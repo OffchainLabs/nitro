@@ -77,7 +77,6 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 
 	for _, d := range servicesThatSignedCert {
 		go func(ctx context.Context, d serviceDetails) {
-			// TODO wrap services with retry policy
 			blob, err := d.service.Retrieve(ctx, cert)
 			if err != nil {
 				errorChan <- err
@@ -104,6 +103,7 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 			log.Warn("Couldn't retrieve message from DAS", "err", err)
 			errorCount++
 		case <-ctx.Done():
+			break
 		}
 	}
 
@@ -140,10 +140,11 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		}(subCtx, d)
 	}
 
-	for i := 0; i < len(a.services); i++ {
+	successfullyStoredCount := 0
+	for i := 0; i < len(a.services) && successfullyStoredCount < a.requiredServicesForStore; i++ {
 		select {
 		case <-ctx.Done():
-			return nil, errors.New("Terminated das.Aggregator.Store() with resquests outstanding")
+			return nil, errors.New("Terminated das.Aggregator.Store() with requests outstanding")
 		case r := <-responses:
 			if r.err != nil {
 				storeFailures++
@@ -183,6 +184,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 					return nil, fmt.Errorf("Mismatched Timeout from DAS %v", r.details)
 				}
 			}
+			successfullyStoredCount++
 		}
 	}
 

@@ -21,10 +21,6 @@ import (
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlTrace)
-	log.Root().SetHandler(glogger)
-
 	numBackendDAS := 10
 	var backends []serviceDetails
 	for i := 0; i < numBackendDAS; i++ {
@@ -57,8 +53,8 @@ type failureType int
 const (
 	success failureType = iota
 	immediateError
-	// TODO timeoutError
-	// TODO data corruption
+	tooSlow
+	dataCorruption
 )
 
 type failureInjector interface {
@@ -71,16 +67,17 @@ type randomBagOfFailures struct {
 	mutex    sync.Mutex
 }
 
-func newRandomBagOfFailures(t *testing.T, nSuccess, nImmediateError int) *randomBagOfFailures {
+func newRandomBagOfFailures(t *testing.T, nSuccess, nFailures int, highestFailureType failureType) *randomBagOfFailures {
 	var failures []failureType
 	for i := 0; i < nSuccess; i++ {
 		failures = append(failures, success)
 	}
-	for i := 0; i < nImmediateError; i++ {
-		failures = append(failures, immediateError)
-	}
 
 	rand.Seed(time.Now().UnixNano())
+	for i := 0; i < nFailures; i++ {
+		failures = append(failures, failureType(rand.Int()%int(highestFailureType)+1))
+	}
+
 	rand.Shuffle(len(failures), func(i, j int) { failures[i], failures[j] = failures[j], failures[i] })
 
 	log.Trace("Injected failures", "failures", failures)
@@ -121,8 +118,17 @@ func (w *WrapRetrieve) Retrieve(ctx context.Context, cert []byte) ([]byte, error
 		return w.DataAvailabilityService.Retrieve(ctx, cert)
 	case immediateError:
 		return nil, errors.New("Expected Retrieve failure")
+	case tooSlow:
+		<-ctx.Done()
+		return nil, errors.New("Canceled")
+	case dataCorruption:
+		data, err := w.DataAvailabilityService.Retrieve(ctx, cert)
+		if err != nil {
+			return nil, err
+		}
+		data[0] = ^data[0]
+		return data, nil
 	}
-
 	Fail(w.t)
 	return nil, nil
 }
@@ -133,8 +139,10 @@ func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (
 		return w.DataAvailabilityService.Store(ctx, message, timeout)
 	case immediateError:
 		return nil, errors.New("Expected Store failure")
+	case tooSlow:
+		<-ctx.Done()
+		return nil, errors.New("Canceled")
 	}
-
 	Fail(w.t)
 	return nil, nil
 }
@@ -153,25 +161,26 @@ func min(a, b int) int {
 	return b
 }
 
+func enableLogging() {
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlTrace)
+	log.Root().SetHandler(glogger)
+}
+
 func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
-	/*
-		glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-		glogger.Verbosity(log.LvlTrace)
-		log.Root().SetHandler(glogger)
-	*/
 	rand.Seed(time.Now().UnixNano())
 	numBackendDAS := (rand.Int() % 20) + 1
 	assumedHonest := (rand.Int() % numBackendDAS) + 1
-	var nImmediateErrors int
+	var nFailures int
 	if shouldFailAggregation {
-		nImmediateErrors = max(assumedHonest, rand.Int()%(numBackendDAS+1))
+		nFailures = max(assumedHonest, rand.Int()%(numBackendDAS+1))
 	} else {
-		nImmediateErrors = min(assumedHonest-1, rand.Int()%(numBackendDAS+1))
+		nFailures = min(assumedHonest-1, rand.Int()%(numBackendDAS+1))
 	}
-	nSuccesses := numBackendDAS - nImmediateErrors
+	nSuccesses := numBackendDAS - nFailures
 	log.Trace(fmt.Sprintf("Testing aggregator with K:%d with K=N+1-H, N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
 
-	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nImmediateErrors)
+	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, tooSlow)
 	var backends []serviceDetails
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
@@ -187,7 +196,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, details)
 	}
 
-	aggregator := NewAggregator(AggregatorConfig{assumedHonest, 7 * 24 * time.Hour}, backends)
+	aggregator := DeadlineWrapper{time.Millisecond * 500, NewAggregator(AggregatorConfig{assumedHonest, 7 * 24 * time.Hour}, backends)}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -215,7 +224,7 @@ func TestDAS_LessThanHStorageFailures(t *testing.T) {
 }
 
 func TestDAS_AtLeastHStorageFailures(t *testing.T) {
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		testConfigurableStorageFailures(t, true)
 	}
 }
@@ -223,17 +232,17 @@ func TestDAS_AtLeastHStorageFailures(t *testing.T) {
 func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	rand.Seed(time.Now().UnixNano())
 	numBackendDAS := (rand.Int() % 20) + 1
-	var nSuccesses, nImmediateErrors int
+	var nSuccesses, nFailures int
 	if shouldFail {
 		nSuccesses = 0
-		nImmediateErrors = numBackendDAS
+		nFailures = numBackendDAS
 	} else {
 		nSuccesses = (rand.Int() % numBackendDAS) + 1
-		nImmediateErrors = numBackendDAS - nSuccesses
+		nFailures = numBackendDAS - nSuccesses
 	}
 
 	var backends []serviceDetails
-	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nImmediateErrors)
+	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
@@ -248,7 +257,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 		backends = append(backends, details)
 	}
 
-	aggregator := NewAggregator(AggregatorConfig{numBackendDAS, 7 * 24 * time.Hour}, backends)
+	aggregator := DeadlineWrapper{time.Millisecond * 500, NewAggregator(AggregatorConfig{1, 7 * 24 * time.Hour}, backends)}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -270,20 +279,13 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 }
 
 func TestDAS_RetrieveFailureFromSomeDASes(t *testing.T) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlTrace)
-	log.Root().SetHandler(glogger)
-
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 20; i++ {
 		testConfigurableRetrieveFailures(t, false)
 	}
 }
 
 func TestDAS_RetrieveFailureFromAllDASes(t *testing.T) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlTrace)
-	log.Root().SetHandler(glogger)
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 10; i++ {
 		testConfigurableRetrieveFailures(t, true)
 	}
 }
