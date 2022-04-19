@@ -43,7 +43,7 @@ jobs:
         with:
           push: true
           context: .
-          tags: localhost:5000/nitro-node-dist:latest
+          tags: localhost:5000/nitro-node:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 

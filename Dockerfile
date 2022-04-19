@@ -168,7 +168,7 @@ USER user
 WORKDIR /home/user/
 ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
-FROM nitro-node-slim as nitro-node-dist
+FROM nitro-node-slim as nitro-node
 USER root
 COPY --from=node-builder /workspace/target/bin/daserver /usr/local/bin/
 RUN export DEBIAN_FRONTEND=noninteractive && \
@@ -182,7 +182,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
-FROM nitro-node-dist as nitro-node-dev
+FROM nitro-node as nitro-node-dev
 USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
@@ -203,5 +203,5 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
-FROM nitro-node-dist as nitro-node-dist-default
+FROM nitro-node as nitro-node-default
 # Just to ensure nitro-node-dist is default
