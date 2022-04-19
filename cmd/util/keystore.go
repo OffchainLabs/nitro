@@ -5,6 +5,8 @@ package util
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -13,26 +15,37 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-func GetTransactOptsFromKeystore(keystorePath, accountAddress, passphrase string, chainId *big.Int) (*bind.TransactOpts, error) {
-	if keystorePath == "" {
+func GetTransactOptsFromWallet(walletConfig *conf.WalletConfig, chainId *big.Int) (*bind.TransactOpts, error) {
+	if walletConfig.PrivateKey != "" {
+		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		return bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+	}
+
+	if walletConfig.Pathname == "" {
 		return nil, errors.New("keystore path empty")
 	}
-	l1keystore := keystore.NewKeyStore(keystorePath, keystore.StandardScryptN, keystore.StandardScryptP)
+	l1keystore := keystore.NewKeyStore(walletConfig.Pathname, keystore.StandardScryptN, keystore.StandardScryptP)
 	var l1Account accounts.Account
-	if accountAddress == "" {
+	if walletConfig.Account == "" {
 		if len(l1keystore.Accounts()) == 0 {
 			return nil, errors.New("keystore empty")
 		}
 		l1Account = l1keystore.Accounts()[0]
 	} else {
-		address := common.HexToAddress(accountAddress)
+		address := common.HexToAddress(walletConfig.Account)
 		var err error
 		l1Account, err = l1keystore.Find(accounts.Account{Address: address})
 		if err != nil {
 			return nil, err
 		}
 	}
-	err := l1keystore.Unlock(l1Account, passphrase)
+	if walletConfig.Password() == nil {
+		panic("l2 password not set")
+	}
+	err := l1keystore.Unlock(l1Account, *walletConfig.Password())
 	if err != nil {
 		return nil, err
 	}

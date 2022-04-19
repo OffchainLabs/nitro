@@ -52,6 +52,7 @@ func ApplyNodeInterface(
 	estimateMethod := nodeInterface.Methods["estimateRetryableTicket"]
 	outboxMethod := nodeInterface.Methods["constructOutboxProof"]
 	findBatchMethod := nodeInterface.Methods["findBatchContainingBlock"]
+	l1ConfsMethod := nodeInterface.Methods["getL1Confirmations"]
 
 	calldata := msg.Data()
 	if len(calldata) < 4 {
@@ -120,7 +121,15 @@ func ApplyNodeInterface(
 		}
 		block, _ := inputs[0].(uint64)
 
-		batch, err := nodeInterfaceFindBatchContainingBlock(ctx, backend, block)
+		node, err := arbNodeFromNodeInterfaceBackend(backend)
+		if err != nil {
+			return msg, nil, err
+		}
+		genesis, err := node.TxStreamer.GetGenesisBlockNumber()
+		if err != nil {
+			return msg, nil, err
+		}
+		batch, err := findBatchContainingBlock(node, genesis, block)
 		if err != nil {
 			return msg, nil, err
 		}
@@ -136,9 +145,48 @@ func ApplyNodeInterface(
 			ScheduledTxes: nil,
 		}
 		return msg, res, err
+	} else if bytes.Equal(l1ConfsMethod.ID, calldata[:4]) {
+		inputs, err := l1ConfsMethod.Inputs.Unpack(calldata[4:])
+		if err != nil {
+			return msg, nil, err
+		}
+		blockHash, _ := inputs[0].([32]byte)
+
+		node, err := arbNodeFromNodeInterfaceBackend(backend)
+		if err != nil {
+			return msg, nil, err
+		}
+		confs, err := getL1Confirmations(node, blockHash)
+		if err != nil {
+			return msg, nil, err
+		}
+		returnData, err := l1ConfsMethod.Outputs.Pack(confs)
+		if err != nil {
+			return msg, nil, fmt.Errorf("internal error: failed to encode outputs: %w", err)
+		}
+
+		res := &ExecutionResult{
+			UsedGas:       0,
+			Err:           nil,
+			ReturnData:    returnData,
+			ScheduledTxes: nil,
+		}
+		return msg, res, err
 	}
 
 	return msg, nil, errors.New("method does not exist in NodeInterface.sol")
+}
+
+func arbNodeFromNodeInterfaceBackend(backend core.NodeInterfaceBackendAPI) (*Node, error) {
+	apiBackend, ok := backend.(*arbitrum.APIBackend)
+	if !ok {
+		return nil, errors.New("API backend isn't Arbitrum")
+	}
+	arbNode, ok := apiBackend.GetArbitrumNode().(*Node)
+	if !ok {
+		return nil, errors.New("failed to get Arbitrum Node from backend")
+	}
+	return arbNode, nil
 }
 
 var merkleTopic common.Hash
@@ -416,38 +464,72 @@ func nodeInterfaceConstructOutboxProof(
 	return result, nil
 }
 
-func nodeInterfaceFindBatchContainingBlock(ctx context.Context, backend core.NodeInterfaceBackendAPI, block uint64) (uint64, error) {
-	apiBackend, ok := backend.(*arbitrum.APIBackend)
-	if !ok {
-		return 0, errors.New("API backend isn't Arbitrum")
-	}
-	arbNode, ok := apiBackend.GetArbitrumNode().(*Node)
-	if !ok {
-		return 0, errors.New("failed to get Arbitrum Node from backend")
-	}
-	genesis, err := arbNode.TxStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
-	}
+var blockInGenesis = errors.New("")
+var blockAfterLatestBatch = errors.New("")
+
+func findBatchContainingBlock(node *Node, genesis uint64, block uint64) (uint64, error) {
 	if block <= genesis {
-		return 0, fmt.Errorf("block %v is part of genesis", block)
+		return 0, fmt.Errorf("%wblock %v is part of genesis", blockInGenesis, block)
 	}
 	pos := arbutil.BlockNumberToMessageCount(block, genesis) - 1
-	high, err := arbNode.InboxTracker.GetBatchCount()
+	high, err := node.InboxTracker.GetBatchCount()
 	if err != nil {
 		return 0, err
 	}
 	high--
-	latestCount, err := arbNode.InboxTracker.GetBatchMessageCount(high)
+	latestCount, err := node.InboxTracker.GetBatchMessageCount(high)
 	if err != nil {
 		return 0, err
 	}
 	latestBlock := arbutil.MessageCountToBlockNumber(latestCount, genesis)
 	if int64(block) > latestBlock {
-		return 0, fmt.Errorf("requested block %v is after latest on-chain block %v published in batch %v", block, latestBlock, high)
+		return 0, fmt.Errorf("%wrequested block %v is after latest on-chain block %v published in batch %v", blockAfterLatestBatch, block, latestBlock, high)
 	}
 
-	return validator.FindBatchContainingMessageIndex(arbNode.InboxTracker, pos, high)
+	return validator.FindBatchContainingMessageIndex(node.InboxTracker, pos, high)
+}
+
+func getL1Confirmations(node *Node, blockHash common.Hash) (uint64, error) {
+	if node.InboxReader == nil {
+		return 0, nil
+	}
+	bc := node.ArbInterface.BlockChain()
+	header := bc.GetHeaderByHash(blockHash)
+	if header == nil {
+		return 0, errors.New("unknown block hash")
+	}
+	blockNum := header.Number.Uint64()
+	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	batch, err := findBatchContainingBlock(node, genesis, blockNum)
+	if err != nil {
+		if errors.Is(err, blockInGenesis) {
+			batch = 0
+		} else if errors.Is(err, blockAfterLatestBatch) {
+			return 0, nil
+		} else {
+			return 0, err
+		}
+	}
+	latestL1Block, latestBatchCount := node.InboxReader.GetLastReadBlockAndBatchCount()
+	if latestBatchCount <= batch {
+		return 0, nil // batch was reorg'd out?
+	}
+	meta, err := node.InboxTracker.GetBatchMetadata(batch)
+	if err != nil {
+		return 0, err
+	}
+	if latestL1Block < meta.L1Block || arbutil.BlockNumberToMessageCount(blockNum, genesis) > meta.MessageCount {
+		return 0, nil
+	}
+	canonicalHash := bc.GetCanonicalHash(header.Number.Uint64())
+	if canonicalHash != header.Hash() {
+		return 0, errors.New("block hash is non-canonical")
+	}
+	confs := (latestL1Block - meta.L1Block) + 1 + node.InboxReader.GetDelayBlocks()
+	return confs, nil
 }
 
 func init() {
