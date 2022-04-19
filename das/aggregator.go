@@ -46,6 +46,10 @@ func NewAggregator(config AggregatorConfig, services []serviceDetails) *Aggregat
 	}
 }
 
+// Retrieve calls  on each backend DAS in parallel and returns immediately on the
+// first successful response where the data matches the requested hash. Otherwise
+// if all requests fail or if its context is canceled (eg via DeadlineWrapper) then
+// it returns an error.
 func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
 	requestedCert, _, err := arbstate.DeserializeDASCertFrom(cert)
 	if err != nil {
@@ -117,6 +121,13 @@ type storeResponse struct {
 	details serviceDetails
 }
 
+// Store calls Store on each backend DAS in parallel and collects responses; if
+// there were enough (at least K) responses then it aggregates the signatures and
+// signerMasks from each DAS together to put in the DataAvailabilityCertificate
+// that it returns; if it gets enough errors that K successes is impossible, then
+// it stops early and returns an error, and if it gets not enough successful
+// responses by the time its context is canceled (eg via DeadlineWrapper) then it
+// also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
 	var aggSignersMask uint64
 	var pubKeys []blsSignatures.PublicKey
