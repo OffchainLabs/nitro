@@ -125,9 +125,9 @@ func main() {
 				panic(err)
 			}
 		}
-	} else {
+	} else if l1Client != nil {
 		// Don't need l1Client anymore
-		log.Info("using chain id to get rollup parameters", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
+		log.Info("used chain id to get rollup parameters", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 		l1Client = nil
 	}
 
@@ -530,7 +530,7 @@ func applyNitroDevNetRollupParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                   "goerli",
 		"node.forwarding-target":             "https://nitro-devnet.arbitrum.io/rpc",
-		"node.feed.input.url":                "https://nitro-devnet.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://nitro-devnet.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0x9903a892da86c1e04522d63b08e5514a921e81df",
 		"l1.rollup.inbox":                    "0x1fdbbcc914e84af593884bf8e8dd6877c29035a2",
 		"l1.rollup.rollup":                   "0x767cff8d8de386d7cbe91dbd39675132ba2f5967",

@@ -33,7 +33,7 @@ func ConfConfigAddOptions(prefix string, f *flag.FlagSet) {
 var ConfConfigDefault = ConfConfig{
 	Dump:      false,
 	EnvPrefix: "",
-	File:      []string{""},
+	File:      nil,
 	S3:        DefaultS3Config,
 	String:    "",
 }
