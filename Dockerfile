@@ -200,3 +200,5 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
+FROM nitro-node-dist as nitro-node-dist-default
+# Just to ensure nitro-node-dist is default
