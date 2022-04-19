@@ -160,6 +160,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     mkdir -p /home/user/.arbitrum/local/nitro && \
     chown -R user:user /home/user && \
     apt-get clean && \
+    rm /usr/local/bin/prover && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/*
 
 USER user
