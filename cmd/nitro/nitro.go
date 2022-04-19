@@ -276,7 +276,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		currentArbosState, err := arbosState.OpenSystemArbosState(statedb, true)
+		currentArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 		if err != nil {
 			panic(err)
 		}
