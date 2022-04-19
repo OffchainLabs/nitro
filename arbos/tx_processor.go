@@ -85,7 +85,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	p.TopTxType = &tipe
 	evm := p.evm
 
-	startTracer := func(calling common.Address) func() {
+	startTracer := func() func() {
 		if !evm.Config.Debug {
 			return func() {}
 		}
@@ -94,35 +94,35 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		start := time.Now()
 		tracer.CaptureStart(evm, from, *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
 
-		tracingInfo = util.NewTracingInfo(evm, from, calling, util.TracingDuringEVM)
+		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
 			tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil)
 			evm.DecrementDepth() // fake the return to the first faked call
 
-			tracingInfo = util.NewTracingInfo(evm, from, calling, util.TracingAfterEVM)
+			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingAfterEVM)
 			p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 		}
 	}
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
-		defer (startTracer(arbosAddress))()
+		defer (startTracer())()
 		if p.msg.From() != arbosAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
 		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
-		defer (startTracer(arbosAddress))()
+		defer (startTracer())()
 		if p.msg.From() != arbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
 		ApplyInternalTxUpdate(tx, p.state, evm)
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
-		defer (startTracer(types.ArbRetryableTxAddress))()
+		defer (startTracer())()
 		statedb := evm.StateDB
 		ticketId := underlyingTx.Hash()
 		escrow := retryables.RetryableEscrowAddress(ticketId)

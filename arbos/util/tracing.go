@@ -79,7 +79,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 	tracer := info.Tracer
 	depth := info.Depth
 
-	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, big.NewInt(0), 0)
+	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, amount, gas)
 
 	scope := &vm.ScopeContext{
 		Memory: TracingMemoryFromBytes(input),
