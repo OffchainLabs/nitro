@@ -127,8 +127,8 @@ func fillBlocks(ctx context.Context, rpcClient *rpc.Client, fromBlock, toBlock u
 			return res.err
 		}
 		block := res.block
-		completed := block.Header.Number.Uint64() - fromBlock
-		totalBlocks := toBlock - fromBlock
+		completed := block.Header.Number.Uint64() - fromBlock + 1
+		totalBlocks := toBlock - fromBlock + 1
 		if completed%10 == 0 {
 			fmt.Printf("\rRead block %v/%v (%.2f%%)", completed, totalBlocks, 100*float64(completed)/float64(totalBlocks))
 		}
