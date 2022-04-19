@@ -124,9 +124,11 @@ RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
 # Download old WASM module roots
 RUN bash -c 'mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
-RUN bash -c 'mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
+RUN bash -c 'mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && LATEST=$_ && ln -s $LATEST latest && cd $LATEST && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
 # Copy in latest WASM module root
-COPY --from=module-root-calc /workspace/target/machines/latest latest
+WORKDIR /workspace/latest-machine
+COPY --from=module-root-calc /workspace/target/machines/latest/*.br latest
+COPY --from=module-root-calc /workspace/target/machines/latest/*.bin latest
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
@@ -152,21 +154,47 @@ FROM debian:bullseye-slim as nitro-node
 WORKDIR /home/user
 COPY --from=node-builder /workspace/target/bin /usr/local/bin
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
+USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y wabt \
-    curl procps jq rsync \
-    node-ws vim-tiny python3 \
-    dnsutils && \
+    apt-get install -y \
+    wabt && \
     useradd -ms /bin/bash user && \
-    chown -R user:user /home/user
-
-WORKDIR /home/user/
-ENTRYPOINT [ "/usr/local/bin/nitro" ]
-
-FROM nitro-node as nitro-node-dist
-RUN export DEBIAN_FRONTEND=noninteractive && \
+    mkdir -p /home/user/l1keystore && \
+    mkdir -p /home/user/.arbitrum/local/nitro && \
+    chown -R user:user /home/user && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/*
 
 USER user
+WORKDIR /home/user/
+ENTRYPOINT [ "/usr/local/bin/nitro" ]
+
+FROM nitro-node as nitro-node-dist
+USER root
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y \
+    curl procps jq rsync \
+    node-ws vim-tiny python3 \
+    dnsutils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+
+USER user
+
+FROM nitro-node-dist as nitro-node-dev
+USER root
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y \
+    sudo && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    rm -rf /home/user/target/machines/ && \
+    adduser user sudo && \
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+COPY --from=machine-versions /workspace/machines /home/user/target/latest-machine
+
+USER user
+
