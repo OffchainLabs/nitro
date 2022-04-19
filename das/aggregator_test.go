@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -73,7 +74,6 @@ func newRandomBagOfFailures(t *testing.T, nSuccess, nFailures int, highestFailur
 		failures = append(failures, success)
 	}
 
-	rand.Seed(time.Now().UnixNano())
 	for i := 0; i < nFailures; i++ {
 		failures = append(failures, failureType(rand.Int()%int(highestFailureType)+1))
 	}
@@ -168,7 +168,6 @@ func enableLogging() {
 }
 
 func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
-	rand.Seed(time.Now().UnixNano())
 	numBackendDAS := (rand.Int() % 20) + 1
 	assumedHonest := (rand.Int() % numBackendDAS) + 1
 	var nFailures int
@@ -196,7 +195,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, details)
 	}
 
-	aggregator := DeadlineWrapper{time.Millisecond * 500, NewAggregator(AggregatorConfig{assumedHonest, 7 * 24 * time.Hour}, backends)}
+	aggregator := DeadlineWrapper{time.Millisecond * 1000, NewAggregator(AggregatorConfig{assumedHonest, 7 * 24 * time.Hour}, backends)}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -217,20 +216,46 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	}
 }
 
+func initTest(t *testing.T) int {
+	seed := time.Now().UnixNano()
+	seedStr := os.Getenv("SEED")
+	if len(seedStr) > 0 {
+		var err error
+		intSeed, err := strconv.Atoi(seedStr)
+		Require(t, err, "Failed to parse string")
+		seed = int64(intSeed)
+	}
+	rand.Seed(seed)
+
+	log.Trace(fmt.Sprintf("Running test with seed %d", seed))
+
+	runsStr := os.Getenv("RUNS")
+	runs := 2 ^ 32
+	if len(runsStr) > 0 {
+		var err error
+		runs, err = strconv.Atoi(runsStr)
+		Require(t, err, "Failed to parse string")
+	}
+	return runs
+}
+
 func TestDAS_LessThanHStorageFailures(t *testing.T) {
-	for i := 0; i < 100; i++ {
+	runs := initTest(t)
+
+	for i := 0; i < min(runs, 100); i++ {
 		testConfigurableStorageFailures(t, false)
 	}
 }
 
 func TestDAS_AtLeastHStorageFailures(t *testing.T) {
-	for i := 0; i < 10; i++ {
+	runs := initTest(t)
+
+	for i := 0; i < min(runs, 10); i++ {
 		testConfigurableStorageFailures(t, true)
 	}
 }
 
 func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
-	rand.Seed(time.Now().UnixNano())
 	numBackendDAS := (rand.Int() % 20) + 1
 	var nSuccesses, nFailures int
 	if shouldFail {
@@ -240,7 +265,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 		nSuccesses = (rand.Int() % numBackendDAS) + 1
 		nFailures = numBackendDAS - nSuccesses
 	}
-
+	log.Trace(fmt.Sprintf("Testing aggregator retrieve with %d successes and %d failures", nSuccesses, nFailures))
 	var backends []serviceDetails
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	for i := 0; i < numBackendDAS; i++ {
@@ -257,7 +282,10 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 		backends = append(backends, details)
 	}
 
-	aggregator := DeadlineWrapper{time.Millisecond * 500, NewAggregator(AggregatorConfig{1, 7 * 24 * time.Hour}, backends)}
+	// All honest -> at least 1 store succeeds.
+	// Aggregator should collect responses up until end of deadline, so
+	// it should get all successes.
+	aggregator := DeadlineWrapper{time.Millisecond * 1000, NewAggregator(AggregatorConfig{numBackendDAS, 7 * 24 * time.Hour}, backends)}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -279,13 +307,15 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 }
 
 func TestDAS_RetrieveFailureFromSomeDASes(t *testing.T) {
-	for i := 0; i < 20; i++ {
+	runs := initTest(t)
+	for i := 0; i < min(runs, 20); i++ {
 		testConfigurableRetrieveFailures(t, false)
 	}
 }
 
 func TestDAS_RetrieveFailureFromAllDASes(t *testing.T) {
-	for i := 0; i < 10; i++ {
+	runs := initTest(t)
+	for i := 0; i < min(runs, 10); i++ {
 		testConfigurableRetrieveFailures(t, true)
 	}
 }

@@ -141,10 +141,14 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	}
 
 	successfullyStoredCount := 0
-	for i := 0; i < len(a.services) && successfullyStoredCount < a.requiredServicesForStore; i++ {
+	for i := 0; i < len(a.services); i++ {
 		select {
 		case <-ctx.Done():
-			return nil, errors.New("Terminated das.Aggregator.Store() with requests outstanding")
+			if successfullyStoredCount < a.requiredServicesForStore {
+				return nil, errors.New("Terminated das.Aggregator.Store() with requests outstanding before enough responses received")
+			} else {
+				break
+			}
 		case r := <-responses:
 			if r.err != nil {
 				storeFailures++
