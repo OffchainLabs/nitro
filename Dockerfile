@@ -146,9 +146,10 @@ COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
-FROM debian:bullseye-slim as nitro-node
+FROM debian:bullseye-slim as nitro-node-slim
 WORKDIR /home/user
-COPY --from=node-builder /workspace/target/bin /usr/local/bin
+COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
 USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
@@ -159,23 +160,23 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     mkdir -p /home/user/l1keystore && \
     mkdir -p /home/user/.arbitrum/local/nitro && \
     chown -R user:user /home/user && \
+    chmod -R 555 /home/user/target/machines && \
     apt-get clean && \
-    rm -f /usr/local/bin/prover && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/*
 
 USER user
 WORKDIR /home/user/
 ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
-FROM nitro-node as nitro-node-dist
+FROM nitro-node-slim as nitro-node-dist
 USER root
+COPY --from=node-builder /workspace/target/bin/daserver /usr/local/bin/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
     curl procps jq rsync \
     node-ws vim-tiny python3 \
     dnsutils && \
-    chmod -R 555 /home/user/target/machines && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/*
 
@@ -185,9 +186,11 @@ FROM nitro-node-dist as nitro-node-dev
 USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
-COPY --from=module-root-calc /workspace/target/machines/latest/*.br /home/user/target/machines/latest/
-COPY --from=module-root-calc /workspace/target/machines/latest/*.bin /home/user/target/machines/latest/
-COPY --from=module-root-calc /workspace/target/machines/latest/*.txt /home/user/target/machines/latest/
+COPY --from=node-builder /workspace/target/bin/deploy /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
+COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
