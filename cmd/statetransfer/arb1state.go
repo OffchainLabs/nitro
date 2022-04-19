@@ -24,8 +24,9 @@ func main() {
 	nodeUrl := flag.String("nodeurl", "https://arb1-graph.arbitrum.io/rpc", "URL of classic chain node")
 	dataPath := flag.String("dir", "target/data", "path to data directory")
 	blockNumParam := flag.Int64("blocknum", -1, "negative for current")
-	prevBlockNumInt := flag.Int64("prevblock", -1, "-1 for no previous data")
+	prevBlockNumInt := flag.Int64("prevblocknum", -1, "-1 for no previous data")
 	newAPI := flag.Bool("newapi", false, "use new api")
+	blocksOnly := flag.Bool("blocksonly", false, "only query blocks")
 
 	flag.Parse()
 	ctx := context.Background()
@@ -63,7 +64,7 @@ func main() {
 		inFileName = path.Join(DirNameFor(*dataPath, uint64(*prevBlockNumInt)), "header.json")
 	}
 
-	err = statetransfer.ReadStateFromClassic(ctx, rpcClient, blockNumUint64, inFileName, outDir, !*newAPI)
+	err = statetransfer.ReadStateFromClassic(ctx, rpcClient, blockNumUint64, inFileName, outDir, *newAPI, *blocksOnly)
 	if err != nil {
 		panic(err)
 	}

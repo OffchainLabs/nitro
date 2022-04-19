@@ -6,6 +6,7 @@ package statetransfer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -118,7 +119,10 @@ func fillBlocks(ctx context.Context, rpcClient *rpc.Client, fromBlock, toBlock u
 		close(inputChan)
 	}()
 	for out := range output {
-		res := out.Value.(blockQueryResult)
+		res, ok := out.Value.(blockQueryResult)
+		if !ok {
+			return errors.New("unexpected result type from block query")
+		}
 		if res.err != nil {
 			return res.err
 		}
@@ -137,6 +141,6 @@ func fillBlocks(ctx context.Context, rpcClient *rpc.Client, fromBlock, toBlock u
 		}
 		prevHash = block.Header.Hash()
 	}
-	fmt.Printf("\rDone reading blocks!\n")
+	fmt.Printf("\rDone reading blocks!                    \n")
 	return nil
 }
