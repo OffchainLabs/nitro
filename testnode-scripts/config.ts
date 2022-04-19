@@ -16,6 +16,12 @@ function writeConfigs(argv: any) {
                 "pathname": consts.l1keystore,
             },
         },
+        "l2": {
+            "chain-id": 421612,
+            "dev-wallet" : {
+                "private-key": "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
+            }
+        },
         "node": {
             "archive": true,
             "forwarding-target": "null",
@@ -52,7 +58,7 @@ function writeConfigs(argv: any) {
             }
         },
         "persistent": {
-            "data": "/data"
+	        "chain": "local"
         },
         "ws": {
             "addr": "0.0.0.0"

@@ -96,14 +96,27 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 		&a.ValidatorUtils,
 		&a.ValidatorWalletCreator,
 	}
+	names := []string{
+		"Bridge",
+		"Inbox",
+		"SequencerInbox",
+		"Rollup",
+		"ValidatorUtils",
+		"ValidatorWalletCreator",
+	}
 	if len(strs) != len(addrs) {
 		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
 	}
+	complete := true
 	for i, s := range strs {
 		if !common.IsHexAddress(s) {
-			return RollupAddresses{}, fmt.Errorf("invalid address: %v", s)
+			log.Error("invalid address", "name", names[i], "value", s)
+			complete = false
 		}
 		*addrs[i] = common.HexToAddress(s)
+	}
+	if !complete {
+		return RollupAddresses{}, fmt.Errorf("invalid addresses")
 	}
 	return a, nil
 }
@@ -252,14 +265,14 @@ func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
 	l1Reader := NewL1Reader(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
 	if wasmModuleRoot == (common.Hash{}) {
 		var err error
-		wasmModuleRoot, err = validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
+		wasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
 		if err != nil {
 			return nil, err
 		}
@@ -708,23 +721,23 @@ func (l arbNodeLifecycle) Stop() error {
 }
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
-	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
+	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
 	if err != nil {
 		return nil, err
 	}
 	var apis []rpc.API
-	if node.BlockValidator != nil {
+	if currentNode.BlockValidator != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: node.BlockValidator, blockchain: l2BlockChain},
+			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
 			Public:    false,
 		})
 	}
 	stack.RegisterAPIs(apis)
 
-	stack.RegisterLifecycle(arbNodeLifecycle{node})
-	return node, nil
+	stack.RegisterLifecycle(arbNodeLifecycle{currentNode})
+	return currentNode, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
