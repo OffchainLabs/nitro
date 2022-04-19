@@ -160,7 +160,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     mkdir -p /home/user/.arbitrum/local/nitro && \
     chown -R user:user /home/user && \
     apt-get clean && \
-    rm /usr/local/bin/prover && \
+    rm -f /usr/local/bin/prover && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/*
 
 USER user
@@ -184,7 +184,7 @@ USER user
 FROM nitro-node-dist as nitro-node-dev
 USER root
 # Copy in latest WASM module root
-RUN rm /home/user/target/machines/latest
+RUN rm -f /home/user/target/machines/latest
 COPY --from=module-root-calc /workspace/target/machines/latest/*.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/*.bin /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/*.txt /home/user/target/machines/latest/
