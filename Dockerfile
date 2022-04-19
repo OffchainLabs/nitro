@@ -123,8 +123,8 @@ FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
 # Download old WASM module roots
-RUN mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br
-RUN mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br
+RUN bash -c 'mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
+RUN bash -c 'mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
 # Copy in latest WASM module root
 COPY --from=module-root-calc /workspace/target/machines/latest latest
 
@@ -149,23 +149,24 @@ RUN mkdir -p target/bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM debian:bullseye-slim as nitro-node
-WORKDIR /workspace
+WORKDIR /home/user
+COPY --from=node-builder /workspace/target/bin /usr/local/bin
+COPY --from=machine-versions /workspace/machines /home/user/target/machines
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y wabt
-COPY --from=node-builder /workspace/target/ target/
-COPY --from=machine-versions /workspace/machines target/machines
-ENTRYPOINT [ "./target/bin/node" ]
+    apt-get install -y wabt \
+    curl procps jq rsync \
+    node-ws vim-tiny python3 \
+    dnsutils && \
+    useradd -ms /bin/bash user && \
+    chown -R user:user /home/user
+
+WORKDIR /home/user/
+ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
 FROM nitro-node as nitro-node-dist
-WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
-    apt-get update && \
-    apt-get install -y curl \
-        procps jq rsync \
-        node-ws vim-tiny libatomic1 python3 \
-        libgmp10 libssl1.1 \
-        libgoogle-perftools4 \
-        libgflags2.2 libsnappy1v5 libzstd1 dnsutils && \
-        apt-get clean && \
-        rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+
+USER user

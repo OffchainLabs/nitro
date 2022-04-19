@@ -77,7 +77,7 @@ func ApplyNodeInterface(
 			pRetryTo = &retryTo
 		}
 
-		state, _ := arbosState.OpenSystemArbosState(statedb, true)
+		state, _ := arbosState.OpenSystemArbosState(statedb, nil, true)
 		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
 		maxSubmissionFee := retryables.RetryableSubmissionFee(len(retryData), l1BaseFee)
 
@@ -557,7 +557,7 @@ func init() {
 			// ArbOS hasn't been installed, so use the vanilla gas cap
 			return
 		}
-		state, err := arbosState.OpenSystemArbosState(statedb, true)
+		state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 		if err != nil {
 			log.Error("failed to open ArbOS state", "err", err)
 			return
