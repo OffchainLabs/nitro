@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package statetransfer
 
 import (
@@ -9,17 +12,20 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
+	concurrently "github.com/tejzpr/ordered-concurrently/v3"
 )
 
 type TransactionResults struct {
 	Transactions []types.ArbitrumLegacyTransactionResult `json:"transactions" gencodec:"required"`
 }
 
+type classicReceiptExtra struct {
+	ReturnCode hexutil.Uint64 `json:"returnCode"`
+}
+
 func ReadBlockFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumber *big.Int) (*StoredBlock, error) {
 	var raw json.RawMessage
-	client := ethclient.NewClient(rpcClient)
 	err := rpcClient.CallContext(ctx, &raw, "eth_getBlockByNumber", hexutil.EncodeBig(blockNumber), true)
 	if err != nil {
 		return nil, err
@@ -35,16 +41,24 @@ func ReadBlockFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 	var receipts types.Receipts
 	var txs []types.ArbitrumLegacyTransactionResult
 	for _, tx := range transactionResults.Transactions {
-		reciept, err := client.TransactionReceipt(ctx, tx.Hash)
-		if err != nil { // we might just skip that receipt, but let's find one first
+		err := rpcClient.CallContext(ctx, &raw, "eth_getTransactionReceipt", tx.Hash)
+		if err != nil {
 			return nil, err
 		}
-		if reciept.BlockNumber.Cmp(blockNumber) != 0 {
-			// duplicate Txhash. Skip.
+		var extra classicReceiptExtra
+		if err := json.Unmarshal(raw, &extra); err != nil {
+			return nil, err
+		}
+		if extra.ReturnCode >= 2 {
+			// possible duplicate Txhash. Skip.
 			continue
 		}
+		var receipt *types.Receipt
+		if err := json.Unmarshal(raw, &receipt); err != nil {
+			return nil, err
+		}
 		txs = append(txs, tx)
-		receipts = append(receipts, reciept)
+		receipts = append(receipts, receipt)
 	}
 	return &StoredBlock{
 		Header:       blockHeader,
@@ -77,20 +91,53 @@ func scanAndCopyBlocks(reader StoredBlockReader, writer *JsonListWriter) (int64,
 	return blockNum, lastHash, nil
 }
 
+const parallelBlockQueries = 64
+
+type blockQuery struct {
+	rpcClient *rpc.Client
+	block     uint64
+}
+
+type blockQueryResult struct {
+	block *StoredBlock
+	err   error
+}
+
+func (q blockQuery) Run(ctx context.Context) interface{} {
+	block, err := ReadBlockFromClassic(ctx, q.rpcClient, new(big.Int).SetUint64(q.block))
+	return blockQueryResult{block, err}
+}
+
 func fillBlocks(ctx context.Context, rpcClient *rpc.Client, fromBlock, toBlock uint64, prevHash common.Hash, writer *JsonListWriter) error {
-	for blockNum := fromBlock; blockNum <= toBlock; blockNum++ {
-		storedBlock, err := ReadBlockFromClassic(ctx, rpcClient, new(big.Int).SetUint64(blockNum))
-		if err != nil {
-			return err
+	inputChan := make(chan concurrently.WorkFunction)
+	output := concurrently.Process(ctx, inputChan, &concurrently.Options{PoolSize: parallelBlockQueries, OutChannelBuffer: parallelBlockQueries})
+	go func() {
+		for block := fromBlock; block <= toBlock; block++ {
+			inputChan <- blockQuery{rpcClient, block}
 		}
-		if storedBlock.Header.ParentHash != prevHash {
+		close(inputChan)
+	}()
+	defer close(inputChan) // in case of error
+	for out := range output {
+		res := out.Value.(blockQueryResult)
+		if res.err != nil {
+			return res.err
+		}
+		block := res.block
+		completed := block.Header.Number.Uint64() - fromBlock
+		totalBlocks := toBlock - fromBlock
+		if completed%10 == 0 {
+			fmt.Printf("\rRead block %v/%v (%.2f%%)", completed, totalBlocks, 100*float64(completed)/float64(totalBlocks))
+		}
+		if block.Header.ParentHash != prevHash {
 			return fmt.Errorf("unexpected block hash: %v", prevHash)
 		}
-		err = writer.Write(&storedBlock)
+		err := writer.Write(&block)
 		if err != nil {
 			return err
 		}
-		prevHash = storedBlock.Header.Hash()
+		prevHash = block.Header.Hash()
 	}
+	fmt.Printf("\rDone reading blocks!\n")
 	return nil
 }
