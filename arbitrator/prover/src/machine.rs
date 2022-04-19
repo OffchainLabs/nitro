@@ -1193,12 +1193,9 @@ impl Machine {
         self.steps
     }
 
-    pub fn step_n(&mut self, mut n: u64) {
+    pub fn step_n(&mut self, n: u64) {
         if self.is_halted() {
             return;
-        }
-        if self.steps.saturating_add(n) >= Self::MAX_STEPS {
-            n = Self::MAX_STEPS.saturating_sub(self.steps);
         }
         let mut module = &mut self.modules[self.pc.module];
         let mut func = &module.funcs[self.pc.func];
@@ -1213,6 +1210,10 @@ impl Machine {
 
         for _ in 0..n {
             self.steps += 1;
+            if self.steps == Self::MAX_STEPS {
+                self.status = MachineStatus::Errored;
+                break;
+            }
             let inst = func.code[self.pc.inst];
             if self.pc.inst == 1 {
                 if let Some(hook) = module
@@ -1781,10 +1782,6 @@ impl Machine {
             }
         }
         flush_module!();
-        if self.steps >= Self::MAX_STEPS {
-            self.status = MachineStatus::Errored;
-            return;
-        }
         if self.is_halted() && !self.stdio_output.is_empty() {
             // If we halted, print out any trailing output that didn't have a newline.
             println!(
