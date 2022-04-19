@@ -13,7 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/nitro/statetransfer"
 )
 
 func DirNameFor(dirPath string, blockNum uint64) string {
