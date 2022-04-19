@@ -141,7 +141,7 @@ func main() {
 		// ArbOS has already been initialized.
 		// Load the chain config and then produce a block normally.
 
-		initialArbosState, err := arbosState.OpenSystemArbosState(statedb, true)
+		initialArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 		if err != nil {
 			panic(fmt.Sprintf("Error opening initial ArbOS state: %v", err.Error()))
 		}
@@ -172,7 +172,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(false), chainConfig)
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig)
 		if err != nil {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}
