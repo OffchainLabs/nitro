@@ -186,6 +186,7 @@ USER root
 RUN rm /home/user/target/machines/latest
 COPY --from=module-root-calc /workspace/target/machines/latest/*.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/*.bin /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/*.txt /home/user/target/machines/latest/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
