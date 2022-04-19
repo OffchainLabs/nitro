@@ -117,7 +117,6 @@ func fillBlocks(ctx context.Context, rpcClient *rpc.Client, fromBlock, toBlock u
 		}
 		close(inputChan)
 	}()
-	defer close(inputChan) // in case of error
 	for out := range output {
 		res := out.Value.(blockQueryResult)
 		if res.err != nil {
