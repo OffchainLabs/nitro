@@ -83,7 +83,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "current",
-	PendingUpgradeModuleRoot: "",
+	PendingUpgradeModuleRoot: "latest",
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -91,7 +91,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "latest",
-	PendingUpgradeModuleRoot: "",
+	PendingUpgradeModuleRoot: "latest",
 }
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
@@ -134,6 +134,23 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 	err = validator.readLastBlockValidatedDbInfo()
 	if err != nil {
 		return nil, err
+	}
+	if config.PendingUpgradeModuleRoot != "" {
+		if config.PendingUpgradeModuleRoot == "latest" {
+			latest, err := machineLoader.GetConfig().ReadLatestWasmModuleRoot()
+			if err != nil {
+				return nil, err
+			}
+			validator.pendingWasmModuleRoot = latest
+		} else {
+			validator.pendingWasmModuleRoot = common.HexToHash(config.PendingUpgradeModuleRoot)
+			if (validator.pendingWasmModuleRoot == common.Hash{}) {
+				return nil, errors.New("pending-upgrade-module-root config value illegal")
+			}
+		}
+		if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true); err != nil {
+			return nil, err
+		}
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
@@ -270,7 +287,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 		return err
 	}
 
-	for _, module := range machConf.ModulePaths {
+	for _, module := range machConf.LibraryPaths {
 		_, err = cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
 		if err != nil {
 			return err
@@ -353,10 +370,12 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	}
 	if (v.currentWasmModuleRoot == common.Hash{}) {
 		v.currentWasmModuleRoot = hash
+		return nil
 	}
 	if v.pendingWasmModuleRoot == hash {
 		log.Info("Block validator: detected progressing to pending machine", "hash", hash)
 		v.currentWasmModuleRoot = hash
+		return nil
 	}
 	if v.config.CurrentModuleRoot != "current" {
 		return nil
@@ -764,23 +783,6 @@ func (v *BlockValidator) Initialize() error {
 		return err
 	}
 
-	if v.config.PendingUpgradeModuleRoot != "" {
-		if v.config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
-			if err != nil {
-				return err
-			}
-			v.pendingWasmModuleRoot = latest
-		} else {
-			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
-			if (v.pendingWasmModuleRoot == common.Hash{}) {
-				return errors.New("pending-upgrade-module-root config value illegal")
-			}
-		}
-		if err := v.MachineLoader.CreateMachine(v.pendingWasmModuleRoot, true); err != nil {
-			return err
-		}
-	}
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
 	return nil
 }
