@@ -309,6 +309,18 @@ contract OneStepProver0 is IOneStepProver {
         mach.functionPc = 0;
     }
 
+    function executeArbitraryJump(
+        Machine memory mach,
+        Module memory,
+        Instruction calldata inst,
+        bytes calldata
+    ) internal pure {
+        // Jump to target
+        uint32 pc = uint32(inst.argumentData);
+        require(pc == inst.argumentData, "BAD_CALL_DATA");
+        mach.functionPc = pc;
+    }
+
     function executeArbitraryJumpIf(
         Machine memory mach,
         Module memory,
@@ -527,6 +539,8 @@ contract OneStepProver0 is IOneStepProver {
             impl = executeEndBlock;
         } else if (opcode == Instructions.END_BLOCK_IF) {
             impl = executeEndBlockIf;
+        } else if (opcode == Instructions.ARBITRARY_JUMP) {
+            impl = executeArbitraryJump;
         } else if (opcode == Instructions.ARBITRARY_JUMP_IF) {
             impl = executeArbitraryJumpIf;
         } else if (opcode == Instructions.LOCAL_GET) {
