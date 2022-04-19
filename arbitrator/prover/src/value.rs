@@ -9,7 +9,7 @@ use digest::Digest;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ValueType {
     I32,
@@ -46,7 +46,7 @@ impl From<RefType> for ValueType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub enum IntegerValType {
     I32,
     I64,
@@ -188,7 +188,7 @@ impl PartialEq for Value {
 
 impl Eq for Value {}
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionType {
     pub inputs: Vec<ValueType>,
     pub outputs: Vec<ValueType>,
