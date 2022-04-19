@@ -13,14 +13,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -28,17 +26,22 @@ import (
 )
 
 type NitroMachineConfig struct {
-	RootPath                string // a folder with various machines in it
-	ProverBinPath           string
-	ModulePaths             []string
-	InitialMachineCachePath string
+	RootPath             string // a folder with various machines in it
+	WavmBinaryPath       string
+	UntilHostIoStatePath string
+
+	// Used for debugging only
+	ProverBinPath string
+	LibraryPaths  []string
 }
 
 var DefaultNitroMachineConfig = NitroMachineConfig{
-	RootPath:                "./target/machines/",
-	ProverBinPath:           "replay.wasm",
-	ModulePaths:             []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
-	InitialMachineCachePath: "./target/etc/initial-machine-cache",
+	RootPath:             "./target/machines/",
+	WavmBinaryPath:       "machine.wavm.br",
+	UntilHostIoStatePath: "until-host-io-state.bin",
+
+	ProverBinPath: "replay.wasm",
+	LibraryPaths:  []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
 }
 
 func init() {
@@ -56,7 +59,7 @@ func (c NitroMachineConfig) getMachinePath(moduleRoot common.Hash) string {
 }
 
 func (c NitroMachineConfig) ReadLatestWasmModuleRoot() (common.Hash, error) {
-	fileToRead := filepath.Join(c.getMachinePath(common.Hash{}), "module_root")
+	fileToRead := filepath.Join(c.getMachinePath(common.Hash{}), "module-root.txt")
 	fileBytes, err := ioutil.ReadFile(fileToRead)
 	if err != nil {
 		return common.Hash{}, err
@@ -80,20 +83,13 @@ func (s *loaderMachineStatus) signalReady() {
 
 func (s *loaderMachineStatus) createZeroStepMachineInternal(config NitroMachineConfig, moduleRoot common.Hash, realModuleRoot common.Hash) {
 	defer s.signalReady()
-	machinePath := config.getMachinePath(moduleRoot)
-	moduleList := []string{}
-	for _, module := range config.ModulePaths {
-		moduleList = append(moduleList, filepath.Join(machinePath, module))
-	}
-	binPath := filepath.Join(machinePath, config.ProverBinPath)
-	cModuleList := CreateCStringList(moduleList)
-	defer FreeCStringList(cModuleList, len(moduleList))
+	binPath := filepath.Join(config.getMachinePath(moduleRoot), config.WavmBinaryPath)
 	cBinPath := C.CString(binPath)
 	defer C.free(unsafe.Pointer(cBinPath))
-	log.Info("creating nitro machine", "binpath", binPath, "moduleList", moduleList)
-	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)))
+	log.Info("creating nitro machine", "binpath", binPath)
+	baseMachine := C.arbitrator_load_wavm_binary(cBinPath)
 	if baseMachine == nil {
-		s.err = errors.New("failed to create base machine")
+		s.err = errors.New("failed to load base machine")
 		return
 	}
 	nitroMachine := machineFromPointer(baseMachine)
@@ -112,69 +108,25 @@ func (s *loaderMachineStatus) createHostIoMachineInternal(config NitroMachineCon
 	defer s.signalReady()
 	ctx := context.Background()
 	machine := zerostep.Clone()
-	hash := machine.Hash()
-	expectedName := hash.String() + ".bin"
-	cacheDir := config.InitialMachineCachePath
-	foundInCache := false
-	saveStateToFile := true
-	err := os.MkdirAll(cacheDir, 0o755)
-	if err != nil {
-		saveStateToFile = false
-	}
-	var files []fs.FileInfo
-	if saveStateToFile {
-		files, err = ioutil.ReadDir(cacheDir)
-		if err != nil {
-			saveStateToFile = false
-		}
-	}
-	if saveStateToFile {
-		cleanCacheBefore := time.Now().Add(-time.Hour * 24)
 
-		for _, file := range files {
-			if file.Name() == expectedName {
-				foundInCache = true
-			} else if file.ModTime().Before(cleanCacheBefore) {
-				log.Info("removing unknown old machine cache", "name", file.Name())
-				err := os.Remove(filepath.Join(cacheDir, file.Name()))
-				if err != nil {
-					log.Error("failed removing old machine cache")
-					saveStateToFile = false
-					break
-				}
-			} else {
-				log.Info("keeping unknown old machine cache", "name", file.Name())
-			}
-		}
-	}
+	statePath := filepath.Join(config.getMachinePath(moduleRoot), config.UntilHostIoStatePath)
+	_, err := os.Stat(statePath)
+	if err == nil {
+		log.Info("found cached machine until host io state", "moduleRoot", moduleRoot)
 
-	file := filepath.Join(cacheDir, expectedName)
-	if foundInCache {
-		// Update the file's last modified time so it doesn't get cleaned up
-		now := time.Now()
-		err := os.Chtimes(file, now, now)
-		if err != nil {
-			foundInCache = false
-			if !errors.Is(err, os.ErrNotExist) {
-				saveStateToFile = false
-			}
-		}
-	}
-
-	if foundInCache {
-		log.Info("found cached initial machine", "hash", hash)
-
-		err := machine.DeserializeAndReplaceState(file)
+		err := machine.DeserializeAndReplaceState(statePath)
 		if err != nil {
 			// Safe as if DeserializeAndReplaceState returns an error it will not have mutated the machine
-			log.Info("failed to load initial machine cache; will reexecute", "err", err)
+			log.Warn("failed to load machine until host io state; will reexecute", "err", err)
 		} else {
 			s.machine = machine
 			s.machine.Freeze()
 			return
 		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		log.Info("didn't find cached machine until host io state", "path", statePath)
 	} else {
-		log.Info("didn't find initial machine in cache", "hash", hash)
+		log.Warn("error checking if machine until host io state is cached", "path", statePath, "err", err)
 	}
 
 	s.err = machine.StepUntilHostIo(ctx)
@@ -189,22 +141,6 @@ func (s *loaderMachineStatus) createHostIoMachineInternal(config NitroMachineCon
 
 	s.machine = machine
 	s.machine.Freeze()
-	if !saveStateToFile {
-		return
-	}
-	log.Info("saving initial machine cache", "hash", hash)
-
-	wipFile := file + ".wip"
-	err = machine.SerializeState(wipFile)
-	if err != nil {
-		log.Error("error trying to save machine state cache", "err", err)
-		return
-	}
-	err = os.Rename(wipFile, file)
-	if err != nil {
-		log.Error("error trying to rename machine state cache", "err", err)
-		return
-	}
 }
 
 type nitroMachineRequest struct {

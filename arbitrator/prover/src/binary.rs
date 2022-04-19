@@ -17,6 +17,7 @@ use nom::{
     Err, Needed,
 };
 use nom_leb128::{leb128_i32, leb128_i64, leb128_u32};
+use serde::{Deserialize, Serialize};
 use std::{hash::Hash, str::FromStr};
 
 type IResult<'a, O> = nom::IResult<&'a [u8], O, VerboseError<&'a [u8]>>;
@@ -266,7 +267,7 @@ pub struct Import {
     pub kind: ImportKind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Limits {
     pub minimum_size: u32,
     pub maximum_size: Option<u32>,
@@ -311,13 +312,13 @@ pub struct Data {
     pub active_location: Option<DataMemoryLocation>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RefType {
     FuncRef,
     ExternRef,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableType {
     pub ty: RefType,
     pub limits: Limits,
@@ -337,7 +338,7 @@ pub struct ElementSegment {
     pub mode: ElementMode,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NameCustomSection {
     pub module: String,
     pub functions: HashMap<u32, String>,

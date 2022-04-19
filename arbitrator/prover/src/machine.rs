@@ -55,10 +55,11 @@ pub fn argument_data_to_inbox(argument_data: u64) -> Option<InboxIdentifier> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Function {
     code: Vec<Instruction>,
     ty: FunctionType,
+    #[serde(skip)]
     code_merkle: Merkle,
     local_types: Vec<ValueType>,
 }
@@ -191,7 +192,7 @@ impl StackFrame {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct TableElement {
     func_ty: FunctionType,
     val: Value,
@@ -216,10 +217,11 @@ impl TableElement {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Table {
     ty: TableType,
     elems: Vec<TableElement>,
+    #[serde(skip)]
     elems_merkle: Merkle,
 }
 
@@ -257,13 +259,15 @@ struct AvailableImport {
     func: u32,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Module {
     globals: Vec<Value>,
     memory: Memory,
     tables: Vec<Table>,
+    #[serde(skip)]
     tables_merkle: Merkle,
     funcs: Arc<Vec<Function>>,
+    #[serde(skip)]
     funcs_merkle: Arc<Merkle>,
     types: Arc<Vec<FunctionType>>,
     internals_offset: u32,
@@ -1064,6 +1068,68 @@ impl Machine {
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
+    }
+
+    pub fn new_from_wavm(wavm_binary: &Path) -> eyre::Result<Machine> {
+        let f = BufReader::new(File::open(wavm_binary)?);
+        let decompressor = brotli2::read::BrotliDecoder::new(f);
+        let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
+        for module in modules.iter_mut() {
+            for table in module.tables.iter_mut() {
+                table.elems_merkle = Merkle::new(
+                    MerkleType::TableElement,
+                    table.elems.iter().map(TableElement::hash).collect(),
+                );
+            }
+            module.tables_merkle = Merkle::new(
+                MerkleType::Table,
+                module.tables.iter().map(Table::hash).collect(),
+            );
+            let funcs =
+                Arc::get_mut(&mut module.funcs).expect("Multiple copies of module functions");
+            for func in funcs.iter_mut() {
+                func.code_merkle = Merkle::new(
+                    MerkleType::Instruction,
+                    func.code.par_iter().map(|i| i.hash()).collect(),
+                );
+            }
+            module.funcs_merkle = Arc::new(Merkle::new(
+                MerkleType::Function,
+                module.funcs.iter().map(Function::hash).collect(),
+            ));
+        }
+        let mut mach = Machine {
+            status: MachineStatus::Running,
+            steps: 0,
+            value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
+            internal_stack: Vec::new(),
+            block_stack: Vec::new(),
+            frame_stack: Vec::new(),
+            modules,
+            modules_merkle: None,
+            global_state: Default::default(),
+            pc: ProgramCounter::default(),
+            stdio_output: Vec::new(),
+            inbox_contents: Default::default(),
+            preimages: Default::default(),
+            initial_hash: Bytes32::default(),
+        };
+        mach.initial_hash = mach.hash();
+        Ok(mach)
+    }
+
+    pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
+        ensure!(
+            self.hash() == self.initial_hash,
+            "serialize_binary can only be called on initial machine",
+        );
+        let mut f = File::create(path)?;
+        let mut compressor = brotli2::write::BrotliEncoder::new(BufWriter::new(&mut f), 9);
+        bincode::serialize_into(&mut compressor, &self.modules)?;
+        compressor.flush()?;
+        drop(compressor);
+        f.sync_data()?;
+        Ok(())
     }
 
     pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {

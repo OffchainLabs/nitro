@@ -9,10 +9,11 @@ use crate::{
 use digest::Digest;
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
+use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {
     Eq,
     Ne,
@@ -37,7 +38,7 @@ fn irelop_type(t: IRelOpType, signed: bool) -> u16 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum IUnOpType {
     Clz = 0,
@@ -45,7 +46,7 @@ pub enum IUnOpType {
     Popcnt,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum IBinOpType {
     Add = 0,
@@ -65,7 +66,7 @@ pub enum IBinOpType {
     Rotr,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Opcode {
     Unreachable,
     Nop,
@@ -317,7 +318,7 @@ impl<'a> FunctionCodegenState<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Instruction {
     pub opcode: Opcode,
     pub argument_data: u64,

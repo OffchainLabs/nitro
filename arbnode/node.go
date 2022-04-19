@@ -516,18 +516,15 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type WasmConfig struct {
-	RootPath  string `koanf:"root-path"`
-	CachePath string `koanf:"cache-path"`
+	RootPath string `koanf:"root-path"`
 }
 
 func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
-	f.String(prefix+".cache-path", DefaultWasmConfig.RootPath, "path for cache of wasm machines")
 }
 
 var DefaultWasmConfig = WasmConfig{
-	RootPath:  "",
-	CachePath: "",
+	RootPath: "",
 }
 
 type Node struct {
@@ -663,9 +660,6 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 		targetDir := filepath.Dir(filepath.Dir(execfile))
 		nitroMachineConfig.RootPath = filepath.Join(targetDir, "machines")
-	}
-	if config.Wasm.CachePath != "" {
-		nitroMachineConfig.InitialMachineCachePath = config.Wasm.CachePath
 	}
 	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
 
