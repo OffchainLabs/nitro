@@ -43,13 +43,13 @@ jobs:
         with:
           push: true
           context: .
-          tags: localhost:5000/nitro-node:latest
+          tags: localhost:5000/nitro-node-dest:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
       - name: print module root
         run: |
-          docker run --entrypoint cat localhost:5000/nitro-node:latest target/machines/latest/module-root.txt
+          docker run --entrypoint cat localhost:5000/nitro-node-dev:latest target/machines/latest/module-root.txt
 
       - name: Move cache
         # Temp fix
