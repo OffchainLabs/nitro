@@ -123,12 +123,8 @@ FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
 # Download old WASM module roots
-RUN bash -c 'mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
-RUN bash -c 'mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && LATEST=$_ && ln -s $LATEST latest && cd $LATEST && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
-# Copy in latest WASM module root
-WORKDIR /workspace/latest-machine
-COPY --from=module-root-calc /workspace/target/machines/latest/*.br latest
-COPY --from=module-root-calc /workspace/target/machines/latest/*.bin latest
+#RUN bash -c 'mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
+RUN bash -c 'mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && ln -s $_ latest && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
@@ -178,6 +174,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     curl procps jq rsync \
     node-ws vim-tiny python3 \
     dnsutils && \
+    chmod -R 555 /home/user/target/machines && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/*
 
@@ -185,16 +182,19 @@ USER user
 
 FROM nitro-node-dist as nitro-node-dev
 USER root
+# Copy in latest WASM module root
+RUN rm /home/user/target/machines/latest
+COPY --from=module-root-calc /workspace/target/machines/latest/*.br /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/*.bin /home/user/target/machines/latest/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
     sudo && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
-    rm -rf /home/user/target/machines/ && \
+    chmod -R 555 /home/user/target/machines && \
     adduser user sudo && \
-    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-COPY --from=machine-versions /workspace/machines /home/user/target/latest-machine
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
 
 USER user
 
