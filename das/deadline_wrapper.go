@@ -16,12 +16,13 @@ type DeadlineWrapper struct {
 }
 
 func (w *DeadlineWrapper) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
-	deadlineCtx, _ := context.WithDeadline(ctx, time.Now().Add(w.t))
+	deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(w.t))
+	defer cancel()
 	return w.DataAvailabilityService.Retrieve(deadlineCtx, cert)
-
 }
 
 func (w *DeadlineWrapper) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
-	deadlineCtx, _ := context.WithDeadline(ctx, time.Now().Add(w.t))
+	deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(w.t))
+	defer cancel()
 	return w.DataAvailabilityService.Store(deadlineCtx, message, timeout)
 }
