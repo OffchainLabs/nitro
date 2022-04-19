@@ -15,6 +15,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/util"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
@@ -593,6 +594,7 @@ func (p Precompile) Call(
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
 		readOnly:    method.purity <= view,
+		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
 	}
 
 	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))

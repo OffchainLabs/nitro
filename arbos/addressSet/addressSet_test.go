@@ -16,7 +16,7 @@ import (
 )
 
 func TestEmptyAddressSet(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
 
@@ -38,7 +38,7 @@ func TestEmptyAddressSet(t *testing.T) {
 
 func TestAddressSet(t *testing.T) {
 	db := storage.NewMemoryBackedStateDB()
-	sto := storage.NewGeth(db, burn.NewSystemBurner(false))
+	sto := storage.NewGeth(db, burn.NewSystemBurner(nil, false))
 	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
 

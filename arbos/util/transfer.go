@@ -12,26 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
-
-type TracingScenario uint64
-
-const (
-	TracingBeforeEVM TracingScenario = iota
-	TracingDuringEVM
-	TracingAfterEVM
-)
-
-// holds an address to satisfy core/vm's ContractRef() interface
-type addressHolder struct {
-	addr common.Address
-}
-
-func (a addressHolder) Address() common.Address {
-	return a.addr
-}
 
 // Represents a balance change occuring aside from a call.
 // While most uses will be transfers, setting `from` or `to` to nil will mint or burn funds, respectively.
@@ -67,53 +49,13 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, sce
 			to = &common.Address{}
 		}
 
-		input := []byte("Transfer Balance")
-		inputLen := uint64(len(input))
-		memory := vm.NewMemory()
-		memory.Resize(inputLen)
-		memory.Set(0, inputLen, input)
-		stack := &vm.Stack{}
-		stack.SetData([]uint256.Int{
-			*uint256.NewInt(0),                          // return size
-			*uint256.NewInt(0),                          // return offset
-			*uint256.NewInt(inputLen),                   // memory length
-			*uint256.NewInt(0),                          // memory offset
-			*uint256.NewInt(0).SetBytes(amount.Bytes()), // call value
-			*uint256.NewInt(0).SetBytes(to.Bytes()),     // to address
-			*uint256.NewInt(0),                          // 0 gas
-		})
-		contract := vm.NewContract(addressHolder{*to}, addressHolder{*from}, big.NewInt(0), 0)
-		scope := &vm.ScopeContext{
-			Memory:   memory,
-			Stack:    stack,
-			Contract: contract,
+		info := &TracingInfo{
+			Tracer:   evm.Config.Tracer,
+			Scenario: scenario,
+			Contract: vm.NewContract(addressHolder{*to}, addressHolder{*from}, big.NewInt(0), 0),
+			Depth:    evm.Depth(),
 		}
-		tracer.CaptureState(0, vm.CALL, 0, 0, scope, []byte{}, evm.Depth(), nil)
-		tracer.CaptureEnter(vm.INVALID, *from, *to, input, 0, amount)
-
-		retStack := &vm.Stack{}
-		retStack.SetData([]uint256.Int{
-			*uint256.NewInt(0), // return size
-			*uint256.NewInt(0), // return offset
-		})
-		retScope := &vm.ScopeContext{
-			Memory:   vm.NewMemory(),
-			Stack:    retStack,
-			Contract: contract,
-		}
-		tracer.CaptureState(0, vm.RETURN, 0, 0, retScope, []byte{}, evm.Depth()+1, nil)
-		tracer.CaptureExit(nil, 0, nil)
-
-		popStack := &vm.Stack{}
-		popStack.SetData([]uint256.Int{
-			*uint256.NewInt(1), // CALL result success
-		})
-		popScope := &vm.ScopeContext{
-			Memory:   vm.NewMemory(),
-			Stack:    popStack,
-			Contract: contract,
-		}
-		tracer.CaptureState(0, vm.POP, 0, 0, popScope, []byte{}, evm.Depth(), nil)
+		info.MockCall([]byte{}, 0, *from, *to, amount)
 	}
 	return nil
 }

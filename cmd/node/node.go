@@ -288,10 +288,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		arbosState, err := arbosState.OpenSystemArbosState(statedb, true)
-		if err != nil {
-			panic(err)
-		}
+		arbosState := arbosState.OpenSystemArbosStateOrPanic(statedb, nil, true)
 		chainId, err := arbosState.ChainId()
 		if err != nil {
 			panic(err)

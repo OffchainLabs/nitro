@@ -220,7 +220,7 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 	// Get the chain ID, both to validate and because the replay binary also gets the chain ID,
 	// so we need to populate the recordingdb with preimages for retrieving the chain ID.
 	if prevHeader != nil {
-		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, true)
+		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, nil, true)
 		if err != nil {
 			return common.Hash{}, nil, fmt.Errorf("error opening initial ArbOS state: %w", err)
 		}
