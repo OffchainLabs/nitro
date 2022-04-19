@@ -287,7 +287,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 		return err
 	}
 
-	for _, module := range machConf.ModulePaths {
+	for _, module := range machConf.LibraryPaths {
 		_, err = cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
 		if err != nil {
 			return err

@@ -126,6 +126,19 @@ unsafe fn arbitrator_load_machine_impl(
     Ok(Box::into_raw(Box::new(mach)))
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
+    let binary_path = cstr_to_string(binary_path);
+    let binary_path = Path::new(&binary_path);
+    match Machine::new_from_wavm(binary_path) {
+        Ok(mach) => Box::into_raw(Box::new(mach)),
+        Err(err) => {
+            eprintln!("Error loading binary: {}", err);
+            std::ptr::null_mut()
+        }
+    }
+}
+
 unsafe fn cstr_to_string(c_str: *const c_char) -> String {
     CStr::from_ptr(c_str).to_string_lossy().into_owned()
 }
