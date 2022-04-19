@@ -145,7 +145,7 @@ if $force_init; then
 
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
-    docker-compose run --entrypoint target/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /l1keystore --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10
+    docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /l1keystore --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines
 
     echo == Writing configs
     docker-compose run testnode-scripts write-config

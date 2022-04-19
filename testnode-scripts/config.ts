@@ -58,8 +58,7 @@ function writeConfigs(argv: any) {
             }
         },
         "persistent": {
-            "data": "/data",
-	        "chain": "local-devnet"
+	        "chain": "local"
         },
         "ws": {
             "addr": "0.0.0.0"

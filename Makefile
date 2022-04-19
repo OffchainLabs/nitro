@@ -137,6 +137,7 @@ clean:
 	@rm -f .make/*
 
 docker:
+	docker build -t nitro-node --target nitro-node .
 	docker build -t nitro-node-dist --target nitro-node-dist .
 
 # regular build rules

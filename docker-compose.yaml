@@ -58,7 +58,7 @@ services:
     pid: host # allow debugging
     build:
       context: .
-      target: nitro-node-dist
+      target: nitro-node
     ports:
       - "7545:7545"
       - "7546:7546"
@@ -73,7 +73,9 @@ services:
 
   sequencer_b:
     pid: host # allow debugging
-    build: .
+    build:
+      context: .
+      target: nitro-node
     ports:
       - "7545"
       - "7546"
@@ -87,7 +89,9 @@ services:
 
   sequencer_c:
     pid: host # allow debugging
-    build: .
+    build:
+      context: .
+      target: nitro-node
     ports:
       - "7545"
       - "7546"
@@ -101,7 +105,9 @@ services:
 
   sequencer_d:
     pid: host # allow debugging
-    build: .
+    build:
+      context: .
+      target: nitro-node
     ports:
       - "7545"
       - "7546"
@@ -117,7 +123,7 @@ services:
     pid: host # allow debugging
     build:
       context: .
-      target: nitro-node-dist
+      target: nitro-node
     ports:
       - "7545"
       - "7546"
@@ -132,7 +138,9 @@ services:
 
   poster:
     pid: host # allow debugging
-    build: .
+    build:
+      context: .
+      target: nitro-node
     ports:
       - "7547"
       - "7548"
@@ -149,7 +157,7 @@ services:
     pid: host # allow debugging
     build:
       context: .
-      target: nitro-node-dist
+      target: nitro-node
     ports:
       - "7547:7547"
       - "7548:7548"
@@ -174,10 +182,10 @@ services:
     pid: host
     build:
       context: .
-      target: nitro-node-dist
+      target: nitro-node
     ports:
       - "9652:9652"
-    entrypoint: target/bin/relay
+    entrypoint: bin/relay
     command: --node.feed.output.port 9652 --node.feed.input.url ws://sequencer:9642/feed
 
 volumes:

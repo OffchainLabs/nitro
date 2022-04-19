@@ -148,19 +148,16 @@ func (w *WalletConfig) ResolveDirectoryNames(chain string) {
 type PersistentConfig struct {
 	GlobalConfig string `koanf:"global-config"`
 	Chain        string `koanf:"chain"`
-	ChainData    string `koanf:"data"`
 }
 
 var PersistentConfigDefault = PersistentConfig{
 	GlobalConfig: ".arbitrum",
 	Chain:        "",
-	ChainData:    "chaindata",
 }
 
 func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
 	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
-	f.String(prefix+".data", PersistentConfigDefault.ChainData, "directory for data storage requirements")
 }
 
 func (c *PersistentConfig) ResolveDirectoryNames() error {
@@ -188,15 +185,6 @@ func (c *PersistentConfig) ResolveDirectoryNames() error {
 	}
 	if DatabaseInDirectory(c.Chain) {
 		return errors.Errorf("Database in --persistent.chain (%s) directory, try specifying parent directory", c.Chain)
-	}
-
-	// Make data directory relative to chain directory if not already absolute
-	if !filepath.IsAbs(c.ChainData) {
-		c.ChainData = path.Join(c.Chain, c.ChainData)
-	}
-	err = os.MkdirAll(c.ChainData, os.ModePerm)
-	if err != nil {
-		return errors.Wrap(err, "Unable to create chain data directory")
 	}
 
 	return nil
