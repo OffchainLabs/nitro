@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package statetransfer
 
@@ -45,7 +44,7 @@ type AccountInitContractInfo struct {
 
 type AccountInitAggregatorInfo struct {
 	FeeCollector common.Address
-	BaseFeeL1Gas *big.Int
+	BaseFeeL1Gas *big.Int // This is unused in Nitro, so its value will be ignored.
 }
 
 type StoredBlock struct {

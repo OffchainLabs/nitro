@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package broadcaster
 
@@ -8,12 +7,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func ExampleBroadcastMessage_broadcastfeedmessage() {
+	var requestId common.Hash
 	msg := BroadcastMessage{
 		Version: 1,
 		Messages: []*BroadcastFeedMessage{
@@ -24,10 +26,10 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:        0,
 							Poster:      [20]byte{},
-							BlockNumber: [32]byte{},
-							Timestamp:   [32]byte{},
-							RequestId:   [32]byte{},
-							BaseFeeL1:   [32]byte{},
+							BlockNumber: 0,
+							Timestamp:   0,
+							RequestId:   &requestId,
+							L1BaseFee:   big.NewInt(0),
 						},
 						L2msg: []byte{0xde, 0xad, 0xbe, 0xef},
 					},
@@ -40,7 +42,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 	encoder := json.NewEncoder(&buf)
 	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
-	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":"0x0000000000000000000000000000000000000000000000000000000000000000","timestamp":"0x0000000000000000000000000000000000000000000000000000000000000000","requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":"0x0000000000000000000000000000000000000000000000000000000000000000"},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333}}]}
+	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333}}]}
 }
 
 func ExampleBroadcastMessage_emptymessage() {

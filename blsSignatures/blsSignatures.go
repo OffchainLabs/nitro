@@ -1,6 +1,5 @@
-//
-// Copyright 2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package blsSignatures
 
@@ -13,22 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/bls12381"
 )
 
-type blsStateType struct {
-	g1            *bls12381.G1
-	g2            *bls12381.G2
-	pairingEngine *bls12381.Engine
-}
-
-var blsState blsStateType
-
-func init() {
-	blsState = blsStateType{
-		g1:            bls12381.NewG1(),
-		g2:            bls12381.NewG2(),
-		pairingEngine: bls12381.NewPairingEngine(),
-	}
-}
-
 type PublicKey struct {
 	key           *bls12381.PointG2
 	validityProof *bls12381.PointG1 // if this is nil, key came from a trusted source
@@ -39,7 +22,8 @@ type PrivateKey *big.Int
 type Signature *bls12381.PointG1
 
 func GenerateKeys() (PublicKey, PrivateKey, error) {
-	seed, err := cryptorand.Int(cryptorand.Reader, blsState.g2.Q())
+	g2 := bls12381.NewG2()
+	seed, err := cryptorand.Int(cryptorand.Reader, g2.Q())
 	if err != nil {
 		return PublicKey{}, nil, err
 	}
@@ -50,7 +34,8 @@ func GenerateKeys() (PublicKey, PrivateKey, error) {
 func internalDeterministicGenerateKeys(seed *big.Int) (PublicKey, PrivateKey, error) {
 	privateKey := seed
 	pubKey := &bls12381.PointG2{}
-	blsState.g2.MulScalar(pubKey, blsState.g2.One(), privateKey)
+	g2 := bls12381.NewG2()
+	g2.MulScalar(pubKey, g2.One(), privateKey)
 	proof, err := KeyValidityProof(pubKey, privateKey)
 	if err != nil {
 		return PublicKey{}, nil, err
@@ -70,12 +55,14 @@ func internalDeterministicGenerateKeys(seed *big.Int) (PublicKey, PrivateKey, er
 // For a proof that this is sufficient, see Theorem 1 in
 // Ristenpart & Yilek, "The Power of Proofs-of-Possession: ..." from EUROCRYPT 2007.
 func KeyValidityProof(pubKey *bls12381.PointG2, privateKey PrivateKey) (Signature, error) {
-	return signMessage2(privateKey, blsState.g2.ToBytes(pubKey), true)
+	g2 := bls12381.NewG2()
+	return signMessage2(privateKey, g2.ToBytes(pubKey), true)
 }
 
 func NewPublicKey(pubKey *bls12381.PointG2, validityProof *bls12381.PointG1) (PublicKey, error) {
+	g2 := bls12381.NewG2()
 	unverifiedPublicKey := PublicKey{pubKey, validityProof}
-	verified, err := verifySignature2(validityProof, blsState.g2.ToBytes(pubKey), unverifiedPublicKey, true)
+	verified, err := verifySignature2(validityProof, g2.ToBytes(pubKey), unverifiedPublicKey, true)
 	if err != nil {
 		return PublicKey{}, err
 	}
@@ -105,8 +92,9 @@ func signMessage2(priv PrivateKey, message []byte, keyValidationMode bool) (Sign
 	if err != nil {
 		return nil, err
 	}
+	g1 := bls12381.NewG1()
 	result := &bls12381.PointG1{}
-	blsState.g1.MulScalar(result, pointOnCurve, priv)
+	g1.MulScalar(result, pointOnCurve, priv)
 	return Signature(result), nil
 }
 
@@ -120,27 +108,29 @@ func verifySignature2(sig Signature, message []byte, publicKey PublicKey, keyVal
 		return false, err
 	}
 
-	engine := blsState.pairingEngine
+	engine := bls12381.NewPairingEngine()
 	engine.Reset()
 	engine.AddPair(pointOnCurve, publicKey.key)
 	leftSide := engine.Result()
-	engine.AddPair(sig, blsState.g2.One())
+	engine.AddPair(sig, engine.G2.One())
 	rightSide := engine.Result()
 	return leftSide.Equal(rightSide), nil
 }
 
 func AggregatePublicKeys(pubKeys []PublicKey) PublicKey {
-	ret := blsState.g2.Zero()
+	g2 := bls12381.NewG2()
+	ret := g2.Zero()
 	for _, pk := range pubKeys {
-		blsState.g2.Add(ret, ret, pk.key)
+		g2.Add(ret, ret, pk.key)
 	}
 	return NewTrustedPublicKey(ret)
 }
 
 func AggregateSignatures(sigs []Signature) Signature {
-	ret := blsState.g1.Zero()
+	g1 := bls12381.NewG1()
+	ret := g1.Zero()
 	for _, s := range sigs {
-		blsState.g1.Add(ret, ret, s)
+		g1.Add(ret, ret, s)
 	}
 	return ret
 }
@@ -150,10 +140,11 @@ func VerifyAggregatedSignatureSameMessage(sig Signature, message []byte, pubKeys
 }
 
 func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte, pubKeys []PublicKey) (bool, error) {
+
 	if len(messages) != len(pubKeys) {
 		return false, errors.New("len(messages) does not match (len(pub keys) in verification")
 	}
-	engine := blsState.pairingEngine
+	engine := bls12381.NewPairingEngine()
 	engine.Reset()
 	for i, msg := range messages {
 		pointOnCurve, err := hashToG1Curve(msg, false)
@@ -165,7 +156,7 @@ func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte
 	leftSide := engine.Result()
 
 	engine.Reset()
-	engine.AddPair(sig, blsState.g2.One())
+	engine.AddPair(sig, engine.G2.One())
 	rightSide := engine.Result()
 	return leftSide.Equal(rightSide), nil
 }
@@ -183,14 +174,16 @@ func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.PointG1, e
 		// modify padding, for domain separation
 		padding[0] = 1
 	}
-	return blsState.g1.MapToCurve(append(padding[:], h...))
+	g1 := bls12381.NewG1()
+	return g1.MapToCurve(append(padding[:], h...))
 }
 
 func PublicKeyToBytes(pub PublicKey) []byte {
+	g2 := bls12381.NewG2()
 	if pub.validityProof == nil {
-		return append([]byte{0}, blsState.g2.ToBytes(pub.key)...)
+		return append([]byte{0}, g2.ToBytes(pub.key)...)
 	} else {
-		keyBytes := blsState.g2.ToBytes(pub.key)
+		keyBytes := g2.ToBytes(pub.key)
 		sigBytes := SignatureToBytes(pub.validityProof)
 		if len(sigBytes) > 255 {
 			panic("validity proof too large to serialize")
@@ -203,12 +196,13 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 	if len(in) == 0 {
 		return PublicKey{}, errors.New("tried to deserialize empty public key")
 	}
+	g2 := bls12381.NewG2()
 	proofLen := int(in[0])
 	if proofLen == 0 {
 		if !trustedSource {
 			return PublicKey{}, errors.New("tried to deserialize unvalidated public key from untrusted source")
 		}
-		key, err := blsState.g2.FromBytes(in[1:])
+		key, err := g2.FromBytes(in[1:])
 		if err != nil {
 			return PublicKey{}, err
 		}
@@ -217,13 +211,14 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 		if len(in) < 1+proofLen {
 			return PublicKey{}, errors.New("invalid serialized public key")
 		}
+		g1 := bls12381.NewG1()
 		proofBytes := in[1 : 1+proofLen]
-		validityProof, err := blsState.g1.FromBytes(proofBytes)
+		validityProof, err := g1.FromBytes(proofBytes)
 		if err != nil {
 			return PublicKey{}, err
 		}
 		keyBytes := in[1+proofLen:]
-		key, err := blsState.g2.FromBytes(keyBytes)
+		key, err := g2.FromBytes(keyBytes)
 		if err != nil {
 			return PublicKey{}, err
 		}
@@ -240,9 +235,11 @@ func PrivateKeyFromBytes(in []byte) (PrivateKey, error) {
 }
 
 func SignatureToBytes(sig Signature) []byte {
-	return blsState.g1.ToBytes(sig)
+	g1 := bls12381.NewG1()
+	return g1.ToBytes(sig)
 }
 
 func SignatureFromBytes(in []byte) (Signature, error) {
-	return blsState.g1.FromBytes(in)
+	g1 := bls12381.NewG1()
+	return g1.FromBytes(in)
 }

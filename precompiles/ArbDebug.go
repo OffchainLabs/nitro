@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -14,6 +13,9 @@ type ArbDebug struct {
 	BasicGasCost func(bool, bytes32) (uint64, error)
 	MixedGasCost func(bool, bool, bytes32, addr, addr) (uint64, error)
 	StoreGasCost func(bool, addr, huge, bytes32, []byte) (uint64, error)
+
+	CustomError func(uint64, string, bool) error
+	UnusedError func() error
 }
 
 func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32) (addr, huge, error) {
@@ -32,6 +34,10 @@ func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32)
 	}
 
 	return c.caller, paid, nil
+}
+
+func (con ArbDebug) CustomRevert(c ctx, number uint64) error {
+	return con.CustomError(number, "This spider family wards off bugs: /\\oo/\\ //\\(oo)/\\ /\\oo/\\", true)
 }
 
 // Caller becomes a chain owner

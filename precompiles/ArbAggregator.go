@@ -1,14 +1,16 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
 import (
 	"errors"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // Provides aggregators and their users methods for configuring how they participate in L1 aggregation.
@@ -66,12 +68,13 @@ func (con ArbAggregator) SetDefaultAggregator(c ctx, evm mech, newDefault addr) 
 	return l1State.SetDefaultAggregator(newDefault)
 }
 
-// Get the aggregator's compression ratio, as measured in ppm (100% = 1,000,000)
+// Get the aggregator's compression ratio, measured in basis points
 func (con ArbAggregator) GetCompressionRatio(c ctx, evm mech, aggregator addr) (uint64, error) {
-	return c.state.L1PricingState().AggregatorCompressionRatio(aggregator)
+	ratio, err := c.state.L1PricingState().AggregatorCompressionRatio(aggregator)
+	return uint64(ratio), err
 }
 
-// Set the aggregator's compression ratio, as measured in ppm (100% = 1,000,000)
+// Set the aggregator's compression ratio, measured in basis points
 func (con ArbAggregator) SetCompressionRatio(c ctx, evm mech, aggregator addr, newRatio uint64) error {
 	allowed, err := accountIsAggregatorOrCollectorOrOwner(c.caller, aggregator, c.state)
 	if err != nil {
@@ -80,7 +83,7 @@ func (con ArbAggregator) SetCompressionRatio(c ctx, evm mech, aggregator addr, n
 	if !allowed {
 		return errors.New("Only an aggregator (or its fee collector / chain owner) may change its compression ratio")
 	}
-	return c.state.L1PricingState().SetAggregatorCompressionRatio(aggregator, newRatio)
+	return c.state.L1PricingState().SetAggregatorCompressionRatio(aggregator, arbmath.Bips(newRatio))
 }
 
 // Gets an aggregator's fee collector
@@ -102,19 +105,14 @@ func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, aggregator addr, newFe
 
 // Gets an aggregator's current fixed fee to submit a tx
 func (con ArbAggregator) GetTxBaseFee(c ctx, evm mech, aggregator addr) (huge, error) {
-	return c.state.L1PricingState().FixedChargeForAggregatorL1Gas(aggregator)
+	// This is deprecated and now always returns zero.
+	return big.NewInt(0), nil
 }
 
 // Sets an aggregator's fixed fee (caller must be the aggregator, its fee collector, or an owner)
 func (con ArbAggregator) SetTxBaseFee(c ctx, evm mech, aggregator addr, feeInL1Gas huge) error {
-	allowed, err := accountIsAggregatorOrCollectorOrOwner(c.caller, aggregator, c.state)
-	if err != nil {
-		return err
-	}
-	if !allowed {
-		return errors.New("Only an aggregator (or its fee collector / chain owner) may change its fee collector")
-	}
-	return c.state.L1PricingState().SetFixedChargeForAggregatorL1Gas(aggregator, feeInL1Gas)
+	// This is deprecated and is now a no-op.
+	return nil
 }
 
 func accountIsAggregatorOrCollectorOrOwner(account, aggregator addr, state *arbosState.ArbosState) (bool, error) {

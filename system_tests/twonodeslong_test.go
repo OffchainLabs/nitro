@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -10,17 +9,21 @@ package arbtest
 
 import (
 	"context"
+	"io/ioutil"
 	"math/big"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/arbnode"
 )
 
-func TestTwoNodesLong(t *testing.T) {
+func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10
@@ -37,10 +40,28 @@ func TestTwoNodesLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	var dbPath string
+	var err error
+	if dasModeStr == "local" {
+		dbPath, err = ioutil.TempDir("/tmp", "das_test")
+		Require(t, err)
+		defer os.RemoveAll(dbPath)
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
+		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
+	}
+	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, false)
+	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigB.BatchPoster.Enable = false
+	l1NodeConfigB.BlockValidator.Enable = false
+	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
+	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -49,11 +70,11 @@ func TestTwoNodesLong(t *testing.T) {
 	l2info.GenerateAccount("ErrorTxSender")
 
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
-		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(params.InitialBaseFee*int64(l2info.TransferGas)), nil),
+		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(l2pricing.InitialBaseFeeWei*int64(l2info.TransferGas)), nil),
 	})
 
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
-	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(params.InitialBaseFee*100000)), delayedMsgsToSendMax)
+	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei*100000)), delayedMsgsToSendMax)
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
 		l2info.PrepareTx("Faucet", "DelayedFaucet", l2info.TransferGas, delayedFaucetNeeds, nil),
 	})
@@ -63,7 +84,7 @@ func TestTwoNodesLong(t *testing.T) {
 	if delayedFaucetBalance.Cmp(delayedFaucetNeeds) != 0 {
 		t.Fatalf("Unexpected balance, has %v, expects %v", delayedFaucetBalance, delayedFaucetNeeds)
 	}
-	t.Logf("DelayedFaucet has %v, per delayd: %v, baseprice: %v", delayedFaucetBalance, fundsPerDelayed, params.InitialBaseFee)
+	t.Logf("DelayedFaucet has %v, per delayd: %v, baseprice: %v", delayedFaucetBalance, fundsPerDelayed, l2pricing.InitialBaseFeeWei)
 
 	if avgTotalL1MessagesPerLoop < avgDelayedMessagesPerLoop {
 		Fail(t, "bad params, avgTotalL1MessagesPerLoop should include avgDelayedMessagesPerLoop")
@@ -99,7 +120,7 @@ func TestTwoNodesLong(t *testing.T) {
 		SendWaitTestTransactions(t, ctx, l2client, l2Txs)
 		directTransfers += int64(l2TxsThisTime)
 		if len(l1Txs) > 0 {
-			_, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
+			_, err := EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
 			if err != nil {
 				Fail(t, err)
 			}
@@ -133,15 +154,15 @@ func TestTwoNodesLong(t *testing.T) {
 				Fail(t, err)
 			}
 		}
-		_, err := arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+		_, err := EnsureTxSucceeded(ctx, l1client, tx)
 		if err != nil {
 			Fail(t, err)
 		}
 	}
 
-	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on main node")
-	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
@@ -176,4 +197,12 @@ func TestTwoNodesLong(t *testing.T) {
 	}
 
 	nodeB.StopAndWait()
+}
+
+func TestTwoNodesLong(t *testing.T) {
+	testTwoNodesLong(t, "onchain")
+}
+
+func TestTwoNodesLongLocalDAS(t *testing.T) {
+	testTwoNodesLong(t, "local")
 }

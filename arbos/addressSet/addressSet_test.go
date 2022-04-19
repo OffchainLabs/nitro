@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package addressSet
 
@@ -17,7 +16,7 @@ import (
 )
 
 func TestEmptyAddressSet(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
 
@@ -39,7 +38,7 @@ func TestEmptyAddressSet(t *testing.T) {
 
 func TestAddressSet(t *testing.T) {
 	db := storage.NewMemoryBackedStateDB()
-	sto := storage.NewGeth(db, burn.NewSystemBurner(false))
+	sto := storage.NewGeth(db, burn.NewSystemBurner(nil, false))
 	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
 
@@ -138,9 +137,9 @@ func size(t *testing.T, aset *AddressSet) uint64 {
 	return size
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	testhelpers.RequireImpl(t, err, printables...)
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

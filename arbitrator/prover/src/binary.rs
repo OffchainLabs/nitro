@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use crate::{
     value::{FunctionType, IntegerValType, Value as LirValue, ValueType},
     wavm::{IBinOpType, IRelOpType, IUnOpType, Opcode},
@@ -9,11 +12,12 @@ use nom::{
     combinator::{all_consuming, map, map_res, value},
     error::{context, ParseError, VerboseError},
     error::{Error, ErrorKind, FromExternalError},
-    multi::{count, length_data, many0, many_till},
+    multi::{count, length_data, many0},
     sequence::{preceded, tuple},
     Err, Needed,
 };
 use nom_leb128::{leb128_i32, leb128_i64, leb128_u32};
+use serde::{Deserialize, Serialize};
 use std::{hash::Hash, str::FromStr};
 
 type IResult<'a, O> = nom::IResult<&'a [u8], O, VerboseError<&'a [u8]>>;
@@ -35,15 +39,6 @@ pub struct MemoryArg {
 pub enum FloatType {
     F32,
     F64,
-}
-
-impl Into<ValueType> for FloatType {
-    fn into(self) -> ValueType {
-        match self {
-            FloatType::F32 => ValueType::F32,
-            FloatType::F64 => ValueType::F64,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -272,7 +267,7 @@ pub struct Import {
     pub kind: ImportKind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Limits {
     pub minimum_size: u32,
     pub maximum_size: Option<u32>,
@@ -317,22 +312,13 @@ pub struct Data {
     pub active_location: Option<DataMemoryLocation>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RefType {
     FuncRef,
     ExternRef,
 }
 
-impl Into<ValueType> for RefType {
-    fn into(self) -> ValueType {
-        match self {
-            RefType::FuncRef => ValueType::FuncRef,
-            RefType::ExternRef => panic!("Extern refs not supported"),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableType {
     pub ty: RefType,
     pub limits: Limits,
@@ -352,7 +338,7 @@ pub struct ElementSegment {
     pub mode: ElementMode,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NameCustomSection {
     pub module: String,
     pub functions: HashMap<u32, String>,
@@ -819,23 +805,6 @@ fn block_type(input: &[u8]) -> IResult<BlockType> {
     ))(input)
 }
 
-fn block_instruction(input: &[u8]) -> IResult<HirInstruction> {
-    alt((
-        map(
-            preceded(tag(&[0x02]), tuple((block_type, instructions))),
-            |(t, i)| HirInstruction::Block(t, i),
-        ),
-        map(
-            preceded(tag(&[0x03]), tuple((block_type, instructions))),
-            |(t, i)| HirInstruction::Loop(t, i),
-        ),
-        map(
-            preceded(tag(&[0x04]), tuple((block_type, instructions_with_else))),
-            |(t, (i, e))| HirInstruction::IfElse(t, i, e),
-        ),
-    ))(input)
-}
-
 fn inst_with_idx(opcode: Opcode) -> impl Fn(u32) -> HirInstruction {
     move |i| HirInstruction::WithIdx(opcode, i)
 }
@@ -875,10 +844,7 @@ fn variables_instruction(input: &[u8]) -> IResult<HirInstruction> {
             tag(&[0x21]),
             map(leb128_u32, inst_with_idx(Opcode::LocalSet)),
         ),
-        preceded(
-            tag(&[0x22]),
-            map(leb128_u32, |x| HirInstruction::LocalTee(x)),
-        ),
+        preceded(tag(&[0x22]), map(leb128_u32, HirInstruction::LocalTee)),
         preceded(
             tag(&[0x23]),
             map(leb128_u32, inst_with_idx(Opcode::GlobalGet)),
@@ -982,11 +948,28 @@ fn const_instruction(input: &[u8]) -> IResult<HirInstruction> {
     ))(input)
 }
 
+#[inline(always)] // minimize stack depth
 fn instruction(input: &[u8]) -> IResult<HirInstruction> {
+    // Pull out block instructions early to minimize stack depth
+    if let Some(&opcode @ 0x02..=0x04) = input.get(0) {
+        let (input, block_ty) = block_type(&input[1..])?;
+        if opcode == 0x02 {
+            let (input, insts) = instructions(input)?;
+            return Ok((input, HirInstruction::Block(block_ty, insts)));
+        } else if opcode == 0x03 {
+            let (input, insts) = instructions(input)?;
+            return Ok((input, HirInstruction::Loop(block_ty, insts)));
+        } else if opcode == 0x04 {
+            let (input, insts) = instructions_with_else(input)?;
+            return Ok((input, HirInstruction::IfElse(block_ty, insts.0, insts.1)));
+        } else {
+            unreachable!();
+        }
+    }
+
     alt((
         map(simple_opcode, HirInstruction::Simple),
         map(float_instruction, HirInstruction::FloatingPointOp),
-        block_instruction,
         branch_instruction,
         call_instruction,
         variables_instruction,
@@ -996,23 +979,38 @@ fn instruction(input: &[u8]) -> IResult<HirInstruction> {
     ))(input)
 }
 
-fn instructions(input: &[u8]) -> IResult<Vec<HirInstruction>> {
-    map(
-        many_till(context("instruction", instruction), tag(&[0x0B])),
-        |(x, _)| x,
-    )(input)
+fn instructions(mut input: &[u8]) -> IResult<Vec<HirInstruction>> {
+    let mut insts = Vec::new();
+    loop {
+        if input.get(0) == Some(&0x0B) {
+            return Ok((&input[1..], insts));
+        }
+        let (new_input, inst) = instruction(input)?;
+        input = new_input;
+        insts.push(inst);
+    }
 }
 
-fn instructions_with_else(input: &[u8]) -> IResult<(Vec<HirInstruction>, Vec<HirInstruction>)> {
-    let term_parser = alt((tag(&[0x05]), tag(&[0x0B])));
-    let (mut input, (if_instructions, terminator)) = many_till(instruction, term_parser)(input)?;
-    let mut else_instructions = Vec::new();
-    if terminator == &[0x05] {
-        let res = instructions(input)?;
-        input = res.0;
-        else_instructions = res.1;
+fn instructions_with_else(mut input: &[u8]) -> IResult<(Vec<HirInstruction>, Vec<HirInstruction>)> {
+    let mut in_else = false;
+    let mut if_insts = Vec::new();
+    let mut else_insts = Vec::new();
+    loop {
+        if !in_else && input.get(0) == Some(&0x05) {
+            in_else = true;
+            input = &input[1..];
+        }
+        if input.get(0) == Some(&0x0B) {
+            return Ok((&input[1..], (if_insts, else_insts)));
+        }
+        let (new_input, inst) = instruction(input)?;
+        input = new_input;
+        if in_else {
+            else_insts.push(inst);
+        } else {
+            if_insts.push(inst);
+        }
     }
-    Ok((input, (if_instructions, else_instructions)))
 }
 
 fn function_type(input: &[u8]) -> IResult<FunctionType> {
@@ -1297,7 +1295,7 @@ fn module(mut input: &[u8]) -> IResult<WasmBinary> {
         memories: memories.unwrap_or_default(),
         globals: globals.unwrap_or_default(),
         exports: exports.unwrap_or_default(),
-        start: start,
+        start,
         elements: elements.unwrap_or_default(),
         code: code.unwrap_or_default(),
         datas: datas.unwrap_or_default(),
@@ -1311,8 +1309,6 @@ pub fn parse(input: &[u8]) -> Result<WasmBinary, nom::error::VerboseError<&[u8]>
     match all_consuming(module)(input) {
         Ok(res) => Ok(res.1),
         Err(Err::Error(e)) | Err(Err::Failure(e)) => Err(e),
-        Err(Err::Incomplete(_)) => {
-            return Err(VerboseError::from_error_kind(&[], ErrorKind::Complete));
-        }
+        Err(Err::Incomplete(_)) => Err(VerboseError::from_error_kind(&[], ErrorKind::Complete)),
     }
 }

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -16,12 +15,11 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
-)
+	flag "github.com/spf13/pflag"
 
-const txTimeout time.Duration = 5 * time.Minute
+	"github.com/offchainlabs/nitro/util"
+)
 
 type StakerStrategy uint8
 
@@ -37,28 +35,66 @@ const (
 )
 
 type L1PostingStrategy struct {
-	HighGasThreshold   float64
-	HighGasDelayBlocks int64
+	HighGasThreshold   float64 `koanf:"high-gas-threshold"`
+	HighGasDelayBlocks int64   `koanf:"high-gas-delay-blocks"`
+}
+
+var DefaultL1PostingStrategy = L1PostingStrategy{
+	HighGasThreshold:   0,
+	HighGasDelayBlocks: 0,
+}
+
+func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
+	f.Float64(prefix+".high-gas-threshold", DefaultL1PostingStrategy.HighGasThreshold, "high gas threshold")
+	f.Int64(prefix+".high-gas-delay-blocks", DefaultL1PostingStrategy.HighGasDelayBlocks, "high gas delay blocks")
 }
 
 type L1ValidatorConfig struct {
-	Strategy            string
-	StakerInterval      time.Duration
-	L1PostingStrategy   L1PostingStrategy
-	DontChallenge       bool
-	WithdrawDestination string
-	TargetNumMachines   int
-	ConfirmationBlocks  int64
+	Enable              bool              `koanf:"enable"`
+	Strategy            string            `koanf:"strategy"`
+	StakerInterval      time.Duration     `koanf:"staker-interval"`
+	L1PostingStrategy   L1PostingStrategy `koanf:"posting-strategy"`
+	DisableChallenge    bool              `koanf:"disable-challenge"`
+	WithdrawDestination string            `koanf:"withdraw-destination"`
+	TargetMachineCount  int               `koanf:"target-machine-count"`
+	ConfirmationBlocks  int64             `koanf:"confirmation-blocks"`
+	Dangerous           DangerousConfig   `koanf:"dangerous"`
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
+	Enable:              false,
 	Strategy:            "Watchtower",
 	StakerInterval:      time.Minute,
 	L1PostingStrategy:   L1PostingStrategy{},
-	DontChallenge:       false,
+	DisableChallenge:    false,
 	WithdrawDestination: "",
-	TargetNumMachines:   4,
+	TargetMachineCount:  4,
 	ConfirmationBlocks:  12,
+	Dangerous:           DangerousConfig{},
+}
+
+func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultL1ValidatorConfig.Enable, "enable validator")
+	f.String(prefix+".strategy", DefaultL1ValidatorConfig.Strategy, "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes")
+	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
+	L1PostingStrategyAddOptions(prefix+".posting-strategy", f)
+	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
+	f.String(prefix+".withdraw-destination", DefaultL1ValidatorConfig.WithdrawDestination, "validator withdraw destination")
+	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
+	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
+	DangerousConfigAddOptions(prefix+".dangerous", f)
+}
+
+type DangerousConfig struct {
+	WithoutBlockValidator bool `koanf:"without-block-validator"`
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	WithoutBlockValidator: false,
+}
+
+func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".without-block-validator", DefaultL1ValidatorConfig.Dangerous.WithoutBlockValidator, "DANGEROUS! allows running an L1 validator without a block validator")
 }
 
 type nodeAndHash struct {
@@ -69,6 +105,7 @@ type nodeAndHash struct {
 type Staker struct {
 	*L1Validator
 	util.StopWaiter
+	l1Reader                L1ReaderInterface
 	activeChallenge         *ChallengeManager
 	strategy                StakerStrategy
 	baseCallOpts            bind.CallOpts
@@ -79,6 +116,7 @@ type Staker struct {
 	bringActiveUntilNode    uint64
 	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
+	nitroMachineLoader      *NitroMachineLoader
 }
 
 func stakerStrategyFromString(s string) (StakerStrategy, error) {
@@ -96,7 +134,7 @@ func stakerStrategyFromString(s string) (StakerStrategy, error) {
 }
 
 func NewStaker(
-	client arbutil.L1Interface,
+	l1Reader L1ReaderInterface,
 	wallet *ValidatorWallet,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
@@ -105,12 +143,14 @@ func NewStaker(
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
+	nitroMachineLoader *NitroMachineLoader,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
 	strategy, err := stakerStrategyFromString(config.Strategy)
 	if err != nil {
 		return nil, err
 	}
+	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, inboxTracker, txStreamer, blockValidator)
 	if err != nil {
 		return nil, err
@@ -121,6 +161,7 @@ func NewStaker(
 	}
 	return &Staker{
 		L1Validator:         val,
+		l1Reader:            l1Reader,
 		strategy:            strategy,
 		baseCallOpts:        callOpts,
 		config:              config,
@@ -128,6 +169,7 @@ func NewStaker(
 		lastActCalledBlock:  nil,
 		withdrawDestination: withdrawDestination,
 		inboxReader:         inboxReader,
+		nitroMachineLoader:  nitroMachineLoader,
 	}, nil
 }
 
@@ -135,9 +177,13 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) time.Duration {
+		err := s.updateBlockValidatorModuleRoot(ctx)
+		if err != nil {
+			log.Warn("error updating latest wasm module root", "err", err)
+		}
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
-			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
+			_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
 			err = errors.Wrap(err, "error waiting for tx receipt")
 			if err == nil {
 				log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
@@ -269,6 +315,36 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		info.LatestStakedNodeHash = s.inactiveLastCheckedNode.hash
 	}
 
+	latestConfirmedNode, err := s.rollup.LatestConfirmed(callOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	// If we have an old stake, remove it
+	if rawInfo != nil && rawInfo.LatestStakedNode <= latestConfirmedNode {
+		// At this point it'd be better to just create a new stake on the latest confirmed node
+		stakeIsTooOutdated := rawInfo.LatestStakedNode < latestConfirmedNode
+		// We're not trying to stake anyways
+		stakeIsUnwanted := effectiveStrategy < StakeLatestStrategy
+		if stakeIsTooOutdated || stakeIsUnwanted {
+			// Note: we must have an address if rawInfo != nil
+			_, err = s.rollup.ReturnOldDeposit(s.builder.Auth(ctx), *walletAddress)
+			if err != nil {
+				return nil, err
+			}
+			if stakeIsUnwanted {
+				_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx), s.withdrawDestination)
+				if err != nil {
+					return nil, err
+				}
+				log.Info("removing old stake and withdrawing funds")
+			} else {
+				log.Info("removing old stake to re-place stake on latest confirmed node")
+			}
+			return s.wallet.ExecuteTransactions(ctx, s.builder)
+		}
+	}
+
 	// Resolve nodes if either we're on the make nodes strategy,
 	// or we're on the stake latest strategy but don't have a stake
 	// (attempt to reduce the current required stake).
@@ -281,12 +357,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	resolvingNode := false
 	if shouldResolveNodes {
-		// Keep the stake of this validator placed if we plan on staking further
-		arbTx, err := s.removeOldStakers(ctx, effectiveStrategy >= StakeLatestStrategy)
-		if err != nil || arbTx != nil {
-			return arbTx, err
-		}
-		arbTx, err = s.resolveTimedOutChallenges(ctx)
+		arbTx, err := s.resolveTimedOutChallenges(ctx)
 		if err != nil || arbTx != nil {
 			return arbTx, err
 		}
@@ -296,9 +367,8 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	addr := s.wallet.Address()
-	if addr != nil {
-		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, *addr)
+	if walletAddress != nil {
+		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, *walletAddress)
 		if err != nil {
 			return nil, err
 		}
@@ -368,8 +438,9 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxReader,
 			s.inboxTracker,
 			s.txStreamer,
+			s.nitroMachineLoader,
 			latestConfirmedCreated,
-			s.config.TargetNumMachines,
+			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,
 		)
 		if err != nil {
@@ -399,7 +470,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 
 	switch action := action.(type) {
 	case createNodeAction:
-		if wrongNodesExist && s.config.DontChallenge {
+		if wrongNodesExist && s.config.DisableChallenge {
 			log.Error("refusing to challenge assertion as config disables challenges")
 			info.CanProgress = false
 			return nil
@@ -412,6 +483,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			info.CanProgress = false
 			return nil
 		}
+
 		// Details are already logged with more details in generateNodeAction
 		info.CanProgress = false
 		info.LatestStakedNode = 0
@@ -528,7 +600,7 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 			conflictInfo.Node1, conflictInfo.Node2 = conflictInfo.Node2, conflictInfo.Node1
 		}
 		if conflictInfo.Node1 <= latestNode {
-			// removeOldStakers will take care of them
+			// Immaterial as this is past the confirmation point; this must be a zombie
 			continue
 		}
 

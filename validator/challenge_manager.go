@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -68,7 +67,9 @@ type ChallengeManager struct {
 	inboxTracker      InboxTrackerInterface
 	txStreamer        TransactionStreamerInterface
 	blockchain        *core.BlockChain
+	machineLoader     *NitroMachineLoader
 	targetNumMachines int
+	wasmModuleRoot    common.Hash
 
 	initialMachine        *ArbitratorMachine
 	initialMachineBlockNr int64
@@ -77,6 +78,7 @@ type ChallengeManager struct {
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 
+// latestMachineLoader may be nil if the block validator is disabled
 func NewChallengeManager(
 	ctx context.Context,
 	l1client bind.ContractBackend,
@@ -88,6 +90,7 @@ func NewChallengeManager(
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
+	machineLoader *NitroMachineLoader,
 	startL1Block uint64,
 	targetNumMachines int,
 	confirmationBlocks int64,
@@ -112,6 +115,12 @@ func NewChallengeManager(
 	// We'll use the most recent log to be safe.
 	evmLog := logs[len(logs)-1]
 	parsedLog, err := con.ParseInitiatedChallenge(evmLog)
+	if err != nil {
+		return nil, err
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	challengeInfo, err := con.Challenges(callOpts, new(big.Int).SetUint64(challengeIndex))
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +154,9 @@ func NewChallengeManager(
 		inboxTracker:          inboxTracker,
 		txStreamer:            txStreamer,
 		blockchain:            l2blockChain,
+		machineLoader:         machineLoader,
 		targetNumMachines:     targetNumMachines,
+		wasmModuleRoot:        challengeInfo.WasmModuleRoot,
 	}, nil
 }
 
@@ -377,11 +388,11 @@ func (m *ChallengeManager) ScanChallengeState(ctx context.Context, backend Chall
 	return 0, errors.Errorf("agreed with entire challenge (start step count %v and end step count %v)", state.Start.String(), state.End.String())
 }
 
-func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum int64) error {
+func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum int64, tooFar bool) error {
 	if m.initialMachine != nil && m.initialMachineBlockNr == blockNum {
 		return nil
 	}
-	initialFrozenMachine, err := GetZeroStepMachine(ctx)
+	initialFrozenMachine, err := m.machineLoader.GetMachine(ctx, m.wasmModuleRoot, false)
 	if err != nil {
 		return err
 	}
@@ -401,43 +412,56 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if err != nil {
 		return err
 	}
-	genesisBlockNum, err := m.txStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return err
-	}
-	message, err := m.txStreamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
-	if err != nil {
-		return err
-	}
-	nextHeader := m.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
-	if nextHeader == nil {
-		return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
-	}
-	preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message)
-	if err != nil {
-		return err
-	}
-	err = machine.AddPreimages(preimages)
-	if err != nil {
-		return err
-	}
-	if hasDelayedMsg {
-		delayedBytes, err := m.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
+	if tooFar {
+		// Just record the part of block creation before the message is read
+		_, preimages, err := RecordBlockCreation(m.blockchain, blockHeader, nil)
 		if err != nil {
 			return err
 		}
-		err = machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
+		err = machine.AddPreimages(preimages)
 		if err != nil {
 			return err
 		}
-	}
-	batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
-	if err != nil {
-		return err
-	}
-	err = machine.AddSequencerInboxMessage(startGlobalState.Batch, batchBytes)
-	if err != nil {
-		return err
+	} else {
+		// Get the next message and block header, and record the full block creation
+		genesisBlockNum, err := m.txStreamer.GetGenesisBlockNumber()
+		if err != nil {
+			return err
+		}
+		message, err := m.txStreamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
+		if err != nil {
+			return err
+		}
+		nextHeader := m.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
+		if nextHeader == nil {
+			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
+		}
+		preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message)
+		if err != nil {
+			return err
+		}
+		err = machine.AddPreimages(preimages)
+		if err != nil {
+			return err
+		}
+		if hasDelayedMsg {
+			delayedBytes, err := m.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
+			if err != nil {
+				return err
+			}
+			err = machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
+			if err != nil {
+				return err
+			}
+		}
+		batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
+		if err != nil {
+			return err
+		}
+		err = machine.AddSequencerInboxMessage(startGlobalState.Batch, batchBytes)
+		if err != nil {
+			return err
+		}
 	}
 	m.initialMachine = machine
 	m.initialMachine.Freeze()
@@ -480,8 +504,8 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	blockNum := m.blockChallengeBackend.startBlock + ev.BlockSteps.Int64()
-	err = m.createInitialMachine(ctx, blockNum)
+	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(ev.BlockSteps.Uint64())
+	err = m.createInitialMachine(ctx, blockNum, tooFar)
 	if err != nil {
 		return err
 	}
@@ -538,8 +562,8 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 			nextMovePos,
 		)
 	}
-	blockNum := m.blockChallengeBackend.GetBlockNrAtStep(uint64(nextMovePos))
-	err = m.createInitialMachine(ctx, blockNum)
+	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(uint64(nextMovePos))
+	err = m.createInitialMachine(ctx, blockNum, tooFar)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package broadcaster
 
@@ -72,11 +71,6 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 			Messages: b.messages,
 		}
 
-		// There is an unknown race in gobwas between the server reporting
-		// handshake complete and the client actually being ready to receive.
-		// If data is sent before then it is lost.
-		time.Sleep(time.Second)
-
 		err := clientConnection.Write(bm)
 		if err != nil {
 			log.Error("error sending client cached messages", err, "client", clientConnection.Name, "elapsed", time.Since(start))
@@ -140,7 +134,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 			b.messages = nil
 			b.messages = append(b.messages, newMsg)
 		} else {
-			log.Info("Skipping already seen message with sequence number: ", newMsg.SequenceNumber)
+			log.Info("Skipping already seen message", "seqNum", newMsg.SequenceNumber)
 		}
 	}
 
@@ -172,6 +166,10 @@ func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbu
 	}
 
 	b.server.Broadcast(bm)
+}
+
+func (b *Broadcaster) Broadcast(msg BroadcastMessage) {
+	b.server.Broadcast(msg)
 }
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {

@@ -1,10 +1,10 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package replay_fuzz
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"math/big"
@@ -34,9 +34,10 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil)
 
-	message, err := inboxMultiplexer.Pop()
+	ctx := context.Background()
+	message, err := inboxMultiplexer.Pop(ctx)
 	if err != nil {
 		return nil, err
 	}

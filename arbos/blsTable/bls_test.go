@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package blsTable
 
@@ -14,13 +13,13 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestLegacyBLS(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	tab := Open(sto)
 
 	maxInt64 := big.NewInt(math.MaxInt64)
@@ -29,7 +28,7 @@ func TestLegacyBLS(t *testing.T) {
 	cases := [][]*big.Int{
 		{big.NewInt(0), big.NewInt(16), big.NewInt(615), big.NewInt(1024)},
 		{big.NewInt(32), big.NewInt(0), big.NewInt(808), big.NewInt(9364)},
-		{maxInt64, util.BigMulByFrac(maxInt64, math.MaxInt64, 2), big.NewInt(2), big.NewInt(0)},
+		{maxInt64, arbmath.BigMulByFrac(maxInt64, math.MaxInt64, 2), big.NewInt(2), big.NewInt(0)},
 	}
 
 	for index, test := range cases {
@@ -46,9 +45,9 @@ func TestLegacyBLS(t *testing.T) {
 	}
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	testhelpers.RequireImpl(t, err, printables...)
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

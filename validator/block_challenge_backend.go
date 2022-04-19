@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -190,15 +189,15 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) 
 const StatusFinished uint8 = 1
 const StatusTooFar uint8 = 3
 
-func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) int64 {
-	return b.startBlock + int64(step)
+func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) (int64, bool) {
+	return b.startBlock + int64(step), step >= b.tooFarStartsAtPosition
 }
 
 func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (GoGlobalState, uint8, error) {
-	if step >= b.tooFarStartsAtPosition {
+	blockNum, tooFar := b.GetBlockNrAtStep(step)
+	if tooFar {
 		return GoGlobalState{}, StatusTooFar, nil
 	}
-	blockNum := b.GetBlockNrAtStep(step)
 	var header *types.Header
 	if blockNum != -1 {
 		header = b.bc.GetHeaderByNumber(uint64(blockNum))

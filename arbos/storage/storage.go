@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package storage
 
@@ -16,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
-	nitro_util "github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
@@ -45,9 +44,9 @@ type Storage struct {
 	burner     burn.Burner
 }
 
-var StorageReadCost = params.SloadGasEIP2200
-var StorageWriteCost = params.SstoreSetGasEIP2200
-var StorageWriteZeroCost = params.SstoreResetGasEIP2200
+const StorageReadCost = params.SloadGasEIP2200
+const StorageWriteCost = params.SstoreSetGasEIP2200
+const StorageWriteZeroCost = params.SstoreResetGasEIP2200
 
 // Use a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
@@ -108,6 +107,9 @@ func (store *Storage) Get(key common.Hash) (common.Hash, error) {
 	if err != nil {
 		return common.Hash{}, err
 	}
+	if info := store.burner.TracingInfo(); info != nil {
+		info.RecordStorageGet(key)
+	}
 	return store.db.GetState(store.account, mapAddress(store.storageKey, key)), nil
 }
 
@@ -136,6 +138,9 @@ func (store *Storage) Set(key common.Hash, value common.Hash) error {
 	err := store.burner.Burn(writeCost(value))
 	if err != nil {
 		return err
+	}
+	if info := store.burner.TracingInfo(); info != nil {
+		info.RecordStorageSet(key, value)
 	}
 	store.db.SetState(store.account, mapAddress(store.storageKey, key), value)
 	return nil
@@ -230,7 +235,7 @@ func (store *Storage) ClearBytes() error {
 	}
 	offset := uint64(1)
 	for bytesLeft > 0 {
-		err := store.SetByUint64(offset, common.Hash{})
+		err := store.ClearByUint64(offset)
 		if err != nil {
 			return err
 		}
@@ -241,7 +246,7 @@ func (store *Storage) ClearBytes() error {
 			bytesLeft -= 32
 		}
 	}
-	return store.SetByUint64(0, common.Hash{})
+	return store.ClearByUint64(0)
 }
 
 func (sto *Storage) Burner() burn.Burner {
@@ -253,7 +258,7 @@ func (sto *Storage) Keccak(data ...[]byte) ([]byte, error) {
 	for _, part := range data {
 		byteCount += len(part)
 	}
-	cost := 30 + 6*nitro_util.WordsForBytes(uint64(byteCount))
+	cost := 30 + 6*arbmath.WordsForBytes(uint64(byteCount))
 	if err := sto.burner.Burn(cost); err != nil {
 		return nil, err
 	}
@@ -281,6 +286,9 @@ func (ss *StorageSlot) Get() (common.Hash, error) {
 	if err != nil {
 		return common.Hash{}, err
 	}
+	if info := ss.burner.TracingInfo(); info != nil {
+		info.RecordStorageGet(ss.slot)
+	}
 	return ss.db.GetState(ss.account, ss.slot), nil
 }
 
@@ -292,6 +300,9 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 	err := ss.burner.Burn(writeCost(value))
 	if err != nil {
 		return err
+	}
+	if info := ss.burner.TracingInfo(); info != nil {
+		info.RecordStorageSet(ss.slot, value)
 	}
 	ss.db.SetState(ss.account, ss.slot, value)
 	return nil
@@ -319,6 +330,24 @@ func (sbu *StorageBackedInt64) Get() (int64, error) {
 
 func (sbu *StorageBackedInt64) Set(value int64) error {
 	return sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
+}
+
+// Represents a number of basis points
+type StorageBackedBips struct {
+	backing StorageBackedInt64
+}
+
+func (sto *Storage) OpenStorageBackedBips(offset uint64) StorageBackedBips {
+	return StorageBackedBips{StorageBackedInt64{sto.NewSlot(offset)}}
+}
+
+func (sbu *StorageBackedBips) Get() (arbmath.Bips, error) {
+	value, err := sbu.backing.Get()
+	return arbmath.Bips(value), err
+}
+
+func (sbu *StorageBackedBips) Set(bips arbmath.Bips) error {
+	return sbu.backing.Set(int64(bips))
 }
 
 type StorageBackedUint64 struct {

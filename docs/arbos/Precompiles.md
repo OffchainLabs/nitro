@@ -66,7 +66,7 @@ Provides the ability to create short-hands for commonly used accounts.
 # [ArbAggregator][ArbAggregator_link]<a name=ArbAggregator></a>
 Provides aggregators and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
-Compression ratios are measured in ppm. Methods that are checkmarked are access-controlled and will revert if not called by the aggregator, its fee collector, or a chain owner.
+Compression ratios are measured in basis points. Methods that are checkmarked are access-controlled and will revert if not called by the aggregator, its fee collector, or a chain owner.
 
 | Methods                                                                                  |                                                         |  |
 |:-----------------------------------------------------------------------------------------|:--------------------------------------------------------|:------------------|
@@ -78,31 +78,35 @@ Compression ratios are measured in ppm. Methods that are checkmarked are access-
 | [<img src=e.png height=16>][As5] [`SetCompressionRatio`][A5]`(aggregator, ratio)`        | Set the aggregator's compression ratio                  | ✔️                 |
 | [<img src=e.png height=16>][As6] [`GetFeeCollector`][A6]`(aggregator)`                   | Gets an aggregator's fee collector                      |                   |
 | [<img src=e.png height=16>][As7] [`SetFeeCollector`][A7]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector                      | ✔️                 |
-| [<img src=e.png height=16>][As8] [`GetTxBaseFee`][A8]`(aggregator)`                      | Gets an aggregator's current fixed fee to submit a tx   |                   |
-| [<img src=e.png height=16>][As9] [`SetTxBaseFee`][A9]`(aggregator, fee)`                 | Sets an aggregator's fixed fee                          | ✔️                 |
 
-[A0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L22
-[A1]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L39
-[A2]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L48
-[A3]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L53
-[A4]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L70
-[A5]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L75
-[A6]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L87
-[A7]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L92
-[A8]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L104
-[A9]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbAggregator.go#L109
+[A0]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L25
+[A1]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L42
+[A2]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L51
+[A3]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L56
+[A4]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L73
+[A5]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L79
+[A6]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L91
+[A7]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L96
 
-[As0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L28
-[As1]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L32
-[As2]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L35
-[As3]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L40
-[As4]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L45
-[As5]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L51
-[As6]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L56
-[As7]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L62
-[As8]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L66
-[As9]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAggregator.sol#L73
+[As0]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L28
+[As1]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L32
+[As2]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L35
+[As3]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L40
+[As4]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L45
+[As5]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L51
+[As6]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L56
+[As7]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L62
 
+| Deprecated Methods                                                         |              |
+|:---------------------------------------------------------------------------|:-------------|
+| [<img src=e.png height=16>][Ads0] [`GetTxBaseFee`][Ad0]`(aggregator)`      | Returns 0    |
+| [<img src=e.png height=16>][Ads1] [`SetTxBaseFee`][Ad1]`(aggregator, fee)` | Does nothing |
+
+[Ad0]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L108
+[Ad1]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/precompiles/ArbAggregator.go#L114
+
+[Ads0]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L67
+[Ads1]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L75
 
 # [ArbBLS][ArbBLS_link]<a name=ArbBLS></a>
 Provides a registry of BLS public keys for accounts.

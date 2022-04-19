@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -48,10 +47,11 @@ type L1Validator struct {
 	callOpts                bind.CallOpts
 	genesisBlockNumber      uint64
 
-	l2Blockchain   *core.BlockChain
-	inboxTracker   InboxTrackerInterface
-	txStreamer     TransactionStreamerInterface
-	blockValidator *BlockValidator
+	l2Blockchain       *core.BlockChain
+	inboxTracker       InboxTrackerInterface
+	txStreamer         TransactionStreamerInterface
+	blockValidator     *BlockValidator
+	lastWasmModuleRoot common.Hash
 }
 
 func NewL1Validator(
@@ -111,32 +111,30 @@ func (v *L1Validator) Initialize(ctx context.Context) error {
 		return err
 	}
 	v.challengeManagerAddress, err = v.rollup.ChallengeManager(v.getCallOpts(ctx))
-	return err
+	if err != nil {
+		return err
+	}
+	return v.updateBlockValidatorModuleRoot(ctx)
 }
 
-// removeOldStakers removes the stakes of all validators staked on the latest confirmed node (aka "refundable" or "old" stakers),
-// except its own if dontRemoveSelf is true
-func (v *L1Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (*types.Transaction, error) {
-	stakersToEliminate, err := v.validatorUtils.RefundableStakers(v.getCallOpts(ctx), v.rollupAddress)
+func (v *L1Validator) updateBlockValidatorModuleRoot(ctx context.Context) error {
+	if v.blockValidator == nil {
+		return nil
+	}
+	moduleRoot, err := v.rollup.WasmModuleRoot(v.getCallOpts(ctx))
 	if err != nil {
-		return nil, err
+		return err
 	}
-	walletAddr := v.wallet.Address()
-	if dontRemoveSelf && walletAddr != nil {
-		for i, staker := range stakersToEliminate {
-			if staker == *walletAddr {
-				stakersToEliminate[i] = stakersToEliminate[len(stakersToEliminate)-1]
-				stakersToEliminate = stakersToEliminate[:len(stakersToEliminate)-1]
-				break
-			}
+	if moduleRoot != v.lastWasmModuleRoot {
+		err := v.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
+		if err != nil {
+			return err
 		}
+		v.lastWasmModuleRoot = moduleRoot
+	} else if (moduleRoot == common.Hash{}) {
+		return errors.New("wasmModuleRoot in rollup is zero")
 	}
-
-	if len(stakersToEliminate) == 0 {
-		return nil, nil
-	}
-	log.Info("removing old stakers", "count", len(stakersToEliminate))
-	return v.wallet.ReturnOldDeposits(ctx, stakersToEliminate)
+	return nil
 }
 
 func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Transaction, error) {
@@ -253,6 +251,9 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, err
 	}
 
+	v.txStreamer.PauseReorgs()
+	defer v.txStreamer.ResumeReorgs()
+
 	localBatchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
 		return nil, false, err
@@ -272,7 +273,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			log.Error("invalid start global state inbox position", startState.GlobalState.BlockHash, "batch", startState.GlobalState.Batch, "pos", startState.GlobalState.PosInBatch)
 			return nil, false, errors.New("invalid start global state inbox position")
 		}
-		latestHeader := v.l2Blockchain.CurrentHeader()
+		latestHeader := v.l2Blockchain.CurrentBlock().Header()
 		if latestHeader.Number.Int64() < expectedBlockHeight {
 			log.Info("catching up to chain blocks", "localBlocks", latestHeader.Number, "target", expectedBlockHeight)
 			return nil, false, nil
@@ -284,9 +285,28 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 
 	var lastBlockValidated uint64
 	if v.blockValidator != nil {
-		lastBlockValidated = v.blockValidator.BlocksValidated()
+		var expectedHash common.Hash
+		var validRoots []common.Hash
+		lastBlockValidated, expectedHash, validRoots = v.blockValidator.LastBlockValidatedAndHash()
+		haveHash := v.l2Blockchain.GetCanonicalHash(lastBlockValidated)
+		if haveHash != expectedHash {
+			return nil, false, fmt.Errorf("block validator validated block %v as hash %v but blockchain has hash %v", lastBlockValidated, expectedHash, haveHash)
+		}
+		if err := v.updateBlockValidatorModuleRoot(ctx); err != nil {
+			return nil, false, err
+		}
+		wasmRootValid := false
+		for _, root := range validRoots {
+			if v.lastWasmModuleRoot == root {
+				wasmRootValid = true
+				break
+			}
+		}
+		if !wasmRootValid {
+			return nil, false, fmt.Errorf("wasmroot doesn't match rollup : %v, valid: %v", v.lastWasmModuleRoot, validRoots)
+		}
 	} else {
-		lastBlockValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
+		lastBlockValidated = v.l2Blockchain.CurrentBlock().Header().Number.Uint64()
 
 		if localBatchCount > 0 {
 			messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)

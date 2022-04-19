@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package addressTable
 
@@ -16,7 +15,7 @@ import (
 )
 
 func TestAddressTableInit(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Initialize(sto)
 	atab := Open(sto)
 	if size(t, atab) != 0 {
@@ -36,7 +35,7 @@ func TestAddressTableInit(t *testing.T) {
 }
 
 func TestAddressTable1(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Initialize(sto)
 	atab := Open(sto)
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -82,7 +81,7 @@ func TestAddressTable1(t *testing.T) {
 }
 
 func TestAddressTableCompressNotInTable(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Initialize(sto)
 	atab := Open(sto)
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -109,7 +108,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 }
 
 func TestAddressTableCompressInTable(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	Initialize(sto)
 	atab := Open(sto)
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -141,9 +140,9 @@ func size(t *testing.T, atab *AddressTable) uint64 {
 	return size
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	testhelpers.RequireImpl(t, err, printables...)
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

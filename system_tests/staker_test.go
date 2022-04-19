@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -13,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -31,7 +31,7 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 		if err != nil {
 			return err
 		}
-		_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
+		_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 		if err != nil {
 			return err
 		}
@@ -43,7 +43,7 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 			if err != nil {
 				return err
 			}
-			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
+			_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
 			if err != nil {
 				return err
 			}
@@ -75,54 +75,55 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 	}
 
-	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner")
+	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
 	l1info.GenerateAccount("ValidatorA")
 	TransferBalance(t, "Faucet", "ValidatorA", balance, l1info, l1client, ctx)
-	l1authA := l1info.GetDefaultTransactOpts("ValidatorA")
+	l1authA := l1info.GetDefaultTransactOpts("ValidatorA", ctx)
 
 	l1info.GenerateAccount("ValidatorB")
 	TransferBalance(t, "Faucet", "ValidatorB", balance, l1info, l1client, ctx)
-	l1authB := l1info.GetDefaultTransactOpts("ValidatorB")
+	l1authB := l1info.GetDefaultTransactOpts("ValidatorB", ctx)
 
-	valWalletAddrA, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l1client)
+	valWalletAddrA, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader)
 	Require(t, err)
-	valWalletAddrCheck, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l1client)
+	valWalletAddrCheck, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader)
 	Require(t, err)
 	if valWalletAddrA == valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
 	}
 
-	valWalletAddrB, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authB, l1client)
+	valWalletAddrB, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authB, l2nodeB.L1Reader)
 	Require(t, err)
 
 	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, l1client)
 	Require(t, err)
 	tx, err := rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, valWalletAddrB}, []bool{true, true})
 	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
 	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
 	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
 	valConfig := validator.L1ValidatorConfig{
-		TargetNumMachines: 4,
+		TargetMachineCount: 4,
 	}
 
-	valWalletA, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l1client, &l1authA, 0, func(common.Address) {})
+	valWalletA, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
 	Require(t, err)
 	if honestStakerInactive {
 		valConfig.Strategy = "Defensive"
 	} else {
 		valConfig.Strategy = "MakeNodes"
 	}
+	nitroMachineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig)
 	stakerA, err := validator.NewStaker(
-		l1client,
+		l2nodeA.L1Reader,
 		valWalletA,
 		bind.CallOpts{},
 		valConfig,
@@ -131,17 +132,18 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		l2nodeA.BlockValidator,
+		nitroMachineLoader,
 		l2nodeA.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
 	Require(t, err)
 
-	valWalletB, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeB.DeployInfo.Rollup, l1client, &l1authB, 0, func(common.Address) {})
+	valWalletB, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader, &l1authB, 0, func(common.Address) {})
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	stakerB, err := validator.NewStaker(
-		l1client,
+		l2nodeB.L1Reader,
 		valWalletB,
 		bind.CallOpts{},
 		valConfig,
@@ -150,6 +152,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		l2nodeB.BlockValidator,
+		nitroMachineLoader,
 		l2nodeA.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)
@@ -160,12 +163,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, balance, nil)
 	err = l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 	if faultyStaker {
 		err = l2clientB.SendTransaction(ctx, tx)
 		Require(t, err)
-		_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
+		_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
 		Require(t, err)
 	}
 
@@ -204,9 +207,27 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				stakerBTxs++
 			}
 		}
+		if err != nil && faultyStaker && i%2 == 1 {
+			// Check if this is an expected error from the faulty staker.
+			if strings.Contains(err.Error(), "agreed with entire challenge") {
+				// Expected error upon realizing you're losing the challenge. Get ready for a timeout.
+				for j := 0; j < 200; j++ {
+					TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
+				}
+			} else if strings.Contains(err.Error(), "insufficient funds") && sawStakerZombie {
+				// Expected error when trying to re-stake after losing initial stake.
+			} else if strings.Contains(err.Error(), "unknown start block hash") && sawStakerZombie {
+				// Expected error when trying to re-stake after the challenger's nodes getting confirmed.
+			} else {
+				Require(t, err, "Faulty staker failed to act")
+			}
+			t.Log("got expected faulty staker error", err)
+			err = nil
+			tx = nil
+		}
 		Require(t, err, "Staker", stakerName, "failed to act")
 		if tx != nil {
-			_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+			_, err = EnsureTxSucceeded(ctx, l1client, tx)
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
 		}
 		if faultyStaker {
@@ -237,7 +258,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	latestConfirmedNode, err := rollup.LatestConfirmed(&bind.CallOpts{})
 	Require(t, err)
 
-	if latestConfirmedNode <= 1 {
+	if latestConfirmedNode <= 1 && !honestStakerInactive {
 		latestCreatedNode, err := rollup.LatestNodeCreated(&bind.CallOpts{})
 		Require(t, err)
 		t.Fatal("latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)

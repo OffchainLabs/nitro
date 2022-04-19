@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -8,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // This precompile provides owners with tools for managing the rollup.
@@ -55,13 +55,13 @@ func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64)
 }
 
 // Sets the L2 gas price directly, bypassing the pool calculus
-func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
-	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
+func (con ArbOwner) SetL2BaseFee(c ctx, evm mech, priceInWei huge) error {
+	return c.state.L2PricingState().SetBaseFeeWei(priceInWei)
 }
 
-// Sets the minimum gas price needed for a transaction to succeed
-func (con ArbOwner) SetMinimumGasPrice(c ctx, evm mech, priceInWei huge) error {
-	return c.state.L2PricingState().SetMinGasPriceWei(priceInWei)
+// Sets the minimum base fee needed for a transaction to succeed
+func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error {
+	return c.state.L2PricingState().SetMinBaseFeeWei(priceInWei)
 }
 
 // Sets the computational speed limit for the chain
@@ -76,12 +76,12 @@ func (con ArbOwner) SetGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
 
 // Set the target fullness in bips the pricing model will try to keep the pool at
 func (con ArbOwner) SetGasPoolTarget(c ctx, evm mech, target uint64) error {
-	return c.state.L2PricingState().SetGasPoolTarget(target)
+	return c.state.L2PricingState().SetGasPoolTarget(arbmath.SaturatingCastToBips(target))
 }
 
 // Set the extent in bips to which the pricing model favors filling the pool over increasing speeds
 func (con ArbOwner) SetGasPoolWeight(c ctx, evm mech, weight uint64) error {
-	return c.state.L2PricingState().SetGasPoolWeight(weight)
+	return c.state.L2PricingState().SetGasPoolWeight(arbmath.SaturatingCastToBips(weight))
 }
 
 // Set how slowly ArbOS updates its estimate the amount of gas being burnt per second
@@ -102,4 +102,9 @@ func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 // Sets the network fee collector
 func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
 	return c.state.SetNetworkFeeAccount(newNetworkFeeAccount)
+}
+
+// Upgrades ArbOS to the requested version at the requested timestamp
+func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, timestamp uint64) error {
+	return c.state.ScheduleArbOSUpgrade(newVersion, timestamp)
 }

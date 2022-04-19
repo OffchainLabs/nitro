@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbstate
 
@@ -64,13 +63,14 @@ func TestEthDepositMessage(t *testing.T) {
 		Fail(t)
 	}
 
+	firstRequestId := common.BigToHash(big.NewInt(3))
 	header := arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_EthDeposit,
 		Poster:      addr,
-		BlockNumber: common.BigToHash(big.NewInt(864513)),
-		Timestamp:   common.BigToHash(big.NewInt(8794561564)),
-		RequestId:   common.BigToHash(big.NewInt(3)),
-		BaseFeeL1:   common.BigToHash(big.NewInt(10000000000000)),
+		BlockNumber: 864513,
+		Timestamp:   8794561564,
+		RequestId:   &firstRequestId,
+		L1BaseFee:   big.NewInt(10000000000000),
 	}
 	msgBuf := bytes.Buffer{}
 	if err := util.HashToWriter(balance, &msgBuf); err != nil {
@@ -86,7 +86,8 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
-	header.RequestId = common.BigToHash(big.NewInt(4))
+	secondRequestId := common.BigToHash(big.NewInt(4))
+	header.RequestId = &secondRequestId
 	msgBuf2 := bytes.Buffer{}
 	if err := util.HashToWriter(balance2, &msgBuf2); err != nil {
 		t.Error(err)
@@ -136,9 +137,9 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 	}
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	testhelpers.RequireImpl(t, err, printables...)
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

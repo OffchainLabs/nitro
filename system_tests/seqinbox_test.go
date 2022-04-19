@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
 
@@ -13,17 +12,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util"
 )
 
 type blockTestState struct {
@@ -36,10 +38,16 @@ type blockTestState struct {
 
 const seqInboxTestIters = 40
 
-func TestSequencerInboxReader(t *testing.T) {
+func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1(t, ctx, false)
+	conf := arbnode.ConfigDefaultL1Test()
+	conf.InboxReader.HardReorg = true
+	if validator {
+		conf.BlockValidator.Enable = true
+		conf.BlockValidator.ConcurrentRunsLimit = 16
+	}
+	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1WithConfig(t, ctx, false, conf, params.ArbitrumDevTestChainConfig())
 	l2Backend := arbNode.Backend
 	defer stack.Close()
 
@@ -47,7 +55,7 @@ func TestSequencerInboxReader(t *testing.T) {
 
 	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
 	Require(t, err)
-	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer")
+	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	ownerAddress := l2Info.GetAddress("Owner")
 	var startL2BlockNumber uint64 = 0
@@ -109,7 +117,7 @@ func TestSequencerInboxReader(t *testing.T) {
 				}
 				tx := l1Info.SignTxAs("ReorgPadding", rawTx)
 				Require(t, l1Client.SendTransaction(ctx, tx))
-				_, _ = arbutil.EnsureTxSucceeded(ctx, l1Client, tx)
+				_, _ = EnsureTxSucceeded(ctx, l1Client, tx)
 			}
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
 			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)
@@ -130,7 +138,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			tx := l1Info.PrepareTx(fmt.Sprintf("ReorgSacrifice%v", i/10), "Faucet", 30000, big.NewInt(0), nil)
 			err = l1Client.SendTransaction(ctx, tx)
 			Require(t, err)
-			_, _ = arbutil.WaitForTx(ctx, l1Client, tx.Hash(), time.Second)
+			_, _ = WaitForTx(ctx, l1Client, tx.Hash(), time.Second)
 		} else {
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]*big.Int)
@@ -144,14 +152,13 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 			state.nonces = newNonces
 
-			batchBuffer := bytes.NewBuffer([]byte{0})
-			batchWriter := brotli.NewWriter(batchBuffer)
+			batchBuffer := bytes.NewBuffer([]byte{})
 			numMessages := 1 + rand.Int()%5
 			for j := 0; j < numMessages; j++ {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
 				amount := new(big.Int).SetUint64(uint64(rand.Int()) % state.balances[source].Uint64())
-				reserveAmount := new(big.Int).SetUint64(params.InitialBaseFee * 10000000)
+				reserveAmount := new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei * 100000000)
 				if state.balances[source].Cmp(new(big.Int).Add(amount, reserveAmount)) < 0 {
 					// Leave enough funds for gas
 					amount = big.NewInt(1)
@@ -171,8 +178,8 @@ func TestSequencerInboxReader(t *testing.T) {
 
 				rawTx := &types.DynamicFeeTx{
 					To:        &dest,
-					Gas:       210000,
-					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+					Gas:       util.NormalizeL2GasForL1GasInitial(210000, params.GWei),
+					GasFeeCap: big.NewInt(l2pricing.InitialBaseFeeWei * 2),
 					Value:     amount,
 					Nonce:     state.nonces[source],
 				}
@@ -184,15 +191,16 @@ func TestSequencerInboxReader(t *testing.T) {
 				segment = append(segment, arbstate.BatchSegmentKindL2Message)
 				segment = append(segment, arbos.L2MessageKind_SignedTx)
 				segment = append(segment, txData...)
-				err = rlp.Encode(batchWriter, segment)
+				err = rlp.Encode(batchBuffer, segment)
 				Require(t, err)
 
 				state.balances[source].Sub(state.balances[source], amount)
 				state.balances[dest].Add(state.balances[dest], amount)
 			}
 
-			Require(t, batchWriter.Close())
-			batchData := batchBuffer.Bytes()
+			compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
+			Require(t, err)
+			batchData := append([]byte{0}, compressed...)
 
 			seqNonce := len(blockStates) - 1
 			for j := 0; ; j++ {
@@ -214,7 +222,7 @@ func TestSequencerInboxReader(t *testing.T) {
 				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
 			}
 			Require(t, err)
-			txRes, err := arbutil.EnsureTxSucceeded(ctx, l1Client, tx)
+			txRes, err := EnsureTxSucceeded(ctx, l1Client, tx)
 			if err != nil {
 				// Geth's clique miner is finicky.
 				// Unfortunately this is so rare that I haven't had an opportunity to test this workaround.
@@ -222,7 +230,7 @@ func TestSequencerInboxReader(t *testing.T) {
 				// if a new tx arrives at the same time as it tries to create a block.
 				// Resubmit the transaction in an attempt to get the miner going again.
 				_ = l1Client.SendTransaction(ctx, tx)
-				txRes, err = arbutil.EnsureTxSucceeded(ctx, l1Client, tx)
+				txRes, err = EnsureTxSucceeded(ctx, l1Client, tx)
 				Require(t, err)
 			}
 
@@ -257,6 +265,18 @@ func TestSequencerInboxReader(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 
+		if validator && i%15 == 0 {
+			for i := 0; ; i++ {
+				lastValidated := arbNode.BlockValidator.LastBlockValidated()
+				if lastValidated == expectedBlockNumber {
+					break
+				} else if i >= 1000 {
+					Fail(t, "timed out waiting for block validator; have", lastValidated, "want", expectedBlockNumber)
+				}
+				time.Sleep(time.Second)
+			}
+		}
+
 		for _, state := range blockStates {
 			block, err := l2Backend.APIBackend().BlockByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
@@ -273,4 +293,8 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSequencerInboxReader(t *testing.T) {
+	testSequencerInboxReaderImpl(t, false)
 }

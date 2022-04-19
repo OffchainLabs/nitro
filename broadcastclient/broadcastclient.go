@@ -1,12 +1,13 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package broadcastclient
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"io"
 	"math/big"
 	"net"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -25,15 +27,46 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-type BroadcastClientConfig struct {
-	Timeout time.Duration
-	URL     string // TODO should this be an array for multiple clients?
+type FeedConfig struct {
+	Output wsbroadcastserver.BroadcasterConfig `koanf:"output"`
+	Input  BroadcastClientConfig               `koanf:"input"`
 }
 
-var DefaultBroadcastClientConfig BroadcastClientConfig
+func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
+	if feedInputEnable {
+		BroadcastClientConfigAddOptions(prefix+".input", f)
+	}
+	if feedOutputEnable {
+		wsbroadcastserver.BroadcasterConfigAddOptions(prefix+".output", f)
+	}
+}
+
+var FeedConfigDefault = FeedConfig{
+	Output: wsbroadcastserver.DefaultBroadcasterConfig,
+	Input:  DefaultBroadcastClientConfig,
+}
+
+type BroadcastClientConfig struct {
+	Timeout time.Duration `koanf:"timeout"`
+	URLs    []string      `koanf:"url"`
+}
+
+func (c *BroadcastClientConfig) Enable() bool {
+	return len(c.URLs) > 0 && c.URLs[0] != ""
+}
+
+func BroadcastClientConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.StringSlice(prefix+".url", DefaultBroadcastClientConfig.URLs, "URL of sequencer feed source")
+	f.Duration(prefix+".timeout", DefaultBroadcastClientConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
+}
+
+var DefaultBroadcastClientConfig = BroadcastClientConfig{
+	URLs:    []string{""},
+	Timeout: 20 * time.Second,
+}
 
 type TransactionStreamerInterface interface {
-	AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error
+	AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error
 }
 
 type BroadcastClient struct {
@@ -75,39 +108,55 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn)
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
-			err := bc.connect(ctx)
+			earlyFrameData, err := bc.connect(ctx)
 			if err == nil {
-				bc.startBackgroundReader()
+				bc.startBackgroundReader(earlyFrameData)
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
+			timer := time.NewTimer(5 * time.Second)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return
-			case <-time.After(5 * time.Second):
+			case <-timer.C:
 			}
 		}
 	})
 }
 
-func (bc *BroadcastClient) connect(ctx context.Context) error {
+func (bc *BroadcastClient) connect(ctx context.Context) (earlyFrameData io.Reader, err error) {
 	if len(bc.websocketUrl) == 0 {
 		// Nothing to do
-		return nil
+		return
 	}
 
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
 	timeoutDialer := ws.Dialer{
 		Timeout: 10 * time.Second,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
 	}
 
 	if bc.isShuttingDown() {
-		return nil
+		return
 	}
 
-	conn, _, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
+	conn, br, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if err != nil {
-		return errors.Wrap(err, "broadcast client unable to connect")
+		return nil, errors.Wrap(err, "broadcast client unable to connect")
+	}
+
+	if br != nil {
+		// Depending on how long the client takes to read the response, there may be
+		// data after the WebSocket upgrade response in a single read from the socket,
+		// ie WebSocket frames sent by the server. If this happens, Dial returns
+		// a non-nil bufio.Reader so that data isn't lost. But beware, this buffered
+		// reader is still hooked up to the socket; trying to read past what had already
+		// been buffered will do a blocking read on the socket, so we have to wrap it
+		// in a LimitedReader.
+		earlyFrameData = io.LimitReader(br, int64(br.Buffered()))
 	}
 
 	bc.connMutex.Lock()
@@ -116,10 +165,10 @@ func (bc *BroadcastClient) connect(ctx context.Context) error {
 
 	log.Info("Connected")
 
-	return nil
+	return
 }
 
-func (bc *BroadcastClient) startBackgroundReader() {
+func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
@@ -128,7 +177,7 @@ func (bc *BroadcastClient) startBackgroundReader() {
 			default:
 			}
 
-			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, bc.idleTimeout, ws.StateClientSide)
+			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.idleTimeout, ws.StateClientSide)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return
@@ -139,7 +188,7 @@ func (bc *BroadcastClient) startBackgroundReader() {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}
 				_ = bc.conn.Close()
-				bc.retryConnect(ctx)
+				earlyFrameData = bc.retryConnect(ctx)
 				continue
 			}
 
@@ -165,7 +214,7 @@ func (bc *BroadcastClient) startBackgroundReader() {
 						for _, message := range res.Messages {
 							messages = append(messages, message.Message)
 						}
-						if err := bc.txStreamer.AddMessages(res.Messages[0].SequenceNumber, false, messages); err != nil {
+						if err := bc.txStreamer.AddBroadcastMessages(res.Messages[0].SequenceNumber, messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}
@@ -188,33 +237,37 @@ func (bc *BroadcastClient) isShuttingDown() bool {
 	return bc.shuttingDown
 }
 
-func (bc *BroadcastClient) retryConnect(ctx context.Context) {
+func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 	maxWaitDuration := 15 * time.Second
 	waitDuration := 500 * time.Millisecond
 	bc.retrying = true
 
 	for !bc.isShuttingDown() {
+		timer := time.NewTimer(waitDuration)
 		select {
 		case <-ctx.Done():
-			return
-		case <-time.After(waitDuration):
+			timer.Stop()
+			return nil
+		case <-timer.C:
 		}
 
 		atomic.AddInt64(&bc.retryCount, 1)
-		err := bc.connect(ctx)
+		earlyFrameData, err := bc.connect(ctx)
 		if err == nil {
 			bc.retrying = false
-			return
+			return earlyFrameData
 		}
 
 		if waitDuration < maxWaitDuration {
 			waitDuration += 500 * time.Millisecond
 		}
 	}
+	return nil
 }
 
-func (bc *BroadcastClient) Close() {
+func (bc *BroadcastClient) StopAndWait() {
 	log.Debug("closing broadcaster client connection")
+	bc.StopWaiter.StopAndWait()
 	bc.connMutex.Lock()
 	defer bc.connMutex.Unlock()
 

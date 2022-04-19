@@ -1,18 +1,5 @@
-/*
- * Copyright 2021-2022, Offchain Labs, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package wsbroadcastserver
 
@@ -29,19 +16,41 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
 	"github.com/mailru/easygo/netpoll"
+	flag "github.com/spf13/pflag"
 )
 
 type BroadcasterConfig struct {
-	Addr          string
-	IOTimeout     time.Duration
-	Port          string
-	Ping          time.Duration
-	ClientTimeout time.Duration
-	Queue         int
-	Workers       int
+	Enable        bool          `koanf:"enable"`
+	Addr          string        `koanf:"addr"`
+	IOTimeout     time.Duration `koanf:"io-timeout"`
+	Port          string        `koanf:"port"`
+	Ping          time.Duration `koanf:"ping"`
+	ClientTimeout time.Duration `koanf:"client-timeout"`
+	Queue         int           `koanf:"queue"`
+	Workers       int           `koanf:"workers"`
 }
 
-var DefaultBroadcasterConfig BroadcasterConfig
+func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultBroadcasterConfig.Enable, "enable broadcaster")
+	f.String(prefix+".addr", DefaultBroadcasterConfig.Addr, "address to bind the relay feed output to")
+	f.Duration(prefix+".io-timeout", DefaultBroadcasterConfig.IOTimeout, "duration to wait before timing out HTTP to WS upgrade")
+	f.String(prefix+".port", DefaultBroadcasterConfig.Port, "port to bind the relay feed output to")
+	f.Duration(prefix+".ping", DefaultBroadcasterConfig.Ping, "duration for ping interval")
+	f.Duration(prefix+".client-timeout", DefaultBroadcasterConfig.ClientTimeout, "duration to wait before timing out connections to client")
+	f.Int(prefix+".queue", DefaultBroadcasterConfig.Queue, "queue size")
+	f.Int(prefix+".workers", DefaultBroadcasterConfig.Workers, "number of threads to reserve for HTTP to WS upgrade")
+}
+
+var DefaultBroadcasterConfig = BroadcasterConfig{
+	Enable:        false,
+	Addr:          "",
+	IOTimeout:     5 * time.Second,
+	Port:          "9642",
+	Ping:          5 * time.Second,
+	ClientTimeout: 15 * time.Second,
+	Queue:         100,
+	Workers:       100,
+}
 
 type WSBroadcastServer struct {
 	startMutex    *sync.Mutex
@@ -191,7 +200,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 			if errors.Is(err, gopool.ErrScheduleTimeout) {
 				var netError net.Error
 				success := errors.As(err, &netError)
-				if !success || !netError.Temporary() {
+				if !success || !netError.Timeout() {
 					log.Error("error in poller.Start", "err", err)
 					return
 				}

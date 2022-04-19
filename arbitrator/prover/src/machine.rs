@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use crate::{
     binary::{
         BlockType, Code, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
@@ -44,18 +47,19 @@ pub enum InboxIdentifier {
     Delayed,
 }
 
-pub fn argument_data_to_inbox(argument_data: u64) -> Result<InboxIdentifier, ()> {
+pub fn argument_data_to_inbox(argument_data: u64) -> Option<InboxIdentifier> {
     match argument_data {
-        0x0 => Ok(InboxIdentifier::Sequencer),
-        0x1 => Ok(InboxIdentifier::Delayed),
-        _ => Err(()),
+        0x0 => Some(InboxIdentifier::Sequencer),
+        0x1 => Some(InboxIdentifier::Delayed),
+        _ => None,
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Function {
     code: Vec<Instruction>,
     ty: FunctionType,
+    #[serde(skip)]
     code_merkle: Merkle,
     local_types: Vec<ValueType>,
 }
@@ -91,17 +95,17 @@ impl Function {
             });
         }
         insts.push(Instruction::simple(Opcode::PushStackBoundary));
-        let codegen_state = FunctionCodegenState::new(func_ty.outputs.len(), fp_impls);
+        let mut codegen_state = FunctionCodegenState::new(func_ty.outputs.len(), fp_impls);
 
         Instruction::extend_from_hir(
             &mut insts,
-            codegen_state,
+            &mut codegen_state,
             crate::binary::HirInstruction::Block(func_block_ty, code.expr),
         )?;
 
         Instruction::extend_from_hir(
             &mut insts,
-            codegen_state,
+            &mut codegen_state,
             crate::binary::HirInstruction::Simple(Opcode::Return),
         )?;
 
@@ -188,7 +192,7 @@ impl StackFrame {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct TableElement {
     func_ty: FunctionType,
     val: Value,
@@ -213,17 +217,17 @@ impl TableElement {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Table {
     ty: TableType,
     elems: Vec<TableElement>,
+    #[serde(skip)]
     elems_merkle: Merkle,
 }
 
 impl Table {
     fn serialize_for_proof(&self) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.push(Into::<ValueType>::into(self.ty.ty).serialize());
+        let mut data = vec![Into::<ValueType>::into(self.ty.ty).serialize()];
         data.extend(&(self.elems.len() as u64).to_be_bytes());
         data.extend(self.elems_merkle.root());
         data
@@ -240,10 +244,11 @@ impl Table {
 }
 
 fn make_internal_func(opcode: Opcode, ty: FunctionType) -> Function {
-    let mut wavm = Vec::new();
-    wavm.push(Instruction::simple(Opcode::InitFrame));
-    wavm.push(Instruction::simple(opcode));
-    wavm.push(Instruction::simple(Opcode::Return));
+    let wavm = vec![
+        Instruction::simple(Opcode::InitFrame),
+        Instruction::simple(opcode),
+        Instruction::simple(Opcode::Return),
+    ];
     Function::new_from_wavm(wavm, ty, Vec::new())
 }
 
@@ -254,13 +259,15 @@ struct AvailableImport {
     func: u32,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Module {
     globals: Vec<Value>,
     memory: Memory,
     tables: Vec<Table>,
+    #[serde(skip)]
     tables_merkle: Merkle,
     funcs: Arc<Vec<Function>>,
+    #[serde(skip)]
     funcs_merkle: Arc<Merkle>,
     types: Arc<Vec<FunctionType>>,
     internals_offset: u32,
@@ -296,13 +303,14 @@ impl Module {
                         "Import has different function signature than host function. Expected {:?} but got {:?}",
                         import.ty, have_ty,
                     );
-                    let mut wavm = Vec::new();
-                    wavm.push(Instruction::simple(Opcode::InitFrame));
-                    wavm.push(Instruction::with_data(
-                        Opcode::CrossModuleCall,
-                        pack_cross_module_call(import.func, import.module),
-                    ));
-                    wavm.push(Instruction::simple(Opcode::Return));
+                    let wavm = vec![
+                        Instruction::simple(Opcode::InitFrame),
+                        Instruction::with_data(
+                            Opcode::CrossModuleCall,
+                            pack_cross_module_call(import.func, import.module),
+                        ),
+                        Instruction::simple(Opcode::Return),
+                    ];
                     func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                 } else {
                     func = get_host_impl(
@@ -610,13 +618,13 @@ impl Deref for LazyModuleMerkle<'_> {
     type Target = Module;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0
     }
 }
 
 impl DerefMut for LazyModuleMerkle<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        self.0
     }
 }
 
@@ -761,10 +769,9 @@ where
     if matches!(
         op,
         IBinOpType::DivS | IBinOpType::DivU | IBinOpType::RemS | IBinOpType::RemU,
-    ) {
-        if b.is_zero() {
-            return T::zero();
-        }
+    ) && b.is_zero()
+    {
+        return T::zero();
     }
     let res = match op {
         IBinOpType::Add => a + b,
@@ -856,7 +863,7 @@ impl Machine {
                     name.clone(),
                     AvailableImport {
                         module: modules.len() as u32,
-                        func: func,
+                        func,
                         ty: ty.clone(),
                     },
                 );
@@ -1063,6 +1070,68 @@ impl Machine {
         Ok(mach)
     }
 
+    pub fn new_from_wavm(wavm_binary: &Path) -> eyre::Result<Machine> {
+        let f = BufReader::new(File::open(wavm_binary)?);
+        let decompressor = brotli2::read::BrotliDecoder::new(f);
+        let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
+        for module in modules.iter_mut() {
+            for table in module.tables.iter_mut() {
+                table.elems_merkle = Merkle::new(
+                    MerkleType::TableElement,
+                    table.elems.iter().map(TableElement::hash).collect(),
+                );
+            }
+            module.tables_merkle = Merkle::new(
+                MerkleType::Table,
+                module.tables.iter().map(Table::hash).collect(),
+            );
+            let funcs =
+                Arc::get_mut(&mut module.funcs).expect("Multiple copies of module functions");
+            for func in funcs.iter_mut() {
+                func.code_merkle = Merkle::new(
+                    MerkleType::Instruction,
+                    func.code.par_iter().map(|i| i.hash()).collect(),
+                );
+            }
+            module.funcs_merkle = Arc::new(Merkle::new(
+                MerkleType::Function,
+                module.funcs.iter().map(Function::hash).collect(),
+            ));
+        }
+        let mut mach = Machine {
+            status: MachineStatus::Running,
+            steps: 0,
+            value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
+            internal_stack: Vec::new(),
+            block_stack: Vec::new(),
+            frame_stack: Vec::new(),
+            modules,
+            modules_merkle: None,
+            global_state: Default::default(),
+            pc: ProgramCounter::default(),
+            stdio_output: Vec::new(),
+            inbox_contents: Default::default(),
+            preimages: Default::default(),
+            initial_hash: Bytes32::default(),
+        };
+        mach.initial_hash = mach.hash();
+        Ok(mach)
+    }
+
+    pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
+        ensure!(
+            self.hash() == self.initial_hash,
+            "serialize_binary can only be called on initial machine",
+        );
+        let mut f = File::create(path)?;
+        let mut compressor = brotli2::write::BrotliEncoder::new(BufWriter::new(&mut f), 9);
+        bincode::serialize_into(&mut compressor, &self.modules)?;
+        compressor.flush()?;
+        drop(compressor);
+        f.sync_data()?;
+        Ok(())
+    }
+
     pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
         let mut f = File::create(path)?;
         let mut writer = BufWriter::new(&mut f);
@@ -1184,7 +1253,18 @@ impl Machine {
                 }
             }
         }
+        self.step_impl();
+        if self.is_halted() && !self.stdio_output.is_empty() {
+            // If we halted, print out any trailing output that didn't have a newline.
+            println!(
+                "\x1b[33mWASM says:\x1b[0m {}",
+                String::from_utf8_lossy(&self.stdio_output),
+            );
+            self.stdio_output.clear();
+        }
+    }
 
+    fn step_impl(&mut self) {
         // Updates the modules_merkle on drop
         let mut module = LazyModuleMerkle(
             &mut self.modules[self.pc.module],
@@ -1203,19 +1283,14 @@ impl Machine {
             Opcode::Block => {
                 let idx = inst.argument_data as usize;
                 self.block_stack.push(idx);
-                self.pc.block_depth += 1;
                 assert!(module.funcs[self.pc.func].code.len() > idx);
             }
             Opcode::EndBlock => {
-                assert!(self.pc.block_depth > 0);
-                self.pc.block_depth -= 1;
                 self.block_stack.pop();
             }
             Opcode::EndBlockIf => {
                 let x = self.value_stack.last().unwrap();
                 if !x.is_i32_zero() {
-                    assert!(self.pc.block_depth > 0);
-                    self.pc.block_depth -= 1;
                     self.block_stack.pop().unwrap();
                 }
             }
@@ -1235,6 +1310,10 @@ impl Machine {
                     caller_module_internals,
                 });
             }
+            Opcode::ArbitraryJump => {
+                self.pc.inst = inst.argument_data as usize;
+                Machine::test_next_instruction(&module, &self.pc);
+            }
             Opcode::ArbitraryJumpIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
@@ -1243,16 +1322,12 @@ impl Machine {
                 }
             }
             Opcode::Branch => {
-                assert!(self.pc.block_depth > 0);
-                self.pc.block_depth -= 1;
                 self.pc.inst = self.block_stack.pop().unwrap();
                 Machine::test_next_instruction(&module, &self.pc);
             }
             Opcode::BranchIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
-                    assert!(self.pc.block_depth > 0);
-                    self.pc.block_depth -= 1;
                     self.pc.inst = self.block_stack.pop().unwrap();
                     Machine::test_next_instruction(&module, &self.pc);
                 }
@@ -1276,7 +1351,6 @@ impl Machine {
                     .push(Value::I32(current_frame.caller_module_internals));
                 self.pc.func = inst.argument_data as usize;
                 self.pc.inst = 0;
-                self.pc.block_depth = 0;
             }
             Opcode::CrossModuleCall => {
                 self.value_stack.push(Value::InternalRef(self.pc));
@@ -1286,7 +1360,6 @@ impl Machine {
                 self.pc.module = module as usize;
                 self.pc.func = func as usize;
                 self.pc.inst = 0;
-                self.pc.block_depth = 0;
             }
             Opcode::CallerModuleInternalCall => {
                 self.value_stack.push(Value::InternalRef(self.pc));
@@ -1302,7 +1375,6 @@ impl Machine {
                     self.pc.module = current_frame.caller_module as usize;
                     self.pc.func = func_idx as usize;
                     self.pc.inst = 0;
-                    self.pc.block_depth = 0;
                 } else {
                     // The caller module has no internals
                     self.status = MachineStatus::Errored;
@@ -1330,7 +1402,6 @@ impl Machine {
                                 .push(Value::I32(current_frame.caller_module_internals));
                             self.pc.func = func as usize;
                             self.pc.inst = 0;
-                            self.pc.block_depth = 0;
                         }
                         Value::RefNull => {
                             self.status = MachineStatus::Errored;
@@ -1477,7 +1548,6 @@ impl Machine {
                     v => panic!("WASM validation failed: bad value for memory.grow {:?}", v),
                 };
                 let new_size = (|| {
-                    let old_size = u64::try_from(old_size).ok()?;
                     let adding_size =
                         u64::from(adding_pages).checked_mul(Memory::PAGE_SIZE as u64)?;
                     let new_size = old_size.checked_add(adding_size)?;
@@ -1616,11 +1686,10 @@ impl Machine {
             Opcode::GetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx >= self.global_state.bytes32_vals.len() {
-                    self.status = MachineStatus::Errored;
-                } else if !module
-                    .memory
-                    .store_slice_aligned(ptr.into(), &*self.global_state.bytes32_vals[idx])
+                if idx >= self.global_state.bytes32_vals.len()
+                    || !module
+                        .memory
+                        .store_slice_aligned(ptr.into(), &*self.global_state.bytes32_vals[idx])
                 {
                     self.status = MachineStatus::Errored;
                 }
@@ -1746,10 +1815,12 @@ impl Machine {
         match (module_name, name) {
             ("wasi_snapshot_preview1", "proc_exit") | ("env", "exit") => {
                 let exit_code = pull_arg!(0, I32);
-                println!(
-                    "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{}\x1b[0m",
-                    exit_code,
-                );
+                if exit_code != 0 {
+                    println!(
+                        "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{}\x1b[0m",
+                        exit_code,
+                    );
+                }
                 Ok(())
             }
             ("wasi_snapshot_preview1", "fd_write") => {
@@ -1758,7 +1829,6 @@ impl Machine {
                     // Not stdout or stderr, ignore
                     return Ok(());
                 }
-                let mut data = Vec::new();
                 let iovecs_ptr = pull_arg!(2, I32);
                 let iovecs_len = pull_arg!(1, I32);
                 for offset in 0..iovecs_len {
@@ -1768,10 +1838,19 @@ impl Machine {
 
                     let data_ptr = read_u32_ptr!(data_ptr_ptr);
                     let data_size = read_u32_ptr!(data_size_ptr);
-                    data.extend_from_slice(read_bytes_segment!(data_ptr, data_size));
+                    self.stdio_output
+                        .extend_from_slice(read_bytes_segment!(data_ptr, data_size));
                 }
-                println!("WASM says: {:?}", String::from_utf8_lossy(&data));
-                self.stdio_output.extend(data);
+                while let Some(mut idx) = self.stdio_output.iter().position(|&c| c == b'\n') {
+                    println!(
+                        "\x1b[33mWASM says:\x1b[0m {}",
+                        String::from_utf8_lossy(&self.stdio_output[..idx]),
+                    );
+                    if self.stdio_output.get(idx + 1) == Some(&b'\r') {
+                        idx += 1;
+                    }
+                    self.stdio_output = self.stdio_output.split_off(idx + 1);
+                }
                 Ok(())
             }
             _ => Ok(()),
@@ -1834,9 +1913,7 @@ impl Machine {
         // Could be variable, but not worth it yet
         const STACK_PROVING_DEPTH: usize = 3;
 
-        let mut data = Vec::new();
-
-        data.push(self.status as u8);
+        let mut data = vec![self.status as u8];
 
         data.extend(prove_stack(
             &self.value_stack,
@@ -2051,8 +2128,8 @@ impl Machine {
                             .get(self.value_stack.len() - 3)
                             .unwrap()
                             .assume_u64();
-                        let inbox_identifier =
-                            argument_data_to_inbox(next_inst.argument_data).unwrap();
+                        let inbox_identifier = argument_data_to_inbox(next_inst.argument_data)
+                            .expect("Bad inbox indentifier");
                         if let Some(msg_data) =
                             self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {
@@ -2110,17 +2187,10 @@ impl Machine {
         };
         push_pc(self.pc);
         for frame in self.frame_stack.iter().rev() {
-            match frame.return_ref {
-                Value::InternalRef(pc) => {
-                    push_pc(pc);
-                }
-                _ => {}
+            if let Value::InternalRef(pc) = frame.return_ref {
+                push_pc(pc);
             }
         }
         res
-    }
-
-    pub fn get_stdio_output(&self) -> &[u8] {
-        &self.stdio_output
     }
 }

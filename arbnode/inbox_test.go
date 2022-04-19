@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbnode
 
@@ -17,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -57,15 +57,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	// Add the init message
-	err = inbox.AddMessages(0, false, []arbstate.MessageWithMetadata{{
-		Message: &arbos.L1IncomingMessage{
-			Header: &arbos.L1IncomingMessageHeader{
-				Kind: arbos.L1MessageType_Initialize,
-			},
-			L2msg: []byte{},
-		},
-		DelayedMessagesRead: 0,
-	}})
+	err = inbox.AddFakeInitMessage()
 	if err != nil {
 		Fail(t, err)
 	}
@@ -98,7 +90,7 @@ func TestTransactionStreamer(t *testing.T) {
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]*big.Int{
-			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(1_000_000)),
+			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(int64(nitroutil.NormalizeL2GasForL1GasInitial(1_000_000, params.GWei)))),
 		},
 		accounts:    []common.Address{rewrittenOwnerAddress},
 		numMessages: 1,
@@ -204,9 +196,9 @@ func TestTransactionStreamer(t *testing.T) {
 	}
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	testhelpers.RequireImpl(t, err, printables...)
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

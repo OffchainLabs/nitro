@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbosState
 
@@ -20,7 +19,7 @@ func TestStorageOpenFromEmpty(t *testing.T) {
 }
 
 func TestMemoryBackingEvmStorage(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	value, err := sto.Get(common.Hash{})
 	Require(t, err)
 	if value != (common.Hash{}) {

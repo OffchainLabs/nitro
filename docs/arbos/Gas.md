@@ -26,7 +26,7 @@ Because a call to [`redeem`](Precompiles.md#ArbRetryableTx) donates all of the c
 Gas estimation for Retryable submissions is possible via [`NodeInterface.sol`][node_interface_link] and similarly requires the auto-redeem attempt succeed.
 
 [estimation_inclusion_link]: https://github.com/OffchainLabs/go-ethereum/blob/edf6a19157606070b6a6660c8decc513e2408cb7/internal/ethapi/api.go#L955
-[node_interface_link]: https://github.com/OffchainLabs/nitro/blob/master/solgen/src/node_interface/NodeInterface.sol
+[node_interface_link]: https://github.com/OffchainLabs/nitro/blob/master/solgen/src/node-interface/NodeInterface.sol
 
 ## NodeInterface.sol<a name=NodeInterface.sol></a>
 To avoid creating new RPC methods for client-side tooling, nitro geth's [`InterceptRPCMessage`][InterceptRPCMessage_link] hook provides an opportunity to swap out the message its handling before deriving a transaction from it. The node [uses this hook][use_hook_link] to detect messages sent to the address `0xc8`, the location of the fictional `NodeInterface` contract specified in [`NodeInterface.sol`][node_interface_link].

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package util
 
@@ -12,9 +11,6 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/offchainlabs/nitro/util"
-
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -25,6 +21,10 @@ var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
 var ParseRedeemScheduledLog func(interface{}, *types.Log) error
 var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
+var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
+var UnpackInternalTxDataStartBlock func([]byte) ([]interface{}, error)
+var PackArbRetryableTxSubmitRetryable func(...interface{}) ([]byte, error)
+var PackArbRetryableTxRedeem func(...interface{}) ([]byte, error)
 
 func init() {
 	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
@@ -60,8 +60,35 @@ func init() {
 		}
 	}
 
+	// Create a mechanism for packing and unpacking calls
+	callParser := func(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) ([]interface{}, error)) {
+		contract, err := abi.JSON(strings.NewReader(source))
+		if err != nil {
+			panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
+		}
+		method, ok := contract.Methods[name]
+		if !ok {
+			panic(fmt.Sprintf("method %v does not exist", name))
+		}
+		pack := func(args ...interface{}) ([]byte, error) {
+			return contract.Pack(name, args...)
+		}
+		unpack := func(data []byte) ([]interface{}, error) {
+			if len(data) < 4 {
+				return nil, errors.New("Data not long enough")
+			}
+			return method.Inputs.Unpack(data[4:])
+		}
+		return pack, unpack
+	}
+
 	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
 	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
+
+	acts := precompilesgen.ArbosActsABI
+	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")
+	PackArbRetryableTxSubmitRetryable, _ = callParser(precompilesgen.ArbRetryableTxABI, "submitRetryable")
+	PackArbRetryableTxRedeem, _ = callParser(precompilesgen.ArbRetryableTxABI, "redeem")
 }
 
 func AddressToHash(address common.Address) common.Hash {
@@ -181,25 +208,27 @@ func DoesTxTypeAlias(txType *byte) bool {
 	}
 	switch *txType {
 	case types.ArbitrumUnsignedTxType:
+		fallthrough
 	case types.ArbitrumContractTxType:
+		fallthrough
 	case types.ArbitrumRetryTxType:
 		return true
 	}
 	return false
 }
 
-func TransferBalance(from, to common.Address, amount *big.Int, statedb vm.StateDB) error {
-	balance := statedb.GetBalance(from)
-	if util.BigLessThan(balance, amount) {
-		return fmt.Errorf("%w: address %v have %v want %v", vm.ErrInsufficientBalance, from, balance, amount)
+func TxTypeHasPosterCosts(txType byte) bool {
+	switch txType {
+	case types.ArbitrumUnsignedTxType:
+		fallthrough
+	case types.ArbitrumContractTxType:
+		fallthrough
+	case types.ArbitrumRetryTxType:
+		fallthrough
+	case types.ArbitrumInternalTxType:
+		fallthrough
+	case types.ArbitrumSubmitRetryableTxType:
+		return false
 	}
-	statedb.SubBalance(from, amount)
-	statedb.AddBalance(to, amount)
-	return nil
-}
-
-func TransferEverything(from, to common.Address, statedb vm.StateDB) {
-	amount := statedb.GetBalance(from)
-	statedb.SubBalance(from, amount)
-	statedb.AddBalance(to, amount)
+	return true
 }

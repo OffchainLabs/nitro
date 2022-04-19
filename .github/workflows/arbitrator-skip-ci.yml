@@ -4,19 +4,13 @@ on:
   pull_request:
     paths-ignore:
       - 'arbitrator/**'
-      - 'solgen/src/osp/**'
-      - 'solgen/src/mock/**'
-      - 'solgen/test/**'
-      - 'solgen/hardhat.config.ts'
+      - 'contracts/src/osp/**'
+      - 'contracts/src/mock/**'
+      - 'contracts/test/**'
+      - 'contracts/hardhat.config.ts'
       - 'Makefile'
 
 jobs:
-  rustfmt:
-    name: Rust formatting check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Do nothing
-        run: echo "doing nothing"
   coverage:
     name: Run Arbitrator tests
     runs-on: ubuntu-latest

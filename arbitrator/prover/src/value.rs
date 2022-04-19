@@ -1,10 +1,15 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+use crate::{
+    binary::{FloatType, RefType},
+    utils::Bytes32,
+};
 use digest::Digest;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 
-use crate::utils::Bytes32;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ValueType {
     I32,
@@ -23,15 +28,33 @@ impl ValueType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+impl From<FloatType> for ValueType {
+    fn from(ty: FloatType) -> ValueType {
+        match ty {
+            FloatType::F32 => ValueType::F32,
+            FloatType::F64 => ValueType::F64,
+        }
+    }
+}
+
+impl From<RefType> for ValueType {
+    fn from(ty: RefType) -> ValueType {
+        match ty {
+            RefType::FuncRef => ValueType::FuncRef,
+            RefType::ExternRef => panic!("Extern refs not supported"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub enum IntegerValType {
     I32,
     I64,
 }
 
-impl Into<ValueType> for IntegerValType {
-    fn into(self) -> ValueType {
-        match self {
+impl From<IntegerValType> for ValueType {
+    fn from(ty: IntegerValType) -> ValueType {
+        match ty {
             IntegerValType::I32 => ValueType::I32,
             IntegerValType::I64 => ValueType::I64,
         }
@@ -43,19 +66,9 @@ pub struct ProgramCounter {
     pub module: usize,
     pub func: usize,
     pub inst: usize,
-    pub block_depth: usize,
 }
 
 impl ProgramCounter {
-    pub fn new(module: usize, func: usize, inst: usize, block_depth: usize) -> ProgramCounter {
-        ProgramCounter {
-            module,
-            func,
-            inst,
-            block_depth,
-        }
-    }
-
     pub fn serialize(self) -> Bytes32 {
         let mut b = [0u8; 32];
         b[28..].copy_from_slice(&(self.inst as u32).to_be_bytes());
@@ -175,7 +188,7 @@ impl PartialEq for Value {
 
 impl Eq for Value {}
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionType {
     pub inputs: Vec<ValueType>,
     pub outputs: Vec<ValueType>,

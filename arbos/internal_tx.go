@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
 
@@ -11,40 +10,71 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 // Types of ArbitrumInternalTx, distinguished by the first data byte
 const (
 	// Contains 8 bytes indicating the big endian L1 block number to set
-	arbInternalTxUpdateL1BlockNumber uint8 = 0
+	arbInternalTxStartBlock uint8 = 0
 )
 
-func InternalTxUpdateL1BlockNumber(chainId, l1BlockNumber, l2BlockNumber *big.Int, txIndex uint64) *types.ArbitrumInternalTx {
+func InternalTxStartBlock(
+	chainId,
+	l1BaseFee *big.Int,
+	l1BlockNum uint64,
+	header,
+	lastHeader *types.Header,
+) *types.ArbitrumInternalTx {
+
+	l2BlockNum := header.Number.Uint64()
+	timePassed := header.Time - lastHeader.Time
+
+	if l1BaseFee == nil {
+		l1BaseFee = big.NewInt(0)
+	}
+	data, err := util.PackInternalTxDataStartBlock(l1BaseFee, lastHeader.BaseFee, l1BlockNum, timePassed)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to pack internal tx %v", err))
+	}
 	return &types.ArbitrumInternalTx{
-		ChainId:     chainId,
-		Type:        arbInternalTxUpdateL1BlockNumber,
-		Data:        rlp.AppendUint64([]byte{}, l1BlockNumber.Uint64()),
-		BlockNumber: l2BlockNumber.Uint64(),
-		TxIndex:     txIndex,
+		ChainId:       chainId,
+		SubType:       arbInternalTxStartBlock,
+		Data:          data,
+		L2BlockNumber: l2BlockNum,
 	}
 }
 
-func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, blockContext vm.BlockContext) error {
-	switch tx.Type {
-	case arbInternalTxUpdateL1BlockNumber:
-		var l1BlockNumber uint64
-		err := rlp.DecodeBytes(tx.Data, &l1BlockNumber)
-		if err != nil {
-			return err
-		}
-		var prevHash common.Hash
-		if blockContext.BlockNumber.Sign() > 0 {
-			prevHash = blockContext.GetHash(blockContext.BlockNumber.Uint64() - 1)
-		}
-		return state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash)
-	default:
-		return fmt.Errorf("unknown ArbitrumInternalTx type %v", tx.Type)
+func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) {
+	inputs, err := util.UnpackInternalTxDataStartBlock(tx.Data)
+	if err != nil {
+		panic(err)
 	}
+	l1BaseFee, _ := inputs[0].(*big.Int)   // current block's
+	l2BaseFee, _ := inputs[1].(*big.Int)   // last block's
+	l1BlockNumber, _ := inputs[2].(uint64) // current block's
+	timePassed, _ := inputs[3].(uint64)    // since last block
+
+	nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
+	state.Restrict(err)
+
+	if l1BlockNumber >= nextL1BlockNumber {
+		var prevHash common.Hash
+		if evm.Context.BlockNumber.Sign() > 0 {
+			prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
+		}
+		state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash))
+	}
+
+	currentTime := evm.Context.Time.Uint64()
+
+	// Try to reap 2 retryables
+	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+
+	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+	state.L1PricingState().UpdatePricingModel(l1BaseFee, currentTime)
+
+	state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
 }

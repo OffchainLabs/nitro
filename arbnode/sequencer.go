@@ -1,13 +1,12 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbnode
 
 import (
 	"context"
 	"fmt"
-	"math/big"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,19 +16,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
 )
-
-// TODO: make these configurable
-const minBlockInterval time.Duration = time.Millisecond * 100
-const maxRevertGasReject uint64 = params.TxGas + 10000
-const maxAcceptableTimestampDeltaSeconds int64 = 60 * 60
 
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
 const maxTxDataSize uint64 = 112065
@@ -50,7 +42,8 @@ type Sequencer struct {
 
 	txStreamer *TransactionStreamer
 	txQueue    chan txQueueItem
-	l1Client   arbutil.L1Interface
+	l1Reader   *L1Reader
+	config     SequencerConfig
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -60,11 +53,12 @@ type Sequencer struct {
 	forwarder      *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Reader *L1Reader, config SequencerConfig) (*Sequencer, error) {
 	return &Sequencer{
 		txStreamer:    txStreamer,
 		txQueue:       make(chan txQueueItem, 128),
-		l1Client:      l1Client,
+		l1Reader:      l1Reader,
+		config:        config,
 		l1BlockNumber: 0,
 		l1Timestamp:   0,
 	}, nil
@@ -72,10 +66,15 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface)
 
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
 	resultChan := make(chan error, 1)
-	s.txQueue <- txQueueItem{
+	queueItem := txQueueItem{
 		tx,
 		resultChan,
 		ctx,
+	}
+	select {
+	case s.txQueue <- queueItem:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	select {
 	case res := <-resultChan:
@@ -85,7 +84,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
 	agg, err := state.L1PricingState().ReimbursableAggregatorForSender(sender)
 	if err != nil {
 		return err
@@ -96,8 +95,8 @@ func preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender com
 	return nil
 }
 
-func postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, receipt *types.Receipt) error {
-	if receipt.Status == types.ReceiptStatusFailed && receipt.GasUsed > dataGas && receipt.GasUsed-dataGas <= maxRevertGasReject {
+func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, receipt *types.Receipt) error {
+	if receipt.Status == types.ReceiptStatusFailed && receipt.GasUsed > dataGas && receipt.GasUsed-dataGas <= s.config.MaxRevertGasReject {
 		return vm.ErrExecutionReverted
 	}
 	return nil
@@ -141,31 +140,7 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	return true
 }
 
-func int64Abs(a int64) int64 {
-	if a < 0 {
-		return -a
-	} else {
-		return a
-	}
-}
-
 func (s *Sequencer) sequenceTransactions(ctx context.Context) {
-	timestamp := time.Now().Unix()
-	s.L1BlockAndTimeMutex.Lock()
-	l1Block := s.l1BlockNumber
-	l1Timestamp := s.l1Timestamp
-	s.L1BlockAndTimeMutex.Unlock()
-
-	if s.l1Client != nil && (l1Block == 0 || int64Abs(int64(l1Timestamp)-timestamp) > maxAcceptableTimestampDeltaSeconds) {
-		log.Error(
-			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
-			"l1Block", l1Block,
-			"l1Timestamp", l1Timestamp,
-			"localTimestamp", timestamp,
-		)
-		return
-	}
-
 	var txes types.Transactions
 	var queueItems []txQueueItem
 	var totalBatchSize int
@@ -223,18 +198,34 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		return
 	}
 
+	timestamp := time.Now().Unix()
+	s.L1BlockAndTimeMutex.Lock()
+	l1Block := s.l1BlockNumber
+	l1Timestamp := s.l1Timestamp
+	s.L1BlockAndTimeMutex.Unlock()
+
+	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config.MaxAcceptableTimestampDelta.Seconds()) {
+		log.Error(
+			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
+			"l1Block", l1Block,
+			"l1Timestamp", l1Timestamp,
+			"localTimestamp", timestamp,
+		)
+		return
+	}
+
 	header := &arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_L2Message,
 		Poster:      l1pricing.SequencerAddress,
-		BlockNumber: common.BigToHash(new(big.Int).SetUint64(l1Block)),
-		Timestamp:   common.BigToHash(new(big.Int).SetInt64(timestamp)),
-		RequestId:   common.Hash{},
-		BaseFeeL1:   common.Hash{},
+		BlockNumber: l1Block,
+		Timestamp:   uint64(timestamp),
+		RequestId:   nil,
+		L1BaseFee:   nil,
 	}
 
 	hooks := &arbos.SequencingHooks{
-		PreTxFilter:    preTxFilter,
-		PostTxFilter:   postTxFilter,
+		PreTxFilter:    s.preTxFilter,
+		PostTxFilter:   s.postTxFilter,
 		RequireDataGas: true,
 		TxErrors:       []error{},
 	}
@@ -292,11 +283,11 @@ func (s *Sequencer) updateLatestL1Block(header *types.Header) {
 }
 
 func (s *Sequencer) Initialize(ctx context.Context) error {
-	if s.l1Client == nil {
+	if s.l1Reader == nil {
 		return nil
 	}
 
-	header, err := s.l1Client.HeaderByNumber(ctx, nil)
+	header, err := s.l1Reader.LastHeader(ctx)
 	if err != nil {
 		return err
 	}
@@ -306,13 +297,13 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn)
-	if s.l1Client != nil {
+	if s.l1Reader != nil {
 		initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
 		if initialBlockNr == 0 {
 			return errors.New("sequencer not initialized")
 		}
 
-		headerChan, cancel := arbutil.HeaderSubscribeWithRetry(s.GetContext(), s.l1Client)
+		headerChan, cancel := s.l1Reader.Subscribe(false)
 
 		s.LaunchThread(func(ctx context.Context) {
 			defer cancel()
@@ -329,20 +320,13 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			}
 		})
 
-		s.CallIteratively(func(ctx context.Context) time.Duration {
-			header, err := s.l1Client.HeaderByNumber(s.GetContext(), nil)
-			if err != nil {
-				log.Warn("failed to get current L1 header", "err", err)
-				return time.Second * 5
-			}
-			s.updateLatestL1Block(header)
-			return time.Second
-		})
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
+		nextBlock := time.Now().Add(s.config.MaxBlockSpeed)
 		s.sequenceTransactions(ctx)
-		return minBlockInterval
+		// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
+		return time.Until(nextBlock)
 	})
 
 	return nil

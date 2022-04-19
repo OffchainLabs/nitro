@@ -1,14 +1,13 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -83,12 +82,19 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
+type PreimageDAS struct {
+}
+
+func (das *PreimageDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
+	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
+	if err != nil {
+		return nil, err
+	}
+	return wavmio.ResolvePreImage(common.BytesToHash(cert.DataHash[:])), nil
+}
+
 func main() {
 	wavmio.StubInit()
-
-	// We initialize the elliptic curve before calling into wavmio.
-	// This allows the validator to cache the elliptic curve initialization.
-	btcec.S256()
 
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(raw)
@@ -111,24 +117,31 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
-	var delayedMessagesRead uint64
-	if lastBlockHeader != nil {
-		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
+	readMessage := func(dasEnabled bool) *arbstate.MessageWithMetadata {
+		var delayedMessagesRead uint64
+		if lastBlockHeader != nil {
+			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
+		}
+		var das arbstate.DataAvailabilityServiceReader
+		if dasEnabled {
+			das = &PreimageDAS{}
+		}
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead, das)
+		ctx := context.Background()
+		message, err := inboxMultiplexer.Pop(ctx)
+		if err != nil {
+			panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))
+		}
+
+		return message
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead)
-	messageWithMetadata, err := inboxMultiplexer.Pop()
-	if err != nil {
-		panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))
-	}
-	delayedMessagesRead = inboxMultiplexer.DelayedMessagesRead()
-	message := messageWithMetadata.Message
 
 	var newBlock *types.Block
 	if lastBlockStateRoot != (common.Hash{}) {
 		// ArbOS has already been initialized.
 		// Load the chain config and then produce a block normally.
 
-		initialArbosState, err := arbosState.OpenSystemArbosState(statedb, true)
+		initialArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 		if err != nil {
 			panic(fmt.Sprintf("Error opening initial ArbOS state: %v", err.Error()))
 		}
@@ -141,13 +154,17 @@ func main() {
 			panic(err)
 		}
 
+		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
+
 		chainContext := WavmChainContext{}
-		newBlock, _ = arbos.ProduceBlock(message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig)
+		newBlock, _ = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig)
 
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		chainId, err := message.ParseInitMessage()
+		message := readMessage(false)
+
+		chainId, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
 		}
@@ -155,7 +172,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(false), chainConfig)
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(nil, false), chainConfig)
 		if err != nil {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}

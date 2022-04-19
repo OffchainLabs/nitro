@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbosState
 
@@ -54,7 +53,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		log.Fatal("failed to init empty statedb", err)
 	}
 
-	burner := burn.NewSystemBurner(false)
+	burner := burn.NewSystemBurner(nil, false)
 	arbosState, err := InitializeArbosState(statedb, burner, chainConfig)
 	if err != nil {
 		log.Fatal("failed to open the ArbOS state", err)
@@ -144,7 +143,7 @@ func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.
 		if r.To != (common.Address{}) {
 			to = &r.To
 		}
-		_, err = rs.CreateRetryable(currentTimestampToUse, r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
+		_, err = rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
 		}
@@ -156,10 +155,6 @@ func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, acco
 	l1pState := arbosState.L1PricingState()
 	if account.AggregatorInfo != nil {
 		err := l1pState.SetAggregatorFeeCollector(account.Addr, account.AggregatorInfo.FeeCollector)
-		if err != nil {
-			return err
-		}
-		err = l1pState.SetFixedChargeForAggregatorL1Gas(account.Addr, account.AggregatorInfo.BaseFeeL1Gas)
 		if err != nil {
 			return err
 		}

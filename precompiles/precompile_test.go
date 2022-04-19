@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -16,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func TestEvents(t *testing.T) {
@@ -66,9 +65,9 @@ func TestEvents(t *testing.T) {
 	)
 	Require(t, err, "call failed")
 
-	burnedToStorage := storage.StorageReadCost                   // the ArbOS version check costs a read
-	burnedToArgs := util.WordsForBytes(32+32) * params.CopyGas   // bool and a bytes32
-	burnedToResult := util.WordsForBytes(32+32) * params.CopyGas // addr and a huge
+	burnedToStorage := storage.StorageReadCost                      // the ArbOS version check costs a read
+	burnedToArgs := arbmath.WordsForBytes(32+32) * params.CopyGas   // bool and a bytes32
+	burnedToResult := arbmath.WordsForBytes(32+32) * params.CopyGas // addr and a huge
 	burnedToEvents := ^uint64(0) - gasLeft - (burnedToStorage + burnedToArgs + burnedToResult)
 
 	if burnedToEvents != 3768 {

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -43,7 +42,7 @@ func NewValidatorTxBuilder(wallet *ValidatorWallet) (*ValidatorTxBuilder, error)
 		builderAuth: fakeAuth,
 		realSender:  wallet.From(),
 		wallet:      wallet,
-		L1Interface: wallet.client,
+		L1Interface: wallet.l1Reader.Client(),
 	}, nil
 }
 

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbnode
 
@@ -23,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var messageDeliveredID common.Hash
@@ -114,10 +114,10 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 	hash := crypto.Keccak256(
 		[]byte{m.Message.Header.Kind},
 		m.Message.Header.Poster.Bytes(),
-		m.Message.Header.BlockNumber.Bytes(),
-		m.Message.Header.Timestamp.Bytes(),
+		arbmath.UintToBytes(m.Message.Header.BlockNumber),
+		arbmath.UintToBytes(m.Message.Header.Timestamp),
 		m.Message.Header.RequestId.Bytes(),
-		m.Message.Header.BaseFeeL1.Bytes(),
+		math.U256Bytes(m.Message.Header.L1BaseFee),
 		crypto.Keccak256(m.Message.L2msg),
 	)
 	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
@@ -194,6 +194,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 			return nil, errors.New("found message data with mismatched hash")
 		}
 
+		requestId := common.BigToHash(parsedLog.MessageIndex)
 		msg := &DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
@@ -201,10 +202,10 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:        parsedLog.Kind,
 					Poster:      parsedLog.Sender,
-					BlockNumber: common.BigToHash(new(big.Int).SetUint64(parsedLog.Raw.BlockNumber)),
-					Timestamp:   common.BigToHash(parsedLog.Timestamp),
-					RequestId:   common.BigToHash(parsedLog.MessageIndex),
-					BaseFeeL1:   common.BigToHash(parsedLog.BaseFeeL1),
+					BlockNumber: parsedLog.Raw.BlockNumber,
+					Timestamp:   parsedLog.Timestamp,
+					RequestId:   &requestId,
+					L1BaseFee:   parsedLog.BaseFeeL1,
 				},
 				L2msg: data,
 			},

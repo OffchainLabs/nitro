@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompile_fuzz
 
@@ -30,7 +29,8 @@ func Fuzz(input []byte) int {
 	if err != nil {
 		panic(err)
 	}
-	_, err = arbosState.InitializeArbosState(sdb, burn.NewSystemBurner(false), params.ArbitrumDevTestChainConfig())
+	burner := burn.NewSystemBurner(nil, false)
+	_, err = arbosState.InitializeArbosState(sdb, burner, params.ArbitrumDevTestChainConfig())
 	if err != nil {
 		panic(err)
 	}

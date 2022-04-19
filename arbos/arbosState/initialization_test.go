@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbosState
 
@@ -174,11 +173,6 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 			Require(t, err)
 			if fc != acct.AggregatorInfo.FeeCollector {
 				t.Fatal()
-			}
-			charge, err := l1p.FixedChargeForAggregatorL1Gas(addr)
-			Require(t, err)
-			if charge.Cmp(acct.AggregatorInfo.BaseFeeL1Gas) != 0 {
-				Fail(t)
 			}
 		}
 		if acct.AggregatorToPay != nil {

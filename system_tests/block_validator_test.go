@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -10,34 +9,57 @@ package arbtest
 
 import (
 	"context"
+	"io/ioutil"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbnode"
 )
 
-func TestBlockValidatorSimple(t *testing.T) {
+func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability.ModeImpl = dasModeString
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	var dbPath string
+	var err error
+	if dasModeString == "local" {
+		dbPath, err = ioutil.TempDir("/tmp", "das_test")
+		Require(t, err)
+		defer os.RemoveAll(dbPath)
+		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
+	}
+	_, err = l1NodeConfigA.DataAvailability.Mode()
+	Require(t, err)
+	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, true)
+	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigB.BatchPoster.Enable = false
+	l1NodeConfigB.BlockValidator.Enable = true
+	l1NodeConfigB.DataAvailability.ModeImpl = dasModeString
+	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
 
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2client.SendTransaction(ctx, tx)
+	err = l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
+	delayedTx := l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil)
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-		WrapL2ForDelayed(t, l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil), l1info, "User", 100000),
+		WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000),
 	})
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -50,14 +72,8 @@ func TestBlockValidatorSimple(t *testing.T) {
 		})
 	}
 
-	// this is needed to stop the 1000000 balance error in CI (BUG)
-	time.Sleep(time.Millisecond * 500)
-
-	_, err = arbutil.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, delayedTx.Hash(), time.Second*5)
 	Require(t, err)
-
-	// BUG: need to sleep to avoid (Unexpected balance: 1000000000000)
-	time.Sleep(time.Millisecond * 100)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
@@ -72,4 +88,12 @@ func TestBlockValidatorSimple(t *testing.T) {
 		Fail(t, "did not validate all blocks")
 	}
 	nodeB.StopAndWait()
+}
+
+func TestBlockValidatorSimple(t *testing.T) {
+	testBlockValidatorSimple(t, "onchain")
+}
+
+func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
+	testBlockValidatorSimple(t, "local")
 }

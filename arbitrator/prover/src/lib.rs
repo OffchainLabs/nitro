@@ -1,3 +1,8 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+#![allow(clippy::missing_safety_doc)] // We have a lot of unsafe ABI
+
 pub mod binary;
 mod host;
 pub mod machine;
@@ -16,6 +21,7 @@ use crate::{
 use eyre::{bail, Result};
 use machine::{GlobalState, MachineStatus};
 use sha3::{Digest, Keccak256};
+use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
     fs::File,
@@ -120,6 +126,19 @@ unsafe fn arbitrator_load_machine_impl(
     Ok(Box::into_raw(Box::new(mach)))
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
+    let binary_path = cstr_to_string(binary_path);
+    let binary_path = Path::new(&binary_path);
+    match Machine::new_from_wavm(binary_path) {
+        Ok(mach) => Box::into_raw(Box::new(mach)),
+        Err(err) => {
+            eprintln!("Error loading binary: {}", err);
+            std::ptr::null_mut()
+        }
+    }
+}
+
 unsafe fn cstr_to_string(c_str: *const c_char) -> String {
     CStr::from_ptr(c_str).to_string_lossy().into_owned()
 }
@@ -165,7 +184,7 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
     data: CByteArray,
 ) -> c_int {
     let mach = &mut *mach;
-    if let Ok(identifier) = argument_data_to_inbox(inbox_identifier) {
+    if let Some(identifier) = argument_data_to_inbox(inbox_identifier) {
         let slice = std::slice::from_raw_parts(data.ptr, data.len);
         let data = slice.to_vec();
         mach.add_inbox_msg(identifier, index, data);
@@ -238,29 +257,38 @@ pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 {
     (*mach).get_steps()
 }
 
-// C requires enums be represented as `int`s, so we need a new type for this :/
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[repr(C)]
-pub enum CMachineStatus {
-    Running,
-    Finished,
-    Errored,
-    TooFar,
-}
+pub const ARBITRATOR_MACHINE_STATUS_RUNNING: u8 = 0;
+pub const ARBITRATOR_MACHINE_STATUS_FINISHED: u8 = 1;
+pub const ARBITRATOR_MACHINE_STATUS_ERRORED: u8 = 2;
+pub const ARBITRATOR_MACHINE_STATUS_TOO_FAR: u8 = 3;
 
+// Unfortunately, cbindgen doesn't support constants with non-literal values, so we assert that they're correct.
+const_assert_eq!(
+    ARBITRATOR_MACHINE_STATUS_RUNNING,
+    MachineStatus::Running as u8,
+);
+const_assert_eq!(
+    ARBITRATOR_MACHINE_STATUS_FINISHED,
+    MachineStatus::Finished as u8,
+);
+const_assert_eq!(
+    ARBITRATOR_MACHINE_STATUS_ERRORED,
+    MachineStatus::Errored as u8,
+);
+const_assert_eq!(
+    ARBITRATOR_MACHINE_STATUS_TOO_FAR,
+    MachineStatus::TooFar as u8,
+);
+
+/// Returns one of ARBITRATOR_MACHINE_STATUS_*
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> CMachineStatus {
-    match (*mach).get_status() {
-        MachineStatus::Running => CMachineStatus::Running,
-        MachineStatus::Finished => CMachineStatus::Finished,
-        MachineStatus::Errored => CMachineStatus::Errored,
-        MachineStatus::TooFar => CMachineStatus::TooFar,
-    }
+pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> u8 {
+    (*mach).get_status() as u8
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalState {
-    return (*mach).get_global_state();
+    (*mach).get_global_state()
 }
 
 #[no_mangle]

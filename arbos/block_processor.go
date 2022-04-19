@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
 
@@ -15,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -34,9 +34,9 @@ var L2ToL1TransactionEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
 	l2Pricing := state.L2PricingState()
-	baseFee, err := l2Pricing.GasPriceWei()
+	baseFee, err := l2Pricing.BaseFeeWei()
 	state.Restrict(err)
 
 	var lastBlockHash common.Hash
@@ -44,7 +44,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
-		timestamp = l1info.l1Timestamp.Uint64()
+		timestamp = l1info.l1Timestamp
 		coinbase = l1info.poster
 	}
 	if prevHeader != nil {
@@ -56,20 +56,20 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	}
 	return &types.Header{
 		ParentHash:  lastBlockHash,
-		UncleHash:   [32]byte{},
+		UncleHash:   types.EmptyUncleHash, // Post-merge Ethereum will require this to be types.EmptyUncleHash
 		Coinbase:    coinbase,
-		Root:        [32]byte{},  // Filled in later
-		TxHash:      [32]byte{},  // Filled in later
-		ReceiptHash: [32]byte{},  // Filled in later
-		Bloom:       [256]byte{}, // Filled in later
-		Difficulty:  big.NewInt(1),
+		Root:        [32]byte{},    // Filled in later
+		TxHash:      [32]byte{},    // Filled in later
+		ReceiptHash: [32]byte{},    // Filled in later
+		Bloom:       [256]byte{},   // Filled in later
+		Difficulty:  big.NewInt(1), // Eventually, Ethereum plans to require this to be zero
 		Number:      blockNumber,
 		GasLimit:    l2pricing.GethBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
-		Extra:       []byte{},   // Unused
-		MixDigest:   [32]byte{}, // Unused
-		Nonce:       [8]byte{},  // Filled in later
+		Extra:       []byte{},   // Unused; Post-merge Ethereum will limit the size of this to 32 bytes
+		MixDigest:   [32]byte{}, // Post-merge Ethereum will require this to be zero
+		Nonce:       [8]byte{},  // Filled in later; post-merge Ethereum will require this to be zero
 		BaseFee:     baseFee,
 	}
 }
@@ -116,7 +116,7 @@ func ProduceBlock(
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
-	messageHeader *L1IncomingMessageHeader,
+	l1Header *L1IncomingMessageHeader,
 	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
@@ -126,7 +126,7 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 ) (*types.Block, types.Receipts) {
 
-	state, err := arbosState.OpenSystemArbosState(statedb, true)
+	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
 		panic(err)
 	}
@@ -135,24 +135,22 @@ func ProduceBlockAdvanced(
 		panic("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
 	}
 
-	poster := messageHeader.Poster
+	poster := l1Header.Poster
 
 	l1Info := &L1Info{
 		poster:        poster,
-		l1BlockNumber: messageHeader.BlockNumber.Big(),
-		l1Timestamp:   messageHeader.Timestamp.Big(),
+		l1BlockNumber: l1Header.BlockNumber,
+		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
-	header := createNewHeader(lastBlockHeader, l1Info, state)
+	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
-	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
-	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
-		// Make an ArbitrumInternalTx the first tx to update the L1 block number
-		// Note: 0 is the TxIndex. If this transaction is ever not the first, that needs updated.
-		tx := InternalTxUpdateL1BlockNumber(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, 0)
-		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
-	}
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
+	l1BlockNum := l1Info.l1BlockNumber
+
+	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
+	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.L1BaseFee, l1BlockNum, header, lastBlockHeader)
+	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
@@ -187,9 +185,11 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			if tx.Type() != types.ArbitrumInternalTxType {
-				// the sequencer has the ability to drop this tx
-				hooks = sequencingHooks
+			switch tx := tx.GetInner().(type) {
+			case *types.ArbitrumInternalTx:
+				tx.TxIndex = uint64(len(receipts))
+			default:
+				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 			}
 		}
@@ -207,20 +207,15 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			aggregator := &poster
-			txType := tx.Type()
-			if util.DoesTxTypeAlias(&txType) {
-				aggregator = nil
-			}
 			if gasPrice.Sign() > 0 {
 				dataGas = math.MaxUint64
-				pricing := state.L1PricingState()
-				posterCost, _, _ := pricing.PosterDataCost(sender, aggregator, tx.Data())
-				posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
+				state.L1PricingState().AddPosterInfo(tx, sender, poster)
+				posterCostInL2Gas := arbmath.BigDiv(tx.PosterCost, gasPrice)
+
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
 				} else {
-					log.Error("Could not get poster cost in L2 terms", posterCost, gasPrice)
+					log.Error("Could not get poster cost in L2 terms", tx.PosterCost, gasPrice)
 				}
 			}
 
@@ -271,7 +266,7 @@ func ProduceBlockAdvanced(
 		if err != nil {
 			// we'll still deduct a TxGas's worth from the block even if the tx was invalid
 			log.Debug("error applying transaction", "tx", tx, "err", err)
-			if gasLeft > params.TxGas {
+			if gasLeft > params.TxGas && isUserTx {
 				gasLeft -= params.TxGas
 			} else {
 				gasLeft = 0
@@ -323,12 +318,14 @@ func ProduceBlockAdvanced(
 			}
 		}
 
-		computeUsed := gasUsed - dataGas
-		if computeUsed < params.TxGas {
-			// a tx, even if invalid, must at least reduce the pool by TxGas
-			computeUsed = params.TxGas
+		if isUserTx {
+			computeUsed := gasUsed - dataGas
+			if computeUsed < params.TxGas {
+				// a tx, even if invalid, must at least reduce the pool by TxGas
+				computeUsed = params.TxGas
+			}
+			gasLeft -= computeUsed
 		}
-		gasLeft -= computeUsed
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
@@ -362,7 +359,7 @@ func ProduceBlockAdvanced(
 	}
 
 	balanceDelta := statedb.GetUnexpectedBalanceDelta()
-	if balanceDelta.Cmp(expectedBalanceDelta) != 0 {
+	if !arbmath.BigEquals(balanceDelta, expectedBalanceDelta) {
 		// Panic if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
 			panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
@@ -377,13 +374,7 @@ func ProduceBlockAdvanced(
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
 	if header != nil {
-		state, err := arbosState.OpenSystemArbosState(statedb, false)
-		if err != nil {
-			panic(err)
-		}
-		timePassed := state.SetLastTimestampSeen(header.Time)
-		state.L2PricingState().UpdatePricingModel(header, timePassed, false)
-		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
+		state, _ := arbosState.OpenSystemArbosState(statedb, nil, true)
 
 		// Add outbox info to the header for client-side proving
 		acc := state.SendMerkleAccumulator()
@@ -396,7 +387,5 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 			L1BlockNumber: nextL1BlockNumber,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
-
-		state.UpgradeArbosVersionIfNecessary(header.Time)
 	}
 }
