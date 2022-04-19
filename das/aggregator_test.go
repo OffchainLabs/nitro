@@ -197,7 +197,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, details)
 	}
 
-	aggregator := DeadlineWrapper{time.Millisecond * 1000, NewAggregator(AggregatorConfig{assumedHonest, 7 * 24 * time.Hour}, backends)}
+	aggregator := DeadlineWrapper{time.Millisecond * 2000, NewAggregator(AggregatorConfig{assumedHonest, 7 * 24 * time.Hour}, backends)}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -244,7 +244,7 @@ func initTest(t *testing.T) int {
 func TestDAS_LessThanHStorageFailures(t *testing.T) {
 	runs := initTest(t)
 
-	for i := 0; i < min(runs, 100); i++ {
+	for i := 0; i < min(runs, 50); i++ {
 		testConfigurableStorageFailures(t, false)
 	}
 }
@@ -287,7 +287,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	aggregator := DeadlineWrapper{time.Millisecond * 1000, NewAggregator(AggregatorConfig{numBackendDAS, 7 * 24 * time.Hour}, backends)}
+	aggregator := DeadlineWrapper{time.Millisecond * 2000, NewAggregator(AggregatorConfig{numBackendDAS, 7 * 24 * time.Hour}, backends)}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -310,7 +310,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 
 func TestDAS_RetrieveFailureFromSomeDASes(t *testing.T) {
 	runs := initTest(t)
-	for i := 0; i < min(runs, 20); i++ {
+	for i := 0; i < min(runs, 10); i++ {
 		testConfigurableRetrieveFailures(t, false)
 	}
 }
