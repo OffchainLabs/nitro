@@ -138,6 +138,8 @@ if $force_init; then
     docker-compose run --entrypoint sh geth -c "rm /root/.ethereum/tmp-funnelkey"
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
+    docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /keystore"
+    docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /config"
 
     echo == Funding validator and sequencer
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
@@ -145,7 +147,7 @@ if $force_init; then
 
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
-    docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /l1keystore --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines
+    docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines
 
     echo == Writing configs
     docker-compose run testnode-scripts write-config
