@@ -82,9 +82,11 @@ func scanAndCopyBlocks(reader StoredBlockReader, writer *JsonListWriter) (int64,
 		if block.Header.ParentHash != lastHash {
 			return blockNum, lastHash, fmt.Errorf("unexpected prev block hash in input: %v", block.Header.ParentHash)
 		}
-		err = writer.Write(block)
-		if err != nil {
-			return blockNum, lastHash, err
+		if writer != nil {
+			err = writer.Write(block)
+			if err != nil {
+				return blockNum, lastHash, err
+			}
 		}
 		lastHash = block.Header.Hash()
 		blockNum++
@@ -127,8 +129,8 @@ func fillBlocks(ctx context.Context, rpcClient *rpc.Client, fromBlock, toBlock u
 			return res.err
 		}
 		block := res.block
-		completed := block.Header.Number.Uint64() - fromBlock + 1
-		totalBlocks := toBlock - fromBlock + 1
+		completed := block.Header.Number.Uint64() + 1
+		totalBlocks := toBlock + 1
 		if completed%10 == 0 {
 			fmt.Printf("\rRead block %v/%v (%.2f%%)", completed, totalBlocks, 100*float64(completed)/float64(totalBlocks))
 		}

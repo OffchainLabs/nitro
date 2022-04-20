@@ -5,10 +5,10 @@ package statetransfer
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -30,29 +30,6 @@ type JsonListReader struct {
 	file  *os.File
 }
 
-func (i *JsonListReader) eatInputDelim(expected json.Delim) error {
-	token, err := i.input.Token()
-	if err != nil {
-		return err
-	}
-	foundString := "<Not Delim>"
-	delim, match := token.(json.Delim)
-	if match {
-		foundString = delim.String()
-	}
-	if foundString != expected.String() {
-		return fmt.Errorf("expected %s, found: %s", expected, foundString)
-	}
-	return nil
-}
-
-func (l *JsonListReader) open() error {
-	if l.input == nil {
-		return nil
-	}
-	return l.eatInputDelim('[')
-}
-
 func (l *JsonListReader) More() bool {
 	if l.input == nil {
 		return false
@@ -71,23 +48,22 @@ func (l *JsonListReader) Close() error {
 	return nil
 }
 
-func (m *JsonInitDataReader) getListReader(fileName string) (JsonListReader, error) {
-	if fileName == "" {
-		return JsonListReader{}, nil
-	}
-	filePath := path.Join(m.basePath, fileName)
+func NewJsonListReader(filePath string) (JsonListReader, error) {
 	inboundFile, err := os.OpenFile(filePath, os.O_RDONLY, 0664)
 	if err != nil {
 		return JsonListReader{}, err
 	}
-	res := JsonListReader{
+	return JsonListReader{
 		file:  inboundFile,
 		input: json.NewDecoder(inboundFile),
+	}, nil
+}
+
+func (m *JsonInitDataReader) getListReader(fileName string) (JsonListReader, error) {
+	if fileName == "" {
+		return JsonListReader{}, nil
 	}
-	if err := res.open(); err != nil {
-		return JsonListReader{}, err
-	}
-	return res, nil
+	return NewJsonListReader(filepath.Join(m.basePath, fileName))
 }
 
 func NewJsonInitDataReader(filepath string) (InitDataReader, error) {

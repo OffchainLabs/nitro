@@ -6,10 +6,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -17,7 +18,7 @@ import (
 )
 
 func DirNameFor(dirPath string, blockNum uint64) string {
-	return path.Join(dirPath, fmt.Sprintf("state.%09d", blockNum))
+	return filepath.Join(dirPath, fmt.Sprintf("state.%09d", blockNum))
 }
 
 func main() {
@@ -52,16 +53,16 @@ func main() {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		panic(err)
 	}
-	entries, err := os.ReadDir(outDir)
-	if err != nil {
+	_, err = os.Stat(filepath.Join(outDir, "header.json"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		panic(err)
+	} else if err == nil {
+		panic("header.json already exists in output directory")
 	}
-	if len(entries) > 0 {
-		panic("out dir not empty")
-	}
+
 	var inFileName string = ""
 	if *prevBlockNumInt >= 0 {
-		inFileName = path.Join(DirNameFor(*dataPath, uint64(*prevBlockNumInt)), "header.json")
+		inFileName = filepath.Join(DirNameFor(*dataPath, uint64(*prevBlockNumInt)), "header.json")
 	}
 
 	err = statetransfer.ReadStateFromClassic(ctx, rpcClient, blockNumUint64, inFileName, outDir, *newAPI, *blocksOnly)

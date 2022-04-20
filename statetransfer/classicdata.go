@@ -6,10 +6,14 @@ package statetransfer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
-	"path"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -17,9 +21,12 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumber uint64, prevFile, nextBase string, newAPIs bool, blocksOnly bool) error {
+func ReadStateFromClassic(ctxIn context.Context, rpcClient *rpc.Client, blockNumber uint64, prevFile, nextBase string, newAPIs bool, blocksOnly bool) error {
 
 	fmt.Println("Initializing")
+
+	ctx, cancel := signal.NotifyContext(ctxIn, os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
 	callopts := &bind.CallOpts{
 		Pending:     false,
@@ -49,26 +56,49 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 	}
 
 	fmt.Println("Copying Blocks")
-	blockReader, err := reader.GetStoredBlockReader()
-	if err != nil {
-		return err
-	}
-	blockWriter, err := NewJsonListWriter(path.Join(nextBase, dataHeader.BlocksPath))
-	if err != nil {
-		return err
-	}
-	blocksCopied, blockHash, err := scanAndCopyBlocks(blockReader, blockWriter)
-	if err != nil {
+	blocksJsonPath := filepath.Join(nextBase, dataHeader.BlocksPath)
+	_, err := os.Stat(blocksJsonPath)
+	var blockWriter *JsonListWriter
+	var blocksCopied int64
+	var blockHash common.Hash
+	if errors.Is(err, os.ErrNotExist) {
+		blockReader, err := reader.GetStoredBlockReader()
+		if err != nil {
+			return err
+		}
+		blockWriter, err = NewJsonListWriter(blocksJsonPath, false)
+		if err != nil {
+			return err
+		}
+		blocksCopied, blockHash, err = scanAndCopyBlocks(blockReader, blockWriter)
+		if err != nil {
+			return err
+		}
+		if err := blockReader.Close(); err != nil {
+			return err
+		}
+	} else if err == nil {
+		listReader, err := NewJsonListReader(blocksJsonPath)
+		blocksCopied, blockHash, err = scanAndCopyBlocks(&JsonStoredBlockReader{listReader}, nil)
+		if err != nil {
+			return err
+		}
+		if err := listReader.Close(); err != nil {
+			return err
+		}
+		blockWriter, err = NewJsonListWriter(blocksJsonPath, true)
+		if err != nil {
+			return err
+		}
+	} else {
 		return err
 	}
 	fmt.Println("Reading Blocks")
 	if err := fillBlocks(ctx, rpcClient, uint64(blocksCopied), blockNumber, blockHash, blockWriter); err != nil {
+		_ = blockWriter.Close()
 		return err
 	}
 	if err := blockWriter.Close(); err != nil {
-		return err
-	}
-	if err := blockReader.Close(); err != nil {
 		return err
 	}
 
@@ -78,7 +108,7 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 		if err != nil {
 			return err
 		}
-		addressTableWriter, err := NewJsonListWriter(path.Join(nextBase, dataHeader.AddressTableContentsPath))
+		addressTableWriter, err := NewJsonListWriter(filepath.Join(nextBase, dataHeader.AddressTableContentsPath), false)
 		if err != nil {
 			return err
 		}
@@ -103,7 +133,7 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 
 	if newAPIs && !blocksOnly {
 		fmt.Println("Retryables")
-		retriableWriter, err := NewJsonListWriter(path.Join(nextBase, dataHeader.RetryableDataPath))
+		retriableWriter, err := NewJsonListWriter(filepath.Join(nextBase, dataHeader.RetryableDataPath), false)
 		if err != nil {
 			return err
 		}
@@ -131,7 +161,7 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 
 	if !blocksOnly {
 		fmt.Println("Accounts")
-		accountWriter, err := NewJsonListWriter(path.Join(nextBase, dataHeader.AccountsPath))
+		accountWriter, err := NewJsonListWriter(filepath.Join(nextBase, dataHeader.AccountsPath), false)
 		if err != nil {
 			return err
 		}
@@ -179,5 +209,5 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(path.Join(nextBase, "header.json"), headerJson, 0600)
+	return ioutil.WriteFile(filepath.Join(nextBase, "header.json"), headerJson, 0600)
 }
