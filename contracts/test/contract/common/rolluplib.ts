@@ -9,13 +9,13 @@ import { RollupUserLogic, RollupAdminLogic, SequencerInbox } from "../../../buil
 import {
   RollupLib,
   NodeCreatedEvent,
-} from "../../../build/types/RollupUserLogic";
+} from "../../../build/types/src/rollup/RollupUserLogic.sol/RollupUserLogic";
 type AssertionStruct = RollupLib.AssertionStruct;
 type ExecutionStateStruct = RollupLib.ExecutionStateStruct;
 import { blockStateHash, hashChallengeState } from "./challengeLib";
 import * as globalStateLib from "./globalStateLib";
 import { constants } from "ethers";
-import { GlobalStateStruct } from "../../../build/types/ChallengeManager";
+import { GlobalStateStruct } from "../../../build/types/src/challenge/ChallengeManager";
 
 export interface Node {
   nodeNum: number;
