@@ -211,7 +211,7 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(mach: *mut Machine, condi
             {
                 return;
             }
-            mach.step();
+            mach.step_n(1);
         }
     }
 }
