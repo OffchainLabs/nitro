@@ -15,12 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 )
 
-func testBlockValidatorSimple(t *testing.T, dasModeString string) {
+func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
@@ -57,6 +59,28 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
+	if expensiveTx {
+		contractData := []byte{0x5b} // JUMPDEST
+		for i := 0; i < 20; i++ {
+			contractData = append(contractData, 0x60, 0x00, 0x60, 0x00, 0x52) // PUSH1 0 MSTORE
+		}
+		contractData = append(contractData, 0x60, 0x00, 0x56) // JUMP
+		ownerInfo := l2info.GetInfoWithPrivKey("Owner")
+		tx = l2info.SignTxAs("Owner", &types.DynamicFeeTx{
+			To:        nil,
+			Gas:       l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimit,
+			GasFeeCap: new(big.Int).Set(l2info.GasPrice),
+			Value:     common.Big0,
+			Nonce:     ownerInfo.Nonce,
+			Data:      contractData,
+		})
+		ownerInfo.Nonce++
+		err = l2client.SendTransaction(ctx, tx)
+		Require(t, err)
+		_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+		Require(t, err)
+	}
+
 	delayedTx := l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil)
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 		WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000),
@@ -91,9 +115,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 }
 
 func TestBlockValidatorSimple(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain")
+	testBlockValidatorSimple(t, "onchain", false)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, "local")
+	testBlockValidatorSimple(t, "local", false)
 }

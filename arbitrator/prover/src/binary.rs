@@ -10,11 +10,18 @@ use nom::{
     combinator::{all_consuming, map, value},
     sequence::{preceded, tuple},
 };
+use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, hash::Hash, str::FromStr};
 use wasmparser::{
     Data, Element, Export, Global, Import, MemoryType, Name, NameSectionReader, Naming, Operator,
     Parser, Payload, TableType, TypeDef,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MemoryArg {
+    pub alignment: u32,
+    pub offset: u32,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FloatType {
@@ -219,7 +226,7 @@ pub struct Local {
     pub value: ArbValueType,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NameCustomSection {
     pub module: String,
     pub functions: HashMap<u32, String>,

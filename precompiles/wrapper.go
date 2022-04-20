@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -78,6 +79,7 @@ func (wrapper *OwnerPrecompile) Call(
 	burner := &context{
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
+		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
 	}
 	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
 	if err != nil {

@@ -10,6 +10,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
 };
+use wasmparser::{TableType, Type};
 
 /// cbindgen:field-names=[bytes]
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -106,4 +107,25 @@ pub fn file_bytes(path: &Path) -> eyre::Result<Vec<u8>> {
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
     Ok(buf)
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "Type")]
+enum RemoteType {
+    I32,
+    I64,
+    F32,
+    F64,
+    V128,
+    FuncRef,
+    ExternRef,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "TableType")]
+pub struct RemoteTableType {
+    #[serde(with = "RemoteType")]
+    pub element_type: Type,
+    pub initial: u32,
+    pub maximum: Option<u32>,
 }

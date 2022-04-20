@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use wasmparser::{FuncType, Type};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ArbValueType {
     I32,
@@ -55,7 +55,7 @@ impl From<FloatType> for ArbValueType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub enum IntegerValType {
     I32,
     I64,
@@ -201,7 +201,7 @@ impl PartialEq for Value {
 
 impl Eq for Value {}
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionType {
     pub inputs: Vec<ArbValueType>,
     pub outputs: Vec<ArbValueType>,

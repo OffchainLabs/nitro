@@ -5,15 +5,22 @@ import { namedAccount } from './accounts'
 const path = require("path");
 
 function writeConfigs(argv: any) {
+    const deployment = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString('utf-8'));
     const baseConfig = {
         "l1": {
-            "deployment": "/config/deployment.json",
+            "rollup": deployment,
             "url": argv.l1url,
             "wallet": {
                 "account": "",
                 "password": consts.l1passphrase,
                 "pathname": consts.l1keystore,
             },
+        },
+        "l2": {
+            "chain-id": 421612,
+            "dev-wallet" : {
+                "private-key": "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
+            }
         },
         "node": {
             "archive": true,
@@ -51,7 +58,7 @@ function writeConfigs(argv: any) {
             }
         },
         "persistent": {
-            "data": "/data"
+	        "chain": "local"
         },
         "ws": {
             "addr": "0.0.0.0"
