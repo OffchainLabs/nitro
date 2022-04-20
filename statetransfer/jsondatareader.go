@@ -5,6 +5,7 @@ package statetransfer
 
 import (
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -48,10 +49,45 @@ func (l *JsonListReader) Close() error {
 	return nil
 }
 
-func NewJsonListReader(filePath string) (JsonListReader, error) {
+func NewJsonListReader(filePath string, seekToLastLine bool) (JsonListReader, error) {
 	inboundFile, err := os.OpenFile(filePath, os.O_RDONLY, 0664)
 	if err != nil {
 		return JsonListReader{}, err
+	}
+	if seekToLastLine {
+		seenNonNewline := false
+		buf := make([]byte, 1024)
+	Seeker:
+		for i := 0; ; i++ {
+			if i == 0 {
+				_, err := inboundFile.Seek(-int64(len(buf)), 2)
+				if err != nil {
+					return JsonListReader{}, err
+				}
+			} else {
+				_, err := inboundFile.Seek(-2*int64(len(buf)), 1)
+				if err != nil {
+					return JsonListReader{}, err
+				}
+			}
+			_, err = io.ReadFull(inboundFile, buf)
+			if err != nil {
+				return JsonListReader{}, err
+			}
+			for j := len(buf) - 1; j >= 0; j-- {
+				if buf[j] == '\n' {
+					if seenNonNewline {
+						_, err := inboundFile.Seek(int64(j+1-len(buf)), 1)
+						if err != nil {
+							return JsonListReader{}, err
+						}
+						break Seeker
+					}
+				} else {
+					seenNonNewline = true
+				}
+			}
+		}
 	}
 	return JsonListReader{
 		file:  inboundFile,
@@ -63,7 +99,7 @@ func (m *JsonInitDataReader) getListReader(fileName string) (JsonListReader, err
 	if fileName == "" {
 		return JsonListReader{}, nil
 	}
-	return NewJsonListReader(filepath.Join(m.basePath, fileName))
+	return NewJsonListReader(filepath.Join(m.basePath, fileName), false)
 }
 
 func NewJsonInitDataReader(filepath string) (InitDataReader, error) {

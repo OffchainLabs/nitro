@@ -28,6 +28,7 @@ func main() {
 	prevBlockNumInt := flag.Int64("prevblocknum", -1, "-1 for no previous data")
 	newAPI := flag.Bool("newapi", false, "use new api")
 	blocksOnly := flag.Bool("blocksonly", false, "only query blocks")
+	assumePrevValid := flag.Bool("assumeprevvalid", false, "assume previous data is valid")
 
 	flag.Parse()
 	ctx := context.Background()
@@ -65,7 +66,7 @@ func main() {
 		inFileName = filepath.Join(DirNameFor(*dataPath, uint64(*prevBlockNumInt)), "header.json")
 	}
 
-	err = statetransfer.ReadStateFromClassic(ctx, rpcClient, blockNumUint64, inFileName, outDir, *newAPI, *blocksOnly)
+	err = statetransfer.ReadStateFromClassic(ctx, rpcClient, blockNumUint64, inFileName, outDir, *newAPI, *blocksOnly, *assumePrevValid)
 	if err != nil {
 		panic(err)
 	}

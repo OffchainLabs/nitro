@@ -21,7 +21,9 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-func ReadStateFromClassic(ctxIn context.Context, rpcClient *rpc.Client, blockNumber uint64, prevFile, nextBase string, newAPIs bool, blocksOnly bool) error {
+const parallelQueries = 64
+
+func ReadStateFromClassic(ctxIn context.Context, rpcClient *rpc.Client, blockNumber uint64, prevFile, nextBase string, newAPIs bool, blocksOnly bool, assumePrevValid bool) error {
 
 	fmt.Println("Initializing")
 
@@ -70,7 +72,7 @@ func ReadStateFromClassic(ctxIn context.Context, rpcClient *rpc.Client, blockNum
 		if err != nil {
 			return err
 		}
-		blocksCopied, blockHash, err = scanAndCopyBlocks(blockReader, blockWriter)
+		blocksCopied, blockHash, err = scanAndCopyBlocks(ctx, blockReader, blockWriter, true)
 		if err != nil {
 			return err
 		}
@@ -78,8 +80,8 @@ func ReadStateFromClassic(ctxIn context.Context, rpcClient *rpc.Client, blockNum
 			return err
 		}
 	} else if err == nil {
-		listReader, err := NewJsonListReader(blocksJsonPath)
-		blocksCopied, blockHash, err = scanAndCopyBlocks(&JsonStoredBlockReader{listReader}, nil)
+		listReader, err := NewJsonListReader(blocksJsonPath, assumePrevValid)
+		blocksCopied, blockHash, err = scanAndCopyBlocks(ctx, &JsonStoredBlockReader{listReader}, nil, !assumePrevValid)
 		if err != nil {
 			return err
 		}
@@ -102,7 +104,7 @@ func ReadStateFromClassic(ctxIn context.Context, rpcClient *rpc.Client, blockNum
 		return err
 	}
 
-	if !blocksOnly {
+	if !blocksOnly && false {
 		fmt.Println("Copying Address Table")
 		addressTableReader, err := reader.GetAddressTableReader()
 		if err != nil {
@@ -133,7 +135,7 @@ func ReadStateFromClassic(ctxIn context.Context, rpcClient *rpc.Client, blockNum
 
 	if newAPIs && !blocksOnly {
 		fmt.Println("Retryables")
-		retriableWriter, err := NewJsonListWriter(filepath.Join(nextBase, dataHeader.RetryableDataPath), false)
+		retryableWriter, err := NewJsonListWriter(filepath.Join(nextBase, dataHeader.RetryableDataPath), false)
 		if err != nil {
 			return err
 		}
@@ -147,12 +149,12 @@ func ReadStateFromClassic(ctxIn context.Context, rpcClient *rpc.Client, blockNum
 			return err
 		}
 		for _, retriable := range retryables {
-			err := retriableWriter.Write(retriable)
+			err := retryableWriter.Write(retriable)
 			if err != nil {
 				return err
 			}
 		}
-		if err := retriableWriter.Close(); err != nil {
+		if err := retryableWriter.Close(); err != nil {
 			return err
 		}
 	} else {

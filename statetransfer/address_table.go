@@ -4,6 +4,8 @@
 package statetransfer
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/solgen/go/classicgen"
+	concurrently "github.com/tejzpr/ordered-concurrently/v3"
 )
 
 var ArbosAddressTable = common.HexToAddress("0x0000000000000000000000000000000000000066")
@@ -36,6 +39,23 @@ func scanAndCopyAddressTable(reader AddressReader, writer *JsonListWriter) (uint
 		length += 1
 	}
 	return length, *address, nil
+}
+
+type addressQuery struct {
+	classicArbAddressTable *classicgen.ArbAddressTableCaller
+	callopts               *bind.CallOpts
+	cIndex                 int64
+}
+
+type addressQueryResult struct {
+	account common.Address
+	cIndex  int64
+	err     error
+}
+
+func (q addressQuery) Run(ctx context.Context) interface{} {
+	addr, err := q.classicArbAddressTable.LookupIndex(q.callopts, big.NewInt(q.cIndex))
+	return addressQueryResult{addr, q.cIndex, err}
 }
 
 func verifyAndFillAddressTable(ethClient *ethclient.Client, callopts *bind.CallOpts, prevLength uint64, lastAddress common.Address, writer *JsonListWriter) error {
@@ -65,16 +85,33 @@ func verifyAndFillAddressTable(ethClient *ethclient.Client, callopts *bind.CallO
 	}
 	fmt.Println("current Num of addresses ", numAddresses)
 
-	for cIndex := int64(prevLength); cIndex < numAddressesInt; cIndex++ {
-		cAddress, err := classicArbAddressTable.LookupIndex(callopts, big.NewInt(cIndex))
+	inputChan := make(chan concurrently.WorkFunction)
+	output := concurrently.Process(callopts.Context, inputChan, &concurrently.Options{PoolSize: parallelQueries, OutChannelBuffer: parallelQueries})
+	go func() {
+		for cIndex := int64(prevLength); cIndex < numAddressesInt; cIndex++ {
+			inputChan <- addressQuery{classicArbAddressTable, callopts, cIndex}
+		}
+		close(inputChan)
+	}()
+	for out := range output {
+		res, ok := out.Value.(addressQueryResult)
+		if !ok {
+			return errors.New("unexpected result type from address query")
+		}
+		if res.err != nil {
+			return res.err
+		}
+		completed := res.cIndex + 1
+		totalAddresses := numAddressesInt
+		if completed%10 == 0 {
+			fmt.Printf("\rRead address %v/%v (%.2f%%)", completed, totalAddresses, 100*float64(completed)/float64(totalAddresses))
+		}
+		err = writer.Write(res.account)
 		if err != nil {
 			return err
 		}
-		err = writer.Write(cAddress)
-		if err != nil {
-			return err
-		}
-		AddressSeen(cAddress)
+		AddressSeen(res.account)
 	}
+	fmt.Printf("\rDone reading addresses!                    \n")
 	return nil
 }

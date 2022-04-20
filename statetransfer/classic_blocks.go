@@ -68,19 +68,25 @@ func ReadBlockFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 	}, nil
 }
 
-func scanAndCopyBlocks(reader StoredBlockReader, writer *JsonListWriter) (int64, common.Hash, error) {
+func scanAndCopyBlocks(ctx context.Context, reader StoredBlockReader, writer *JsonListWriter, validate bool) (int64, common.Hash, error) {
 	blockNum := int64(0)
 	lastHash := common.Hash{}
 	for reader.More() {
+		err := ctx.Err()
+		if err != nil {
+			return blockNum, lastHash, err
+		}
 		block, err := reader.GetNext()
 		if err != nil {
 			return blockNum, lastHash, err
 		}
-		if block.Header.Number.Cmp(big.NewInt(blockNum)) != 0 {
-			return blockNum, lastHash, fmt.Errorf("unexpected block number in input: %v", block.Header.Number)
-		}
-		if block.Header.ParentHash != lastHash {
-			return blockNum, lastHash, fmt.Errorf("unexpected prev block hash in input: %v", block.Header.ParentHash)
+		if validate {
+			if block.Header.Number.Cmp(big.NewInt(blockNum)) != 0 {
+				return blockNum, lastHash, fmt.Errorf("unexpected block number in input: %v", block.Header.Number)
+			}
+			if block.Header.ParentHash != lastHash {
+				return blockNum, lastHash, fmt.Errorf("unexpected prev block hash in input: %v", block.Header.ParentHash)
+			}
 		}
 		if writer != nil {
 			err = writer.Write(block)
@@ -89,12 +95,10 @@ func scanAndCopyBlocks(reader StoredBlockReader, writer *JsonListWriter) (int64,
 			}
 		}
 		lastHash = block.Header.Hash()
-		blockNum++
+		blockNum = block.Header.Number.Int64() + 1
 	}
 	return blockNum, lastHash, nil
 }
-
-const parallelBlockQueries = 64
 
 type blockQuery struct {
 	rpcClient *rpc.Client
@@ -113,7 +117,7 @@ func (q blockQuery) Run(ctx context.Context) interface{} {
 
 func fillBlocks(ctx context.Context, rpcClient *rpc.Client, fromBlock, toBlock uint64, prevHash common.Hash, writer *JsonListWriter) error {
 	inputChan := make(chan concurrently.WorkFunction)
-	output := concurrently.Process(ctx, inputChan, &concurrently.Options{PoolSize: parallelBlockQueries, OutChannelBuffer: parallelBlockQueries})
+	output := concurrently.Process(ctx, inputChan, &concurrently.Options{PoolSize: parallelQueries, OutChannelBuffer: parallelQueries})
 	go func() {
 		for block := fromBlock; block <= toBlock; block++ {
 			inputChan <- blockQuery{rpcClient, block}
