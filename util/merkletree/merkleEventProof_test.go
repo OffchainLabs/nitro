@@ -14,7 +14,7 @@ import (
 )
 
 func initializedMerkleAccumulatorForTesting() *merkleAccumulator.MerkleAccumulator {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	merkleAccumulator.InitializeMerkleAccumulator(sto)
 	return merkleAccumulator.OpenMerkleAccumulator(sto)
 }

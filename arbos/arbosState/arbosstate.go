@@ -85,11 +85,19 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	}, nil
 }
 
-func OpenSystemArbosState(stateDB vm.StateDB, readOnly bool) (*ArbosState, error) {
-	burner := burn.NewSystemBurner(readOnly)
+func OpenSystemArbosState(stateDB vm.StateDB, tracingInfo *util.TracingInfo, readOnly bool) (*ArbosState, error) {
+	burner := burn.NewSystemBurner(tracingInfo, readOnly)
 	state, err := OpenArbosState(stateDB, burner)
 	burner.Restrict(err)
 	return state, err
+}
+
+func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingInfo, readOnly bool) *ArbosState {
+	state, err := OpenSystemArbosState(stateDB, tracingInfo, readOnly)
+	if err != nil {
+		panic(err)
+	}
+	return state
 }
 
 // Create and initialize a memory-backed ArbOS state (for testing only)
@@ -100,7 +108,7 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	if err != nil {
 		log.Fatal("failed to init empty statedb", err)
 	}
-	burner := burn.NewSystemBurner(false)
+	burner := burn.NewSystemBurner(nil, false)
 	state, err := InitializeArbosState(statedb, burner, params.ArbitrumDevTestChainConfig())
 	if err != nil {
 		log.Fatal("failed to open the ArbOS state", err)
@@ -110,7 +118,7 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 
 // Get the ArbOS version
 func ArbOSVersion(stateDB vm.StateDB) uint64 {
-	backingStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(false))
+	backingStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(nil, false))
 	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
 		log.Fatal("faled to get the ArbOS version", err)

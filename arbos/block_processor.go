@@ -126,7 +126,7 @@ func ProduceBlockAdvanced(
 	sequencingHooks *SequencingHooks,
 ) (*types.Block, types.Receipts) {
 
-	state, err := arbosState.OpenSystemArbosState(statedb, true)
+	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
 		panic(err)
 	}
@@ -374,7 +374,7 @@ func ProduceBlockAdvanced(
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
 	if header != nil {
-		state, _ := arbosState.OpenSystemArbosState(statedb, true)
+		state, _ := arbosState.OpenSystemArbosState(statedb, nil, true)
 
 		// Add outbox info to the header for client-side proving
 		acc := state.SendMerkleAccumulator()

@@ -53,7 +53,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		log.Fatal("failed to init empty statedb", err)
 	}
 
-	burner := burn.NewSystemBurner(false)
+	burner := burn.NewSystemBurner(nil, false)
 	arbosState, err := InitializeArbosState(statedb, burner, chainConfig)
 	if err != nil {
 		log.Fatal("failed to open the ArbOS state", err)
