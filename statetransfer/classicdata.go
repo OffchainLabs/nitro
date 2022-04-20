@@ -104,7 +104,7 @@ func ReadStateFromClassic(ctxIn context.Context, rpcClient *rpc.Client, blockNum
 		return err
 	}
 
-	if !blocksOnly && false {
+	if !blocksOnly {
 		fmt.Println("Copying Address Table")
 		addressTableReader, err := reader.GetAddressTableReader()
 		if err != nil {
