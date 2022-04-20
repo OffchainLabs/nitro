@@ -572,6 +572,30 @@ func init() {
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
 
+	core.GetArbOSComputeRate = func(statedb *state.StateDB) (float64, error) {
+		arbosVersion := arbosState.ArbOSVersion(statedb)
+		if arbosVersion == 0 {
+			return 0.0, errors.New("ArbOS not installed")
+		}
+		state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+		if err != nil {
+			log.Error("failed to open ArbOS state", "err", err)
+			return 0.0, err
+		}
+		pricing := state.L2PricingState()
+		speedLimit, err := pricing.SpeedLimitPerSecond()
+		if err != nil {
+			log.Error("failed to get the speed limit", "err", err)
+			return 0.0, err
+		}
+		rateEstimate, err := pricing.RateEstimate()
+		if err != nil {
+			log.Error("failed to get the rate estimate", "err", err)
+			return 0.0, err
+		}
+		return float64(rateEstimate) / float64(speedLimit), nil
+	}
+
 	arbSys, err := precompilesgen.ArbSysMetaData.GetAbi()
 	if err != nil {
 		panic(err)
