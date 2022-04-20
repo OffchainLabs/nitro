@@ -123,10 +123,8 @@ FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
 # Download old WASM module roots
-RUN bash -c 'mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
-RUN bash -c 'mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
-# Copy in latest WASM module root
-COPY --from=module-root-calc /workspace/target/machines/latest latest
+#RUN bash -c 'mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
+RUN bash -c 'mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && ln -s $_ latest && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
@@ -148,25 +146,62 @@ COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
-FROM debian:bullseye-slim as nitro-node
+FROM debian:bullseye-slim as nitro-node-slim
 WORKDIR /home/user
-COPY --from=node-builder /workspace/target/bin /usr/local/bin
+COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
+USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y wabt \
-    curl procps jq rsync \
-    node-ws vim-tiny python3 \
-    dnsutils && \
+    apt-get install -y \
+    wabt && \
     useradd -ms /bin/bash user && \
-    chown -R user:user /home/user
-
-WORKDIR /home/user/
-ENTRYPOINT [ "/usr/local/bin/nitro" ]
-
-FROM nitro-node as nitro-node-dist
-RUN export DEBIAN_FRONTEND=noninteractive && \
+    mkdir -p /home/user/l1keystore && \
+    mkdir -p /home/user/.arbitrum/local/nitro && \
+    chown -R user:user /home/user && \
+    chmod -R 555 /home/user/target/machines && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/*
 
 USER user
+WORKDIR /home/user/
+ENTRYPOINT [ "/usr/local/bin/nitro" ]
+
+FROM nitro-node-slim as nitro-node
+USER root
+COPY --from=node-builder /workspace/target/bin/daserver /usr/local/bin/
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y \
+    curl procps jq rsync \
+    node-ws vim-tiny python3 \
+    dnsutils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+
+USER user
+
+FROM nitro-node as nitro-node-dev
+USER root
+# Copy in latest WASM module root
+RUN rm -f /home/user/target/machines/latest
+COPY --from=node-builder /workspace/target/bin/deploy /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
+COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y \
+    sudo && \
+    chmod -R 555 /home/user/target/machines && \
+    adduser user sudo && \
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+
+USER user
+
+FROM nitro-node as nitro-node-default
+# Just to ensure nitro-node-dist is default
