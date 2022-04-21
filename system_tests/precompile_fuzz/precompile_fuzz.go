@@ -29,7 +29,8 @@ func Fuzz(input []byte) int {
 	if err != nil {
 		panic(err)
 	}
-	_, err = arbosState.InitializeArbosState(sdb, burn.NewSystemBurner(false), params.ArbitrumDevTestChainConfig())
+	burner := burn.NewSystemBurner(nil, false)
+	_, err = arbosState.InitializeArbosState(sdb, burner, params.ArbitrumDevTestChainConfig())
 	if err != nil {
 		panic(err)
 	}

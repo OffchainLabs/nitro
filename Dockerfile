@@ -38,8 +38,8 @@ RUN apt-get update && apt-get install -y curl build-essential=12.9
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
 RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
-    # pinned rust 1.58.1
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.59.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+    # pinned rust 1.60.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.60.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
@@ -121,14 +121,10 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
 FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
-WORKDIR /workspace
+WORKDIR /workspace/machines
 # Download old WASM module roots
-RUN wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/wasm-0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810.zip
-RUN wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/wasm-0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3.zip
-RUN for f in *.zip; do unzip -d machines -- "$f"; done
-# Copy in latest WASM module root
-COPY --from=module-root-calc /workspace/target/machines/latest /workspace/machines/latest
-
+#RUN bash -c 'mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
+RUN bash -c 'mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && ln -s $_ latest && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
@@ -150,24 +146,62 @@ COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
-FROM debian:bullseye-slim as nitro-node
-WORKDIR /workspace
+FROM debian:bullseye-slim as nitro-node-slim
+WORKDIR /home/user
+COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
+COPY --from=machine-versions /workspace/machines /home/user/target/machines
+USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y wabt
-COPY --from=node-builder /workspace/target/ target/
-COPY --from=machine-versions /workspace/machines target/machines
-ENTRYPOINT [ "./target/bin/node" ]
+    apt-get install -y \
+    wabt && \
+    useradd -ms /bin/bash user && \
+    mkdir -p /home/user/l1keystore && \
+    mkdir -p /home/user/.arbitrum/local/nitro && \
+    chown -R user:user /home/user && \
+    chmod -R 555 /home/user/target/machines && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
 
-FROM nitro-node as nitro-node-dist
-WORKDIR /workspace
+USER user
+WORKDIR /home/user/
+ENTRYPOINT [ "/usr/local/bin/nitro" ]
+
+FROM nitro-node-slim as nitro-node
+USER root
+COPY --from=node-builder /workspace/target/bin/daserver /usr/local/bin/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y curl \
-        procps jq rsync \
-        node-ws vim-tiny libatomic1 python3 \
-        libgmp10 libssl1.1 \
-        libgoogle-perftools4 \
-        libgflags2.2 libsnappy1v5 libzstd1 dnsutils && \
-        apt-get clean && \
-        rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+    apt-get install -y \
+    curl procps jq rsync \
+    node-ws vim-tiny python3 \
+    dnsutils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+
+USER user
+
+FROM nitro-node as nitro-node-dev
+USER root
+# Copy in latest WASM module root
+RUN rm -f /home/user/target/machines/latest
+COPY --from=node-builder /workspace/target/bin/deploy /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
+COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y \
+    sudo && \
+    chmod -R 555 /home/user/target/machines && \
+    adduser user sudo && \
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+
+USER user
+
+FROM nitro-node as nitro-node-default
+# Just to ensure nitro-node-dist is default

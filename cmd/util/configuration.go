@@ -15,7 +15,7 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-func applyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
+func ApplyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 	// Apply command line options and environment variables
 	if err := applyOverrideOverrides(f, k); err != nil {
 		return err
@@ -33,14 +33,16 @@ func applyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 	}
 
 	// Local config file overrides S3 config file
-	configFile := k.String("conf.file")
-	if len(configFile) > 0 {
-		if err := k.Load(file.Provider(configFile), json.Parser()); err != nil {
-			return errors.Wrap(err, "error loading local config file")
-		}
+	configFiles := k.Strings("conf.file")
+	for _, configFile := range configFiles {
+		if len(configFile) > 0 {
+			if err := k.Load(file.Provider(configFile), json.Parser()); err != nil {
+				return errors.Wrap(err, "error loading local config file")
+			}
 
-		if err := applyOverrideOverrides(f, k); err != nil {
-			return err
+			if err := applyOverrideOverrides(f, k); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -112,7 +114,7 @@ func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
 	var k = koanf.New(".")
 
 	// Initial application of command line parameters and environment variables so other methods can be applied
-	if err := applyOverrides(f, k); err != nil {
+	if err := ApplyOverrides(f, k); err != nil {
 		return nil, err
 	}
 

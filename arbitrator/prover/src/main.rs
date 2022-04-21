@@ -66,9 +66,9 @@ struct Opts {
     /// Require that the machine end in the Finished state
     #[structopt(long)]
     require_success: bool,
-    /// Output the initial WAVM module root hash and exit
+    /// Generate WAVM binary, until host io state, and module root and exit
     #[structopt(long)]
-    output_module_root: bool,
+    generate_binaries: Option<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -194,8 +194,21 @@ fn main() -> Result<()> {
         inbox_contents,
         preimages,
     )?;
-    if opts.output_module_root {
-        println!("{}", mach.get_modules_root());
+    if let Some(output_path) = opts.generate_binaries {
+        let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
+        writeln!(module_root_file, "{}", mach.get_modules_root())?;
+        module_root_file.flush()?;
+
+        mach.serialize_binary(output_path.join("machine.wavm.br"))?;
+        while mach
+            .get_next_instruction()
+            .map(|i| !i.opcode.is_host_io())
+            .unwrap_or(false)
+        {
+            mach.step_n(1);
+        }
+        mach.serialize_state(output_path.join("until-host-io-state.bin"))?;
+
         return Ok(());
     }
 
@@ -227,7 +240,7 @@ fn main() -> Result<()> {
             let prove =
                 count < 5 || (count < 25 && count % 5 == 0) || (count < 125 && count % 25 == 0);
             if !prove {
-                mach.step();
+                mach.step_n(1);
                 continue;
             }
         }
@@ -239,7 +252,7 @@ fn main() -> Result<()> {
             unsafe {
                 start = core::arch::x86_64::_rdtsc();
             }
-            mach.step();
+            mach.step_n(1);
             #[cfg(target_arch = "x86_64")]
             unsafe {
                 end = core::arch::x86_64::_rdtsc();
@@ -303,7 +316,7 @@ fn main() -> Result<()> {
                 break;
             }
             let proof = mach.serialize_proof();
-            mach.step();
+            mach.step_n(1);
             let after = mach.hash();
             println!(" - done");
             proofs.push(ProofInfo {

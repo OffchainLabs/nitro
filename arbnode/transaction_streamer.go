@@ -593,7 +593,7 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 }
 
 func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
-	// TODO: when block 0 is no longer necessarily the genesis, track this
+	// TODO: when block 0 is no longer necessarily the genesis, track this and update core.NitroGenesisBlock
 	return 0, nil
 }
 

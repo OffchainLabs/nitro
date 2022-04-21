@@ -10,8 +10,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
@@ -29,6 +31,7 @@ type context struct {
 	gasLeft     uint64
 	txProcessor *arbos.TxProcessor
 	state       *arbosState.ArbosState
+	tracingInfo *util.TracingInfo
 	readOnly    bool
 }
 
@@ -54,14 +57,20 @@ func (c *context) ReadOnly() bool {
 	return c.readOnly
 }
 
+func (c *context) TracingInfo() *util.TracingInfo {
+	return c.tracingInfo
+}
+
 func testContext(caller addr, evm mech) *context {
+	tracingInfo := util.NewTracingInfo(evm, common.Address{}, types.ArbosAddress, util.TracingDuringEVM)
 	ctx := &context{
 		caller:      caller,
 		gasSupplied: ^uint64(0),
 		gasLeft:     ^uint64(0),
+		tracingInfo: tracingInfo,
 		readOnly:    false,
 	}
-	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(false))
+	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracingInfo, false))
 	if err != nil {
 		panic(err)
 	}

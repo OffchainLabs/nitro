@@ -9,7 +9,7 @@ use digest::Digest;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ValueType {
     I32,
@@ -46,7 +46,7 @@ impl From<RefType> for ValueType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub enum IntegerValType {
     I32,
     I64,
@@ -66,19 +66,9 @@ pub struct ProgramCounter {
     pub module: usize,
     pub func: usize,
     pub inst: usize,
-    pub block_depth: usize,
 }
 
 impl ProgramCounter {
-    pub fn new(module: usize, func: usize, inst: usize, block_depth: usize) -> ProgramCounter {
-        ProgramCounter {
-            module,
-            func,
-            inst,
-            block_depth,
-        }
-    }
-
     pub fn serialize(self) -> Bytes32 {
         let mut b = [0u8; 32];
         b[28..].copy_from_slice(&(self.inst as u32).to_be_bytes());
@@ -198,7 +188,7 @@ impl PartialEq for Value {
 
 impl Eq for Value {}
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionType {
     pub inputs: Vec<ValueType>,
     pub outputs: Vec<ValueType>,

@@ -62,7 +62,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/node $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/seq-coordinator-invalidate
+build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/seq-coordinator-invalidate
 	@printf $(done)
 
 build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
@@ -80,7 +80,7 @@ build-prover-lib: $(arbitrator_prover_lib)
 
 build-prover-bin: $(arbitrator_prover_bin)
 
-build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machines/latest/module_root
+build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machines/latest/machine.wavm.br
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
@@ -137,12 +137,14 @@ clean:
 	@rm -f .make/*
 
 docker:
+	docker build -t nitro-node-slim --target nitro-node-slim .
 	docker build -t nitro-node --target nitro-node .
+	docker build -t nitro-node-dev --target nitro-node-dev .
 
 # regular build rules
 
-$(output_root)/bin/node: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/node
+$(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ ./cmd/nitro
 
 $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ ./cmd/deploy
@@ -287,14 +289,17 @@ $(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrat
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
 
-$(output_root)/machines/latest/module_root: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
-	$(arbitrator_prover_bin) $(replay_wasm) --output-module-root -l $(output_root)/machines/latest/soft-float.wasm -l $(output_root)/machines/latest/wasi_stub.wasm -l $(output_root)/machines/latest/go_stub.wasm -l $(output_root)/machines/latest/host_io.wasm -l $(output_root)/machines/latest/brotli.wasm  > $@
+$(output_root)/machines/latest/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest -l $(output_root)/machines/latest/soft-float.wasm -l $(output_root)/machines/latest/wasi_stub.wasm -l $(output_root)/machines/latest/go_stub.wasm -l $(output_root)/machines/latest/host_io.wasm -l $(output_root)/machines/latest/brotli.wasm
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
 contracts/test/prover/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(output_root)/machines/latest/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(output_root)/machines/latest/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
+
+contracts/test/prover/proofs/no-stack-pollution.json: arbitrator/prover/test-cases/no-stack-pollution.wasm $(arbitrator_prover_bin)
+	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --require-success --always-merkleize
 
 contracts/test/prover/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/data/msg0.bin --inbox arbitrator/prover/test-cases/rust/data/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg1.bin --preimages arbitrator/prover/test-cases/rust/data/preimages.bin

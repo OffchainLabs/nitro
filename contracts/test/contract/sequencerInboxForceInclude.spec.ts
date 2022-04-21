@@ -36,7 +36,7 @@ import { Interface } from '@ethersproject/abi'
 import {
   BridgeInterface,
   MessageDeliveredEvent,
-} from '../../build/types/Bridge'
+} from '../../build/types/src/bridge/Bridge'
 import { Signer } from 'ethers'
 
 const mineBlocks = async (count: number, timeDiffPerBlock = 14) => {

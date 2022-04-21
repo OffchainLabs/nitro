@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -19,13 +20,13 @@ import (
 )
 
 type InboxReaderConfig struct {
-	DelayBlocks int64         `koanf:"delay-blocks"`
+	DelayBlocks uint64        `koanf:"delay-blocks"`
 	CheckDelay  time.Duration `koanf:"check-delay"`
 	HardReorg   bool          `koanf:"hard-reorg"`
 }
 
 func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
+	f.Uint64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
 	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "how long to wait between inbox checks")
 	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
 }
@@ -56,6 +57,11 @@ type InboxReader struct {
 	sequencerInbox *SequencerInbox
 	caughtUpChan   chan bool
 	client         arbutil.L1Interface
+
+	// Behind the mutex
+	lastReadMutex      sync.RWMutex
+	lastReadBlock      uint64
+	lastReadBatchCount uint64
 }
 
 func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
@@ -126,6 +132,14 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	}
 	blocksToFetch := uint64(100)
 	for {
+		timer := time.NewTimer(ir.config.CheckDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+
 		currentHeightRaw, err := ir.client.BlockNumber(ctx)
 		if err != nil {
 			return err
@@ -133,7 +147,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		currentHeight := new(big.Int).SetUint64(currentHeightRaw)
 
 		if ir.config.DelayBlocks > 0 {
-			currentHeight = new(big.Int).Sub(currentHeight, big.NewInt(ir.config.DelayBlocks))
+			currentHeight = new(big.Int).Sub(currentHeight, new(big.Int).SetUint64(ir.config.DelayBlocks))
 			if currentHeight.Cmp(ir.firstMessageBlock) < 0 {
 				currentHeight = new(big.Int).Set(ir.firstMessageBlock)
 			}
@@ -179,11 +193,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 		}
 
+		checkingBatchCount, err := ir.sequencerInbox.GetBatchCount(ctx, currentHeight)
+		if err != nil {
+			return err
+		}
 		{
-			checkingBatchCount, err := ir.sequencerInbox.GetBatchCount(ctx, currentHeight)
-			if err != nil {
-				return err
-			}
 			ourLatestBatchCount, err := ir.tracker.GetBatchCount()
 			if err != nil {
 				return err
@@ -213,6 +227,17 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 		}
 
+		if !missingDelayed && !reorgingDelayed && !missingSequencer && !reorgingSequencer {
+			// There's nothing to do
+			from = currentHeight
+			ir.lastReadMutex.Lock()
+			ir.lastReadBlock = currentHeight.Uint64()
+			ir.lastReadBatchCount = checkingBatchCount
+			ir.lastReadMutex.Unlock()
+			continue
+		}
+
+		readAnyBatches := false
 		for {
 			if ctx.Err() != nil {
 				// the context is done, shut down
@@ -325,6 +350,13 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				if delayedMismatch {
 					reorgingDelayed = true
 				}
+				if len(sequencerBatches) > 0 {
+					readAnyBatches = true
+					ir.lastReadMutex.Lock()
+					ir.lastReadBlock = to.Uint64()
+					ir.lastReadBatchCount = sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1
+					ir.lastReadMutex.Unlock()
+				}
 			}
 			if reorgingDelayed || reorgingSequencer {
 				from, err = ir.getPrevBlockForReorg(from)
@@ -345,12 +377,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 		}
 
-		timer := time.NewTimer(ir.config.CheckDelay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil
-		case <-timer.C:
+		if !readAnyBatches {
+			ir.lastReadMutex.Lock()
+			ir.lastReadBlock = currentHeight.Uint64()
+			ir.lastReadBatchCount = checkingBatchCount
+			ir.lastReadMutex.Unlock()
 		}
 	}
 }
@@ -393,10 +424,8 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 		return nil, err
 	}
 	msgBlock := new(big.Int).SetUint64(msg.Header.BlockNumber)
-	// Re-check the last few blocks just in case there are delayed messages we missed
-	msgBlock.Sub(msgBlock, big.NewInt(20))
 	if arbmath.BigLessThan(msgBlock, r.firstMessageBlock) {
-		return new(big.Int).Set(r.firstMessageBlock), nil
+		msgBlock.Set(r.firstMessageBlock)
 	}
 	return msgBlock, nil
 }
@@ -417,4 +446,14 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 		}
 	}
 	return nil, errors.New("sequencer batch not found")
+}
+
+func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {
+	r.lastReadMutex.RLock()
+	defer r.lastReadMutex.RUnlock()
+	return r.lastReadBlock, r.lastReadBatchCount
+}
+
+func (r *InboxReader) GetDelayBlocks() uint64 {
+	return r.config.DelayBlocks
 }
