@@ -650,23 +650,25 @@ pub fn wasm_to_wavm<'a>(
             }
             Return => {
                 let return_count = func_ty.outputs.len() as StackHeight;
-                
-                // Hold the return values on the internal stack while we drop extraneous stack values
-                for _ in 0..return_count {
-                    opcode!(MoveFromStackToInternal);
-                }
 
-                // Pop the values left on the stack
-                ensure!(stack >= return_count, "stack accounting is wrong: {} {}", stack, return_count);
-                for _ in return_count..stack {
-                    opcode!(Drop);
+                if stack != return_count {
+                    // Hold the return values on the internal stack while we drop extraneous stack values
+                    for _ in 0..return_count {
+                        opcode!(MoveFromStackToInternal);
+                    }
+
+                    // Pop the values left on the stack
+                    ensure!(stack >= return_count, "stack accounting is wrong: {} {}", stack, return_count);
+                    for _ in return_count..stack {
+                        opcode!(Drop);
+                    }
+
+                    // Move the return values back from the internal stack to the value stack
+                    for _ in 0..return_count {
+                        opcode!(MoveFromInternalToStack);
+                    }
                 }
                 stack = 0;
-
-                // Move the return values back from the internal stack to the value stack
-                for _ in 0..return_count {
-                    opcode!(MoveFromInternalToStack);
-                }
                 opcode!(Return);
             }
             Call { function_index } => {
