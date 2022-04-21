@@ -510,7 +510,6 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	log.Info(
 		"InboxTracker sync",
 		"sequencerBatchCount", pos,
-		"messageCount", newMessageCount,
 		"l2BlockNumber", latestBlock,
 		"timestamp", time.Unix(int64(latestTimestamp), 0),
 	)
