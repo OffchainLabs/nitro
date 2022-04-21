@@ -7,7 +7,7 @@ use crate::{
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
-    utils::{file_bytes, Bytes32, RemoteTableType},
+    utils::{file_bytes, Bytes32, DeprecatedTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
@@ -20,6 +20,7 @@ use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, FromInto};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
@@ -212,9 +213,10 @@ impl TableElement {
     }
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Table {
-    #[serde(with = "RemoteTableType")]
+    #[serde_as(as = "FromInto<DeprecatedTableType>")]
     ty: TableType,
     elems: Vec<TableElement>,
     #[serde(skip)]
