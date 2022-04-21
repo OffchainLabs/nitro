@@ -45,6 +45,11 @@ type TransactionStreamer struct {
 	broadcasterQueuedMessages    []arbstate.MessageWithMetadata
 	broadcasterQueuedMessagesPos arbutil.MessageIndex
 
+	latestBlockAndMessageMutex sync.Mutex
+	latestBlock                *types.Block
+	latestMessage              *arbos.L1IncomingMessage
+	newBlockNotifier           chan struct{}
+
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
@@ -55,6 +60,7 @@ func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastSer
 		db:                 rawdb.NewTable(db, arbitrumPrefix),
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
+		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 	}
 	return inbox, nil
@@ -691,7 +697,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg
-			return nil
+			break
 		}
 		if ctx.Err() != nil {
 			// the context is done, shut down
@@ -732,10 +738,22 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			s.validator.NewBlock(block, lastBlockHeader, msg)
 		}
 
+		s.latestBlockAndMessageMutex.Lock()
+		s.latestBlock = block
+		s.latestMessage = msg.Message
+		s.latestBlockAndMessageMutex.Unlock()
+		select {
+		case s.newBlockNotifier <- struct{}{}:
+		default:
+		}
+
 		lastBlockHeader = block.Header()
 	}
 
 	return nil
+}
+
+func logCreatedBlock(block *types.Block, message *arbos.L1IncomingMessage) {
 }
 
 func (s *TransactionStreamer) Initialize() error {
@@ -760,6 +778,35 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 			case <-timer.C:
 			}
 
+		}
+	})
+	s.LaunchThread(func(ctx context.Context) {
+		var lastBlock *types.Block
+		for {
+			select {
+			case <-s.newBlockNotifier:
+			case <-ctx.Done():
+				return
+			}
+			s.latestBlockAndMessageMutex.Lock()
+			block := s.latestBlock
+			message := s.latestMessage
+			s.latestBlockAndMessageMutex.Unlock()
+			if block != lastBlock && block != nil && message != nil {
+				log.Info(
+					"created block",
+					"l2Block", block.Number(),
+					"l2BlockHash", block.Hash(),
+					"l1Block", message.Header.BlockNumber,
+					"l1Timestamp", time.Unix(int64(message.Header.Timestamp), 0),
+				)
+				lastBlock = block
+				select {
+				case <-time.After(time.Second):
+				case <-ctx.Done():
+					return
+				}
+			}
 		}
 	})
 }
