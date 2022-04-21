@@ -499,19 +499,23 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 
 	newMessageCount := prevbatchmeta.MessageCount + arbutil.MessageIndex(len(messages))
-	latestBlock, err := t.txStreamer.MessageCountToBlockNumber(newMessageCount)
+	latestL2Block, err := t.txStreamer.MessageCountToBlockNumber(newMessageCount)
 	if err != nil {
 		return err
 	}
+	var latestL1Block uint64
 	var latestTimestamp uint64
 	if len(messages) > 0 {
-		latestTimestamp = messages[len(messages)-1].Message.Header.Timestamp
+		lastHeader := messages[len(messages)-1].Message.Header
+		latestL1Block = lastHeader.BlockNumber
+		latestTimestamp = lastHeader.Timestamp
 	}
 	log.Info(
 		"InboxTracker sync",
 		"sequencerBatchCount", pos,
-		"l2BlockNumber", latestBlock,
-		"timestamp", time.Unix(int64(latestTimestamp), 0),
+		"l1Block", latestL1Block,
+		"l2Block", latestL2Block,
+		"blockTimestamp", time.Unix(int64(latestTimestamp), 0),
 	)
 
 	if t.validator != nil {
