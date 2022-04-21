@@ -753,9 +753,6 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	return nil
 }
 
-func logCreatedBlock(block *types.Block, message *arbos.L1IncomingMessage) {
-}
-
 func (s *TransactionStreamer) Initialize() error {
 	return s.cleanupInconsistentState()
 }
