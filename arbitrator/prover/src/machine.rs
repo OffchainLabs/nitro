@@ -1005,6 +1005,7 @@ impl Machine {
         let mut entrypoint_names = NameCustomSection {
             module: "entry".into(),
             functions: HashMap::default(),
+            _locals_removed: HashMap::default(),
         };
         entrypoint_names
             .functions
