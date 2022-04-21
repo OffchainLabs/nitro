@@ -594,7 +594,7 @@ pub fn wasm_to_wavm<'a>(
             }
             Else => {
                 branch!(ArbitraryJump, 0);
-                let _ = stack; // silence warning from above
+                let _ = stack; // silence warning from above (we overwrite stack below so the assignment is unused)
 
                 match scopes.last_mut() {
                     Some(Scope::IfElse(_, cond, if_height, _)) if cond.is_some() => {
@@ -627,7 +627,7 @@ pub fn wasm_to_wavm<'a>(
             Br { relative_depth } => branch!(ArbitraryJump, *relative_depth),
             BrIf { relative_depth } => branch!(ArbitraryJumpIf, *relative_depth),
             BrTable { table } => {
-                // Evaluate each branch
+                // evaluate each branch
                 let mut subjumps = vec![];
                 for (index, target) in table.targets().enumerate() {
                     opcode!(Dup);
@@ -637,16 +637,18 @@ pub fn wasm_to_wavm<'a>(
                     opcode!(ArbitraryJumpIf);
                 }
 
-                // Nothing matched. Drop the index and jump to the default.
+                // nothing matched: drop the index and jump to the default.
                 opcode!(Drop, @pop 1);
                 branch!(ArbitraryJump, table.default());
 
-                // Simulate a jump table of branches
+                // simulate a jump table of branches
                 for (jump, branch) in subjumps {
                     out[jump].argument_data = out.len() as u64;
-                    opcode!(Drop, @pop 1);
+                    opcode!(Drop);
                     branch!(ArbitraryJump, branch);
                 }
+                
+                // The stack delta would be off by the number of subjump Drops, but this point is unreachable
             }
             Return => {
                 let return_count = func_ty.outputs.len() as StackHeight;
