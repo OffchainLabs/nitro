@@ -37,10 +37,15 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
     - RollupCore
     - Outbox
 
-- **Sequencer Inbox changes**: The Sequencer inbox has a new interface and requires a new approach to determining a transaction's inclusion on L1; see [arbitrum-sdk](https://github.com/OffchainLabs/arbitrum-sdk/blob/fe3c3ee90a2d713955988dcb6a9f87732b7dbedc/src/lib/message/L2Transaction.ts#L165) for client-side flow. 
+- **Sequencer Inbox changes**: The Sequencer inbox has a new interface and requires a new approach to determining a transaction's inclusion on L1 (see "Batch Info In Receipts" below).
 
 
 - **Outbox Changes**: The Outbox has a new (simplified!) architecture; in short, all outgoing messages will be included in a single Merkle tree (vs Arbitrum classic, in which many outbox entries, each with its own Merkle root, get created over time). See [arbitrum-sdk](https://github.com/OffchainLabs/arbitrum-sdk/blob/fe3c3ee90a2d713955988dcb6a9f87732b7dbedc/src/lib/message/L2ToL1Message.ts#L479) for new flow of interacting with the outbox, which includes interactions with new methods in the NodeInterface virtual precompile (detailed documentation coming soon).
 
-#### Other
-- **No Parity tracing**: Initially `trace_filter` RPCs won't be available; they will be in the coming months.
+#### RPCs
+
+- **No Parity tracing**: Initially `trace_filter` RPCs won't be available; they will be in the coming months. (Note that the Geth tracing APIs _are_ available).
+
+- **Gas Info in Transaction Receipts**: Arbitrum transaction receipts return data about gas in a new format; receipts will have `gasUsed` (total) and `gasUsedForL1` fields (instead of the `feeStats` field in Arbitrum classic).
+
+- **Batch Info In Receipts**: Arbitrum transaction receipts no longer include the `l1SequenceNumber` field; the `findBatchContainingBlock` method in the [NodeInterface](../../contracts/src/node-interface/NodeInterface.sol) virtual precompile can be used to determine a transaction's inclusion in L1.
