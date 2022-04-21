@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -314,7 +315,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		if err != nil {
 			return err
 		}
-		log.Info("InboxTracker", "SequencerBatchCount", count)
+		log.Info("InboxTracker", "sequencerBatchCount", count)
 		err = deleteStartingAt(t.db, batch, sequencerBatchMetaPrefix, uint64ToBytes(count))
 		if err != nil {
 			return err
@@ -496,7 +497,23 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	if err != nil {
 		return err
 	}
-	log.Info("InboxTracker", "sequencerBatchCount", pos, "prevMessageCount", prevbatchmeta.MessageCount, "newMessageCount", int(prevbatchmeta.MessageCount)+len(messages))
+
+	newMessageCount := prevbatchmeta.MessageCount + arbutil.MessageIndex(len(messages))
+	var latestL1Block uint64
+	if len(batches) > 0 {
+		latestL1Block = batches[len(batches)-1].BlockNumber
+	}
+	var latestTimestamp uint64
+	if len(messages) > 0 {
+		latestTimestamp = messages[len(messages)-1].Message.Header.Timestamp
+	}
+	log.Info(
+		"InboxTracker",
+		"sequencerBatchCount", pos,
+		"messageCount", newMessageCount,
+		"l1Block", latestL1Block,
+		"l1Timestamp", time.Unix(int64(latestTimestamp), 0),
+	)
 
 	if t.validator != nil {
 		t.validator.ReorgToBatchCount(startPos)

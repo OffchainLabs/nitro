@@ -1,6 +1,6 @@
 import {
   GlobalStateStruct,
-} from '../../../build/types/RollupUserLogic'
+} from '../../../build/types/src/rollup/RollupUserLogic.sol/RollupUserLogic'
 import { solidityKeccak256 } from 'ethers/lib/utils'
 
 export function hash(state: GlobalStateStruct) {
