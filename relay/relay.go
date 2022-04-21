@@ -13,12 +13,12 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Relay struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 	broadcastClients            []*broadcastclient.BroadcastClient
 	broadcaster                 *broadcaster.Broadcaster
 	confirmedSequenceNumberChan chan arbutil.MessageIndex

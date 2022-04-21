@@ -18,7 +18,7 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type StakerStrategy uint8
@@ -104,7 +104,7 @@ type nodeAndHash struct {
 
 type Staker struct {
 	*L1Validator
-	util.StopWaiter
+	stopwaiter.StopWaiter
 	l1Reader                L1ReaderInterface
 	activeChallenge         *ChallengeManager
 	strategy                StakerStrategy

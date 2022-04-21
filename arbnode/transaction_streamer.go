@@ -24,14 +24,14 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
 // Produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
 // The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 
 	db ethdb.Database
 	bc *core.BlockChain
