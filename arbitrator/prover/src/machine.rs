@@ -332,7 +332,16 @@ impl Module {
             let func_ty = func_types[idx].clone();
             code.push(Function::new(
                 &c.locals,
-                |code| wasm_to_wavm(&c.expr, code, floating_point_impls, &func_types, &types, &func_ty),
+                |code| {
+                    wasm_to_wavm(
+                        &c.expr,
+                        code,
+                        floating_point_impls,
+                        &func_types,
+                        &types,
+                        &func_ty,
+                    )
+                },
                 func_ty.clone(),
                 &types,
             )?);

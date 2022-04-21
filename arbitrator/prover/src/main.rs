@@ -230,7 +230,7 @@ fn main() -> Result<()> {
     while !mach.is_halted() {
         let next_inst = mach.get_next_instruction().unwrap();
         let next_opcode = next_inst.opcode;
-        
+
         if opts.proving_backoff {
             let count_entry = opcode_counts.entry(next_opcode).or_insert(0);
             *count_entry += 1;
@@ -243,7 +243,7 @@ fn main() -> Result<()> {
                 continue;
             }
         }
-        
+
         if opts.profile_run {
             let start: u64;
             let end: u64;

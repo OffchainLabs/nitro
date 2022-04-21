@@ -647,7 +647,7 @@ pub fn wasm_to_wavm<'a>(
                     opcode!(Drop);
                     branch!(ArbitraryJump, branch);
                 }
-                
+
                 // The stack delta would be off by the number of subjump Drops, but this point is unreachable
             }
             Return => {
@@ -681,7 +681,7 @@ pub fn wasm_to_wavm<'a>(
             CallIndirect { index, table_index, .. } => {
                 let ty = &all_types[*index as usize];
                 let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
-                opcode!(CallIndirect, pack_call_indirect(*table_index, *index), @push delta);
+                opcode!(CallIndirect, pack_call_indirect(*table_index, *index), @push delta - 1);
             }
 
             unsupported @ dot!(ReturnCall, ReturnCallIndirect) => {
