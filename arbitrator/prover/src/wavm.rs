@@ -568,17 +568,26 @@ pub fn wasm_to_wavm<'a>(
             Br { relative_depth } => branch!(ArbitraryJump, *relative_depth),
             BrIf { relative_depth } => branch!(ArbitraryJumpIf, *relative_depth),
             BrTable { table } => {
-                // Evaluate each branch
+                // evaluate each branch
+                let mut subjumps = vec![];
                 for (index, target) in table.targets().enumerate() {
                     opcode!(Dup);
                     opcode!(I32Const, index as u64);
                     compare!(I32, Eq, false);
-                    branch!(ArbitraryJumpIf, target?);
+                    subjumps.push((out.len(), target?));
+                    opcode!(ArbitraryJumpIf);
                 }
 
-                // Nothing matched. Drop the index and jump to the default.
+                // nothing matched: drop the index and jump to the default.
                 opcode!(Drop);
                 branch!(ArbitraryJump, table.default());
+
+                // simulate a jump table of branches
+                for (jump, branch) in subjumps {
+                    out[jump].argument_data = out.len() as u64;
+                    opcode!(Drop);
+                    branch!(ArbitraryJump, branch);
+                }
             }
             Return => {
                 // Hold the return values on the internal stack while we drop extraneous stack values
