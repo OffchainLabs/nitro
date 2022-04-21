@@ -10,8 +10,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
@@ -201,8 +203,10 @@ func (s *L1Reader) broadcastLoop(ctx context.Context) {
 				clientSubscription, err = s.client.SubscribeNewHead(ctx, inputChannel)
 				if err != nil {
 					clientSubscription = nil
-					if time.Now().After(nextSubscribeErr) {
-						log.Error("failed subscribing to header", "err", err)
+					if errors.Is(err, rpc.ErrNotificationsUnsupported) {
+						s.config.PollOnly = true
+					} else if time.Now().After(nextSubscribeErr) {
+						log.Warn("failed subscribing to header", "err", err)
 						nextSubscribeErr = time.Now().Add(s.config.SubscribeErrInterval)
 					}
 				}
