@@ -35,8 +35,11 @@ The jump locations can be known at transpilation time, making blocks obsolete.
 
 ## `br_table`
 
-`br_table` is translated to an `ArbitraryJumpIf` for each possible branch in the table,
-and then if none of the checks hit, an `ArbitraryJump` to the default level.
+`br_table` is translated to a check for each possible branch in the table,
+and then if none of the checks hit, a branch of the default level.
+
+Each of the non-default branches has a conditional jump to a section afterwards,
+containing a `drop` for the selector, and then a jump to the target branch.
 
 ## `local.tee`
 
