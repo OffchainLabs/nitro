@@ -23,12 +23,12 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type BatchPoster struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 	l1Reader      *L1Reader
 	inbox         *InboxTracker
 	streamer      *TransactionStreamer
