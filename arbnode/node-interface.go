@@ -537,6 +537,11 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	nodeInterfaceMore, err := abi.JSON(strings.NewReader(node_interfacegen.NodeInterfaceMoreABI))
+	if err != nil {
+		panic(err)
+	}
+
 	core.InterceptRPCMessage = func(
 		msg Message,
 		ctx context.Context,
@@ -545,10 +550,15 @@ func init() {
 	) (Message, *ExecutionResult, error) {
 		to := msg.To()
 		arbosVersion := arbosState.ArbOSVersion(statedb) // check ArbOS has been installed
-		if to == nil || *to != types.NodeInterfaceAddress || arbosVersion == 0 {
-			return msg, nil, nil
+		if to != nil && arbosVersion != 0 {
+			switch *to {
+			case types.NodeInterfaceAddress:
+				return ApplyNodeInterface(msg, ctx, statedb, backend, nodeInterface)
+			case types.NodeInterfaceMoreAddress:
+				return ApplyNodeInterfaceMore(msg, ctx, statedb, backend, nodeInterfaceMore)
+			}
 		}
-		return ApplyNodeInterface(msg, ctx, statedb, backend, nodeInterface)
+		return msg, nil, nil
 	}
 
 	core.InterceptRPCGasCap = func(gascap *uint64, msg Message, header *types.Header, statedb *state.StateDB) {

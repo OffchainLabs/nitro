@@ -186,6 +186,10 @@ func (retryable *Retryable) SetTimeout(val uint64) error {
 	return retryable.timeout.Set(val)
 }
 
+func (retryable *Retryable) TimeoutWindowsLeft() (uint64, error) {
+	return retryable.timeoutWindowsLeft.Get()
+}
+
 func (retryable *Retryable) From() (common.Address, error) {
 	return retryable.from.Get()
 }
@@ -353,6 +357,36 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 		TicketId:  ticketId,
 		RefundTo:  refundTo,
 	}, nil
+}
+
+func (retryable *Retryable) SerializeRetryable() ([]byte, error) {
+	timeout, _ := retryable.CalculateTimeout()
+	from, _ := retryable.from.Get()
+	toPointer, _ := retryable.To()
+	callvalue, _ := retryable.Callvalue()
+	beneficiary, _ := retryable.Beneficiary()
+	calldata, _ := retryable.Calldata()
+	tries, err := retryable.NumTries()
+
+	if err != nil {
+		return nil, err
+	}
+
+	to := common.Address{}
+	if toPointer != nil {
+		to = *toPointer
+	}
+
+	out := []byte{}
+	out = append(out, retryable.id.Bytes()...)
+	out = append(out, arbmath.UintToBytes(timeout)...)
+	out = append(out, from.Bytes()...)
+	out = append(out, to.Bytes()...)
+	out = append(out, callvalue.Bytes()...)
+	out = append(out, beneficiary.Bytes()...)
+	out = append(out, calldata...)
+	out = append(out, arbmath.UintToBytes(tries)...)
+	return out, nil
 }
 
 func RetryableEscrowAddress(ticketId common.Hash) common.Address {
