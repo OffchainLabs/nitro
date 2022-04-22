@@ -18,20 +18,20 @@ import (
 	"github.com/pkg/errors"
 )
 
-func ApplyNodeInterfaceMore(
+func ApplyNodeInterfaceDebug(
 	msg Message,
 	ctx context.Context,
 	statedb *state.StateDB,
 	backend core.NodeInterfaceBackendAPI,
-	nodeInterfaceMore abi.ABI,
+	nodeInterfaceDebug abi.ABI,
 ) (Message, *ExecutionResult, error) {
 
-	queueMethod := nodeInterfaceMore.Methods["retryableTimeoutQueue"]
-	retryMethod := nodeInterfaceMore.Methods["serializeRetryable"]
+	queueMethod := nodeInterfaceDebug.Methods["retryableTimeoutQueue"]
+	retryMethod := nodeInterfaceDebug.Methods["serializeRetryable"]
 
 	calldata := msg.Data()
 	if len(calldata) < 4 {
-		return msg, nil, errors.New("calldata for NodeInterfaceMore.sol is too short")
+		return msg, nil, errors.New("calldata for NodeInterfaceDebug.sol is too short")
 	}
 
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -45,7 +45,7 @@ func ApplyNodeInterfaceMore(
 		if err != nil {
 			return msg, nil, err
 		}
-		res, err := nodeInterfaceMoreTimeoutQueue(state, queueMethod)
+		res, err := nodeInterfaceDebugTimeoutQueue(state, queueMethod)
 		return msg, res, err
 	}
 
@@ -55,14 +55,14 @@ func ApplyNodeInterfaceMore(
 			return msg, nil, err
 		}
 		id, _ := inputs[0].([32]byte)
-		res, err := nodeInterfaceMoreSerializeRetryable(state, id)
+		res, err := nodeInterfaceDebugSerializeRetryable(state, id)
 		return msg, res, err
 	}
 
 	return msg, nil, nil
 }
 
-func nodeInterfaceMoreTimeoutQueue(state *arbosState.ArbosState, method abi.Method) (*ExecutionResult, error) {
+func nodeInterfaceDebugTimeoutQueue(state *arbosState.ArbosState, method abi.Method) (*ExecutionResult, error) {
 
 	tickets := make([]common.Hash, 0)
 	timeouts := make([]uint64, 0)
@@ -106,7 +106,7 @@ func nodeInterfaceMoreTimeoutQueue(state *arbosState.ArbosState, method abi.Meth
 	return res, nil
 }
 
-func nodeInterfaceMoreSerializeRetryable(state *arbosState.ArbosState, id common.Hash) (*ExecutionResult, error) {
+func nodeInterfaceDebugSerializeRetryable(state *arbosState.ArbosState, id common.Hash) (*ExecutionResult, error) {
 	// we don't care if the retryable has expired
 	retryable, err := state.RetryableState().OpenRetryable(id, 0)
 	if err != nil {

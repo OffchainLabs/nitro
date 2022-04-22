@@ -10,7 +10,7 @@ pragma solidity >=0.4.21 <0.9.0;
  *  as such may change without notice.
  */
 
-interface NodeInterfaceMore {
+interface NodeInterfaceDebug {
     /**
      * @notice exports the state of the retryable timeout queue
      * @return queueSize the number of elements in the queue

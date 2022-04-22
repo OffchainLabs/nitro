@@ -537,7 +537,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	nodeInterfaceMore, err := abi.JSON(strings.NewReader(node_interfacegen.NodeInterfaceMoreABI))
+	nodeInterfaceDebug, err := abi.JSON(strings.NewReader(node_interfacegen.NodeInterfaceDebugABI))
 	if err != nil {
 		panic(err)
 	}
@@ -554,8 +554,8 @@ func init() {
 			switch *to {
 			case types.NodeInterfaceAddress:
 				return ApplyNodeInterface(msg, ctx, statedb, backend, nodeInterface)
-			case types.NodeInterfaceMoreAddress:
-				return ApplyNodeInterfaceMore(msg, ctx, statedb, backend, nodeInterfaceMore)
+			case types.NodeInterfaceDebugAddress:
+				return ApplyNodeInterfaceDebug(msg, ctx, statedb, backend, nodeInterfaceDebug)
 			}
 		}
 		return msg, nil, nil
