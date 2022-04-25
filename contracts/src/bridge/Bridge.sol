@@ -32,7 +32,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     address[] public allowedInboxList;
     address[] public allowedOutboxList;
 
-    address public override activeOutbox;
+    address public override activeOutbox = address(type(uint160).max);
 
     /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override inboxAccs;
