@@ -12,13 +12,13 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
 type L1Reader struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 	config L1ReaderConfig
 	client arbutil.L1Interface
 

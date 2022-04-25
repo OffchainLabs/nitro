@@ -26,7 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 const CHOSENSEQ_KEY string = "coordinator.chosen"              // Never overwritten. Expires or released only
@@ -38,7 +38,7 @@ const LIVELINESS_VAL string = "OK"
 const INVALID_VAL string = "INVALID"
 
 type SeqCoordinator struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 
 	streamer                *TransactionStreamer
 	sequencer               *Sequencer
