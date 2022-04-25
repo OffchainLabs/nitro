@@ -15,12 +15,12 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type DelayedSequencer struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 	l1Reader        *L1Reader
 	bridge          *DelayedBridge
 	inbox           *InboxTracker
