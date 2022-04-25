@@ -26,6 +26,9 @@ error AlreadySpent(uint256 index);
 /// @dev A call to the bridge failed with no return data
 error BridgeCallFailed();
 
+/// @dev Outbox do not process any tx
+error OutboxNotStart();
+
 interface IOutbox {
     event SendRootUpdated(bytes32 indexed blockHash, bytes32 indexed outputRoot);
     event OutBoxTransactionExecuted(

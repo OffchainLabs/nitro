@@ -4,12 +4,12 @@
 
 pragma solidity ^0.8.4;
 
-import "./IBridge.sol";
-import "./IOutbox.sol";
+import "../bridge/IBridge.sol";
+import "../bridge/IOutbox.sol";
 import "../libraries/MerkleLib.sol";
 import "../libraries/DelegateCallAware.sol";
 
-contract Outbox is DelegateCallAware, IOutbox {
+contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
     address public rollup; // the rollup contract
     IBridge public bridge; // the bridge contract
 
@@ -34,22 +34,14 @@ contract Outbox is DelegateCallAware, IOutbox {
         _;
     }
 
-    function initialize(address _rollup, IBridge _bridge) external onlyDelegated {
+    function initialize(address _rollup, IBridge _bridge) external {
         if (rollup != address(0)) revert AlreadyInit();
-        bytes32 initialBytes = keccak256(abi.encode(block.timestamp));
-        context = L2ToL1Context({
-            l2Block: type(uint128).max,
-            l1Block: type(uint128).max,
-            timestamp: type(uint128).max,
-            outputId: initialBytes,
-            sender: address(this)
-        });
         rollup = _rollup;
         bridge = _bridge;
     }
 
     function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external override {
-        if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
+        //if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);  //test only!!!
         roots[root] = l2BlockHash;
         emit SendRootUpdated(root, l2BlockHash);
     }
