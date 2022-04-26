@@ -46,19 +46,6 @@ func init() {
 	nodeInterfaceDebugMeta := node_interfacegen.NodeInterfaceDebugMetaData
 	_, nodeInterfaceDebug := precompiles.MakePrecompile(nodeInterfaceDebugMeta, nodeInterfaceDebugImpl)
 
-	resetInterfaceImpls := func(msg Message, ret *Message, retBool *bool, ctx context.Context, backend BackendAPI) {
-		nodeInterfaceImpl.backend = backend
-		nodeInterfaceImpl.context = ctx
-		nodeInterfaceImpl.sourceMessage = msg
-		nodeInterfaceImpl.returnMessage.message = ret
-		nodeInterfaceImpl.returnMessage.changed = retBool
-		nodeInterfaceDebugImpl.backend = backend
-		nodeInterfaceDebugImpl.context = ctx
-		nodeInterfaceDebugImpl.sourceMessage = msg
-		nodeInterfaceDebugImpl.returnMessage.message = ret
-		nodeInterfaceDebugImpl.returnMessage.changed = retBool
-	}
-
 	core.InterceptRPCMessage = func(
 		msg Message,
 		ctx context.Context,
@@ -70,14 +57,28 @@ func init() {
 		arbosVersion := arbosState.ArbOSVersion(statedb) // check ArbOS has been installed
 		if to != nil && arbosVersion != 0 {
 			var precompile precompiles.ArbosPrecompile
+			var swapMessages bool
+			returnMessage := &Message{}
 			var address addr
 
 			switch *to {
 			case types.NodeInterfaceAddress:
-				precompile = nodeInterface
+				duplicate := *nodeInterfaceImpl
+				duplicate.backend = backend
+				duplicate.context = ctx
+				duplicate.sourceMessage = msg
+				duplicate.returnMessage.message = returnMessage
+				duplicate.returnMessage.changed = &swapMessages
+				precompile = nodeInterface.SwapImpl(&duplicate)
 				address = types.NodeInterfaceAddress
 			case types.NodeInterfaceDebugAddress:
-				precompile = nodeInterfaceDebug
+				duplicate := *nodeInterfaceDebugImpl
+				duplicate.backend = backend
+				duplicate.context = ctx
+				duplicate.sourceMessage = msg
+				duplicate.returnMessage.message = returnMessage
+				duplicate.returnMessage.changed = &swapMessages
+				precompile = nodeInterfaceDebug.SwapImpl(&duplicate)
 				address = types.NodeInterfaceDebugAddress
 			default:
 				return msg, nil, nil
@@ -92,10 +93,6 @@ func init() {
 				evm.Cancel()
 			}()
 			core.ReadyEVMForL2(evm, msg)
-
-			var swapMessages bool
-			returnMessage := &Message{}
-			resetInterfaceImpls(msg, returnMessage, &swapMessages, ctx, backend)
 
 			output, gasLeft, err := precompile.Call(
 				msg.Data(), address, address, msg.From(), msg.Value(), false, msg.Gas(), evm,

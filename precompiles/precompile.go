@@ -116,7 +116,7 @@ func (e *SolError) Error() string {
 
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
 // supports each method.
-func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, ArbosPrecompile) {
+func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Precompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
 		log.Fatal("Bad ABI")
@@ -542,6 +542,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
 	return contracts
+}
+
+func (p Precompile) SwapImpl(impl interface{}) Precompile {
+	p.implementer = reflect.ValueOf(impl)
+	return p
 }
 
 // call a precompile in typed form, deserializing its inputs and serializing its outputs
