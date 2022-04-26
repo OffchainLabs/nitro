@@ -1,6 +1,5 @@
-//
-// Copyright 2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package das
 
@@ -32,7 +31,9 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		signerMask := uint64(1 << i)
 		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
 		Require(t, err)
-		backends = append(backends, serviceDetails{das, *das.pubKey, signerMask})
+		details, err := newServiceDetails(das, *das.pubKey, signerMask)
+		Require(t, err)
+		backends = append(backends, *details)
 	}
 
 	aggregator := NewAggregator(AggregatorConfig{1, 7 * 24 * time.Hour}, backends)
@@ -142,6 +143,13 @@ func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (
 	case tooSlow:
 		<-ctx.Done()
 		return nil, errors.New("Canceled")
+	case dataCorruption:
+		cert, err := w.DataAvailabilityService.Store(ctx, message, timeout)
+		if err != nil {
+			return nil, err
+		}
+		cert.DataHash[0] = ^cert.DataHash[0]
+		return cert, nil
 	}
 	Fail(w.t)
 	return nil, nil
@@ -181,7 +189,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	nSuccesses := numBackendDAS - nFailures
 	log.Trace(fmt.Sprintf("Testing aggregator with K:%d with K=N+1-H, N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
 
-	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, tooSlow)
+	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	var backends []serviceDetails
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
@@ -192,9 +200,9 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
 		Require(t, err)
 
-		details := serviceDetails{&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask}
-
-		backends = append(backends, details)
+		details, err := newServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask)
+		Require(t, err)
+		backends = append(backends, *details)
 	}
 
 	aggregator := DeadlineWrapper{time.Millisecond * 2000, NewAggregator(AggregatorConfig{assumedHonest, 7 * 24 * time.Hour}, backends)}
@@ -244,7 +252,7 @@ func initTest(t *testing.T) int {
 func TestDAS_LessThanHStorageFailures(t *testing.T) {
 	runs := initTest(t)
 
-	for i := 0; i < min(runs, 50); i++ {
+	for i := 0; i < min(runs, 20); i++ {
 		testConfigurableStorageFailures(t, false)
 	}
 }
