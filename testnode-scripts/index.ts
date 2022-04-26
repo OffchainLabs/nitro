@@ -11,7 +11,7 @@ async function main() {
         .options({
             redisUrl: { string: true, default: "redis://redis:6379" },
             l1url: { string: true, default: "ws://geth:8546" },
-            l2url: { string: true, default: "ws://sequencer:7546" },
+            l2url: { string: true, default: "ws://sequencer:8548" },
         })
         .options(stressOptions)
         .command(bridgeFundsCommand)

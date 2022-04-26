@@ -1,11 +1,14 @@
 package conf
 
 import (
-	"errors"
+	"os"
+	"path"
+	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
@@ -14,7 +17,7 @@ const PASSWORD_NOT_SET = "PASSWORD_NOT_SET"
 type ConfConfig struct {
 	Dump      bool     `koanf:"dump"`
 	EnvPrefix string   `koanf:"env-prefix"`
-	File      string   `koanf:"file"`
+	File      []string `koanf:"file"`
 	S3        S3Config `koanf:"s3"`
 	String    string   `koanf:"string"`
 }
@@ -22,7 +25,7 @@ type ConfConfig struct {
 func ConfConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".dump", ConfConfigDefault.Dump, "print out currently active configuration file")
 	f.String(prefix+".env-prefix", ConfConfigDefault.EnvPrefix, "environment variables with given prefix will be loaded as configuration values")
-	f.String(prefix+".file", ConfConfigDefault.File, "name of configuration file")
+	f.StringSlice(prefix+".file", ConfConfigDefault.File, "name of configuration file")
 	S3ConfigAddOptions(prefix+".s3", f)
 	f.String(prefix+".string", ConfConfigDefault.String, "configuration as JSON string")
 }
@@ -30,7 +33,7 @@ func ConfConfigAddOptions(prefix string, f *flag.FlagSet) {
 var ConfConfigDefault = ConfConfig{
 	Dump:      false,
 	EnvPrefix: "",
-	File:      "",
+	File:      nil,
 	S3:        DefaultS3Config,
 	String:    "",
 }
@@ -60,16 +63,16 @@ var DefaultS3Config = S3Config{
 }
 
 type L1Config struct {
-	ChainID            uint64       `koanf:"chain-id"`
-	Deployment         string       `koanf:"deployment"`
-	URL                string       `koanf:"url"`
-	ConnectionAttempts int          `koanf:"connection-attempts"`
-	Wallet             WalletConfig `koanf:"wallet"`
+	ChainID            uint64                        `koanf:"chain-id"`
+	Rollup             arbnode.RollupAddressesConfig `koanf:"rollup"`
+	URL                string                        `koanf:"url"`
+	ConnectionAttempts int                           `koanf:"connection-attempts"`
+	Wallet             WalletConfig                  `koanf:"wallet"`
 }
 
 var L1ConfigDefault = L1Config{
-	ChainID:            1337,
-	Deployment:         "",
+	ChainID:            0,
+	Rollup:             arbnode.RollupAddressesConfigDefault,
 	URL:                "",
 	ConnectionAttempts: 15,
 	Wallet:             WalletConfigDefault,
@@ -77,25 +80,34 @@ var L1ConfigDefault = L1Config{
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
-	f.String(prefix+".deployment", L1ConfigDefault.Deployment, "json file including the existing deployment information")
 	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
+	arbnode.RollupAddressesConfigAddOptions(prefix+".rollup", f)
 	f.Int(prefix+".connection-attempts", L1ConfigDefault.ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
-	WalletConfigAddOptions(prefix+".wallet", f)
+	WalletConfigAddOptions(prefix+".wallet", f, "wallet")
+}
+
+func (c *L1Config) ResolveDirectoryNames(chain string) {
+	c.Wallet.ResolveDirectoryNames(chain)
 }
 
 type L2Config struct {
-	ChainID uint64       `koanf:"chain-id"`
-	Wallet  WalletConfig `koanf:"wallet"`
+	ChainID   uint64       `koanf:"chain-id"`
+	DevWallet WalletConfig `koanf:"dev-wallet"`
 }
 
 var L2ConfigDefault = L2Config{
-	ChainID: params.ArbitrumTestnetChainConfig().ChainID.Uint64(),
-	Wallet:  WalletConfigDefault,
+	ChainID:   0,
+	DevWallet: WalletConfigDefault,
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
-	WalletConfigAddOptions(prefix+".wallet", f)
+	// Dev wallet does not exist unless specified
+	WalletConfigAddOptions(prefix+".dev-wallet", f, "")
+}
+
+func (c *L2Config) ResolveDirectoryNames(chain string) {
+	c.DevWallet.ResolveDirectoryNames(chain)
 }
 
 type WalletConfig struct {
@@ -105,7 +117,7 @@ type WalletConfig struct {
 	Account      string `koanf:"account"`
 }
 
-func (w WalletConfig) Password() *string {
+func (w *WalletConfig) Password() *string {
 	if w.PasswordImpl == PASSWORD_NOT_SET {
 		return nil
 	}
@@ -119,29 +131,63 @@ var WalletConfigDefault = WalletConfig{
 	Account:      "",
 }
 
-func WalletConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".pathname", WalletConfigDefault.Pathname, "pathname for wallet")
+func WalletConfigAddOptions(prefix string, f *flag.FlagSet, defaultPathname string) {
+	f.String(prefix+".pathname", defaultPathname, "pathname for wallet")
 	f.String(prefix+".password", WalletConfigDefault.PasswordImpl, "wallet passphrase")
 	f.String(prefix+".private-key", WalletConfigDefault.PasswordImpl, "private key for wallet")
 	f.String(prefix+".account", WalletConfigDefault.Account, "account to use (default is first account in keystore)")
 }
 
+func (w *WalletConfig) ResolveDirectoryNames(chain string) {
+	// Make wallet directories relative to chain directory if specified and not already absolute
+	if len(w.Pathname) != 0 && !filepath.IsAbs(w.Pathname) {
+		w.Pathname = path.Join(chain, w.Pathname)
+	}
+}
+
 type PersistentConfig struct {
 	GlobalConfig string `koanf:"global-config"`
 	Chain        string `koanf:"chain"`
-	Data         string `koanf:"data"`
 }
 
 var PersistentConfigDefault = PersistentConfig{
-	GlobalConfig: "",
+	GlobalConfig: ".arbitrum",
 	Chain:        "",
-	Data:         "",
 }
 
 func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
 	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
-	f.String(prefix+".data", PersistentConfigDefault.Data, "directory for data storage requirements")
+}
+
+func (c *PersistentConfig) ResolveDirectoryNames() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return errors.Wrap(err, "Unable to read users home directory")
+	}
+
+	// Make persistent storage directory relative to home directory if not already absolute
+	if !filepath.IsAbs(c.GlobalConfig) {
+		c.GlobalConfig = path.Join(homeDir, c.GlobalConfig)
+	}
+	err = os.MkdirAll(c.GlobalConfig, os.ModePerm)
+	if err != nil {
+		return errors.Wrap(err, "Unable to create global configuration directory")
+	}
+
+	// Make chain directory relative to persistent storage directory if not already absolute
+	if !filepath.IsAbs(c.Chain) {
+		c.Chain = path.Join(c.GlobalConfig, c.Chain)
+	}
+	err = os.MkdirAll(c.Chain, os.ModePerm)
+	if err != nil {
+		return errors.Wrap(err, "Unable to create chain directory")
+	}
+	if DatabaseInDirectory(c.Chain) {
+		return errors.Errorf("Database in --persistent.chain (%s) directory, try specifying parent directory", c.Chain)
+	}
+
+	return nil
 }
 
 type HTTPConfig struct {
@@ -155,7 +201,7 @@ type HTTPConfig struct {
 
 var HTTPConfigDefault = HTTPConfig{
 	Addr:       node.DefaultConfig.HTTPHost,
-	Port:       7545,
+	Port:       8547,
 	API:        append(node.DefaultConfig.HTTPModules, "eth"),
 	RPCPrefix:  node.DefaultConfig.HTTPPathPrefix,
 	CORSDomain: node.DefaultConfig.HTTPCors,
@@ -182,7 +228,7 @@ type WSConfig struct {
 
 var WSConfigDefault = WSConfig{
 	Addr:      node.DefaultConfig.WSHost,
-	Port:      7546,
+	Port:      8548,
 	API:       append(node.DefaultConfig.WSModules, "eth"),
 	RPCPrefix: node.DefaultConfig.WSPathPrefix,
 	Origins:   node.DefaultConfig.WSOrigins,
@@ -220,4 +266,11 @@ var MetricsServerConfigDefault = MetricsServerConfig{
 func MetricsServerAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", MetricsServerConfigDefault.Addr, "metrics server address")
 	f.Int(prefix+".port", MetricsServerConfigDefault.Port, "metrics server port")
+}
+
+func DatabaseInDirectory(path string) bool {
+	// Consider database present if file `CURRENT` in directory
+	_, err := os.Stat(path + "/CURRENT")
+
+	return err == nil
 }
