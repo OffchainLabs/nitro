@@ -70,5 +70,27 @@ func (n NodeInterfaceDebug) SerializeRetryable(c ctx, evm mech, ticket bytes32) 
 	if retryable == nil {
 		return RetryableInfo{}, fmt.Errorf("no retryable with id %v exists", ticket)
 	}
-	return retryable.SerializeRetryable()
+
+	timeout, _ := retryable.CalculateTimeout()
+	from, _ := retryable.From()
+	toPointer, _ := retryable.To()
+	callvalue, _ := retryable.Callvalue()
+	beneficiary, _ := retryable.Beneficiary()
+	calldata, _ := retryable.Calldata()
+	tries, err := retryable.NumTries()
+
+	to := common.Address{}
+	if toPointer != nil {
+		to = *toPointer
+	}
+
+	return node_interfacegen.NodeInterfaceDebugRetryableInfo{
+		Timeout:     timeout,
+		From:        from,
+		To:          to,
+		Value:       callvalue,
+		Beneficiary: beneficiary,
+		Tries:       tries,
+		Data:        calldata,
+	}, err
 }

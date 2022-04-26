@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -358,31 +357,6 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 		TicketId:  ticketId,
 		RefundTo:  refundTo,
 	}, nil
-}
-
-func (retryable *Retryable) SerializeRetryable() (node_interfacegen.NodeInterfaceDebugRetryableInfo, error) {
-	timeout, _ := retryable.CalculateTimeout()
-	from, _ := retryable.from.Get()
-	toPointer, _ := retryable.To()
-	callvalue, _ := retryable.Callvalue()
-	beneficiary, _ := retryable.Beneficiary()
-	calldata, _ := retryable.Calldata()
-	tries, err := retryable.NumTries()
-
-	to := common.Address{}
-	if toPointer != nil {
-		to = *toPointer
-	}
-
-	return node_interfacegen.NodeInterfaceDebugRetryableInfo{
-		Timeout:     timeout,
-		From:        from,
-		To:          to,
-		Value:       callvalue,
-		Beneficiary: beneficiary,
-		Tries:       tries,
-		Data:        calldata,
-	}, err
 }
 
 func RetryableEscrowAddress(ticketId common.Hash) common.Address {
