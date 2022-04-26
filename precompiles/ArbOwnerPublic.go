@@ -16,15 +16,15 @@ type ArbOwnerPublic struct {
 
 // Retrieves the list of chain owners
 func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.state.ChainOwners().AllMembers()
+	return c.State.ChainOwners().AllMembers()
 }
 
 // See if the user is a chain owner
 func (con ArbOwnerPublic) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
-	return c.state.ChainOwners().IsMember(addr)
+	return c.State.ChainOwners().IsMember(addr)
 }
 
 // Gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
-	return c.state.NetworkFeeAccount()
+	return c.State.NetworkFeeAccount()
 }

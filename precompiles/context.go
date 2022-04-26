@@ -30,7 +30,7 @@ type Context struct {
 	gasSupplied uint64
 	gasLeft     uint64
 	txProcessor *arbos.TxProcessor
-	state       *arbosState.ArbosState
+	State       *arbosState.ArbosState
 	tracingInfo *util.TracingInfo
 	readOnly    bool
 }
@@ -74,7 +74,7 @@ func testContext(caller addr, evm mech) *Context {
 	if err != nil {
 		panic(err)
 	}
-	ctx.state = state
+	ctx.State = state
 	var ok bool
 	ctx.txProcessor, ok = evm.ProcessingHook.(*arbos.TxProcessor)
 	if !ok {

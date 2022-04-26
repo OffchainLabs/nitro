@@ -609,7 +609,7 @@ func (p Precompile) Call(
 		if err != nil {
 			return nil, 0, err
 		}
-		callerCtx.state = state
+		callerCtx.State = state
 	}
 
 	switch txProcessor := evm.ProcessingHook.(type) {
