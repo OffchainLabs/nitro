@@ -76,6 +76,7 @@ interface IInbox is IMessageProvider {
 
     function depositEth() external payable returns (uint256);
 
+    /// @notice deprecated in favour of depositEth with no parameters
     function depositEth(uint256 maxSubmissionCost) external payable returns (uint256);
 
     function bridge() external view returns (IBridge);
