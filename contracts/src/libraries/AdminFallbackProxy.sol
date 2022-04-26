@@ -11,8 +11,6 @@ import "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 /// @notice An extension to OZ's ERC1967Upgrade implementation to support two logic contracts
 abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
-    using Address for address;
-
     // This is the keccak-256 hash of "eip1967.proxy.implementation.secondary" subtracted by 1
     bytes32 internal constant _IMPLEMENTATION_SECONDARY_SLOT =
         0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d;
@@ -138,7 +136,7 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
             ? DoubleLogicERC1967Upgrade._getSecondaryImplementation()
             : ERC1967Upgrade._getImplementation();
         // implementation setters do an existence check, but we protect against selfdestructs this way
-        require(target.isContract(), "TARGET_NOT_CONTRACT");
+        require(Address.isContract(target), "TARGET_NOT_CONTRACT");
         return target;
     }
 
