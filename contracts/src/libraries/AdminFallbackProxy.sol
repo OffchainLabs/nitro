@@ -137,8 +137,8 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
         address target = _getAdmin() != msg.sender
             ? DoubleLogicERC1967Upgrade._getSecondaryImplementation()
             : ERC1967Upgrade._getImplementation();
-        // implementation setters already do an existence check
-        // require(target.isContract(), "TARGET_NOT_CONTRACT");
+        // implementation setters do an existence check, but we protect against selfdestructs this way
+        require(target.isContract(), "TARGET_NOT_CONTRACT");
         return target;
     }
 
