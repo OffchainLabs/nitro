@@ -66,19 +66,9 @@ pub struct ProgramCounter {
     pub module: usize,
     pub func: usize,
     pub inst: usize,
-    pub block_depth: usize,
 }
 
 impl ProgramCounter {
-    pub fn new(module: usize, func: usize, inst: usize, block_depth: usize) -> ProgramCounter {
-        ProgramCounter {
-            module,
-            func,
-            inst,
-            block_depth,
-        }
-    }
-
     pub fn serialize(self) -> Bytes32 {
         let mut b = [0u8; 32];
         b[28..].copy_from_slice(&(self.inst as u32).to_be_bytes());

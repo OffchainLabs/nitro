@@ -205,7 +205,7 @@ fn main() -> Result<()> {
             .map(|i| !i.opcode.is_host_io())
             .unwrap_or(false)
         {
-            mach.step();
+            mach.step_n(1);
         }
         mach.serialize_state(output_path.join("until-host-io-state.bin"))?;
 
@@ -240,7 +240,7 @@ fn main() -> Result<()> {
             let prove =
                 count < 5 || (count < 25 && count % 5 == 0) || (count < 125 && count % 25 == 0);
             if !prove {
-                mach.step();
+                mach.step_n(1);
                 continue;
             }
         }
@@ -252,7 +252,7 @@ fn main() -> Result<()> {
             unsafe {
                 start = core::arch::x86_64::_rdtsc();
             }
-            mach.step();
+            mach.step_n(1);
             #[cfg(target_arch = "x86_64")]
             unsafe {
                 end = core::arch::x86_64::_rdtsc();
@@ -316,7 +316,7 @@ fn main() -> Result<()> {
                 break;
             }
             let proof = mach.serialize_proof();
-            mach.step();
+            mach.step_n(1);
             let after = mach.hash();
             println!(" - done");
             proofs.push(ProofInfo {

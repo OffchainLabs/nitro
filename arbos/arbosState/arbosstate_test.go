@@ -19,7 +19,7 @@ func TestStorageOpenFromEmpty(t *testing.T) {
 }
 
 func TestMemoryBackingEvmStorage(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	value, err := sto.Get(common.Hash{})
 	Require(t, err)
 	if value != (common.Hash{}) {

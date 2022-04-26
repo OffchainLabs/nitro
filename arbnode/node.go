@@ -45,13 +45,80 @@ import (
 )
 
 type RollupAddresses struct {
-	Bridge                 common.Address
-	Inbox                  common.Address
-	SequencerInbox         common.Address
-	Rollup                 common.Address
-	ValidatorUtils         common.Address
-	ValidatorWalletCreator common.Address
-	DeployedAt             uint64
+	Bridge                 common.Address `json:"bridge"`
+	Inbox                  common.Address `json:"inbox"`
+	SequencerInbox         common.Address `json:"sequencer-inbox"`
+	Rollup                 common.Address `json:"rollup"`
+	ValidatorUtils         common.Address `json:"validator-utils"`
+	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
+	DeployedAt             uint64         `json:"deployed-at"`
+}
+
+type RollupAddressesConfig struct {
+	Bridge                 string `koanf:"bridge"`
+	Inbox                  string `koanf:"inbox"`
+	SequencerInbox         string `koanf:"sequencer-inbox"`
+	Rollup                 string `koanf:"rollup"`
+	ValidatorUtils         string `koanf:"validator-utils"`
+	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
+	DeployedAt             uint64 `koanf:"deployed-at"`
+}
+
+var RollupAddressesConfigDefault = RollupAddressesConfig{}
+
+func RollupAddressesConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".bridge", "", "the bridge contract address")
+	f.String(prefix+".inbox", "", "the inbox contract address")
+	f.String(prefix+".sequencer-inbox", "", "the sequencer inbox contract address")
+	f.String(prefix+".rollup", "", "the rollup contract address")
+	f.String(prefix+".validator-utils", "", "the validator utils contract address")
+	f.String(prefix+".validator-wallet-creator", "", "the validator wallet creator contract address")
+	f.Uint64(prefix+".deployed-at", 0, "the block number at which the rollup was deployed")
+}
+
+func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
+	a := RollupAddresses{
+		DeployedAt: c.DeployedAt,
+	}
+	strs := []string{
+		c.Bridge,
+		c.Inbox,
+		c.SequencerInbox,
+		c.Rollup,
+		c.ValidatorUtils,
+		c.ValidatorWalletCreator,
+	}
+	addrs := []*common.Address{
+		&a.Bridge,
+		&a.Inbox,
+		&a.SequencerInbox,
+		&a.Rollup,
+		&a.ValidatorUtils,
+		&a.ValidatorWalletCreator,
+	}
+	names := []string{
+		"Bridge",
+		"Inbox",
+		"SequencerInbox",
+		"Rollup",
+		"ValidatorUtils",
+		"ValidatorWalletCreator",
+	}
+	if len(strs) != len(addrs) {
+		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
+	}
+	complete := true
+	for i, s := range strs {
+		if !common.IsHexAddress(s) {
+			log.Error("invalid address", "name", names[i], "value", s)
+			complete = false
+		}
+		*addrs[i] = common.HexToAddress(s)
+	}
+	if !complete {
+		return RollupAddresses{}, fmt.Errorf("invalid addresses")
+	}
+	return a, nil
 }
 
 func andTxSucceeded(ctx context.Context, l1Reader *L1Reader, tx *types.Transaction, err error) error {
@@ -198,14 +265,14 @@ func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
 	l1Reader := NewL1Reader(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
 	if wasmModuleRoot == (common.Hash{}) {
 		var err error
-		wasmModuleRoot, err = validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
+		wasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
 		if err != nil {
 			return nil, err
 		}
@@ -578,7 +645,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReader))
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReader))
 	if err != nil {
 		return nil, err
 	}
@@ -654,23 +721,23 @@ func (l arbNodeLifecycle) Stop() error {
 }
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
-	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
+	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
 	if err != nil {
 		return nil, err
 	}
 	var apis []rpc.API
-	if node.BlockValidator != nil {
+	if currentNode.BlockValidator != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: node.BlockValidator, blockchain: l2BlockChain},
+			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
 			Public:    false,
 		})
 	}
 	stack.RegisterAPIs(apis)
 
-	stack.RegisterLifecycle(arbNodeLifecycle{node})
-	return node, nil
+	stack.RegisterLifecycle(arbNodeLifecycle{currentNode})
+	return currentNode, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {

@@ -62,7 +62,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/node $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/seq-coordinator-invalidate
+build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/seq-coordinator-invalidate
 	@printf $(done)
 
 build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
@@ -137,12 +137,14 @@ clean:
 	@rm -f .make/*
 
 docker:
+	docker build -t nitro-node-slim --target nitro-node-slim .
 	docker build -t nitro-node --target nitro-node .
+	docker build -t nitro-node-dev --target nitro-node-dev .
 
 # regular build rules
 
-$(output_root)/bin/node: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/node
+$(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ ./cmd/nitro
 
 $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ ./cmd/deploy
@@ -295,6 +297,9 @@ arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 
 contracts/test/prover/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(output_root)/machines/latest/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(output_root)/machines/latest/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
+
+contracts/test/prover/proofs/no-stack-pollution.json: arbitrator/prover/test-cases/no-stack-pollution.wasm $(arbitrator_prover_bin)
+	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --require-success --always-merkleize
 
 contracts/test/prover/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/data/msg0.bin --inbox arbitrator/prover/test-cases/rust/data/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg1.bin --preimages arbitrator/prover/test-cases/rust/data/preimages.bin

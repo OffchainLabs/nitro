@@ -5,9 +5,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/ecdsa"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"os"
@@ -16,18 +15,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
-
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/knadh/koanf"
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/pkg/errors"
@@ -37,26 +37,24 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/cmd/conf"
-	cmdutil "github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
-	nitroutil "github.com/offchainlabs/nitro/util"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 )
 
-func printSampleUsage() {
-	progname := os.Args[0]
+func printSampleUsage(name string) {
 	fmt.Printf("\n")
-	fmt.Printf("Sample usage:                  %s --help \n", progname)
+	fmt.Printf("Sample usage:                  %s --help \n", name)
 }
 
 func main() {
 	ctx := context.Background()
 
-	nodeConfig, l1wallet, l2wallet, err := ParseNode(ctx, os.Args[1:])
+	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
 	if err != nil {
-		printSampleUsage()
+		printSampleUsage(os.Args[0])
 		if !strings.Contains(err.Error(), "help requested") {
 			fmt.Printf("%s\n", err.Error())
 		}
@@ -108,6 +106,31 @@ func main() {
 		panic(err.Error())
 	}
 
+	var rollupAddrs arbnode.RollupAddresses
+	var l1TransactionOpts *bind.TransactOpts
+	if nodeConfig.Node.L1Reader.Enable {
+		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
+
+		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
+		if err != nil {
+			panic(err)
+		}
+
+		if nodeConfig.Node.BatchPoster.Enable || nodeConfig.Node.Validator.Enable {
+			l1TransactionOpts, err = util.GetTransactOptsFromWallet(
+				l1Wallet,
+				new(big.Int).SetUint64(nodeConfig.L1.ChainID),
+			)
+			if err != nil {
+				panic(err)
+			}
+		}
+	} else if l1Client != nil {
+		// Don't need l1Client anymore
+		log.Info("used chain id to get rollup parameters", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
+		l1Client = nil
+	}
+
 	if nodeConfig.Node.Validator.Enable {
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
@@ -118,54 +141,8 @@ func main() {
 		}
 	}
 
-	var l1client *ethclient.Client
-	var deployInfo arbnode.RollupAddresses
-	var l1TransactionOpts *bind.TransactOpts
-	if nodeConfig.Node.L1Reader.Enable {
-		var err error
-
-		if nodeConfig.L1.ConnectionAttempts <= 0 {
-			nodeConfig.L1.ConnectionAttempts = math.MaxInt
-		}
-		for i := 1; i <= nodeConfig.L1.ConnectionAttempts; i++ {
-			l1client, err = ethclient.DialContext(ctx, nodeConfig.L1.URL)
-			if err == nil {
-				break
-			}
-			if i < nodeConfig.L1.ConnectionAttempts {
-				log.Warn("error connecting to L1", "err", err)
-			} else {
-				panic(err)
-			}
-			time.Sleep(time.Second)
-		}
-		if nodeConfig.Node.BatchPoster.Enable || nodeConfig.Node.Validator.Enable {
-			l1TransactionOpts, err = nitroutil.GetTransactOptsFromKeystore(
-				l1wallet.Pathname,
-				l1wallet.Account,
-				*l1wallet.Password(),
-				new(big.Int).SetUint64(nodeConfig.L1.ChainID),
-			)
-			if err != nil {
-				panic(err)
-			}
-		}
-
-		if nodeConfig.L1.Deployment == "" {
-			flag.Usage()
-			panic("no deployment specified")
-		}
-		rawDeployment, err := ioutil.ReadFile(nodeConfig.L1.Deployment)
-		if err != nil {
-			panic(err)
-		}
-		if err := json.Unmarshal(rawDeployment, &deployInfo); err != nil {
-			panic(err)
-		}
-	}
-
 	stackConf := node.DefaultConfig
-	stackConf.DataDir = nodeConfig.Persistent.Data
+	stackConf.DataDir = nodeConfig.Persistent.Chain
 	stackConf.HTTPHost = nodeConfig.HTTP.Addr
 	stackConf.HTTPPort = nodeConfig.HTTP.Port
 	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
@@ -188,35 +165,46 @@ func main() {
 		panic(err)
 	}
 
-	devPrivKeyStr := "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
-	devPrivKey, err := crypto.HexToECDSA(devPrivKeyStr)
-	if err != nil {
-		panic(err)
-	}
-	devAddr := crypto.PubkeyToAddress(devPrivKey.PublicKey)
-	log.Info("Dev node funded private key", "priv", devPrivKeyStr)
-	log.Info("Funded public address", "addr", devAddr)
+	var devAddr common.Address
+	var devPrivKey *ecdsa.PrivateKey
+	if l2DevWallet.PrivateKey != "" {
+		devPrivKey, err = crypto.HexToECDSA(l2DevWallet.PrivateKey)
+		if err != nil {
+			panic(err)
+		}
 
-	if l2wallet.Pathname != "" {
-		mykeystore := keystore.NewPlaintextKeyStore(l2wallet.Pathname)
-		stack.AccountManager().AddBackend(mykeystore)
+		devAddr = crypto.PubkeyToAddress(devPrivKey.PublicKey)
+
+		log.Info("Dev node funded private key", "priv", l2DevWallet.PrivateKey)
+		log.Info("Funded public address", "addr", devAddr)
+	}
+
+	if l2DevWallet.Pathname != "" {
+		myKeystore := keystore.NewKeyStore(l2DevWallet.Pathname, keystore.StandardScryptN, keystore.StandardScryptP)
+		stack.AccountManager().AddBackend(myKeystore)
 		var account accounts.Account
-		if mykeystore.HasAddress(devAddr) {
+		if myKeystore.HasAddress(devAddr) {
 			account.Address = devAddr
-			account, err = mykeystore.Find(account)
+			account, err = myKeystore.Find(account)
+		} else if l2DevWallet.Account != "" && myKeystore.HasAddress(common.HexToAddress(l2DevWallet.Account)) {
+			account.Address = common.HexToAddress(l2DevWallet.Account)
+			account, err = myKeystore.Find(account)
 		} else {
-			if l2wallet.Password() == nil {
+			if l2DevWallet.Password() == nil {
 				panic("l2 password not set")
 			}
-			account, err = mykeystore.ImportECDSA(devPrivKey, *l2wallet.Password())
+			if devPrivKey == nil {
+				panic("l2 private key not set")
+			}
+			account, err = myKeystore.ImportECDSA(devPrivKey, *l2DevWallet.Password())
 		}
 		if err != nil {
 			panic(err)
 		}
-		if l2wallet.Password() == nil {
+		if l2DevWallet.Password() == nil {
 			panic("l2 password not set")
 		}
-		err = mykeystore.Unlock(account, *l2wallet.Password())
+		err = myKeystore.Unlock(account, *l2DevWallet.Password())
 		if err != nil {
 			panic(err)
 		}
@@ -288,11 +276,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		arbosState, err := arbosState.OpenSystemArbosState(statedb, true)
+		currentArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 		if err != nil {
 			panic(err)
 		}
-		chainId, err := arbosState.ChainId()
+		chainId, err := currentArbosState.ChainId()
 		if err != nil {
 			panic(err)
 		}
@@ -310,19 +298,19 @@ func main() {
 		}
 	}
 
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts)
+	currentNode, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
-		count, err := node.TxStreamer.GetMessageCount()
+		count, err := currentNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			panic(err)
 		}
 		if count == 0 {
-			err = node.TxStreamer.AddFakeInitMessage()
+			err = currentNode.TxStreamer.AddFakeInitMessage()
 			if err != nil {
 				panic(err)
 			}
@@ -394,19 +382,106 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.MetricsServerAddOptions("metrics-server", f)
 }
 
-func ParseNode(_ context.Context, args []string) (*NodeConfig, *conf.WalletConfig, *conf.WalletConfig, error) {
+func (c *NodeConfig) ResolveDirectoryNames() error {
+	err := c.Persistent.ResolveDirectoryNames()
+	if err != nil {
+		return err
+	}
+	c.L1.ResolveDirectoryNames(c.Persistent.Chain)
+	c.L2.ResolveDirectoryNames(c.Persistent.Chain)
+
+	return nil
+}
+
+func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletConfig, *conf.WalletConfig, *ethclient.Client, *big.Int, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
-	k, err := cmdutil.BeginCommonParse(f, args)
+	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
+	}
+
+	var l1ChainId *big.Int
+	var l1Client *ethclient.Client
+	l1URL := k.String("l1.url")
+	configChainId := uint64(k.Int64("l1.chain-id"))
+	if l1URL != "" {
+		maxConnectionAttempts := k.Int("l1.connection-attempts")
+		if maxConnectionAttempts <= 0 {
+			maxConnectionAttempts = math.MaxInt
+		}
+		for i := 1; i <= maxConnectionAttempts; i++ {
+			l1Client, err = ethclient.DialContext(ctx, l1URL)
+			if err == nil {
+				l1ChainId, err = l1Client.ChainID(ctx)
+				if err == nil {
+					// Successfully got chain ID
+					break
+				}
+			}
+			if i < maxConnectionAttempts {
+				log.Warn("error connecting to L1", "err", err)
+			} else {
+				panic(err)
+			}
+
+			timer := time.NewTimer(time.Second * 1)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, nil, nil, nil, nil, errors.New("aborting startup")
+			case <-timer.C:
+			}
+		}
+	} else if configChainId == 0 && !k.Bool("conf.dump") {
+		return nil, nil, nil, nil, nil, errors.New("l1 chain id not provided")
+	} else if k.Bool("node.l1-reader.enable") {
+		return nil, nil, nil, nil, nil, errors.New("l1 reader enabled but --l1.url not provided")
+	}
+
+	if l1ChainId == nil {
+		l1ChainId = big.NewInt(int64(configChainId))
+	}
+
+	if configChainId != l1ChainId.Uint64() {
+		if configChainId != 0 {
+			log.Error("chain id from L1 does not match command line chain id", "l1", l1ChainId.String(), "cli", configChainId)
+			return nil, nil, nil, nil, nil, errors.New("chain id from L1 does not match command line chain id")
+		}
+
+		err := k.Load(confmap.Provider(map[string]interface{}{
+			"l1.chain-id": l1ChainId.Uint64(),
+		}, "."), nil)
+		if err != nil {
+			return nil, nil, nil, nil, nil, errors.Wrap(err, "error setting ")
+		}
+	}
+
+	switch l1ChainId.Uint64() {
+	case 1: // mainnet
+		switch k.String("l2.rollup.rollup") {
+		case "", "0x767cff8d8de386d7cbe91dbd39675132ba2f5967":
+			return nil, nil, nil, nil, nil, errors.New("mainnet not supported yet")
+		}
+	case 5: // goerli
+		switch k.String("l2.rollup.rollup") {
+		case "", "0x767cff8d8de386d7cbe91dbd39675132ba2f5967":
+			if err := applyNitroDevNetRollupParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+		}
+	}
+
+	err = util.ApplyOverrides(f, k)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
 	}
 
 	var nodeConfig NodeConfig
-	if err := cmdutil.EndCommonParse(k, &nodeConfig); err != nil {
-		return nil, nil, nil, err
+	if err := util.EndCommonParse(k, &nodeConfig); err != nil {
+		return nil, nil, nil, nil, nil, err
 	}
 
 	if nodeConfig.Conf.Dump {
@@ -421,23 +496,48 @@ func ParseNode(_ context.Context, args []string) (*NodeConfig, *conf.WalletConfi
 			"l2.wallet.private-key": "",
 		}, "."), nil)
 		if err != nil {
-			return nil, nil, nil, errors.Wrap(err, "error removing extra parameters before dump")
+			return nil, nil, nil, nil, nil, errors.Wrap(err, "error removing extra parameters before dump")
 		}
 
 		c, err := k.Marshal(koanfjson.Parser())
 		if err != nil {
-			return nil, nil, nil, errors.Wrap(err, "unable to marshal config file to JSON")
+			return nil, nil, nil, nil, nil, errors.Wrap(err, "unable to marshal config file to JSON")
 		}
 
 		fmt.Println(string(c))
 		os.Exit(0)
 	}
 
-	// Don't pass around wallet contents with normal configuration
-	l1wallet := nodeConfig.L1.Wallet
-	l2wallet := nodeConfig.L2.Wallet
-	nodeConfig.L1.Wallet = conf.WalletConfigDefault
-	nodeConfig.L2.Wallet = conf.WalletConfigDefault
+	if nodeConfig.Persistent.Chain == "" {
+		return nil, nil, nil, nil, nil, errors.New("--persistent.chain not specified")
+	}
 
-	return &nodeConfig, &l1wallet, &l2wallet, nil
+	err = nodeConfig.ResolveDirectoryNames()
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+
+	// Don't pass around wallet contents with normal configuration
+	l1Wallet := nodeConfig.L1.Wallet
+	l2DevWallet := nodeConfig.L2.DevWallet
+	nodeConfig.L1.Wallet = conf.WalletConfigDefault
+	nodeConfig.L2.DevWallet = conf.WalletConfigDefault
+
+	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
+}
+
+func applyNitroDevNetRollupParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain":                   "goerli",
+		"node.forwarding-target":             "https://nitro-devnet.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://nitro-devnet.arbitrum.io/feed",
+		"l1.rollup.bridge":                   "0x9903a892da86c1e04522d63b08e5514a921e81df",
+		"l1.rollup.inbox":                    "0x1fdbbcc914e84af593884bf8e8dd6877c29035a2",
+		"l1.rollup.rollup":                   "0x767cff8d8de386d7cbe91dbd39675132ba2f5967",
+		"l1.rollup.sequencer-inbox":          "0xb32f4257e05c56c53d46bbec9e85770eb52425d6",
+		"l1.rollup.validator-utils":          "0x96f42d78bac19a050595c4ea6f64fe355e0af90a",
+		"l1.rollup.validator-wallet-creator": "0xd562adc7ff479461d29e3a3c602a017c34196add",
+		"l1.rollup.deployed-at":              6664425,
+		"l2.chain-id":                        421612,
+	}, "."), nil)
 }
