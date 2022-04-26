@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
-	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -18,8 +17,7 @@ import (
 )
 
 type AggregatorConfig struct {
-	assumedHonest   int
-	retentionPeriod time.Duration
+	assumedHonest int
 }
 
 type Aggregator struct {
@@ -144,10 +142,6 @@ type storeResponse struct {
 // responses by the time its context is canceled (eg via DeadlineWrapper) then it
 // also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
-	if timeout == CALLEE_PICKS_TIMEOUT {
-		timeout = uint64(time.Now().Add(a.config.retentionPeriod).Unix())
-	}
-
 	responses := make(chan storeResponse, len(a.services))
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

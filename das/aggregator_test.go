@@ -36,11 +36,11 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, *details)
 	}
 
-	aggregator := NewAggregator(AggregatorConfig{1, 7 * 24 * time.Hour}, backends)
+	aggregator := NewAggregator(AggregatorConfig{1}, backends)
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, CALLEE_PICKS_TIMEOUT)
+	cert, err := aggregator.Store(ctx, rawMsg, 0)
 	Require(t, err, "Error storing message")
 
 	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
@@ -205,11 +205,11 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, *details)
 	}
 
-	aggregator := DeadlineWrapper{time.Millisecond * 2000, NewAggregator(AggregatorConfig{assumedHonest, 7 * 24 * time.Hour}, backends)}
+	aggregator := DeadlineWrapper{time.Millisecond * 2000, NewAggregator(AggregatorConfig{assumedHonest}, backends)}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, CALLEE_PICKS_TIMEOUT)
+	cert, err := aggregator.Store(ctx, rawMsg, 0)
 	if !shouldFailAggregation {
 		Require(t, err, "Error storing message")
 	} else {
@@ -295,11 +295,11 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	aggregator := DeadlineWrapper{time.Millisecond * 2000, NewAggregator(AggregatorConfig{numBackendDAS, 7 * 24 * time.Hour}, backends)}
+	aggregator := DeadlineWrapper{time.Millisecond * 2000, NewAggregator(AggregatorConfig{numBackendDAS}, backends)}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, CALLEE_PICKS_TIMEOUT)
+	cert, err := aggregator.Store(ctx, rawMsg, 0)
 	Require(t, err, "Error storing message")
 
 	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
