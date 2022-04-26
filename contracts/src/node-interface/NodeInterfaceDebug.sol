@@ -26,9 +26,22 @@ interface NodeInterfaceDebug {
             uint64[] memory timeouts
         );
 
+    struct RetryableInfo {
+        uint64 timeout;
+        address from;
+        address to;
+        uint256 value;
+        address beneficiary;
+        uint64 tries;
+        bytes data;
+    }
+
     /**
      * @notice serializes a retryable
      * @return retryable the serialized retryable
      */
-    function serializeRetryable(bytes32 ticket) external view returns (bytes memory retryable);
+    function serializeRetryable(bytes32 ticket)
+        external
+        view
+        returns (RetryableInfo memory retryable);
 }

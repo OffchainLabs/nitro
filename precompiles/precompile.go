@@ -134,6 +134,25 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 		log.Fatal("Implementer for precompile ", contract, "'s Address field has the wrong type")
 	}
 
+	gethAbiFuncTypeEquality := func(actual, geth reflect.Type) bool {
+		gethIn := geth.NumIn()
+		gethOut := geth.NumOut()
+		if actual.NumIn() != gethIn || actual.NumOut() != gethOut {
+			return false
+		}
+		for i := 0; i < gethIn; i++ {
+			if !geth.In(i).ConvertibleTo(actual.In(i)) {
+				return false
+			}
+		}
+		for i := 0; i < gethOut; i++ {
+			if !actual.Out(i).ConvertibleTo(geth.Out(i)) {
+				return false
+			}
+		}
+		return true
+	}
+
 	methods := make(map[[4]byte]PrecompileMethod)
 	events := make(map[string]PrecompileEvent)
 	errors := make(map[string]PrecompileError)
@@ -192,7 +211,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 
 		expectedHandlerType := reflect.FuncOf(needs, outputs, false)
 
-		if handler.Type != expectedHandlerType {
+		if !gethAbiFuncTypeEquality(handler.Type, expectedHandlerType) {
 			log.Fatal(
 				"Precompile "+contract+"'s "+name+"'s implementer has the wrong type\n",
 				"\texpected:\t", expectedHandlerType, "\n\tbut have:\t", handler.Type,
@@ -261,13 +280,13 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 		if !ok {
 			log.Fatal(missing, "event ", name, "'s GasCost of type\n\t", expectedCostType)
 		}
-		if field.Type != expectedFieldType {
+		if !gethAbiFuncTypeEquality(field.Type, expectedFieldType) {
 			log.Fatal(
 				context, "'s field for event ", name, " has the wrong type\n",
 				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
 			)
 		}
-		if costField.Type != expectedCostType {
+		if !gethAbiFuncTypeEquality(costField.Type, expectedCostType) {
 			log.Fatal(
 				context, "'s field for event ", name, "GasCost has the wrong type\n",
 				"\texpected:\t", expectedCostType, "\n\tbut have:\t", costField.Type,
@@ -650,7 +669,8 @@ func (p Precompile) Call(
 		return nil, 0, vm.ErrExecutionReverted
 	}
 	for _, arg := range args {
-		reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
+		converted := reflect.ValueOf(arg).Convert(method.handler.Type.In(len(reflectArgs)))
+		reflectArgs = append(reflectArgs, converted)
 	}
 
 	reflectResult := method.handler.Func.Call(reflectArgs)

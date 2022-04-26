@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 )
 
 type NodeInterfaceDebug struct {
@@ -58,14 +59,16 @@ func (n NodeInterfaceDebug) RetryableTimeoutQueue(c ctx, evm mech) (uint64, []by
 	return uint64(len(tickets)), tickets32, timeouts, err
 }
 
-func (n NodeInterfaceDebug) SerializeRetryable(c ctx, evm mech, ticket bytes32) ([]byte, error) {
+type RetryableInfo = node_interfacegen.NodeInterfaceDebugRetryableInfo
+
+func (n NodeInterfaceDebug) SerializeRetryable(c ctx, evm mech, ticket bytes32) (RetryableInfo, error) {
 	// we don't care if the retryable has expired
 	retryable, err := c.State.RetryableState().OpenRetryable(ticket, 0)
 	if err != nil {
-		return nil, err
+		return RetryableInfo{}, err
 	}
 	if retryable == nil {
-		return nil, fmt.Errorf("no retryable with id %v exists", ticket)
+		return RetryableInfo{}, fmt.Errorf("no retryable with id %v exists", ticket)
 	}
 	return retryable.SerializeRetryable()
 }

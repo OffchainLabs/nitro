@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -359,7 +360,7 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 	}, nil
 }
 
-func (retryable *Retryable) SerializeRetryable() ([]byte, error) {
+func (retryable *Retryable) SerializeRetryable() (node_interfacegen.NodeInterfaceDebugRetryableInfo, error) {
 	timeout, _ := retryable.CalculateTimeout()
 	from, _ := retryable.from.Get()
 	toPointer, _ := retryable.To()
@@ -368,25 +369,20 @@ func (retryable *Retryable) SerializeRetryable() ([]byte, error) {
 	calldata, _ := retryable.Calldata()
 	tries, err := retryable.NumTries()
 
-	if err != nil {
-		return nil, err
-	}
-
 	to := common.Address{}
 	if toPointer != nil {
 		to = *toPointer
 	}
 
-	out := []byte{}
-	out = append(out, retryable.id.Bytes()...)
-	out = append(out, arbmath.UintToBytes(timeout)...)
-	out = append(out, from.Bytes()...)
-	out = append(out, to.Bytes()...)
-	out = append(out, callvalue.Bytes()...)
-	out = append(out, beneficiary.Bytes()...)
-	out = append(out, calldata...)
-	out = append(out, arbmath.UintToBytes(tries)...)
-	return out, nil
+	return node_interfacegen.NodeInterfaceDebugRetryableInfo{
+		Timeout:     timeout,
+		From:        from,
+		To:          to,
+		Value:       callvalue,
+		Beneficiary: beneficiary,
+		Tries:       tries,
+		Data:        calldata,
+	}, err
 }
 
 func RetryableEscrowAddress(ticketId common.Hash) common.Address {
