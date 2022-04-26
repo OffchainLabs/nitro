@@ -116,7 +116,7 @@ func (e *SolError) Error() string {
 
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
 // supports each method.
-func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, ArbosPrecompile) {
+func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, ArbosPrecompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
 		log.Fatal("Bad ABI")
@@ -229,7 +229,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		name := event.RawName
 
 		var needs = []reflect.Type{
-			reflect.TypeOf(&context{}), // where the emit goes
+			reflect.TypeOf(&Context{}), // where the emit goes
 			reflect.TypeOf(&vm.EVM{}),  // where the emit goes
 		}
 		for _, arg := range event.Inputs {
@@ -492,29 +492,29 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return impl.Precompile()
 	}
 
-	insert(makePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
-	insert(makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
-	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
-	insert(makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
-	insert(makePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
-	insert(makePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
-	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
-	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
-	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
-	insert(makePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
+	insert(MakePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
+	insert(MakePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
+	insert(MakePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
+	insert(MakePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
+	insert(MakePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
+	insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
+	insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
+	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
+	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
+	insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 
-	eventCtx := func(gasLimit uint64, err error) *context {
+	eventCtx := func(gasLimit uint64, err error) *Context {
 		if err != nil {
 			glog.Error("call to event's GasCost field failed", "err", err)
 		}
-		return &context{
+		return &Context{
 			gasSupplied: gasLimit,
 			gasLeft:     gasLimit,
 		}
 	}
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
-	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
+	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 	emitReedeemScheduled := func(evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr) error {
@@ -527,7 +527,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
 	}
 
-	ArbSys := insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
+	ArbSys := insert(MakePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
 
@@ -536,10 +536,10 @@ func Precompiles() map[addr]ArbosPrecompile {
 		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
-	_, ArbOwner := makePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
+	_, ArbOwner := MakePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
-	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
+	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
 	return contracts
 }
@@ -589,7 +589,7 @@ func (p Precompile) Call(
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
-	callerCtx := &context{
+	callerCtx := &Context{
 		caller:      caller,
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
