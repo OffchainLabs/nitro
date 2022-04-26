@@ -71,7 +71,6 @@ type PrecompileMethod struct {
 	template     abi.Method
 	purity       purity
 	handler      reflect.Method
-	implementer  reflect.Value
 	arbosVersion uint64
 }
 
@@ -205,7 +204,6 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 			method,
 			purity,
 			handler,
-			reflect.ValueOf(implementer),
 			0,
 		}
 	}
@@ -629,7 +627,7 @@ func (p Precompile) Call(
 	}
 
 	reflectArgs := []reflect.Value{
-		method.implementer,
+		p.implementer,
 		reflect.ValueOf(callerCtx),
 	}
 
