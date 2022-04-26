@@ -17,7 +17,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 // MaxSendQueue is the maximum number of items in a clients out channel before client gets disconnected.
@@ -26,7 +26,7 @@ const MaxSendQueue = 1000
 
 // ClientConnection represents client connection.
 type ClientConnection struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 
 	ioMutex sync.Mutex
 	conn    net.Conn
