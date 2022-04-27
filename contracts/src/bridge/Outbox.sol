@@ -42,6 +42,9 @@ contract Outbox is DelegateCallAware, IOutbox {
 
     function initialize(address _rollup, IBridge _bridge) external onlyDelegated {
         if (rollup != address(0)) revert AlreadyInit();
+        // address zero is returned if no context is set, but the values used in storage
+        // are non-zero to save users some gas (as storage refunds are usually maxed out)
+        // EIP-1153 would help here
         context = getDefaultContext();
         rollup = _rollup;
         bridge = _bridge;
