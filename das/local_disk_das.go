@@ -4,6 +4,7 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"encoding/base32"
 	"errors"
@@ -125,7 +126,7 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certB
 	dasMutex.Lock()
 	defer dasMutex.Unlock()
 
-	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
 		return nil, err
 	}

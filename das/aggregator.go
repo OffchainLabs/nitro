@@ -60,7 +60,7 @@ func NewAggregator(config AggregatorConfig, services []serviceDetails) *Aggregat
 // if all requests fail or if its context is canceled (eg via DeadlineWrapper) then
 // it returns an error.
 func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
-	requestedCert, _, err := arbstate.DeserializeDASCertFrom(cert)
+	requestedCert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(cert))
 	if err != nil {
 		return nil, err
 	}

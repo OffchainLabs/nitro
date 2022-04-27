@@ -4,10 +4,12 @@
 package arbstate
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
@@ -41,30 +43,50 @@ type DataAvailabilityCertificate struct {
 	Sig         blsSignatures.Signature
 }
 
-func DeserializeDASCertFrom(buf []byte) (c *DataAvailabilityCertificate, bytesRead int, err error) {
+func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err error) {
+	r := bufio.NewReader(rd)
 	c = &DataAvailabilityCertificate{}
-	expectedCertSize := uintptr(1 + 32 + 8 + 8 + 96)
-	if uintptr(len(buf)) < expectedCertSize {
-		return nil, 0, fmt.Errorf("Can't deserialize DAS cert from smaller buffer (was %dB but should be %d)", uintptr(len(buf)), expectedCertSize)
+	expectedCertSize := 1 + 32 + 8 + 8 + 96
+	if r.Size() < expectedCertSize {
+		return nil, fmt.Errorf("Can't deserialize DAS cert from smaller buffer (was %dB but should be %d)", r.Size(), expectedCertSize)
 	}
-	if !IsDASMessageHeaderByte(buf[0]) {
-		return nil, 0, errors.New("Tried to deserialize a message that doesn't have the DAS header.")
-	}
-	bytesRead += 1
 
-	bytesRead += copy(c.DataHash[:], buf[bytesRead:bytesRead+32])
-
-	c.Timeout = binary.BigEndian.Uint64(buf[bytesRead : bytesRead+8])
-	bytesRead += 8
-
-	c.SignersMask = binary.BigEndian.Uint64(buf[bytesRead : bytesRead+8])
-	bytesRead += 8
-
-	c.Sig, err = blsSignatures.SignatureFromBytes(buf[bytesRead : bytesRead+96])
+	header, err := r.ReadByte()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	bytesRead += 96
+	if !IsDASMessageHeaderByte(header) {
+		return nil, errors.New("Tried to deserialize a message that doesn't have the DAS header.")
+	}
 
-	return c, bytesRead, nil
+	_, err = r.Read(c.DataHash[:])
+	if err != nil {
+		return nil, err
+	}
+
+	var timeoutBuf [8]byte
+	_, err = r.Read(timeoutBuf[:])
+	if err != nil {
+		return nil, err
+	}
+	c.Timeout = binary.BigEndian.Uint64(timeoutBuf[:])
+
+	var signersMaskBuf [8]byte
+	_, err = r.Read(signersMaskBuf[:])
+	if err != nil {
+		return nil, err
+	}
+	c.SignersMask = binary.BigEndian.Uint64(signersMaskBuf[:])
+
+	var blsSignaturesBuf [96]byte
+	_, err = r.Read(blsSignaturesBuf[:])
+	if err != nil {
+		return nil, err
+	}
+	c.Sig, err = blsSignatures.SignatureFromBytes(blsSignaturesBuf[:])
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }
