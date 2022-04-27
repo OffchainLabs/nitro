@@ -11,21 +11,6 @@ pragma solidity >=0.4.21 <0.9.0;
  */
 
 interface NodeInterfaceDebug {
-    /**
-     * @notice exports the state of the retryable timeout queue
-     * @return queueSize the number of elements in the queue
-     * @return tickets the ordered entries of the queue
-     * @return timeouts the timeout associated with each element in the queue
-     */
-    function retryableTimeoutQueue()
-        external
-        view
-        returns (
-            uint64 queueSize,
-            bytes32[] memory tickets,
-            uint64[] memory timeouts
-        );
-
     struct RetryableInfo {
         uint64 timeout;
         address from;
@@ -37,11 +22,9 @@ interface NodeInterfaceDebug {
     }
 
     /**
-     * @notice serializes a retryable
+     * @notice gets a retryable
+     * @param ticket the retryable's id
      * @return retryable the serialized retryable
      */
-    function serializeRetryable(bytes32 ticket)
-        external
-        view
-        returns (RetryableInfo memory retryable);
+    function getRetryable(bytes32 ticket) external view returns (RetryableInfo memory retryable);
 }

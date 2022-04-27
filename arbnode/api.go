@@ -58,7 +58,7 @@ type ArbDebugAPI struct {
 
 type PricingModelHistory struct {
 	First                    uint64     `json:"first"`
-	Timestamp                []uint64   `json"timestamp"`
+	Timestamp                []uint64   `json:"timestamp"`
 	BaseFee                  []*big.Int `json:"baseFee"`
 	RateEstimate             []uint64   `json:"rateEstimate"`
 	GasPool                  []int64    `json:"gasPool"`
