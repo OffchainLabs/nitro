@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -82,8 +83,8 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn)
 	r.CallIteratively(func(ctx context.Context) time.Duration {
 		err := r.run(ctx)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			log.Error("error reading inbox", "err", err)
+		if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
+			log.Warn("error reading inbox", "err", err)
 		}
 		return time.Second
 	})
