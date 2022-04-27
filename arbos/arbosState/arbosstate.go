@@ -72,7 +72,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
-		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace)),
+		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace), arbosVersion),
 		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
 		blsTable.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
@@ -234,7 +234,8 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 					state.Restrict(state.chainOwners.Add(TestnetUpgrade2Owner))
 				}
 			} else if state.arbosVersion == 2 {
-				// Upgrade version 2->3 has no state changes
+				// Upgrade version 2->3 removes the base fee from state
+				state.Restrict(state.L2PricingState().SetBaseFeeWei(common.Big0))
 			} else {
 				// code to upgrade to future versions will be put here
 				panic("Unable to perform requested ArbOS upgrade")

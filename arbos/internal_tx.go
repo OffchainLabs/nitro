@@ -59,16 +59,6 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 	nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
 	state.Restrict(err)
 
-	if state.FormatVersion() >= 3 {
-		// The `l2BaseFee` in the tx data is indeed the last block's base fee,
-		// however, for the purposes of this function, we need the previous computed base fee.
-		// Since the computed base fee takes one block to apply, the last block's base fee
-		// is actually two calculations ago. Instead, as of ArbOS format version 3,
-		// we use the current state's base fee, which is the result of the last calculation.
-		l2BaseFee, err = state.L2PricingState().BaseFeeWei()
-		state.Restrict(err)
-	}
-
 	if l1BlockNumber >= nextL1BlockNumber {
 		var prevHash common.Hash
 		if evm.Context.BlockNumber.Sign() > 0 {
@@ -83,7 +73,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 
-	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, true, false)
 	state.L1PricingState().UpdatePricingModel(l1BaseFee, currentTime)
 
 	state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())

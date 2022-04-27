@@ -17,13 +17,13 @@ func PricingForTest(t *testing.T) *L2PricingState {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	err := InitializeL2PricingState(storage)
 	Require(t, err)
-	return OpenL2PricingState(storage)
+	return OpenL2PricingState(storage, 2)
 }
 
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
 	basefee := getPrice(t, pricing)
 	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed))
-	pricing.UpdatePricingModel(arbmath.UintToBig(basefee), timePassed, true)
+	pricing.UpdatePricingModel(arbmath.UintToBig(basefee), timePassed, true, true)
 }
 
 func TestPricingModel(t *testing.T) {

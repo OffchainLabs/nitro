@@ -14,6 +14,7 @@ import (
 
 type L2PricingState struct {
 	storage             *storage.Storage
+	arbosVersion        uint64
 	gasPool             storage.StorageBackedInt64
 	gasPoolLastBlock    storage.StorageBackedInt64
 	gasPoolSeconds      storage.StorageBackedUint64
@@ -37,7 +38,7 @@ const (
 	rateEstimateInertiaOffset
 	speedLimitPerSecondOffset
 	maxPerBlockGasLimitOffset
-	baseFeeWeiOffset
+	baseFeeWeiOffset // Removed as of format version 3
 	minBaseFeeWeiOffset
 )
 
@@ -57,9 +58,10 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumBaseFeeWei)
 }
 
-func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
+func OpenL2PricingState(sto *storage.Storage, arbosVersion uint64) *L2PricingState {
 	return &L2PricingState{
 		sto,
+		arbosVersion,
 		sto.OpenStorageBackedInt64(gasPoolOffset),
 		sto.OpenStorageBackedInt64(gasPoolLastBlockOffset),
 		sto.OpenStorageBackedUint64(gasPoolSecondsOffset),
@@ -147,11 +149,19 @@ func (ps *L2PricingState) SetRateEstimateInertia(inertia uint64) error {
 	return ps.rateEstimateInertia.Set(inertia)
 }
 
+var baseFeeUnavailableErr = errors.New("base fee is not in state as of ArbOS format version 3")
+
 func (ps *L2PricingState) BaseFeeWei() (*big.Int, error) {
+	if ps.arbosVersion >= 3 { // Checks FormatVersion()
+		return nil, baseFeeUnavailableErr
+	}
 	return ps.baseFeeWei.Get()
 }
 
 func (ps *L2PricingState) SetBaseFeeWei(val *big.Int) error {
+	if ps.arbosVersion >= 3 { // Checks FormatVersion()
+		return baseFeeUnavailableErr
+	}
 	return ps.baseFeeWei.Set(val)
 }
 

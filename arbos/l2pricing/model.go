@@ -31,7 +31,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 }
 
 // Update the pricing model with info from the last block
-func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, debug bool) {
+func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, write bool, debug bool) *big.Int {
 
 	// update the rate estimate, which is the weighted average of the past and present
 	//     rate' = weighted average of the historical rate and the current
@@ -47,7 +47,6 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 	rateSeconds, _ := ps.RateEstimateInertia()
 	priorRate, _ := ps.RateEstimate()
 	rate := arbmath.SaturatingUAdd(arbmath.SaturatingUMul(rateSeconds, priorRate), gasUsed) / (rateSeconds + timePassed)
-	ps.SetRateEstimate(rate)
 
 	// compute the rate ratio
 	//     ratio = recent gas consumption rate / speed limit
@@ -97,7 +96,7 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 	//
 	exp := (averageOfRatios - arbmath.OneInBips) * arbmath.Bips(timePassed) / 120 // limit to EIP 1559's max rate
 	price := arbmath.BigMulByBips(l2BaseFee, arbmath.ApproxExpBasisPoints(exp))
-	maxPrice := arbmath.BigMulByInt(l2BaseFee, params.ElasticityMultiplier)
+	maxPrice := arbmath.BigMulByInt(l2BaseFee, 2)
 	minPrice, _ := ps.MinBaseFeeWei()
 
 	p := func(args ...interface{}) {
@@ -118,9 +117,16 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 		log.Warn("ArbOS tried to 2x the price", "price", price, "bound", maxPrice)
 		price = maxPrice
 	}
-	_ = ps.SetBaseFeeWei(price)
-	_ = ps.SetGasPool(newGasPool)
-	ps.SetGasPoolLastBlock(newGasPool)
+	if write {
+		ps.SetRateEstimate(rate)
+		if ps.arbosVersion < 3 { // Checks FormatVersion()
+			_ = ps.SetBaseFeeWei(price)
+		}
+		_ = ps.SetGasPool(newGasPool)
+		ps.SetGasPoolLastBlock(newGasPool)
+	}
+
+	return price
 }
 
 func (ps *L2PricingState) PerBlockGasLimit() (uint64, error) {

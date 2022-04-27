@@ -35,10 +35,6 @@ var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, 
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
-	l2Pricing := state.L2PricingState()
-	baseFee, err := l2Pricing.BaseFeeWei()
-	state.Restrict(err)
-
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
 	timestamp := uint64(0)
@@ -54,6 +50,10 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 			timestamp = prevHeader.Time
 		}
 	}
+
+	timePassed := timestamp - prevHeader.Time
+	baseFee := state.L2PricingState().UpdatePricingModel(prevHeader.BaseFee, timePassed, false, false)
+
 	return &types.Header{
 		ParentHash:  lastBlockHash,
 		UncleHash:   types.EmptyUncleHash, // Post-merge Ethereum will require this to be types.EmptyUncleHash
