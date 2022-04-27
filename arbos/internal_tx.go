@@ -83,7 +83,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 
-	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, state.FormatVersion(), false)
 	state.L1PricingState().UpdatePricingModel(l1BaseFee, currentTime)
 
 	state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
