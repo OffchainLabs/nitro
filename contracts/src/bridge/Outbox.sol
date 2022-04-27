@@ -60,23 +60,27 @@ contract Outbox is DelegateCallAware, IOutbox {
     /// When the return value is zero, that means this is a system message
     /// @dev the l2ToL1Sender behaves as the tx.origin, the msg.sender should be validated to protect against reentrancies
     function l2ToL1Sender() external view override returns (address) {
-        if(context.sender == getDefaultContext().sender) return address(uint160(0));
-        return context.sender;
+        address sender = context.sender;
+        if(sender == getDefaultContext().sender) return address(uint160(0));
+        return sender;
     }
 
     function l2ToL1Block() external view override returns (uint256) {
-        if(context.l2Block == getDefaultContext().l2Block) return uint256(0);
-        return uint256(context.l2Block);
+        uint128 l2Block = context.l2Block;
+        if(l2Block == getDefaultContext().l2Block) return uint256(0);
+        return uint256(l2Block);
     }
 
     function l2ToL1EthBlock() external view override returns (uint256) {
-        if(context.l1Block == getDefaultContext().l1Block) return uint256(0);
-        return uint256(context.l1Block);
+        uint128 l1Block = context.l1Block;
+        if(l1Block == getDefaultContext().l1Block) return uint256(0);
+        return uint256(l1Block);
     }
 
     function l2ToL1Timestamp() external view override returns (uint256) {
-        if(context.timestamp == getDefaultContext().timestamp) return uint256(0);
-        return uint256(context.timestamp);
+        uint128 timestamp = context.timestamp;
+        if(timestamp == getDefaultContext().timestamp) return uint256(0);
+        return uint256(timestamp);
     }
 
     // @deprecated batch number is now always 0
@@ -85,8 +89,9 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     function l2ToL1OutputId() external view override returns (bytes32) {
-        if(context.outputId == getDefaultContext().outputId) return bytes32(uint256(0));
-        return context.outputId;
+        bytes32 outputId = context.outputId;
+        if(outputId == getDefaultContext().outputId) return bytes32(uint256(0));
+        return outputId;
     }
 
     /**
