@@ -29,27 +29,27 @@ contract OutboxWithOptTester is DelegateCallAware, IOutbox {
     L2ToL1Context internal context;
     uint128 public constant OUTBOX_VERSION = 2;
 
-    modifier outboxIsRunning() {
-        if(context.l2Block == type(uint128).max) revert OutboxNotStart();
-        _;
-    }
-
-    function initialize(address _rollup, IBridge _bridge) external  {
-        if (rollup != address(0)) revert AlreadyInit();
-        bytes32 initialBytes = keccak256(abi.encode(block.timestamp));
-        context = L2ToL1Context({
+    //workaround for constant struct
+    function getDefaultContext() internal pure returns (L2ToL1Context memory) {
+        return L2ToL1Context({
             l2Block: type(uint128).max,
             l1Block: type(uint128).max,
             timestamp: type(uint128).max,
-            outputId: initialBytes,
-            sender: address(this)
+            outputId: bytes32(type(uint256).max),
+            sender: address(type(uint160).max)
         });
+    }
+
+    function initialize(address _rollup, IBridge _bridge) external {
+        if (rollup != address(0)) revert AlreadyInit();
+        context = getDefaultContext();
         rollup = _rollup;
         bridge = _bridge;
     }
 
     function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external override {
-        //if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);  //test only!!!
+        //test only!!!
+        //if (msg.sender != rollup) revert NotRollup(msg.sender, rollup); 
         roots[root] = l2BlockHash;
         emit SendRootUpdated(root, l2BlockHash);
     }
@@ -57,19 +57,23 @@ contract OutboxWithOptTester is DelegateCallAware, IOutbox {
     /// @notice When l2ToL1Sender returns a nonzero address, the message was originated by an L2 account
     /// When the return value is zero, that means this is a system message
     /// @dev the l2ToL1Sender behaves as the tx.origin, the msg.sender should be validated to protect against reentrancies
-    function l2ToL1Sender() external view override outboxIsRunning returns (address) {
+    function l2ToL1Sender() external view override returns (address) {
+        if(context.sender == getDefaultContext().sender) return address(uint160(0));
         return context.sender;
     }
 
-    function l2ToL1Block() external view override outboxIsRunning returns (uint256) {
+    function l2ToL1Block() external view override returns (uint256) {
+        if(context.l2Block == getDefaultContext().l2Block) return uint256(0);
         return uint256(context.l2Block);
     }
 
-    function l2ToL1EthBlock() external view override outboxIsRunning returns (uint256) {
+    function l2ToL1EthBlock() external view override returns (uint256) {
+        if(context.l1Block == getDefaultContext().l1Block) return uint256(0);
         return uint256(context.l1Block);
     }
 
-    function l2ToL1Timestamp() external view override outboxIsRunning returns (uint256) {
+    function l2ToL1Timestamp() external view override returns (uint256) {
+        if(context.timestamp == getDefaultContext().timestamp) return uint256(0);
         return uint256(context.timestamp);
     }
 
@@ -78,7 +82,8 @@ contract OutboxWithOptTester is DelegateCallAware, IOutbox {
         return 0;
     }
 
-    function l2ToL1OutputId() external view override outboxIsRunning returns (bytes32) {
+    function l2ToL1OutputId() external view override returns (bytes32) {
+        if(context.outputId == getDefaultContext().outputId) return bytes32(uint256(0));
         return context.outputId;
     }
 

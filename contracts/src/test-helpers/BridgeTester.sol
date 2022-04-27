@@ -32,13 +32,21 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
     address[] public allowedInboxList;
     address[] public allowedOutboxList;
 
-    address public override activeOutbox = address(type(uint160).max);
+    address private _activeOutbox;
 
     /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override inboxAccs;
 
-    function initialize() external initializer  {
+    address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
+
+    function initialize() external initializer {
+        _activeOutbox = EMPTY_ACTIVEOUTBOX;
         __Ownable_init();
+    }
+
+    function activeOutbox() public view returns (address) {
+        if(_activeOutbox == EMPTY_ACTIVEOUTBOX) return address(uint160(0));
+        return _activeOutbox;
     }
 
     function allowedInboxes(address inbox) external view override returns (bool) {
@@ -114,15 +122,15 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
     ) external override returns (bool success, bytes memory returnData) {
         if (!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
         if (data.length > 0 && !to.isContract()) revert NotContract(to);
-        address prevOutbox = activeOutbox;
-        activeOutbox = msg.sender;
+        address prevOutbox = _activeOutbox;
+        _activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call
 
         // We use a low level call here since we want to bubble up whether it succeeded or failed to the caller
         // rather than reverting on failure as well as allow contract and non-contract calls
         // solhint-disable-next-line avoid-low-level-calls
         (success, returnData) = to.call{value: value}(data);
-        activeOutbox = prevOutbox;
+        _activeOutbox = prevOutbox;
         emit BridgeCallTriggered(msg.sender, to, value, data);
     }
 
@@ -165,6 +173,7 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
     function messageCount() external view override returns (uint256) {
         return inboxAccs.length;
     }
+
     receive() payable external{
 
     }
