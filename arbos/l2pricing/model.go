@@ -87,10 +87,6 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 		arbmath.BigFloatMulByUint(rateRatio, uint64(oneInBips-poolWeight)),
 	).Uint64()
 	averageOfRatios := arbmath.Bips(averageOfRatiosRaw)
-	averageOfRatiosUnbounded := averageOfRatios
-	if averageOfRatios > arbmath.PercentToBips(200) {
-		averageOfRatios = arbmath.PercentToBips(200)
-	}
 
 	// update the gas price, adjusting each second by the max allowed by EIP 1559
 	//      price' = price * exp(seconds at intensity) / 2 mins
@@ -107,7 +103,7 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 	}
 	p("\nused\t", gasUsed, " in ", timePassed, "s = ", rate, "/s vs limit ", speedLimit, "/s for ", rateRatio)
 	p("pool\t", gasPool, "/", poolMax, " ➤ ", averagePool, " ➤ ", newGasPool, " ", poolRatio)
-	p("ratio\t", poolRatio, rateRatio, " ➤ ", averageOfRatiosUnbounded, "‱   bound to [0, 20000]")
+	p("ratio\t", poolRatio, rateRatio, " ➤ ", averageOfRatios, "‱  ")
 	p("exp()\t", exp, " ➤ ", arbmath.ApproxExpBasisPoints(exp), "‱  ")
 	p("price\t", l2BaseFee, " ➤ ", price, " bound to [", minPrice, ", ", maxPrice, "]\n")
 
