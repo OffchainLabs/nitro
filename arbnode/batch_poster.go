@@ -67,7 +67,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	PostingErrorDelay:    time.Second * 10,
 	MaxBatchPostInterval: time.Hour,
 	CompressionLevel:     brotli.DefaultCompression,
-	DASRetentionPeriod:   time.Hour * 24 * 14,
+	DASRetentionPeriod:   time.Hour * 24 * 15,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -77,7 +77,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	PostingErrorDelay:    time.Millisecond * 10,
 	MaxBatchPostInterval: 0,
 	CompressionLevel:     2,
-	DASRetentionPeriod:   time.Hour * 24 * 14,
+	DASRetentionPeriod:   time.Hour * 24 * 15,
 }
 
 func NewBatchPoster(l1Reader *L1Reader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
