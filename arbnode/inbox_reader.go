@@ -154,7 +154,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 					// shutting down
 					return nil
 				}
-				currentHeight = header.Number
+				currentHeight = new(big.Int).Set(header.Number)
 			case <-ctx.Done():
 				return nil
 			case <-checkDelayTimer.C:
