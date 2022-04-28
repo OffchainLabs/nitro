@@ -36,7 +36,8 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, *details)
 	}
 
-	aggregator := NewAggregator(AggregatorConfig{1}, backends)
+	aggregator, err := NewAggregator(AggregatorConfig{1}, backends)
+	Require(t, err)
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -205,7 +206,9 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, *details)
 	}
 
-	aggregator := DeadlineWrapper{time.Millisecond * 2000, NewAggregator(AggregatorConfig{assumedHonest}, backends)}
+	unwrappedAggregator, err := NewAggregator(AggregatorConfig{assumedHonest}, backends)
+	Require(t, err)
+	aggregator := DeadlineWrapper{time.Millisecond * 2000, unwrappedAggregator}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -295,7 +298,9 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	aggregator := DeadlineWrapper{time.Millisecond * 2000, NewAggregator(AggregatorConfig{numBackendDAS}, backends)}
+	unwrappedAggregator, err := NewAggregator(AggregatorConfig{numBackendDAS}, backends)
+	Require(t, err)
+	aggregator := DeadlineWrapper{time.Millisecond * 2000, unwrappedAggregator}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")

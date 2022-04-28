@@ -30,29 +30,37 @@ type Aggregator struct {
 }
 
 type serviceDetails struct {
-	service    DataAvailabilityService
-	pubKey     blsSignatures.PublicKey
-	signerMask uint64
+	service     DataAvailabilityService
+	pubKey      blsSignatures.PublicKey
+	signersMask uint64
 }
 
-func newServiceDetails(service DataAvailabilityService, pubKey blsSignatures.PublicKey, signerMask uint64) (*serviceDetails, error) {
-	if bits.OnesCount64(signerMask) != 1 {
-		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signerMask %X", signerMask)
+func newServiceDetails(service DataAvailabilityService, pubKey blsSignatures.PublicKey, signersMask uint64) (*serviceDetails, error) {
+	if bits.OnesCount64(signersMask) != 1 {
+		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signersMask %X", signersMask)
 	}
 	return &serviceDetails{
-		service:    service,
-		pubKey:     pubKey,
-		signerMask: signerMask,
+		service:     service,
+		pubKey:      pubKey,
+		signersMask: signersMask,
 	}, nil
 }
 
-func NewAggregator(config AggregatorConfig, services []serviceDetails) *Aggregator {
+func NewAggregator(config AggregatorConfig, services []serviceDetails) (*Aggregator, error) {
+	var aggSignersMask uint64
+	for _, d := range services {
+		aggSignersMask |= d.signersMask
+	}
+	if bits.OnesCount64(aggSignersMask) != len(services) {
+		return nil, errors.New("At least two signers share a mask")
+	}
+
 	return &Aggregator{
 		config:                         config,
 		services:                       services,
 		requiredServicesForStore:       len(services) + 1 - config.assumedHonest,
 		maxAllowedServiceStoreFailures: config.assumedHonest - 1,
-	}
+	}, nil
 }
 
 // Retrieve calls  on each backend DAS in parallel and returns immediately on the
@@ -69,7 +77,7 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 	var servicesThatSignedCert []serviceDetails
 	var pubKeys []blsSignatures.PublicKey
 	for _, d := range a.services {
-		if requestedCert.SignersMask&d.signerMask != 0 {
+		if requestedCert.SignersMask&d.signersMask != 0 {
 			servicesThatSignedCert = append(servicesThatSignedCert, d)
 			pubKeys = append(pubKeys, d.pubKey)
 		}
@@ -104,7 +112,7 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 			if bytes.Equal(crypto.Keccak256(blob), requestedCert.DataHash[:]) {
 				blobChan <- blob
 			} else {
-				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signerMask)
+				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
 			}
 		}(subCtx, d)
 	}
@@ -128,27 +136,61 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 }
 
 type storeResponse struct {
-	cert *arbstate.DataAvailabilityCertificate
-	err  error
-
 	details serviceDetails
+	sig     blsSignatures.Signature
+	err     error
 }
 
-// Store calls Store on each backend DAS in parallel and collects responses; if
-// there were enough (at least K) responses then it aggregates the signatures and
-// signerMasks from each DAS together to put in the DataAvailabilityCertificate
-// that it returns; if it gets enough errors that K successes is impossible, then
-// it stops early and returns an error, and if it gets not enough successful
-// responses by the time its context is canceled (eg via DeadlineWrapper) then it
-// also returns an error.
+// Store calls Store on each backend DAS in parallel and collects responses.
+// If there were at least K responses then it aggregates the signatures and
+// signersMasks from each DAS together into the DataAvailabilityCertificate
+// then Store returns immediately. If there were any backend Store subroutines
+// that were still running when Aggregator.Store returns, they are allowed to
+// continue running until the context is canceled (eg via DeadlineWrapper),
+// with their results discarded.
+//
+// If Store gets enough errors that K successes is impossible, then it stops early
+// and returns an error.
+//
+// If Store gets not enough successful responses by the time its context is canceled
+// (eg via DeadlineWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
 	responses := make(chan storeResponse, len(a.services))
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	expectedHash := crypto.Keccak256(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d serviceDetails) {
 			cert, err := d.service.Store(ctx, message, timeout)
-			responses <- storeResponse{cert, err, d}
+			if err != nil {
+				responses <- storeResponse{d, nil, err}
+				return
+			}
+
+			verified, err := blsSignatures.VerifySignature(cert.Sig, serializeSignableFields(*cert), d.pubKey)
+			if err != nil {
+				responses <- storeResponse{d, nil, err}
+				return
+			}
+			if !verified {
+				responses <- storeResponse{d, nil, errors.New("Signature verification failed.")}
+				return
+			}
+
+			if cert.SignersMask != d.signersMask {
+				responses <- storeResponse{d, nil, fmt.Errorf("Signers mask was %X, expected %X", cert.SignersMask, d.signersMask)}
+				return
+			}
+			if !bytes.Equal(cert.DataHash[:], expectedHash) {
+				responses <- storeResponse{d, nil, errors.New("Hash verification failed.")}
+				return
+			}
+			if cert.Timeout != timeout {
+				responses <- storeResponse{d, nil, fmt.Errorf("Timeout was %d, expected %d", cert.Timeout, timeout)}
+				return
+			}
+
+			responses <- storeResponse{d, cert.Sig, nil}
 		}(subCtx, d)
 	}
 
@@ -156,11 +198,9 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	var sigs []blsSignatures.Signature
 	var aggCert arbstate.DataAvailabilityCertificate
 	var aggSignersMask uint64
-	var initialStoreSucceeded bool
 	var storeFailures, successfullyStoredCount int
 	var errs []error
 	for i := 0; i < len(a.services) && storeFailures <= a.maxAllowedServiceStoreFailures; i++ {
-
 		select {
 		case <-ctx.Done():
 			break
@@ -170,45 +210,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 				errs = append(errs, r.err)
 				continue
 			}
-			verified, err := blsSignatures.VerifySignature(r.cert.Sig, serializeSignableFields(*r.cert), r.details.pubKey)
-			if err != nil {
-				storeFailures++
-				errs = append(errs, err)
-				continue
-			}
-			if !verified {
-				storeFailures++
-				errs = append(errs, err)
-				continue
-			}
 
-			prevPopCount := bits.OnesCount64(aggSignersMask)
-			certPopCount := bits.OnesCount64(r.cert.SignersMask)
-			aggSignersMask |= r.cert.SignersMask
-			newPopCount := bits.OnesCount64(aggSignersMask)
-			if prevPopCount+certPopCount != newPopCount {
-				storeFailures++
-				errs = append(errs, errors.New("Duplicate signers error."))
-				continue
-			}
 			pubKeys = append(pubKeys, r.details.pubKey)
-			sigs = append(sigs, r.cert.Sig)
-			if !initialStoreSucceeded {
-				initialStoreSucceeded = true
-				aggCert.DataHash = r.cert.DataHash
-				aggCert.Timeout = r.cert.Timeout
-			} else {
-				if aggCert.DataHash != r.cert.DataHash {
-					storeFailures++
-					errs = append(errs, fmt.Errorf("Mismatched DataHash from DAS %v", r.details))
-					continue
-				}
-				if aggCert.Timeout != r.cert.Timeout {
-					storeFailures++
-					errs = append(errs, fmt.Errorf("Mismatched DataHash from DAS %v", r.details))
-					continue
-				}
-			}
+			sigs = append(sigs, r.sig)
+			aggSignersMask |= r.details.signersMask
 			successfullyStoredCount++
 		}
 	}
@@ -220,6 +225,8 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	aggCert.Sig = blsSignatures.AggregateSignatures(sigs)
 	aggPubKey := blsSignatures.AggregatePublicKeys(pubKeys)
 	aggCert.SignersMask = aggSignersMask
+	copy(aggCert.DataHash[:], expectedHash)
+	aggCert.Timeout = timeout
 
 	verified, err := blsSignatures.VerifySignature(aggCert.Sig, serializeSignableFields(aggCert), aggPubKey)
 	if err != nil {
