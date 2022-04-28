@@ -15,12 +15,12 @@ type ArbAddressTable struct {
 
 // Check if an address exists in the table
 func (con ArbAddressTable) AddressExists(c ctx, evm mech, addr addr) (bool, error) {
-	return c.state.AddressTable().AddressExists(addr)
+	return c.State.AddressTable().AddressExists(addr)
 }
 
 // Gets bytes that represent the address
 func (con ArbAddressTable) Compress(c ctx, evm mech, addr addr) ([]uint8, error) {
-	return c.state.AddressTable().Compress(addr)
+	return c.State.AddressTable().Compress(addr)
 }
 
 // Replaces the compressed bytes at the given offset with those of the corresponding account
@@ -32,13 +32,13 @@ func (con ArbAddressTable) Decompress(c ctx, evm mech, buf []uint8, offset huge)
 	if ioffset > int64(len(buf)) {
 		return addr{}, nil, errors.New("invalid offset in ArbAddressTable.Decompress")
 	}
-	result, nbytes, err := c.state.AddressTable().Decompress(buf[ioffset:])
+	result, nbytes, err := c.State.AddressTable().Decompress(buf[ioffset:])
 	return result, big.NewInt(int64(nbytes)), err
 }
 
 // Looks up the index of an address in the table
 func (con ArbAddressTable) Lookup(c ctx, evm mech, addr addr) (huge, error) {
-	result, exists, err := c.state.AddressTable().Lookup(addr)
+	result, exists, err := c.State.AddressTable().Lookup(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (con ArbAddressTable) LookupIndex(c ctx, evm mech, index huge) (addr, error
 	if !index.IsUint64() {
 		return addr{}, errors.New("invalid index in ArbAddressTable.LookupIndex")
 	}
-	result, exists, err := c.state.AddressTable().LookupIndex(index.Uint64())
+	result, exists, err := c.State.AddressTable().LookupIndex(index.Uint64())
 	if err != nil {
 		return addr{}, err
 	}
@@ -65,12 +65,12 @@ func (con ArbAddressTable) LookupIndex(c ctx, evm mech, index huge) (addr, error
 
 // Adds an account to the table, shrinking its compressed representation
 func (con ArbAddressTable) Register(c ctx, evm mech, addr addr) (huge, error) {
-	slot, err := c.state.AddressTable().Register(addr)
+	slot, err := c.State.AddressTable().Register(addr)
 	return big.NewInt(int64(slot)), err
 }
 
 // Gets the number of addresses in the table
 func (con ArbAddressTable) Size(c ctx, evm mech) (huge, error) {
-	size, err := c.state.AddressTable().Size()
+	size, err := c.State.AddressTable().Size()
 	return big.NewInt(int64(size)), err
 }

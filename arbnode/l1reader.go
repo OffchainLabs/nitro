@@ -12,13 +12,13 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
 type L1Reader struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 	config L1ReaderConfig
 	client arbutil.L1Interface
 
@@ -74,6 +74,7 @@ func NewL1Reader(client arbutil.L1Interface, config L1ReaderConfig) *L1Reader {
 // Subscribers are notified when there is a change.
 // Channel could be missing headers and have duplicates.
 // Listening to the channel will make sure listenere is notified when header changes.
+// Warning: listeners must not modify the header or its number, as they're shared between listeners.
 func (s *L1Reader) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Header, func()) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()

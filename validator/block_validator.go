@@ -26,11 +26,11 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type BlockValidator struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 	*StatelessBlockValidator
 
 	validationEntries sync.Map

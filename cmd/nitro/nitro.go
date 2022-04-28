@@ -42,6 +42,7 @@ import (
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
+	_ "github.com/offchainlabs/nitro/nodeInterface"
 )
 
 func printSampleUsage(name string) {
