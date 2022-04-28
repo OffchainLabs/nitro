@@ -76,7 +76,7 @@ func (wrapper *OwnerPrecompile) Call(
 ) ([]byte, uint64, error) {
 	con := wrapper.precompile
 
-	burner := &context{
+	burner := &Context{
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
 		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
