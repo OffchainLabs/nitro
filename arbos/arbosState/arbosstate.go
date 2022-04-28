@@ -185,7 +185,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 
 	arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-	if arbosVersion != 1 && arbosVersion != 2 {
+	if arbosVersion < 1 || arbosVersion > 3 {
 		return nil, fmt.Errorf("cannot initialize to unsupported ArbOS version %v", arbosVersion)
 	}
 
@@ -233,6 +233,8 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 				if arbmath.BigEquals(chainConfig.ChainID, params.ArbitrumTestnetChainConfig().ChainID) {
 					state.Restrict(state.chainOwners.Add(TestnetUpgrade2Owner))
 				}
+			} else if state.arbosVersion == 2 {
+				// Upgrade version 2->3 has no state changes
 			} else {
 				// code to upgrade to future versions will be put here
 				panic("Unable to perform requested ArbOS upgrade")

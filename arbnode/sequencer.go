@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 )
 
@@ -38,7 +38,7 @@ func (i *txQueueItem) returnResult(err error) {
 }
 
 type Sequencer struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 
 	txStreamer *TransactionStreamer
 	txQueue    chan txQueueItem

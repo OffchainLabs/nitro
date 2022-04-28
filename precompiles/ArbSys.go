@@ -52,7 +52,7 @@ func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 
 // Gets the current ArbOS version
 func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
-	version := new(big.Int).SetUint64(55 + c.state.FormatVersion()) // Nitro starts at version 56
+	version := new(big.Int).SetUint64(55 + c.State.FormatVersion()) // Nitro starts at version 56
 	return version, nil
 }
 
@@ -101,7 +101,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	}
 	bigL1BlockNum := new(big.Int).SetUint64(l1BlockNum)
 
-	arbosState := c.state
+	arbosState := c.State
 	sendHash, err := arbosState.KeccakHash(
 		c.caller.Bytes(),
 		destination.Bytes(),
@@ -173,7 +173,7 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32
 
 	// OK to not charge gas, because method is only callable by address zero
 
-	size, rootHash, rawPartials, _ := c.state.SendMerkleAccumulator().StateForExport()
+	size, rootHash, rawPartials, _ := c.State.SendMerkleAccumulator().StateForExport()
 	partials := make([]bytes32, len(rawPartials))
 	for i, par := range rawPartials {
 		partials[i] = bytes32(par)

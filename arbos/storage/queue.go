@@ -98,3 +98,28 @@ func (q *Queue) Shift() (bool, error) {
 	}
 	return true, q.nextPutOffset.Set(2)
 }
+
+// Apply a closure on the enumerated elements element of the queue
+func (q *Queue) ForEach(closure func(uint64, common.Hash) error) error {
+
+	size, err := q.Size()
+	if err != nil {
+		return err
+	}
+	offset, err := q.nextGetOffset.Get()
+	if err != nil {
+		return err
+	}
+
+	for index := uint64(0); index < size; index++ {
+		entry, err := q.storage.GetByUint64(offset + index)
+		if err != nil {
+			return err
+		}
+		err = closure(index, entry)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

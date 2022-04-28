@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -70,7 +70,7 @@ type TransactionStreamerInterface interface {
 }
 
 type BroadcastClient struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 
 	websocketUrl    string
 	lastInboxSeqNum *big.Int
