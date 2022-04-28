@@ -150,3 +150,7 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certB
 
 	return originalMessage, nil
 }
+
+func (d *LocalDiskDataAvailabilityService) String() string {
+	return fmt.Sprintf("LocalDiskDataAvailabilityService{signersMask:%d,dbPath:%s}", d.signerMask, d.dbPath)
+}

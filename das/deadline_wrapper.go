@@ -5,6 +5,7 @@ package das
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -25,4 +26,8 @@ func (w *DeadlineWrapper) Store(ctx context.Context, message []byte, timeout uin
 	deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(w.t))
 	defer cancel()
 	return w.DataAvailabilityService.Store(deadlineCtx, message, timeout)
+}
+
+func (w *DeadlineWrapper) String() string {
+	return fmt.Sprintf("DeadlineWrapper{%v}", w.DataAvailabilityService)
 }

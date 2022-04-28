@@ -207,7 +207,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		case r := <-responses:
 			if r.err != nil {
 				storeFailures++
-				errs = append(errs, r.err)
+				errs = append(errs, fmt.Errorf("Error from backend %v, with signer mask %d: %w", r.details.service, r.details.signersMask, r.err))
 				continue
 			}
 
@@ -236,4 +236,19 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		return nil, errors.New("Failed aggregate signature check")
 	}
 	return &aggCert, nil
+}
+
+func (a *Aggregator) String() string {
+	var b bytes.Buffer
+	b.WriteString("das.Aggregator{")
+	first := true
+	for _, d := range a.services {
+		if !first {
+			b.WriteString(",")
+		}
+		b.WriteString(fmt.Sprintf("signersMask(aggregator):%d,", d.signersMask))
+		b.WriteString(d.service.String())
+	}
+	b.WriteString("}")
+	return b.String()
 }

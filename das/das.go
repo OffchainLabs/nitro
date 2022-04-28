@@ -25,6 +25,7 @@ type DataAvailabilityServiceWriter interface {
 type DataAvailabilityService interface {
 	arbstate.DataAvailabilityServiceReader
 	DataAvailabilityServiceWriter
+	fmt.Stringer
 }
 
 type DataAvailabilityMode uint64
