@@ -156,8 +156,7 @@ type storeResponse struct {
 // (eg via DeadlineWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
 	responses := make(chan storeResponse, len(a.services))
-	subCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+
 	expectedHash := crypto.Keccak256(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d serviceDetails) {
@@ -191,7 +190,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 			}
 
 			responses <- storeResponse{d, cert.Sig, nil}
-		}(subCtx, d)
+		}(ctx, d)
 	}
 
 	var pubKeys []blsSignatures.PublicKey
@@ -200,7 +199,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	var aggSignersMask uint64
 	var storeFailures, successfullyStoredCount int
 	var errs []error
-	for i := 0; i < len(a.services) && storeFailures <= a.maxAllowedServiceStoreFailures; i++ {
+	for i := 0; i < len(a.services) && storeFailures <= a.maxAllowedServiceStoreFailures && successfullyStoredCount < a.requiredServicesForStore; i++ {
 		select {
 		case <-ctx.Done():
 			break

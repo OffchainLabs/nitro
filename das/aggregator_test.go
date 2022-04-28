@@ -170,13 +170,11 @@ func min(a, b int) int {
 	return b
 }
 
-/*
 func enableLogging() {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlTrace)
 	log.Root().SetHandler(glogger)
 }
-*/
 
 func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	numBackendDAS := (rand.Int() % 20) + 1
@@ -249,6 +247,12 @@ func initTest(t *testing.T) int {
 		runs, err = strconv.Atoi(runsStr)
 		Require(t, err, "Failed to parse string")
 	}
+
+	loggingStr := os.Getenv("LOGGING")
+	if len(loggingStr) > 0 {
+		enableLogging()
+	}
+
 	return runs
 }
 
