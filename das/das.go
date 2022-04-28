@@ -12,6 +12,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/conf"
 )
 
 type DataAvailabilityServiceWriter interface {
@@ -31,13 +32,15 @@ const (
 )
 
 type DataAvailabilityConfig struct {
-	ModeImpl         string `koanf:"mode"`
-	LocalDiskDataDir string `koanf:"local-disk-data-dir"`
+	ModeImpl         string        `koanf:"mode"`
+	LocalDiskDataDir string        `koanf:"local-disk-data-dir"`
+	S3Config         conf.S3Config `koanf:"s3"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	ModeImpl:         "onchain",
 	LocalDiskDataDir: "",
+	S3Config:         conf.DefaultS3Config,
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
