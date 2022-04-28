@@ -65,7 +65,7 @@ func NewAggregator(config AggregatorConfig, services []serviceDetails) (*Aggrega
 
 // Retrieve calls  on each backend DAS in parallel and returns immediately on the
 // first successful response where the data matches the requested hash. Otherwise
-// if all requests fail or if its context is canceled (eg via DeadlineWrapper) then
+// if all requests fail or if its context is canceled (eg via TimeoutWrapper) then
 // it returns an error.
 func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
 	requestedCert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(cert))
@@ -146,14 +146,14 @@ type storeResponse struct {
 // signersMasks from each DAS together into the DataAvailabilityCertificate
 // then Store returns immediately. If there were any backend Store subroutines
 // that were still running when Aggregator.Store returns, they are allowed to
-// continue running until the context is canceled (eg via DeadlineWrapper),
+// continue running until the context is canceled (eg via TimeoutWrapper),
 // with their results discarded.
 //
 // If Store gets enough errors that K successes is impossible, then it stops early
 // and returns an error.
 //
 // If Store gets not enough successful responses by the time its context is canceled
-// (eg via DeadlineWrapper) then it also returns an error.
+// (eg via TimeoutWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
 	responses := make(chan storeResponse, len(a.services))
 

@@ -206,7 +206,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	unwrappedAggregator, err := NewAggregator(AggregatorConfig{assumedHonest}, backends)
 	Require(t, err)
-	aggregator := DeadlineWrapper{time.Millisecond * 2000, unwrappedAggregator}
+	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -304,7 +304,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// it should get all successes.
 	unwrappedAggregator, err := NewAggregator(AggregatorConfig{numBackendDAS}, backends)
 	Require(t, err)
-	aggregator := DeadlineWrapper{time.Millisecond * 2000, unwrappedAggregator}
+	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
