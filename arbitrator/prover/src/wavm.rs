@@ -455,7 +455,8 @@ impl Instruction {
             }
             HirInstruction::BranchTable(options, default) => {
                 // Build an equivalent HirInstruction sequence without BranchTable
-                for (i, &option) in options.iter().enumerate() {
+                let mut option_jumps = Vec::new();
+                for (i, &target) in options.iter().enumerate() {
                     let i = u32::try_from(i).unwrap();
                     // Evaluate this branch
                     ops.push(Instruction::simple(Opcode::Dup));
@@ -466,11 +467,19 @@ impl Instruction {
                     )));
                     // Jump if the subtraction resulted in 0, i.e. it matched the index
                     ops.push(Instruction::simple(Opcode::I32Eqz));
-                    Instruction::extend_from_hir(ops, state, HirInstruction::BranchIf(option))?;
+                    option_jumps.push((ops.len(), target));
+                    ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
                 }
                 // Nothing matched. Drop the index and jump to the default.
                 ops.push(Instruction::simple(Opcode::Drop));
                 Instruction::extend_from_hir(ops, state, HirInstruction::Branch(default))?;
+                // Make a jump table of branches
+                for (source, branch) in option_jumps {
+                    ops[source].argument_data = ops.len() as u64;
+                    // Drop the index and branch the target depth
+                    ops.push(Instruction::simple(Opcode::Drop));
+                    Instruction::extend_from_hir(ops, state, HirInstruction::Branch(branch))?;
+                }
             }
             HirInstruction::LocalTee(x) => {
                 // Translate into a dup then local.set

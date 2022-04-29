@@ -645,7 +645,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReader))
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReader))
 	if err != nil {
 		return nil, err
 	}
@@ -734,6 +734,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 			Public:    false,
 		})
 	}
+	apis = append(apis, rpc.API{
+		Namespace: "arbdebug",
+		Version:   "1.0",
+		Service:   &ArbDebugAPI{blockchain: l2BlockChain},
+		Public:    false,
+	})
 	stack.RegisterAPIs(apis)
 
 	stack.RegisterLifecycle(arbNodeLifecycle{currentNode})

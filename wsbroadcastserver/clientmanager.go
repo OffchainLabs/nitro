@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 
 	"github.com/gobwas/ws"
@@ -30,7 +30,7 @@ type CatchupBuffer interface {
 
 // ClientManager manages client connections
 type ClientManager struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 
 	clientPtrMap  map[*ClientConnection]bool
 	clientCount   int32

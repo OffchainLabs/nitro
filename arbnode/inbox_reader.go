@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,8 +16,8 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type InboxReaderConfig struct {
@@ -32,8 +33,8 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
-	DelayBlocks: 4,
-	CheckDelay:  2 * time.Second,
+	DelayBlocks: 0,
+	CheckDelay:  20 * time.Second,
 	HardReorg:   false,
 }
 
@@ -44,7 +45,7 @@ var TestInboxReaderConfig = InboxReaderConfig{
 }
 
 type InboxReader struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 
 	// Only in run thread
 	caughtUp          bool
@@ -57,6 +58,7 @@ type InboxReader struct {
 	sequencerInbox *SequencerInbox
 	caughtUpChan   chan bool
 	client         arbutil.L1Interface
+	l1Reader       *L1Reader
 
 	// Behind the mutex
 	lastReadMutex      sync.RWMutex
@@ -64,12 +66,13 @@ type InboxReader struct {
 	lastReadBatchCount uint64
 }
 
-func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *L1Reader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
 	return &InboxReader{
 		tracker:           tracker,
 		delayedBridge:     delayedBridge,
 		sequencerInbox:    sequencerInbox,
 		client:            client,
+		l1Reader:          l1Reader,
 		firstMessageBlock: firstMessageBlock,
 		caughtUpChan:      make(chan bool, 1),
 		config:            config,
@@ -80,8 +83,8 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn)
 	r.CallIteratively(func(ctx context.Context) time.Duration {
 		err := r.run(ctx)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			log.Error("error reading inbox", "err", err)
+		if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
+			log.Warn("error reading inbox", "err", err)
 		}
 		return time.Second
 	})
@@ -130,21 +133,35 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	newHeaders, unsubscribe := ir.l1Reader.Subscribe(false)
+	defer unsubscribe()
 	blocksToFetch := uint64(100)
 	for {
-		timer := time.NewTimer(ir.config.CheckDelay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil
-		case <-timer.C:
-		}
 
 		currentHeightRaw, err := ir.client.BlockNumber(ctx)
 		if err != nil {
 			return err
 		}
 		currentHeight := new(big.Int).SetUint64(currentHeightRaw)
+
+		neededBlockHeight := new(big.Int).Add(from, new(big.Int).SetUint64(ir.config.DelayBlocks))
+		checkDelayTimer := time.NewTimer(ir.config.CheckDelay)
+	WaitForHeight:
+		for arbmath.BigLessThan(currentHeight, neededBlockHeight) {
+			select {
+			case header := <-newHeaders:
+				if header == nil {
+					// shutting down
+					return nil
+				}
+				currentHeight = new(big.Int).Set(header.Number)
+			case <-ctx.Done():
+				return nil
+			case <-checkDelayTimer.C:
+				break WaitForHeight
+			}
+		}
+		checkDelayTimer.Stop()
 
 		if ir.config.DelayBlocks > 0 {
 			currentHeight = new(big.Int).Sub(currentHeight, new(big.Int).SetUint64(ir.config.DelayBlocks))
@@ -364,16 +381,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 					return err
 				}
 			} else {
-				delta := new(big.Int).SetUint64(blocksToFetch)
-				if new(big.Int).Add(to, delta).Cmp(currentHeight) >= 0 {
-					delta = delta.Div(delta, big.NewInt(2))
-					from = from.Add(from, delta)
-					if from.Cmp(to) > 0 {
-						from = from.Set(to)
-					}
-				} else {
-					from = from.Add(to, big.NewInt(1))
-				}
+				from = from.Add(to, big.NewInt(1))
 			}
 		}
 

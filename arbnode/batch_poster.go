@@ -23,12 +23,12 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type BatchPoster struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 	l1Reader      *L1Reader
 	inbox         *InboxTracker
 	streamer      *TransactionStreamer
@@ -47,6 +47,7 @@ type BatchPosterConfig struct {
 	BatchPollDelay       time.Duration `koanf:"poll-delay"`
 	PostingErrorDelay    time.Duration `koanf:"error-delay"`
 	CompressionLevel     int           `koanf:"compression-level"`
+	DASRetentionPeriod   time.Duration `koanf:"das-retention-period"`
 }
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -56,6 +57,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
+	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -65,6 +67,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	PostingErrorDelay:    time.Second * 10,
 	MaxBatchPostInterval: time.Hour,
 	CompressionLevel:     brotli.DefaultCompression,
+	DASRetentionPeriod:   time.Hour * 24 * 15,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -74,6 +77,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	PostingErrorDelay:    time.Millisecond * 10,
 	MaxBatchPostInterval: 0,
 	CompressionLevel:     2,
+	DASRetentionPeriod:   time.Hour * 24 * 15,
 }
 
 func NewBatchPoster(l1Reader *L1Reader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
@@ -369,7 +373,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, timeSinceBatc
 	}
 
 	if b.das != nil {
-		cert, err := b.das.Store(ctx, sequencerMsg)
+		cert, err := b.das.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()))
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
 		} else {

@@ -41,15 +41,15 @@ import {
 import { initializeAccounts } from "./utils";
 
 import { Node, RollupContract, forceCreateNode, assertionEquals } from "./common/rolluplib";
-import { RollupLib } from "../../build/types/RollupUserLogic";
+import { RollupLib } from "../../build/types/src/rollup/RollupUserLogic.sol/RollupUserLogic";
 type AssertionStruct = RollupLib.AssertionStruct;
 type ExecutionStateStruct = RollupLib.ExecutionStateStruct;
 import { keccak256 } from "ethers/lib/utils";
-import { ConfigStruct, RollupCreatedEvent } from "../../build/types/RollupCreator";
+import { ConfigStruct, RollupCreatedEvent } from "../../build/types/src/rollup/RollupCreator";
 import { constants } from "ethers";
 import { blockStateHash, MachineStatus } from "./common/challengeLib";
 import * as globalStateLib from "./common/globalStateLib";
-import { RollupChallengeStartedEvent } from "../../build/types/IRollupCore";
+import { RollupChallengeStartedEvent } from "../../build/types/src/rollup/IRollupCore";
 
 const zerobytes32 = ethers.constants.HashZero;
 const stakeRequirement = 10;
