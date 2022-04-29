@@ -409,7 +409,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		duration := time.Since(before)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				log.Error("Validation of block failed", "err", err)
+				log.Error("Validation of block failed", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "err", err)
 			}
 			return
 		}
@@ -433,7 +433,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 			return
 		}
 
-		log.Info("validation succeeded", "blockNr", entry.BlockNumber, "moduleRoot", moduleRoot, "time", duration)
+		log.Info("validation succeeded", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", duration)
 	}
 
 	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
