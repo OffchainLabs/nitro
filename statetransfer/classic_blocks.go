@@ -50,7 +50,7 @@ func ReadBlockFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 		if err := json.Unmarshal(raw, &extra); err != nil {
 			return nil, err
 		}
-		if extra.ReturnCode >= 2 {
+		if extra.ReturnCode == 6 || extra.ReturnCode == 7 || extra.ReturnCode == 13 || extra.ReturnCode == 14 || extra.ReturnCode == 15 {
 			// possible duplicate Txhash. Skip.
 			continue
 		}
