@@ -794,6 +794,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.LaunchThread(func(ctx context.Context) {
 		// `progressValidated` and `sendValidations` should both only do `concurrentRunsLimit` iterations of work,
 		// so they won't stomp on each other and prevent the other from running.
+		v.sendValidations(ctx)
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:
