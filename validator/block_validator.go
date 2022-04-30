@@ -213,7 +213,10 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 	}
 	validationStatus.Entry = validationEntry
 	atomic.StoreUint32(&validationStatus.Status, validationStatusPrepared)
-	v.sendValidationsChan <- struct{}{}
+	select {
+	case v.sendValidationsChan <- struct{}{}:
+	default:
+	}
 }
 
 func (v *BlockValidator) getModuleRootsToValidateLocked() []common.Hash {
@@ -361,6 +364,13 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		return
 	}
 	entry := validationStatus.Entry
+	defer func() {
+		atomic.AddInt32(&v.atomicValidationsRunning, -1)
+		select {
+		case v.sendValidationsChan <- struct{}{}:
+		default:
+		}
+	}()
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 		before := time.Now()
