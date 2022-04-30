@@ -4,6 +4,7 @@
 package l2pricing
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -20,13 +21,21 @@ func PricingForTest(t *testing.T) *L2PricingState {
 	return OpenL2PricingState(storage)
 }
 
-func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
+func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64, arbosVersion uint64) {
 	basefee := getPrice(t, pricing)
-	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed))
-	pricing.UpdatePricingModel(arbmath.UintToBig(basefee), timePassed, 3, true)
+	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed, arbosVersion))
+	pricing.UpdatePricingModel(arbmath.UintToBig(basefee), timePassed, arbosVersion, true)
 }
 
-func TestPricingModel(t *testing.T) {
+func TestPricingModelPreExp(t *testing.T) {
+	versionedTestPricingModel(t, FirstExponentialPricingVersion-1)
+}
+
+func TestPricingModelExp(t *testing.T) {
+	versionedTestPricingModel(t, FirstExponentialPricingVersion)
+}
+
+func versionedTestPricingModel(t *testing.T, arbosVersion uint64) {
 	pricing := PricingForTest(t)
 	maxPool := maxGasPool(t, pricing)
 	gasPool := getGasPool(t, pricing)
@@ -47,11 +56,11 @@ func TestPricingModel(t *testing.T) {
 	// show that running at the speed limit with a full pool is a steady-state
 	colors.PrintBlue("full pool & speed limit")
 	for seconds := 0; seconds < 4; seconds++ {
-		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
+		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds), arbosVersion)
 		if getPrice(t, pricing) != minPrice {
 			Fail(t, "price changed when it shouldn't have")
 		}
-		if getGasPool(t, pricing) != maxPool {
+		if arbosVersion < 4 && getGasPool(t, pricing) != maxPool {
 			Fail(t, "pool changed when it shouldn't have")
 		}
 	}
@@ -67,11 +76,11 @@ func TestPricingModel(t *testing.T) {
 	// note that for large enough spans of time the price will rise a miniscule amount due to the pool's avg
 	colors.PrintBlue("pool target & speed limit")
 	for seconds := 0; seconds < 4; seconds++ {
-		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
+		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds), arbosVersion)
 		if getPrice(t, pricing) != minPrice {
 			Fail(t, "price changed when it shouldn't have")
 		}
-		if getGasPool(t, pricing) != poolTarget {
+		if arbosVersion < FirstExponentialPricingVersion && getGasPool(t, pricing) != poolTarget {
 			Fail(t, "pool changed when it shouldn't have")
 		}
 	}
@@ -83,8 +92,8 @@ func TestPricingModel(t *testing.T) {
 	// show that running over the speed limit escalates the price before the pool drains
 	colors.PrintBlue("exceeding the speed limit")
 	for {
-		fakeBlockUpdate(t, pricing, 8*int64(limit), 1)
-		if getGasPool(t, pricing) < poolTarget {
+		fakeBlockUpdate(t, pricing, 8*int64(limit), 1, arbosVersion)
+		if arbosVersion < FirstExponentialPricingVersion && getGasPool(t, pricing) < poolTarget {
 			Fail(t, "the price failed to rise before the pool drained")
 		}
 		newPrice := getPrice(t, pricing)
@@ -98,23 +107,29 @@ func TestPricingModel(t *testing.T) {
 	}
 
 	// empty the pool
-	Require(t, pricing.SetGasPool(0))
-	pricing.SetGasPoolLastBlock(0)
 	pricing.SetRateEstimate(limit)
 	price = getPrice(t, pricing)
 	rate := rateEstimate(t, pricing)
+	if arbosVersion < FirstExponentialPricingVersion {
+		Require(t, pricing.SetGasPool(0))
+		pricing.SetGasPoolLastBlock(0)
+	} else {
+		Require(t, pricing.SetGasPool(-100000000))
+		pricing.SetGasPoolLastBlock(-100000000)
+	}
 
 	// show that nothing happens when no time has passed and no gas has been burnt
 	colors.PrintBlue("nothing should happen")
-	fakeBlockUpdate(t, pricing, 0, 0)
-	if getPrice(t, pricing) != price || getGasPool(t, pricing) != 0 || rateEstimate(t, pricing) != rate {
+	fakeBlockUpdate(t, pricing, 0, 0, arbosVersion)
+	if arbosVersion < FirstExponentialPricingVersion && (getPrice(t, pricing) != price || getGasPool(t, pricing) != 0 || rateEstimate(t, pricing) != rate) {
 		Fail(t, "state shouldn't have changed")
 	}
 
 	// show that the pool will escalate the price
 	colors.PrintBlue("gas pool is empty")
-	fakeBlockUpdate(t, pricing, 0, 1)
+	fakeBlockUpdate(t, pricing, 0, 1, arbosVersion)
 	if getPrice(t, pricing) <= price {
+		fmt.Println(price, getPrice(t, pricing))
 		Fail(t, "price should have risen")
 	}
 }

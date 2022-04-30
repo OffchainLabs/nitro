@@ -191,6 +191,19 @@ func SaturatingUMul(multiplicand uint64, multiplier uint64) uint64 {
 	return product
 }
 
+// multiply two int64's without over/underflow
+func SaturatingMul(multiplicand int64, multiplier int64) int64 {
+	product := multiplicand * multiplier
+	if multiplier != 0 && product/multiplier != multiplicand {
+		if (multiplicand > 0 && multiplier > 0) || (multiplicand < 0 && multiplier < 0) {
+			product = math.MaxInt64
+		} else {
+			product = math.MinInt64
+		}
+	}
+	return product
+}
+
 // cast a uint64 to an int64, clipping to [0, 2^63-1]
 func SaturatingCast(value uint64) int64 {
 	if value > math.MaxInt64 {

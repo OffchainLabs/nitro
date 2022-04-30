@@ -22,16 +22,37 @@ const InitialRateEstimateInertia = 60
 var InitialGasPoolTargetBips = arbmath.PercentToBips(80)
 var InitialGasPoolWeightBips = arbmath.PercentToBips(60)
 
-func (ps *L2PricingState) AddToGasPool(gas int64) error {
+const FirstExponentialPricingVersion = 4
+
+func (ps *L2PricingState) AddToGasPool(gas int64, arbosVersion uint64) error {
 	gasPool, err := ps.GasPool()
 	if err != nil {
 		return err
+	}
+	if arbosVersion >= FirstExponentialPricingVersion && gasPool >= 0 {
+		gasPool = 0
 	}
 	return ps.SetGasPool(arbmath.SaturatingAdd(gasPool, gas))
 }
 
 // Update the pricing model with info from the last block
 func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, arbosVersion uint64, debug bool) {
+	if arbosVersion < FirstExponentialPricingVersion {
+		// note: if we restart the chain at version >= FirstExponentialPricingVersion, we can simplify the L2-pricing-related params and precompiles
+		ps.UpdatePricingModelPreExpVersion(l2BaseFee, timePassed, arbosVersion, debug)
+		return
+	}
+
+	speedLimit, _ := ps.SpeedLimitPerSecond()
+	_ = ps.AddToGasPool(int64(timePassed*speedLimit), arbosVersion)
+	gasPool, _ := ps.GasPool()
+	minBaseFee, _ := ps.MinBaseFeeWei()
+	expVal := arbmath.ApproxExpBasisPoints(arbmath.Bips(-arbmath.SaturatingMul(gasPool, int64(arbmath.OneInBips)) / (int64(102 * speedLimit))))
+	baseFee := arbmath.BigMulByBips(minBaseFee, expVal)
+	_ = ps.SetBaseFeeWei(baseFee)
+}
+
+func (ps *L2PricingState) UpdatePricingModelPreExpVersion(l2BaseFee *big.Int, timePassed uint64, arbosVersion uint64, debug bool) {
 
 	// update the rate estimate, which is the weighted average of the past and present
 	//     rate' = weighted average of the historical rate and the current
