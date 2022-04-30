@@ -94,6 +94,16 @@ func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetMaxPerBlockGasLimit(limit)
 }
 
+// Set the gas pricing exponential denominator
+func (con ArbOwner) SetGasExponentialDenom(c ctx, evm mech, sec uint64) error {
+	return c.State.L2PricingState().SetExponentialMechanismDenom(sec)
+}
+
+// Set the gas pricing exponential tolerance
+func (con ArbOwner) SetGasExponentialTolerance(c ctx, evm mech, sec uint64) error {
+	return c.State.L2PricingState().SetExponentialMechanismTolerance(sec)
+}
+
 // Gets the network fee collector
 func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.NetworkFeeAccount()

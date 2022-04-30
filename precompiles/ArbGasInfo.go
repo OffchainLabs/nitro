@@ -165,3 +165,13 @@ func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 func (con ArbGasInfo) GetGasPool(c ctx, evm mech) (int64, error) {
 	return c.State.L2PricingState().GasPool()
 }
+
+// Get the gas pool exponential denominator
+func (con ArbGasInfo) GetGasExponentialDenom(c ctx, evm mech) (uint64, error) {
+	return c.State.L2PricingState().ExponentialMechanismDenom()
+}
+
+// Get the gas pool exponential tolerance
+func (con ArbGasInfo) GetGasExponentialTolerance(c ctx, evm mech) (uint64, error) {
+	return c.State.L2PricingState().ExponentialMechanismTolerance()
+}

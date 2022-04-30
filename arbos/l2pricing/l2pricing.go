@@ -13,18 +13,20 @@ import (
 )
 
 type L2PricingState struct {
-	storage             *storage.Storage
-	gasPool             storage.StorageBackedInt64
-	gasPoolLastBlock    storage.StorageBackedInt64
-	gasPoolSeconds      storage.StorageBackedUint64
-	gasPoolTarget       storage.StorageBackedBips
-	gasPoolWeight       storage.StorageBackedBips
-	rateEstimate        storage.StorageBackedUint64
-	rateEstimateInertia storage.StorageBackedUint64
-	speedLimitPerSecond storage.StorageBackedUint64
-	maxPerBlockGasLimit storage.StorageBackedUint64
-	baseFeeWei          storage.StorageBackedBigInt
-	minBaseFeeWei       storage.StorageBackedBigInt
+	storage                       *storage.Storage
+	gasPool                       storage.StorageBackedInt64
+	gasPoolLastBlock              storage.StorageBackedInt64
+	gasPoolSeconds                storage.StorageBackedUint64
+	gasPoolTarget                 storage.StorageBackedBips
+	gasPoolWeight                 storage.StorageBackedBips
+	rateEstimate                  storage.StorageBackedUint64
+	rateEstimateInertia           storage.StorageBackedUint64
+	speedLimitPerSecond           storage.StorageBackedUint64
+	maxPerBlockGasLimit           storage.StorageBackedUint64
+	baseFeeWei                    storage.StorageBackedBigInt
+	minBaseFeeWei                 storage.StorageBackedBigInt
+	exponentialMechanismDenom     storage.StorageBackedUint64
+	exponentialMechanismTolerance storage.StorageBackedUint64
 }
 
 const (
@@ -39,11 +41,13 @@ const (
 	maxPerBlockGasLimitOffset
 	baseFeeWeiOffset
 	minBaseFeeWeiOffset
+	exponentialMechanismDenomOffset
+	exponentialToleranceOffset
 )
 
 const GethBlockGasLimit = 1 << 63
 
-func InitializeL2PricingState(sto *storage.Storage) error {
+func InitializeL2PricingState(sto *storage.Storage, arbosVersion uint64) error {
 	_ = sto.SetUint64ByUint64(gasPoolOffset, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(gasPoolLastBlockOffset, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(gasPoolSecondsOffset, InitialGasPoolSeconds)
@@ -54,6 +58,10 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(maxPerBlockGasLimitOffset, InitialPerBlockGasLimit)
 	_ = sto.SetUint64ByUint64(baseFeeWeiOffset, InitialBaseFeeWei)
+	if arbosVersion >= FirstExponentialPricingVersion {
+		_ = sto.SetUint64ByUint64(exponentialMechanismDenomOffset, InitialExponentialMechanismDenom)
+		_ = sto.SetUint64ByUint64(exponentialToleranceOffset, InitialExponentialMechanismTolerance)
+	}
 	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumBaseFeeWei)
 }
 
@@ -71,7 +79,16 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedUint64(maxPerBlockGasLimitOffset),
 		sto.OpenStorageBackedBigInt(baseFeeWeiOffset),
 		sto.OpenStorageBackedBigInt(minBaseFeeWeiOffset),
+		sto.OpenStorageBackedUint64(exponentialMechanismDenomOffset),
+		sto.OpenStorageBackedUint64(exponentialToleranceOffset),
 	}
+}
+
+func (ps *L2PricingState) UpdateToVersion4() error {
+	if err := ps.SetExponentialMechanismDenom(InitialExponentialMechanismDenom); err != nil {
+		return err
+	}
+	return ps.SetExponentialMechanismTolerance(InitialExponentialMechanismTolerance)
 }
 
 func (ps *L2PricingState) GasPool() (int64, error) {
@@ -199,6 +216,22 @@ func (ps *L2PricingState) MaxPerBlockGasLimit() (uint64, error) {
 
 func (ps *L2PricingState) SetMaxPerBlockGasLimit(limit uint64) error {
 	return ps.maxPerBlockGasLimit.Set(limit)
+}
+
+func (ps *L2PricingState) ExponentialMechanismDenom() (uint64, error) {
+	return ps.exponentialMechanismDenom.Get()
+}
+
+func (ps *L2PricingState) SetExponentialMechanismDenom(val uint64) error {
+	return ps.exponentialMechanismDenom.Set(val)
+}
+
+func (ps *L2PricingState) ExponentialMechanismTolerance() (uint64, error) {
+	return ps.exponentialMechanismTolerance.Get()
+}
+
+func (ps *L2PricingState) SetExponentialMechanismTolerance(val uint64) error {
+	return ps.exponentialMechanismTolerance.Set(val)
 }
 
 // Ensure the gas pool is within the implied maximum capacity

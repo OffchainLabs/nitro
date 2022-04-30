@@ -201,7 +201,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
-	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
+	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace), arbosVersion)
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
 	_ = blsTable.InitializeBLSTable(sto.OpenSubStorage(blsTableSubspace))
@@ -235,6 +235,10 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 				}
 			} else if state.arbosVersion == 2 {
 				// Upgrade version 2->3 has no state changes
+			} else if state.arbosVersion == 3 {
+				// Upgrade version 3->4 adds two fields to the L2 pricing model
+				// (We don't bother to remove no-longer-used fields, for safety and because they'll be removed when we telescope versions for re-launch.)
+				state.Restrict(state.l2PricingState.UpdateToVersion4())
 			} else {
 				// code to upgrade to future versions will be put here
 				panic("Unable to perform requested ArbOS upgrade")

@@ -18,6 +18,8 @@ const InitialMinimumBaseFeeWei = params.GWei / 10
 const InitialBaseFeeWei = InitialMinimumBaseFeeWei
 const InitialGasPoolSeconds = 10 * 60
 const InitialRateEstimateInertia = 60
+const InitialExponentialMechanismDenom = 102
+const InitialExponentialMechanismTolerance = 10
 
 var InitialGasPoolTargetBips = arbmath.PercentToBips(80)
 var InitialGasPoolWeightBips = arbmath.PercentToBips(60)
@@ -45,10 +47,15 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 
 	speedLimit, _ := ps.SpeedLimitPerSecond()
 	_ = ps.AddToGasPool(int64(timePassed*speedLimit), arbosVersion)
+	denom, _ := ps.ExponentialMechanismDenom()
+	tolerance, _ := ps.ExponentialMechanismTolerance()
 	gasPool, _ := ps.GasPool()
 	minBaseFee, _ := ps.MinBaseFeeWei()
-	expVal := arbmath.ApproxExpBasisPoints(arbmath.Bips(-arbmath.SaturatingMul(gasPool, int64(arbmath.OneInBips)) / (int64(102 * speedLimit))))
-	baseFee := arbmath.BigMulByBips(minBaseFee, expVal)
+	baseFee := minBaseFee
+	if gasPool+int64(tolerance*speedLimit) < 0 {
+		exponentBips := arbmath.Bips(-arbmath.SaturatingMul(gasPool+int64(tolerance*speedLimit), int64(arbmath.OneInBips)) / (int64(denom * speedLimit)))
+		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips))
+	}
 	_ = ps.SetBaseFeeWei(baseFee)
 }
 

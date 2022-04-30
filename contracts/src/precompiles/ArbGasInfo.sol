@@ -118,4 +118,10 @@ interface ArbGasInfo {
 
     /// @notice Get the amount of gas remaining in the gas pool
     function getGasPool() external view returns (int64);
+
+    /// @notice Get the gas pool exponential denominator
+    function getGasExponentialDenom() external view returns (uint64);
+
+    /// @notice Get the gas pool exponential tolerance
+    function getGasExponentialTolerance() external view returns (uint64);
 }

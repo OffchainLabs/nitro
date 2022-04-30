@@ -14,9 +14,9 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func PricingForTest(t *testing.T) *L2PricingState {
+func PricingForTest(t *testing.T, arbosVersion uint64) *L2PricingState {
 	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL2PricingState(storage)
+	err := InitializeL2PricingState(storage, arbosVersion)
 	Require(t, err)
 	return OpenL2PricingState(storage)
 }
@@ -36,7 +36,7 @@ func TestPricingModelExp(t *testing.T) {
 }
 
 func versionedTestPricingModel(t *testing.T, arbosVersion uint64) {
-	pricing := PricingForTest(t)
+	pricing := PricingForTest(t, arbosVersion)
 	maxPool := maxGasPool(t, pricing)
 	gasPool := getGasPool(t, pricing)
 	minPrice := getMinPrice(t, pricing)
