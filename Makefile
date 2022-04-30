@@ -144,19 +144,19 @@ docker:
 # regular build rules
 
 $(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ $(pwd)/cmd/nitro
+	go build -o $@ "$(pwd)/cmd/nitro"
 
 $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ $(pwd)/cmd/deploy
+	go build -o $@ "$(pwd)/cmd/deploy"
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ $(pwd)/cmd/relay
+	go build -o $@ "$(pwd)/cmd/relay"
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ $(pwd)/cmd/daserver
+	go build -o $@ "$(pwd)/cmd/daserver"
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ $(pwd)/cmd/seq-coordinator-invalidate
+	go build -o $@ "$(pwd)/cmd/seq-coordinator-invalidate"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
