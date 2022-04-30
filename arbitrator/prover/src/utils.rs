@@ -129,6 +129,9 @@ impl Default for CBytes {
 
 impl From<&[u8]> for CBytes {
     fn from(slice: &[u8]) -> Self {
+        if slice.is_empty() {
+            return Self::default();
+        }
         unsafe {
             let ptr = libc::malloc(slice.len()) as *mut u8;
             if ptr.is_null() {
