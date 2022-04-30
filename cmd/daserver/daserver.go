@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"os"
 	"os/signal"
 	"strings"
@@ -56,12 +57,14 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 }
 
 func startup() error {
+	vcsRevision, vcsTime := conf.GetVersion()
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
+		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
+		printSampleUsage()
 		if !strings.Contains(err.Error(), "help requested") {
 			fmt.Printf("%s\n", err.Error())
 		}
-		printSampleUsage()
 		return nil
 	}
 
