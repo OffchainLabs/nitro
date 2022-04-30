@@ -5,7 +5,6 @@ package validator
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,7 +34,6 @@ type BlockValidator struct {
 
 	validationEntries sync.Map
 	sequencerBatches  sync.Map
-	preimageCache     preimageCache
 	blockMutex        sync.Mutex
 	batchMutex        sync.Mutex
 	reorgMutex        sync.Mutex
@@ -102,7 +100,6 @@ type validationStatus struct {
 	Status      uint32           // atomic: value is one of validationStatus*
 	Cancel      func()           // non-atomic: only read/written to with reorg mutex
 	Entry       *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
-	Preimages   []common.Hash    // non-atomic: only read if Status >= validationStatusPrepared
 	ModuleRoots []common.Hash    // non-atomic: present from the start
 }
 
@@ -204,19 +201,17 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 }
 
 func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
-	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
+	hasDelayedMessage, delayedMsgToRead, err := BlockDelayedMessageRead(header, prevHeader)
 	if err != nil {
 		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
 		return
 	}
-	hashlist := v.preimageCache.PourToCache(preimages)
 	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead)
 	if err != nil {
 		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
 		return
 	}
 	validationStatus.Entry = validationEntry
-	validationStatus.Preimages = hashlist
 	atomic.StoreUint32(&validationStatus.Status, validationStatusPrepared)
 	v.sendValidationsChan <- struct{}{}
 }
@@ -259,7 +254,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, sequencerMsg, delayedMsg []byte) error {
 	machConf := v.MachineLoader.GetConfig()
 	outDirPath := filepath.Join(machConf.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
@@ -304,29 +299,6 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 		return err
 	}
 	_, err = cmdFile.WriteString(" --inbox " + sequencerFileName)
-	if err != nil {
-		return err
-	}
-
-	preimageFile, err := os.Create(filepath.Join(outDirPath, "preimages.bin"))
-	if err != nil {
-		return err
-	}
-	defer preimageFile.Close()
-	for _, data := range preimages {
-		lenbytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(lenbytes, uint64(len(data)))
-		_, err := preimageFile.Write(lenbytes)
-		if err != nil {
-			return err
-		}
-		_, err = preimageFile.Write(data)
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = cmdFile.WriteString(" --preimages preimages.bin")
 	if err != nil {
 		return err
 	}
@@ -389,23 +361,10 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		return
 	}
 	entry := validationStatus.Entry
-	preimages, err := v.preimageCache.FillHashedValues(validationStatus.Preimages)
-	if err != nil {
-		log.Error("validator: failed prepare arrays", "err", err)
-		return
-	}
-	defer (func() {
-		atomic.AddInt32(&v.atomicValidationsRunning, -1)
-		v.sendValidationsChan <- struct{}{}
-		err := v.preimageCache.RemoveFromCache(validationStatus.Preimages)
-		if err != nil {
-			log.Error("validator failed to remove from cache", "err", err)
-		}
-	})()
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 		before := time.Now()
-		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, moduleRoot)
+		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, seqMsg, moduleRoot)
 		duration := time.Since(before)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
@@ -422,7 +381,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 
 		if writeThisBlock {
-			err = v.writeToFile(entry, moduleRoot, entry.StartPosition, entry.EndPosition, preimages, seqMsg, delayedMsg)
+			err = v.writeToFile(entry, moduleRoot, entry.StartPosition, entry.EndPosition, seqMsg, delayedMsg)
 			if err != nil {
 				log.Error("failed to write file", "err", err)
 			}

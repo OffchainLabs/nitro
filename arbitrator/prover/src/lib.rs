@@ -19,7 +19,7 @@ use crate::{
     machine::{argument_data_to_inbox, Machine},
 };
 use eyre::{bail, Result};
-use machine::{GlobalState, MachineStatus};
+use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
 use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
@@ -29,8 +29,12 @@ use std::{
     os::raw::{c_char, c_int},
     path::Path,
     process::Command,
-    sync::atomic::{self, AtomicU8},
+    sync::{
+        atomic::{self, AtomicU8},
+        Arc,
+    },
 };
+use utils::Bytes32;
 
 pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
     let mut f = File::open(path)?;
@@ -121,7 +125,7 @@ unsafe fn arbitrator_load_machine_impl(
         false,
         Default::default(),
         Default::default(),
-        Default::default(),
+        get_empty_preimage_resolver(),
     )?;
     Ok(Box::into_raw(Box::new(mach)))
 }
@@ -323,16 +327,34 @@ pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: Glo
     (*mach).set_global_state(gs);
 }
 
+#[repr(C)]
+pub struct ResolvedPreimage {
+    pub ptr: *const u8,
+    pub len: isize, // negative if not found
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_add_preimage(
+pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
-    c_preimage: CByteArray,
-) -> c_int {
-    let slice = std::slice::from_raw_parts(c_preimage.ptr, c_preimage.len);
-    let data = slice.to_vec();
-    let hash = Keccak256::digest(&data);
-    (*mach).add_preimage(hash.into(), data);
-    0
+    context: usize,
+    resolver: unsafe extern "C" fn(usize, *const u8) -> ResolvedPreimage,
+) {
+    (*mach).set_preimage_resolver(Arc::new(move |hash: Bytes32| -> Option<Vec<u8>> {
+        let res = resolver(context, hash.as_ptr());
+        if res.len < 0 {
+            return None;
+        }
+        let data = std::slice::from_raw_parts(res.ptr, res.len as usize);
+        let have_hash = Keccak256::digest(data);
+        if have_hash.as_slice() != *hash {
+            panic!(
+                "Resolved incorrect data for hash {}: got {}",
+                hash,
+                hex::encode(data),
+            );
+        }
+        Some(data.to_vec())
+    }) as PreimageResolver);
 }
 
 #[no_mangle]

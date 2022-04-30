@@ -7,14 +7,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
@@ -208,50 +207,7 @@ func NewStatelessBlockValidator(
 	return validator, nil
 }
 
-// If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
-func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg *arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
-	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
-	if err != nil {
-		return common.Hash{}, nil, err
-	}
-
-	chainConfig := blockchain.Config()
-
-	// Get the chain ID, both to validate and because the replay binary also gets the chain ID,
-	// so we need to populate the recordingdb with preimages for retrieving the chain ID.
-	if prevHeader != nil {
-		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, nil, true)
-		if err != nil {
-			return common.Hash{}, nil, fmt.Errorf("error opening initial ArbOS state: %w", err)
-		}
-		chainId, err := initialArbosState.ChainId()
-		if err != nil {
-			return common.Hash{}, nil, fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
-		}
-		if chainId.Cmp(chainConfig.ChainID) != 0 {
-			return common.Hash{}, nil, fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
-		}
-	}
-
-	var blockHash common.Hash
-	if msg != nil {
-		block, _ := arbos.ProduceBlock(
-			msg.Message,
-			msg.DelayedMessagesRead,
-			prevHeader,
-			recordingdb,
-			chaincontext,
-			chainConfig,
-		)
-		blockHash = block.Hash()
-	}
-
-	preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
-
-	return blockHash, preimages, err
-}
-
-func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
+func BlockDelayedMessageRead(header, prevHeader *types.Header) (hasDelayedMessage bool, delayedMsgNr uint64, err error) {
 	var prevHash common.Hash
 	if prevHeader != nil {
 		prevHash = prevHeader.Hash()
@@ -261,17 +217,6 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 		return
 	}
 
-	if prevHeader != nil { // no preimages are needed for the genesis block
-		var blockhash common.Hash
-		blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, &msg)
-		if err != nil {
-			return
-		}
-		if blockhash != header.Hash() {
-			err = fmt.Errorf("wrong hash expected %s got %s", header.Hash(), blockhash)
-			return
-		}
-	}
 	if prevHeader == nil || header.Nonce != prevHeader.Nonce {
 		hasDelayedMessage = true
 		if prevHeader != nil {
@@ -281,38 +226,66 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	return
 }
 
-func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *validationEntry, preimages map[common.Hash][]byte, seqMsg []byte, moduleRoot common.Hash) (GoGlobalState, []byte, error) {
-	start := entry.StartPosition
-	gsStart := entry.start()
-
+func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, seqMsg []byte, bc *core.BlockChain, das das.DataAvailabilityService) error {
+	var dasHash common.Hash
+	var dasPreimage []byte
 	if arbstate.IsDASMessageHeaderByte(seqMsg[40]) {
-		if v.das == nil {
+		if das == nil {
 			log.Error("No DAS configured, but sequencer message found with DAS header")
-			if v.blockchain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
-				return GoGlobalState{}, nil, errors.New("processing data availability chain without DAS configured")
+			if bc.Config().ArbitrumChainParams.DataAvailabilityCommittee {
+				return errors.New("processing data availability chain without DAS configured")
 			}
 		} else {
 			cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
 			if err != nil {
 				log.Error("Failed to deserialize DAS message", "err", err)
 			} else {
-				preimages[common.BytesToHash(cert.DataHash[:])], err = v.das.Retrieve(ctx, seqMsg[40:])
+				dasPreimage, err = das.Retrieve(ctx, seqMsg[40:])
 				if err != nil {
-					return GoGlobalState{}, nil, fmt.Errorf("couldn't retrieve message from DAS %w", err)
+					return fmt.Errorf("couldn't retrieve message from DAS %w", err)
 				}
+				dasHash = common.BytesToHash(cert.DataHash[:])
 			}
 		}
 	}
+
+	db := bc.StateCache().TrieDB()
+	return mach.SetPreimageResolver(func(hash common.Hash) ([]byte, error) {
+		// Check if it's the DAS hash
+		if hash == dasHash && dasHash != (common.Hash{}) {
+			return dasPreimage, nil
+		}
+		// Check if it's part of the state trie
+		preimage, err := db.Node(hash)
+		if err != nil {
+			// Check if it's a code hash
+			codeKey := append([]byte{}, rawdb.CodePrefix...)
+			codeKey = append(codeKey, hash.Bytes()...)
+			preimage, err = db.DiskDB().Get(codeKey)
+		}
+		if err != nil {
+			// Check if it's a block hash
+			header := bc.GetHeaderByHash(hash)
+			if header != nil {
+				preimage, err = rlp.EncodeToBytes(header)
+			}
+		}
+		return preimage, err
+	})
+}
+
+func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *validationEntry, seqMsg []byte, moduleRoot common.Hash) (GoGlobalState, []byte, error) {
+	start := entry.StartPosition
+	gsStart := entry.start()
 
 	basemachine, err := v.MachineLoader.GetMachine(ctx, moduleRoot, true)
 	if err != nil {
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 	mach := basemachine.Clone()
-	err = mach.AddPreimages(preimages)
+	err = SetMachinePreimageResolver(ctx, mach, seqMsg, v.blockchain, v.das)
 	if err != nil {
-		log.Error("error while adding preimage for proving", "err", err, "gsStart", gsStart)
-		return GoGlobalState{}, nil, errors.New("error while adding preimage for proving ")
+		return GoGlobalState{}, nil, err
 	}
 	err = mach.SetGlobalState(gsStart)
 	if err != nil {
@@ -367,11 +340,7 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 	if prevHeader == nil {
 		return false, errors.New("prev header not found")
 	}
-	msg, err := v.streamer.GetMessage(msgIndex)
-	if err != nil {
-		return false, err
-	}
-	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
+	hasDelayedMessage, delayedMsgToRead, err := BlockDelayedMessageRead(header, prevHeader)
 	if err != nil {
 		return false, fmt.Errorf("failed to get block data to validate: %w", err)
 	}
@@ -402,7 +371,7 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 		return false, err
 	}
 
-	gsEnd, _, err := v.executeBlock(ctx, entry, preimages, seqMsg, moduleRoot)
+	gsEnd, _, err := v.executeBlock(ctx, entry, seqMsg, moduleRoot)
 	if err != nil {
 		return false, err
 	}

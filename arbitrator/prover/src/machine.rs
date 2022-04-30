@@ -642,6 +642,47 @@ pub struct MachineState<'a> {
     initial_hash: Bytes32,
 }
 
+pub type PreimageResolver = Arc<dyn Fn(Bytes32) -> Option<Vec<u8>>>;
+
+#[derive(Clone)]
+struct CachedPreimageResolver {
+    resolver: PreimageResolver,
+    last_resolved: Option<(Bytes32, Vec<u8>)>,
+}
+
+impl CachedPreimageResolver {
+    pub fn new(resolver: PreimageResolver) -> CachedPreimageResolver {
+        CachedPreimageResolver {
+            resolver,
+            last_resolved: None,
+        }
+    }
+
+    pub fn get(&mut self, hash: Bytes32) -> Option<&[u8]> {
+        // TODO: this is unnecessarily complicated by the rust borrow checker.
+        // This will probably be simplifiable when Polonius is shipped.
+        if matches!(&self.last_resolved, Some(r) if r.0 != hash) {
+            self.last_resolved = None;
+        }
+        match &mut self.last_resolved {
+            Some(resolved) => Some(&resolved.1),
+            x => {
+                let data = (self.resolver)(hash)?;
+                Some(&x.insert((hash, data)).1)
+            }
+        }
+    }
+
+    pub fn get_const(&self, hash: Bytes32) -> Option<Vec<u8>> {
+        if let Some(resolved) = &self.last_resolved {
+            if resolved.0 == hash {
+                return Some(resolved.1.clone());
+            }
+        }
+        (self.resolver)(hash)
+    }
+}
+
 #[derive(Clone)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
@@ -656,7 +697,7 @@ pub struct Machine {
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-    preimages: HashMap<Bytes32, Vec<u8>>,
+    preimage_resolver: CachedPreimageResolver,
     initial_hash: Bytes32,
 }
 
@@ -795,6 +836,10 @@ where
     Value::I32(res as u32)
 }
 
+pub fn get_empty_preimage_resolver() -> PreimageResolver {
+    Arc::new(|_| None) as _
+}
+
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
 
@@ -805,7 +850,7 @@ impl Machine {
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-        preimages: HashMap<Bytes32, Vec<u8>>,
+        preimage_resolver: PreimageResolver,
     ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
@@ -1038,7 +1083,7 @@ impl Machine {
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_contents,
-            preimages,
+            preimage_resolver: CachedPreimageResolver::new(preimage_resolver),
             initial_hash: Bytes32::default(),
         };
         mach.initial_hash = mach.hash();
@@ -1086,7 +1131,7 @@ impl Machine {
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_contents: Default::default(),
-            preimages: Default::default(),
+            preimage_resolver: CachedPreimageResolver::new(get_empty_preimage_resolver()),
             initial_hash: Bytes32::default(),
         };
         mach.initial_hash = mach.hash();
@@ -1722,7 +1767,7 @@ impl Machine {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
                     if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                        if let Some(preimage) = self.preimages.get(&hash) {
+                        if let Some(preimage) = self.preimage_resolver.get(hash) {
                             let offset = usize::try_from(offset).unwrap();
                             let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
                             let read = preimage.get(offset..(offset + len)).unwrap_or_default();
@@ -2131,7 +2176,7 @@ impl Machine {
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
                     if next_inst.opcode == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
-                        let preimage = match self.preimages.get(&hash) {
+                        let preimage = match self.preimage_resolver.get_const(hash) {
                             Some(b) => b,
                             None => panic!("Missing requested preimage for hash {}", hash),
                         };
@@ -2173,8 +2218,8 @@ impl Machine {
         self.global_state = gs;
     }
 
-    pub fn add_preimage(&mut self, key: Bytes32, val: Vec<u8>) {
-        self.preimages.insert(key, val);
+    pub fn set_preimage_resolver(&mut self, resolver: Arc<dyn Fn(Bytes32) -> Option<Vec<u8>>>) {
+        self.preimage_resolver.resolver = resolver;
     }
 
     pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {
