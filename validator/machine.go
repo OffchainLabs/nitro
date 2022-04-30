@@ -324,9 +324,6 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-	if m.preimageResolver != nil {
-		return errors.New("attempted to set preimage resolver twice on machine")
-	}
 	id := atomic.AddInt64(&lastPreimageResolverId, 1)
 	preimageResolvers.Store(id, resolver)
 	m.preimageResolver = &preimageResolverMarker{id}
