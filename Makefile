@@ -153,10 +153,10 @@ $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ "$(CURDIR)/cmd/relay"
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(pwd)/cmd/daserver"
+	go build -o $@ "$(CURDIR)/cmd/daserver"
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(pwd)/cmd/seq-coordinator-invalidate"
+	go build -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
