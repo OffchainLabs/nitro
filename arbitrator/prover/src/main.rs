@@ -5,6 +5,7 @@ use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::machine::{InboxIdentifier, MachineStatus, PreimageResolver};
 use prover::parse_binary;
+use prover::utils::CBytes;
 use prover::{machine::GlobalState, utils::Bytes32};
 use prover::{machine::Machine, wavm::Opcode};
 use serde::Serialize;
@@ -166,14 +167,14 @@ fn main() -> Result<()> {
         delayed_position += 1;
     }
 
-    let mut preimages: HashMap<Bytes32, Vec<u8>> = HashMap::default();
+    let mut preimages: HashMap<Bytes32, CBytes> = HashMap::default();
     if let Some(path) = opts.preimages {
         preimages = parse_size_delim(&path)?
             .into_iter()
             .map(|b| {
                 let mut hasher = Keccak256::new();
                 hasher.update(&b);
-                (hasher.finalize().into(), b)
+                (hasher.finalize().into(), CBytes::from(b.as_slice()))
             })
             .collect();
     }

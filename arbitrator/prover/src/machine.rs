@@ -10,7 +10,7 @@ use crate::{
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
-    utils::Bytes32,
+    utils::{Bytes32, CBytes},
     value::{FunctionType, IntegerValType, ProgramCounter, Value, ValueType},
     wavm::{pack_cross_module_call, unpack_cross_module_call, FloatingPointImpls, Instruction},
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
@@ -642,12 +642,12 @@ pub struct MachineState<'a> {
     initial_hash: Bytes32,
 }
 
-pub type PreimageResolver = Arc<dyn Fn(Bytes32) -> Option<Vec<u8>>>;
+pub type PreimageResolver = Arc<dyn Fn(Bytes32) -> Option<CBytes>>;
 
 #[derive(Clone)]
 struct CachedPreimageResolver {
     resolver: PreimageResolver,
-    last_resolved: Option<(Bytes32, Vec<u8>)>,
+    last_resolved: Option<(Bytes32, CBytes)>,
 }
 
 impl CachedPreimageResolver {
@@ -673,7 +673,7 @@ impl CachedPreimageResolver {
         }
     }
 
-    pub fn get_const(&self, hash: Bytes32) -> Option<Vec<u8>> {
+    pub fn get_const(&self, hash: Bytes32) -> Option<CBytes> {
         if let Some(resolved) = &self.last_resolved {
             if resolved.0 == hash {
                 return Some(resolved.1.clone());
@@ -2218,7 +2218,7 @@ impl Machine {
         self.global_state = gs;
     }
 
-    pub fn set_preimage_resolver(&mut self, resolver: Arc<dyn Fn(Bytes32) -> Option<Vec<u8>>>) {
+    pub fn set_preimage_resolver(&mut self, resolver: PreimageResolver) {
         self.preimage_resolver.resolver = resolver;
     }
 

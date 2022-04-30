@@ -34,7 +34,7 @@ use std::{
         Arc,
     },
 };
-use utils::Bytes32;
+use utils::{Bytes32, CBytes};
 
 pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
     let mut f = File::open(path)?;
@@ -168,6 +168,9 @@ fn err_to_c_string(err: eyre::Report) -> *mut libc::c_char {
     let err = format!("{:#}", err);
     unsafe {
         let buf = libc::malloc(err.len() + 1);
+        if buf.is_null() {
+            panic!("Failed to allocate memory for error string");
+        }
         std::ptr::copy_nonoverlapping(err.as_ptr(), buf as *mut u8, err.len());
         *(buf.add(err.len()) as *mut u8) = 0;
         buf as *mut libc::c_char
@@ -339,13 +342,12 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     context: usize,
     resolver: unsafe extern "C" fn(usize, *const u8) -> ResolvedPreimage,
 ) {
-    (*mach).set_preimage_resolver(Arc::new(move |hash: Bytes32| -> Option<Vec<u8>> {
+    (*mach).set_preimage_resolver(Arc::new(move |hash: Bytes32| -> Option<CBytes> {
         let res = resolver(context, hash.as_ptr());
         if res.len < 0 {
             return None;
         }
-        let data = std::slice::from_raw_parts(res.ptr, res.len as usize).to_vec();
-        libc::free(res.ptr as _);
+        let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
         let have_hash = Keccak256::digest(&data);
         if have_hash.as_slice() != *hash {
             panic!(
