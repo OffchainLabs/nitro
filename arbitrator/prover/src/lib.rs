@@ -329,7 +329,7 @@ pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: Glo
 
 #[repr(C)]
 pub struct ResolvedPreimage {
-    pub ptr: *const u8,
+    pub ptr: *mut u8,
     pub len: isize, // negative if not found
 }
 
@@ -344,8 +344,9 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
         if res.len < 0 {
             return None;
         }
-        let data = std::slice::from_raw_parts(res.ptr, res.len as usize);
-        let have_hash = Keccak256::digest(data);
+        let data = std::slice::from_raw_parts(res.ptr, res.len as usize).to_vec();
+        libc::free(res.ptr as _);
+        let have_hash = Keccak256::digest(&data);
         if have_hash.as_slice() != *hash {
             panic!(
                 "Resolved incorrect data for hash {}: got {}",
@@ -353,7 +354,7 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
                 hex::encode(data),
             );
         }
-        Some(data.to_vec())
+        Some(data)
     }) as PreimageResolver);
 }
 
