@@ -33,10 +33,15 @@ type MachineInterface interface {
 	ProveNextStep() []byte
 }
 
+// Has a finalizer attached to remove the resolver from the global map
+type preimageResolverMarker struct {
+	id int64
+}
+
 // Holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
 	ptr              *C.struct_Machine
-	preimageResolver int64
+	preimageResolver *preimageResolverMarker
 	frozen           bool // does not allow anything that changes machine state, not cloned with the machine
 }
 
@@ -48,9 +53,10 @@ var lastPreimageResolverId int64 // atomic
 
 func freeMachine(mach *ArbitratorMachine) {
 	C.arbitrator_free_machine(mach.ptr)
-	if mach.preimageResolver != 0 {
-		preimageResolvers.Delete(mach.preimageResolver)
-	}
+}
+
+func freePreimageResolver(resolver *preimageResolverMarker) {
+	preimageResolvers.Delete(resolver.id)
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
@@ -81,7 +87,9 @@ func (m *ArbitratorMachine) Freeze() {
 // Even if origin is frozen - clone is not
 func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer runtime.KeepAlive(m)
-	return machineFromPointer(C.arbitrator_clone_machine(m.ptr))
+	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
+	newMach.preimageResolver = m.preimageResolver
+	return newMach
 }
 
 func (m *ArbitratorMachine) CloneMachineInterface() MachineInterface {
@@ -316,12 +324,13 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-	if m.preimageResolver != 0 {
+	if m.preimageResolver != nil {
 		return errors.New("attempted to set preimage resolver twice on machine")
 	}
 	id := atomic.AddInt64(&lastPreimageResolverId, 1)
 	preimageResolvers.Store(id, resolver)
-	m.preimageResolver = id
+	m.preimageResolver = &preimageResolverMarker{id}
+	runtime.SetFinalizer(m.preimageResolver, freePreimageResolver)
 	C.arbitrator_set_preimage_resolver(m.ptr, C.size_t(id), (*[0]byte)(C.preimageResolverC))
 	return nil
 }
