@@ -144,13 +144,13 @@ docker:
 # regular build rules
 
 $(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(pwd)/cmd/nitro"
+	go build -o $@ "$(CURDIR)/cmd/nitro"
 
 $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(pwd)/cmd/deploy"
+	go build -o $@ "$(CURDIR)/cmd/deploy"
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(pwd)/cmd/relay"
+	go build -o $@ "$(CURDIR)/cmd/relay"
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ "$(pwd)/cmd/daserver"
