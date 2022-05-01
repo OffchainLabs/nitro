@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -89,6 +90,10 @@ func verifyAndFillAddressTable(ethClient *ethclient.Client, callopts *bind.CallO
 	output := concurrently.Process(callopts.Context, inputChan, &concurrently.Options{PoolSize: parallelQueries, OutChannelBuffer: parallelQueries})
 	go func() {
 		for cIndex := int64(prevLength); cIndex < numAddressesInt; cIndex++ {
+			if cIndex%(numAddressesInt/10) == 0 {
+				// give the node a bit of time to recover
+				time.Sleep(time.Second)
+			}
 			inputChan <- addressQuery{classicArbAddressTable, callopts, cIndex}
 		}
 		close(inputChan)
