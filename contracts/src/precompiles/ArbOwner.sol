@@ -54,11 +54,11 @@ interface ArbOwner {
     /// @notice Set the maximum size a tx (and block) can be
     function setMaxTxGasLimit(uint64 limit) external;
 
-    /// @notice Set the gas pricing exponential denominator
-    function setGasExponentialDenom(uint64 sec) external;
+    /// @notice Set the L2 gas pricing inertia
+    function setL2GasPricingInertia(uint64 sec) external;
 
-    /// @notice Set the gas pricing exponential tolerance
-    function setGasExponentialTolerance(uint64 sec) external;
+    /// @notice Set the L2 gas backlog tolerance
+    function setL2GasBacklogTolerance(uint64 sec) external;
 
     /// @notice Get the network fee collector
     function getNetworkFeeAccount() external view returns (address);

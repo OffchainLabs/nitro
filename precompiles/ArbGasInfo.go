@@ -166,12 +166,12 @@ func (con ArbGasInfo) GetGasPool(c ctx, evm mech) (int64, error) {
 	return c.State.L2PricingState().GasPool()
 }
 
-// Get the gas pool exponential denominator
-func (con ArbGasInfo) GetGasExponentialDenom(c ctx, evm mech) (uint64, error) {
-	return c.State.L2PricingState().ExponentialMechanismDenom()
+// Get the L2 gas pricing inertia
+func (con ArbGasInfo) GetL2PricingInertia(c ctx, evm mech) (uint64, error) {
+	return c.State.L2PricingState().PricingInertia()
 }
 
-// Get the gas pool exponential tolerance
-func (con ArbGasInfo) GetGasExponentialTolerance(c ctx, evm mech) (uint64, error) {
-	return c.State.L2PricingState().ExponentialMechanismTolerance()
+// Get the L2 gas backlog tolerance
+func (con ArbGasInfo) GetL2GasBacklogTolerance(c ctx, evm mech) (uint64, error) {
+	return c.State.L2PricingState().BacklogTolerance()
 }

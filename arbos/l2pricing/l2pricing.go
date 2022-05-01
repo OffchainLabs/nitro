@@ -13,20 +13,20 @@ import (
 )
 
 type L2PricingState struct {
-	storage                       *storage.Storage
-	gasPool                       storage.StorageBackedInt64
-	gasPoolLastBlock              storage.StorageBackedInt64
-	gasPoolSeconds                storage.StorageBackedUint64
-	gasPoolTarget                 storage.StorageBackedBips
-	gasPoolWeight                 storage.StorageBackedBips
-	rateEstimate                  storage.StorageBackedUint64
-	rateEstimateInertia           storage.StorageBackedUint64
-	speedLimitPerSecond           storage.StorageBackedUint64
-	maxPerBlockGasLimit           storage.StorageBackedUint64
-	baseFeeWei                    storage.StorageBackedBigInt
-	minBaseFeeWei                 storage.StorageBackedBigInt
-	exponentialMechanismDenom     storage.StorageBackedUint64
-	exponentialMechanismTolerance storage.StorageBackedUint64
+	storage             *storage.Storage
+	gasPool             storage.StorageBackedInt64
+	gasPoolLastBlock    storage.StorageBackedInt64
+	gasPoolSeconds      storage.StorageBackedUint64
+	gasPoolTarget       storage.StorageBackedBips
+	gasPoolWeight       storage.StorageBackedBips
+	rateEstimate        storage.StorageBackedUint64
+	rateEstimateInertia storage.StorageBackedUint64
+	speedLimitPerSecond storage.StorageBackedUint64
+	maxPerBlockGasLimit storage.StorageBackedUint64
+	baseFeeWei          storage.StorageBackedBigInt
+	minBaseFeeWei       storage.StorageBackedBigInt
+	pricingInertia      storage.StorageBackedUint64
+	backlogTolerance    storage.StorageBackedUint64
 }
 
 const (
@@ -41,8 +41,8 @@ const (
 	maxPerBlockGasLimitOffset
 	baseFeeWeiOffset
 	minBaseFeeWeiOffset
-	exponentialMechanismDenomOffset
-	exponentialToleranceOffset
+	pricingInertiaOffset
+	backlogToleranceOffset
 )
 
 const GethBlockGasLimit = 1 << 63
@@ -59,8 +59,8 @@ func InitializeL2PricingState(sto *storage.Storage, arbosVersion uint64) error {
 	_ = sto.SetUint64ByUint64(maxPerBlockGasLimitOffset, InitialPerBlockGasLimit)
 	_ = sto.SetUint64ByUint64(baseFeeWeiOffset, InitialBaseFeeWei)
 	if arbosVersion >= FirstExponentialPricingVersion {
-		_ = sto.SetUint64ByUint64(exponentialMechanismDenomOffset, InitialExponentialMechanismDenom)
-		_ = sto.SetUint64ByUint64(exponentialToleranceOffset, InitialExponentialMechanismTolerance)
+		_ = sto.SetUint64ByUint64(pricingInertiaOffset, InitialPricingInertia)
+		_ = sto.SetUint64ByUint64(backlogToleranceOffset, InitialBacklogTolerance)
 	}
 	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumBaseFeeWei)
 }
@@ -79,16 +79,16 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedUint64(maxPerBlockGasLimitOffset),
 		sto.OpenStorageBackedBigInt(baseFeeWeiOffset),
 		sto.OpenStorageBackedBigInt(minBaseFeeWeiOffset),
-		sto.OpenStorageBackedUint64(exponentialMechanismDenomOffset),
-		sto.OpenStorageBackedUint64(exponentialToleranceOffset),
+		sto.OpenStorageBackedUint64(pricingInertiaOffset),
+		sto.OpenStorageBackedUint64(backlogToleranceOffset),
 	}
 }
 
-func (ps *L2PricingState) UpdateToVersion4() error {
-	if err := ps.SetExponentialMechanismDenom(InitialExponentialMechanismDenom); err != nil {
+func (ps *L2PricingState) UpgradeToVersion4() error {
+	if err := ps.SetPricingInertia(InitialPricingInertia); err != nil {
 		return err
 	}
-	return ps.SetExponentialMechanismTolerance(InitialExponentialMechanismTolerance)
+	return ps.SetBacklogTolerance(InitialBacklogTolerance)
 }
 
 func (ps *L2PricingState) GasPool() (int64, error) {
@@ -218,20 +218,20 @@ func (ps *L2PricingState) SetMaxPerBlockGasLimit(limit uint64) error {
 	return ps.maxPerBlockGasLimit.Set(limit)
 }
 
-func (ps *L2PricingState) ExponentialMechanismDenom() (uint64, error) {
-	return ps.exponentialMechanismDenom.Get()
+func (ps *L2PricingState) PricingInertia() (uint64, error) {
+	return ps.pricingInertia.Get()
 }
 
-func (ps *L2PricingState) SetExponentialMechanismDenom(val uint64) error {
-	return ps.exponentialMechanismDenom.Set(val)
+func (ps *L2PricingState) SetPricingInertia(val uint64) error {
+	return ps.pricingInertia.Set(val)
 }
 
-func (ps *L2PricingState) ExponentialMechanismTolerance() (uint64, error) {
-	return ps.exponentialMechanismTolerance.Get()
+func (ps *L2PricingState) BacklogTolerance() (uint64, error) {
+	return ps.backlogTolerance.Get()
 }
 
-func (ps *L2PricingState) SetExponentialMechanismTolerance(val uint64) error {
-	return ps.exponentialMechanismTolerance.Set(val)
+func (ps *L2PricingState) SetBacklogTolerance(val uint64) error {
+	return ps.backlogTolerance.Set(val)
 }
 
 // Ensure the gas pool is within the implied maximum capacity

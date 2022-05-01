@@ -119,9 +119,9 @@ interface ArbGasInfo {
     /// @notice Get the amount of gas remaining in the gas pool
     function getGasPool() external view returns (int64);
 
-    /// @notice Get the gas pool exponential denominator
-    function getGasExponentialDenom() external view returns (uint64);
+    /// @notice Get the L2 gas pricing inertia
+    function getL2PricingInertia() external view returns (uint64);
 
-    /// @notice Get the gas pool exponential tolerance
-    function getGasExponentialTolerance() external view returns (uint64);
+    /// @notice Get the L2 gas backlog tolerance
+    function getL2GasBacklogTolerance() external view returns (uint64);
 }

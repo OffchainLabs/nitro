@@ -185,7 +185,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 
 	arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-	if arbosVersion < 1 || arbosVersion > 3 {
+	if arbosVersion < 1 || arbosVersion > 4 {
 		return nil, fmt.Errorf("cannot initialize to unsupported ArbOS version %v", arbosVersion)
 	}
 
@@ -237,8 +237,9 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 				// Upgrade version 2->3 has no state changes
 			} else if state.arbosVersion == 3 {
 				// Upgrade version 3->4 adds two fields to the L2 pricing model
-				// (We don't bother to remove no-longer-used fields, for safety and because they'll be removed when we telescope versions for re-launch.)
-				state.Restrict(state.l2PricingState.UpdateToVersion4())
+				// (We don't bother to remove no-longer-used fields, for safety
+				//       and because they'll be removed when we telescope versions for re-launch.)
+				state.Restrict(state.l2PricingState.UpgradeToVersion4())
 			} else {
 				// code to upgrade to future versions will be put here
 				panic("Unable to perform requested ArbOS upgrade")
