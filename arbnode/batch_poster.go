@@ -38,6 +38,7 @@ type BatchPoster struct {
 	gasRefunder   common.Address
 	transactOpts  *bind.TransactOpts
 	building      *buildingBatch
+	nextMessageAt time.Time
 	das           das.DataAvailabilityService
 }
 
@@ -316,7 +317,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, nextMessageAt *time.Time) (*types.Transaction, error) {
+func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (*types.Transaction, error) {
 	batchSeqNum, err := b.inbox.GetBatchCount()
 	if err != nil {
 		return nil, err
@@ -325,11 +326,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, nextMessageAt
 	if err != nil {
 		return nil, err
 	}
-	timeSinceBatchPosted := time.Since(*nextMessageAt)
+	timeSinceNextMessage := time.Since(b.nextMessageAt)
 	if !arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum)) {
 		// If it's been under a minute since the last batch was posted, and the inbox tracker is exactly one batch behind,
 		// then there isn't an error. We're just waiting for the inbox tracker to read the most recently posted batch.
-		if timeSinceBatchPosted <= time.Minute && arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum+1)) {
+		if timeSinceNextMessage <= time.Minute && arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum+1)) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("inbox tracker not synced: contract has %v batches but inbox tracker has %v", inboxContractCount, batchSeqNum)
@@ -353,7 +354,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, nextMessageAt
 	if err != nil {
 		return nil, err
 	}
-	forcePostBatch := timeSinceBatchPosted >= b.config.MaxBatchPostInterval
+	forcePostBatch := timeSinceNextMessage >= b.config.MaxBatchPostInterval
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
@@ -373,7 +374,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, nextMessageAt
 	}
 	if b.building.segments.IsEmpty() {
 		// we don't need to post a batch for the time being
-		*nextMessageAt = time.Now()
+		b.nextMessageAt = time.Now()
 		return nil, nil
 	}
 	if !forcePostBatch {
@@ -408,7 +409,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, nextMessageAt
 		return nil, err
 	}
 	highGasThreshold := new(big.Int).SetUint64(uint64(b.config.HighGasThreshold * params.GWei))
-	if b.config.HighGasThreshold != 0 && tx.GasFeeCap().Cmp(highGasThreshold) > 0 && timeSinceBatchPosted < b.config.HighGasDelay {
+	if b.config.HighGasThreshold != 0 && tx.GasFeeCap().Cmp(highGasThreshold) > 0 && timeSinceNextMessage < b.config.HighGasDelay {
 		// The gas fee cap abigen recommended is above the high gas threshold. Check if this is necessary:
 		lastHeader, err := b.l1Reader.LastHeader(ctx)
 		if err != nil {
@@ -436,17 +437,33 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, nextMessageAt
 				"not posting batch yet as gas price is high",
 				"baseFee", float32(lastHeader.BaseFee.Uint64())/params.GWei,
 				"highGasThreshold", b.config.HighGasThreshold,
-				"timeSinceBatchPosted", timeSinceBatchPosted,
+				"timeSinceBatchPosted", timeSinceNextMessage,
 				"highGasDelay", b.config.HighGasDelay,
 			)
 			return nil, nil
 		}
 	}
 	err = b.l1Reader.Client().SendTransaction(ctx, tx)
-	if err == nil {
-		log.Info("BatchPoster: batch sent", "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "to", b.building.msgCount, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", b.building.segments.delayedMsg, "total segments", len(b.building.segments.rawSegments))
+	if err != nil {
+		return nil, err
 	}
-	return tx, err
+	postingMsgCount := b.building.msgCount
+	log.Info("BatchPoster: batch sent", "tx", tx.Hash(), "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "to", postingMsgCount, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", b.building.segments.delayedMsg, "total segments", len(b.building.segments.rawSegments))
+	b.building = nil
+	_, err = b.l1Reader.WaitForTxApproval(ctx, tx)
+	if err != nil {
+		return tx, err
+	}
+	if postingMsgCount < msgCount {
+		msg, err := b.streamer.GetMessage(postingMsgCount)
+		if err != nil {
+			return tx, err
+		}
+		b.nextMessageAt = time.Unix(int64(msg.Message.Header.Timestamp), 0)
+	} else {
+		b.nextMessageAt = time.Now()
+	}
+	return tx, nil
 }
 
 // Returns the timestamp of the next message to post, or time.Now() if there's no new messages
@@ -463,7 +480,7 @@ func (b *BatchPoster) getNextMessageTime(ctx context.Context) (time.Time, error)
 	if err != nil {
 		return time.Time{}, err
 	}
-	msgCount, err := b.inbox.txStreamer.GetMessageCount()
+	msgCount, err := b.streamer.GetMessageCount()
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -471,7 +488,7 @@ func (b *BatchPoster) getNextMessageTime(ctx context.Context) (time.Time, error)
 		// There's nothing after the newest batch, therefore batch posting was not required
 		return time.Now(), nil
 	}
-	msg, err := b.inbox.txStreamer.GetMessage(batchMsgCount - 1)
+	msg, err := b.streamer.GetMessage(batchMsgCount - 1)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -480,30 +497,20 @@ func (b *BatchPoster) getNextMessageTime(ctx context.Context) (time.Time, error)
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn)
-	var nextMessageAt time.Time
 	b.CallIteratively(func(ctx context.Context) time.Duration {
-		if nextMessageAt == (time.Time{}) {
+		if b.nextMessageAt == (time.Time{}) {
 			computed, err := b.getNextMessageTime(ctx)
 			if err != nil {
 				log.Error("error getting next message time", "err", err)
 				return b.config.PostingErrorDelay
 			}
-			nextMessageAt = computed
+			b.nextMessageAt = computed
 		}
-		tx, err := b.maybePostSequencerBatch(ctx, &nextMessageAt)
+		_, err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
 			b.building = nil
 			log.Error("error posting batch", "err", err)
 			return b.config.PostingErrorDelay
-		}
-		if tx != nil {
-			b.building = nil
-			_, err = b.l1Reader.WaitForTxApproval(ctx, tx)
-			if err != nil {
-				log.Error("failed ensuring batch tx succeeded", "err", err)
-			} else {
-				nextMessageAt = time.Now()
-			}
 		}
 		return b.config.BatchPollDelay
 	})
