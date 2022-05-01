@@ -163,7 +163,7 @@ func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 
 // Get the amount of gas remaining in the gas pool
 func (con ArbGasInfo) GetGasPool(c ctx, evm mech) (int64, error) {
-	return c.State.L2PricingState().GasPool()
+	return c.State.L2PricingState().GasPool_preExp()
 }
 
 // Get the L2 gas pricing inertia

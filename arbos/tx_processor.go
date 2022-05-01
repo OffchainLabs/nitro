@@ -298,7 +298,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	if p.msg.RunMode() != types.MessageEthcallMode {
 		// If this is a real tx, limit the amount of computed based on the gas pool.
 		// We do this by charging extra gas, and then refunding it later.
-		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
+		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit(p.state.FormatVersion())
 		if *gasRemaining > gasAvailable {
 			p.computeHoldGas = *gasRemaining - gasAvailable
 			*gasRemaining = gasAvailable

@@ -68,7 +68,7 @@ func versionedTestPricingModel(t *testing.T, arbosVersion uint64) {
 	// set the gas pool to the target
 	target, _ := pricing.GasPoolTarget()
 	poolTarget := int64(target) * maxPool / 10000
-	Require(t, pricing.SetGasPool(poolTarget))
+	Require(t, pricing.SetGasPool_preExp(poolTarget))
 	pricing.SetGasPoolLastBlock(poolTarget)
 	pricing.SetRateEstimate(limit)
 
@@ -86,7 +86,7 @@ func versionedTestPricingModel(t *testing.T, arbosVersion uint64) {
 	}
 
 	// fill the gas pool
-	Require(t, pricing.SetGasPool(maxPool))
+	Require(t, pricing.SetGasPool_preExp(maxPool))
 	pricing.SetGasPoolLastBlock(maxPool)
 
 	// show that running over the speed limit escalates the price before the pool drains
@@ -111,11 +111,10 @@ func versionedTestPricingModel(t *testing.T, arbosVersion uint64) {
 	price = getPrice(t, pricing)
 	rate := rateEstimate(t, pricing)
 	if arbosVersion < FirstExponentialPricingVersion {
-		Require(t, pricing.SetGasPool(0))
+		Require(t, pricing.SetGasPool_preExp(0))
 		pricing.SetGasPoolLastBlock(0)
 	} else {
-		Require(t, pricing.SetGasPool(-100000000))
-		pricing.SetGasPoolLastBlock(-100000000)
+		Require(t, pricing.SetGasBacklog(100000000))
 	}
 
 	// show that nothing happens when no time has passed and no gas has been burnt
@@ -141,7 +140,7 @@ func maxGasPool(t *testing.T, pricing *L2PricingState) int64 {
 }
 
 func getGasPool(t *testing.T, pricing *L2PricingState) int64 {
-	value, err := pricing.GasPool()
+	value, err := pricing.GasPool_preExp()
 	Require(t, err)
 	return value
 }

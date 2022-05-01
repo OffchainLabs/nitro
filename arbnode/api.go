@@ -114,7 +114,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		l2Pricing := state.L2PricingState()
 
 		rateEstimate, _ := l2Pricing.RateEstimate()
-		gasPool, _ := l2Pricing.GasPool()
+		gasPool, _ := l2Pricing.GasPool_preExp()
 		l1BaseFeeEstimate, _ := l1Pricing.L1BaseFeeEstimateWei()
 		l1BaseFeeUpdateTime, err := l1Pricing.LastL1BaseFeeUpdateTime()
 		if err != nil {
