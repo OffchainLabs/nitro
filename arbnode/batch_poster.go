@@ -372,7 +372,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, nextMessageAt
 		b.building.msgCount++
 	}
 	if b.building.segments.IsEmpty() {
-		// pretend we posted a batch as there's nothing to post
+		// we don't need to post a batch for the time being
 		*nextMessageAt = time.Now()
 		return nil, nil
 	}
