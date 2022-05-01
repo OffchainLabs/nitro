@@ -31,10 +31,11 @@ func (ps *L2PricingState) AddToGasPool(gas int64, arbosVersion uint64) error {
 	if err != nil {
 		return err
 	}
+	gasPool = arbmath.SaturatingAdd(gasPool, gas)
 	if arbosVersion >= FirstExponentialPricingVersion && gasPool >= 0 {
 		gasPool = 0
 	}
-	return ps.SetGasPool(arbmath.SaturatingAdd(gasPool, gas))
+	return ps.SetGasPool(gasPool)
 }
 
 // Update the pricing model with info from the last block
