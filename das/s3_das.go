@@ -9,7 +9,6 @@ import (
 	"encoding/base32"
 	"errors"
 	"sync"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -45,13 +44,12 @@ var DefaultS3Config = S3Config{
 }
 
 type S3DataAvailabilityService struct {
-	s3Config        S3Config
-	pubKey          *blsSignatures.PublicKey
-	privKey         blsSignatures.PrivateKey
-	uploader        *manager.Uploader
-	downloader      *manager.Downloader
-	retentionPeriod time.Duration
-	signerMask      uint64
+	s3Config   S3Config
+	pubKey     *blsSignatures.PublicKey
+	privKey    blsSignatures.PrivateKey
+	uploader   *manager.Uploader
+	downloader *manager.Downloader
+	signerMask uint64
 }
 
 func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -150,14 +148,14 @@ func NewS3DataAvailabilityService(s3Config S3Config) (*S3DataAvailabilityService
 	}, nil
 }
 
-func (das *S3DataAvailabilityService) Store(ctx context.Context, message []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (das *S3DataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
 	s3DasMutex.Lock()
 	defer s3DasMutex.Unlock()
 
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
-	c.Timeout = uint64(time.Now().Add(das.retentionPeriod).Unix())
+	c.Timeout = timeout
 	c.SignersMask = das.signerMask
 
 	fields := serializeSignableFields(*c)
