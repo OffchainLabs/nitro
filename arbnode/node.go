@@ -734,6 +734,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 			Public:    false,
 		})
 	}
+	apis = append(apis, rpc.API{
+		Namespace: "arbdebug",
+		Version:   "1.0",
+		Service:   &ArbDebugAPI{blockchain: l2BlockChain},
+		Public:    false,
+	})
 	stack.RegisterAPIs(apis)
 
 	stack.RegisterLifecycle(arbNodeLifecycle{currentNode})

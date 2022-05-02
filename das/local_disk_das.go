@@ -9,7 +9,6 @@ import (
 	"errors"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -20,11 +19,10 @@ import (
 var dasMutex sync.Mutex
 
 type LocalDiskDataAvailabilityService struct {
-	dbPath          string
-	pubKey          *blsSignatures.PublicKey
-	privKey         blsSignatures.PrivateKey
-	retentionPeriod time.Duration
-	signerMask      uint64
+	dbPath     string
+	pubKey     *blsSignatures.PublicKey
+	privKey    blsSignatures.PrivateKey
+	signerMask uint64
 }
 
 func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
@@ -89,14 +87,14 @@ func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabil
 	}, nil
 }
 
-func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
 	dasMutex.Lock()
 	defer dasMutex.Unlock()
 
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
-	c.Timeout = uint64(time.Now().Add(das.retentionPeriod).Unix())
+	c.Timeout = timeout
 	c.SignersMask = das.signerMask
 
 	fields := serializeSignableFields(*c)

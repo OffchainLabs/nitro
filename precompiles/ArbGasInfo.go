@@ -28,12 +28,12 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	evm mech,
 	aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
-	l1GasPrice, err := c.state.L1PricingState().L1BaseFeeEstimateWei()
+	l1GasPrice, err := c.State.L1PricingState().L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 	l2GasPrice := evm.Context.BaseFee
-	ratio, err := c.state.L1PricingState().AggregatorCompressionRatio(aggregator)
+	ratio, err := c.State.L1PricingState().AggregatorCompressionRatio(aggregator)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -57,7 +57,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 
 // Get prices in wei when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
-	maybeAggregator, err := c.state.L1PricingState().ReimbursableAggregatorForSender(c.caller)
+	maybeAggregator, err := c.State.L1PricingState().ReimbursableAggregatorForSender(c.caller)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -69,12 +69,12 @@ func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, h
 
 // Get prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
-	l1GasPrice, err := c.state.L1PricingState().L1BaseFeeEstimateWei()
+	l1GasPrice, err := c.State.L1PricingState().L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	l2GasPrice := evm.Context.BaseFee
-	ratio, err := c.state.L1PricingState().AggregatorCompressionRatio(aggregator)
+	ratio, err := c.State.L1PricingState().AggregatorCompressionRatio(aggregator)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -90,7 +90,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 // Get prices in ArbGas when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, error) {
-	maybeAggregator, err := c.state.L1PricingState().ReimbursableAggregatorForSender(c.caller)
+	maybeAggregator, err := c.State.L1PricingState().ReimbursableAggregatorForSender(c.caller)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -102,7 +102,7 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 
 // Get the rollup's speed limit, pool size, and tx gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
-	l2pricing := c.state.L2PricingState()
+	l2pricing := c.State.L2PricingState()
 	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
 	gasPoolMax, _ := l2pricing.GasPoolMax()
 	maxTxGasLimit, err := l2pricing.MaxPerBlockGasLimit()
@@ -111,44 +111,44 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 
 // Get the minimum gas price needed for a transaction to succeed
 func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
-	return c.state.L2PricingState().MinBaseFeeWei()
+	return c.State.L2PricingState().MinBaseFeeWei()
 }
 
 // Get the number of seconds worth of the speed limit the gas pool contains
 func (con ArbGasInfo) GetGasPoolSeconds(c ctx, evm mech) (uint64, error) {
-	return c.state.L2PricingState().GasPoolSeconds()
+	return c.State.L2PricingState().GasPoolSeconds()
 }
 
 // Get the target fullness in bips the pricing model will try to keep the pool at
 func (con ArbGasInfo) GetGasPoolTarget(c ctx, evm mech) (uint64, error) {
-	target, err := c.state.L2PricingState().GasPoolTarget()
+	target, err := c.State.L2PricingState().GasPoolTarget()
 	return uint64(target), err
 }
 
 // Get the extent in bips to which the pricing model favors filling the pool over increasing speeds
 func (con ArbGasInfo) GetGasPoolWeight(c ctx, evm mech) (uint64, error) {
-	weight, err := c.state.L2PricingState().GasPoolWeight()
+	weight, err := c.State.L2PricingState().GasPoolWeight()
 	return uint64(weight), err
 }
 
 // Get ArbOS's estimate of the amount of gas being burnt per second
 func (con ArbGasInfo) GetRateEstimate(c ctx, evm mech) (uint64, error) {
-	return c.state.L2PricingState().RateEstimate()
+	return c.State.L2PricingState().RateEstimate()
 }
 
 // Get how slowly ArbOS updates its estimate the amount of gas being burnt per second
 func (con ArbGasInfo) GetRateEstimateInertia(c ctx, evm mech) (uint64, error) {
-	return c.state.L2PricingState().RateEstimateInertia()
+	return c.State.L2PricingState().RateEstimateInertia()
 }
 
 // Get the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimate(c ctx, evm mech) (huge, error) {
-	return c.state.L1PricingState().L1BaseFeeEstimateWei()
+	return c.State.L1PricingState().L1BaseFeeEstimateWei()
 }
 
 // Get how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, error) {
-	return c.state.L1PricingState().L1BaseFeeEstimateInertia()
+	return c.State.L1PricingState().L1BaseFeeEstimateInertia()
 }
 
 // Deprecated -- Same as getL1BaseFeeEstimate()
@@ -163,5 +163,5 @@ func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 
 // Get the amount of gas remaining in the gas pool
 func (con ArbGasInfo) GetGasPool(c ctx, evm mech) (int64, error) {
-	return c.state.L2PricingState().GasPool()
+	return c.State.L2PricingState().GasPool()
 }
