@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -14,6 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
@@ -133,6 +136,7 @@ type validationEntry struct {
 	DelayedMsgNr  uint64
 	StartPosition GlobalStatePosition
 	EndPosition   GlobalStatePosition
+	Preimages     map[common.Hash][]byte
 }
 
 func (v *validationEntry) start() GoGlobalState {
@@ -160,6 +164,7 @@ func newValidationEntry(
 	header *types.Header,
 	hasDelayed bool,
 	delayedMsgNr uint64,
+	preimages map[common.Hash][]byte,
 ) (*validationEntry, error) {
 	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
 	if err != nil {
@@ -178,6 +183,7 @@ func newValidationEntry(
 		BlockHeader:   header,
 		HasDelayedMsg: hasDelayed,
 		DelayedMsgNr:  delayedMsgNr,
+		Preimages:     preimages,
 	}, nil
 }
 
@@ -207,7 +213,50 @@ func NewStatelessBlockValidator(
 	return validator, nil
 }
 
-func BlockDelayedMessageRead(header, prevHeader *types.Header) (hasDelayedMessage bool, delayedMsgNr uint64, err error) {
+// If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
+func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg *arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
+	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
+	if err != nil {
+		return common.Hash{}, nil, err
+	}
+
+	chainConfig := blockchain.Config()
+
+	// Get the chain ID, both to validate and because the replay binary also gets the chain ID,
+	// so we need to populate the recordingdb with preimages for retrieving the chain ID.
+	if prevHeader != nil {
+		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, nil, true)
+		if err != nil {
+			return common.Hash{}, nil, fmt.Errorf("error opening initial ArbOS state: %w", err)
+		}
+		chainId, err := initialArbosState.ChainId()
+		if err != nil {
+			return common.Hash{}, nil, fmt.Errorf("error getting chain ID from initial ArbOS state: %w", err)
+		}
+		if chainId.Cmp(chainConfig.ChainID) != 0 {
+			return common.Hash{}, nil, fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
+		}
+	}
+
+	var blockHash common.Hash
+	if msg != nil {
+		block, _ := arbos.ProduceBlock(
+			msg.Message,
+			msg.DelayedMessagesRead,
+			prevHeader,
+			recordingdb,
+			chaincontext,
+			chainConfig,
+		)
+		blockHash = block.Hash()
+	}
+
+	preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
+
+	return blockHash, preimages, err
+}
+
+func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, producePreimages bool) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
 	var prevHash common.Hash
 	if prevHeader != nil {
 		prevHash = prevHeader.Hash()
@@ -217,18 +266,35 @@ func BlockDelayedMessageRead(header, prevHeader *types.Header) (hasDelayedMessag
 		return
 	}
 
+	if prevHeader != nil && producePreimages {
+		var blockhash common.Hash
+		blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, &msg)
+		if err != nil {
+			return
+		}
+		if blockhash != header.Hash() {
+			err = fmt.Errorf("wrong hash expected %s got %s", header.Hash(), blockhash)
+			return
+		}
+	}
+
 	if prevHeader == nil || header.Nonce != prevHeader.Nonce {
 		hasDelayedMessage = true
 		if prevHeader != nil {
 			delayedMsgNr = prevHeader.Nonce.Uint64()
 		}
 	}
+
 	return
 }
 
-func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, seqMsg []byte, bc *core.BlockChain, das das.DataAvailabilityService) error {
-	var dasHash common.Hash
-	var dasPreimage []byte
+func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, preimages map[common.Hash][]byte, seqMsg []byte, bc *core.BlockChain, das das.DataAvailabilityService) error {
+	recordNewPreimages := true
+	if preimages == nil {
+		preimages = make(map[common.Hash][]byte)
+		recordNewPreimages = false
+	}
+
 	if arbstate.IsDASMessageHeaderByte(seqMsg[40]) {
 		if das == nil {
 			log.Error("No DAS configured, but sequencer message found with DAS header")
@@ -240,20 +306,20 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, se
 			if err != nil {
 				log.Error("Failed to deserialize DAS message", "err", err)
 			} else {
-				dasPreimage, err = das.Retrieve(ctx, seqMsg[40:])
+				dasPreimage, err := das.Retrieve(ctx, seqMsg[40:])
 				if err != nil {
 					return fmt.Errorf("couldn't retrieve message from DAS %w", err)
 				}
-				dasHash = common.BytesToHash(cert.DataHash[:])
+				preimages[common.BytesToHash(cert.DataHash[:])] = dasPreimage
 			}
 		}
 	}
 
 	db := bc.StateCache().TrieDB()
 	return mach.SetPreimageResolver(func(hash common.Hash) ([]byte, error) {
-		// Check if it's the DAS hash
-		if hash == dasHash && dasHash != (common.Hash{}) {
-			return dasPreimage, nil
+		// Check if it's a known preimage
+		if preimage, ok := preimages[hash]; ok {
+			return preimage, nil
 		}
 		// Check if it's part of the state trie
 		preimage, err := db.Node(hash)
@@ -270,6 +336,9 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, se
 				preimage, err = rlp.EncodeToBytes(header)
 			}
 		}
+		if err == nil && recordNewPreimages {
+			preimages[hash] = preimage
+		}
 		return preimage, err
 	})
 }
@@ -283,7 +352,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 	mach := basemachine.Clone()
-	err = SetMachinePreimageResolver(ctx, mach, seqMsg, v.blockchain, v.das)
+	err = SetMachinePreimageResolver(ctx, mach, entry.Preimages, seqMsg, v.blockchain, v.das)
 	if err != nil {
 		return GoGlobalState{}, nil, err
 	}
@@ -340,7 +409,11 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 	if prevHeader == nil {
 		return false, errors.New("prev header not found")
 	}
-	hasDelayedMessage, delayedMsgToRead, err := BlockDelayedMessageRead(header, prevHeader)
+	msg, err := v.streamer.GetMessage(msgIndex)
+	if err != nil {
+		return false, err
+	}
+	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg, false)
 	if err != nil {
 		return false, fmt.Errorf("failed to get block data to validate: %w", err)
 	}
@@ -359,7 +432,7 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 		return false, fmt.Errorf("failed calculating position for validation: %w", err)
 	}
 
-	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead)
+	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages)
 	if err != nil {
 		return false, fmt.Errorf("failed to create validation entry %w", err)
 	}

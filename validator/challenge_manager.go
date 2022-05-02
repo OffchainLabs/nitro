@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/pkg/errors"
@@ -415,13 +416,31 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if err != nil {
 		return err
 	}
-	if !tooFar {
+	if tooFar {
+		// Just record the part of block creation before the message is read
+		_, preimages, err := RecordBlockCreation(m.blockchain, blockHeader, nil)
+		if err != nil {
+			return err
+		}
+		err = SetMachinePreimageResolver(ctx, machine, preimages, nil, m.blockchain, m.das)
+		if err != nil {
+			return err
+		}
+	} else {
 		// Get the next message and block header, and record the full block creation
+		genesisBlockNum, err := m.txStreamer.GetGenesisBlockNumber()
+		if err != nil {
+			return err
+		}
+		message, err := m.txStreamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
+		if err != nil {
+			return err
+		}
 		nextHeader := m.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
 		if nextHeader == nil {
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
-		hasDelayedMsg, delayedMsgNr, err := BlockDelayedMessageRead(nextHeader, blockHeader)
+		preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message, false)
 		if err != nil {
 			return err
 		}
@@ -429,7 +448,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		if err != nil {
 			return err
 		}
-		err = SetMachinePreimageResolver(ctx, machine, batchBytes, m.blockchain, m.das)
+		err = SetMachinePreimageResolver(ctx, machine, preimages, batchBytes, m.blockchain, m.das)
 		if err != nil {
 			return err
 		}

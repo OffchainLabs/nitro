@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -686,14 +687,19 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		return err
 	}
 
+	var statedb *state.StateDB
+	defer func() {
+		if statedb != nil {
+			statedb.StopPrefetcher()
+		}
+	}()
+
 	for pos < msgCount {
 
-		statedb, err := s.bc.StateAt(lastBlockHeader.Root)
+		statedb, err = s.bc.StateAt(lastBlockHeader.Root)
 		if err != nil {
 			return err
 		}
-
-		statedb.StartPrefetcher("TransactionStreamer")
 
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg
@@ -704,6 +710,8 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			// nolint:nilerr
 			return nil
 		}
+
+		statedb.StartPrefetcher("TransactionStreamer")
 
 		msg, err := s.GetMessage(pos)
 		if err != nil {

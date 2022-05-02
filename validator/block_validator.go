@@ -5,6 +5,7 @@ package validator
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,6 +67,7 @@ type BlockValidatorConfig struct {
 	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
 	CurrentModuleRoot        string `koanf:"current-module-root"`
 	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
+	StorePreimages           bool   `koanf:"store-preimages"`
 }
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -74,6 +76,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
+	f.Bool(prefix+".store-preimages", DefaultBlockValidatorConfig.StorePreimages, "store preimages of running machines (higher memory cost, better debugging, potentially better performance)")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
@@ -82,6 +85,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
+	StorePreimages:           false,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -90,6 +94,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
+	StorePreimages:           false,
 }
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
@@ -201,12 +206,12 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 }
 
 func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
-	hasDelayedMessage, delayedMsgToRead, err := BlockDelayedMessageRead(header, prevHeader)
+	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg, v.config.StorePreimages)
 	if err != nil {
 		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
 		return
 	}
-	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead)
+	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages)
 	if err != nil {
 		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
 		return
@@ -257,7 +262,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, sequencerMsg, delayedMsg []byte) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
 	machConf := v.MachineLoader.GetConfig()
 	outDirPath := filepath.Join(machConf.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
@@ -302,6 +307,29 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 		return err
 	}
 	_, err = cmdFile.WriteString(" --inbox " + sequencerFileName)
+	if err != nil {
+		return err
+	}
+
+	preimageFile, err := os.Create(filepath.Join(outDirPath, "preimages.bin"))
+	if err != nil {
+		return err
+	}
+	defer preimageFile.Close()
+	for _, data := range preimages {
+		lenbytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(lenbytes, uint64(len(data)))
+		_, err := preimageFile.Write(lenbytes)
+		if err != nil {
+			return err
+		}
+		_, err = preimageFile.Write(data)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = cmdFile.WriteString(" --preimages preimages.bin")
 	if err != nil {
 		return err
 	}
@@ -391,7 +419,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 
 		if writeThisBlock {
-			err = v.writeToFile(entry, moduleRoot, entry.StartPosition, entry.EndPosition, seqMsg, delayedMsg)
+			err = v.writeToFile(entry, moduleRoot, entry.StartPosition, entry.EndPosition, entry.Preimages, seqMsg, delayedMsg)
 			if err != nil {
 				log.Error("failed to write file", "err", err)
 			}
