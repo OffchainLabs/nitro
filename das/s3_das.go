@@ -22,13 +22,30 @@ import (
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
-	"github.com/offchainlabs/nitro/cmd/conf"
+
+	flag "github.com/spf13/pflag"
 )
 
 var s3DasMutex sync.Mutex
 
+type S3Config struct {
+	AccessKey string `koanf:"access-key"`
+	Bucket    string `koanf:"bucket"`
+	ObjectKey string `koanf:"object-key"`
+	Region    string `koanf:"region"`
+	SecretKey string `koanf:"secret-key"`
+}
+
+var DefaultS3Config = S3Config{
+	AccessKey: "",
+	Bucket:    "",
+	ObjectKey: "",
+	Region:    "",
+	SecretKey: "",
+}
+
 type S3DataAvailabilityService struct {
-	s3Config        conf.S3Config
+	s3Config        S3Config
 	pubKey          *blsSignatures.PublicKey
 	privKey         blsSignatures.PrivateKey
 	uploader        *manager.Uploader
@@ -37,7 +54,15 @@ type S3DataAvailabilityService struct {
 	signerMask      uint64
 }
 
-func readKeysFromS3(s3Config conf.S3Config, downloader *manager.Downloader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
+func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".access-key", DefaultS3Config.AccessKey, "S3 access key")
+	f.String(prefix+".bucket", DefaultS3Config.Bucket, "S3 bucket")
+	f.String(prefix+".object-key", DefaultS3Config.ObjectKey, "S3 object key")
+	f.String(prefix+".region", DefaultS3Config.Region, "S3 region")
+	f.String(prefix+".secret-key", DefaultS3Config.SecretKey, "S3 secret key")
+}
+
+func readKeysFromS3(s3Config S3Config, downloader *manager.Downloader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
 	pubKeyBuf := manager.NewWriteAtBuffer([]byte{})
 	_, err := downloader.Download(context.TODO(), pubKeyBuf, &s3.GetObjectInput{
 		Bucket: aws.String(s3Config.Bucket),
@@ -67,7 +92,7 @@ func readKeysFromS3(s3Config conf.S3Config, downloader *manager.Downloader) (*bl
 	return &pubKey, privKey, nil
 }
 
-func generateAndStoreKeysInS3(s3Config conf.S3Config, uploader *manager.Uploader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
+func generateAndStoreKeysInS3(s3Config S3Config, uploader *manager.Uploader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
 	pubKey, privKey, err := blsSignatures.GenerateKeys()
 	if err != nil {
 		return nil, nil, err
@@ -92,7 +117,7 @@ func generateAndStoreKeysInS3(s3Config conf.S3Config, uploader *manager.Uploader
 	return &pubKey, privKey, nil
 }
 
-func NewS3DataAvailabilityService(s3Config conf.S3Config) (*S3DataAvailabilityService, error) {
+func NewS3DataAvailabilityService(s3Config S3Config) (*S3DataAvailabilityService, error) {
 	s3DasMutex.Lock()
 	defer s3DasMutex.Unlock()
 
