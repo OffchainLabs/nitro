@@ -876,8 +876,7 @@ impl Machine {
         }
 
         for lib in libraries {
-            let module =
-                Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
+            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
             for (name, &func) in &*module.exports {
                 let ty = module.func_types[func as usize].clone();
                 available_imports.insert(
