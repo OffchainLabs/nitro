@@ -58,7 +58,7 @@ describe("EthCallAware", async () => {
         expect(
           ethCallAware.callStatic.testFunction(num, data, skipEthCallAware),
           "Error message"
-        ).to.be.revertedWith(`CallAwareData("${data}")`);
+        ).to.be.revertedWith(`TriggerOffchainHandler(0, "${data}")`);
       }
     });
 

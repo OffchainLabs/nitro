@@ -10,7 +10,7 @@ import "./IBridge.sol";
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
-import { CallAwareData, EthCallAware } from "../libraries/EthCallAware.sol";
+import { EthCallAware, revertWithInboxHandler } from "../libraries/EthCallAware.sol";
 import {
     L2_MSG,
     L1MessageType_L2FundedByL1,
@@ -385,10 +385,9 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bytes memory _messageData,
         bool allowRevertOnCall
     ) internal returns (uint256) {
-        if (EthCallAware.isCall() && allowRevertOnCall)
-            revert CallAwareData(abi.encodePacked(_sender, _messageData));
         if (_messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
+        if (EthCallAware.isCall() && allowRevertOnCall) revertWithInboxHandler(_sender, _messageData);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
