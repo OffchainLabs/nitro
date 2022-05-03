@@ -19,7 +19,7 @@
 import { assert, expect } from "chai";
 import { ethers } from "hardhat";
 import { EthCallAwareTester__factory } from "../../build/types";
-import { TxSuccessEvent } from "../../build/types/EthCallAwareTester";
+import { TxSuccessEvent } from "../../build/types/src/test-helpers/EthCallAwareTester";
 import { initializeAccounts } from "./utils";
 
 describe("EthCallAware", async () => {
