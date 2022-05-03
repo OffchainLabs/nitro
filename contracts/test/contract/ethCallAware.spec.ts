@@ -38,6 +38,19 @@ describe("EthCallAware", async () => {
   const num = 10;
   const data = "0x2020";
 
+  it(`estimate gas returns correct value`, async () => {
+    const ethCallAware = await setupEthCallAware();
+    const gasEstimate = await ethCallAware.estimateGas.testFunction(num, data);
+
+    const res = await ethCallAware.functions.testFunction(num, data);
+    const receipt = await res.wait();
+    const event = ethCallAware.interface.parseLog(receipt.logs[0])
+      .args as TxSuccessEvent["args"];
+    expect(event.data, "data").to.eq(data);
+    expect(event.num.toNumber(), "num").to.eq(num);
+    expect(gasEstimate.toNumber(), "gas used").to.eq(receipt.gasUsed);
+  });
+
   for (let i = 0; i < 2; i++) {
     const opts: CallOverrides = {};
 
@@ -63,19 +76,6 @@ describe("EthCallAware", async () => {
           ethCallAware.callStatic.testFunction(num, data, opts),
           "Error message"
         ).to.be.revertedWith(`CallAwareData(0, "${data}")`);
-      });
-
-      it(`estimate gas returns correct value`, async () => {
-        const ethCallAware = await setupEthCallAware();
-        const gasEstimate = await ethCallAware.estimateGas.testFunction(num, data);
-
-        const res = await ethCallAware.functions.testFunction(num, data);
-        const receipt = await res.wait();
-        const event = ethCallAware.interface.parseLog(receipt.logs[0])
-          .args as TxSuccessEvent["args"];
-        expect(event.data, "data").to.eq(data);
-        expect(event.num.toNumber(), "num").to.eq(num);
-        expect(gasEstimate.toNumber(), "gas used").to.eq(receipt.gasUsed);
       });
     });
   }

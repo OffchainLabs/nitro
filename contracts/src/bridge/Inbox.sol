@@ -10,7 +10,7 @@ import "./IBridge.sol";
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
-import { EthCallAware, CallAwareData } from "../libraries/EthCallAware.sol";
+import {EthCallAware, CallAwareData} from "../libraries/EthCallAware.sol";
 import {
     L2_MSG,
     L1MessageType_L2FundedByL1,
