@@ -32,7 +32,6 @@ library EthCallAware {
     address constant public MAGIC_ORIGIN = address(uint160(MAGIC_GAS));
 
     /// @dev Tries to determine if the current execution is a transaction or a call
-    /// @return isCall if gas price is less than one or tx origin is set to magic value
     function isCall() internal view returns (bool) {
         // when making eth_calls many libraries leave empty, or allow arbitrary setting of, some
         // transaction fields such as 'from' and 'gasPrice'. Since it's impossible for a user to
