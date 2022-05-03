@@ -26,13 +26,6 @@ error CallAwareData(bytes data);
 library EthCallAware {
     address constant public MAGIC_ORIGIN = address(0xe4404cA11);
 
-    /// @dev Tries to determine if the current execution is a transaction
-    /// or a call. Allows execution to continue if the execution is a transaction
-    /// and reverts with the provided data if the execution is a call
-    function revertOnCall(bytes memory data) internal view {
-        if (isCall()) revert CallAwareData(data);
-    }
-
     /// @dev Tries to determine if the current execution is a transaction or a call
     /// @return isCall if gas price is less than one or tx origin is set to magic value
     function isCall() internal view returns (bool) {
