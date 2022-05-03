@@ -12,10 +12,9 @@ contract EthCallAwareTester {
 
     function testFunction(
         uint256 num,
-        bytes calldata data,
-        bool skip
+        bytes calldata data
     ) public {
-        if (EthCallAware.isCall() && !skip) revert CallAwareData(0x00, data);
+        if (EthCallAware.isCall()) revert CallAwareData(0x00, data);
         emit TxSuccess(num, data);
     }
 }
