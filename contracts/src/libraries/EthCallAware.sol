@@ -18,26 +18,6 @@
 
 pragma solidity ^0.8.4;
 
-/// @dev Thrown when the execution context detected to be an eth_call and
-/// data should be surfaced to an offchain handler
-/// @param decoderId identifier that specifies how data should be decoded
-/// @param data hex bytes of data that can be decoded according to the respective decoder id
-error TriggerOffchainHandler(uint256 decoderId, bytes data);
-
-/// @dev this should be used acompanied by EthCallAware since offchain handlers
-/// will only be triggered if in an eth_call or estimateGas
-/// @param data arbitrary hex data
-function revertWithArbitraryData(bytes memory data) pure {
-    revert TriggerOffchainHandler(0x00, data);
-}
-
-/// @dev this should be used acompanied by EthCallAware since offchain handlers
-/// will only be triggered if in an eth_call or estimateGas
-/// @param inboxSender address that called the inbox with message
-/// @param messageData hex data that inbox will include into Arbitrum
-function revertWithInboxHandler(address inboxSender, bytes memory messageData) pure {
-    revert TriggerOffchainHandler(0xa4b11, abi.encodePacked(inboxSender, messageData));
-}
 
 /// @dev Tools for inferring whether a transaction was made in the context of an eth_call
 library EthCallAware {
@@ -57,4 +37,26 @@ library EthCallAware {
         // we compare tx.origin to MAGIC_ORIGIN so this codepath isn't hit accidentally
         return tx.gasprice <= 1 || tx.origin == MAGIC_ORIGIN;
     }
+}
+
+/// @dev Thrown when the execution context detected to be an eth_call and
+/// data should be surfaced to an offchain handler
+/// @param version identifies how data should be decoded
+/// @param data hex bytes of data that can be decoded according to the respective decoder id
+error CallAwareData(uint256 version, bytes data);
+
+/// @dev this should be used acompanied by EthCallAware since offchain handlers
+/// will only be triggered if in an eth_call or estimateGas
+/// @param data arbitrary hex data
+function revertWithArbitraryData(bytes memory data) view {
+    if(EthCallAware.isCall()) revert CallAwareData(0x00, data);
+}
+
+/// @dev this should be used acompanied by EthCallAware since offchain handlers
+/// will only be triggered if in an eth_call or estimateGas
+/// @param inboxSender address that called the inbox with message
+/// @param messageData hex data that inbox will include into Arbitrum
+function revertWithInboxHandler(address inboxSender, bytes memory messageData) view {
+    if(EthCallAware.isCall())
+        revert CallAwareData(0x01, abi.encodePacked(inboxSender, messageData));
 }

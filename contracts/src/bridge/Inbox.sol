@@ -387,7 +387,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     ) internal returns (uint256) {
         if (_messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
-        if (EthCallAware.isCall() && allowRevertOnCall) revertWithInboxHandler(_sender, _messageData);
+        if (allowRevertOnCall) revertWithInboxHandler(_sender, _messageData);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
