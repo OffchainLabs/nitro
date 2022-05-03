@@ -21,7 +21,7 @@ pragma solidity ^0.8.4;
 /// @dev Thrown when the execution context detected to be an eth_call and
 /// data should be surfaced to an offchain handler
 /// @param version identifies how data should be encoded
-/// @param data hex bytes of data that can be decoded according to the respective decoder id
+/// @param data hex bytes of data that can be decoded according to the version
 error CallAwareData(uint256 version, bytes data);
 
 /// @dev Tools for inferring whether a transaction was made in the context of an eth_call
