@@ -1,6 +1,5 @@
-#
-# Copyright 2020, Offchain Labs, Inc. All rights reserved.
-#
+# Copyright 2021-2022, Offchain Labs, Inc.
+# For license information, see https://github.com/nitro/blob/master/LICENSE
 
 # Docker builds mess up file timestamps. Then again, in docker builds we never
 # have to update an existing file. So - for docker, convert all dependencies

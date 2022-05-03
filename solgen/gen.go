@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package main
 
@@ -131,9 +130,14 @@ func main() {
 		}
 	}
 
-	blockscout := filepath.Join(parent, "blockscout", "init", "data")
-	modules["precompilesgen"].exportABIs(blockscout)
-	modules["node_interfacegen"].exportABIs(blockscout)
-
 	fmt.Println("successfully generated go abi files")
+
+	blockscout := filepath.Join(parent, "blockscout", "init", "data")
+	if _, err := os.Stat(blockscout); err != nil {
+		fmt.Println("skipping abi export since blockscout is not present")
+	} else {
+		modules["precompilesgen"].exportABIs(blockscout)
+		modules["node_interfacegen"].exportABIs(blockscout)
+		fmt.Println("successfully exported abi files")
+	}
 }
