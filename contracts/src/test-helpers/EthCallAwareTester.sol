@@ -10,12 +10,8 @@ import "../libraries/EthCallAware.sol";
 contract EthCallAwareTester {
     event TxSuccess(uint256 num, bytes data);
 
-    function testFunction(
-        uint256 num,
-        bytes calldata data,
-        bool skip
-    ) public {
-        if (!skip) EthCallAware.revertOnCall(data);
+    function testFunction(uint256 num, bytes calldata data) public {
+        if (EthCallAware.isCall()) revert CallAwareData(0x00, data);
         emit TxSuccess(num, data);
     }
 }

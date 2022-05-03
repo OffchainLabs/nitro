@@ -18,29 +18,30 @@
 
 pragma solidity ^0.8.4;
 
-/// @dev Thrown when the execution context detected to be an eth_call.
-/// @param data The msg.data of the current call
-error CallAwareData(bytes data);
+/// @dev Thrown when the execution context detected to be an eth_call
+/// @param version identifies how data should be encoded
+/// @param data hex bytes of data that can be decoded according to the version
+error CallAwareData(uint256 version, bytes data);
 
 /// @dev Tools for inferring whether a transaction was made in the context of an eth_call
 library EthCallAware {
-    /// @dev Tries to determine if the current execution is a transaction
-    /// or a call. Allows execution to continue if the execution is a transaction
-    /// and reverts with the provided data if the execution is a call
-    function revertOnCall(bytes memory data) internal view {
-        if (isCall()) revert CallAwareData(data);
-    }
+    /// @dev this is equivalent to 0.000051729 gwei
+    uint256 public constant MAGIC_GAS = uint256(0xcA11);
+    /// @dev the address gets padded to `0x000000000000000000000000000000000000cA11`
+    address public constant MAGIC_ORIGIN = address(uint160(MAGIC_GAS));
 
     /// @dev Tries to determine if the current execution is a transaction or a call
     function isCall() internal view returns (bool) {
         // when making eth_calls many libraries leave empty, or allow arbitrary setting of, some
         // transaction fields such as 'from' and 'gasPrice'. Since it's impossible for a user to
-        // sign a transaction from the 0x000.. address we know that if a transaction has that as its origin
+        // sign a valid transaction from MAGIC_ORIGIN we know that if a transaction has that as its origin
         // then we must be in an eth_call. Likewise the base fee stops transactions being mined at 0 or 1 wei
         // gas prices, so those values are also indicators of an eth_call.
+        // instead of relying on gasPrice of 0 or 1 we use a magic value so this flow can be opt-in
+        // (ie some tools set basefee of 0 and may hit this codepath accidentally)
         // See https://twitter.com/0xkarmacoma/status/1493380279309717505 for more details.
 
-        // remix sets a gasprice of 1, whereas ethersjs uses 0
-        return tx.gasprice <= 1;
+        // we compare tx.origin and gas price to the magic number so this codepath isn't hit accidentally
+        return tx.gasprice == MAGIC_GAS || tx.origin == MAGIC_ORIGIN;
     }
 }
