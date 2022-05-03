@@ -41,6 +41,19 @@ func (m *moduleInfo) addArtifact(artifact HardHatArtifact) {
 	m.bytecodes = append(m.bytecodes, artifact.Bytecode)
 }
 
+func (m *moduleInfo) exportABIs(dest string) {
+	for i, name := range m.contractNames {
+		path := filepath.Join(dest, name+".abi")
+		abi := m.abis[i] + "\n"
+
+		// #nosec G306
+		err := ioutil.WriteFile(path, []byte(abi), 0o644)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
 func main() {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
@@ -86,6 +99,7 @@ func main() {
 	}
 
 	for module, info := range modules {
+
 		code, err := bind.Bind(
 			info.contractNames,
 			info.abis,
@@ -116,6 +130,10 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+
+	blockscout := filepath.Join(parent, "blockscout", "init", "data")
+	modules["precompilesgen"].exportABIs(blockscout)
+	modules["node_interfacegen"].exportABIs(blockscout)
 
 	fmt.Println("successfully generated go abi files")
 }
