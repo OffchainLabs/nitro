@@ -15,7 +15,7 @@ contract EthCallAwareTester {
         bytes calldata data,
         bool skip
     ) public {
-        if (!skip) revertWithArbitraryData(data);
+        if (EthCallAware.isCall() && !skip) revert CallAwareData(0x00, data);
         emit TxSuccess(num, data);
     }
 }
