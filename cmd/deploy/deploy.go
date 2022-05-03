@@ -7,17 +7,18 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"github.com/offchainlabs/nitro/validator"
 	"io/ioutil"
 	"math/big"
 	"os"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/util"
 )
 
 func main() {
@@ -32,6 +33,7 @@ func main() {
 	l1keystore := flag.String("l1keystore", "", "l1 private key store")
 	deployAccount := flag.String("l1DeployAccount", "", "l1 seq account to use (default is first account in keystore)")
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
+	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
 	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
@@ -41,7 +43,12 @@ func main() {
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
-	l1TransactionOpts, err := util.GetTransactOptsFromKeystore(*l1keystore, *deployAccount, *l1passphrase, l1ChainId)
+	wallet := conf.WalletConfig{
+		Pathname:     *l1keystore,
+		Account:      *deployAccount,
+		PasswordImpl: *l1passphrase,
+	}
+	l1TransactionOpts, err := util.GetTransactOptsFromWallet(&wallet, l1ChainId)
 	if err != nil {
 		flag.Usage()
 		log.Error("error reading keystore")
@@ -55,7 +62,10 @@ func main() {
 		panic(err)
 	}
 
-	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, time.Minute*5)
+	machineConfig := validator.DefaultNitroMachineConfig
+	machineConfig.RootPath = *wasmrootpath
+
+	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, arbnode.DefaultL1ReaderConfig, machineConfig)
 	if err != nil {
 		flag.Usage()
 		log.Error("error deploying on l1")

@@ -22,6 +22,7 @@ import (
 )
 
 type StatelessBlockValidator struct {
+	MachineLoader   *NitroMachineLoader
 	inboxReader     InboxReaderInterface
 	inboxTracker    InboxTrackerInterface
 	streamer        TransactionStreamerInterface
@@ -53,6 +54,12 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
+}
+
+type L1ReaderInterface interface {
+	Client() arbutil.L1Interface
+	Subscribe(bool) (<-chan *types.Header, func())
+	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
 }
 
 type GlobalStatePosition struct {
@@ -176,6 +183,7 @@ func newValidationEntry(
 }
 
 func NewStatelessBlockValidator(
+	machineLoader *NitroMachineLoader,
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
@@ -183,12 +191,12 @@ func NewStatelessBlockValidator(
 	db ethdb.Database,
 	das das.DataAvailabilityService,
 ) (*StatelessBlockValidator, error) {
-	CreateHostIoMachine()
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
 	if err != nil {
 		return nil, err
 	}
 	validator := &StatelessBlockValidator{
+		MachineLoader:   machineLoader,
 		inboxReader:     inboxReader,
 		inboxTracker:    inbox,
 		streamer:        streamer,
@@ -212,7 +220,7 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 	// Get the chain ID, both to validate and because the replay binary also gets the chain ID,
 	// so we need to populate the recordingdb with preimages for retrieving the chain ID.
 	if prevHeader != nil {
-		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, true)
+		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, nil, true)
 		if err != nil {
 			return common.Hash{}, nil, fmt.Errorf("error opening initial ArbOS state: %w", err)
 		}
@@ -273,7 +281,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	return
 }
 
-func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *validationEntry, preimages map[common.Hash][]byte, seqMsg []byte) (GoGlobalState, []byte, error) {
+func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *validationEntry, preimages map[common.Hash][]byte, seqMsg []byte, moduleRoot common.Hash) (GoGlobalState, []byte, error) {
 	start := entry.StartPosition
 	gsStart := entry.start()
 
@@ -296,7 +304,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		}
 	}
 
-	basemachine, err := GetHostIoMachine(ctx)
+	basemachine, err := v.MachineLoader.GetMachine(ctx, moduleRoot, true)
 	if err != nil {
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
@@ -335,13 +343,9 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		var count uint64 = 500000000
 		err = mach.Step(ctx, count)
 		if steps > 0 {
-			log.Info("validation", "block", entry.BlockNumber, "steps", steps)
+			log.Debug("validation", "moduleRoot", moduleRoot, "block", entry.BlockNumber, "steps", steps)
 		}
 		if err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				log.Error("running machine failed", "err", err)
-				panic("Failed to run machine: " + err.Error())
-			}
 			return GoGlobalState{}, nil, fmt.Errorf("machine execution failed with error: %w", err)
 		}
 		steps += count
@@ -353,7 +357,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 	return mach.GetGlobalState(), delayedMsg, nil
 }
 
-func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header) (bool, error) {
+func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header, moduleRoot common.Hash) (bool, error) {
 	if header == nil {
 		return false, errors.New("header not found")
 	}
@@ -398,7 +402,7 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 		return false, err
 	}
 
-	gsEnd, _, err := v.executeBlock(ctx, entry, preimages, seqMsg)
+	gsEnd, _, err := v.executeBlock(ctx, entry, preimages, seqMsg, moduleRoot)
 	if err != nil {
 		return false, err
 	}

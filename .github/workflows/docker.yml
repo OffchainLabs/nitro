@@ -38,18 +38,29 @@ jobs:
           key: ${{ runner.os }}-buildx-a-${{ github.sha }}
           restore-keys: ${{ runner.os }}-buildx-a-
 
-      - name: Build docker
+      - name: Build nitro-node docker
         uses: docker/build-push-action@v2
         with:
+          target: nitro-node
           push: true
           context: .
           tags: localhost:5000/nitro-node:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
+      - name: Build nitro-node-dev docker
+        uses: docker/build-push-action@v2
+        with:
+          target: nitro-node-dev
+          push: true
+          context: .
+          tags: localhost:5000/nitro-node-dev:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
       - name: print module root
         run: |
-          docker run --entrypoint cat localhost:5000/nitro-node:latest target/machine/module_root
+          docker run --entrypoint cat localhost:5000/nitro-node-dev:latest target/machines/latest/module-root.txt
 
       - name: Move cache
         # Temp fix

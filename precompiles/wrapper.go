@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -75,9 +76,10 @@ func (wrapper *OwnerPrecompile) Call(
 ) ([]byte, uint64, error) {
 	con := wrapper.precompile
 
-	burner := &context{
+	burner := &Context{
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
+		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
 	}
 	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
 	if err != nil {
@@ -90,7 +92,7 @@ func (wrapper *OwnerPrecompile) Call(
 		return nil, burner.gasLeft, err
 	}
 
-	if !isOwner {
+	if !isOwner && (state.FormatVersion() >= 2 || caller != arbosState.TestnetUpgrade2Owner) {
 		return nil, burner.gasLeft, errors.New("unauthorized caller to access-controlled method")
 	}
 

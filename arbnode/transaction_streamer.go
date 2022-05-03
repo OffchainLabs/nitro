@@ -24,14 +24,14 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
 // Produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
 // The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 
 	db ethdb.Database
 	bc *core.BlockChain
@@ -41,6 +41,14 @@ type TransactionStreamer struct {
 	reorgMutex         sync.RWMutex
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
+
+	broadcasterQueuedMessages    []arbstate.MessageWithMetadata
+	broadcasterQueuedMessagesPos arbutil.MessageIndex
+
+	latestBlockAndMessageMutex sync.Mutex
+	latestBlock                *types.Block
+	latestMessage              *arbos.L1IncomingMessage
+	newBlockNotifier           chan struct{}
 
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
@@ -52,6 +60,7 @@ func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastSer
 		db:                 rawdb.NewTable(db, arbitrumPrefix),
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
+		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 	}
 	return inbox, nil
@@ -225,6 +234,37 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, 
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
+func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+
+	currentMessageCount, err := s.GetMessageCount()
+	if err != nil {
+		return err
+	}
+
+	if currentMessageCount >= pos {
+		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
+		s.broadcasterQueuedMessagesPos = 0
+		return s.addMessagesAndEndBatchImpl(pos, false, messages, nil)
+	} else if len(s.broadcasterQueuedMessages) > 0 && s.broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == pos {
+		s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
+	} else {
+		if len(s.broadcasterQueuedMessages) > 0 {
+			log.Warn(
+				"broadcaster queue jumped positions",
+				"queuedMessages", len(s.broadcasterQueuedMessages),
+				"expectedNextPos", s.broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
+				"gotPos", pos,
+			)
+		}
+		s.broadcasterQueuedMessages = messages
+		s.broadcasterQueuedMessagesPos = pos
+	}
+
+	return nil
+}
+
 // Should only be used for testing or running a local dev node
 func (s *TransactionStreamer) AddFakeInitMessage() error {
 	return s.AddMessages(0, false, []arbstate.MessageWithMetadata{{
@@ -248,15 +288,27 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
+	return s.addMessagesAndEndBatchImpl(pos, force, messages, batch)
+}
+
+func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+	var prevDelayedRead uint64
 	if pos > 0 {
-		key := dbKey(messagePrefix, uint64(pos-1))
-		hasPrev, err := s.db.Has(key)
+		prevMsg, err := s.GetMessage(pos - 1)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get previous message: %w", err)
 		}
-		if !hasPrev {
-			return errors.New("missing previous message")
+		prevDelayedRead = prevMsg.DelayedMessagesRead
+	}
+
+	dontReorgAfter := len(messages)
+	afterCount := pos + arbutil.MessageIndex(len(messages))
+	if afterCount >= s.broadcasterQueuedMessagesPos {
+		if int(afterCount-s.broadcasterQueuedMessagesPos) < len(messages) {
+			messages = append(messages, s.broadcasterQueuedMessages[afterCount-s.broadcasterQueuedMessagesPos:]...)
 		}
+		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
+		s.broadcasterQueuedMessagesPos = 0
 	}
 
 	reorg := false
@@ -283,8 +335,10 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 		}
 		if bytes.Equal(haveMessage, wantMessage) {
 			// This message is a duplicate, skip it
+			prevDelayedRead = messages[0].DelayedMessagesRead
 			messages = messages[1:]
 			pos++
+			dontReorgAfter--
 		} else {
 			var dbMessageParsed arbstate.MessageWithMetadata
 			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
@@ -293,9 +347,22 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 			} else {
 				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-delayed", messages[0].DelayedMessagesRead, "got-header", messages[0].Message.Header, "db-delayed", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
 			}
-			reorg = true
+			if dontReorgAfter > 0 {
+				reorg = true
+			} else {
+				log.Warn("TransactionStreamer ignoring broadcast client reorg")
+			}
 			break
 		}
+	}
+
+	// Validate delayed message counts of remaining messages
+	for _, msg := range messages {
+		diff := msg.DelayedMessagesRead - prevDelayedRead
+		if diff != 0 && diff != 1 {
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, pos)
+		}
+		prevDelayedRead = msg.DelayedMessagesRead
 	}
 
 	if reorg {
@@ -532,7 +599,7 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 }
 
 func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
-	// TODO: when block 0 is no longer necessarily the genesis, track this
+	// TODO: when block 0 is no longer necessarily the genesis, track this and update core.NitroGenesisBlock
 	return 0, nil
 }
 
@@ -630,7 +697,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg
-			return nil
+			break
 		}
 		if ctx.Err() != nil {
 			// the context is done, shut down
@@ -671,6 +738,15 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			s.validator.NewBlock(block, lastBlockHeader, msg)
 		}
 
+		s.latestBlockAndMessageMutex.Lock()
+		s.latestBlock = block
+		s.latestMessage = msg.Message
+		s.latestBlockAndMessageMutex.Unlock()
+		select {
+		case s.newBlockNotifier <- struct{}{}:
+		default:
+		}
+
 		lastBlockHeader = block.Header()
 	}
 
@@ -699,6 +775,35 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 			case <-timer.C:
 			}
 
+		}
+	})
+	s.LaunchThread(func(ctx context.Context) {
+		var lastBlock *types.Block
+		for {
+			select {
+			case <-s.newBlockNotifier:
+			case <-ctx.Done():
+				return
+			}
+			s.latestBlockAndMessageMutex.Lock()
+			block := s.latestBlock
+			message := s.latestMessage
+			s.latestBlockAndMessageMutex.Unlock()
+			if block != lastBlock && block != nil && message != nil {
+				log.Info(
+					"created block",
+					"l2Block", block.Number(),
+					"l2BlockHash", block.Hash(),
+					"l1Block", message.Header.BlockNumber,
+					"l1Timestamp", time.Unix(int64(message.Header.Timestamp), 0),
+				)
+				lastBlock = block
+				select {
+				case <-time.After(time.Second):
+				case <-ctx.Done():
+					return
+				}
+			}
 		}
 	})
 }

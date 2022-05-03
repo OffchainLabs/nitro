@@ -42,5 +42,5 @@ func (con ArbDebug) CustomRevert(c ctx, number uint64) error {
 
 // Caller becomes a chain owner
 func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
-	return c.state.ChainOwners().Add(c.caller)
+	return c.State.ChainOwners().Add(c.caller)
 }

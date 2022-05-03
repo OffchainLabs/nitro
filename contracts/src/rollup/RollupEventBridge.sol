@@ -4,8 +4,6 @@
 
 pragma solidity ^0.8.0;
 
-import "./IRollupLogic.sol";
-
 import "../bridge/IBridge.sol";
 import "../bridge/IMessageProvider.sol";
 import "../libraries/DelegateCallAware.sol";

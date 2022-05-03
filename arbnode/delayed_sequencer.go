@@ -10,18 +10,18 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 type DelayedSequencer struct {
-	util.StopWaiter
-	client          arbutil.L1Interface
+	stopwaiter.StopWaiter
+	l1Reader        *L1Reader
 	bridge          *DelayedBridge
 	inbox           *InboxTracker
 	txStreamer      *TransactionStreamer
@@ -54,9 +54,9 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	TimeAggregate:    time.Second,
 }
 
-func NewDelayedSequencer(client arbutil.L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *L1Reader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
-		client:      client,
+		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
 		inbox:       reader.Tracker(),
 		coordinator: coordinator,
@@ -77,13 +77,12 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 	return lastMsg.DelayedMessagesRead, nil
 }
 
-func (d *DelayedSequencer) update(ctx context.Context) error {
+func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.Header) error {
 	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
 		return nil
 	}
-	lastBlockHeader, err := d.client.HeaderByNumber(ctx, nil)
-	if err != nil {
-		return err
+	if d.waitingForBlock != nil && lastBlockHeader.Number.Cmp(d.waitingForBlock) < 0 {
+		return nil
 	}
 
 	// Unless we find an unfinalized message (which sets waitingForBlock),
@@ -154,51 +153,28 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 	return nil
 }
 
-func (d *DelayedSequencer) run(ctx context.Context) error {
-	headerChan, cancel := arbutil.HeaderSubscribeWithRetry(ctx, d.client)
+func (d *DelayedSequencer) run(ctx context.Context) {
+	headerChan, cancel := d.l1Reader.Subscribe(false)
 	defer cancel()
 
 	for {
-		err := d.update(ctx)
-		if err != nil {
-			return err
-		}
-
-		exit, err := func() (bool, error) {
-			timeoutTimer := time.NewTimer(d.config.TimeAggregate)
-			defer timeoutTimer.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return true, nil
-				case <-timeoutTimer.C:
-					return false, nil
-				case newHeader, ok := <-headerChan:
-					if ctx.Err() != nil {
-						return true, ctx.Err()
-					}
-					if !ok {
-						return true, errors.New("header channel closed")
-					}
-					if d.waitingForBlock == nil || newHeader.Number.Cmp(d.waitingForBlock) >= 0 {
-						return false, nil
-					}
-				}
+		select {
+		case nextHeader, ok := <-headerChan:
+			if !ok {
+				log.Info("delayed sequencer: header channel close")
+				return
 			}
-		}()
-		if err != nil || exit {
-			return err
+			if err := d.update(ctx, nextHeader); err != nil {
+				log.Error("Delayed sequencer error", "err", err)
+			}
+		case <-ctx.Done():
+			log.Info("delayed sequencer: context done", "err", ctx.Err())
+			return
 		}
 	}
 }
 
 func (d *DelayedSequencer) Start(ctxIn context.Context) {
 	d.StopWaiter.Start(ctxIn)
-	d.CallIteratively(func(ctx context.Context) time.Duration {
-		err := d.run(ctx)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			log.Error("error sequencing delayed messages", "err", err)
-		}
-		return time.Second
-	})
+	d.LaunchThread(d.run)
 }

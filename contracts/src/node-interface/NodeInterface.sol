@@ -9,7 +9,6 @@ pragma solidity >=0.4.21 <0.9.0;
  *  0x00000000000000000000000000000000000000C8
  *  This is a cute trick to allow an Arbitrum node to provide data without us having to implement additional RPCs
  */
-
 interface NodeInterface {
     /**
      * @notice Estimate the cost of putting a message in the L2 inbox that is reexecuted
@@ -47,4 +46,22 @@ interface NodeInterface {
             bytes32 root,
             bytes32[] memory proof
         );
+
+    /**
+     * @notice Finds the L1 batch containing a requested L2 block, reverting if none does
+     * Throws if block doesn't exist, or if block number is 0
+     * @param blockNum The L2 block being queried
+     * @return batch The L1 block containing the requested L2 block
+     */
+    function findBatchContainingBlock(uint64 blockNum) external view returns (uint64 batch);
+
+    /**
+     * @notice Gets the number of L1 confirmations of the sequencer batch producing the requested L2 block
+     * This gets the number of L1 confirmations for the input message producing the L2 block,
+     * which happens well before the L1 rollup contract confirms the L2 block.
+     * Throws if block doesnt exist in the L2 chain.
+     * @param blockHash The hash of the L2 block being queried
+     * @return confirmations The number of L1 confirmations the sequencer batch has. Returns 0 if block not yet included in an L1 batch.
+     */
+    function getL1Confirmations(bytes32 blockHash) external view returns (uint64 confirmations);
 }

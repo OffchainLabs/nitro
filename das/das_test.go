@@ -6,9 +6,11 @@ package das
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -23,9 +25,13 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 
 	ctx := context.Background()
 
+	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(ctx, messageSaved)
+	cert, err := das.Store(ctx, messageSaved, timeout)
 	Require(t, err, "Error storing message")
+	if cert.Timeout != timeout {
+		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
+	}
 
 	certBytes := Serialize(*cert)
 
@@ -57,8 +63,12 @@ func TestDASMissingMessage(t *testing.T) {
 	ctx := context.Background()
 
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(ctx, messageSaved)
+	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
+	cert, err := das.Store(ctx, messageSaved, timeout)
 	Require(t, err, "Error storing message")
+	if cert.Timeout != timeout {
+		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
+	}
 
 	// Change the hash to look up
 	cert.DataHash[0] += 1
@@ -71,9 +81,9 @@ func TestDASMissingMessage(t *testing.T) {
 	}
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	testhelpers.RequireImpl(t, err, printables...)
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

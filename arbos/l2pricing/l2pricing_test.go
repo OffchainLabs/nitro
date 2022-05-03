@@ -14,7 +14,7 @@ import (
 )
 
 func PricingForTest(t *testing.T) *L2PricingState {
-	storage := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	storage := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	err := InitializeL2PricingState(storage)
 	Require(t, err)
 	return OpenL2PricingState(storage)
@@ -23,7 +23,7 @@ func PricingForTest(t *testing.T) *L2PricingState {
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
 	basefee := getPrice(t, pricing)
 	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed))
-	pricing.UpdatePricingModel(arbmath.UintToBig(basefee), timePassed, true)
+	pricing.UpdatePricingModel(arbmath.UintToBig(basefee), timePassed, 3, true)
 }
 
 func TestPricingModel(t *testing.T) {
@@ -155,9 +155,9 @@ func rateEstimate(t *testing.T, pricing *L2PricingState) uint64 {
 	return value
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	testhelpers.RequireImpl(t, err, printables...)
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

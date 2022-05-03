@@ -15,13 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 )
 
-func testBlockValidatorSimple(t *testing.T, dasModeString string) {
+func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
@@ -55,11 +56,34 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 	err = l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
+	if expensiveTx {
+		contractData := []byte{0x5b} // JUMPDEST
+		for i := 0; i < 20; i++ {
+			contractData = append(contractData, 0x60, 0x00, 0x60, 0x00, 0x52) // PUSH1 0 MSTORE
+		}
+		contractData = append(contractData, 0x60, 0x00, 0x56) // JUMP
+		ownerInfo := l2info.GetInfoWithPrivKey("Owner")
+		tx = l2info.SignTxAs("Owner", &types.DynamicFeeTx{
+			To:        nil,
+			Gas:       l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimit,
+			GasFeeCap: new(big.Int).Set(l2info.GasPrice),
+			Value:     common.Big0,
+			Nonce:     ownerInfo.Nonce,
+			Data:      contractData,
+		})
+		ownerInfo.Nonce++
+		err = l2client.SendTransaction(ctx, tx)
+		Require(t, err)
+		_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+		Require(t, err)
+	}
+
+	delayedTx := l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil)
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-		WrapL2ForDelayed(t, l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil), l1info, "User", 100000),
+		WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000),
 	})
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -72,14 +96,8 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 		})
 	}
 
-	// this is needed to stop the 1000000 balance error in CI (BUG)
-	time.Sleep(time.Millisecond * 500)
-
-	_, err = arbutil.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, delayedTx.Hash(), time.Second*5)
 	Require(t, err)
-
-	// BUG: need to sleep to avoid (Unexpected balance: 1000000000000)
-	time.Sleep(time.Millisecond * 100)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
@@ -97,9 +115,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 }
 
 func TestBlockValidatorSimple(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain")
+	testBlockValidatorSimple(t, "onchain", false)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, "local")
+	testBlockValidatorSimple(t, "local", false)
 }

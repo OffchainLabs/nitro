@@ -9,10 +9,11 @@ use crate::{
 use digest::Digest;
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
+use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {
     Eq,
     Ne,
@@ -37,7 +38,7 @@ fn irelop_type(t: IRelOpType, signed: bool) -> u16 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum IUnOpType {
     Clz = 0,
@@ -45,7 +46,7 @@ pub enum IUnOpType {
     Popcnt,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum IBinOpType {
     Add = 0,
@@ -65,7 +66,7 @@ pub enum IBinOpType {
     Rotr,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Opcode {
     Unreachable,
     Nop,
@@ -166,6 +167,8 @@ pub enum Opcode {
     ReadInboxMessage,
     /// Stop exexcuting the machine and move to the finished status
     HaltAndSetFinished,
+    /// Unconditional jump to an arbitrary point in code.
+    ArbitraryJump,
 }
 
 impl Opcode {
@@ -282,6 +285,7 @@ impl Opcode {
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
             Opcode::HaltAndSetFinished => 0x8022,
+            Opcode::ArbitraryJump => 0x8023,
         }
     }
 
@@ -300,10 +304,11 @@ impl Opcode {
 
 pub type FloatingPointImpls = HashMap<FloatInstruction, (u32, u32)>;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct FunctionCodegenState<'a> {
     return_values: usize,
-    block_depth: usize,
+    /// For each block, contains a list of br/br_if instruction indicies targeting it
+    blocks: Vec<Vec<usize>>,
     floating_point_impls: &'a FloatingPointImpls,
 }
 
@@ -311,13 +316,20 @@ impl<'a> FunctionCodegenState<'a> {
     pub fn new(return_values: usize, floating_point_impls: &'a FloatingPointImpls) -> Self {
         FunctionCodegenState {
             return_values,
-            block_depth: 0,
+            blocks: Vec::new(),
             floating_point_impls,
         }
     }
+
+    fn mark_branch(&mut self, block: u32, op_idx: usize) {
+        let block = usize::try_from(block).unwrap();
+        assert!(block < self.blocks.len());
+        let absolute_idx = self.blocks.len() - block - 1;
+        self.blocks[absolute_idx].push(op_idx);
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Instruction {
     pub opcode: Opcode,
     pub argument_data: u64,
@@ -384,31 +396,28 @@ impl Instruction {
 
     pub fn extend_from_hir(
         ops: &mut Vec<Instruction>,
-        mut state: FunctionCodegenState,
+        state: &mut FunctionCodegenState,
         inst: HirInstruction,
     ) -> Result<()> {
         match inst {
             HirInstruction::Block(_, insts) => {
-                let block_idx = ops.len();
-                ops.push(Instruction::simple(Opcode::Block));
-                state.block_depth += 1;
+                state.blocks.push(Vec::new());
                 for inst in insts {
                     Self::extend_from_hir(ops, state, inst)?;
                 }
-                ops.push(Instruction::simple(Opcode::EndBlock));
-                ops[block_idx].argument_data = ops.len() as u64;
+                for idx in state.blocks.pop().unwrap() {
+                    ops[idx].argument_data = ops.len() as u64;
+                }
             }
             HirInstruction::Loop(_, insts) => {
-                ops.push(Instruction {
-                    opcode: Opcode::Block,
-                    argument_data: ops.len() as u64,
-                    proving_argument_data: None,
-                });
-                state.block_depth += 1;
+                let loop_start = ops.len();
+                state.blocks.push(Vec::new());
                 for inst in insts {
                     Self::extend_from_hir(ops, state, inst)?;
                 }
-                ops.push(Instruction::simple(Opcode::EndBlock));
+                for idx in state.blocks.pop().unwrap() {
+                    ops[idx].argument_data = loop_start as u64;
+                }
             }
             HirInstruction::IfElse(_, if_insts, else_insts) => {
                 // begin block with endpoint end
@@ -418,9 +427,7 @@ impl Instruction {
                 //   else: [instructions inside else statement]
                 // end
 
-                let block_idx = ops.len();
-                ops.push(Instruction::simple(Opcode::Block));
-                state.block_depth += 1;
+                state.blocks.push(Vec::new());
                 ops.push(Instruction::simple(Opcode::I32Eqz));
                 let jump_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
@@ -428,37 +435,29 @@ impl Instruction {
                 for inst in if_insts {
                     Self::extend_from_hir(ops, state, inst)?;
                 }
-                ops.push(Instruction::simple(Opcode::Branch));
+                Self::extend_from_hir(ops, state, HirInstruction::Branch(0))?;
 
                 ops[jump_idx].argument_data = ops.len() as u64;
                 for inst in else_insts {
                     Self::extend_from_hir(ops, state, inst)?;
                 }
-                ops.push(Instruction::simple(Opcode::EndBlock));
-                ops[block_idx].argument_data = ops.len() as u64;
+                for idx in state.blocks.pop().unwrap() {
+                    ops[idx].argument_data = ops.len() as u64;
+                }
             }
             HirInstruction::Branch(x) => {
-                assert!(x < state.block_depth as u32);
-                for _ in 0..x {
-                    ops.push(Instruction::simple(Opcode::EndBlock));
-                }
-                ops.push(Instruction::simple(Opcode::Branch));
+                state.mark_branch(x, ops.len());
+                ops.push(Instruction::simple(Opcode::ArbitraryJump));
             }
             HirInstruction::BranchIf(x) => {
-                assert!(x < state.block_depth as u32);
-                for _ in 0..x {
-                    ops.push(Instruction::simple(Opcode::EndBlockIf));
-                }
-                ops.push(Instruction::simple(Opcode::BranchIf));
+                state.mark_branch(x, ops.len());
+                ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
             }
             HirInstruction::BranchTable(options, default) => {
-                let mut option_jumps = Vec::new();
                 // Build an equivalent HirInstruction sequence without BranchTable
-                for (i, option) in options.iter().enumerate() {
-                    let i = match u32::try_from(i) {
-                        Ok(x) => x,
-                        _ => break,
-                    };
+                let mut option_jumps = Vec::new();
+                for (i, &target) in options.iter().enumerate() {
+                    let i = u32::try_from(i).unwrap();
                     // Evaluate this branch
                     ops.push(Instruction::simple(Opcode::Dup));
                     ops.push(Instruction::with_data(Opcode::I32Const, i.into()));
@@ -468,7 +467,7 @@ impl Instruction {
                     )));
                     // Jump if the subtraction resulted in 0, i.e. it matched the index
                     ops.push(Instruction::simple(Opcode::I32Eqz));
-                    option_jumps.push((ops.len(), *option));
+                    option_jumps.push((ops.len(), target));
                     ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
                 }
                 // Nothing matched. Drop the index and jump to the default.
@@ -603,13 +602,10 @@ impl Instruction {
                         vec![
                             HirInstruction::Simple(Opcode::IsStackBoundary),
                             HirInstruction::Simple(Opcode::I32Eqz),
-                            HirInstruction::Simple(Opcode::BranchIf),
+                            HirInstruction::BranchIf(0),
                         ],
                     ),
                 )?;
-                for _ in 0..state.block_depth {
-                    ops.push(Instruction::simple(Opcode::EndBlock));
-                }
                 // Move the return values back from the internal stack to the value stack
                 ops.extend(
                     std::iter::repeat(Instruction::simple(Opcode::MoveFromInternalToStack))

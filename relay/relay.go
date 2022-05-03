@@ -13,12 +13,12 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Relay struct {
-	util.StopWaiter
+	stopwaiter.StopWaiter
 	broadcastClients            []*broadcastclient.BroadcastClient
 	broadcaster                 *broadcaster.Broadcaster
 	confirmedSequenceNumberChan chan arbutil.MessageIndex
@@ -34,7 +34,7 @@ type RelayMessageQueue struct {
 	queue chan broadcastFeedMessage
 }
 
-func (q *RelayMessageQueue) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
+func (q *RelayMessageQueue) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
 	for i, message := range messages {
 		q.queue <- broadcastFeedMessage{
 			sequenceNumber: pos + arbutil.MessageIndex(i),

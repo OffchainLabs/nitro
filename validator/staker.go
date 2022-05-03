@@ -18,11 +18,8 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
-
-const txTimeout time.Duration = 5 * time.Minute
 
 type StakerStrategy uint8
 
@@ -107,7 +104,8 @@ type nodeAndHash struct {
 
 type Staker struct {
 	*L1Validator
-	util.StopWaiter
+	stopwaiter.StopWaiter
+	l1Reader                L1ReaderInterface
 	activeChallenge         *ChallengeManager
 	strategy                StakerStrategy
 	baseCallOpts            bind.CallOpts
@@ -118,6 +116,7 @@ type Staker struct {
 	bringActiveUntilNode    uint64
 	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
+	nitroMachineLoader      *NitroMachineLoader
 }
 
 func stakerStrategyFromString(s string) (StakerStrategy, error) {
@@ -135,7 +134,7 @@ func stakerStrategyFromString(s string) (StakerStrategy, error) {
 }
 
 func NewStaker(
-	client arbutil.L1Interface,
+	l1Reader L1ReaderInterface,
 	wallet *ValidatorWallet,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
@@ -144,12 +143,14 @@ func NewStaker(
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
+	nitroMachineLoader *NitroMachineLoader,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
 	strategy, err := stakerStrategyFromString(config.Strategy)
 	if err != nil {
 		return nil, err
 	}
+	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, inboxTracker, txStreamer, blockValidator)
 	if err != nil {
 		return nil, err
@@ -160,6 +161,7 @@ func NewStaker(
 	}
 	return &Staker{
 		L1Validator:         val,
+		l1Reader:            l1Reader,
 		strategy:            strategy,
 		baseCallOpts:        callOpts,
 		config:              config,
@@ -167,6 +169,7 @@ func NewStaker(
 		lastActCalledBlock:  nil,
 		withdrawDestination: withdrawDestination,
 		inboxReader:         inboxReader,
+		nitroMachineLoader:  nitroMachineLoader,
 	}, nil
 }
 
@@ -174,9 +177,13 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) time.Duration {
+		err := s.updateBlockValidatorModuleRoot(ctx)
+		if err != nil {
+			log.Warn("error updating latest wasm module root", "err", err)
+		}
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
-			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
+			_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
 			err = errors.Wrap(err, "error waiting for tx receipt")
 			if err == nil {
 				log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
@@ -431,6 +438,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxReader,
 			s.inboxTracker,
 			s.txStreamer,
+			s.nitroMachineLoader,
 			latestConfirmedCreated,
 			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,
@@ -475,6 +483,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			info.CanProgress = false
 			return nil
 		}
+
 		// Details are already logged with more details in generateNodeAction
 		info.CanProgress = false
 		info.LatestStakedNode = 0

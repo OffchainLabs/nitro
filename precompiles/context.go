@@ -10,8 +10,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
@@ -21,18 +23,19 @@ type huge = *big.Int
 type hash = common.Hash
 type bytes4 = [4]byte
 type bytes32 = [32]byte
-type ctx = *context
+type ctx = *Context
 
-type context struct {
+type Context struct {
 	caller      addr
 	gasSupplied uint64
 	gasLeft     uint64
 	txProcessor *arbos.TxProcessor
-	state       *arbosState.ArbosState
+	State       *arbosState.ArbosState
+	tracingInfo *util.TracingInfo
 	readOnly    bool
 }
 
-func (c *context) Burn(amount uint64) error {
+func (c *Context) Burn(amount uint64) error {
 	if c.gasLeft < amount {
 		c.gasLeft = 0
 		return vm.ErrOutOfGas
@@ -42,30 +45,36 @@ func (c *context) Burn(amount uint64) error {
 }
 
 //nolint:unused
-func (c *context) Burned() uint64 {
+func (c *Context) Burned() uint64 {
 	return c.gasSupplied - c.gasLeft
 }
 
-func (c *context) Restrict(err error) {
+func (c *Context) Restrict(err error) {
 	log.Fatal("A metered burner was used for access-controlled work", err)
 }
 
-func (c *context) ReadOnly() bool {
+func (c *Context) ReadOnly() bool {
 	return c.readOnly
 }
 
-func testContext(caller addr, evm mech) *context {
-	ctx := &context{
+func (c *Context) TracingInfo() *util.TracingInfo {
+	return c.tracingInfo
+}
+
+func testContext(caller addr, evm mech) *Context {
+	tracingInfo := util.NewTracingInfo(evm, common.Address{}, types.ArbosAddress, util.TracingDuringEVM)
+	ctx := &Context{
 		caller:      caller,
 		gasSupplied: ^uint64(0),
 		gasLeft:     ^uint64(0),
+		tracingInfo: tracingInfo,
 		readOnly:    false,
 	}
-	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(false))
+	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracingInfo, false))
 	if err != nil {
 		panic(err)
 	}
-	ctx.state = state
+	ctx.State = state
 	var ok bool
 	ctx.txProcessor, ok = evm.ProcessingHook.(*arbos.TxProcessor)
 	if !ok {

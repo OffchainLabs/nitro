@@ -1,141 +1,165 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbnode
+package nodeInterface
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/big"
 	"sort"
-	"strings"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
+	"github.com/offchainlabs/nitro/validator"
 )
-
-type Message = types.Message
-type ExecutionResult = core.ExecutionResult
 
 // To avoid creating new RPC methods for client-side tooling, nitro Geth's InterceptRPCMessage() hook provides
 // an opportunity to swap out the message its handling before deriving a transaction from it.
 //
-// This function handles messages sent to 0xc8 and uses NodeInterface.sol to determine what to do. No contract
+// This mechanism handles messages sent to 0xc8 and uses NodeInterface.sol to determine what to do. No contract
 // actually exists at 0xc8, but the abi methods allow the incoming message's calldata to specify the arguments.
 //
-func ApplyNodeInterface(
-	msg Message,
-	ctx context.Context,
-	statedb *state.StateDB,
-	backend core.NodeInterfaceBackendAPI,
-	nodeInterface abi.ABI,
-) (Message, *ExecutionResult, error) {
-
-	estimateMethod := nodeInterface.Methods["estimateRetryableTicket"]
-	outboxMethod := nodeInterface.Methods["constructOutboxProof"]
-
-	calldata := msg.Data()
-	if len(calldata) < 4 {
-		return msg, nil, errors.New("calldata for NodeInterface.sol is too short")
+type NodeInterface struct {
+	Address       addr
+	backend       core.NodeInterfaceBackendAPI
+	context       context.Context
+	sourceMessage types.Message
+	returnMessage struct {
+		message *types.Message
+		changed *bool
 	}
-
-	if bytes.Equal(estimateMethod.ID, calldata[:4]) {
-		inputs, err := estimateMethod.Inputs.Unpack(calldata[4:])
-		if err != nil {
-			return msg, nil, err
-		}
-		sender, _ := inputs[0].(common.Address)
-		deposit, _ := inputs[1].(*big.Int)
-		retryTo, _ := inputs[2].(common.Address)
-		l2CallValue, _ := inputs[3].(*big.Int)
-		excessFeeRefundAddress, _ := inputs[4].(common.Address)
-		callValueRefundAddress, _ := inputs[5].(common.Address)
-		retryData, _ := inputs[6].([]byte)
-
-		var pRetryTo *common.Address
-		if retryTo != (common.Address{}) {
-			pRetryTo = &retryTo
-		}
-
-		state, _ := arbosState.OpenSystemArbosState(statedb, true)
-		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
-		maxSubmissionFee := retryables.RetryableSubmissionFee(len(retryData), l1BaseFee)
-
-		submitTx := &types.ArbitrumSubmitRetryableTx{
-			ChainId:          nil,
-			RequestId:        common.Hash{},
-			From:             util.RemapL1Address(sender),
-			L1BaseFee:        l1BaseFee,
-			DepositValue:     deposit,
-			GasFeeCap:        msg.GasPrice(),
-			Gas:              msg.Gas(),
-			RetryTo:          pRetryTo,
-			Value:            l2CallValue,
-			Beneficiary:      callValueRefundAddress,
-			MaxSubmissionFee: maxSubmissionFee,
-			FeeRefundAddr:    excessFeeRefundAddress,
-			RetryData:        retryData,
-		}
-
-		// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
-		msg, err := types.NewTx(submitTx).AsMessage(types.NewArbitrumSigner(nil), nil)
-		return msg, nil, err
-	}
-
-	if bytes.Equal(outboxMethod.ID, calldata[:4]) {
-		inputs, err := outboxMethod.Inputs.Unpack(calldata[4:])
-		if err != nil {
-			return msg, nil, err
-		}
-		size, _ := inputs[0].(uint64)
-		leaf, _ := inputs[1].(uint64)
-
-		if leaf >= size {
-			return msg, nil, fmt.Errorf("leaf %v is newer than root of size %v", leaf, size)
-		}
-
-		method := nodeInterface.Methods["constructOutboxProof"]
-		res, err := nodeInterfaceConstructOutboxProof(msg, ctx, size, leaf, backend, method)
-		return msg, res, err
-
-	}
-
-	return msg, nil, errors.New("method does not exist in NodeInterface.sol")
 }
 
 var merkleTopic common.Hash
 var withdrawTopic common.Hash
 
-func nodeInterfaceConstructOutboxProof(
-	msg Message,
-	ctx context.Context,
-	size, leaf uint64,
-	backend core.NodeInterfaceBackendAPI,
-	method abi.Method,
-) (*ExecutionResult, error) {
+var blockInGenesis = errors.New("")
+var blockAfterLatestBatch = errors.New("")
 
-	currentBlock := backend.CurrentBlock()
+func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
+	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, err
+	}
+	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	return findBatchContainingBlock(node, genesis, blockNum)
+}
+
+func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (uint64, error) {
+	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, err
+	}
+	if node.InboxReader == nil {
+		return 0, nil
+	}
+	bc := node.ArbInterface.BlockChain()
+	header := bc.GetHeaderByHash(blockHash)
+	if header == nil {
+		return 0, errors.New("unknown block hash")
+	}
+	blockNum := header.Number.Uint64()
+	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	batch, err := findBatchContainingBlock(node, genesis, blockNum)
+	if err != nil {
+		if errors.Is(err, blockInGenesis) {
+			batch = 0
+		} else if errors.Is(err, blockAfterLatestBatch) {
+			return 0, nil
+		} else {
+			return 0, err
+		}
+	}
+	latestL1Block, latestBatchCount := node.InboxReader.GetLastReadBlockAndBatchCount()
+	if latestBatchCount <= batch {
+		return 0, nil // batch was reorg'd out?
+	}
+	meta, err := node.InboxTracker.GetBatchMetadata(batch)
+	if err != nil {
+		return 0, err
+	}
+	if latestL1Block < meta.L1Block || arbutil.BlockNumberToMessageCount(blockNum, genesis) > meta.MessageCount {
+		return 0, nil
+	}
+	canonicalHash := bc.GetCanonicalHash(header.Number.Uint64())
+	if canonicalHash != header.Hash() {
+		return 0, errors.New("block hash is non-canonical")
+	}
+	confs := (latestL1Block - meta.L1Block) + 1 + node.InboxReader.GetDelayBlocks()
+	return confs, nil
+}
+
+func (n NodeInterface) EstimateRetryableTicket(
+	c ctx,
+	evm mech,
+	sender addr,
+	deposit huge,
+	to addr,
+	l2CallValue huge,
+	excessFeeRefundAddress addr,
+	callValueRefundAddress addr,
+	data []byte,
+) error {
+
+	var pRetryTo *addr
+	if to != (addr{}) {
+		pRetryTo = &to
+	}
+
+	l1BaseFee, _ := c.State.L1PricingState().L1BaseFeeEstimateWei()
+	maxSubmissionFee := retryables.RetryableSubmissionFee(len(data), l1BaseFee)
+
+	submitTx := &types.ArbitrumSubmitRetryableTx{
+		ChainId:          nil,
+		RequestId:        hash{},
+		From:             util.RemapL1Address(sender),
+		L1BaseFee:        l1BaseFee,
+		DepositValue:     deposit,
+		GasFeeCap:        n.sourceMessage.GasPrice(),
+		Gas:              n.sourceMessage.Gas(),
+		RetryTo:          pRetryTo,
+		Value:            l2CallValue,
+		Beneficiary:      callValueRefundAddress,
+		MaxSubmissionFee: maxSubmissionFee,
+		FeeRefundAddr:    excessFeeRefundAddress,
+		RetryData:        data,
+	}
+
+	// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
+	msg, err := types.NewTx(submitTx).AsMessage(types.NewArbitrumSigner(nil), nil)
+	*n.returnMessage.message = msg
+	*n.returnMessage.changed = true
+	return err
+}
+
+func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) (bytes32, bytes32, []bytes32, error) {
+
+	hash0 := bytes32{}
+
+	currentBlock := n.backend.CurrentBlock()
 	currentBlockInfo, err := types.DeserializeHeaderExtraInformation(currentBlock.Header())
 	if err != nil {
-		return nil, err
+		return hash0, hash0, nil, err
 	}
 	if leaf > currentBlockInfo.SendCount {
-		return nil, errors.New("leaf does not exist")
+		return hash0, hash0, nil, errors.New("leaf does not exist")
 	}
 
 	balanced := size == arbmath.NextPowerOf2(size)/2
@@ -166,7 +190,7 @@ func nodeInterfaceConstructOutboxProof(
 	}
 
 	// find all the partials
-	partials := make(map[merkletree.LevelAndLeaf]common.Hash)
+	partials := make(map[merkletree.LevelAndLeaf]hash)
 	if !balanced {
 		power := uint64(1) << proofLevels
 		total := uint64(0)
@@ -180,7 +204,7 @@ func nodeInterfaceConstructOutboxProof(
 				partial := merkletree.NewLevelAndLeaf(uint64(level), leaf)
 
 				query = append(query, partial)
-				partials[partial] = common.Hash{}
+				partials[partial] = hash0
 			}
 			power >>= 1
 		}
@@ -193,7 +217,7 @@ func nodeInterfaceConstructOutboxProof(
 	var search func(lo, hi uint64, find []merkletree.LevelAndLeaf)
 	var searchLogs []*types.Log
 	var searchErr error
-	var searchPositions = make(map[common.Hash]struct{})
+	var searchPositions = make(map[hash]struct{})
 	for _, item := range query {
 		hash := common.BigToHash(item.ToBigInt())
 		searchPositions[hash] = struct{}{}
@@ -202,14 +226,14 @@ func nodeInterfaceConstructOutboxProof(
 
 		mid := (lo + hi) / 2
 
-		block, err := backend.BlockByNumber(ctx, rpc.BlockNumber(mid))
+		block, err := n.backend.BlockByNumber(n.context, rpc.BlockNumber(mid))
 		if err != nil {
 			searchErr = err
 			return
 		}
 
 		if lo == hi {
-			all, err := backend.GetLogs(ctx, block.Hash())
+			all, err := n.backend.GetLogs(n.context, block.Hash())
 			if err != nil {
 				searchErr = err
 				return
@@ -264,13 +288,13 @@ func nodeInterfaceConstructOutboxProof(
 	search(0, currentBlock.NumberU64(), query)
 
 	if searchErr != nil {
-		return nil, searchErr
+		return hash0, hash0, nil, searchErr
 	}
 
-	known := make(map[merkletree.LevelAndLeaf]common.Hash) // all values in the tree we know
-	partialsByLevel := make(map[uint64]common.Hash)        // maps for each level the partial it may have
-	var minPartialPlace *merkletree.LevelAndLeaf           // the lowest-level partial
-	var send common.Hash
+	known := make(map[merkletree.LevelAndLeaf]hash) // all values in the tree we know
+	partialsByLevel := make(map[uint64]hash)        // maps for each level the partial it may have
+	var minPartialPlace *merkletree.LevelAndLeaf    // the lowest-level partial
+	var send hash
 
 	for _, log := range searchLogs {
 
@@ -292,8 +316,8 @@ func nodeInterfaceConstructOutboxProof(
 		known[place] = hash
 
 		if zero, ok := partials[place]; ok {
-			if zero != (common.Hash{}) {
-				return nil, errors.New("internal error constructing proof: duplicate partial")
+			if zero != hash0 {
+				return hash0, hash0, nil, errors.New("internal error constructing proof: duplicate partial")
 			}
 			partials[place] = hash
 			partialsByLevel[level] = hash
@@ -307,17 +331,15 @@ func nodeInterfaceConstructOutboxProof(
 		// This tree isn't balanced, so we'll need to use the partials to recover the missing info.
 		// To do this, we'll walk the boundry of what's known, computing hashes along the way
 
-		zero := common.Hash{}
-
 		step := *minPartialPlace
 		step.Leaf += 1 << step.Level // we start on the min partial's zero-hash sibling
-		known[step] = zero
+		known[step] = hash0
 
 		for step.Level < uint64(treeLevels) {
 
 			curr, ok := known[step]
 			if !ok {
-				return nil, errors.New("internal error constructing proof: bad step in walk")
+				return hash0, hash0, nil, errors.New("internal error constructing proof: bad step in walk")
 			}
 
 			left := curr
@@ -329,15 +351,16 @@ func nodeInterfaceConstructOutboxProof(
 				step.Leaf -= 1 << step.Level
 				partial, ok := known[step]
 				if !ok {
-					return nil, errors.New("internal error constructing proof: incomplete frontier")
+					err := errors.New("internal error constructing proof: incomplete frontier")
+					return hash0, hash0, nil, err
 				}
 				left = partial
 			} else {
 				// getting to the next partial means covering its mirror subtree, so go right
 				// moving rightward for a level l skips 2^l leaves
 				step.Leaf += 1 << step.Level
-				known[step] = zero
-				right = zero
+				known[step] = hash0
+				right = hash0
 			}
 
 			// move to the parent
@@ -347,11 +370,11 @@ func nodeInterfaceConstructOutboxProof(
 		}
 	}
 
-	hashes := make([]common.Hash, len(nodes))
+	hashes := make([]hash, len(nodes))
 	for i, place := range nodes {
 		hash, ok := known[place]
 		if !ok {
-			return nil, errors.New("internal error constructing proof: incomplete information")
+			return hash0, hash0, nil, errors.New("internal error constructing proof: incomplete information")
 		}
 		hashes[i] = hash
 	}
@@ -376,67 +399,36 @@ func nodeInterfaceConstructOutboxProof(
 		Proof:     hashes,
 	}
 	if !proof.IsCorrect() {
-		return nil, errors.New("internal error constructing proof: proof is wrong")
+		return hash0, hash0, nil, errors.New("internal error constructing proof: proof is wrong")
 	}
 
-	returnData, err := method.Outputs.Pack(send, root, hashes)
-	if err != nil {
-		return nil, fmt.Errorf("internal error: failed to encode outputs: %w", err)
+	hashes32 := make([]bytes32, len(hashes))
+	for i, hash := range hashes {
+		hashes32[i] = bytes32(hash)
 	}
-
-	result := &ExecutionResult{
-		UsedGas:       0,
-		Err:           nil,
-		ReturnData:    returnData,
-		ScheduledTxes: nil,
-	}
-	return result, nil
+	return send, root, hashes32, nil
 }
 
-func init() {
-	nodeInterface, err := abi.JSON(strings.NewReader(node_interfacegen.NodeInterfaceABI))
+func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) (uint64, error) {
+	if block <= genesis {
+		return 0, fmt.Errorf("%wblock %v is part of genesis", blockInGenesis, block)
+	}
+	pos := arbutil.BlockNumberToMessageCount(block, genesis) - 1
+	high, err := node.InboxTracker.GetBatchCount()
 	if err != nil {
-		panic(err)
+		return 0, err
 	}
-	core.InterceptRPCMessage = func(
-		msg Message,
-		ctx context.Context,
-		statedb *state.StateDB,
-		backend core.NodeInterfaceBackendAPI,
-	) (Message, *ExecutionResult, error) {
-		to := msg.To()
-		arbosVersion := arbosState.ArbOSVersion(statedb) // check ArbOS has been installed
-		if to == nil || *to != types.NodeInterfaceAddress || arbosVersion == 0 {
-			return msg, nil, nil
-		}
-		return ApplyNodeInterface(msg, ctx, statedb, backend, nodeInterface)
-	}
-
-	core.InterceptRPCGasCap = func(gascap *uint64, msg Message, header *types.Header, statedb *state.StateDB) {
-		arbosVersion := arbosState.ArbOSVersion(statedb)
-		if arbosVersion == 0 {
-			// ArbOS hasn't been installed, so use the vanilla gas cap
-			return
-		}
-		state, err := arbosState.OpenSystemArbosState(statedb, true)
-		if err != nil {
-			log.Error("failed to open ArbOS state", "err", err)
-			return
-		}
-		poster, _ := state.L1PricingState().ReimbursableAggregatorForSender(msg.From())
-		if poster == nil || header.BaseFee.Sign() == 0 {
-			// if gas is free or there's no reimbursable poster, the user won't pay for L1 data costs
-			return
-		}
-		posterCost, _ := state.L1PricingState().PosterDataCost(msg, msg.From(), *poster)
-		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
-		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
-	}
-
-	arbSys, err := precompilesgen.ArbSysMetaData.GetAbi()
+	high--
+	latestCount, err := node.InboxTracker.GetBatchMessageCount(high)
 	if err != nil {
-		panic(err)
+		return 0, err
 	}
-	withdrawTopic = arbSys.Events["L2ToL1Transaction"].ID
-	merkleTopic = arbSys.Events["SendMerkleUpdate"].ID
+	latestBlock := arbutil.MessageCountToBlockNumber(latestCount, genesis)
+	if int64(block) > latestBlock {
+		return 0, fmt.Errorf(
+			"%wrequested block %v is after latest on-chain block %v published in batch %v",
+			blockAfterLatestBatch, block, latestBlock, high,
+		)
+	}
+	return validator.FindBatchContainingMessageIndex(node.InboxTracker, pos, high)
 }

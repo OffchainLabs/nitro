@@ -150,6 +150,8 @@ library Instructions {
     uint16 internal constant READ_INBOX_MESSAGE = 0x8021;
     uint16 internal constant HALT_AND_SET_FINISHED = 0x8022;
 
+    uint16 internal constant ARBITRARY_JUMP = 0x8023;
+
     uint256 internal constant INBOX_INDEX_SEQUENCER = 0;
     uint256 internal constant INBOX_INDEX_DELAYED = 1;
 

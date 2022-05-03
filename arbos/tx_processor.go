@@ -26,6 +26,8 @@ import (
 	glog "github.com/ethereum/go-ethereum/log"
 )
 
+var arbosAddress = types.ArbosAddress
+
 // A TxProcessor is created and freed for every L2 transaction.
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
@@ -42,10 +44,8 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState, err := arbosState.OpenSystemArbosState(evm.StateDB, false)
-	if err != nil {
-		panic(err)
-	}
+	tracingInfo := util.NewTracingInfo(evm, msg.From(), arbosAddress, util.TracingBeforeEVM)
+	arbosState := arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 	return &TxProcessor{
 		msg:              msg,
 		state:            arbosState,
@@ -66,6 +66,10 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
+func (p *TxProcessor) DropTip() bool {
+	return p.state.FormatVersion() >= 2
+}
+
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
@@ -75,10 +79,11 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		return false, 0, nil, nil
 	}
 
-	evm := p.evm
-
+	var tracingInfo *util.TracingInfo
+	from := p.msg.From()
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
+	evm := p.evm
 
 	startTracer := func() func() {
 		if !evm.Config.Debug {
@@ -87,24 +92,31 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		evm.IncrementDepth() // fake a call
 		tracer := evm.Config.Tracer
 		start := time.Now()
-		tracer.CaptureStart(evm, p.msg.From(), *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
+		tracer.CaptureStart(evm, from, *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
+
+		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingDuringEVM)
+		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
+
 		return func() {
 			tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil)
 			evm.DecrementDepth() // fake the return to the first faked call
+
+			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To(), util.TracingAfterEVM)
+			p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 		}
 	}
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
 		defer (startTracer())()
-		if p.msg.From() != types.ArbosAddress {
+		if p.msg.From() != arbosAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
 		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
-		if p.msg.From() != types.ArbosAddress {
+		if p.msg.From() != arbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
 		ApplyInternalTxUpdate(tx, p.state, evm)
@@ -204,6 +216,15 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		)
 		if err != nil {
 			glog.Error("failed to emit RedeemScheduled event", "err", err)
+		}
+
+		if evm.Config.Debug {
+			redeem, err := util.PackArbRetryableTxRedeem(ticketId)
+			if err == nil {
+				tracingInfo.MockCall(redeem, usergas, from, types.ArbRetryableTxAddress, tx.Value)
+			} else {
+				glog.Error("failed to abi-encode auto-redeem", "err", err)
+			}
 		}
 
 		return true, usergas, nil, underlyingTx.Hash().Bytes()
@@ -328,10 +349,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("network fee address doesn't have enough funds to give user refund", "err", err)
 		}
 		if success {
-			state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false) // we don't want to charge for this
-			if err != nil {
-				panic(err)
-			}
+			// we don't want to charge for this
+			tracingInfo := util.NewTracingInfo(p.evm, arbosAddress, p.msg.From(), util.TracingAfterEVM)
+			state := arbosState.OpenSystemArbosStateOrPanic(p.evm.StateDB, tracingInfo, false)
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId, p.evm, util.TracingAfterEVM)
 		} else {
 			// return the Callvalue to escrow
@@ -416,19 +436,34 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
-	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false)
+	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From(), arbosAddress, util.TracingDuringEVM)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return 0, err
 	}
 	return state.Blockhashes().NextBlockNumber()
 }
 
-func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
-	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false)
+func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64) (common.Hash, error) {
+	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From(), arbosAddress, util.TracingDuringEVM)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return state.Blockhashes().BlockHash(l1BlocKNumber)
+	if state.FormatVersion() < 2 {
+		// Support the old broken behavior
+		var lower, upper uint64
+		upper = p.evm.Context.BlockNumber.Uint64()
+		if upper < 257 {
+			lower = 0
+		} else {
+			lower = upper - 256
+		}
+		if l1BlockNumber < lower || l1BlockNumber >= upper {
+			return common.Hash{}, nil
+		}
+	}
+	return state.Blockhashes().BlockHash(l1BlockNumber)
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
