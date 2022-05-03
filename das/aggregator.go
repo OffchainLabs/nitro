@@ -37,7 +37,7 @@ type serviceDetails struct {
 
 func newServiceDetails(service DataAvailabilityService, pubKey blsSignatures.PublicKey, signersMask uint64) (*serviceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
-		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signersMask %X", signersMask)
+		return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
 	}
 	return &serviceDetails{
 		service:     service,
@@ -49,6 +49,9 @@ func newServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 func NewAggregator(config AggregatorConfig, services []serviceDetails) (*Aggregator, error) {
 	var aggSignersMask uint64
 	for _, d := range services {
+		if bits.OnesCount64(d.signersMask) != 1 {
+			return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", d.service, d.signersMask)
+		}
 		aggSignersMask |= d.signersMask
 	}
 	if bits.OnesCount64(aggSignersMask) != len(services) {

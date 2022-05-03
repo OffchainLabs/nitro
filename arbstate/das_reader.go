@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -46,10 +45,6 @@ type DataAvailabilityCertificate struct {
 func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err error) {
 	r := bufio.NewReader(rd)
 	c = &DataAvailabilityCertificate{}
-	expectedCertSize := 1 + 32 + 8 + 8 + 96
-	if r.Size() < expectedCertSize {
-		return nil, fmt.Errorf("Can't deserialize DAS cert from smaller buffer (was %dB but should be %d)", r.Size(), expectedCertSize)
-	}
 
 	header, err := r.ReadByte()
 	if err != nil {
@@ -59,27 +54,27 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 		return nil, errors.New("Tried to deserialize a message that doesn't have the DAS header.")
 	}
 
-	_, err = r.Read(c.DataHash[:])
+	_, err = io.ReadFull(r, c.DataHash[:])
 	if err != nil {
 		return nil, err
 	}
 
 	var timeoutBuf [8]byte
-	_, err = r.Read(timeoutBuf[:])
+	_, err = io.ReadFull(r, timeoutBuf[:])
 	if err != nil {
 		return nil, err
 	}
 	c.Timeout = binary.BigEndian.Uint64(timeoutBuf[:])
 
 	var signersMaskBuf [8]byte
-	_, err = r.Read(signersMaskBuf[:])
+	_, err = io.ReadFull(r, signersMaskBuf[:])
 	if err != nil {
 		return nil, err
 	}
 	c.SignersMask = binary.BigEndian.Uint64(signersMaskBuf[:])
 
 	var blsSignaturesBuf [96]byte
-	_, err = r.Read(blsSignaturesBuf[:])
+	_, err = io.ReadFull(r, blsSignaturesBuf[:])
 	if err != nil {
 		return nil, err
 	}
