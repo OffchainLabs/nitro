@@ -14,6 +14,7 @@ use std::{
 };
 
 const MAX_RUNTIME: Duration = Duration::from_millis(500);
+const MAX_STEPS: u64 = 200;
 const DEBUG: bool = false;
 const PARALLEL: usize = if DEBUG { 1 } else { 8 };
 
@@ -131,7 +132,7 @@ async fn fuzz_impl(data: &[u8]) -> Result<()> {
     let start = Instant::now();
     let mut handles = VecDeque::new();
     let mut last_hash = mach.hash();
-    while start.elapsed() < MAX_RUNTIME {
+    while start.elapsed() < MAX_RUNTIME && mach.get_steps() <= MAX_STEPS {
         let proof = mach.serialize_proof();
         let op = mach.get_next_instruction().map(|i| i.opcode);
         if DEBUG {
