@@ -38,41 +38,56 @@ describe("EthCallAware", async () => {
   const data = "0x2020";
 
   const tests = async (skipEthCallAware: boolean) => {
-    it(`allows transaction to continue (skipped: ${skipEthCallAware})`, async () => {
-      const ethCallAware = await setupEthCallAware();
-      const res = await ethCallAware.functions.testFunction(num, data, skipEthCallAware);
-      const receipt = await res.wait();
-
-      const event = ethCallAware.interface.parseLog(receipt.logs[0]).args as TxSuccessEvent["args"];
-      expect(event.data, "data").to.eq(data);
-      expect(event.num.toNumber(), "num").to.eq(num);
-    });
-
-    it(`call reverts with data (skipped: ${skipEthCallAware})`, async () => {
-      const ethCallAware = await setupEthCallAware();
-
-      if (skipEthCallAware) {
-        // we expect this to succeed
-        await ethCallAware.callStatic.testFunction(num, data, skipEthCallAware);
-      } else {
-        expect(
-          ethCallAware.callStatic.testFunction(num, data, skipEthCallAware),
-          "Error message"
-        ).to.be.revertedWith(`TriggerOffchainHandler(0, "${data}")`);
+    for (let i = 0; i < 2; i++) {
+      const opts: any = {};
+      if (!skipEthCallAware) {
+        if (i == 0) opts["gasPrice"] = ethers.BigNumber.from("0xe4404cA11");
+        else opts["txOrigin"] = "0x0000000000000000000000000000000e4404cA11";
       }
-    });
+      describe(`running tests by overloading ${i === 0 ? "gasPrice" : "txOrigin"}`, () => {
+        it(`allows transaction to continue (skipped: ${skipEthCallAware})`, async () => {
+          const ethCallAware = await setupEthCallAware();
+          const res = await ethCallAware.functions.testFunction(num, data, skipEthCallAware);
+          const receipt = await res.wait();
 
-    it(`estimate gas returns correct value (skipped: ${skipEthCallAware})`, async () => {
-      const ethCallAware = await setupEthCallAware();
-      const gasEstimate = await ethCallAware.estimateGas.testFunction(num, data, skipEthCallAware);
+          const event = ethCallAware.interface.parseLog(receipt.logs[0])
+            .args as TxSuccessEvent["args"];
+          expect(event.data, "data").to.eq(data);
+          expect(event.num.toNumber(), "num").to.eq(num);
+        });
 
-      const res = await ethCallAware.functions.testFunction(num, data, skipEthCallAware);
-      const receipt = await res.wait();
-      const event = ethCallAware.interface.parseLog(receipt.logs[0]).args as TxSuccessEvent["args"];
-      expect(event.data, "data").to.eq(data);
-      expect(event.num.toNumber(), "num").to.eq(num);
-      expect(gasEstimate.toNumber(), "gas used").to.eq(receipt.gasUsed);
-    });
+        it(`call reverts with data (skipped: ${skipEthCallAware})`, async () => {
+          const ethCallAware = await setupEthCallAware();
+
+          if (skipEthCallAware) {
+            // we expect this to succeed
+            await ethCallAware.callStatic.testFunction(num, data, skipEthCallAware, opts);
+          } else {
+            expect(
+              ethCallAware.callStatic.testFunction(num, data, skipEthCallAware, opts),
+              "Error message"
+            ).to.be.revertedWith(`CallAwareData(0, "${data}")`);
+          }
+        });
+
+        it(`estimate gas returns correct value (skipped: ${skipEthCallAware})`, async () => {
+          const ethCallAware = await setupEthCallAware();
+          const gasEstimate = await ethCallAware.estimateGas.testFunction(
+            num,
+            data,
+            skipEthCallAware
+          );
+
+          const res = await ethCallAware.functions.testFunction(num, data, skipEthCallAware);
+          const receipt = await res.wait();
+          const event = ethCallAware.interface.parseLog(receipt.logs[0])
+            .args as TxSuccessEvent["args"];
+          expect(event.data, "data").to.eq(data);
+          expect(event.num.toNumber(), "num").to.eq(num);
+          expect(gasEstimate.toNumber(), "gas used").to.eq(receipt.gasUsed);
+        });
+      });
+    }
   };
 
   tests(false);

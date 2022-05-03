@@ -26,7 +26,8 @@ error CallAwareData(uint256 version, bytes data);
 
 /// @dev Tools for inferring whether a transaction was made in the context of an eth_call
 library EthCallAware {
-    address constant public MAGIC_ORIGIN = address(0xe4404cA11);
+    uint256 constant public MAGIC_GAS = uint256(0xe4404cA11);
+    address constant public MAGIC_ORIGIN = address(uint160(MAGIC_GAS));
 
     /// @dev Tries to determine if the current execution is a transaction or a call
     /// @return isCall if gas price is less than one or tx origin is set to magic value
@@ -38,8 +39,7 @@ library EthCallAware {
         // gas prices, so those values are also indicators of an eth_call.
         // See https://twitter.com/0xkarmacoma/status/1493380279309717505 for more details.
 
-        // remix sets a gasprice of 1, whereas ethersjs uses 0
-        // we compare tx.origin to MAGIC_ORIGIN so this codepath isn't hit accidentally
-        return tx.gasprice <= 1 || tx.origin == MAGIC_ORIGIN;
+        // we compare tx.origin and gas price to the magic number so this codepath isn't hit accidentally
+        return tx.gasprice == MAGIC_GAS || tx.origin == MAGIC_ORIGIN;
     }
 }
