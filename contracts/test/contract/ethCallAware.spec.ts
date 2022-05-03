@@ -41,8 +41,8 @@ describe("EthCallAware", async () => {
     for (let i = 0; i < 2; i++) {
       const opts: any = {};
       if (!skipEthCallAware) {
-        if (i == 0) opts["gasPrice"] = ethers.BigNumber.from("0xe4404cA11");
-        else opts["txOrigin"] = "0x0000000000000000000000000000000e4404cA11";
+        if (i == 0) opts["gasPrice"] = ethers.BigNumber.from("0xcA11");
+        else opts["txOrigin"] = "0x000000000000000000000000000000000000cA11";
       }
       describe(`running tests by overloading ${i === 0 ? "gasPrice" : "txOrigin"}`, () => {
         it(`allows transaction to continue (skipped: ${skipEthCallAware})`, async () => {
