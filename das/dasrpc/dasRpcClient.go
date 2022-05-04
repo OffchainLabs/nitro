@@ -5,6 +5,8 @@ package dasrpc
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"google.golang.org/grpc"
@@ -48,4 +50,8 @@ func (clnt *DASRPCClient) Store(ctx context.Context, message []byte) (*arbstate.
 		SignersMask: response.SignersMask,
 		Sig:         sig,
 	}, nil
+}
+
+func (clnt *DASRPCClient) String() string {
+	return fmt.Sprintf("DASRPCClient{clnt:%v}", clnt.clnt)
 }
