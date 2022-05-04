@@ -25,10 +25,10 @@ error CallAwareData(uint256 version, bytes data);
 
 /// @dev Tools for inferring whether a transaction was made in the context of an eth_call
 library EthCallAware {
-    /// @dev this is equivalent to 0.000051729 gwei
-    uint256 public constant MAGIC_GAS = uint256(0xcA11);
-    /// @dev the address gets padded to `0x000000000000000000000000000000000000cA11`
-    address public constant MAGIC_ORIGIN = address(uint160(MAGIC_GAS));
+    /// @dev its expected that the chain never has a basefee of 6
+    uint256 public constant MAGIC_GAS = uint256(6);
+    /// @dev the address gets padded to `0x0000000000000000000000000000000e4404cA11`
+    address public constant MAGIC_ORIGIN = address(0xe4404cA11);
 
     /// @dev Tries to determine if the current execution is a transaction or a call
     function isCall() internal view returns (bool) {

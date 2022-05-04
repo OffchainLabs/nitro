@@ -54,8 +54,8 @@ describe("EthCallAware", async () => {
   for (let i = 0; i < 2; i++) {
     const opts: CallOverrides = {};
 
-    if (i == 0) opts["gasPrice"] = ethers.BigNumber.from("0xcA11");
-    else opts["from"] = "0x000000000000000000000000000000000000cA11";
+    if (i == 0) opts["gasPrice"] = 6
+    else opts["from"] = "0x0000000000000000000000000000000e4404cA11";
 
     describe(`running tests by overloading ${i === 0 ? "gasPrice" : "txOrigin"}`, () => {
       it(`allows transaction to continue`, async () => {
