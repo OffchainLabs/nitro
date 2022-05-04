@@ -6,17 +6,19 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/conf"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dasrpc"
-	flag "github.com/spf13/pflag"
 )
 
 type DAServerConfig struct {
@@ -57,7 +59,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 }
 
 func startup() error {
-	vcsRevision, vcsTime := conf.GetVersion()
+	vcsRevision, vcsTime := genericconf.GetVersion()
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)

@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +20,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -44,7 +44,7 @@ func printSampleUsage() {
 func startup() error {
 	ctx := context.Background()
 
-	vcsRevision, vcsTime := conf.GetVersion()
+	vcsRevision, vcsTime := genericconf.GetVersion()
 	relayConfig, err := ParseRelay(ctx, os.Args[1:])
 	if err != nil {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)

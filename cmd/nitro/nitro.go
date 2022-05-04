@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"math"
 	"math/big"
 	"os"
@@ -38,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
 
@@ -54,7 +54,7 @@ func printSampleUsage(name string) {
 func main() {
 	ctx := context.Background()
 
-	vcsRevision, vcsTime := conf.GetVersion()
+	vcsRevision, vcsTime := genericconf.GetVersion()
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
 	if err != nil {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
