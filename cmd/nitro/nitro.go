@@ -292,7 +292,7 @@ func main() {
 	}
 
 	if nodeConfig.Metrics {
-		go metrics.CollectProcessMetrics(3 * time.Second)
+		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
 
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
