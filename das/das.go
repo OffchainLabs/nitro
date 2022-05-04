@@ -40,7 +40,7 @@ type DataAvailabilityConfig struct {
 	ModeImpl         string        `koanf:"mode"`
 	LocalDiskDataDir string        `koanf:"local-disk-data-dir"`
 	S3Config         conf.S3Config `koanf:"s3"`
-	SignerMask       SignerMask `koanf:"signer-mask"`
+	SignerMask       SignerMask    `koanf:"signer-mask"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
