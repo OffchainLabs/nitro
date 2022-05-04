@@ -1,29 +1,41 @@
 #![no_main]
+use evm::{
+    backend::MemoryAccount,
+    executor::stack::{self as evm_stack, StackSubstateMetadata},
+};
 use eyre::{bail, Result};
 use libfuzzer_sys::fuzz_target;
+use primitive_types::{H160, U256};
 use prover::{
     binary,
     machine::{GlobalState, Machine},
     utils::Bytes32,
     wavm::Opcode,
 };
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::VecDeque,
-    time::{Duration, Instant},
-};
+use serde::Deserialize;
+use std::{collections::BTreeMap, fs::File, rc::Rc};
 
-const MAX_RUNTIME: Duration = Duration::from_millis(500);
 const MAX_STEPS: u64 = 200;
 const DEBUG: bool = false;
-const PARALLEL: usize = if DEBUG { 1 } else { 8 };
+const EVM_CONFIG: evm::Config = evm::Config::london();
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractInfo {
+    deployed_bytecode: String,
+}
+
+fn get_contract_deployed_bytecode(contract: &str) -> Vec<u8> {
+    let f = File::open(format!(
+        "../../../contracts/build/contracts/src/osp/{0}.sol/{0}.json",
+        contract,
+    ))
+    .expect("Failed to read contract JSON");
+    let info: ContractInfo = serde_json::from_reader(f).expect("Failed to parse contract JSON");
+    hex::decode(&info.deployed_bytecode[2..]).unwrap()
+}
 
 lazy_static::lazy_static! {
-    static ref RPC_URL: String =
-        std::env::var("RPC_URL").expect("RPC_URL environment variable must be present");
-    static ref REQWEST_CLIENT: reqwest::Client = reqwest::Client::new();
-    static ref OSP_ENTRY_ADDRESS: String = std::env::var("OSP_ENTRY_ADDRESS")
-        .expect("OSP_ENTRY_ADDRESS environment variable must be present");
     static ref OSP_PREFIX: Vec<u8> = {
         let mut data = Vec::new();
         data.extend(hex::decode("2fae8811").unwrap()); // function selector
@@ -32,35 +44,68 @@ lazy_static::lazy_static! {
         data.extend([0; 32]); // delayedInbox
         data
     };
+    static ref EVM_VICINITY: evm::backend::MemoryVicinity = {
+        evm::backend::MemoryVicinity {
+            gas_price: Default::default(),
+            origin: Default::default(),
+            chain_id: Default::default(),
+            block_hashes: Default::default(),
+            block_number: Default::default(),
+            block_coinbase: Default::default(),
+            block_timestamp: Default::default(),
+            block_difficulty: Default::default(),
+            block_gas_limit: Default::default(),
+            block_base_fee_per_gas: Default::default(),
+        }
+    };
+    static ref OSP_ENTRY_ADDRESS: H160 = H160::repeat_byte(1);
+    static ref OSP_ENTRY_CODE: Vec<u8> = get_contract_deployed_bytecode("OneStepProofEntry");
+    static ref EVM_BACKEND: evm::backend::MemoryBackend<'static> = {
+        const CONTRACTS: &[&str] = &[
+            "OneStepProofEntry",
+            "OneStepProver0",
+            "OneStepProverMemory",
+            "OneStepProverMath",
+            "OneStepProverHostIo",
+        ];
+        let mut state = BTreeMap::new();
+        for (i, contract) in CONTRACTS.iter().enumerate() {
+            let mut account = MemoryAccount::default();
+            if i == 0 {
+                account.code = OSP_ENTRY_CODE.clone();
+                // Put the other provers' addresses in the entry contract's storage
+                for i in 1..CONTRACTS.len() {
+                    let mut key = [0u8; 32];
+                    key[31] = i as u8 - 1;
+                    account.storage.insert(key.into(), H160::repeat_byte(i as u8 + 1).into());
+                }
+            } else {
+                account.code = get_contract_deployed_bytecode(contract);
+            }
+            state.insert(H160::repeat_byte(i as u8 + 1), account);
+        }
+        evm::backend::MemoryBackend::new(&*EVM_VICINITY, state)
+    };
 }
 
-#[derive(Serialize)]
-struct EthCallParams<'a> {
-    to: &'a str,
-    data: String,
+thread_local! {
+    static OSP_ENTRY_CODE_RC: Rc<Vec<u8>> = Rc::new(OSP_ENTRY_CODE.clone());
 }
 
-#[derive(Serialize)]
-struct EthCallRequest<'a> {
-    jsonrpc: &'static str,
-    id: usize,
-    method: &'static str,
-    params: (EthCallParams<'a>, &'static str),
+fn make_evm_executor() -> evm_stack::StackExecutor<
+    'static,
+    'static,
+    evm_stack::MemoryStackState<'static, 'static, evm::backend::MemoryBackend<'static>>,
+    (),
+> {
+    let stack = evm_stack::MemoryStackState::new(
+        StackSubstateMetadata::new(u64::MAX, &EVM_CONFIG),
+        &*EVM_BACKEND,
+    );
+    evm_stack::StackExecutor::new_with_precompiles(stack, &EVM_CONFIG, &())
 }
 
-#[derive(Deserialize)]
-struct EthCallError {
-    message: String,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum EthCallResponse {
-    Success { result: String },
-    Failure { error: EthCallError },
-}
-
-async fn test_proof(
+fn test_proof(
     before_hash: Bytes32,
     steps: u64,
     opcode: Option<Opcode>,
@@ -83,42 +128,59 @@ async fn test_proof(
     if DEBUG {
         println!("Proving {:?} with {}", opcode, hex::encode(&data));
     }
-    let params = EthCallParams {
-        to: &*OSP_ENTRY_ADDRESS,
-        data: format!("0x{}", hex::encode(data)),
+    let code = OSP_ENTRY_CODE_RC.with(|code| code.clone());
+    let context = evm::Context {
+        address: *OSP_ENTRY_ADDRESS,
+        caller: H160::default(),
+        apparent_value: U256::default(),
     };
-    let request = EthCallRequest {
-        jsonrpc: "2.0",
-        id: 0,
-        method: "eth_call",
-        params: (params, "latest"),
+    let mut runtime = evm::Runtime::new(code, Rc::new(data), context, &EVM_CONFIG);
+    let mut handler = make_evm_executor();
+    let res = match runtime.run(&mut handler) {
+        evm::Capture::Exit(res) => res,
+        evm::Capture::Trap(_) => bail!("hit trap executing EVM"),
     };
-    let res: EthCallResponse = REQWEST_CLIENT
-        .post(&*RPC_URL)
-        .json(&request)
-        .send()
-        .await?
-        .json()
-        .await?;
     match res {
-        EthCallResponse::Success { result } => {
-            let mut got_hash = Bytes32::default();
-            hex::decode_to_slice(&result[2..], &mut *got_hash)?;
-            if got_hash != after_hash {
+        evm::ExitReason::Succeed(_) => {
+            let result = runtime.machine().return_value();
+            if result.as_slice() != *after_hash {
                 bail!(
                     "executing {:?} expecting after hash {} but got {}",
                     opcode,
                     after_hash,
-                    got_hash,
+                    hex::encode(result),
                 );
             }
         }
-        EthCallResponse::Failure { error } => bail!("{}", error.message),
+        evm::ExitReason::Revert(_) => {
+            let result = runtime.machine().return_value();
+            if result.is_empty() {
+                bail!("execution reverted");
+            } else if result.len() >= 64
+                && result[..31].iter().all(|b| *b == 0)
+                && result[31] == 32
+                && result[32..48].iter().all(|b| *b == 0)
+            {
+                bail!(
+                    "execution reverted: {} ({})",
+                    String::from_utf8_lossy(&result[64..]),
+                    hex::encode(&result),
+                );
+            } else {
+                bail!("execution reverted: {}", hex::encode(&result));
+            }
+        }
+        evm::ExitReason::Error(err) => {
+            bail!("EVM hit error: {:?}", err);
+        }
+        evm::ExitReason::Fatal(err) => {
+            bail!("EVM hit fatal error: {:?}", err);
+        }
     }
     Ok(())
 }
 
-async fn fuzz_impl(data: &[u8]) -> Result<()> {
+fn fuzz_impl(data: &[u8]) -> Result<()> {
     let wavm_binary = binary::parse(data)?;
     let mut mach = Machine::from_binaries(
         &[],
@@ -129,10 +191,8 @@ async fn fuzz_impl(data: &[u8]) -> Result<()> {
         Default::default(),
         Default::default(),
     )?;
-    let start = Instant::now();
-    let mut handles = VecDeque::new();
     let mut last_hash = mach.hash();
-    while start.elapsed() < MAX_RUNTIME && mach.get_steps() <= MAX_STEPS {
+    while mach.get_steps() <= MAX_STEPS {
         let proof = mach.serialize_proof();
         let op = mach.get_next_instruction().map(|i| i.opcode);
         if DEBUG {
@@ -140,31 +200,18 @@ async fn fuzz_impl(data: &[u8]) -> Result<()> {
         }
         mach.step_n(1);
         let new_hash = mach.hash();
-        handles.push_back(tokio::spawn(test_proof(
-            last_hash,
-            mach.get_steps(),
-            op,
-            proof,
-            new_hash,
-        )));
-        if PARALLEL >= handles.len() {
-            handles.pop_front().unwrap().await.unwrap().unwrap();
-        }
+        test_proof(last_hash, mach.get_steps(), op, proof, new_hash)
+            .expect("Failed to validate proof");
         if new_hash == last_hash {
             break;
         }
         last_hash = new_hash;
     }
-    for handle in handles {
-        handle.await.unwrap().expect("Failed to test proof");
-    }
     Ok(())
 }
 
 fuzz_target!(|data: &[u8]| {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let _guard = runtime.enter();
-    if let Err(err) = runtime.block_on(fuzz_impl(data)) {
+    if let Err(err) = fuzz_impl(data) {
         if DEBUG {
             eprintln!("Non-critical error: {}", err);
         }
