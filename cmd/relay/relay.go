@@ -42,8 +42,12 @@ func printSampleUsage() {
 }
 
 func startup() error {
-	relayConfig, err := ParseRelay(context.Background(), os.Args[1:])
+	ctx := context.Background()
+
+	vcsRevision, vcsTime := conf.GetVersion()
+	relayConfig, err := ParseRelay(ctx, os.Args[1:])
 	if err != nil {
+		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
 		printSampleUsage()
 		if !strings.Contains(err.Error(), "help requested") {
 			fmt.Printf("%s\n", err.Error())
@@ -60,6 +64,8 @@ func startup() error {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(log.Lvl(relayConfig.LogLevel))
 	log.Root().SetHandler(glogger)
+
+	log.Info("Running Arbitrum nitro relay", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	serverConf := wsbroadcastserver.BroadcasterConfig{
 		Addr:          relayConfig.Node.Feed.Output.Addr,
@@ -83,7 +89,7 @@ func startup() error {
 
 	// Start up an arbitrum sequencer relay
 	newRelay := relay.NewRelay(serverConf, clientConf)
-	err = newRelay.Start(context.Background())
+	err = newRelay.Start(ctx)
 	if err != nil {
 		return err
 	}

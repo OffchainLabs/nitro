@@ -4,9 +4,12 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"encoding/base32"
 	"errors"
+	"fmt"
+	"math/bits"
 	"os"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -62,7 +65,11 @@ func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignature
 	return &pubKey, privKey, nil
 }
 
-func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabilityService, error) {
+func NewLocalDiskDataAvailabilityService(dbPath string, signerMask uint64) (*LocalDiskDataAvailabilityService, error) {
+	if bits.OnesCount64(signerMask) != 1 {
+		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signerMask %X", signerMask)
+	}
+
 	pubKey, privKey, err := readKeysFromFile(dbPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -76,9 +83,10 @@ func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabil
 	}
 
 	return &LocalDiskDataAvailabilityService{
-		dbPath:  dbPath,
-		pubKey:  pubKey,
-		privKey: privKey,
+		dbPath:     dbPath,
+		pubKey:     pubKey,
+		privKey:    privKey,
+		signerMask: signerMask,
 	}, nil
 }
 
@@ -107,7 +115,7 @@ func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message 
 }
 
 func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
-	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -126,14 +134,12 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certB
 		return nil, errors.New("Retrieved message stored hash doesn't match calculated hash.")
 	}
 
-	signedBlob := serializeSignableFields(*cert)
-	sigMatch, err := blsSignatures.VerifySignature(cert.Sig, signedBlob, *das.pubKey)
-	if err != nil {
-		return nil, err
-	}
-	if !sigMatch {
-		return nil, errors.New("Signature of data in cert passed in doesn't match")
-	}
+	// The cert passed in may have an aggregate signature, so we don't
+	// check the signature against this DAS's public key here.
 
 	return originalMessage, nil
+}
+
+func (d *LocalDiskDataAvailabilityService) String() string {
+	return fmt.Sprintf("LocalDiskDataAvailabilityService{signersMask:%d,dbPath:%s}", d.signerMask, d.dbPath)
 }
