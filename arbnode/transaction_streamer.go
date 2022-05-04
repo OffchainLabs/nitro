@@ -690,6 +690,8 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	var statedb *state.StateDB
 	defer func() {
 		if statedb != nil {
+			// This can safely be called even if the prefetcher hasn't been started,
+			// as it checks if a prefetcher is present before stopping it.
 			statedb.StopPrefetcher()
 		}
 	}()

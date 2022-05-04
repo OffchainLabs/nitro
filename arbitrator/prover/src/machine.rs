@@ -644,15 +644,17 @@ pub struct MachineState<'a> {
 
 pub type PreimageResolver = Arc<dyn Fn(Bytes32) -> Option<CBytes>>;
 
+/// Wraps a preimage resolver to provide an easier API
+/// and cache the last preimage retrieved.
 #[derive(Clone)]
-struct CachedPreimageResolver {
+struct PreimageResolverWrapper {
     resolver: PreimageResolver,
     last_resolved: Option<(Bytes32, CBytes)>,
 }
 
-impl CachedPreimageResolver {
-    pub fn new(resolver: PreimageResolver) -> CachedPreimageResolver {
-        CachedPreimageResolver {
+impl PreimageResolverWrapper {
+    pub fn new(resolver: PreimageResolver) -> PreimageResolverWrapper {
+        PreimageResolverWrapper {
             resolver,
             last_resolved: None,
         }
@@ -697,7 +699,7 @@ pub struct Machine {
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-    preimage_resolver: CachedPreimageResolver,
+    preimage_resolver: PreimageResolverWrapper,
     initial_hash: Bytes32,
 }
 
@@ -1083,7 +1085,7 @@ impl Machine {
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_contents,
-            preimage_resolver: CachedPreimageResolver::new(preimage_resolver),
+            preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             initial_hash: Bytes32::default(),
         };
         mach.initial_hash = mach.hash();
@@ -1131,7 +1133,7 @@ impl Machine {
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_contents: Default::default(),
-            preimage_resolver: CachedPreimageResolver::new(get_empty_preimage_resolver()),
+            preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             initial_hash: Bytes32::default(),
         };
         mach.initial_hash = mach.hash();

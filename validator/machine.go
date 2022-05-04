@@ -33,16 +33,11 @@ type MachineInterface interface {
 	ProveNextStep() []byte
 }
 
-// Has a finalizer attached to remove the resolver from the global map
-type preimageResolverMarker struct {
-	id int64
-}
-
 // Holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
-	ptr              *C.struct_Machine
-	preimageResolver *preimageResolverMarker
-	frozen           bool // does not allow anything that changes machine state, not cloned with the machine
+	ptr       *C.struct_Machine
+	contextId *int64 // has a finalizer attached to remove the preimage resolver from the global map
+	frozen    bool   // does not allow anything that changes machine state, not cloned with the machine
 }
 
 // Assert that ArbitratorMachine implements MachineInterface
@@ -55,8 +50,8 @@ func freeMachine(mach *ArbitratorMachine) {
 	C.arbitrator_free_machine(mach.ptr)
 }
 
-func freePreimageResolver(resolver *preimageResolverMarker) {
-	preimageResolvers.Delete(resolver.id)
+func freeContextId(context *int64) {
+	preimageResolvers.Delete(*context)
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
@@ -88,7 +83,7 @@ func (m *ArbitratorMachine) Freeze() {
 func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer runtime.KeepAlive(m)
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
-	newMach.preimageResolver = m.preimageResolver
+	newMach.contextId = m.contextId
 	return newMach
 }
 
@@ -326,8 +321,8 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	}
 	id := atomic.AddInt64(&lastPreimageResolverId, 1)
 	preimageResolvers.Store(id, resolver)
-	m.preimageResolver = &preimageResolverMarker{id}
-	runtime.SetFinalizer(m.preimageResolver, freePreimageResolver)
+	m.contextId = &id
+	runtime.SetFinalizer(m.contextId, freeContextId)
 	C.arbitrator_set_preimage_resolver(m.ptr, C.size_t(id), (*[0]byte)(C.preimageResolverC))
 	return nil
 }
