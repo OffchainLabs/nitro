@@ -302,7 +302,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bytes calldata data
     ) external payable virtual override whenNotPaused returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
-        require(msg.value >= maxSubmissionCost + l2CallValue, "insufficient value");
+        if (msg.value < maxSubmissionCost + l2CallValue)
+            revert InsufficientValue(maxSubmissionCost + l2CallValue, msg.value);
 
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
@@ -354,10 +355,9 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) public payable virtual override whenNotPaused returns (uint256) {
-        {
-            uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
-            require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
-        }
+        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
+        if (maxSubmissionCost < submissionFee)
+            revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
 
         return
             _deliverMessage(

@@ -39,11 +39,11 @@ jobs:
             build-essential cmake nodejs ethereum lld-10 golang-go libudev-dev
           sudo ln -s /usr/bin/wasm-ld-10 /usr/local/bin/wasm-ld
 
-      - name: Install rust nightly
+      - name: Install rust stable
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: stable
           override: true
           components: 'llvm-tools-preview, rustfmt, clippy'
 
@@ -132,7 +132,7 @@ jobs:
         run: |
           echo LLVM_PROFILE_FILE="your_name-%p-%m.profraw" >> $GITHUB_ENV
           echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
-          echo RUSTFLAGS="-Zinstrument-coverage" >> $GITHUB_ENV
+          echo RUSTFLAGS="-Cinstrument-coverage" >> $GITHUB_ENV
           echo RUSTDOCFLAGS="-Cpanic=abort" >> $GITHUB_ENV
 
       - name: Clippy check
