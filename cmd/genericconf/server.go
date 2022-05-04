@@ -19,7 +19,7 @@ type HTTPConfig struct {
 }
 
 var HTTPConfigDefault = HTTPConfig{
-	Addr:       node.DefaultConfig.HTTPHost,
+	Addr:       node.DefaultHTTPHost,
 	Port:       8547,
 	API:        append(node.DefaultConfig.HTTPModules, "eth"),
 	RPCPrefix:  node.DefaultConfig.HTTPPathPrefix,
@@ -55,7 +55,7 @@ type WSConfig struct {
 }
 
 var WSConfigDefault = WSConfig{
-	Addr:      node.DefaultConfig.WSHost,
+	Addr:      node.DefaultWSHost,
 	Port:      8548,
 	API:       append(node.DefaultConfig.WSModules, "eth"),
 	RPCPrefix: node.DefaultConfig.WSPathPrefix,
