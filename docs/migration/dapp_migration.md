@@ -28,8 +28,8 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 - **Gas Accounting**: it is now consistent with the L1 EVM, any hard-coded gas values should be changed accordingly (the same applies to any gas amount used in conjuntion with `gasleft`).
 - **No more storage gas**: there is no more concept of a separate pool of storage gas, opcodes are prices identically to the L1 EVM.
 - **Retryable Tickets**: 
-    - The submission cost is now collected/enforced in the L1 inbox and checked against the L1 transaction's `msg.value`; contracts cannot/should not rely on funds pooled in the L2 destination to cover this cost.
-    - For the redemption of retryable tickets, the calculation of the L2 transaction ID is changed, as has the transaction lifecycle of attempting multiple redemptions (i.e., after failed attempts). See [arbitrum-sdk](https://github.com/OffchainLabs/arbitrum-sdk/blob/fe3c3ee90a2d713955988dcb6a9f87732b7dbedc/src/lib/message/L1ToL2Message.ts#L547) for the new client-side flow (detailed documentation coming soon) 
+    - The submission cost is now enforced in the L1 inbox and checked against the L1 transaction's `msg.value`; contracts shouldn't rely on funds pooled in the L2 destination to cover this cost.
+    - For the redemption of retryable tickets, the calculation of the L2 transaction ID changed, as has the transaction lifecycle of attempting multiple redemptions (i.e., after failed attempts). See [arbitrum-sdk](https://github.com/OffchainLabs/arbitrum-sdk) for a reference implementation on the new client-side flow. 
 
 #### Protocol Contracts 
 
@@ -41,7 +41,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 - **Sequencer Inbox changes**: The Sequencer inbox has a new interface and requires a new approach to determining a transaction's inclusion on L1 (see "Batch Info In Receipts" below).
 
 
-- **Outbox Changes**: The Outbox has a new (simplified!) architecture; in short, all outgoing messages will be included in a single Merkle tree (vs Arbitrum classic, in which many outbox entries, each with its own Merkle root, get created over time). See [arbitrum-sdk](https://github.com/OffchainLabs/arbitrum-sdk/blob/fe3c3ee90a2d713955988dcb6a9f87732b7dbedc/src/lib/message/L2ToL1Message.ts#L479) for new flow of interacting with the outbox, which includes interactions with new methods in the NodeInterface virtual precompile (detailed documentation coming soon).
+- **Outbox Changes**: The Outbox has a new (simplified!) architecture; in short, all outgoing messages will be included in a single Merkle tree (opposed to Arbitrum classic, in which many outbox entries, each with its own Merkle root). See [arbitrum-sdk](https://github.com/OffchainLabs/arbitrum-sdk) for a reference implementation on how to handle the new flow of interacting with the outbox.
 
 #### RPCs
 
