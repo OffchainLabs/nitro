@@ -26,10 +26,10 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 
 #### Dapps
 - **Gas Accounting**: it is now consistent with the L1 EVM, any hard-coded gas values should be changed accordingly (the same applies to any gas amount used in conjuntion with `gasleft`).
-- **No more storage gas**: there is no more concept of a separate pool of storage gas, opcodes are prices identically to the L1 EVM.
+- **No more storage gas**: there is no more concept of a separate pool of storage gas, and opcodes are priced identically to the L1 EVM.
 - **Retryable Tickets**: 
     - The submission cost is now enforced in the L1 inbox and checked against the L1 transaction's `msg.value`; contracts shouldn't rely on funds pooled in the L2 destination to cover this cost.
-    - For the redemption of retryable tickets, the calculation of the L2 transaction ID changed, as has the transaction lifecycle of attempting multiple redemptions (i.e., after failed attempts). See [arbitrum-sdk](https://github.com/OffchainLabs/arbitrum-sdk) for a reference implementation on the new client-side flow. 
+    - For the redemption of retryable tickets, the calculation of the L2 transaction ID changed and differs between different redeem attempts (i.e. after failed attempts). See [arbitrum-sdk](https://github.com/offchainlabs/arbitrum-sdk/tree/c-nitro) for a reference implementation on the new client-side flow. 
 
 #### Protocol Contracts 
 
@@ -41,7 +41,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 - **Sequencer Inbox changes**: The Sequencer inbox has a new interface and requires a new approach to determining a transaction's inclusion on L1 (see "Batch Info In Receipts" below).
 
 
-- **Outbox Changes**: The Outbox has a new (simplified!) architecture; in short, all outgoing messages will be included in a single Merkle tree (opposed to Arbitrum classic, in which many outbox entries, each with its own Merkle root). See [arbitrum-sdk](https://github.com/OffchainLabs/arbitrum-sdk) for a reference implementation on how to handle the new flow of interacting with the outbox.
+- **Outbox Changes**: The Outbox has a new (simplified!) architecture; in short, all outgoing messages will be included in a single Merkle tree (opposed to Arbitrum classic, in which many outbox entries, each with its own Merkle root). See [arbitrum-sdk](https://github.com/offchainlabs/arbitrum-sdk/tree/c-nitro) for a reference implementation on how to handle the new flow of interacting with the outbox.
 
 #### RPCs
 
@@ -49,4 +49,4 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 
 - **Gas Info in Transaction Receipts**: Arbitrum transaction receipts return data about gas in a new format; receipts will have `gasUsed` (total) and `gasUsedForL1` fields (instead of the `feeStats` field in Arbitrum classic).
 
-- **Batch Info In Receipts**: Arbitrum transaction receipts no longer include the `l1SequenceNumber` field; the `findBatchContainingBlock` or `getL1Confirmations` methods in the [NodeInterface precompile](../arbos/Precompiles.md) can be used to determine a transaction's inclusion in L1.
+- **Batch Info In Receipts**: Arbitrum transaction receipts no longer include the `l1SequenceNumber` field; the `findBatchContainingBlock` or `getL1Confirmations` methods in the [NodeInterface precompile](../../contracts/src/node-interface/NodeInterface.sol) can be used to determine a transaction's inclusion in L1.
