@@ -31,9 +31,9 @@ type S3DataAvailabilityService struct {
 	signerMask uint64
 }
 
-func readKeysFromS3(s3Config conf.S3Config, downloader *manager.Downloader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
+func readKeysFromS3(ctx context.Context, s3Config conf.S3Config, downloader *manager.Downloader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
 	pubKeyBuf := manager.NewWriteAtBuffer([]byte{})
-	_, err := downloader.Download(context.TODO(), pubKeyBuf, &s3.GetObjectInput{
+	_, err := downloader.Download(ctx, pubKeyBuf, &s3.GetObjectInput{
 		Bucket: aws.String(s3Config.Bucket),
 		Key:    aws.String("pubkey"),
 	})
@@ -42,7 +42,7 @@ func readKeysFromS3(s3Config conf.S3Config, downloader *manager.Downloader) (*bl
 	}
 
 	privKeyBuf := manager.NewWriteAtBuffer([]byte{})
-	_, err = downloader.Download(context.TODO(), privKeyBuf, &s3.GetObjectInput{
+	_, err = downloader.Download(ctx, privKeyBuf, &s3.GetObjectInput{
 		Bucket: aws.String(s3Config.Bucket),
 		Key:    aws.String("privkey"),
 	})
@@ -61,13 +61,13 @@ func readKeysFromS3(s3Config conf.S3Config, downloader *manager.Downloader) (*bl
 	return &pubKey, privKey, nil
 }
 
-func generateAndStoreKeysInS3(s3Config conf.S3Config, uploader *manager.Uploader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
+func generateAndStoreKeysInS3(ctx context.Context, s3Config conf.S3Config, uploader *manager.Uploader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
 	pubKey, privKey, err := blsSignatures.GenerateKeys()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	_, err = uploader.Upload(context.TODO(), &s3.PutObjectInput{
+	_, err = uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s3Config.Bucket),
 		Key:    aws.String("pubkey"),
 		Body:   bytes.NewReader(blsSignatures.PublicKeyToBytes(pubKey)),
@@ -75,7 +75,7 @@ func generateAndStoreKeysInS3(s3Config conf.S3Config, uploader *manager.Uploader
 	if err != nil {
 		return nil, nil, err
 	}
-	_, err = uploader.Upload(context.TODO(), &s3.PutObjectInput{
+	_, err = uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s3Config.Bucket),
 		Key:    aws.String("privkey"),
 		Body:   bytes.NewReader(blsSignatures.PrivateKeyToBytes(privKey)),
@@ -86,7 +86,7 @@ func generateAndStoreKeysInS3(s3Config conf.S3Config, uploader *manager.Uploader
 	return &pubKey, privKey, nil
 }
 
-func NewS3DataAvailabilityService(s3Config conf.S3Config) (*S3DataAvailabilityService, error) {
+func NewS3DataAvailabilityService(ctx context.Context, s3Config conf.S3Config) (*S3DataAvailabilityService, error) {
 	client := s3.New(s3.Options{
 		Region:      s3Config.Region,
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(s3Config.AccessKey, s3Config.SecretKey, "")),
@@ -94,11 +94,11 @@ func NewS3DataAvailabilityService(s3Config conf.S3Config) (*S3DataAvailabilitySe
 	uploader := manager.NewUploader(client)
 	downloader := manager.NewDownloader(client)
 
-	pubKey, privKey, err := readKeysFromS3(s3Config, downloader)
+	pubKey, privKey, err := readKeysFromS3(ctx, s3Config, downloader)
 	if err != nil {
 		var nsk *types.NoSuchKey
 		if errors.As(err, &nsk) {
-			pubKey, privKey, err = generateAndStoreKeysInS3(s3Config, uploader)
+			pubKey, privKey, err = generateAndStoreKeysInS3(ctx, s3Config, uploader)
 			if err != nil {
 				return nil, err
 			}
@@ -132,7 +132,7 @@ func (das *S3DataAvailabilityService) Store(ctx context.Context, message []byte,
 	path := base32.StdEncoding.EncodeToString(c.DataHash[:])
 	log.Debug("Storing message at", "path", path)
 
-	_, err = das.uploader.Upload(context.TODO(), &s3.PutObjectInput{
+	_, err = das.uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(das.s3Config.Bucket),
 		Key:    aws.String(path),
 		Body:   bytes.NewReader(message),
@@ -154,7 +154,7 @@ func (das *S3DataAvailabilityService) Retrieve(ctx context.Context, certBytes []
 	log.Debug("Retrieving message from", "path", path)
 
 	originalMessageBuf := manager.NewWriteAtBuffer([]byte{})
-	_, err = das.downloader.Download(context.TODO(), originalMessageBuf, &s3.GetObjectInput{
+	_, err = das.downloader.Download(ctx, originalMessageBuf, &s3.GetObjectInput{
 		Bucket: aws.String(das.s3Config.Bucket),
 		Key:    aws.String(path),
 	})
