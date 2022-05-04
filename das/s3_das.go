@@ -145,7 +145,7 @@ func (das *S3DataAvailabilityService) Store(ctx context.Context, message []byte,
 }
 
 func (das *S3DataAvailabilityService) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
-	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
 		return nil, err
 	}
