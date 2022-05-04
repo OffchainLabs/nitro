@@ -8,12 +8,12 @@ use libfuzzer_sys::fuzz_target;
 use primitive_types::{H160, U256};
 use prover::{
     binary,
-    machine::{GlobalState, Machine},
+    machine::{GlobalState, Machine, PreimageResolver},
     utils::Bytes32,
     wavm::Opcode,
 };
 use serde::Deserialize;
-use std::{collections::BTreeMap, fs::File, rc::Rc};
+use std::{collections::BTreeMap, fs::File, rc::Rc, sync::Arc};
 
 const MAX_STEPS: u64 = 200;
 const DEBUG: bool = false;
@@ -189,7 +189,7 @@ fn fuzz_impl(data: &[u8]) -> Result<()> {
         false,
         GlobalState::default(),
         Default::default(),
-        Default::default(),
+        Arc::new(|_| None) as PreimageResolver,
     )?;
     let mut last_hash = mach.hash();
     while mach.get_steps() <= MAX_STEPS {
@@ -198,7 +198,7 @@ fn fuzz_impl(data: &[u8]) -> Result<()> {
         if DEBUG {
             println!("Executing {:?} with stack {:?}", op, mach.get_data_stack());
         }
-        mach.step_n(1);
+        mach.step_n(1).expect("Failed to execute machine step");
         let new_hash = mach.hash();
         test_proof(last_hash, mach.get_steps(), op, proof, new_hash)
             .expect("Failed to validate proof");

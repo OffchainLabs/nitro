@@ -16,15 +16,19 @@ pub mod wavm;
 
 use crate::machine::{argument_data_to_inbox, Machine};
 use eyre::Result;
-use machine::{GlobalState, MachineStatus};
+use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
 use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
     os::raw::{c_char, c_int},
     path::Path,
-    sync::atomic::{self, AtomicU8},
+    sync::{
+        atomic::{self, AtomicU8},
+        Arc,
+    },
 };
+use utils::{Bytes32, CBytes};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -77,7 +81,7 @@ unsafe fn arbitrator_load_machine_impl(
         false,
         Default::default(),
         Default::default(),
-        Default::default(),
+        get_empty_preimage_resolver(),
     )?;
     Ok(Box::into_raw(Box::new(mach)))
 }
@@ -116,9 +120,27 @@ pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
     (*(ptr as *mut AtomicU8)).store(contents, atomic::Ordering::Relaxed);
 }
 
+fn err_to_c_string(err: eyre::Report) -> *mut libc::c_char {
+    let err = format!("{:#}", err);
+    unsafe {
+        let buf = libc::malloc(err.len() + 1);
+        if buf.is_null() {
+            panic!("Failed to allocate memory for error string");
+        }
+        std::ptr::copy_nonoverlapping(err.as_ptr(), buf as *mut u8, err.len());
+        *(buf.add(err.len()) as *mut u8) = 0;
+        buf as *mut libc::c_char
+    }
+}
+
 /// Runs the machine while the condition variable is zero. May return early if num_steps is hit.
+/// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64, condition: *const u8) {
+pub unsafe extern "C" fn arbitrator_step(
+    mach: *mut Machine,
+    num_steps: u64,
+    condition: *const u8,
+) -> *mut libc::c_char {
     let mach = &mut *mach;
     let condition = &*(condition as *const AtomicU8);
     let mut remaining_steps = num_steps;
@@ -127,9 +149,13 @@ pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64, con
             break;
         }
         let stepping = std::cmp::min(remaining_steps, 1_000_000);
-        mach.step_n(stepping);
+        match mach.step_n(stepping) {
+            Ok(()) => {}
+            Err(err) => return err_to_c_string(err),
+        }
         remaining_steps -= stepping;
     }
+    std::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -151,25 +177,33 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
 }
 
 /// Like arbitrator_step, but stops early if it hits a host io operation.
+/// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_step_until_host_io(mach: *mut Machine, condition: *const u8) {
+pub unsafe extern "C" fn arbitrator_step_until_host_io(
+    mach: *mut Machine,
+    condition: *const u8,
+) -> *mut libc::c_char {
     let mach = &mut *mach;
     let condition = &*(condition as *const AtomicU8);
     while condition.load(atomic::Ordering::Relaxed) == 0 {
         for _ in 0..1_000_000 {
             if mach.is_halted() {
-                return;
+                return std::ptr::null_mut();
             }
             if mach
                 .get_next_instruction()
                 .map(|i| i.opcode.is_host_io())
                 .unwrap_or(true)
             {
-                return;
+                return std::ptr::null_mut();
             }
-            mach.step_n(1);
+            match mach.step_n(1) {
+                Ok(()) => {}
+                Err(err) => return err_to_c_string(err),
+            }
         }
     }
+    std::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -252,16 +286,34 @@ pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: Glo
     (*mach).set_global_state(gs);
 }
 
+#[repr(C)]
+pub struct ResolvedPreimage {
+    pub ptr: *mut u8,
+    pub len: isize, // negative if not found
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_add_preimage(
+pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
-    c_preimage: CByteArray,
-) -> c_int {
-    let slice = std::slice::from_raw_parts(c_preimage.ptr, c_preimage.len);
-    let data = slice.to_vec();
-    let hash = Keccak256::digest(&data);
-    (*mach).add_preimage(hash.into(), data);
-    0
+    context: usize,
+    resolver: unsafe extern "C" fn(usize, *const u8) -> ResolvedPreimage,
+) {
+    (*mach).set_preimage_resolver(Arc::new(move |hash: Bytes32| -> Option<CBytes> {
+        let res = resolver(context, hash.as_ptr());
+        if res.len < 0 {
+            return None;
+        }
+        let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
+        let have_hash = Keccak256::digest(&data);
+        if have_hash.as_slice() != *hash {
+            panic!(
+                "Resolved incorrect data for hash {}: got {}",
+                hash,
+                hex::encode(data),
+            );
+        }
+        Some(data)
+    }) as PreimageResolver);
 }
 
 #[no_mangle]

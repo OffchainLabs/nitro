@@ -161,3 +161,113 @@ impl From<TableType> for DeprecatedTableType {
         }
     }
 }
+
+/// A Vec<u8> allocated with libc::malloc
+pub struct CBytes {
+    ptr: *mut u8,
+    len: usize,
+}
+
+impl CBytes {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
+
+    pub unsafe fn from_raw_parts(ptr: *mut u8, len: usize) -> Self {
+        Self { ptr, len }
+    }
+}
+
+impl Default for CBytes {
+    fn default() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+            len: 0,
+        }
+    }
+}
+
+impl From<&[u8]> for CBytes {
+    fn from(slice: &[u8]) -> Self {
+        if slice.is_empty() {
+            return Self::default();
+        }
+        unsafe {
+            let ptr = libc::malloc(slice.len()) as *mut u8;
+            if ptr.is_null() {
+                panic!("Failed to allocate memory instantiating CBytes");
+            }
+            std::ptr::copy_nonoverlapping(slice.as_ptr(), ptr, slice.len());
+            Self {
+                ptr,
+                len: slice.len(),
+            }
+        }
+    }
+}
+
+impl Drop for CBytes {
+    fn drop(&mut self) {
+        unsafe { libc::free(self.ptr as _) }
+    }
+}
+
+impl Clone for CBytes {
+    fn clone(&self) -> Self {
+        self.as_slice().into()
+    }
+}
+
+impl Deref for CBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl AsRef<[u8]> for CBytes {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl Borrow<[u8]> for CBytes {
+    fn borrow(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+#[derive(Clone)]
+pub struct CBytesIntoIter(CBytes, usize);
+
+impl Iterator for CBytesIntoIter {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<u8> {
+        if self.0.len >= self.1 {
+            return None;
+        }
+        let byte = self.0[self.1];
+        self.1 += 1;
+        Some(byte)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.0.len - self.1;
+        (len, Some(len))
+    }
+}
+
+impl IntoIterator for CBytes {
+    type Item = u8;
+    type IntoIter = CBytesIntoIter;
+
+    fn into_iter(self) -> CBytesIntoIter {
+        CBytesIntoIter(self, 0)
+    }
+}
