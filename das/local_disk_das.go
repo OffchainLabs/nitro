@@ -8,15 +8,12 @@ import (
 	"encoding/base32"
 	"errors"
 	"os"
-	"sync"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
-
-var dasMutex sync.Mutex
 
 type LocalDiskDataAvailabilityService struct {
 	dbPath     string
@@ -66,8 +63,6 @@ func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignature
 }
 
 func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabilityService, error) {
-	dasMutex.Lock()
-	defer dasMutex.Unlock()
 	pubKey, privKey, err := readKeysFromFile(dbPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -88,9 +83,6 @@ func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabil
 }
 
 func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
-	dasMutex.Lock()
-	defer dasMutex.Unlock()
-
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
@@ -115,9 +107,6 @@ func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message 
 }
 
 func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
-	dasMutex.Lock()
-	defer dasMutex.Unlock()
-
 	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
 	if err != nil {
 		return nil, err

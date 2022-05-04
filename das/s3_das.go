@@ -8,8 +8,6 @@ import (
 	"context"
 	"encoding/base32"
 	"errors"
-	"sync"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -23,8 +21,6 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/conf"
 )
-
-var s3DasMutex sync.Mutex
 
 type S3DataAvailabilityService struct {
 	s3Config   conf.S3Config
@@ -91,9 +87,6 @@ func generateAndStoreKeysInS3(s3Config conf.S3Config, uploader *manager.Uploader
 }
 
 func NewS3DataAvailabilityService(s3Config conf.S3Config) (*S3DataAvailabilityService, error) {
-	s3DasMutex.Lock()
-	defer s3DasMutex.Unlock()
-
 	client := s3.New(s3.Options{
 		Region:      s3Config.Region,
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(s3Config.AccessKey, s3Config.SecretKey, "")),
@@ -124,9 +117,6 @@ func NewS3DataAvailabilityService(s3Config conf.S3Config) (*S3DataAvailabilitySe
 }
 
 func (das *S3DataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
-	s3DasMutex.Lock()
-	defer s3DasMutex.Unlock()
-
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
@@ -155,9 +145,6 @@ func (das *S3DataAvailabilityService) Store(ctx context.Context, message []byte,
 }
 
 func (das *S3DataAvailabilityService) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
-	s3DasMutex.Lock()
-	defer s3DasMutex.Unlock()
-
 	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
 	if err != nil {
 		return nil, err
