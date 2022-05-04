@@ -178,7 +178,8 @@ fn main() -> Result<()> {
             })
             .collect();
     }
-    let preimage_resolver = Arc::new(move |hash| preimages.get(&hash).cloned()) as PreimageResolver;
+    let preimage_resolver =
+        Arc::new(move |_, hash| preimages.get(&hash).cloned()) as PreimageResolver;
 
     let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
     let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
