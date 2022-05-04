@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
@@ -43,83 +44,6 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/validator"
 )
-
-type RollupAddresses struct {
-	Bridge                 common.Address `json:"bridge"`
-	Inbox                  common.Address `json:"inbox"`
-	SequencerInbox         common.Address `json:"sequencer-inbox"`
-	Rollup                 common.Address `json:"rollup"`
-	ValidatorUtils         common.Address `json:"validator-utils"`
-	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
-	DeployedAt             uint64         `json:"deployed-at"`
-}
-
-type RollupAddressesConfig struct {
-	Bridge                 string `koanf:"bridge"`
-	Inbox                  string `koanf:"inbox"`
-	SequencerInbox         string `koanf:"sequencer-inbox"`
-	Rollup                 string `koanf:"rollup"`
-	ValidatorUtils         string `koanf:"validator-utils"`
-	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
-	DeployedAt             uint64 `koanf:"deployed-at"`
-}
-
-var RollupAddressesConfigDefault = RollupAddressesConfig{}
-
-func RollupAddressesConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".bridge", "", "the bridge contract address")
-	f.String(prefix+".inbox", "", "the inbox contract address")
-	f.String(prefix+".sequencer-inbox", "", "the sequencer inbox contract address")
-	f.String(prefix+".rollup", "", "the rollup contract address")
-	f.String(prefix+".validator-utils", "", "the validator utils contract address")
-	f.String(prefix+".validator-wallet-creator", "", "the validator wallet creator contract address")
-	f.Uint64(prefix+".deployed-at", 0, "the block number at which the rollup was deployed")
-}
-
-func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
-	a := RollupAddresses{
-		DeployedAt: c.DeployedAt,
-	}
-	strs := []string{
-		c.Bridge,
-		c.Inbox,
-		c.SequencerInbox,
-		c.Rollup,
-		c.ValidatorUtils,
-		c.ValidatorWalletCreator,
-	}
-	addrs := []*common.Address{
-		&a.Bridge,
-		&a.Inbox,
-		&a.SequencerInbox,
-		&a.Rollup,
-		&a.ValidatorUtils,
-		&a.ValidatorWalletCreator,
-	}
-	names := []string{
-		"Bridge",
-		"Inbox",
-		"SequencerInbox",
-		"Rollup",
-		"ValidatorUtils",
-		"ValidatorWalletCreator",
-	}
-	if len(strs) != len(addrs) {
-		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
-	}
-	complete := true
-	for i, s := range strs {
-		if !common.IsHexAddress(s) {
-			log.Error("invalid address", "name", names[i], "value", s)
-			complete = false
-		}
-		*addrs[i] = common.HexToAddress(s)
-	}
-	if !complete {
-		return RollupAddresses{}, fmt.Errorf("invalid addresses")
-	}
-	return a, nil
-}
 
 func andTxSucceeded(ctx context.Context, l1Reader *L1Reader, tx *types.Transaction, err error) error {
 	if err != nil {
@@ -265,7 +189,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig, machineConfig validator.NitroMachineConfig) (*conf.RollupAddresses, error) {
 	l1Reader := NewL1Reader(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -359,7 +283,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		}
 	}
 
-	return &RollupAddresses{
+	return &conf.RollupAddresses{
 		Bridge:                 info.DelayedBridge,
 		Inbox:                  info.InboxAddress,
 		SequencerInbox:         info.SequencerInbox,
@@ -533,7 +457,7 @@ type Node struct {
 	L1Reader         *L1Reader
 	TxStreamer       *TransactionStreamer
 	TxPublisher      TransactionPublisher
-	DeployInfo       *RollupAddresses
+	DeployInfo       *conf.RollupAddresses
 	InboxReader      *InboxReader
 	InboxTracker     *InboxTracker
 	DelayedSequencer *DelayedSequencer
@@ -545,7 +469,7 @@ type Node struct {
 	SeqCoordinator   *SeqCoordinator
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (*Node, error) {
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *conf.RollupAddresses, txOpts *bind.TransactOpts) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -720,7 +644,7 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *conf.RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
 	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
 	if err != nil {
 		return nil, err
