@@ -27,6 +27,15 @@ var HTTPConfigDefault = HTTPConfig{
 	VHosts:     node.DefaultConfig.HTTPVirtualHosts,
 }
 
+func (c HTTPConfig) Apply(stackConf *node.Config) {
+	stackConf.HTTPHost = c.Addr
+	stackConf.HTTPPort = c.Port
+	stackConf.HTTPModules = c.API
+	stackConf.HTTPPathPrefix = c.RPCPrefix
+	stackConf.HTTPCors = c.CORSDomain
+	stackConf.HTTPVirtualHosts = c.VHosts
+}
+
 func HTTPConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".addr", HTTPConfigDefault.Addr, "HTTP-RPC server listening interface")
 	f.Int(prefix+".port", HTTPConfigDefault.Port, "HTTP-RPC server listening port")
@@ -52,6 +61,15 @@ var WSConfigDefault = WSConfig{
 	RPCPrefix: node.DefaultConfig.WSPathPrefix,
 	Origins:   node.DefaultConfig.WSOrigins,
 	ExposeAll: node.DefaultConfig.WSExposeAll,
+}
+
+func (c WSConfig) Apply(stackConf *node.Config) {
+	stackConf.WSHost = c.Addr
+	stackConf.WSPort = c.Port
+	stackConf.WSModules = c.API
+	stackConf.WSPathPrefix = c.RPCPrefix
+	stackConf.WSOrigins = c.Origins
+	stackConf.WSExposeAll = c.ExposeAll
 }
 
 func WSConfigAddOptions(prefix string, f *pflag.FlagSet) {

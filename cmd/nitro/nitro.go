@@ -145,16 +145,8 @@ func main() {
 
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
-	stackConf.HTTPHost = nodeConfig.HTTP.Addr
-	stackConf.HTTPPort = nodeConfig.HTTP.Port
-	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
-	stackConf.HTTPModules = nodeConfig.HTTP.API
-	stackConf.HTTPCors = nodeConfig.HTTP.CORSDomain
-	stackConf.WSHost = nodeConfig.WS.Addr
-	stackConf.WSPort = nodeConfig.WS.Port
-	stackConf.WSOrigins = nodeConfig.WS.Origins
-	stackConf.WSModules = nodeConfig.WS.API
-	stackConf.WSExposeAll = nodeConfig.WS.ExposeAll
+	nodeConfig.HTTP.Apply(&stackConf)
+	nodeConfig.WS.Apply(&stackConf)
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
