@@ -59,6 +59,7 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 		return nil
 	}
 	mach := &ArbitratorMachine{ptr: ptr}
+	C.arbitrator_set_preimage_resolver(ptr, (*[0]byte)(C.preimageResolverC))
 	runtime.SetFinalizer(mach, freeMachine)
 	return mach
 }
@@ -323,6 +324,6 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	preimageResolvers.Store(id, resolver)
 	m.contextId = &id
 	runtime.SetFinalizer(m.contextId, freeContextId)
-	C.arbitrator_set_preimage_resolver(m.ptr, C.size_t(id), (*[0]byte)(C.preimageResolverC))
+	C.arbitrator_set_context(m.ptr, C.uint64_t(id))
 	return nil
 }

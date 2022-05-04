@@ -642,7 +642,7 @@ pub struct MachineState<'a> {
     initial_hash: Bytes32,
 }
 
-pub type PreimageResolver = Arc<dyn Fn(Bytes32) -> Option<CBytes>>;
+pub type PreimageResolver = Arc<dyn Fn(u64, Bytes32) -> Option<CBytes>>;
 
 /// Wraps a preimage resolver to provide an easier API
 /// and cache the last preimage retrieved.
@@ -660,7 +660,7 @@ impl PreimageResolverWrapper {
         }
     }
 
-    pub fn get(&mut self, hash: Bytes32) -> Option<&[u8]> {
+    pub fn get(&mut self, context: u64, hash: Bytes32) -> Option<&[u8]> {
         // TODO: this is unnecessarily complicated by the rust borrow checker.
         // This will probably be simplifiable when Polonius is shipped.
         if matches!(&self.last_resolved, Some(r) if r.0 != hash) {
@@ -669,19 +669,19 @@ impl PreimageResolverWrapper {
         match &mut self.last_resolved {
             Some(resolved) => Some(&resolved.1),
             x => {
-                let data = (self.resolver)(hash)?;
+                let data = (self.resolver)(context, hash)?;
                 Some(&x.insert((hash, data)).1)
             }
         }
     }
 
-    pub fn get_const(&self, hash: Bytes32) -> Option<CBytes> {
+    pub fn get_const(&self, context: u64, hash: Bytes32) -> Option<CBytes> {
         if let Some(resolved) = &self.last_resolved {
             if resolved.0 == hash {
                 return Some(resolved.1.clone());
             }
         }
-        (self.resolver)(hash)
+        (self.resolver)(context, hash)
     }
 }
 
@@ -701,6 +701,7 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     preimage_resolver: PreimageResolverWrapper,
     initial_hash: Bytes32,
+    context: u64,
 }
 
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -839,7 +840,7 @@ where
 }
 
 pub fn get_empty_preimage_resolver() -> PreimageResolver {
-    Arc::new(|_| None) as _
+    Arc::new(|_, _| None) as _
 }
 
 impl Machine {
@@ -1087,6 +1088,7 @@ impl Machine {
             inbox_contents,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             initial_hash: Bytes32::default(),
+            context: 0,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1135,6 +1137,7 @@ impl Machine {
             inbox_contents: Default::default(),
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             initial_hash: Bytes32::default(),
+            context: 0,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1769,7 +1772,7 @@ impl Machine {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
                     if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                        if let Some(preimage) = self.preimage_resolver.get(hash) {
+                        if let Some(preimage) = self.preimage_resolver.get(self.context, hash) {
                             let offset = usize::try_from(offset).unwrap();
                             let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
                             let read = preimage.get(offset..(offset + len)).unwrap_or_default();
@@ -2178,7 +2181,7 @@ impl Machine {
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
                     if next_inst.opcode == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
-                        let preimage = match self.preimage_resolver.get_const(hash) {
+                        let preimage = match self.preimage_resolver.get_const(self.context, hash) {
                             Some(b) => b,
                             None => panic!("Missing requested preimage for hash {}", hash),
                         };
@@ -2222,6 +2225,10 @@ impl Machine {
 
     pub fn set_preimage_resolver(&mut self, resolver: PreimageResolver) {
         self.preimage_resolver.resolver = resolver;
+    }
+
+    pub fn set_context(&mut self, context: u64) {
+        self.context = context;
     }
 
     pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {

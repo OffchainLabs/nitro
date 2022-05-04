@@ -339,25 +339,31 @@ pub struct ResolvedPreimage {
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
-    context: usize,
-    resolver: unsafe extern "C" fn(usize, *const u8) -> ResolvedPreimage,
+    resolver: unsafe extern "C" fn(u64, *const u8) -> ResolvedPreimage,
 ) {
-    (*mach).set_preimage_resolver(Arc::new(move |hash: Bytes32| -> Option<CBytes> {
-        let res = resolver(context, hash.as_ptr());
-        if res.len < 0 {
-            return None;
-        }
-        let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
-        let have_hash = Keccak256::digest(&data);
-        if have_hash.as_slice() != *hash {
-            panic!(
-                "Resolved incorrect data for hash {}: got {}",
-                hash,
-                hex::encode(data),
-            );
-        }
-        Some(data)
-    }) as PreimageResolver);
+    (*mach).set_preimage_resolver(
+        Arc::new(move |context: u64, hash: Bytes32| -> Option<CBytes> {
+            let res = resolver(context, hash.as_ptr());
+            if res.len < 0 {
+                return None;
+            }
+            let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
+            let have_hash = Keccak256::digest(&data);
+            if have_hash.as_slice() != *hash {
+                panic!(
+                    "Resolved incorrect data for hash {}: got {}",
+                    hash,
+                    hex::encode(data),
+                );
+            }
+            Some(data)
+        }) as PreimageResolver,
+    );
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) {
+    (*mach).set_context(context);
 }
 
 #[no_mangle]
