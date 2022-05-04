@@ -131,7 +131,9 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
     function _implementation() internal view override returns (address) {
         require(msg.data.length >= 4, "NO_FUNC_SIG");
         // if the sender is the proxy's admin, delegate to admin logic
-        // if the admin is disabled (set to addr zero), all calls will be forwarded to user logic
+        // if the admin is disabled, all calls will be forwarded to user logic
+        // admin affordances can be disabled by setting to address(1) since
+        // `ERC1697._setAdmin()` doesn't allow address(0) to be set
         address target = _getAdmin() != msg.sender
             ? DoubleLogicERC1967Upgrade._getSecondaryImplementation()
             : ERC1967Upgrade._getImplementation();

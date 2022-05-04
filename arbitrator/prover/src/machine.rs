@@ -806,7 +806,7 @@ where
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
 
-    pub fn from_binary(
+    pub fn from_paths(
         library_paths: &[PathBuf],
         binary_path: &Path,
         always_merkleize: bool,
@@ -829,7 +829,26 @@ impl Machine {
             let library = parse(source).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
         }
+        Self::from_binaries(
+            &libraries,
+            bin,
+            always_merkleize,
+            allow_hostapi_from_main,
+            global_state,
+            inbox_contents,
+            preimages,
+        )
+    }
 
+    pub fn from_binaries(
+        libraries: &[WasmBinary<'_>],
+        bin: WasmBinary<'_>,
+        always_merkleize: bool,
+        allow_hostapi_from_main: bool,
+        global_state: GlobalState,
+        inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
+        preimages: HashMap<Bytes32, Vec<u8>>,
+    ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
@@ -857,8 +876,7 @@ impl Machine {
         }
 
         for lib in libraries {
-            let module =
-                Module::from_binary(&lib, &available_imports, &floating_point_impls, true)?;
+            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
             for (name, &func) in &*module.exports {
                 let ty = module.func_types[func as usize].clone();
                 available_imports.insert(
