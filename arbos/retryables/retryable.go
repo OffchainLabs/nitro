@@ -186,6 +186,10 @@ func (retryable *Retryable) SetTimeout(val uint64) error {
 	return retryable.timeout.Set(val)
 }
 
+func (retryable *Retryable) TimeoutWindowsLeft() (uint64, error) {
+	return retryable.timeoutWindowsLeft.Get()
+}
+
 func (retryable *Retryable) From() (common.Address, error) {
 	return retryable.from.Get()
 }

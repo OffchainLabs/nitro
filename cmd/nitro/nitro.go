@@ -42,6 +42,7 @@ import (
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
+	_ "github.com/offchainlabs/nitro/nodeInterface"
 )
 
 func printSampleUsage(name string) {
@@ -52,8 +53,10 @@ func printSampleUsage(name string) {
 func main() {
 	ctx := context.Background()
 
+	vcsRevision, vcsTime := conf.GetVersion()
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
 	if err != nil {
+		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
 		printSampleUsage(os.Args[0])
 		if !strings.Contains(err.Error(), "help requested") {
 			fmt.Printf("%s\n", err.Error())
@@ -70,7 +73,7 @@ func main() {
 	glogger.Verbosity(log.Lvl(nodeConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	log.Info("Running Arbitrum nitro node")
+	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
 		nodeConfig.Node.L1Reader.Enable = false

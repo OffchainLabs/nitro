@@ -4,6 +4,7 @@
 package validator
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -292,7 +293,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 				return GoGlobalState{}, nil, errors.New("processing data availability chain without DAS configured")
 			}
 		} else {
-			cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
+			cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(seqMsg[40:]))
 			if err != nil {
 				log.Error("Failed to deserialize DAS message", "err", err)
 			} else {

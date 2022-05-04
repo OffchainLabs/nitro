@@ -17,6 +17,12 @@ error AlreadyUnpaused();
 /// @dev The contract is paused
 error Paused();
 
+/// @dev msg.value sent to the inbox isn't high enough
+error InsufficientValue(uint256 expected, uint256 actual);
+
+/// @dev submission cost provided isn't enough to create retryable ticket
+error InsufficientSubmissionCost(uint256 expected, uint256 actual);
+
 interface IInbox is IMessageProvider {
     function sendL2Message(bytes calldata messageData) external returns (uint256);
 
@@ -74,6 +80,9 @@ interface IInbox is IMessageProvider {
         bytes calldata data
     ) external payable returns (uint256);
 
+    function depositEth() external payable returns (uint256);
+
+    /// @notice deprecated in favour of depositEth with no parameters
     function depositEth(uint256 maxSubmissionCost) external payable returns (uint256);
 
     function bridge() external view returns (IBridge);

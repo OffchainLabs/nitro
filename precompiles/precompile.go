@@ -71,7 +71,6 @@ type PrecompileMethod struct {
 	template     abi.Method
 	purity       purity
 	handler      reflect.Method
-	implementer  reflect.Value
 	arbosVersion uint64
 }
 
@@ -116,7 +115,7 @@ func (e *SolError) Error() string {
 
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
 // supports each method.
-func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, ArbosPrecompile) {
+func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Precompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
 		log.Fatal("Bad ABI")
@@ -133,6 +132,25 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 	address, ok := reflect.ValueOf(implementer).Elem().FieldByName("Address").Interface().(addr)
 	if !ok {
 		log.Fatal("Implementer for precompile ", contract, "'s Address field has the wrong type")
+	}
+
+	gethAbiFuncTypeEquality := func(actual, geth reflect.Type) bool {
+		gethIn := geth.NumIn()
+		gethOut := geth.NumOut()
+		if actual.NumIn() != gethIn || actual.NumOut() != gethOut {
+			return false
+		}
+		for i := 0; i < gethIn; i++ {
+			if !geth.In(i).ConvertibleTo(actual.In(i)) {
+				return false
+			}
+		}
+		for i := 0; i < gethOut; i++ {
+			if !actual.Out(i).ConvertibleTo(geth.Out(i)) {
+				return false
+			}
+		}
+		return true
 	}
 
 	methods := make(map[[4]byte]PrecompileMethod)
@@ -193,7 +211,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 
 		expectedHandlerType := reflect.FuncOf(needs, outputs, false)
 
-		if handler.Type != expectedHandlerType {
+		if !gethAbiFuncTypeEquality(handler.Type, expectedHandlerType) {
 			log.Fatal(
 				"Precompile "+contract+"'s "+name+"'s implementer has the wrong type\n",
 				"\texpected:\t", expectedHandlerType, "\n\tbut have:\t", handler.Type,
@@ -205,7 +223,6 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			method,
 			purity,
 			handler,
-			reflect.ValueOf(implementer),
 			0,
 		}
 	}
@@ -229,7 +246,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		name := event.RawName
 
 		var needs = []reflect.Type{
-			reflect.TypeOf(&context{}), // where the emit goes
+			reflect.TypeOf(&Context{}), // where the emit goes
 			reflect.TypeOf(&vm.EVM{}),  // where the emit goes
 		}
 		for _, arg := range event.Inputs {
@@ -263,13 +280,13 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		if !ok {
 			log.Fatal(missing, "event ", name, "'s GasCost of type\n\t", expectedCostType)
 		}
-		if field.Type != expectedFieldType {
+		if !gethAbiFuncTypeEquality(field.Type, expectedFieldType) {
 			log.Fatal(
 				context, "'s field for event ", name, " has the wrong type\n",
 				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
 			)
 		}
-		if costField.Type != expectedCostType {
+		if !gethAbiFuncTypeEquality(costField.Type, expectedCostType) {
 			log.Fatal(
 				context, "'s field for event ", name, "GasCost has the wrong type\n",
 				"\texpected:\t", expectedCostType, "\n\tbut have:\t", costField.Type,
@@ -492,29 +509,29 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return impl.Precompile()
 	}
 
-	insert(makePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
-	insert(makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
-	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
-	insert(makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
-	insert(makePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
-	insert(makePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
-	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
-	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
-	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
-	insert(makePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
+	insert(MakePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
+	insert(MakePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
+	insert(MakePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
+	insert(MakePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
+	insert(MakePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
+	insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
+	insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
+	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
+	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
+	insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 
-	eventCtx := func(gasLimit uint64, err error) *context {
+	eventCtx := func(gasLimit uint64, err error) *Context {
 		if err != nil {
 			glog.Error("call to event's GasCost field failed", "err", err)
 		}
-		return &context{
+		return &Context{
 			gasSupplied: gasLimit,
 			gasLeft:     gasLimit,
 		}
 	}
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
-	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
+	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 	emitReedeemScheduled := func(evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr) error {
@@ -527,7 +544,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
 	}
 
-	ArbSys := insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
+	ArbSys := insert(MakePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
 
@@ -536,12 +553,17 @@ func Precompiles() map[addr]ArbosPrecompile {
 		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
-	_, ArbOwner := makePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
+	_, ArbOwner := MakePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
-	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
+	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
 	return contracts
+}
+
+func (p Precompile) SwapImpl(impl interface{}) Precompile {
+	p.implementer = reflect.ValueOf(impl)
+	return p
 }
 
 // call a precompile in typed form, deserializing its inputs and serializing its outputs
@@ -589,7 +611,7 @@ func (p Precompile) Call(
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
-	callerCtx := &context{
+	callerCtx := &Context{
 		caller:      caller,
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
@@ -609,7 +631,7 @@ func (p Precompile) Call(
 		if err != nil {
 			return nil, 0, err
 		}
-		callerCtx.state = state
+		callerCtx.State = state
 	}
 
 	switch txProcessor := evm.ProcessingHook.(type) {
@@ -624,7 +646,7 @@ func (p Precompile) Call(
 	}
 
 	reflectArgs := []reflect.Value{
-		method.implementer,
+		p.implementer,
 		reflect.ValueOf(callerCtx),
 	}
 
@@ -647,7 +669,8 @@ func (p Precompile) Call(
 		return nil, 0, vm.ErrExecutionReverted
 	}
 	for _, arg := range args {
-		reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
+		converted := reflect.ValueOf(arg).Convert(method.handler.Type.In(len(reflectArgs)))
+		reflectArgs = append(reflectArgs, converted)
 	}
 
 	reflectResult := method.handler.Func.Call(reflectArgs)

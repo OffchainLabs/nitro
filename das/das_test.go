@@ -6,9 +6,11 @@ package das
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -18,14 +20,18 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	defer os.RemoveAll(dbPath)
 
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath)
+	das, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
 	Require(t, err, "no das")
 
 	ctx := context.Background()
 
+	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(ctx, messageSaved)
+	cert, err := das.Store(ctx, messageSaved, timeout)
 	Require(t, err, "Error storing message")
+	if cert.Timeout != timeout {
+		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
+	}
 
 	certBytes := Serialize(*cert)
 
@@ -36,7 +42,7 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	}
 
 	// 2nd das instance can read keys from disk
-	das2, err := NewLocalDiskDataAvailabilityService(dbPath)
+	das2, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
 	Require(t, err, "no das")
 
 	messageRetrieved2, err := das2.Retrieve(ctx, certBytes)
@@ -51,14 +57,18 @@ func TestDASMissingMessage(t *testing.T) {
 	defer os.RemoveAll(dbPath)
 
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath)
+	das, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
 	Require(t, err, "no das")
 
 	ctx := context.Background()
 
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(ctx, messageSaved)
+	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
+	cert, err := das.Store(ctx, messageSaved, timeout)
 	Require(t, err, "Error storing message")
+	if cert.Timeout != timeout {
+		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
+	}
 
 	// Change the hash to look up
 	cert.DataHash[0] += 1
