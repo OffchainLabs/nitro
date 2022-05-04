@@ -7,12 +7,12 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/offchainlabs/nitro/cmd/conf"
 
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/conf"
 )
 
 type DataAvailabilityServiceWriter interface {
