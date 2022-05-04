@@ -283,7 +283,7 @@ contract OneStepProverMath is IOneStepProver {
                 res = a >> (b % 32);
             } else if (opcodeOffset == 11) {
                 // shr_s
-                res = uint32(int32(a) >> b);
+                res = uint32(int32(a) >> (b % 32));
             } else if (opcodeOffset == 13) {
                 // rotl
                 res = rotl32(a, b);
@@ -333,7 +333,7 @@ contract OneStepProverMath is IOneStepProver {
                 res = a >> (b % 64);
             } else if (opcodeOffset == 11) {
                 // shr_s
-                res = uint64(int64(a) >> b);
+                res = uint64(int64(a) >> (b % 64));
             } else if (opcodeOffset == 13) {
                 // rotl
                 res = rotl64(a, b);
