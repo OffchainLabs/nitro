@@ -11,7 +11,7 @@ _Last Updated 4/13/2022_
 
 For starters, here's a sampling of exciting perks dapps with get with the Nitro upgrade:
 
-- **Ethereum L1 Gas Compatibility 🥳**:  gas pricing and accounting for EVM operations is be perfectly in line with L1; no more ArbGas/Eth Gas conversion.  
+- **Ethereum L1 Gas Compatibility 🥳**:  gas pricing and accounting for EVM operations is be perfectly in line with L1; no more ArbGas.  
 - **Safer Retryable tickets 🥳**: Retryable tickets' submission cost is collected in the L1 Inbox contract; if the submission cost is too low, the transaction will simply revert on the L1 side, eliminating the [failure mode](https://developer.offchainlabs.com/docs/l1_l2_messages#important-note-about-base-submission-fee) in which a retryable ticket fails to get created. 
 - **Calldata compression 🥳**: Compression takes place protocol level; dapps don't need to change anything, data will just get cheaper! (You are charged even less if your calldata is highly compressible with brotli.)
 - **Support for All Ethereum L1 precompiles 🥳**: (`blake2f`, `ripemd160`, etc)
@@ -25,7 +25,8 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 ## Breaking changes
 
 #### Dapps
-- **Gas Accounting:** Since gas accounting is now consistent with the L1 EVM, and hard-coded gas values (used, e.g. in conjuction with `gasLeft`) should be changed accordingly.
+- **Gas Accounting**: it is now consistent with the L1 EVM, any hard-coded gas values should be changed accordingly (the same applies to any gas amount used in conjuntion with `gasleft`).
+- **No more storage gas**: there is no more concept of a separate pool of storage gas, opcodes are prices identically to the L1 EVM.
 - **Retryable Tickets**: 
     - The submission cost is now collected/enforced in the L1 inbox and checked against the L1 transaction's `msg.value`; contracts cannot/should not rely on funds pooled in the L2 destination to cover this cost.
     - For the redemption of retryable tickets, the calculation of the L2 transaction ID is changed, as has the transaction lifecycle of attempting multiple redemptions (i.e., after failed attempts). See [arbitrum-sdk](https://github.com/OffchainLabs/arbitrum-sdk/blob/fe3c3ee90a2d713955988dcb6a9f87732b7dbedc/src/lib/message/L1ToL2Message.ts#L547) for the new client-side flow (detailed documentation coming soon) 
@@ -48,4 +49,4 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 
 - **Gas Info in Transaction Receipts**: Arbitrum transaction receipts return data about gas in a new format; receipts will have `gasUsed` (total) and `gasUsedForL1` fields (instead of the `feeStats` field in Arbitrum classic).
 
-- **Batch Info In Receipts**: Arbitrum transaction receipts no longer include the `l1SequenceNumber` field; the `findBatchContainingBlock` method in the [NodeInterface](../../contracts/src/node-interface/NodeInterface.sol) virtual precompile can be used to determine a transaction's inclusion in L1.
+- **Batch Info In Receipts**: Arbitrum transaction receipts no longer include the `l1SequenceNumber` field; the `findBatchContainingBlock` or `getL1Confirmations` methods in the [NodeInterface precompile](../arbos/Precompiles.md) can be used to determine a transaction's inclusion in L1.
