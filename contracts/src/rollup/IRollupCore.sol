@@ -49,7 +49,33 @@ interface IRollupCore {
         uint256 finalBalance
     );
 
+    function confirmPeriodBlocks() external view returns (uint64);
+    
+    function extraChallengeTimeBlocks() external view returns (uint64);
+
+    function chainId() external view returns (uint256);
+
+    function baseStake() external view returns (uint256);
+
+    function wasmModuleRoot() external view returns (bytes32);
+
+    function delayedBridge() external view returns (IBridge);
+
+    function sequencerBridge() external view returns (ISequencerInbox);
+
+    function outbox() external view returns (IOutbox);
+
+    function rollupEventBridge() external view returns (RollupEventBridge);
+
     function challengeManager() external view returns (IChallengeManager);
+
+    function loserStakeEscrow() external view returns (address);
+
+    function stakeToken() external view returns (address);
+
+    function minimumAssertionPeriod() external view returns (uint256);
+
+    function isValidator(address) external view returns (bool);
 
     /**
      * @notice Get the Node for the given index.
