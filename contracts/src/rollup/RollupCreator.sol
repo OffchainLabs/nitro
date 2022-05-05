@@ -4,10 +4,6 @@
 
 pragma solidity ^0.8.0;
 
-import "../bridge/IBridge.sol";
-import "../bridge/ISequencerInbox.sol";
-import "../bridge/IInbox.sol";
-import "../bridge/IOutbox.sol";
 import "./BridgeCreator.sol";
 
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
