@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
@@ -43,6 +44,34 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/validator"
 )
+
+type L1Config struct {
+	ChainID            uint64                `koanf:"chain-id"`
+	Rollup             RollupAddressesConfig `koanf:"rollup"`
+	URL                string                `koanf:"url"`
+	ConnectionAttempts int                   `koanf:"connection-attempts"`
+	Wallet             conf.WalletConfig     `koanf:"wallet"`
+}
+
+var L1ConfigDefault = L1Config{
+	ChainID:            0,
+	Rollup:             RollupAddressesConfigDefault,
+	URL:                "",
+	ConnectionAttempts: 15,
+	Wallet:             conf.WalletConfigDefault,
+}
+
+func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
+	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
+	RollupAddressesConfigAddOptions(prefix+".rollup", f)
+	f.Int(prefix+".connection-attempts", L1ConfigDefault.ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
+	conf.WalletConfigAddOptions(prefix+".wallet", f, "wallet")
+}
+
+func (c *L1Config) ResolveDirectoryNames(chain string) {
+	c.Wallet.ResolveDirectoryNames(chain)
+}
 
 type RollupAddresses struct {
 	Bridge                 common.Address `json:"bridge"`

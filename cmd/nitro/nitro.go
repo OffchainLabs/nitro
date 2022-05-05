@@ -338,7 +338,7 @@ func main() {
 type NodeConfig struct {
 	Conf          conf.ConfConfig          `koanf:"conf"`
 	Node          arbnode.Config           `koanf:"node"`
-	L1            conf.L1Config            `koanf:"l1"`
+	L1            arbnode.L1Config         `koanf:"l1"`
 	L2            conf.L2Config            `koanf:"l2"`
 	LogLevel      int                      `koanf:"log-level"`
 	LogType       string                   `koanf:"log-type"`
@@ -355,7 +355,7 @@ type NodeConfig struct {
 var NodeConfigDefault = NodeConfig{
 	Conf:          conf.ConfConfigDefault,
 	Node:          arbnode.ConfigDefault,
-	L1:            conf.L1ConfigDefault,
+	L1:            arbnode.L1ConfigDefault,
 	L2:            conf.L2ConfigDefault,
 	LogLevel:      int(log.LvlInfo),
 	LogType:       "plaintext",
@@ -371,7 +371,7 @@ var NodeConfigDefault = NodeConfig{
 func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
-	conf.L1ConfigAddOptions("l1", f)
+	arbnode.L1ConfigAddOptions("l1", f)
 	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
