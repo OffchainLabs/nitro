@@ -20,7 +20,7 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	defer os.RemoveAll(dbPath)
 
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath)
+	das, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
 	Require(t, err, "no das")
 
 	ctx := context.Background()
@@ -42,7 +42,7 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	}
 
 	// 2nd das instance can read keys from disk
-	das2, err := NewLocalDiskDataAvailabilityService(dbPath)
+	das2, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
 	Require(t, err, "no das")
 
 	messageRetrieved2, err := das2.Retrieve(ctx, certBytes)
@@ -57,7 +57,7 @@ func TestDASMissingMessage(t *testing.T) {
 	defer os.RemoveAll(dbPath)
 
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath)
+	das, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
 	Require(t, err, "no das")
 
 	ctx := context.Background()
