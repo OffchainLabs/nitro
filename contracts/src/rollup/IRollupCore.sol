@@ -50,7 +50,7 @@ interface IRollupCore {
     );
 
     function confirmPeriodBlocks() external view returns (uint64);
-    
+
     function extraChallengeTimeBlocks() external view returns (uint64);
 
     function chainId() external view returns (uint256);

@@ -52,9 +52,7 @@ interface IRollupUserAbs is IRollupCore {
 
     function requireUnresolved(uint256 nodeNum) external view;
 
-    function withdrawStakerFunds(address payable destination)
-        external
-        returns (uint256);
+    function withdrawStakerFunds(address payable destination) external returns (uint256);
 }
 
 interface IRollupUser is IRollupUserAbs {
