@@ -564,8 +564,6 @@ abstract contract AbsRollupUserLogic is
         require(isStaked(stakerAddress), "NOT_STAKED");
         require(currentChallenge(stakerAddress) == NO_CHAL_INDEX, "IN_CHAL");
     }
-
-    function withdrawStakerFunds(address payable destination) external virtual returns (uint256);
 }
 
 contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
