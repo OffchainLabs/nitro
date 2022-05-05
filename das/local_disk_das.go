@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/bits"
 	"os"
 
@@ -33,34 +32,20 @@ func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.Pr
 	if err != nil {
 		return nil, nil, err
 	}
-
-	// Ethereum's BLS library doesn't like the byte slice containing the BLS keys to be
-	// any larger than necessary, so we need to create a Decoder to avoid returning any padding.
-	pubKeyDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(pubKeyEncodedBytes))
-	pubKeyBytes, err := ioutil.ReadAll(pubKeyDecoder)
+	pubKey, err := DecodeBase64BLSPublicKey(pubKeyEncodedBytes)
 	if err != nil {
 		return nil, nil, err
 	}
-	pubKey, err := blsSignatures.PublicKeyFromBytes(pubKeyBytes, true)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	privKeyPath := dbPath + "/privkey"
 	privKeyEncodedBytes, err := os.ReadFile(privKeyPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	privKeyDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(privKeyEncodedBytes))
-	privKeyBytes, err := ioutil.ReadAll(privKeyDecoder)
+	privKey, err := DecodeBase64BLSPrivateKey(privKeyEncodedBytes)
 	if err != nil {
 		return nil, nil, err
 	}
-	privKey, err := blsSignatures.PrivateKeyFromBytes(privKeyBytes)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &pubKey, privKey, nil
+	return pubKey, *privKey, nil
 }
 
 func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
@@ -88,7 +73,7 @@ func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignature
 	return &pubKey, privKey, nil
 }
 
-func NewLocalDiskDataAvailabilityService(dbPath string, signerMask uint64) (*LocalDiskDataAvailabilityService, error) {
+func NewLocalDiskDataAvailabilityService(dbPath string, signerMask uint64 /* TODO remove */) (*LocalDiskDataAvailabilityService, error) {
 	if bits.OnesCount64(signerMask) != 1 {
 		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signerMask %X", signerMask)
 	}

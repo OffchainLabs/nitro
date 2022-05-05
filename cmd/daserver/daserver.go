@@ -86,7 +86,7 @@ func startup() error {
 	}
 	var dasImpl das.DataAvailabilityService
 	if mode == das.LocalDataAvailability {
-		dasImpl, err = das.NewLocalDiskDataAvailabilityService(serverConfig.DAConf.LocalDiskDataDir, uint64(serverConfig.DAConf.SignerMask))
+		dasImpl, err = das.NewLocalDiskDataAvailabilityService(serverConfig.DAConf.LocalDiskDataDir, 1)
 		if err != nil {
 			return err
 		}

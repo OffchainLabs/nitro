@@ -33,8 +33,8 @@ func (clnt *DASRPCClient) Retrieve(ctx context.Context, cert []byte) ([]byte, er
 	return response.Result, nil
 }
 
-func (clnt *DASRPCClient) Store(ctx context.Context, message []byte) (*arbstate.DataAvailabilityCertificate, error) {
-	response, err := clnt.clnt.Store(ctx, &StoreRequest{Message: message})
+func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
+	response, err := clnt.clnt.Store(ctx, &StoreRequest{Message: message, Timeout: timeout})
 	if err != nil {
 		return nil, err
 	}

@@ -558,7 +558,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	var dataAvailabilityService das.DataAvailabilityService
 	if dataAvailabilityMode == das.LocalDataAvailability {
 		var err error
-		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailability.LocalDiskDataDir, uint64(config.DataAvailability.SignerMask))
+		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailability.LocalDiskDataDir, 1)
 		if err != nil {
 			return nil, err
 		}
