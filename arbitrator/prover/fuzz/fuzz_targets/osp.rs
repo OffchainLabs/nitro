@@ -181,7 +181,10 @@ fn test_proof(
 }
 
 fn fuzz_impl(data: &[u8]) -> Result<()> {
-    let wavm_binary = binary::parse(data)?;
+    let mut wavm_binary = binary::parse(data)?;
+    for memory in &mut wavm_binary.memories {
+        memory.initial = std::cmp::min(memory.initial, 1);
+    }
     let mut mach = Machine::from_binaries(
         &[],
         wavm_binary,
@@ -195,6 +198,10 @@ fn fuzz_impl(data: &[u8]) -> Result<()> {
     while mach.get_steps() <= MAX_STEPS {
         let proof = mach.serialize_proof();
         let op = mach.get_next_instruction().map(|i| i.opcode);
+        if matches!(op, Some(Opcode::MemoryGrow { .. })) {
+            // We already have good memory grow testing, and we want to keep memory small
+            break;
+        }
         if DEBUG {
             println!("Executing {:?} with stack {:?}", op, mach.get_data_stack());
         }
