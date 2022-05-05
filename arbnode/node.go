@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/das/dasrpc"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -556,12 +557,19 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, err
 	}
 	var dataAvailabilityService das.DataAvailabilityService
-	if dataAvailabilityMode == das.LocalDataAvailability {
+	switch dataAvailabilityMode {
+	case das.LocalDataAvailability:
 		var err error
 		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailability.LocalDiskDataDir, 1)
 		if err != nil {
 			return nil, err
 		}
+	case das.AggregatorDataAvailability:
+		dataAvailabilityService, err = dasrpc.NewRPCAggregator(config.DataAvailability.AggregatorConfig)
+		if err != nil {
+			return nil, err
+		}
+	default:
 	}
 
 	var l1Reader *L1Reader

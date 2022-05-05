@@ -17,7 +17,8 @@ type DASRPCClient struct { // implements DataAvailabilityService
 }
 
 func NewDASRPCClient(target string) (*DASRPCClient, error) {
-	conn, err := grpc.Dial(target)
+	// TODO revisit insecure setting
+	conn, err := grpc.Dial(target, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
 	}

@@ -3,11 +3,29 @@
 
 package dasrpc
 
-import "github.com/offchainlabs/nitro/das"
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/offchainlabs/nitro/das"
+)
+
+type BackendConfig struct {
+	URL                 string `json:"url"`
+	PubKeyBase64Encoded string `json:"pubkey"`
+	SignerMask          uint64 `json:"signermask"`
+}
 
 func NewRPCAggregator(config das.AggregatorConfig) (*das.Aggregator, error) {
+	var cs []BackendConfig
+	err := json.Unmarshal([]byte(config.Backends), &cs)
+	if err != nil {
+		return nil, err
+	}
+
 	var services []das.ServiceDetails
-	for _, b := range config.Backends {
+
+	for _, b := range cs {
 		service, err := NewDASRPCClient(b.URL)
 		if err != nil {
 			return nil, err

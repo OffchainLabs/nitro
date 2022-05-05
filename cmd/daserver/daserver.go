@@ -85,12 +85,18 @@ func startup() error {
 		return err
 	}
 	var dasImpl das.DataAvailabilityService
-	if mode == das.LocalDataAvailability {
+	switch mode {
+	case das.LocalDataAvailability:
 		dasImpl, err = das.NewLocalDiskDataAvailabilityService(serverConfig.DAConf.LocalDiskDataDir, 1)
 		if err != nil {
 			return err
 		}
-	} else {
+	case das.AggregatorDataAvailability:
+		dasImpl, err = dasrpc.NewRPCAggregator(serverConfig.DAConf.AggregatorConfig)
+		if err != nil {
+			return err
+		}
+	default:
 		panic("Only local DAS implementation supported for daserver currently.")
 	}
 

@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
-	"strconv"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -19,96 +17,18 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-type SignerMask uint64
-
-func (m *SignerMask) String() string {
-	return fmt.Sprintf("%X", *m)
-}
-
-func (m *SignerMask) Set(s string) error {
-	res, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	if bits.OnesCount64(res) != 1 {
-		return fmt.Errorf("Got invalid SignerMask %s (%X), must have only 1 bit set, had %d.", s, res, bits.OnesCount64(res))
-	}
-	return nil
-}
-
-func (m *SignerMask) Type() string {
-	return "SignerMask"
-}
-
-/*
-type BackendConfig struct {
-	URL                 string     `koanf:"url"`
-	PubKeyBase64Encoded string     `koanf:"pubkey"`
-	SignerMask          SignerMask `koanf:"signermask"`
-}
-*/
-type BackendConfig struct {
-	URL                 string
-	PubKeyBase64Encoded string
-	SignerMask          string
-}
-
-type BackendsConfig struct {
-	value *[]BackendConfig
-}
-
-func (c *BackendsConfig) String() string {
-	return fmt.Sprintf("%v", *c.value)
-}
-
-func (c *BackendsConfig) Set(s string) error {
-	backendsStrings := strings.Split(s, "Q")
-
-	for _, b := range backendsStrings {
-		backendStrings := strings.Split(b, ",")
-		if len(backendStrings) != 3 {
-			return fmt.Errorf("Each aggregator backend requires 3 values, was \"%s\"", b)
-		}
-		newBackend := BackendConfig{
-			URL:                 backendStrings[0],
-			PubKeyBase64Encoded: backendStrings[1],
-			SignerMask:          backendStrings[2],
-		}
-		/*
-			err := newBackend.SignerMask.Set(backendStrings[2])
-			if err != nil {
-				return err
-			}
-		*/
-
-		*c.value = append(*c.value, newBackend)
-		fmt.Printf("appending %v\n", c)
-	}
-	return nil
-}
-
-func (*BackendsConfig) Type() string {
-	return "BackendsConfig"
-}
-
 type AggregatorConfig struct {
 	// sequencer public key
-	AssumedHonest int            `koanf:"assumed-honest"`
-	Backends      BackendsConfig `koanf:"backends"`
+	AssumedHonest int    `koanf:"assumed-honest"`
+	Backends      string `koanf:"backends"`
 }
 
-var DefaultAggregatorConfig = AggregatorConfig{
-	Backends: BackendsConfig{value: &[]BackendConfig{}},
-}
+var DefaultAggregatorConfig = AggregatorConfig{}
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
-	//f.StringToString(prefix+".backends", map[string]string{}, "")
-	//f.StringSlice(prefix+".backends", []string{}, "")
-	f.Var(&DefaultAggregatorConfig.Backends, prefix+".backends", "Configuration for each backend of the aggregator.")
+	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
 }
-
-//	f.Var(&DefaultDataAvailabilityConfig.SignerMask, prefix+".signer-mask", "Single bit uint64 unique for this DAS.")
 
 type Aggregator struct {
 	config   AggregatorConfig
