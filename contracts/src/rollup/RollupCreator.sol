@@ -4,10 +4,10 @@
 
 pragma solidity ^0.8.0;
 
-import "../bridge/Bridge.sol";
-import "../bridge/SequencerInbox.sol";
-import "../bridge/Inbox.sol";
-import "../bridge/Outbox.sol";
+import "../bridge/IBridge.sol";
+import "../bridge/ISequencerInbox.sol";
+import "../bridge/IInbox.sol";
+import "../bridge/IOutbox.sol";
 import "./BridgeCreator.sol";
 
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
@@ -15,11 +15,6 @@ import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.so
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "../libraries/ArbitrumProxy.sol";
-import "./RollupUserLogic.sol";
-import "./RollupAdminLogic.sol";
-import "../bridge/IBridge.sol";
-
-import "./RollupLib.sol";
 
 contract RollupCreator is Ownable {
     event RollupCreated(
@@ -56,11 +51,11 @@ contract RollupCreator is Ownable {
 
     struct CreateRollupFrame {
         ProxyAdmin admin;
-        Bridge delayedBridge;
-        SequencerInbox sequencerInbox;
-        Inbox inbox;
-        RollupEventBridge rollupEventBridge;
-        Outbox outbox;
+        IBridge delayedBridge;
+        ISequencerInbox sequencerInbox;
+        IInbox inbox;
+        IRollupEventBridge rollupEventBridge;
+        IOutbox outbox;
         ArbitrumProxy rollup;
     }
 
