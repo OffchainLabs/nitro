@@ -730,6 +730,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
 
 [[package]]
+name = "wasm-testsuite"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+ "prover",
+ "serde",
+ "serde_json",
+ "structopt",
+]
+
+[[package]]
 name = "wasmparser"
 version = "0.84.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

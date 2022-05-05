@@ -13,3 +13,9 @@
 [submodule "blockscout"]
 	path = blockscout
         url = https://github.com/OffchainLabs/blockscout.git
+[submodule "arbitrator/testsuite"]
+	path = arbitrator/testsuite
+	url = git@github.com:WebAssembly/testsuite.git
+[submodule "arbitrator/wasm-testsuite/testsuite"]
+	path = arbitrator/wasm-testsuite/testsuite
+	url = git@github.com:WebAssembly/testsuite.git

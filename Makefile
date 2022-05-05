@@ -344,6 +344,11 @@ contracts/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbit
 	yarn --cwd contracts install
 	@touch $@
 
+.make/wasm-testsuite: $(DEP_PREDICATE) arbitrator/wasm-testsuite/testsuite/*.wast $(ORDER_ONLY_PREDICATE) .make
+	mkdir -p arbitrator/wasm-testsuite/tests
+	wast2json arbitrator/wasm-testsuite/testsuite/fac.wast -o arbitrator/wasm-testsuite/tests/hehe.json
+#@touch $@
+
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
 	@printf "%btesting cbrotli local build exists. If this step fails, run ./build-brotli.sh -l%b\n" $(color_pink) $(color_reset)
 	test -f target/include/brotli/encode.h
