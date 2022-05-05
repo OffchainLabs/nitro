@@ -603,7 +603,7 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
      * @notice Increase the amount staked eth for the given staker
      * @param stakerAddress Address of the staker whose stake is increased
      */
-    function addToDeposit(address stakerAddress) external payable onlyValidator whenNotPaused {
+    function addToDeposit(address stakerAddress) external payable override onlyValidator whenNotPaused {
         _addToDeposit(stakerAddress, msg.value);
     }
 

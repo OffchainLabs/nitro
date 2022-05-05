@@ -65,6 +65,8 @@ interface IRollupUser is IRollupUserAbs {
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) external payable;
+
+    function addToDeposit(address stakerAddress) external payable;
 }
 
 interface IRollupUserERC20 is IRollupUserAbs {
@@ -80,6 +82,8 @@ interface IRollupUserERC20 is IRollupUserAbs {
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) external;
+
+    function addToDeposit(address stakerAddress, uint256 tokenAmount) external;
 }
 
 interface IRollupAdmin {
