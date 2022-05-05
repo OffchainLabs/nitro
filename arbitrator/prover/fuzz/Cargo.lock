@@ -878,6 +878,7 @@ dependencies = [
  "libfuzzer-sys",
  "primitive-types",
  "prover",
+ "rayon",
  "serde",
  "serde_json",
  "tokio",
