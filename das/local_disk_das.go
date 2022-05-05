@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/base32"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/bits"
 	"os"
 	"sync"
@@ -30,16 +32,30 @@ type LocalDiskDataAvailabilityService struct {
 
 func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
 	pubKeyPath := dbPath + "/pubkey"
-	privKeyPath := dbPath + "/privkey"
-	pubKeyBytes, err := os.ReadFile(pubKeyPath)
+	pubKeyEncodedBytes, err := os.ReadFile(pubKeyPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	privKeyBytes, err := os.ReadFile(privKeyPath)
+
+	// Ethereum's BLS library doesn't like the byte slice containing the BLS keys to be
+	// any larger than necessary, so we need to create a Decoder to avoid returning any padding.
+	pubKeyDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(pubKeyEncodedBytes))
+	pubKeyBytes, err := ioutil.ReadAll(pubKeyDecoder)
 	if err != nil {
 		return nil, nil, err
 	}
 	pubKey, err := blsSignatures.PublicKeyFromBytes(pubKeyBytes, true)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	privKeyPath := dbPath + "/privkey"
+	privKeyEncodedBytes, err := os.ReadFile(privKeyPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	privKeyDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(privKeyEncodedBytes))
+	privKeyBytes, err := ioutil.ReadAll(privKeyDecoder)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -56,12 +72,19 @@ func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignature
 		return nil, nil, err
 	}
 	pubKeyPath := dbPath + "/pubkey"
-	privKeyPath := dbPath + "/privkey"
-	err = os.WriteFile(pubKeyPath, blsSignatures.PublicKeyToBytes(pubKey), 0600)
+	pubKeyBytes := blsSignatures.PublicKeyToBytes(pubKey)
+	encodedPubKey := make([]byte, base64.StdEncoding.EncodedLen(len(pubKeyBytes)))
+	base64.StdEncoding.Encode(encodedPubKey, pubKeyBytes)
+	err = os.WriteFile(pubKeyPath, encodedPubKey, 0600)
 	if err != nil {
 		return nil, nil, err
 	}
-	err = os.WriteFile(privKeyPath, blsSignatures.PrivateKeyToBytes(privKey), 0600)
+
+	privKeyPath := dbPath + "/privkey"
+	privKeyBytes := blsSignatures.PrivateKeyToBytes(privKey)
+	encodedPrivKey := make([]byte, base64.StdEncoding.EncodedLen(len(privKeyBytes)))
+	base64.StdEncoding.Encode(encodedPrivKey, privKeyBytes)
+	err = os.WriteFile(privKeyPath, encodedPrivKey, 0600)
 	if err != nil {
 		return nil, nil, err
 	}
