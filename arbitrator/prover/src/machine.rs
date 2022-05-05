@@ -16,7 +16,7 @@ use crate::{
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
-use eyre::{bail, ensure, eyre};
+use eyre::{bail, ensure, eyre, Result};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use rayon::prelude::*;
@@ -70,7 +70,7 @@ impl Function {
         func_block_ty: BlockType,
         module_types: &[FunctionType],
         fp_impls: &FloatingPointImpls,
-    ) -> eyre::Result<Function> {
+    ) -> Result<Function> {
         let locals_with_params: Vec<ValueType> =
             func_ty.inputs.iter().cloned().chain(code.locals).collect();
         let mut insts = Vec::new();
@@ -283,7 +283,7 @@ impl Module {
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
-    ) -> eyre::Result<Module> {
+    ) -> Result<Module> {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
         let mut memory = Memory::default();
@@ -375,7 +375,7 @@ impl Module {
                 }
                 Err(eyre!("Global initializer isn't a constant"))
             })
-            .collect::<eyre::Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?;
         for export in bin.exports {
             if let ExportKind::Function(idx) = export.kind {
                 exports.insert(export.name, idx);
@@ -452,7 +452,7 @@ impl Module {
                         };
                         Ok(TableElement { val, func_ty })
                     })
-                    .collect::<eyre::Result<Vec<_>>>()?;
+                    .collect::<Result<Vec<_>>>()?;
                 let len = contents.len();
                 ensure!(
                     offset.saturating_add(len) <= table.elems.len(),
@@ -806,7 +806,7 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
-    ) -> eyre::Result<Machine> {
+    ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
@@ -1045,7 +1045,7 @@ impl Machine {
         Ok(mach)
     }
 
-    pub fn new_from_wavm(wavm_binary: &Path) -> eyre::Result<Machine> {
+    pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let f = BufReader::new(File::open(wavm_binary)?);
         let decompressor = brotli2::read::BrotliDecoder::new(f);
         let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
@@ -1093,7 +1093,7 @@ impl Machine {
         Ok(mach)
     }
 
-    pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
+    pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         ensure!(
             self.hash() == self.initial_hash,
             "serialize_binary can only be called on initial machine",
@@ -1107,7 +1107,7 @@ impl Machine {
         Ok(())
     }
 
-    pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
+    pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let mut f = File::create(path)?;
         let mut writer = BufWriter::new(&mut f);
         let modules = self
@@ -1139,11 +1139,11 @@ impl Machine {
     }
 
     // Requires that this is the same base machine. If this returns an error, it has not mutated `self`.
-    pub fn deserialize_and_replace_state<P: AsRef<Path>>(&mut self, path: P) -> eyre::Result<()> {
+    pub fn deserialize_and_replace_state<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         let reader = BufReader::new(File::open(path)?);
         let new_state: MachineState = bincode::deserialize_from(reader)?;
         if self.initial_hash != new_state.initial_hash {
-            eyre::bail!(
+            bail!(
                 "attempted to load deserialize machine with initial hash {} into machine with initial hash {}",
                 new_state.initial_hash, self.initial_hash,
             );
@@ -1193,9 +1193,9 @@ impl Machine {
         self.steps
     }
 
-    pub fn step_n(&mut self, n: u64) {
+    pub fn step_n(&mut self, n: u64) -> Result<()> {
         if self.is_halted() {
-            return;
+            return Ok(());
         }
         let mut module = &mut self.modules[self.pc.module];
         let mut func = &module.funcs[self.pc.func];
@@ -1313,7 +1313,7 @@ impl Machine {
                             }
                             func = &module.funcs[self.pc.func];
                         }
-                        v => panic!("Attempted to return into an invalid reference: {:?}", v),
+                        v => bail!("attempted to return into an invalid reference: {:?}", v),
                     }
                 }
                 Opcode::Call => {
@@ -1367,7 +1367,7 @@ impl Machine {
                     let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
                     let idx = match self.value_stack.pop() {
                         Some(Value::I32(i)) => usize::try_from(i).unwrap(),
-                        x => panic!(
+                        x => bail!(
                             "WASM validation failed: top of stack before call_indirect is {:?}",
                             x,
                         ),
@@ -1391,7 +1391,7 @@ impl Machine {
                                 self.status = MachineStatus::Errored;
                                 break;
                             }
-                            v => panic!("Invalid table element value {:?}", v),
+                            v => bail!("invalid table element value {:?}", v),
                         }
                     } else {
                         self.status = MachineStatus::Errored;
@@ -1417,7 +1417,7 @@ impl Machine {
                 Opcode::MemoryLoad { ty, bytes, signed } => {
                     let base = match self.value_stack.pop() {
                         Some(Value::I32(x)) => x,
-                        x => panic!(
+                        x => bail!(
                             "WASM validation failed: top of stack before memory load is {:?}",
                             x,
                         ),
@@ -1441,14 +1441,14 @@ impl Machine {
                         Some(Value::I64(x)) => x,
                         Some(Value::F32(x)) => x.to_bits().into(),
                         Some(Value::F64(x)) => x.to_bits(),
-                        x => panic!(
+                        x => bail!(
                             "WASM validation failed: attempted to memory store type {:?}",
                             x,
                         ),
                     };
                     let base = match self.value_stack.pop() {
                         Some(Value::I32(x)) => x,
-                        x => panic!(
+                        x => bail!(
                             "WASM validation failed: attempted to memory store with index type {:?}",
                             x,
                         ),
@@ -1497,7 +1497,7 @@ impl Machine {
                                     self.value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
-                                panic!("WASM validation failed: wrong types for i32relop");
+                                bail!("WASM validation failed: wrong types for i32relop");
                             }
                         }
                         IntegerValType::I64 => {
@@ -1508,7 +1508,7 @@ impl Machine {
                                     self.value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
-                                panic!("WASM validation failed: wrong types for i64relop");
+                                bail!("WASM validation failed: wrong types for i64relop");
                             }
                         }
                     }
@@ -1535,7 +1535,7 @@ impl Machine {
                     let old_size = module.memory.size();
                     let adding_pages = match self.value_stack.pop() {
                         Some(Value::I32(x)) => x,
-                        v => panic!("WASM validation failed: bad value for memory.grow {:?}", v),
+                        v => bail!("WASM validation failed: bad value for memory.grow {:?}", v),
                     };
                     let new_size = (|| {
                         let adding_size =
@@ -1565,14 +1565,14 @@ impl Machine {
                             if let Some(Value::I32(a)) = va {
                                 self.value_stack.push(Value::I32(exec_iun_op(a, op)));
                             } else {
-                                panic!("WASM validation failed: wrong types for i32unop");
+                                bail!("WASM validation failed: wrong types for i32unop");
                             }
                         }
                         IntegerValType::I64 => {
                             if let Some(Value::I64(a)) = va {
                                 self.value_stack.push(Value::I64(exec_iun_op(a, op) as u64));
                             } else {
-                                panic!("WASM validation failed: wrong types for i64unop");
+                                bail!("WASM validation failed: wrong types for i64unop");
                             }
                         }
                     }
@@ -1585,14 +1585,14 @@ impl Machine {
                             if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
                                 self.value_stack.push(Value::I32(exec_ibin_op(a, b, op)));
                             } else {
-                                panic!("WASM validation failed: wrong types for i32binop");
+                                bail!("WASM validation failed: wrong types for i32binop");
                             }
                         }
                         IntegerValType::I64 => {
                             if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
                                 self.value_stack.push(Value::I64(exec_ibin_op(a, b, op)));
                             } else {
-                                panic!("WASM validation failed: wrong types for i64binop");
+                                bail!("WASM validation failed: wrong types for i64binop");
                             }
                         }
                     }
@@ -1600,7 +1600,7 @@ impl Machine {
                 Opcode::I32WrapI64 => {
                     let x = match self.value_stack.pop() {
                         Some(Value::I64(x)) => x,
-                        v => panic!(
+                        v => bail!(
                             "WASM validation failed: wrong type for i32.wrapi64: {:?}",
                             v,
                         ),
@@ -1633,7 +1633,7 @@ impl Machine {
                             assert_eq!(dest, ValueType::I64, "Unsupported reinterpret");
                             Value::I64(x.to_bits())
                         }
-                        v => panic!("Bad reinterpret: val {:?} source {:?}", v, source),
+                        v => bail!("bad reinterpret: val {:?} source {:?}", v, source),
                     };
                     self.value_stack.push(val);
                 }
@@ -1742,7 +1742,7 @@ impl Machine {
                                     module, func, pc
                                 );
                             }
-                            panic!("Missing requested preimage for hash {}", hash);
+                            bail!("missing requested preimage for hash {}", hash);
                         }
                     } else {
                         self.status = MachineStatus::Errored;
@@ -1790,6 +1790,7 @@ impl Machine {
             );
             self.stdio_output.clear();
         }
+        Ok(())
     }
 
     fn host_call_hook(
@@ -1798,7 +1799,7 @@ impl Machine {
         stdio_output: &mut Vec<u8>,
         module_name: &str,
         name: &str,
-    ) -> eyre::Result<()> {
+    ) -> Result<()> {
         macro_rules! pull_arg {
             ($offset:expr, $t:ident) => {
                 value_stack
@@ -1807,7 +1808,7 @@ impl Machine {
                         Value::$t(x) => Some(*x),
                         _ => None,
                     })
-                    .ok_or_else(|| eyre::eyre!("Exit code not on top of stack"))?
+                    .ok_or_else(|| eyre!("exit code not on top of stack"))?
             };
         }
         macro_rules! read_u32_ptr {
@@ -1815,7 +1816,7 @@ impl Machine {
                 module
                     .memory
                     .get_u32($ptr.into())
-                    .ok_or_else(|| eyre::eyre!("Pointer out of bounds"))?
+                    .ok_or_else(|| eyre!("pointer out of bounds"))?
             };
         }
         macro_rules! read_bytes_segment {
@@ -1823,7 +1824,7 @@ impl Machine {
                 module
                     .memory
                     .get_range($ptr as usize, $size as usize)
-                    .ok_or_else(|| eyre::eyre!("Bytes segment out of bounds"))?
+                    .ok_or_else(|| eyre!("bytes segment out of bounds"))?
             };
         }
         match (module_name, name) {
@@ -2062,7 +2063,8 @@ impl Machine {
                         // For stores, prove the second merkle against a state after the first leaf is set.
                         // This state also happens to have the second leaf set, but that's irrelevant.
                         let mut copy = self.clone();
-                        copy.step_n(1);
+                        copy.step_n(1)
+                            .expect("Failed to step machine forward for proof");
                         copy.modules[self.pc.module].memory.merkelize().into_owned()
                     } else {
                         mem_merkle.into_owned()

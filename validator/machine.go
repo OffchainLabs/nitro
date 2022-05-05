@@ -151,7 +151,12 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 	conditionByte, cancel := manageConditionByte(ctx)
 	defer cancel()
 
-	C.arbitrator_step(m.ptr, C.uint64_t(count), conditionByte)
+	err := C.arbitrator_step(m.ptr, C.uint64_t(count), conditionByte)
+	if err != nil {
+		errString := C.GoString(err)
+		C.free(unsafe.Pointer(err))
+		return errors.New(errString)
+	}
 
 	return ctx.Err()
 }
