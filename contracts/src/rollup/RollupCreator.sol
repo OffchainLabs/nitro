@@ -8,7 +8,6 @@ import "../bridge/Bridge.sol";
 import "../bridge/SequencerInbox.sol";
 import "../bridge/Inbox.sol";
 import "../bridge/Outbox.sol";
-import "./RollupEventBridge.sol";
 import "./BridgeCreator.sol";
 
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";

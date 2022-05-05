@@ -9,7 +9,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "./Node.sol";
 import "./IRollupCore.sol";
 import "./RollupLib.sol";
-import "./RollupEventBridge.sol";
+import "./IRollupEventBridge.sol";
 import "./IRollupCore.sol";
 
 import "../challenge/IChallengeManager.sol";
