@@ -405,7 +405,9 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, seqMsg, moduleRoot)
 		duration := time.Since(before)
 		if err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				log.Info("Validation of block canceled", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "err", err)
+			} else {
 				log.Error("Validation of block failed", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "err", err)
 			}
 			return
