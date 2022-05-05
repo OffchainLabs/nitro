@@ -8,6 +8,9 @@ import (
 	"context"
 	"encoding/base32"
 	"errors"
+	"fmt"
+	"math/bits"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -86,7 +89,10 @@ func generateAndStoreKeysInS3(ctx context.Context, s3Config conf.S3Config, uploa
 	return &pubKey, privKey, nil
 }
 
-func NewS3DataAvailabilityService(ctx context.Context, s3Config conf.S3Config) (*S3DataAvailabilityService, error) {
+func NewS3DataAvailabilityService(ctx context.Context, s3Config conf.S3Config, signerMask uint64) (*S3DataAvailabilityService, error) {
+	if bits.OnesCount64(signerMask) != 1 {
+		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signerMask %X", signerMask)
+	}
 	client := s3.New(s3.Options{
 		Region:      s3Config.Region,
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(s3Config.AccessKey, s3Config.SecretKey, "")),
@@ -113,6 +119,7 @@ func NewS3DataAvailabilityService(ctx context.Context, s3Config conf.S3Config) (
 		privKey:    privKey,
 		uploader:   uploader,
 		downloader: downloader,
+		signerMask: signerMask,
 	}, nil
 }
 
@@ -169,14 +176,12 @@ func (das *S3DataAvailabilityService) Retrieve(ctx context.Context, certBytes []
 		return nil, errors.New("Retrieved message stored hash doesn't match calculated hash.")
 	}
 
-	signedBlob := serializeSignableFields(*cert)
-	sigMatch, err := blsSignatures.VerifySignature(cert.Sig, signedBlob, *das.pubKey)
-	if err != nil {
-		return nil, err
-	}
-	if !sigMatch {
-		return nil, errors.New("Signature of data in cert passed in doesn't match")
-	}
+	// The cert passed in may have an aggregate signature, so we don't
+	// check the signature against this DAS's public key here.
 
 	return originalMessage, nil
+}
+
+func (das *S3DataAvailabilityService) String() string {
+	return fmt.Sprintf("S3DataAvailabilityService{signersMask:%d}", das.signerMask)
 }
