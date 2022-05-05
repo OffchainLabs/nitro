@@ -109,7 +109,7 @@ func main() {
 		panic(err.Error())
 	}
 
-	var rollupAddrs conf.RollupAddresses
+	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)

@@ -27,7 +27,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/cmd/conf"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -141,7 +140,7 @@ func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return l1info, l1Client, l1backend, stack
 }
 
-func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client client, chainId *big.Int) *conf.RollupAddresses {
+func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client client, chainId *big.Int) *arbnode.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")

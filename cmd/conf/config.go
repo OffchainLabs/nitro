@@ -1,14 +1,13 @@
 package conf
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
@@ -63,94 +62,17 @@ var DefaultS3Config = S3Config{
 	SecretKey: "",
 }
 
-type RollupAddresses struct {
-	Bridge                 common.Address `json:"bridge"`
-	Inbox                  common.Address `json:"inbox"`
-	SequencerInbox         common.Address `json:"sequencer-inbox"`
-	Rollup                 common.Address `json:"rollup"`
-	ValidatorUtils         common.Address `json:"validator-utils"`
-	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
-	DeployedAt             uint64         `json:"deployed-at"`
-}
-
-type RollupAddressesConfig struct {
-	Bridge                 string `koanf:"bridge"`
-	Inbox                  string `koanf:"inbox"`
-	SequencerInbox         string `koanf:"sequencer-inbox"`
-	Rollup                 string `koanf:"rollup"`
-	ValidatorUtils         string `koanf:"validator-utils"`
-	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
-	DeployedAt             uint64 `koanf:"deployed-at"`
-}
-
-var RollupAddressesConfigDefault = RollupAddressesConfig{}
-
-func RollupAddressesConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".bridge", "", "the bridge contract address")
-	f.String(prefix+".inbox", "", "the inbox contract address")
-	f.String(prefix+".sequencer-inbox", "", "the sequencer inbox contract address")
-	f.String(prefix+".rollup", "", "the rollup contract address")
-	f.String(prefix+".validator-utils", "", "the validator utils contract address")
-	f.String(prefix+".validator-wallet-creator", "", "the validator wallet creator contract address")
-	f.Uint64(prefix+".deployed-at", 0, "the block number at which the rollup was deployed")
-}
-
-func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
-	a := RollupAddresses{
-		DeployedAt: c.DeployedAt,
-	}
-	strs := []string{
-		c.Bridge,
-		c.Inbox,
-		c.SequencerInbox,
-		c.Rollup,
-		c.ValidatorUtils,
-		c.ValidatorWalletCreator,
-	}
-	addrs := []*common.Address{
-		&a.Bridge,
-		&a.Inbox,
-		&a.SequencerInbox,
-		&a.Rollup,
-		&a.ValidatorUtils,
-		&a.ValidatorWalletCreator,
-	}
-	names := []string{
-		"Bridge",
-		"Inbox",
-		"SequencerInbox",
-		"Rollup",
-		"ValidatorUtils",
-		"ValidatorWalletCreator",
-	}
-	if len(strs) != len(addrs) {
-		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
-	}
-	complete := true
-	for i, s := range strs {
-		if !common.IsHexAddress(s) {
-			log.Error("invalid address", "name", names[i], "value", s)
-			complete = false
-		}
-		*addrs[i] = common.HexToAddress(s)
-	}
-	if !complete {
-		return RollupAddresses{}, fmt.Errorf("invalid addresses")
-	}
-	return a, nil
-}
-
 type L1Config struct {
-	ChainID            uint64                `koanf:"chain-id"`
-	Rollup             RollupAddressesConfig `koanf:"rollup"`
-	URL                string                `koanf:"url"`
-	ConnectionAttempts int                   `koanf:"connection-attempts"`
-	Wallet             WalletConfig          `koanf:"wallet"`
+	ChainID            uint64                        `koanf:"chain-id"`
+	Rollup             arbnode.RollupAddressesConfig `koanf:"rollup"`
+	URL                string                        `koanf:"url"`
+	ConnectionAttempts int                           `koanf:"connection-attempts"`
+	Wallet             WalletConfig                  `koanf:"wallet"`
 }
 
 var L1ConfigDefault = L1Config{
 	ChainID:            0,
-	Rollup:             RollupAddressesConfigDefault,
+	Rollup:             arbnode.RollupAddressesConfigDefault,
 	URL:                "",
 	ConnectionAttempts: 15,
 	Wallet:             WalletConfigDefault,
@@ -159,7 +81,7 @@ var L1ConfigDefault = L1Config{
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
 	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
-	RollupAddressesConfigAddOptions(prefix+".rollup", f)
+	arbnode.RollupAddressesConfigAddOptions(prefix+".rollup", f)
 	f.Int(prefix+".connection-attempts", L1ConfigDefault.ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
 	WalletConfigAddOptions(prefix+".wallet", f, "wallet")
 }
