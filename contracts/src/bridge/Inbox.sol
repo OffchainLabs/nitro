@@ -20,9 +20,9 @@ import {
 } from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
-import "./Bridge.sol";
 
 /**
  * @title Inbox for user and contract originated messages
@@ -34,7 +34,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     modifier onlyOwner() {
         // whoevever owns the Bridge, also owns the Inbox. this is usually the rollup contract
-        address bridgeOwner = Bridge(address(bridge)).owner();
+        address bridgeOwner = OwnableUpgradeable(address(bridge)).owner();
         if (msg.sender != bridgeOwner) revert NotOwner(msg.sender, bridgeOwner);
         _;
     }
