@@ -37,7 +37,9 @@ enum Command {
     AssertTrap {},
 
     Action {},
-    AssertMalformed {},
+    AssertMalformed {
+        filename: String,
+    },
     AssertInvalid {},
     AssertUninstantiable {},
 }
@@ -66,8 +68,7 @@ fn main() -> eyre::Result<()> {
     let reader = BufReader::new(File::open(path)?);
     let case: Case = serde_json::from_reader(reader)?;
 
-    let mut currentModule: Option<String> = None;
-    let mut valid = HashSet::new();
+    let mut module: Option<String> = None;
     let mut invalid = HashSet::new();
 
     for command in &case.commands {
@@ -75,15 +76,15 @@ fn main() -> eyre::Result<()> {
 
         match command {
             Module { line: _, filename } => {
-                if let Some(prior) = currentModule {
-                    invalid.insert(prior.clone());
-                }
-                currentModule = Some(filename.clone());
+                module = Some(filename.clone());
             }
-            AssertReturn { .. } | AssertTrap { .. } | AssertExhaustion { .. } => {
-                valid.insert(currentModule.clone().expect("no module"));
+            AssertReturn { .. } | AssertTrap { .. } | AssertExhaustion { .. } => {}
+            AssertMalformed { filename } => {
+                invalid.insert(filename.to_owned());
             }
-            _ => {}
+            _ => {
+                invalid.insert(module.clone().expect("no module"));
+            }
         }
     }
 
@@ -109,18 +110,28 @@ fn main() -> eyre::Result<()> {
                     HashMap::default(),
                 );
 
-                if mech.is_ok() && invalid.contains(&filename) {
-                    bail!("failed to reject invalid module {}", filename);
-                }
-                if mech.is_err() && valid.contains(&filename) {
-                    bail!("failed to accept valid module {}", filename);
+                if let Err(error) = &mech {
+                    if error.to_string().contains("Module has no code") {
+                        //
+                        machine = None;
+                        continue;
+                    }
+                    if !invalid.contains(&filename) {
+                        bail!("failed to accept valid module {}: {}", filename, error);
+                    }
                 }
 
-                match mech {
+                if invalid.contains(&filename) {
+                    bail!("failed to reject invalid module {}", filename);
+                }
+
+                machine = Some(mech.unwrap());
+
+                /*match mech {
                     Ok(mech) => machine = Some(mech),
                     Err(err) if err.to_string().contains("Module has no code") => machine = None,
                     Err(err) => return Err(err),
-                }
+                }*/
 
                 wasmfile = filename;
             }

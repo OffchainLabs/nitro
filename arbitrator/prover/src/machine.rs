@@ -398,7 +398,7 @@ impl Module {
             };
             if !matches!(
                 offset.checked_add(data.data.len()),
-                Some(x) if (x as u64) < memory.size() as u64,
+                Some(x) if (x as u64) <= memory.size() as u64,
             ) {
                 bail!(
                     "Out-of-bounds data memory init with offset {} and size {}",
@@ -650,7 +650,7 @@ pub struct MachineState<'a> {
     initial_hash: Bytes32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
     status: MachineStatus,
