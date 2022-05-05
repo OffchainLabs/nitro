@@ -65,7 +65,7 @@ interface IRollupCore {
 
     function outbox() external view returns (IOutbox);
 
-    function rollupEventBridge() external view returns (RollupEventBridge);
+    function rollupEventBridge() external view returns (IRollupEventBridge);
 
     function challengeManager() external view returns (IChallengeManager);
 

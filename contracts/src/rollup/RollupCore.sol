@@ -34,7 +34,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     IBridge public delayedBridge;
     ISequencerInbox public sequencerBridge;
     IOutbox public outbox;
-    RollupEventBridge public rollupEventBridge;
+    IRollupEventBridge public rollupEventBridge;
     IChallengeManager public override challengeManager;
     // when a staker loses a challenge, half of their funds get escrowed in this address
     address public loserStakeEscrow;
