@@ -217,7 +217,16 @@ fn fuzz_impl(data: &[u8]) -> Result<()> {
     Ok(())
 }
 
+static CONFIGURE_RAYON: std::sync::Once = std::sync::Once::new();
+
 fuzz_target!(|data: &[u8]| {
+    CONFIGURE_RAYON.call_once(|| {
+        std::env::set_var("RAYON_NUM_THREADS", "1"); // in case a different version of rayon is loaded
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build_global()
+            .expect("Failed to configure global Rayon thread pool");
+    });
     if let Err(err) = fuzz_impl(data) {
         if DEBUG {
             eprintln!("Non-critical error: {}", err);
