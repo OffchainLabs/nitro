@@ -27,6 +27,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 #### Dapps
 - **Gas Accounting**: it is now consistent with the L1 EVM, any hard-coded gas values should be changed accordingly (the same applies to any gas amount used in conjuntion with `gasleft`).
 - **No more storage gas**: there is no more concept of a separate pool of storage gas, and opcodes are priced identically to the L1 EVM.
+- **New L2 to L1 event signature**: The function signature for the [L2 to L1 event](../../contracts/src/precompiles/ArbSys.sol#L110) emitted by ArbSys has now changed.
 - **Retryable Tickets**: 
     - The submission cost is now enforced in the L1 inbox and checked against the L1 transaction's `msg.value`; contracts shouldn't rely on funds pooled in the L2 destination to cover this cost.
     - For the redemption of retryable tickets, the calculation of the L2 transaction ID changed and differs between different redeem attempts (i.e. after failed attempts). See [arbitrum-sdk](https://github.com/offchainlabs/arbitrum-sdk/tree/c-nitro) for a reference implementation on the new client-side flow. 
