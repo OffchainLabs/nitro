@@ -1,8 +1,8 @@
 import {ethers} from "hardhat";
 import {expect} from "chai";
-import TestCase from "./withdraw-testcase.json";
+import TestCase from "./outbox/withdraw-testcase.json";
 import { BigNumber, Contract, ContractFactory, Signer } from "ethers";
-import { TransparentUpgradeableProxy__factory } from "../../../build/types/factories/@openzeppelin/contracts/proxy/transparent";
+import { TransparentUpgradeableProxy__factory } from "../../build/types/factories/@openzeppelin/contracts/proxy/transparent";
 
 async function sendEth(send_account: string, to_address: string, send_token_amount: BigNumber) {
     const nonce = await ethers.provider.getTransactionCount(send_account, "latest");
