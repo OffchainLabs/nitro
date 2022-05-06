@@ -97,11 +97,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         whenNotPaused
         returns (uint256)
     {
-        if (messageData.length > MAX_DATA_SIZE)
-            revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
-        emit InboxMessageDelivered(msgNum, messageData);
-        return msgNum;
+        return _deliverMessage(L2_MSG, msg.sender, messageData);
     }
 
     function sendL1FundedUnsignedTransaction(
