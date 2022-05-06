@@ -44,9 +44,15 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         __Ownable_init();
     }
 
+    /// @dev returns the address of current active Outbox, or zero if no outbox is active
     function activeOutbox() public view returns (address) {
-        if(_activeOutbox == EMPTY_ACTIVEOUTBOX) return address(uint160(0));
-        return _activeOutbox;
+        address outbox = _activeOutbox;
+        // address zero is returned if no outbox is set, but the value used in storage
+        // is non-zero to save users some gas (as storage refunds are usually maxed out)
+        // EIP-1153 would help here.
+        // we don't return `EMPTY_ACTIVEOUTBOX` to avoid a breaking change on the current api
+        if(outbox == EMPTY_ACTIVEOUTBOX) return address(0);
+        return outbox;
     }
 
     function allowedInboxes(address inbox) external view override returns (bool) {
@@ -153,6 +159,8 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     }
 
     function setOutbox(address outbox, bool enabled) external override onlyOwner {
+        if(outbox == EMPTY_ACTIVEOUTBOX) revert InvalidOutboxSet(outbox);
+
         InOutInfo storage info = allowedOutboxesMap[outbox];
         bool alreadyEnabled = info.allowed;
         emit OutboxToggle(outbox, enabled);

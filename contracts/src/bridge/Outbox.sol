@@ -29,7 +29,9 @@ contract Outbox is DelegateCallAware, IOutbox {
     L2ToL1Context internal context;
     uint128 public constant OUTBOX_VERSION = 2;
 
-    //workaround for constant struct
+    /// @dev returns default values to be used in storage instead of zero, to save on storage refunds
+    /// @dev solidity doesn't support constant structs, so instead we return it in a pure function
+    /// @dev it is assumed that arb-os never assigns these values to a valid leaf to be redeemed
     function getDefaultContext() internal pure returns (L2ToL1Context memory) {
         return L2ToL1Context({
             l2Block: type(uint128).max,
@@ -61,36 +63,49 @@ contract Outbox is DelegateCallAware, IOutbox {
     /// @dev the l2ToL1Sender behaves as the tx.origin, the msg.sender should be validated to protect against reentrancies
     function l2ToL1Sender() external view override returns (address) {
         address sender = context.sender;
-        if(sender == getDefaultContext().sender) return address(uint160(0));
+        // we don't return the default context value to avoid a breaking change in the API
+        if(sender == getDefaultContext().sender) return address(0);
         return sender;
     }
 
+    /// @return l2Block return L2 block when the L2 tx was initiated or zero
+    /// if no L2 to L1 transaction is active
     function l2ToL1Block() external view override returns (uint256) {
         uint128 l2Block = context.l2Block;
+        // we don't return the default context value to avoid a breaking change in the API
         if(l2Block == getDefaultContext().l2Block) return uint256(0);
         return uint256(l2Block);
     }
 
+    /// @return l1Block return L1 block when the L2 tx was initiated or zero
+    /// if no L2 to L1 transaction is active
     function l2ToL1EthBlock() external view override returns (uint256) {
         uint128 l1Block = context.l1Block;
+        // we don't return the default context value to avoid a breaking change in the API
         if(l1Block == getDefaultContext().l1Block) return uint256(0);
         return uint256(l1Block);
     }
 
+    /// @return timestamp return L2 timestamp when the L2 tx was initiated or zero
+    /// if no L2 to L1 transaction is active
     function l2ToL1Timestamp() external view override returns (uint256) {
         uint128 timestamp = context.timestamp;
+        // we don't return the default context value to avoid a breaking change in the API
         if(timestamp == getDefaultContext().timestamp) return uint256(0);
         return uint256(timestamp);
     }
 
-    // @deprecated batch number is now always 0
+    /// @notice batch number is deprecated and now always returns 0
     function l2ToL1BatchNum() external pure override returns (uint256) {
         return 0;
     }
 
+    /// @return outputId returns the unique output identifier of the L2 to L1 tx or
+    /// zero if no L2 to L1 transaction is active
     function l2ToL1OutputId() external view override returns (bytes32) {
         bytes32 outputId = context.outputId;
-        if(outputId == getDefaultContext().outputId) return bytes32(uint256(0));
+        // we don't return the default context value to avoid a breaking change in the API
+        if(outputId == getDefaultContext().outputId) return bytes32(0);
         return outputId;
     }
 
