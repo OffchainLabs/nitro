@@ -166,12 +166,17 @@ func (con ArbGasInfo) GetGasPool(c ctx, evm mech) (int64, error) {
 	return c.State.L2PricingState().GasPool_preExp()
 }
 
-// Get the L2 gas pricing inertia
-func (con ArbGasInfo) GetL2PricingInertia(c ctx, evm mech) (uint64, error) {
+// Get the backlogged amount of gas burnt in excess of the speed limit
+func (con ArbGasInfo) GetGasBacklog(c ctx, evm mech) (uint64, error) {
+	return c.State.L2PricingState().GasBacklog()
+}
+
+// Get how slowly ArbOS updates the L2 basefee in response to backlogged gas
+func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().PricingInertia()
 }
 
-// Get the L2 gas backlog tolerance
-func (con ArbGasInfo) GetL2GasBacklogTolerance(c ctx, evm mech) (uint64, error) {
+// Get the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
+func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().BacklogTolerance()
 }

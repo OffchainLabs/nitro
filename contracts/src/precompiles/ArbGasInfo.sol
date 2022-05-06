@@ -119,9 +119,12 @@ interface ArbGasInfo {
     /// @notice Get the amount of gas remaining in the gas pool
     function getGasPool() external view returns (int64);
 
-    /// @notice Get the L2 gas pricing inertia
-    function getL2PricingInertia() external view returns (uint64);
+    /// @notice Get the backlogged amount of gas burnt in excess of the speed limit
+    function getGasBacklog() external view returns (uint64);
 
-    /// @notice Get the L2 gas backlog tolerance
-    function getL2GasBacklogTolerance() external view returns (uint64);
+    /// @notice Get how slowly ArbOS updates the L2 basefee in response to backlogged gas
+    function getPricingInertia() external view returns (uint64);
+
+    /// @notice Get the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
+    function getGasBacklogTolerance() external view returns (uint64);
 }
