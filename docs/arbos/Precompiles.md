@@ -229,9 +229,9 @@ Provides insight into the cost of using the chain. These methods have been adjus
 [GI12]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L155
 [GI13]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L160
 [GI14]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L165
-[GI15]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L165
-[GI16]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L165
-[GI17]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L165
+[GI15]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/precompiles/ArbGasInfo.go#L170
+[GI16]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/precompiles/ArbGasInfo.go#L175
+[GI17]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/precompiles/ArbGasInfo.go#L180
 
 [GIs0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L36
 [GIs1]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L58
@@ -248,9 +248,9 @@ Provides insight into the cost of using the chain. These methods have been adjus
 [GIs12]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L125
 [GIs13]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L128
 [GIs14]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L131
-[GIs15]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L125
-[GIs16]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L128
-[GIs17]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L131
+[GIs15]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/contracts/src/precompiles/ArbGasInfo.sol#L123
+[GIs16]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/contracts/src/precompiles/ArbGasInfo.sol#L126
+[GIs17]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/contracts/src/precompiles/ArbGasInfo.sol#L129
 
 
 # [ArbInfo][ArbInfo_link]<a name=ArbInfo></a>
