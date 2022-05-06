@@ -1,7 +1,8 @@
 import {ethers} from "hardhat";
 import {expect} from "chai";
 import TestCase from "./withdraw-testcase.json";
-import { BigNumber, Contract } from "ethers";
+import { BigNumber, Contract, ContractFactory, Signer } from "ethers";
+import { TransparentUpgradeableProxy__factory } from "../../../build/types/factories/@openzeppelin/contracts/proxy/transparent";
 
 async function sendEth(send_account: string, to_address: string, send_token_amount: BigNumber) {
     const nonce = await ethers.provider.getTransactionCount(send_account, "latest");
@@ -20,11 +21,26 @@ async function sendEth(send_account: string, to_address: string, send_token_amou
 
 }
 
-async function setSendRoot(cases: any, outbox: Contract) {
+async function setSendRoot(cases: any, outbox: Contract, signer: Signer) {
     const length = cases.length;
     for(let i = 0; i < length; i++) {
-        await outbox.updateSendRoot(cases[i].root, cases[i].l2blockhash);
+        await outbox.connect(signer).updateSendRoot(cases[i].root, cases[i].l2blockhash)
     }  
+}
+
+const deployBehindProxy = async <T extends ContractFactory>(
+  deployer: Signer,
+  factory: T,
+  admin: string,
+  dataToCallProxy = '0x'
+): Promise<ReturnType<T['deploy']>> => {
+  const instance = await factory.connect(deployer).deploy()
+  await instance.deployed()
+  const proxy = await new TransparentUpgradeableProxy__factory()
+    .connect(deployer)
+    .deploy(instance.address, admin, dataToCallProxy)
+  await proxy.deployed()
+  return instance.attach(proxy.address)
 }
 
 describe("Outbox", async function () {
@@ -33,30 +49,27 @@ describe("Outbox", async function () {
     let bridge: Contract;
     const cases = TestCase.cases;
     const sentEthAmount = ethers.utils.parseEther("10");
-    const rollupsAddress = "0xC12BA48c781F6e392B49Db2E25Cd0c28cD77531A";
+    let rollup: Signer;
     
     before(async function () {
         const accounts = await ethers.getSigners();
-        const OutboxWithOpt = await ethers.getContractFactory("OutboxWithOptTester");
+        const OutboxWithOpt = await ethers.getContractFactory("Outbox");
         const OutboxWithoutOpt = await ethers.getContractFactory("OutboxWithoutOptTester");
         const Bridge = await ethers.getContractFactory("BridgeTester");
-        outboxWithOpt = await OutboxWithOpt.deploy();
+        outboxWithOpt = await deployBehindProxy(accounts[0], OutboxWithOpt, accounts[1].address)
+        rollup = accounts[3]
         outboxWithoutOpt = await OutboxWithoutOpt.deploy();
         bridge = await Bridge.deploy();
         await bridge.initialize();
-        await outboxWithOpt.initialize(rollupsAddress, bridge.address);
-        await outboxWithoutOpt.initialize(rollupsAddress, bridge.address);
-
+        await outboxWithOpt.initialize(await rollup.getAddress(), bridge.address);
+        await outboxWithoutOpt.initialize(await rollup.getAddress(), bridge.address);
         await bridge.setOutbox(outboxWithOpt.address, true);
         await bridge.setOutbox(outboxWithoutOpt.address, true);
-
-        await setSendRoot(cases, outboxWithOpt);
-        await setSendRoot(cases, outboxWithoutOpt);
-
+        await setSendRoot(cases, outboxWithOpt, rollup);
+        await setSendRoot(cases, outboxWithoutOpt, rollup);
         await sendEth(accounts[0].address, bridge.address, sentEthAmount);
-        
-        
     })
+
     it("First call to initial some storage", async function () {    
         expect(await outboxWithOpt.executeTransaction(cases[0].proof, cases[0].index, cases[0].l2Sender, cases[0].to, cases[0].l2Block, cases[0].l1Block, cases[0].l2Timestamp, cases[0].value, cases[0].data)).to.emit(outboxWithOpt, "BridgeCallTriggered")
         expect(await outboxWithoutOpt.executeTransaction(cases[0].proof, cases[0].index, cases[0].l2Sender, cases[0].to, cases[0].l2Block, cases[0].l1Block, cases[0].l2Timestamp, cases[0].value, cases[0].data)).to.emit(outboxWithoutOpt, "BridgeCallTriggered")
@@ -66,13 +79,11 @@ describe("Outbox", async function () {
     it("Call twice without storage initail cost", async function () {
         expect(await outboxWithOpt.executeTransaction(cases[1].proof, cases[1].index, cases[1].l2Sender, cases[1].to, cases[1].l2Block, cases[1].l1Block, cases[1].l2Timestamp, cases[1].value, cases[1].data)).to.emit(outboxWithOpt, "BridgeCallTriggered")
         expect(await outboxWithoutOpt.executeTransaction(cases[1].proof, cases[1].index, cases[1].l2Sender, cases[1].to, cases[1].l2Block, cases[1].l1Block, cases[1].l2Timestamp, cases[1].value, cases[1].data)).to.emit(outboxWithoutOpt, "BridgeCallTriggered")
-        
     });
 
     it("third call", async function () {
         expect(await outboxWithOpt.executeTransaction(cases[2].proof, cases[2].index, cases[2].l2Sender, cases[2].to, cases[2].l2Block, cases[2].l1Block, cases[2].l2Timestamp, cases[2].value, cases[2].data)).to.emit(outboxWithOpt, "BridgeCallTriggered")
         expect(await outboxWithoutOpt.executeTransaction(cases[2].proof, cases[2].index, cases[2].l2Sender, cases[2].to, cases[2].l2Block, cases[2].l1Block, cases[2].l2Timestamp, cases[2].value, cases[2].data)).to.emit(outboxWithoutOpt, "BridgeCallTriggered")
-        
     });
     
   });
