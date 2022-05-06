@@ -408,8 +408,10 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, moduleRoot)
 		duration := time.Since(before)
 		if err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				log.Error("Validation of block failed", "err", err)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				log.Info("Validation of block canceled", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "err", err)
+			} else {
+				log.Error("Validation of block failed", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "err", err)
 			}
 			return
 		}
@@ -433,7 +435,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 			return
 		}
 
-		log.Info("validation succeeded", "blockNr", entry.BlockNumber, "moduleRoot", moduleRoot, "time", duration)
+		log.Info("validation succeeded", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", duration)
 	}
 
 	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
@@ -794,6 +796,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.LaunchThread(func(ctx context.Context) {
 		// `progressValidated` and `sendValidations` should both only do `concurrentRunsLimit` iterations of work,
 		// so they won't stomp on each other and prevent the other from running.
+		v.sendValidations(ctx)
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:
