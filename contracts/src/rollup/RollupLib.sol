@@ -11,7 +11,7 @@ import "../bridge/ISequencerInbox.sol";
 
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
-import "./RollupEventBridge.sol";
+import "./IRollupEventBridge.sol";
 import "./IRollupLogic.sol";
 
 struct Config {
@@ -30,7 +30,7 @@ struct ContractDependencies {
     IBridge delayedBridge;
     ISequencerInbox sequencerInbox;
     IOutbox outbox;
-    RollupEventBridge rollupEventBridge;
+    IRollupEventBridge rollupEventBridge;
     IChallengeManager challengeManager;
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;
