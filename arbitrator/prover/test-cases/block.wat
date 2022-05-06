@@ -27,6 +27,32 @@
 		)
 		(unreachable)
 	)
+
+	(i32.const 1)
+	(block
+		(i64.const -64)
+		(i64.const -64)
+		(br 0)
+		(unreachable)
+	)
+	(block
+		(i64.const -64)
+		(i32.const 1)
+		(br_if 0)
+		(unreachable)
+	)
+	(block (param i32)
+		(br_if 0)
+		(unreachable)
+	)
+	(i32.const 1)
+	(block
+		(i32.const 1)
+		(i64.const -64)
+		(br 0)
+		(unreachable)
+	)
+	(br_if 0)
 )
 
 (start 0)
