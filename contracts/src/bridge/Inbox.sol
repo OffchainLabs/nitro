@@ -14,14 +14,15 @@ import {
     L2_MSG,
     L1MessageType_L2FundedByL1,
     L1MessageType_submitRetryableTx,
+    L1MessageType_ethDeposit,
     L2MessageType_unsignedEOATx,
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
-import "./Bridge.sol";
 
 /**
  * @title Inbox for user and contract originated messages
@@ -33,7 +34,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     modifier onlyOwner() {
         // whoevever owns the Bridge, also owns the Inbox. this is usually the rollup contract
-        address bridgeOwner = Bridge(address(bridge)).owner();
+        address bridgeOwner = OwnableUpgradeable(address(bridge)).owner();
         if (msg.sender != bridgeOwner) revert NotOwner(msg.sender, bridgeOwner);
         _;
     }
@@ -96,11 +97,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         whenNotPaused
         returns (uint256)
     {
-        if (messageData.length > MAX_DATA_SIZE)
-            revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
-        emit InboxMessageDelivered(msgNum, messageData);
-        return msgNum;
+        return _deliverMessage(L2_MSG, msg.sender, messageData);
     }
 
     function sendL1FundedUnsignedTransaction(
@@ -209,20 +206,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     /// @notice deposit eth from L1 to L2
+    /// @dev this does not trigger the fallback function when receiving in the L2 side.
+    /// Look into retryable tickets if you are interested in this functionality.
     /// @dev this function should not be called inside contract constructors
-    function depositEth(uint256 maxSubmissionCost)
-        external
-        payable
-        virtual
-        override
-        whenNotPaused
-        returns (uint256)
-    {
+    function depositEth() public payable override whenNotPaused returns (uint256) {
         address sender = msg.sender;
-        address destinationAddress = msg.sender;
-
-        uint256 submissionFee = calculateRetryableSubmissionFee(0, block.basefee);
-        require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
 
         // solhint-disable-next-line avoid-tx-origin
         if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
@@ -233,29 +221,19 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             // have the L1 sender address mapped.
             // Here we preemptively reverse the mapping for EOAs so deposits work as expected
             sender = AddressAliasHelper.undoL1ToL2Alias(sender);
-        } else {
-            destinationAddress = AddressAliasHelper.applyL1ToL2Alias(destinationAddress);
         }
 
         return
             _deliverMessage(
-                L1MessageType_submitRetryableTx,
-                sender,
-                abi.encodePacked(
-                    // the beneficiary and other refund addresses don't get rewritten by arb-os
-                    // so we use the original msg.sender value
-                    uint256(uint160(bytes20(destinationAddress))),
-                    uint256(0),
-                    msg.value,
-                    maxSubmissionCost,
-                    uint256(uint160(bytes20(destinationAddress))),
-                    uint256(uint160(bytes20(destinationAddress))),
-                    uint256(0),
-                    uint256(0),
-                    uint256(0),
-                    ""
-                )
+                L1MessageType_ethDeposit,
+                sender, // arb-os will add the alias to this value
+                abi.encodePacked(msg.value)
             );
+    }
+
+    /// @notice deprecated in favour of depositEth with no parameters
+    function depositEth(uint256) external payable virtual override whenNotPaused returns (uint256) {
+        return depositEth();
     }
 
     /**
@@ -318,7 +296,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bytes calldata data
     ) external payable virtual override whenNotPaused returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
-        require(msg.value >= maxSubmissionCost + l2CallValue, "insufficient value");
+        if (msg.value < maxSubmissionCost + l2CallValue)
+            revert InsufficientValue(maxSubmissionCost + l2CallValue, msg.value);
 
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
@@ -371,7 +350,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bytes calldata data
     ) public payable virtual override whenNotPaused returns (uint256) {
         uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
-        require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
+        if (maxSubmissionCost < submissionFee)
+            revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
 
         return
             _deliverMessage(

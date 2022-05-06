@@ -4,12 +4,14 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"encoding/base32"
 	"errors"
+	"fmt"
+	"math/bits"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -20,11 +22,10 @@ import (
 var dasMutex sync.Mutex
 
 type LocalDiskDataAvailabilityService struct {
-	dbPath          string
-	pubKey          *blsSignatures.PublicKey
-	privKey         blsSignatures.PrivateKey
-	retentionPeriod time.Duration
-	signerMask      uint64
+	dbPath     string
+	pubKey     *blsSignatures.PublicKey
+	privKey    blsSignatures.PrivateKey
+	signerMask uint64
 }
 
 func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
@@ -67,9 +68,13 @@ func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignature
 	return &pubKey, privKey, nil
 }
 
-func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabilityService, error) {
+func NewLocalDiskDataAvailabilityService(dbPath string, signerMask uint64) (*LocalDiskDataAvailabilityService, error) {
 	dasMutex.Lock()
 	defer dasMutex.Unlock()
+	if bits.OnesCount64(signerMask) != 1 {
+		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signerMask %X", signerMask)
+	}
+
 	pubKey, privKey, err := readKeysFromFile(dbPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -83,20 +88,21 @@ func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabil
 	}
 
 	return &LocalDiskDataAvailabilityService{
-		dbPath:  dbPath,
-		pubKey:  pubKey,
-		privKey: privKey,
+		dbPath:     dbPath,
+		pubKey:     pubKey,
+		privKey:    privKey,
+		signerMask: signerMask,
 	}, nil
 }
 
-func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
 	dasMutex.Lock()
 	defer dasMutex.Unlock()
 
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
-	c.Timeout = uint64(time.Now().Add(das.retentionPeriod).Unix())
+	c.Timeout = timeout
 	c.SignersMask = das.signerMask
 
 	fields := serializeSignableFields(*c)
@@ -120,7 +126,7 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certB
 	dasMutex.Lock()
 	defer dasMutex.Unlock()
 
-	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -139,14 +145,12 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certB
 		return nil, errors.New("Retrieved message stored hash doesn't match calculated hash.")
 	}
 
-	signedBlob := serializeSignableFields(*cert)
-	sigMatch, err := blsSignatures.VerifySignature(cert.Sig, signedBlob, *das.pubKey)
-	if err != nil {
-		return nil, err
-	}
-	if !sigMatch {
-		return nil, errors.New("Signature of data in cert passed in doesn't match")
-	}
+	// The cert passed in may have an aggregate signature, so we don't
+	// check the signature against this DAS's public key here.
 
 	return originalMessage, nil
+}
+
+func (d *LocalDiskDataAvailabilityService) String() string {
+	return fmt.Sprintf("LocalDiskDataAvailabilityService{signersMask:%d,dbPath:%s}", d.signerMask, d.dbPath)
 }

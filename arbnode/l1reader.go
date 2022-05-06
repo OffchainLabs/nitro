@@ -74,6 +74,7 @@ func NewL1Reader(client arbutil.L1Interface, config L1ReaderConfig) *L1Reader {
 // Subscribers are notified when there is a change.
 // Channel could be missing headers and have duplicates.
 // Listening to the channel will make sure listenere is notified when header changes.
+// Warning: listeners must not modify the header or its number, as they're shared between listeners.
 func (s *L1Reader) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Header, func()) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()

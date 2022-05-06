@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -86,7 +87,7 @@ type PreimageDAS struct {
 }
 
 func (das *PreimageDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
-	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
 		return nil, err
 	}
