@@ -21,46 +21,45 @@ import { ethers } from "hardhat";
 import { EthCallAwareTester__factory } from "../../build/types";
 import { TxSuccessEvent } from "../../build/types/src/test-helpers/EthCallAwareTester";
 import { initializeAccounts } from "./utils";
-import { CallOverrides } from "ethers";
+import { CallOverrides, Signer } from "ethers";
 
 describe("EthCallAware", async () => {
+  let accounts: Signer[];
+
   const setupEthCallAware = async () => {
-    const accounts = await initializeAccounts();
-    const admin = accounts[0];
+    accounts = await initializeAccounts();
 
     const ethCallAwareFac = (await ethers.getContractFactory(
       "EthCallAwareTester"
     )) as EthCallAwareTester__factory;
 
-    const ethCallAware = (await ethCallAwareFac.deploy()).connect(admin);
-    return ethCallAware;
+    const ethCallAware = await ethCallAwareFac.deploy();
+    return ethCallAware.connect(ethers.provider);
   };
   const num = 10;
   const data = "0x2020";
 
   it(`estimate gas returns correct value`, async () => {
     const ethCallAware = await setupEthCallAware();
-    const gasEstimate = await ethCallAware.estimateGas.testFunction(num, data);
+    const gasEstimate = await ethCallAware.connect(accounts[0]).estimateGas.testFunction(num, data);
 
-    const res = await ethCallAware.functions.testFunction(num, data);
+    const res = await ethCallAware.connect(accounts[0]).functions.testFunction(num, data);
     const receipt = await res.wait();
-    const event = ethCallAware.interface.parseLog(receipt.logs[0])
-      .args as TxSuccessEvent["args"];
+    const event = ethCallAware.interface.parseLog(receipt.logs[0]).args as TxSuccessEvent["args"];
     expect(event.data, "data").to.eq(data);
     expect(event.num.toNumber(), "num").to.eq(num);
     expect(gasEstimate.toNumber(), "gas used").to.eq(receipt.gasUsed);
   });
 
-  for (let i = 0; i < 2; i++) {
-    const opts: CallOverrides = {};
+  it(`doesn't revert if not opt-in eth call`, async () => {
+    const ethCallAware = await setupEthCallAware();
+    await ethCallAware.callStatic.testFunction(num, data);
+  });
 
-    if (i == 0) opts["gasPrice"] = 6
-    else opts["from"] = "0x0000000000000000000000000000000e4404cA11";
-
-    describe(`running tests by overloading ${i === 0 ? "gasPrice" : "txOrigin"}`, () => {
+  const runTest = async (opts?: CallOverrides) => {
       it(`allows transaction to continue`, async () => {
         const ethCallAware = await setupEthCallAware();
-        const res = await ethCallAware.functions.testFunction(num, data);
+        const res = await ethCallAware.connect(accounts[0]).functions.testFunction(num, data);
         const receipt = await res.wait();
 
         const event = ethCallAware.interface.parseLog(receipt.logs[0])
@@ -72,11 +71,32 @@ describe("EthCallAware", async () => {
       it(`call reverts with data`, async () => {
         const ethCallAware = await setupEthCallAware();
 
-        expect(
-          ethCallAware.callStatic.testFunction(num, data, opts),
-          "Error message"
-        ).to.be.revertedWith(`CallAwareData(0, "${data}")`);
+        // waiting for release that includes https://github.com/TrueFiEng/Waffle/pull/719
+        // await expect(
+        //   ethCallAware.callStatic.testFunction(num, data, opts),
+        //   "Error message"
+        // ).to.be.revertedWith(`CallAwareData(0, "${data}")`);
+
+        const res = await ethCallAware.callStatic
+          .testFunction(num, data, opts)
+          .catch((err) => err.error.toString());
+
+        const regexp = new RegExp(
+          "VM Exception while processing transaction: reverted with custom error '(.*)'"
+        );
+        const matches = regexp.exec(res);
+        assert(matches && matches.length >= 1, "error not found");
+
+        const customErrorThrown = matches[1];
+        expect(customErrorThrown).to.equal(`CallAwareData(0, "${data}")`, "wrong error thrown");
       });
-    });
-  }
+  };
+
+  describe('running with overloaded gas price', async () => {
+    await runTest({ gasPrice: "0x4404cA11" });
+    await runTest({ gasPrice: "0x1234404cA11" });
+  })
+  describe('running with overloaded origin', async () => {
+    await runTest({ from: "0x0000000000000000000000000000000e4404cA11" });
+  })
 });

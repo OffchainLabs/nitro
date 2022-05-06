@@ -25,8 +25,8 @@ error CallAwareData(uint256 version, bytes data);
 
 /// @dev Tools for inferring whether a transaction was made in the context of an eth_call
 library EthCallAware {
-    /// @dev its expected that the chain never has a basefee of 6
-    uint256 public constant MAGIC_GAS = uint256(6);
+    /// @dev its expected that the user doesn't set these lower end bytes
+    uint256 public constant MAGIC_GAS = uint32(0x4404cA11);
     /// @dev the address gets padded to `0x0000000000000000000000000000000e4404cA11`
     address public constant MAGIC_ORIGIN = address(0xe4404cA11);
 
@@ -42,6 +42,6 @@ library EthCallAware {
         // See https://twitter.com/0xkarmacoma/status/1493380279309717505 for more details.
 
         // we compare tx.origin and gas price to the magic number so this codepath isn't hit accidentally
-        return tx.gasprice == MAGIC_GAS || tx.origin == MAGIC_ORIGIN;
+        return tx.origin == MAGIC_ORIGIN || (tx.gasprice & uint32(0xffffffff)) == MAGIC_GAS;
     }
 }
