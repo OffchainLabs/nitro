@@ -112,7 +112,6 @@ interface ArbSys {
         address indexed destination,
         uint256 indexed hash,
         uint256 indexed position,
-        uint256 indexInBatch,
         uint256 arbBlockNum,
         uint256 ethBlockNum,
         uint256 timestamp,

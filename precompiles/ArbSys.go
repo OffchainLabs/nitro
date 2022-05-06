@@ -17,7 +17,7 @@ import (
 // Provides system-level functionality for interacting with L1 and understanding the call stack.
 type ArbSys struct {
 	Address                  addr
-	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
+	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, []byte) error
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
 	SendMerkleUpdate         func(ctx, mech, huge, bytes32, huge) error
 	SendMerkleUpdateGasCost  func(huge, bytes32, huge) (uint64, error)
@@ -154,7 +154,6 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		destination,
 		sendHash.Big(),
 		leafNum,
-		big.NewInt(0),
 		evm.Context.BlockNumber,
 		bigL1BlockNum,
 		evm.Context.Time,
