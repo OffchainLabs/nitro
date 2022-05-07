@@ -6,8 +6,6 @@ package precompiles
 import (
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
-
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -28,22 +26,17 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	evm mech,
 	aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
-	l1GasPrice, err := c.State.L1PricingState().L1BaseFeeEstimateWei()
+	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 	l2GasPrice := evm.Context.BaseFee
-	ratio, err := c.State.L1PricingState().AggregatorCompressionRatio(aggregator)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	perL1CalldataUnit := arbmath.BigDivByUint(arbmath.BigMulByBips(weiForL1Calldata, ratio), 16)
 
 	// the cost of a simple tx without calldata
-	perL2Tx := arbmath.BigMulByUint(perL1CalldataUnit, 16*l1pricing.TxFixedCost)
+	perL2Tx := arbmath.BigMulByUint(weiForL1Calldata, l1pricing.TxFixedCost)
 
 	// nitro's compute-centric l2 gas pricing has no special compute component that rises independently
 	perArbGasBase := l2GasPrice
@@ -52,37 +45,29 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 
 	weiForL2Storage := arbmath.BigMul(l2GasPrice, storageArbGas)
 
-	return perL2Tx, perL1CalldataUnit, weiForL2Storage, perArbGasBase, perArbGasCongestion, perArbGasTotal, nil
+	return perL2Tx, weiForL1Calldata, weiForL2Storage, perArbGasBase, perArbGasCongestion, perArbGasTotal, nil
 }
 
 // Get prices in wei when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
-	maybeAggregator, err := c.State.L1PricingState().ReimbursableAggregatorForSender(c.caller)
+	maybeAggregator, err := c.State.L1PricingState().Sequencer()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
-	if maybeAggregator == nil {
-		return con.GetPricesInWeiWithAggregator(c, evm, common.Address{})
-	}
-	return con.GetPricesInWeiWithAggregator(c, evm, *maybeAggregator)
+	return con.GetPricesInWeiWithAggregator(c, evm, maybeAggregator)
 }
 
 // Get prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
-	l1GasPrice, err := c.State.L1PricingState().L1BaseFeeEstimateWei()
+	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	l2GasPrice := evm.Context.BaseFee
-	ratio, err := c.State.L1PricingState().AggregatorCompressionRatio(aggregator)
-	if err != nil {
-		return nil, nil, nil, err
-	}
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	compressedCharge := arbmath.BigMulByBips(weiForL1Calldata, ratio)
-	gasForL1Calldata := arbmath.BigDiv(compressedCharge, l2GasPrice)
+	gasForL1Calldata := arbmath.BigDiv(weiForL1Calldata, l2GasPrice)
 
 	perL2Tx := big.NewInt(l1pricing.TxFixedCost)
 	return perL2Tx, gasForL1Calldata, storageArbGas, nil
@@ -90,14 +75,11 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 // Get prices in ArbGas when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, error) {
-	maybeAggregator, err := c.State.L1PricingState().ReimbursableAggregatorForSender(c.caller)
+	maybeAggregator, err := c.State.L1PricingState().Sequencer()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if maybeAggregator == nil {
-		return con.GetPricesInArbGasWithAggregator(c, evm, common.Address{})
-	}
-	return con.GetPricesInArbGasWithAggregator(c, evm, *maybeAggregator)
+	return con.GetPricesInArbGasWithAggregator(c, evm, maybeAggregator)
 }
 
 // Get the rollup's speed limit, pool size, and tx gas limit
@@ -143,17 +125,19 @@ func (con ArbGasInfo) GetRateEstimateInertia(c ctx, evm mech) (uint64, error) {
 
 // Get the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimate(c ctx, evm mech) (huge, error) {
-	return c.State.L1PricingState().L1BaseFeeEstimateWei()
+	reward, err := c.State.L1PricingState().PerUnitReward()
+	return arbmath.UintToBig(reward), err
 }
 
 // Get how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, error) {
-	return c.State.L1PricingState().L1BaseFeeEstimateInertia()
+	return c.State.L1PricingState().Inertia()
 }
 
-// Deprecated -- Same as getL1BaseFeeEstimate()
+// Get the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
-	return con.GetL1BaseFeeEstimate(c, evm)
+	reward, err := c.State.L1PricingState().PerUnitReward()
+	return arbmath.UintToBig(reward), err
 }
 
 // Get the fee paid to the aggregator for posting this tx

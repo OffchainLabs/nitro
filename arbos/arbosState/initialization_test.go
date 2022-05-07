@@ -168,18 +168,13 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 				t.Fatal(err)
 			}
 		}
-		if acct.AggregatorInfo != nil {
-			fc, err := l1p.AggregatorFeeCollector(addr)
+		sequencer, err := l1p.Sequencer()
+		Require(t, err)
+		if acct.AggregatorInfo != nil && acct.Addr == sequencer {
+			fc, err := l1p.PaySequencerFeesTo()
 			Require(t, err)
 			if fc != acct.AggregatorInfo.FeeCollector {
 				t.Fatal()
-			}
-		}
-		if acct.AggregatorToPay != nil {
-			aggregator, err := l1p.ReimbursableAggregatorForSender(addr)
-			Require(t, err)
-			if aggregator == nil || *aggregator != *acct.AggregatorToPay {
-				Fail(t)
 			}
 		}
 	}

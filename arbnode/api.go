@@ -98,7 +98,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		if err != nil {
 			return history, err
 		}
-		l1BaseFeeUpdateTime, err := state.L1PricingState().LastL1BaseFeeUpdateTime()
+		l1BaseFeeUpdateTime, err := state.L1PricingState().LastUpdateTime()
 		if err != nil {
 			return history, err
 		}
@@ -115,8 +115,8 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 
 		rateEstimate, _ := l2Pricing.RateEstimate()
 		gasPool, _ := l2Pricing.GasPool()
-		l1BaseFeeEstimate, _ := l1Pricing.L1BaseFeeEstimateWei()
-		l1BaseFeeUpdateTime, err := l1Pricing.LastL1BaseFeeUpdateTime()
+		l1BaseFeeEstimate, _ := l1Pricing.PricePerUnit()
+		l1BaseFeeUpdateTime, err := l1Pricing.LastUpdateTime()
 		if err != nil {
 			return history, err
 		}
@@ -135,7 +135,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 			gasPoolTarget, _ := l2Pricing.GasPoolTarget()
 			gasPoolWeight, _ := l2Pricing.GasPoolWeight()
 			maxPerBlockGasLimit, _ := l2Pricing.MaxPerBlockGasLimit()
-			l1BaseFeeEstimateInertia, err := l1Pricing.L1BaseFeeEstimateInertia()
+			l1BaseFeeEstimateInertia, err := l1Pricing.Inertia()
 			if err != nil {
 				return history, err
 			}

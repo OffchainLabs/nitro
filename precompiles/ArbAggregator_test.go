@@ -43,10 +43,8 @@ func TestPreferredAggregator(t *testing.T) {
 
 	userAddr := common.BytesToAddress(crypto.Keccak256([]byte{0})[:20])
 	defaultAggAddr := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
-	prefAggAddr := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
 
 	callerCtx := testContext(common.Address{}, evm)
-	userCtx := testContext(userAddr, evm)
 
 	// initial preferred aggregator should be the default of zero address
 	res, isDefault, err := ArbAggregator{}.GetPreferredAggregator(callerCtx, evm, userAddr)
@@ -71,26 +69,13 @@ func TestPreferredAggregator(t *testing.T) {
 	if res != defaultAggAddr {
 		Fail(t)
 	}
-
-	// set preferred aggregator
-	Require(t, agg.SetPreferredAggregator(userCtx, evm, prefAggAddr))
-
-	// preferred aggregator should now be prefAggAddr
-	res, isDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
-	Require(t, err)
-	if isDefault {
-		Fail(t)
-	}
-	if res != prefAggAddr {
-		Fail(t)
-	}
 }
 
 func TestFeeCollector(t *testing.T) {
 	evm := newMockEVMForTesting()
 	agg := ArbAggregator{}
 
-	aggAddr := common.BytesToAddress(crypto.Keccak256([]byte{0})[:20])
+	aggAddr := l1pricing.SequencerAddress
 	collectorAddr := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
 	impostorAddr := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
 

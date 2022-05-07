@@ -28,6 +28,14 @@ func MinInt(value, ceiling int64) int64 {
 	return value
 }
 
+// the minimum of two ints
+func MinUint(value, ceiling uint64) uint64 {
+	if value > ceiling {
+		return ceiling
+	}
+	return value
+}
+
 // the maximum of two ints
 func MaxInt(value, floor int64) int64 {
 	if value < floor {

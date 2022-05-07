@@ -51,7 +51,6 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 	if err != nil {
 		panic(err)
 	}
-	l1BaseFee, _ := inputs[0].(*big.Int)   // current block's
 	l2BaseFee, _ := inputs[1].(*big.Int)   // the last L2 block's base fee (which is the result of the calculation 2 blocks ago)
 	l1BlockNumber, _ := inputs[2].(uint64) // current block's
 	timePassed, _ := inputs[3].(uint64)    // since last block
@@ -84,7 +83,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 
 	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, state.FormatVersion(), false)
-	state.L1PricingState().UpdatePricingModel(l1BaseFee, currentTime)
+	state.L1PricingState().UpdateTime(currentTime)
 
 	state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
 }

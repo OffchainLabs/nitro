@@ -24,9 +24,6 @@ interface ArbOwner {
     /// @notice Retrieves the list of chain owners
     function getAllChainOwners() external view returns (address[] memory);
 
-    /// @notice Set the L1 basefee estimate directly, bypassing the autoregression
-    function setL1BaseFeeEstimate(uint256 priceInWei) external;
-
     /// @notice Set how slowly ArbOS updates its estimate of the L1 basefee
     function setL1BaseFeeEstimateInertia(uint64 inertia) external;
 

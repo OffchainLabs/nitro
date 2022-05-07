@@ -20,6 +20,10 @@ type ArbOwner struct {
 	OwnerActsGasCost func(bytes4, addr, []byte) (uint64, error)
 }
 
+var (
+	ErrOutOfBounds = errors.New("value out of bounds")
+)
+
 // Add account as a chain owner
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
 	return c.State.ChainOwners().Add(newOwner)
@@ -44,14 +48,9 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 	return c.State.ChainOwners().AllMembers()
 }
 
-// Sets the L1 basefee estimate directly, bypassing the autoregression
-func (con ArbOwner) SetL1BaseFeeEstimate(c ctx, evm mech, priceInWei huge) error {
-	return c.State.L1PricingState().SetL1BaseFeeEstimateWei(priceInWei)
-}
-
 // Set how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64) error {
-	return c.State.L1PricingState().SetL1BaseFeeEstimateInertia(inertia)
+	return c.State.L1PricingState().SetInertia(inertia)
 }
 
 // Sets the L2 gas price directly, bypassing the pool calculus

@@ -5,242 +5,361 @@ package l1pricing
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 type L1PricingState struct {
-	storage                     *storage.Storage
-	defaultAggregator           storage.StorageBackedAddress
-	l1BaseFeeEstimate           storage.StorageBackedBigInt
-	l1BaseFeeEstimateInertia    storage.StorageBackedUint64
-	lastL1BaseFeeUpdateTime     storage.StorageBackedUint64
-	userSpecifiedAggregators    *storage.Storage
-	refuseDefaultAggregator     *storage.Storage
-	aggregatorFeeCollectors     *storage.Storage
-	aggregatorCompressionRatios *storage.Storage
+	storage *storage.Storage
+	// parameters
+	sequencer          storage.StorageBackedAddress
+	paySequencerFeesTo storage.StorageBackedAddress
+	payRewardsTo       storage.StorageBackedAddress
+	equilibrationTime  storage.StorageBackedUint64
+	inertia            storage.StorageBackedUint64
+	perUnitReward      storage.StorageBackedUint64
+	// variables
+	currentTime          storage.StorageBackedUint64
+	lastUpdateTime       storage.StorageBackedUint64
+	availableFunds       storage.StorageBackedUint64
+	fundsDueToSequencer  storage.StorageBackedUint64
+	fundsDueForRewards   storage.StorageBackedUint64
+	collectedSinceUpdate storage.StorageBackedUint64
+	unitsSinceUpdate     storage.StorageBackedUint64
+	pricePerUnit         storage.StorageBackedBigInt
 }
 
 var (
-	SequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
+	SequencerAddress         = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
+	L1PricerFundsPoolAddress = common.HexToAddress("0xA4B0000000000000000000000000000000000f6")
 
-	userSpecifiedAggregatorKey    = []byte{0}
-	refuseDefaultAggregatorKey    = []byte{1}
-	aggregatorFeeCollectorKey     = []byte{2}
-	aggregatorCompressionRatioKey = []byte{3}
+	ErrInvalidTime = errors.New("invalid timestamp")
 )
 
 const (
-	defaultAggregatorAddressOffset uint64 = 0
-	l1BaseFeeEstimateOffset        uint64 = 1
-	l1BaseFeeEstimateInertiaOffset uint64 = 2
-	lastL1BaseFeeUpdateTimeOffset  uint64 = 3
+	sequencerOffset uint64 = iota
+	paySequencerFeesToOffset
+	payRewardsToOffset
+	equilibrationTimeOffset
+	inertiaOffset
+	perUnitRewardOffset
+	currentTimeOffset
+	lastUpdateTimeOffset
+	availableFundsOffset
+	fundsDueToSequencerOffset
+	fundsDueForRewards
+	collectedSinceOffset
+	unitsSinceOffset
+	pricePerUnitOffset
 )
 
-const InitialL1BaseFeeEstimate = 50 * params.GWei
-const InitialL1BaseFeeEstimateInertia = 24
+const (
+	InitialEquilibrationTime = 10000000
+	InitialInertia           = 10
+	InitialPerUnitReward     = 10
+	InitialPricePerUnitGwei  = 50
+)
 
 func InitializeL1PricingState(sto *storage.Storage) error {
-	err := sto.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(SequencerAddress.Bytes()))
-	if err != nil {
+	if err := sto.SetByUint64(sequencerOffset, util.AddressToHash(SequencerAddress)); err != nil {
 		return err
 	}
-	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateInertiaOffset, InitialL1BaseFeeEstimateInertia); err != nil {
+	if err := sto.SetByUint64(paySequencerFeesToOffset, util.AddressToHash(SequencerAddress)); err != nil {
 		return err
 	}
-	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateOffset, InitialL1BaseFeeEstimate); err != nil {
+	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(SequencerAddress)); err != nil {
 		return err
 	}
-	return sto.SetUint64ByUint64(lastL1BaseFeeUpdateTimeOffset, 0)
+	if err := sto.SetUint64ByUint64(equilibrationTimeOffset, InitialEquilibrationTime); err != nil {
+		return err
+	}
+	if err := sto.SetUint64ByUint64(inertiaOffset, InitialInertia); err != nil {
+		return err
+	}
+	if err := sto.SetUint64ByUint64(perUnitRewardOffset, InitialPerUnitReward); err != nil {
+		return err
+	}
+	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
+	return pricePerUnit.Set(big.NewInt(InitialPricePerUnitGwei * 1000000000))
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	return &L1PricingState{
 		sto,
-		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
-		sto.OpenStorageBackedBigInt(l1BaseFeeEstimateOffset),
-		sto.OpenStorageBackedUint64(l1BaseFeeEstimateInertiaOffset),
-		sto.OpenStorageBackedUint64(lastL1BaseFeeUpdateTimeOffset),
-		sto.OpenSubStorage(userSpecifiedAggregatorKey),
-		sto.OpenSubStorage(refuseDefaultAggregatorKey),
-		sto.OpenSubStorage(aggregatorFeeCollectorKey),
-		sto.OpenSubStorage(aggregatorCompressionRatioKey),
+		sto.OpenStorageBackedAddress(sequencerOffset),
+		sto.OpenStorageBackedAddress(paySequencerFeesToOffset),
+		sto.OpenStorageBackedAddress(payRewardsToOffset),
+		sto.OpenStorageBackedUint64(equilibrationTimeOffset),
+		sto.OpenStorageBackedUint64(inertiaOffset),
+		sto.OpenStorageBackedUint64(perUnitRewardOffset),
+		sto.OpenStorageBackedUint64(currentTimeOffset),
+		sto.OpenStorageBackedUint64(lastUpdateTimeOffset),
+		sto.OpenStorageBackedUint64(availableFundsOffset),
+		sto.OpenStorageBackedUint64(fundsDueToSequencerOffset),
+		sto.OpenStorageBackedUint64(fundsDueForRewards),
+		sto.OpenStorageBackedUint64(collectedSinceOffset),
+		sto.OpenStorageBackedUint64(unitsSinceOffset),
+		sto.OpenStorageBackedBigInt(pricePerUnitOffset),
 	}
 }
 
-func (ps *L1PricingState) DefaultAggregator() (common.Address, error) {
-	return ps.defaultAggregator.Get()
+func (ps *L1PricingState) Sequencer() (common.Address, error) {
+	return ps.sequencer.Get()
 }
 
-func (ps *L1PricingState) SetDefaultAggregator(val common.Address) error {
-	return ps.defaultAggregator.Set(val)
+func (ps *L1PricingState) SetSequencer(seq common.Address) error {
+	return ps.sequencer.Set(seq)
 }
 
-func (ps *L1PricingState) L1BaseFeeEstimateWei() (*big.Int, error) {
-	return ps.l1BaseFeeEstimate.Get()
+func (ps *L1PricingState) PaySequencerFeesTo() (common.Address, error) {
+	return ps.paySequencerFeesTo.Get()
 }
 
-func (ps *L1PricingState) SetL1BaseFeeEstimateWei(val *big.Int) error {
-	return ps.l1BaseFeeEstimate.Set(val)
+func (ps *L1PricingState) SetPaySequencerFeesTo(addr common.Address) error {
+	return ps.paySequencerFeesTo.Set(addr)
 }
 
-func (ps *L1PricingState) LastL1BaseFeeUpdateTime() (uint64, error) {
-	return ps.lastL1BaseFeeUpdateTime.Get()
+func (ps *L1PricingState) PayRewardsTo() (common.Address, error) {
+	return ps.payRewardsTo.Get()
 }
 
-func (ps *L1PricingState) SetLastL1BaseFeeUpdateTime(t uint64) error {
-	return ps.lastL1BaseFeeUpdateTime.Set(t)
+func (ps *L1PricingState) EquilibrationTime() (uint64, error) {
+	return ps.equilibrationTime.Get()
+}
+
+func (ps *L1PricingState) Inertia() (uint64, error) {
+	return ps.inertia.Get()
+}
+
+func (ps *L1PricingState) SetInertia(inertia uint64) error {
+	return ps.inertia.Set(inertia)
+}
+
+func (ps *L1PricingState) PerUnitReward() (uint64, error) {
+	return ps.perUnitReward.Get()
+}
+
+func (ps *L1PricingState) CurrentTime() (uint64, error) {
+	return ps.currentTime.Get()
+}
+
+func (ps *L1PricingState) SetCurrentTime(t uint64) error {
+	return ps.currentTime.Set(t)
+}
+
+func (ps *L1PricingState) LastUpdateTime() (uint64, error) {
+	return ps.lastUpdateTime.Get()
+}
+
+func (ps *L1PricingState) SetLastUpdateTime(t uint64) error {
+	return ps.lastUpdateTime.Set(t)
+}
+
+func (ps *L1PricingState) AvailableFunds() (uint64, error) {
+	return ps.availableFunds.Get()
+}
+
+func (ps *L1PricingState) SetAvailableFunds(amt uint64) error {
+	return ps.availableFunds.Set(amt)
+}
+
+func (ps *L1PricingState) FundsDueToSequencer() (uint64, error) {
+	return ps.fundsDueToSequencer.Get()
+}
+
+func (ps *L1PricingState) SetFundsDueToSequencer(amt uint64) error {
+	return ps.fundsDueToSequencer.Set(amt)
+}
+
+func (ps *L1PricingState) FundsDueForRewards() (uint64, error) {
+	return ps.fundsDueForRewards.Get()
+}
+
+func (ps *L1PricingState) SetFundsDueForRewards(amt uint64) error {
+	return ps.fundsDueForRewards.Set(amt)
+}
+
+func (ps *L1PricingState) CollectedSinceUpdate() (uint64, error) {
+	return ps.collectedSinceUpdate.Get()
+}
+
+func (ps *L1PricingState) SetCollectedSinceUpdate(amt uint64) error {
+	return ps.collectedSinceUpdate.Set(amt)
+}
+
+func (ps *L1PricingState) UnitsSinceUpdate() (uint64, error) {
+	return ps.unitsSinceUpdate.Get()
+}
+
+func (ps *L1PricingState) SetUnitsSinceUpdate(units uint64) error {
+	return ps.unitsSinceUpdate.Set(units)
+}
+
+func (ps *L1PricingState) PricePerUnit() (*big.Int, error) {
+	return ps.pricePerUnit.Get()
+}
+
+func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
+	return ps.pricePerUnit.Set(price)
 }
 
 // Update the pricing model with info from the start of a block
-func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, currentTime uint64) {
-
-	if baseFeeSample.Sign() == 0 {
-		// The sequencer's normal messages do not include the l1 basefee, so ignore them
-		return
-	}
-
-	// update the l1 basefee estimate, which is the weighted average of the past and present
-	//     basefee' = weighted average of the historical rate and the current, discounting time passed
-	//     basefee' = (memory * basefee + sqrt(passed) * sample) / (memory + sqrt(passed))
-	//
-	baseFee, _ := ps.L1BaseFeeEstimateWei()
-	inertia, _ := ps.L1BaseFeeEstimateInertia()
-	lastTime, _ := ps.LastL1BaseFeeUpdateTime()
-	if currentTime <= lastTime {
-		return
-	}
-	passedSqrt := arbmath.ApproxSquareRoot(currentTime - lastTime)
-	newBaseFee := arbmath.BigDivByUint(
-		arbmath.BigAdd(arbmath.BigMulByUint(baseFee, inertia), arbmath.BigMulByUint(baseFeeSample, passedSqrt)),
-		inertia+passedSqrt,
-	)
-
-	_ = ps.SetL1BaseFeeEstimateWei(newBaseFee)
-	_ = ps.SetLastL1BaseFeeUpdateTime(currentTime)
+func (ps *L1PricingState) UpdateTime(currentTime uint64) {
+	_ = ps.SetCurrentTime(currentTime)
 }
 
-// Get how slowly ArbOS updates its estimate of the L1 basefee
-func (ps *L1PricingState) L1BaseFeeEstimateInertia() (uint64, error) {
-	return ps.l1BaseFeeEstimateInertia.Get()
-}
-
-// Set how slowly ArbOS updates its estimate of the L1 basefee
-func (ps *L1PricingState) SetL1BaseFeeEstimateInertia(inertia uint64) error {
-	return ps.l1BaseFeeEstimateInertia.Set(inertia)
-}
-
-func (ps *L1PricingState) userSpecifiedAggregatorsForAddress(sender common.Address) *addressSet.AddressSet {
-	return addressSet.OpenAddressSet(ps.userSpecifiedAggregators.OpenSubStorage(sender.Bytes()))
-}
-
-// Get sender's user-specified aggregator, or nil if there is none. This does NOT fall back to the default aggregator
-//     if there is no user-specified aggregator. If that is what you want, call ReimbursableAggregatorForSender instead.
-func (ps *L1PricingState) UserSpecifiedAggregator(sender common.Address) (*common.Address, error) {
-	return ps.userSpecifiedAggregatorsForAddress(sender).GetAnyMember()
-}
-
-func (ps *L1PricingState) SetUserSpecifiedAggregator(sender common.Address, maybeAggregator *common.Address) error {
-	paSet := ps.userSpecifiedAggregatorsForAddress(sender)
-	if err := paSet.Clear(); err != nil {
+// Update the pricing model based on a payment by the sequencer
+func (ps *L1PricingState) UpdateForSequencerSpending(stateDb vm.StateDB, updateTime uint64, currentTime uint64, weiSpent uint64) error {
+	// compute previous shortfall
+	fundsDueToSequencer, err := ps.FundsDueToSequencer()
+	if err != nil {
 		return err
 	}
-	if maybeAggregator == nil {
-		return nil
-	}
-	return paSet.Add(*maybeAggregator)
-}
-
-func (ps *L1PricingState) RefusesDefaultAggregator(addr common.Address) (bool, error) {
-	val, err := ps.refuseDefaultAggregator.Get(common.BytesToHash(addr.Bytes()))
+	fundsDueForRewards, err := ps.FundsDueForRewards()
 	if err != nil {
-		return false, err
+		return err
 	}
-	return val != (common.Hash{}), nil
-}
-
-func (ps *L1PricingState) SetRefusesDefaultAggregator(addr common.Address, refuses bool) error {
-	val := uint64(0)
-	if refuses {
-		val = 1
-	}
-	return ps.refuseDefaultAggregator.Set(common.BytesToHash(addr.Bytes()), common.BigToHash(arbmath.UintToBig(val)))
-}
-
-// Get the aggregator who is eligible to be reimbursed for L1 costs of txs from sender, or nil if there is none.
-func (ps *L1PricingState) ReimbursableAggregatorForSender(sender common.Address) (*common.Address, error) {
-	fromTable, err := ps.UserSpecifiedAggregator(sender)
+	availableFunds, err := ps.AvailableFunds()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if fromTable != nil {
-		return fromTable, nil
-	}
+	oldShortfall := int64(fundsDueToSequencer) + int64(fundsDueForRewards) - int64(availableFunds)
 
-	refuses, err := ps.RefusesDefaultAggregator(sender)
-	if err != nil || refuses {
-		return nil, err
-	}
-	aggregator, err := ps.DefaultAggregator()
+	// compute allocation fraction
+	lastUpdateTime, err := ps.LastUpdateTime()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if aggregator == (common.Address{}) {
-		return nil, nil
+	if updateTime > currentTime || updateTime < lastUpdateTime || currentTime == lastUpdateTime {
+		return ErrInvalidTime
 	}
-	return &aggregator, nil
+	allocFractionNum := updateTime - lastUpdateTime
+	allocFractionDenom := currentTime - lastUpdateTime
 
+	// allocate units to this update
+	unitsSinceUpdate, err := ps.UnitsSinceUpdate()
+	if err != nil {
+		return err
+	}
+	unitsAllocated := unitsSinceUpdate * allocFractionNum / allocFractionDenom
+	unitsSinceUpdate -= unitsAllocated
+	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
+		return err
+	}
+
+	// allocate funds to this update
+	collectedSinceUpdate, err := ps.CollectedSinceUpdate()
+	if err != nil {
+		return err
+	}
+	fundsToMove := collectedSinceUpdate * allocFractionNum / allocFractionDenom
+	collectedSinceUpdate -= fundsToMove
+	if err := ps.SetCollectedSinceUpdate(collectedSinceUpdate); err != nil {
+		return err
+	}
+	availableFunds += fundsToMove
+
+	// update amounts due
+	perUnitReward, err := ps.PerUnitReward()
+	if err != nil {
+		return err
+	}
+	fundsDueToSequencer += weiSpent
+	if err := ps.SetFundsDueToSequencer(fundsDueToSequencer); err != nil {
+		return err
+	}
+	fundsDueForRewards += perUnitReward * allocFractionNum / allocFractionDenom
+	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
+		return err
+	}
+
+	// settle up, by paying out available funds
+	payRewardsTo, err := ps.PayRewardsTo()
+	if err != nil {
+		return err
+	}
+	paymentForRewards := arbmath.MinUint(availableFunds, fundsDueForRewards)
+	if paymentForRewards > 0 {
+		availableFunds -= paymentForRewards
+		if err := ps.SetAvailableFunds(availableFunds); err != nil {
+			return err
+		}
+		fundsDueForRewards -= paymentForRewards
+		if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
+			return err
+		}
+		core.Transfer(stateDb, L1PricerFundsPoolAddress, payRewardsTo, arbmath.UintToBig(paymentForRewards))
+	}
+	sequencerPaymentAddr, err := ps.Sequencer()
+	if err != nil {
+		return err
+	}
+	paymentForSequencer := arbmath.MinUint(availableFunds, fundsDueToSequencer)
+	if paymentForSequencer > 0 {
+		availableFunds -= paymentForSequencer
+		if err := ps.SetAvailableFunds(availableFunds); err != nil {
+			return err
+		}
+		fundsDueToSequencer -= paymentForSequencer
+		if err := ps.SetFundsDueToSequencer(fundsDueToSequencer); err != nil {
+			return err
+		}
+		core.Transfer(stateDb, L1PricerFundsPoolAddress, sequencerPaymentAddr, arbmath.UintToBig(paymentForSequencer))
+	}
+
+	// update time
+	if err := ps.SetLastUpdateTime(updateTime); err != nil {
+		return err
+	}
+
+	// adjust the price
+	if unitsAllocated > 0 {
+		shortfall := int64(fundsDueToSequencer) + int64(fundsDueForRewards) - int64(availableFunds)
+		inertia, err := ps.Inertia()
+		if err != nil {
+			return err
+		}
+		equilTime, err := ps.EquilibrationTime()
+		if err != nil {
+			return err
+		}
+		fdenom := unitsAllocated + equilTime/inertia
+		price, err := ps.PricePerUnit()
+		if err != nil {
+			return err
+		}
+		newPrice := new(big.Int).Sub(price, big.NewInt((shortfall-oldShortfall)/int64(fdenom)+shortfall/int64(equilTime*fdenom)))
+		if newPrice.Sign() >= 0 {
+			price = newPrice
+		} else {
+			price = big.NewInt(0)
+		}
+		if err := ps.SetPricePerUnit(price); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (ps *L1PricingState) SetAggregatorFeeCollector(aggregator common.Address, addr common.Address) error {
-	return ps.aggregatorFeeCollectors.Set(common.BytesToHash(aggregator.Bytes()), common.BytesToHash(addr.Bytes()))
-}
-
-func (ps *L1PricingState) AggregatorFeeCollector(aggregator common.Address) (common.Address, error) {
-	raw, err := ps.aggregatorFeeCollectors.Get(common.BytesToHash(aggregator.Bytes()))
-	if raw == (common.Hash{}) {
-		return aggregator, err
-	} else {
-		return common.BytesToAddress(raw.Bytes()), err
-	}
-}
-
-func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) (arbmath.Bips, error) {
-	raw, err := ps.aggregatorCompressionRatios.Get(common.BytesToHash(aggregator.Bytes()))
-	if raw == (common.Hash{}) {
-		return arbmath.OneInBips, err
-	} else {
-		return arbmath.BigToBips(raw.Big()), err
-	}
-}
-
-func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio arbmath.Bips) error {
-	if ratio > arbmath.PercentToBips(200) {
-		return errors.New("compression ratio out of bounds")
-	}
-	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(uint64(ratio)))
-}
-
-func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster common.Address) {
-
+func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, poster common.Address) {
 	tx.PosterCost = big.NewInt(0)
 	tx.PosterIsReimbursable = false
 
-	aggregator, perr := ps.ReimbursableAggregatorForSender(sender)
+	sequencer, perr := ps.Sequencer()
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
-	if !util.TxTypeHasPosterCosts(txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
+	if !util.TxTypeHasPosterCosts(txType) || perr != nil || merr != nil || poster != sequencer {
 		return
 	}
 
@@ -251,38 +370,19 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
-	l1GasPrice, _ := ps.L1BaseFeeEstimateWei()
-	l1BytePrice := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	l1Fee := arbmath.BigMulByUint(l1BytePrice, uint64(l1Bytes))
-
-	// Adjust the price paid by the aggregator's reported improvements due to batching
-	ratio, _ := ps.AggregatorCompressionRatio(poster)
-	adjustedL1Fee := arbmath.BigMulByBips(l1Fee, ratio)
-
+	pricePerUnit, _ := ps.PricePerUnit()
+	tx.PosterCost = arbmath.BigMulByUint(pricePerUnit, l1Bytes*params.TxDataNonZeroGasEIP2028)
 	tx.PosterIsReimbursable = true
-	tx.PosterCost = adjustedL1Fee
 }
 
 const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
-func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address) (*big.Int, bool) {
-
+func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, bool) {
 	if tx := message.UnderlyingTransaction(); tx != nil {
 		if tx.PosterCost == nil {
-			ps.AddPosterInfo(tx, sender, poster)
+			ps.AddPosterInfo(tx, poster)
 		}
 		return tx.PosterCost, tx.PosterIsReimbursable
-	}
-
-	if message.RunMode() == types.MessageGasEstimationMode {
-		// assume for the purposes of gas estimation that the poster will be the user's preferred aggregator
-		aggregator, _ := ps.ReimbursableAggregatorForSender(sender)
-		if aggregator != nil {
-			poster = *aggregator
-		} else {
-			// assume the user will use the delayed inbox since there's no reimbursable party
-			return big.NewInt(0), false
-		}
 	}
 
 	byteCount, err := byteCountAfterBrotli0(message.Data())
@@ -293,13 +393,9 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 
 	// Approximate the l1 fee charged for posting this tx's calldata
 	l1Bytes := byteCount + TxFixedCost
-	l1GasPrice, _ := ps.L1BaseFeeEstimateWei()
-	l1BytePrice := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	l1Fee := arbmath.BigMulByUint(l1BytePrice, uint64(l1Bytes))
+	pricePerUnit, _ := ps.PricePerUnit()
 
-	// Adjust the price paid by the aggregator's reported improvements due to batching
-	ratio, _ := ps.AggregatorCompressionRatio(poster)
-	return arbmath.BigMulByBips(l1Fee, ratio), true
+	return arbmath.BigMulByUint(pricePerUnit, l1Bytes*params.TxDataNonZeroGasEIP2028), true
 }
 
 func byteCountAfterBrotli0(input []byte) (uint64, error) {
