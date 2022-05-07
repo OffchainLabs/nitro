@@ -183,6 +183,7 @@ fn main() -> Result<()> {
     let mut mach = Machine::from_binary(
         &opts.libraries,
         &opts.binary,
+        true,
         opts.always_merkleize,
         opts.allow_hostapi,
         global_state,

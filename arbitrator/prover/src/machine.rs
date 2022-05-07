@@ -3,6 +3,7 @@
 
 use crate::{
     binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
+    console::Color,
     host::get_host_impl,
     memory::Memory,
     merkle::{Merkle, MerkleType},
@@ -359,7 +360,12 @@ impl Module {
                 .ok()
                 .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
                 .ok_or_else(|| eyre!("Memory size is too large"))?;
-            memory = Memory::new(size);
+
+            let max_size = match limits.maximum {
+                Some(value) if value < u32::MAX as u64 => value,
+                _ => u32::MAX as u64,
+            };
+            memory = Memory::new(size, max_size as u32);
         }
 
         let mut globals = vec![];
@@ -809,6 +815,7 @@ impl Machine {
     pub fn from_binary(
         library_paths: &[PathBuf],
         binary_path: &Path,
+        language_support: bool,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
@@ -932,7 +939,7 @@ impl Machine {
         let main_module_idx = modules.len() - 1;
         let main_module = &modules[main_module_idx];
         // Rust support
-        if let Some(&f) = main_module.exports.get("main") {
+        if let Some(&f) = main_module.exports.get("main").filter(|_| language_support) {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
@@ -948,12 +955,12 @@ impl Machine {
             entry!(HaltAndSetFinished);
         }
         // Go support
-        if let Some(&f) = main_module.exports.get("run") {
+        if let Some(&f) = main_module.exports.get("run").filter(|_| language_support) {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
             ensure!(
-                main_module.func_types[f as usize] == expected_type,
+                dbg!(&main_module.func_types[f as usize]) == &expected_type,
                 "Run function doesn't match expected signature of [argc, argv]",
             );
             // Go's flags library panics if the argument list is empty.
@@ -1204,6 +1211,35 @@ impl Machine {
         self.pc = new_state.pc;
         self.stdio_output = new_state.stdio_output.into_owned();
         Ok(())
+    }
+
+    pub fn jump_into_function(&mut self, func: &str, mut args: Vec<Value>) {
+        let frame_args = [Value::RefNull, Value::I32(0), Value::I32(0)];
+        args.extend(frame_args);
+        self.value_stack = args;
+
+        let module = self.modules.last().expect("no module");
+        let export = module.exports.iter().find(|x| x.0 == func);
+        let export = export.expect(&format!("func {} not found", func)).1;
+
+        self.frame_stack.clear();
+        self.block_stack.clear();
+        self.internal_stack.clear();
+
+        self.pc = ProgramCounter {
+            module: self.modules.len() - 1,
+            func: *export as usize,
+            inst: 0,
+        };
+        self.status = MachineStatus::Running;
+        self.steps = 0;
+    }
+
+    pub fn get_final_result(&self) -> Result<Vec<Value>> {
+        if self.frame_stack.len() != 0 {
+            bail!("machine has not successfully computed a final result")
+        }
+        Ok(self.value_stack.clone())
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
@@ -1575,12 +1611,25 @@ impl Machine {
                         Some(Value::I32(x)) => x,
                         v => panic!("WASM validation failed: bad value for memory.grow {:?}", v),
                     };
+                    let page_size = Memory::PAGE_SIZE as u64;
+                    let max_size = match module.memory.max_size {
+                        Some(value) => {
+                            let max = page_size * value as u64;
+                            match max <= u32::MAX as u64 {
+                                true => max,
+                                false => u32::MAX as u64,
+                            }
+                        },
+                        None => u32::MAX as u64,
+                    };
                     let new_size = (|| {
-                        let adding_size =
-                            u64::from(adding_pages).checked_mul(Memory::PAGE_SIZE as u64)?;
+                        let adding_size = u64::from(adding_pages).checked_mul(page_size)?;
                         let new_size = old_size.checked_add(adding_size)?;
                         // Note: we require the size remain *below* 2^32, meaning the actual limit is 2^32-PAGE_SIZE
-                        if new_size < (1 << 32) {
+
+                        println!("{} {} {}", old_size, new_size, max_size);
+                        
+                        if new_size <= max_size as u64 {
                             Some(new_size)
                         } else {
                             None
@@ -1589,7 +1638,7 @@ impl Machine {
                     if let Some(new_size) = new_size {
                         module.memory.resize(usize::try_from(new_size).unwrap());
                         // Push the old number of pages
-                        let old_pages = u32::try_from(old_size / Memory::PAGE_SIZE as u64).unwrap();
+                        let old_pages = u32::try_from(old_size / page_size).unwrap();
                         self.value_stack.push(Value::I32(old_pages));
                     } else {
                         // Push -1
@@ -1823,7 +1872,8 @@ impl Machine {
         if self.is_halted() && !self.stdio_output.is_empty() {
             // If we halted, print out any trailing output that didn't have a newline.
             println!(
-                "\x1b[33mWASM says:\x1b[0m {}",
+                "{} {}",
+                Color::yellow("WASM says:"),
                 String::from_utf8_lossy(&self.stdio_output),
             );
             self.stdio_output.clear();

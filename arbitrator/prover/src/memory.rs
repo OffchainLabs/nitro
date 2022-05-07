@@ -17,6 +17,7 @@ pub struct Memory {
     buffer: Vec<u8>,
     #[serde(skip)]
     merkle: Option<Merkle>,
+    pub max_size: Option<u32>, // TODO make this no longer optional next re-init
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -53,10 +54,11 @@ impl Memory {
     /// 1 + log2(2^32 / LEAF_SIZE) = 1 + log2(2^(32 - log2(LEAF_SIZE))) = 1 + 32 - 5
     const MEMORY_LAYERS: usize = 1 + 32 - 5;
 
-    pub fn new(size: usize) -> Memory {
+    pub fn new(size: usize, max_size: u32) -> Memory {
         Memory {
             buffer: vec![0u8; size],
             merkle: None,
+            max_size: Some(max_size),
         }
     }
 

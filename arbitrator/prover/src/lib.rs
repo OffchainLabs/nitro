@@ -4,6 +4,7 @@
 #![allow(clippy::missing_safety_doc)] // We have a lot of unsafe ABI
 
 pub mod binary;
+pub mod console;
 mod host;
 pub mod machine;
 /// cbindgen:ignore
@@ -11,7 +12,7 @@ mod memory;
 mod merkle;
 mod reinterpret;
 pub mod utils;
-mod value;
+pub mod value;
 pub mod wavm;
 
 use crate::machine::{argument_data_to_inbox, Machine};
@@ -73,6 +74,7 @@ unsafe fn arbitrator_load_machine_impl(
     let mach = Machine::from_binary(
         &libraries,
         binary_path,
+        true,
         false,
         false,
         Default::default(),

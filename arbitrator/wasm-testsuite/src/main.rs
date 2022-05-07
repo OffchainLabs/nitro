@@ -1,5 +1,9 @@
 use eyre::{bail, ensure};
-use prover::machine::{GlobalState, Machine};
+use prover::{
+    console::Color,
+    machine::{GlobalState, Machine, MachineState, MachineStatus},
+    value::Value,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -25,16 +29,16 @@ struct Case {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Command {
     Module {
-        line: usize,
         filename: String,
     },
     AssertReturn {
-        line: usize,
         action: Action,
         expected: Vec<TextValue>,
     },
     AssertExhaustion {},
-    AssertTrap {},
+    AssertTrap {
+        action: Action,
+    },
 
     Action {},
     AssertMalformed {
@@ -54,8 +58,68 @@ enum Action {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct TextValue {
     #[serde(rename = "type")]
-    ty: String,
+    ty: TextValueType,
     value: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum TextValueType {
+    I32,
+    I64,
+    F32,
+    F64,
+}
+
+impl Into<Value> for TextValue {
+    fn into(self) -> Value {
+        match self.ty {
+            TextValueType::I32 => {
+                let value = self.value.parse().expect("not an i32");
+                Value::I32(value)
+            }
+            TextValueType::I64 => {
+                let value = self.value.parse().expect("not an i64");
+                Value::I64(value)
+            }
+            TextValueType::F32 => {
+                if self.value.contains("nan") {
+                    return Value::F32(f32::NAN);
+                }
+                let message = format!("{} not the bit representation of an f32", self.value);
+                let bits: u32 = self.value.parse().expect(&message);
+                Value::F32(f32::from_bits(bits))
+            }
+            TextValueType::F64 => {
+                if self.value.contains("nan") {
+                    return Value::F64(f64::NAN);
+                }
+                let message = format!("{} not the bit representation of an f64", self.value);
+                let bits: u64 = self.value.parse().expect(&message);
+                Value::F64(f64::from_bits(bits))
+            }
+        }
+    }
+}
+
+impl PartialEq<Value> for TextValue {
+    fn eq(&self, other: &Value) -> bool {
+        if &Into::<Value>::into(self.clone()) == other {
+            return true;
+        }
+
+        match self.ty {
+            TextValueType::F32 => match other {
+                Value::F32(value) => value.is_nan() && self.value.contains("nan"),
+                _ => false,
+            },
+            TextValueType::F64 => match other {
+                Value::F64(value) => value.is_nan() && self.value.contains("nan"),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
 }
 
 fn main() -> eyre::Result<()> {
@@ -68,41 +132,25 @@ fn main() -> eyre::Result<()> {
     let reader = BufReader::new(File::open(path)?);
     let case: Case = serde_json::from_reader(reader)?;
 
-    let mut module: Option<String> = None;
-    let mut invalid = HashSet::new();
-
-    for command in &case.commands {
-        use Command::*;
-
-        match command {
-            Module { line: _, filename } => {
-                module = Some(filename.clone());
-            }
-            AssertReturn { .. } | AssertTrap { .. } | AssertExhaustion { .. } => {}
-            AssertMalformed { filename } => {
-                invalid.insert(filename.to_owned());
-            }
-            _ => {
-                invalid.insert(module.clone().expect("no module"));
-            }
-        }
-    }
-
     let soft_float = PathBuf::from("../../target/machines/latest/soft-float.wasm");
 
     let mut wasmpath = PathBuf::new();
     let mut wasmfile = String::new();
     let mut machine = None;
+    let mut subtest = 0;
 
-    for command in case.commands {
+    for (index, command) in case.commands.into_iter().enumerate() {
         match command {
-            Command::Module { line: _, filename } => {
-                wasmpath = PathBuf::from("tests/");
-                wasmpath.push(&filename);
+            Command::Module { filename } => {
+                wasmfile = filename;
+                wasmpath = PathBuf::from("tests").join(&wasmfile);
+                machine = None;
+                subtest = 1;
 
                 let mech = Machine::from_binary(
                     &[soft_float.clone()],
                     &wasmpath,
+                    false,
                     false,
                     false,
                     GlobalState::default(),
@@ -111,43 +159,103 @@ fn main() -> eyre::Result<()> {
                 );
 
                 if let Err(error) = &mech {
-                    if error.to_string().contains("Module has no code") {
-                        //
-                        machine = None;
+                    let error = error.root_cause().to_string();
+
+                    if error.contains("Module has no code") {
+                        // We don't support metadata-only modules that have no code
                         continue;
                     }
-                    if !invalid.contains(&filename) {
-                        bail!("failed to accept valid module {}: {}", filename, error);
+                    if error.contains("Unsupported import") {
+                        // We don't support the import test's functions
+                        continue;
                     }
+                    if error.contains("multiple tables") {
+                        // We don't support the reference-type extension
+                        continue;
+                    }
+                    if error.contains("bulk memory") {
+                        // We don't support the bulk-memory extension
+                        continue;
+                    }
+                    bail!("Unexpected error parsing module {}: {}", wasmfile, error)
                 }
 
-                if invalid.contains(&filename) {
-                    bail!("failed to reject invalid module {}", filename);
-                }
-
-                machine = Some(mech.unwrap());
-
-                /*match mech {
-                    Ok(mech) => machine = Some(mech),
-                    Err(err) if err.to_string().contains("Module has no code") => machine = None,
-                    Err(err) => return Err(err),
-                }*/
-
-                wasmfile = filename;
+                machine = mech.ok();
             }
-            Command::AssertReturn {
-                line: _,
-                action,
-                expected,
-            } => {
-                let (field, args) = match action {
+            Command::AssertReturn { action, expected } => {
+                let (func, args) = match action {
                     Action::Invoke { field, args } => (field, args),
                     _ => continue,
                 };
-                //println!("{} {:?}", field, args)
+
+                let args: Vec<_> = args.into_iter().map(Into::into).collect();
+                
+                let machine = machine.as_mut().unwrap();
+                machine.jump_into_function(&func, args.clone());
+                machine.step_n(u64::MAX);
+                
+                let output = machine.get_final_result()?;
+
+                if expected != output {
+                    let expected: Vec<Value> = expected.into_iter().map(Into::into).collect();
+                    println!(
+                        "Divergence in func {} of test {}",
+                        Color::red(func),
+                        Color::red(index),
+                    );
+                    println!("\tExpected {:?}", expected);
+                    println!("\tObserved {:?}", output);
+                    println!("\tArgs     {:?}", args);
+                    println!();
+                    bail!(
+                        "Failure in test {}",
+                        Color::red(format!("{} #{}", wasmfile, subtest))
+                    )
+                }
+                subtest += 1;
             }
-            Command::AssertTrap {} => {}
-            Command::AssertExhaustion {} => {}
+            Command::AssertTrap { action } => {
+                let (func, args) = match action {
+                    Action::Invoke { field, args } => (field, args),
+                    _ => continue,
+                };
+
+                let args: Vec<_> = args.into_iter().map(Into::into).collect();
+
+                let machine = machine.as_mut().unwrap();
+                machine.jump_into_function(&func, args.clone());
+                //machine.step_n(u64::MAX);
+                machine.step_n(1000);
+
+                if machine.get_status() == MachineStatus::Running {
+                    bail!("machine failed to trap")
+                }
+
+                if let Ok(output) = machine.get_final_result() {
+                    bail!("machine should have failed {:?}", output)
+                }
+                
+                subtest += 1;
+            }
+            Command::AssertExhaustion {} => {
+                panic!("unimplemented");
+                subtest += 1;
+            }
+            Command::AssertMalformed { filename } => {
+                let wasmpath = PathBuf::from("tests").join(&filename);
+
+                Machine::from_binary(
+                    &[soft_float.clone()],
+                    &wasmpath,
+                    false,
+                    false,
+                    false,
+                    GlobalState::default(),
+                    HashMap::default(),
+                    HashMap::default(),
+                )
+                .expect_err(&format!("failed to reject invalid module {}", filename));
+            }
             _ => {}
         }
     }
