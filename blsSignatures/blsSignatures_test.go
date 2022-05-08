@@ -4,7 +4,9 @@
 package blsSignatures
 
 import (
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -77,6 +79,37 @@ func TestSignatureAggregation(t *testing.T) {
 		Fail(t, "First aggregated signature check failed")
 	}
 
+	verified, err = VerifyAggregatedSignatureSameMessage(AggregateSignatures(sigs), message, pubKeys)
+	Require(t, err)
+	if !verified {
+		Fail(t, "Second aggregated signature check failed")
+	}
+}
+
+func TestSignatureAggregationAnyOrder(t *testing.T) {
+	message := []byte("The quick brown fox jumped over the lazy dog.")
+	pubKeys := []PublicKey{}
+	sigs := []Signature{}
+	for i := 0; i < NumSignaturesToAggregate; i++ {
+		pub, priv, err := GenerateKeys()
+		Require(t, err)
+		pubKeys = append(pubKeys, pub)
+		sig, err := SignMessage(priv, message)
+		Require(t, err)
+		sigs = append(sigs, sig)
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(NumSignaturesToAggregate, func(i, j int) { sigs[i], sigs[j] = sigs[j], sigs[i] })
+	rand.Shuffle(NumSignaturesToAggregate, func(i, j int) { pubKeys[i], pubKeys[j] = pubKeys[j], pubKeys[i] })
+
+	verified, err := VerifySignature(AggregateSignatures(sigs), message, AggregatePublicKeys(pubKeys))
+	Require(t, err)
+	if !verified {
+		Fail(t, "First aggregated signature check failed")
+	}
+
+	rand.Shuffle(NumSignaturesToAggregate, func(i, j int) { sigs[i], sigs[j] = sigs[j], sigs[i] })
 	verified, err = VerifyAggregatedSignatureSameMessage(AggregateSignatures(sigs), message, pubKeys)
 	Require(t, err)
 	if !verified {
