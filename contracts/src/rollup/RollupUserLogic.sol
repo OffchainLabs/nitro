@@ -564,8 +564,6 @@ abstract contract AbsRollupUserLogic is
         require(isStaked(stakerAddress), "NOT_STAKED");
         require(currentChallenge(stakerAddress) == NO_CHAL_INDEX, "IN_CHAL");
     }
-
-    function withdrawStakerFunds(address payable destination) external virtual returns (uint256);
 }
 
 contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
@@ -605,7 +603,13 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
      * @notice Increase the amount staked eth for the given staker
      * @param stakerAddress Address of the staker whose stake is increased
      */
-    function addToDeposit(address stakerAddress) external payable onlyValidator whenNotPaused {
+    function addToDeposit(address stakerAddress)
+        external
+        payable
+        override
+        onlyValidator
+        whenNotPaused
+    {
         _addToDeposit(stakerAddress, msg.value);
     }
 

@@ -1,6 +1,6 @@
 {
   "name": "@arbitrum/nitro-contracts",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.4",
   "description": "Layer 2 precompiles and rollup for Arbitrum Nitro",
   "author": "Offchain Labs, Inc.",
   "license": "BUSL-1.1",
@@ -9,6 +9,11 @@
     "url": "git+https://github.com/offchainlabs/nitro.git",
     "directory": "contracts"
   },
+  "files": [
+    "src/",
+    "scripts/build.bash",
+    "hardhat.prod-config.js"
+  ],
   "bugs": {
     "url": "https://github.com/offchainlabs/nitro/issues"
   },

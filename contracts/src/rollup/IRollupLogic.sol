@@ -16,15 +16,43 @@ interface IRollupUserAbs is IRollupCore {
 
     function isERC20Enabled() external view returns (bool);
 
+    function rejectNextNode(address stakerAddress) external;
+
+    function confirmNextNode(bytes32 blockHash, bytes32 sendRoot) external;
+
+    function stakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external;
+
+    function stakeOnNewNode(
+        RollupLib.Assertion memory assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external;
+
     function returnOldDeposit(address stakerAddress) external;
 
-    function requireUnresolved(uint256 nodeNum) external view;
+    function reduceDeposit(uint256 target) external;
 
-    function requireUnresolvedExists() external view;
+    function removeZombie(uint256 zombieNum, uint256 maxNodes) external;
+
+    function removeOldZombies(uint256 startIndex) external;
+
+    function requiredStake(
+        uint256 blockNumber,
+        uint64 firstUnresolvedNodeNum,
+        uint64 latestCreatedNode
+    ) external view returns (uint256);
+
+    function currentRequiredStake() external view returns (uint256);
 
     function countStakedZombies(uint64 nodeNum) external view returns (uint256);
 
     function countZombiesStakedOnChildren(uint64 nodeNum) external view returns (uint256);
+
+    function requireUnresolvedExists() external view;
+
+    function requireUnresolved(uint256 nodeNum) external view;
+
+    function withdrawStakerFunds(address payable destination) external returns (uint256);
 }
 
 interface IRollupUser is IRollupUserAbs {
@@ -35,6 +63,8 @@ interface IRollupUser is IRollupUserAbs {
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) external payable;
+
+    function addToDeposit(address stakerAddress) external payable;
 }
 
 interface IRollupUserERC20 is IRollupUserAbs {
@@ -50,6 +80,8 @@ interface IRollupUserERC20 is IRollupUserAbs {
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) external;
+
+    function addToDeposit(address stakerAddress, uint256 tokenAmount) external;
 }
 
 interface IRollupAdmin {
