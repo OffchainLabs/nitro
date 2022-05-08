@@ -4,13 +4,14 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
-    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus},
-    utils::Bytes32,
+    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver},
+    utils::{Bytes32, CBytes},
     wavm::Opcode,
 };
 use serde::Serialize;
 use sha3::{Digest, Keccak256};
 use std::io::BufWriter;
+use std::sync::Arc;
 use std::{
     fs::File,
     io::{BufReader, ErrorKind, Read, Write},
@@ -160,17 +161,19 @@ fn main() -> Result<()> {
         delayed_position += 1;
     }
 
-    let mut preimages = HashMap::default();
+    let mut preimages: HashMap<Bytes32, CBytes> = HashMap::default();
     if let Some(path) = opts.preimages {
         preimages = parse_size_delim(&path)?
             .into_iter()
             .map(|b| {
                 let mut hasher = Keccak256::new();
                 hasher.update(&b);
-                (hasher.finalize().into(), b)
+                (hasher.finalize().into(), CBytes::from(b.as_slice()))
             })
             .collect();
     }
+    let preimage_resolver =
+        Arc::new(move |_, hash| preimages.get(&hash).cloned()) as PreimageResolver;
 
     let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
     let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
@@ -187,7 +190,7 @@ fn main() -> Result<()> {
         opts.allow_hostapi,
         global_state,
         inbox_contents,
-        preimages,
+        preimage_resolver,
     )?;
     if let Some(output_path) = opts.generate_binaries {
         let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
@@ -200,7 +203,7 @@ fn main() -> Result<()> {
             .map(|i| !i.opcode.is_host_io())
             .unwrap_or(false)
         {
-            mach.step_n(1);
+            mach.step_n(1)?;
         }
         mach.serialize_state(output_path.join("until-host-io-state.bin"))?;
 
@@ -235,7 +238,7 @@ fn main() -> Result<()> {
             let prove =
                 count < 5 || (count < 25 && count % 5 == 0) || (count < 125 && count % 25 == 0);
             if !prove {
-                mach.step_n(1);
+                mach.step_n(1)?;
                 continue;
             }
         }
@@ -247,7 +250,7 @@ fn main() -> Result<()> {
             unsafe {
                 start = core::arch::x86_64::_rdtsc();
             }
-            mach.step_n(1);
+            mach.step_n(1)?;
             #[cfg(target_arch = "x86_64")]
             unsafe {
                 end = core::arch::x86_64::_rdtsc();
@@ -311,7 +314,7 @@ fn main() -> Result<()> {
                 break;
             }
             let proof = mach.serialize_proof();
-            mach.step_n(1);
+            mach.step_n(1)?;
             let after = mach.hash();
             println!(" - done");
             proofs.push(ProofInfo {
@@ -319,7 +322,7 @@ fn main() -> Result<()> {
                 proof: hex::encode(proof),
                 after: after.to_string(),
             });
-            mach.step_n(opts.proving_interval.saturating_sub(1));
+            mach.step_n(opts.proving_interval.saturating_sub(1))?;
         }
     }
     #[cfg(target_arch = "x86_64")]
