@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/pkg/errors"
 )
@@ -48,6 +49,7 @@ type L1Validator struct {
 	genesisBlockNumber      uint64
 
 	l2Blockchain       *core.BlockChain
+	das                das.DataAvailabilityService
 	inboxTracker       InboxTrackerInterface
 	txStreamer         TransactionStreamerInterface
 	blockValidator     *BlockValidator
@@ -60,6 +62,7 @@ func NewL1Validator(
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
 	l2Blockchain *core.BlockChain,
+	das das.DataAvailabilityService,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
@@ -93,6 +96,7 @@ func NewL1Validator(
 		callOpts:           callOpts,
 		genesisBlockNumber: genesisBlockNumber,
 		l2Blockchain:       l2Blockchain,
+		das:                das,
 		inboxTracker:       inboxTracker,
 		txStreamer:         txStreamer,
 		blockValidator:     blockValidator,
