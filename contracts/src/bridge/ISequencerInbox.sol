@@ -68,6 +68,9 @@ interface ISequencerInbox {
     /// @dev The batch data has the inbox authenticated bit set, but the batch data was not authenticated by the inbox
     error DataNotAuthenticated();
 
+    /// @dev An invalid Data Availability Service keyset was submitted
+    error InvalidDASKeyset(bytes32);
+
     function inboxAccs(uint256 index) external view returns (bytes32);
 
     function batchCount() external view returns (uint256);

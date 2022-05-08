@@ -36,6 +36,7 @@ func IsZeroheavyEncodedHeaderByte(header byte) bool {
 }
 
 type DataAvailabilityCertificate struct {
+	KeysetHash  [32]byte
 	DataHash    [32]byte
 	Timeout     uint64
 	SignersMask uint64
@@ -52,6 +53,11 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 	}
 	if !IsDASMessageHeaderByte(header) {
 		return nil, errors.New("Tried to deserialize a message that doesn't have the DAS header.")
+	}
+
+	_, err = io.ReadFull(r, c.KeysetHash[:])
+	if err != nil {
+		return nil, err
 	}
 
 	_, err = io.ReadFull(r, c.DataHash[:])

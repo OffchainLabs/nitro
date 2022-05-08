@@ -7,6 +7,7 @@ pragma solidity ^0.8.0;
 import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
+import "../das/DasKeysetManager.sol";
 
 import {GasRefundEnabled, IGasRefunder} from "../libraries/IGasRefunder.sol";
 import "../libraries/DelegateCallAware.sol";
@@ -24,6 +25,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
+
+    DasKeysetManager private dasKeysetManager;
 
     /// @dev The size of the batch header
     uint256 public constant HEADER_LENGTH = 40;
@@ -133,6 +136,13 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
+        bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
+        if (dasKeysetHash != bytes32(0)) {
+            if (
+                dasKeysetManager == DasKeysetManager(address(0)) ||
+                !dasKeysetManager.isValidKeysetHash(dasKeysetHash)
+            ) revert InvalidDASKeyset(dasKeysetHash);
+        }
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
             afterDelayedMessagesRead
@@ -179,6 +189,17 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             BatchDataLocation.SeparateBatchEvent
         );
         emit SequencerBatchData(sequenceNumber, data);
+    }
+
+    function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32) {
+        if (data.length < 33 || data[0] != 0x80) {
+            return bytes32(0);
+        }
+        bytes32 temp;
+        assembly {
+            temp := mload(add(data, 1))
+        }
+        return temp;
     }
 
     function packHeader(uint256 afterDelayedMessagesRead)

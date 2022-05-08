@@ -111,6 +111,8 @@ func Serialize(c arbstate.DataAvailabilityCertificate) []byte {
 
 	buf = append(buf, arbstate.DASMessageHeaderFlag)
 
+	buf = append(buf, c.KeysetHash[:]...)
+
 	buf = append(buf, serializeSignableFields(c)...)
 
 	var intData [8]byte
