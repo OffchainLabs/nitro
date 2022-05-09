@@ -13,7 +13,7 @@ use crate::{
     wavm::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
-    }, machine,
+    }
 };
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
@@ -1235,7 +1235,7 @@ impl Machine {
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
-        if self.frame_stack.len() != 0 /*|| self.status == MachineStatus::Errored*/ {
+        if self.frame_stack.len() != 0 {
             bail!("machine has not successfully computed a final result")
         }
         Ok(self.value_stack.clone())
@@ -1280,12 +1280,17 @@ impl Machine {
                 }
             };
         }
+        macro_rules! error {
+            () => {{
+                self.status = MachineStatus::Errored;
+                break;
+            }};
+        }
 
         for _ in 0..n {
             self.steps += 1;
             if self.steps == Self::MAX_STEPS {
-                self.status = MachineStatus::Errored;
-                break;
+                error!();
             }
             let inst = func.code[self.pc.inst];
             if self.pc.inst == 1 {
@@ -1311,10 +1316,7 @@ impl Machine {
             }
             self.pc.inst += 1;
             match inst.opcode {
-                Opcode::Unreachable => {
-                    self.status = MachineStatus::Errored;
-                    break;
-                }
+                Opcode::Unreachable => error!(),
                 Opcode::Nop => {}
                 Opcode::Block => {
                     let idx = inst.argument_data as usize;
@@ -1371,10 +1373,7 @@ impl Machine {
                 Opcode::Return => {
                     let frame = self.frame_stack.pop().unwrap();
                     match frame.return_ref {
-                        Value::RefNull => {
-                            self.status = MachineStatus::Errored;
-                            break;
-                        }
+                        Value::RefNull => error!(),
                         Value::InternalRef(pc) => {
                             let changing_module = pc.module != self.pc.module;
                             if changing_module {
@@ -1432,8 +1431,7 @@ impl Machine {
                         func = &module.funcs[self.pc.func];
                     } else {
                         // The caller module has no internals
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     }
                 }
                 Opcode::CallIndirect => {
@@ -1460,15 +1458,11 @@ impl Machine {
                                 self.pc.inst = 0;
                                 func = &module.funcs[self.pc.func];
                             }
-                            Value::RefNull => {
-                                self.status = MachineStatus::Errored;
-                                break;
-                            }
+                            Value::RefNull => error!(),
                             v => panic!("Invalid table element value {:?}", v),
                         }
                     } else {
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     }
                 }
                 Opcode::LocalGet => {
@@ -1500,12 +1494,10 @@ impl Machine {
                         if let Some(val) = val {
                             self.value_stack.push(val);
                         } else {
-                            self.status = MachineStatus::Errored;
-                            break;
+                            error!();
                         }
                     } else {
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     }
                 }
                 Opcode::MemoryStore { ty: _, bytes } => {
@@ -1528,12 +1520,10 @@ impl Machine {
                     };
                     if let Some(idx) = inst.argument_data.checked_add(base.into()) {
                         if !module.memory.store_value(idx, val, bytes) {
-                            self.status = MachineStatus::Errored;
-                            break;
+                            error!();
                         }
                     } else {
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     }
                 }
                 Opcode::I32Const => {
@@ -1669,20 +1659,28 @@ impl Machine {
                     match w {
                         IntegerValType::I32 => {
                             if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
-                                match exec_ibin_op(a, b, op) {
-                                    Some(value) => self.value_stack.push(Value::I32(value)),
-                                    None => self.status = MachineStatus::Errored,
+                                let value = match exec_ibin_op(a, b, op) {
+                                    Some(value) => value,
+                                    None => error!(),
+                                };
+                                if value > i32::MAX as u32 && op.signed() {
+                                    error!();
                                 }
+                                self.value_stack.push(Value::I32(value))
                             } else {
                                 panic!("WASM validation failed: wrong types for i32binop");
                             }
                         }
                         IntegerValType::I64 => {
                             if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
-                                match exec_ibin_op(a, b, op) {
-                                    Some(value) => self.value_stack.push(Value::I64(value)),
-                                    None => self.status = MachineStatus::Errored,
+                                let value = match exec_ibin_op(a, b, op) {
+                                    Some(value) => value,
+                                    None => error!(),
+                                };
+                                if value > i64::MAX as u64 && op.signed() {
+                                    error!();
                                 }
+                                self.value_stack.push(Value::I64(value))
                             } else {
                                 panic!("WASM validation failed: wrong types for i64binop");
                             }
@@ -1773,28 +1771,24 @@ impl Machine {
                             .memory
                             .store_slice_aligned(ptr.into(), &*self.global_state.bytes32_vals[idx])
                     {
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     }
                 }
                 Opcode::SetGlobalStateBytes32 => {
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
                     let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.bytes32_vals.len() {
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
                         self.global_state.bytes32_vals[idx] = hash;
                     } else {
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     }
                 }
                 Opcode::GetGlobalStateU64 => {
                     let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     } else {
                         self.value_stack
                             .push(Value::I64(self.global_state.u64_vals[idx]));
@@ -1804,8 +1798,7 @@ impl Machine {
                     let val = self.value_stack.pop().unwrap().assume_u64();
                     let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     } else {
                         self.global_state.u64_vals[idx] = val
                     }
@@ -1837,8 +1830,7 @@ impl Machine {
                             panic!("Missing requested preimage for hash {}", hash);
                         }
                     } else {
-                        self.status = MachineStatus::Errored;
-                        break;
+                        error!();
                     }
                 }
                 Opcode::ReadInboxMessage => {
@@ -1849,8 +1841,7 @@ impl Machine {
                         argument_data_to_inbox(inst.argument_data).expect("Bad inbox indentifier");
                     if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
                         if ptr as u64 + 32 > module.memory.size() {
-                            self.status = MachineStatus::Errored;
-                            break;
+                            error!();
                         } else {
                             let offset = usize::try_from(offset).unwrap();
                             let len = std::cmp::min(32, message.len().saturating_sub(offset));
@@ -1858,8 +1849,7 @@ impl Machine {
                             if module.memory.store_slice_aligned(ptr.into(), read) {
                                 self.value_stack.push(Value::I32(len as u32));
                             } else {
-                                self.status = MachineStatus::Errored;
-                                break;
+                                error!();
                             }
                         }
                     } else {

@@ -5,12 +5,7 @@ use prover::{
     value::Value,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    fs::File,
-    io::BufReader,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fs::File, io::BufReader, path::PathBuf};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -122,6 +117,18 @@ impl PartialEq<Value> for TextValue {
     }
 }
 
+fn pretty_print_values(prefix: &str, values: Vec<Value>) {
+    let mut result = format!("  {}  ", prefix);
+    for value in values {
+        result += &format!("{}, ", value.pretty_print());
+    }
+    if result.len() > 2 {
+        result.pop();
+        result.pop();
+    }
+    println!("{}", result)
+}
+
 fn main() -> eyre::Result<()> {
     let opts = Opts::from_args();
     println!("test {:?}", opts.json);
@@ -201,17 +208,12 @@ fn main() -> eyre::Result<()> {
                             Color::red(func),
                             Color::red(index),
                         );
-                        println!("\tArgs     {:?}", args);
-                        println!("\tExpected {:?}", expected);
+                        pretty_print_values("Args    ", args);
+                        pretty_print_values("Expected", expected);
                         println!();
                         bail!("{}", error)
                     }
                 };
-
-                // i32::max + 1  =>   2147483648  =>  0x4F000000  0x41E0000000000000
-                // i32::min - 1  =>  -2147483649  =>  0xCF000000  0xC1E0000000200000
-                // u32::max + 1  =>   4294967296  =>  0x4F800000  0x41F0000000000000
-                // u32::min - 1  =>           -1  =>  0xBF800000  0xBFF0000000000000
 
                 if expected != output {
                     let expected: Vec<Value> = expected.into_iter().map(Into::into).collect();
@@ -220,9 +222,9 @@ fn main() -> eyre::Result<()> {
                         Color::red(func),
                         Color::red(index),
                     );
-                    println!("\tArgs     {:?}", args);
-                    println!("\tExpected {:?}", expected);
-                    println!("\tObserved {:?}", output);
+                    pretty_print_values("Args    ", args);
+                    pretty_print_values("Expected", expected);
+                    pretty_print_values("Observed", output);
                     println!();
                     bail!(
                         "Failure in test {}",
@@ -255,8 +257,8 @@ fn main() -> eyre::Result<()> {
                         Color::red(func),
                         Color::red(index),
                     );
-                    println!("\tArgs     {:?}", args);
-                    println!("\tOutput   {:?}", output);
+                    pretty_print_values("Args  ", args);
+                    pretty_print_values("Output", output);
                     println!();
                     bail!("Unexpected success in test {}", test)
                 }

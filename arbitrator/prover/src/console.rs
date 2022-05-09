@@ -25,22 +25,22 @@ impl Color {
         format!("{}{}{}", color, text, Color::RESET)
     }
 
-    /// Colors text red. Typically used for compile errors.
+    /// Colors text red.
     pub fn red<S: fmt::Display>(text: S) -> String {
         Color::color(Color::RED, text)
     }
 
-    /// Colors text blue. Typically used for display lines.
+    /// Colors text blue.
     pub fn blue<S: fmt::Display>(text: S) -> String {
         Color::color(Color::BLUE, text)
     }
 
-    /// Colors text yellow. Typically used for compile warnings.
+    /// Colors text yellow.
     pub fn yellow<S: fmt::Display>(text: S) -> String {
         Color::color(Color::YELLOW, text)
     }
 
-    /// Colors text pink. Typically used for warnings promoted to errors.
+    /// Colors text pink.
     pub fn pink<S: fmt::Display>(text: S) -> String {
         Color::color(Color::PINK, text)
     }
@@ -50,12 +50,12 @@ impl Color {
         Color::color(Color::GREY, text)
     }
 
-    /// Colors text lavender. Often used for human-readable values.
+    /// Colors text lavender.
     pub fn lavender<S: fmt::Display>(text: S) -> String {
         Color::color(Color::LAVENDER, text)
     }
 
-    /// Colors text mint. Often used for meta-markup in the optimizer.
+    /// Colors text mint.
     pub fn mint<S: fmt::Display>(text: S) -> String {
         Color::color(Color::MINT, text)
     }

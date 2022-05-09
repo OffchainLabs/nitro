@@ -3,7 +3,7 @@
 
 use std::convert::TryFrom;
 
-use crate::{binary::FloatType, utils::Bytes32};
+use crate::{binary::FloatType, console::Color, utils::Bytes32};
 use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -189,6 +189,45 @@ impl Value {
             ArbValueType::StackBoundary => {
                 panic!("Attempted to make default of StackBoundary type")
             }
+        }
+    }
+
+    pub fn pretty_print(&self) -> String {
+        let lparem = Color::grey("(");
+        let rparem = Color::grey(")");
+            
+        macro_rules! single {
+            ($ty:expr, $value:expr) => {{
+                format!("{}{}{}{}", Color::grey($ty), lparem, $value, rparem)
+            }};
+        }
+        macro_rules! pair {
+            ($ty:expr, $left:expr, $right:expr) => {{
+                let eq = Color::grey("=");
+                format!("{}{}{} {} {}{}", Color::grey($ty), lparem, $left, eq, $right, rparem)
+            }};
+        }
+        match self {
+            Value::I32(value) => {
+                if (*value as i32) < 0 {
+                    pair!("i32", *value as i32, value)
+                } else {
+                    single!("i32", *value)
+                }
+            },
+            Value::I64(value) => {
+                if (*value as i64) < 0 {
+                    pair!("i64", *value as i64, value)
+                } else {
+                    single!("i64", *value)
+                }
+            },
+            Value::F32(value) => single!("f32", *value),
+            Value::F64(value) => single!("f64", *value),
+            Value::RefNull => format!("null"),
+            Value::FuncRef(func) => format!("func {}", func),
+            Value::InternalRef(pc) => format!("inst {} in {}-{}", pc.inst, pc.module, pc.func),
+            Value::StackBoundary => format!("stack boundary"),
         }
     }
 }
