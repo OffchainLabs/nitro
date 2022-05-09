@@ -5,7 +5,6 @@ package dasrpc
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/offchainlabs/nitro/das"
 )
