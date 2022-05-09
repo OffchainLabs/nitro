@@ -13,7 +13,7 @@ use crate::{
     wavm::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
-    },
+    }, machine,
 };
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
@@ -748,7 +748,7 @@ where
 }
 
 #[must_use]
-fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> T
+fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> Option<T>
 where
     Wrapping<T>: ReinterpretAsSigned,
     T: Zero,
@@ -760,7 +760,7 @@ where
         IBinOpType::DivS | IBinOpType::DivU | IBinOpType::RemS | IBinOpType::RemU,
     ) && b.is_zero()
     {
-        return T::zero();
+        return None
     }
     let res = match op {
         IBinOpType::Add => a + b,
@@ -779,7 +779,7 @@ where
         IBinOpType::Rotl => a.rotl(b.cast_usize()),
         IBinOpType::Rotr => a.rotr(b.cast_usize()),
     };
-    res.0
+    Some(res.0)
 }
 
 #[must_use]
@@ -1235,7 +1235,7 @@ impl Machine {
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
-        if self.frame_stack.len() != 0 {
+        if self.frame_stack.len() != 0 /*|| self.status == MachineStatus::Errored*/ {
             bail!("machine has not successfully computed a final result")
         }
         Ok(self.value_stack.clone())
@@ -1669,14 +1669,20 @@ impl Machine {
                     match w {
                         IntegerValType::I32 => {
                             if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
-                                self.value_stack.push(Value::I32(exec_ibin_op(a, b, op)));
+                                match exec_ibin_op(a, b, op) {
+                                    Some(value) => self.value_stack.push(Value::I32(value)),
+                                    None => self.status = MachineStatus::Errored,
+                                }
                             } else {
                                 panic!("WASM validation failed: wrong types for i32binop");
                             }
                         }
                         IntegerValType::I64 => {
                             if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
-                                self.value_stack.push(Value::I64(exec_ibin_op(a, b, op)));
+                                match exec_ibin_op(a, b, op) {
+                                    Some(value) => self.value_stack.push(Value::I64(value)),
+                                    None => self.status = MachineStatus::Errored,
+                                }
                             } else {
                                 panic!("WASM validation failed: wrong types for i64binop");
                             }
