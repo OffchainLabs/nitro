@@ -884,7 +884,7 @@ impl Machine {
             allow_hostapi_from_main,
             global_state,
             inbox_contents,
-            preimages,
+            preimage_resolver,
         )
     }
 
@@ -895,7 +895,7 @@ impl Machine {
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-        preimages: HashMap<Bytes32, Vec<u8>>,
+        preimage_resolver: PreimageResolver,
     ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
