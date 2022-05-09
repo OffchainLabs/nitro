@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -21,7 +20,7 @@ import (
 func main() {
 	args := os.Args
 	if len(args) < 2 {
-		panic(fmt.Sprintf("Usage: datool [client|keygen] ..."))
+		panic("Usage: datool [client|keygen] ...")
 	}
 
 	var err error
@@ -139,7 +138,10 @@ func startClientRetrieve(args []string) error {
 	}
 
 	decodedCert := make([]byte, base64.StdEncoding.DecodedLen(len(config.Cert)))
-	base64.StdEncoding.Decode(decodedCert, []byte(config.Cert))
+	_, err = base64.StdEncoding.Decode(decodedCert, []byte(config.Cert))
+	if err != nil {
+		return err
+	}
 	ctx := context.Background()
 	message, err := client.Retrieve(ctx, decodedCert)
 	if err != nil {
@@ -149,15 +151,37 @@ func startClientRetrieve(args []string) error {
 	return nil
 }
 
-//
+// das keygen
 
 type KeyGenConfig struct {
+	Dir string
+}
+
+func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
+	f := flag.NewFlagSet("client", flag.ContinueOnError)
+	f.String("dir", "", "The directory to generate the keys in")
+
+	k, err := util.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var config KeyGenConfig
+	if err := util.EndCommonParse(k, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
 }
 
 func startKeyGen(args []string) error {
-	return errors.New("Not implemented")
-}
+	config, err := parseKeyGenConfig(args)
+	if err != nil {
+		return err
+	}
 
-func parseKeyGenConfig(args []string) error {
+	_, _, err = das.GenerateAndStoreKeys(config.Dir)
+	if err != nil {
+		return err
+	}
 	return nil
 }

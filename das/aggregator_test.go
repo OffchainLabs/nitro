@@ -28,8 +28,13 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
+		config := LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+		}
 		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
+		das, err := NewLocalDiskDAS(config, signerMask)
 		Require(t, err)
 		details, err := NewServiceDetails(das, *das.pubKey, signerMask)
 		Require(t, err)
@@ -196,7 +201,12 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		defer os.RemoveAll(dbPath)
 
 		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
+		config := LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+		}
+		das, err := NewLocalDiskDAS(config, signerMask)
 		Require(t, err)
 
 		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask)
@@ -290,8 +300,13 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
+		config := LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+		}
 		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
+		das, err := NewLocalDiskDAS(config, signerMask)
 		Require(t, err)
 
 		details := ServiceDetails{&WrapRetrieve{t, injectedFailures, das}, *das.pubKey, signerMask}

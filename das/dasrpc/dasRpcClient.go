@@ -10,6 +10,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
@@ -18,7 +19,7 @@ type DASRPCClient struct { // implements DataAvailabilityService
 
 func NewDASRPCClient(target string) (*DASRPCClient, error) {
 	// TODO revisit insecure setting
-	conn, err := grpc.Dial(target, grpc.WithInsecure())
+	conn, err := grpc.Dial(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}

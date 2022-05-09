@@ -37,9 +37,9 @@ const (
 )
 
 type DataAvailabilityConfig struct {
-	ModeImpl         string           `koanf:"mode"`
-	LocalDiskDataDir string           `koanf:"local-disk-data-dir"`
-	AggregatorConfig AggregatorConfig `koanf:"aggregator"`
+	ModeImpl           string             `koanf:"mode"`
+	LocalDiskDASConfig LocalDiskDASConfig `koanf:"local-disk"`
+	AggregatorConfig   AggregatorConfig   `koanf:"aggregator"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
@@ -56,9 +56,9 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	}
 
 	if c.ModeImpl == "local" {
-		if c.LocalDiskDataDir == "" {
+		if c.LocalDiskDASConfig.DataDir == "" || c.LocalDiskDASConfig.KeyDir == "" {
 			flag.Usage()
-			return 0, errors.New("--data-availability.local-disk-data-dir must be specified if mode is set to local")
+			return 0, errors.New("--data-availability.local-disk.data-dir and .key-dir must be specified if mode is set to local")
 		}
 		return LocalDataAvailability, nil
 	}
@@ -77,7 +77,7 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode (onchain or local)")
-	f.String(prefix+".local-disk-data-dir", DefaultDataAvailabilityConfig.LocalDiskDataDir, "For local mode, the directory of the data store")
+	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
 }
 

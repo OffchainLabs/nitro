@@ -87,7 +87,7 @@ func startup() error {
 	var dasImpl das.DataAvailabilityService
 	switch mode {
 	case das.LocalDataAvailability:
-		dasImpl, err = das.NewLocalDiskDataAvailabilityService(serverConfig.DAConf.LocalDiskDataDir, 1)
+		dasImpl, err = das.NewLocalDiskDAS(serverConfig.DAConf.LocalDiskDASConfig, 1)
 		if err != nil {
 			return err
 		}

@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base32"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/bits"
@@ -17,88 +16,58 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	flag "github.com/spf13/pflag"
 )
 
-type LocalDiskDataAvailabilityService struct {
-	dbPath     string
+type LocalDiskDASConfig struct {
+	KeyDir            string `koanf:"key-dir"`
+	DataDir           string `koanf:"data-dir"`
+	AllowGenerateKeys bool   `koanf:"allow-generate-keys"`
+}
+
+func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".key-dir", "", fmt.Sprintf("The directory to read the bls keypair ('%s' and '%s') from", DefaultPubKeyFilename, DefaultPrivKeyFilename))
+	f.String(prefix+".data-dir", "", "The directory to use as the DAS file-based database.")
+	f.Bool(prefix+".allow-generate-keys", false, "Allow the local disk DAS to generate its own keys in key-dir if they don't already exist")
+}
+
+type LocalDiskDAS struct {
+	config     LocalDiskDASConfig
 	pubKey     *blsSignatures.PublicKey
 	privKey    blsSignatures.PrivateKey
 	signerMask uint64
 }
 
-func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
-	pubKeyPath := dbPath + "/pubkey"
-	pubKeyEncodedBytes, err := os.ReadFile(pubKeyPath)
-	if err != nil {
-		return nil, nil, err
-	}
-	pubKey, err := DecodeBase64BLSPublicKey(pubKeyEncodedBytes)
-	if err != nil {
-		return nil, nil, err
-	}
-	privKeyPath := dbPath + "/privkey"
-	privKeyEncodedBytes, err := os.ReadFile(privKeyPath)
-	if err != nil {
-		return nil, nil, err
-	}
-	privKey, err := DecodeBase64BLSPrivateKey(privKeyEncodedBytes)
-	if err != nil {
-		return nil, nil, err
-	}
-	return pubKey, *privKey, nil
-}
-
-func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
-	pubKey, privKey, err := blsSignatures.GenerateKeys()
-	if err != nil {
-		return nil, nil, err
-	}
-	pubKeyPath := dbPath + "/pubkey"
-	pubKeyBytes := blsSignatures.PublicKeyToBytes(pubKey)
-	encodedPubKey := make([]byte, base64.StdEncoding.EncodedLen(len(pubKeyBytes)))
-	base64.StdEncoding.Encode(encodedPubKey, pubKeyBytes)
-	err = os.WriteFile(pubKeyPath, encodedPubKey, 0600)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	privKeyPath := dbPath + "/privkey"
-	privKeyBytes := blsSignatures.PrivateKeyToBytes(privKey)
-	encodedPrivKey := make([]byte, base64.StdEncoding.EncodedLen(len(privKeyBytes)))
-	base64.StdEncoding.Encode(encodedPrivKey, privKeyBytes)
-	err = os.WriteFile(privKeyPath, encodedPrivKey, 0600)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &pubKey, privKey, nil
-}
-
-func NewLocalDiskDataAvailabilityService(dbPath string, signerMask uint64 /* TODO remove */) (*LocalDiskDataAvailabilityService, error) {
+func NewLocalDiskDAS(config LocalDiskDASConfig, signerMask uint64 /* TODO remove */) (*LocalDiskDAS, error) {
 	if bits.OnesCount64(signerMask) != 1 {
 		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signerMask %X", signerMask)
 	}
 
-	pubKey, privKey, err := readKeysFromFile(dbPath)
+	pubKey, privKey, err := ReadKeysFromFile(config.KeyDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			pubKey, privKey, err = generateAndStoreKeys(dbPath)
-			if err != nil {
-				return nil, err
+			if config.AllowGenerateKeys {
+				pubKey, privKey, err = GenerateAndStoreKeys(config.KeyDir)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, fmt.Errorf("Required BLS keypair did not exist at %s", config.KeyDir)
 			}
 		} else {
 			return nil, err
 		}
 	}
 
-	return &LocalDiskDataAvailabilityService{
-		dbPath:     dbPath,
+	return &LocalDiskDAS{
+		config:     config,
 		pubKey:     pubKey,
 		privKey:    privKey,
 		signerMask: signerMask,
 	}, nil
 }
 
-func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
@@ -111,7 +80,7 @@ func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message 
 		return nil, err
 	}
 
-	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(c.DataHash[:])
+	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(c.DataHash[:])
 	log.Debug("Storing message at", "path", path)
 
 	err = os.WriteFile(path, message, 0600)
@@ -122,13 +91,13 @@ func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message 
 	return c, nil
 }
 
-func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
+func (das *LocalDiskDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
 	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
 		return nil, err
 	}
 
-	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(cert.DataHash[:])
+	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(cert.DataHash[:])
 	log.Debug("Retrieving message from", "path", path)
 
 	originalMessage, err := os.ReadFile(path)
@@ -148,6 +117,6 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certB
 	return originalMessage, nil
 }
 
-func (d *LocalDiskDataAvailabilityService) String() string {
-	return fmt.Sprintf("LocalDiskDataAvailabilityService{signersMask:%d,dbPath:%s}", d.signerMask, d.dbPath)
+func (d *LocalDiskDAS) String() string {
+	return fmt.Sprintf("LocalDiskDAS{config:%v, signersMask:%d}", d.config, d.signerMask)
 }
