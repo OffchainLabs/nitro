@@ -374,6 +374,9 @@ impl Instruction {
     }
 }
 
+/// Note: An Unreachable stack state is equal to any other stack state.
+/// That's because an unreachable code path merging with another code path
+/// will not have a mismatch in the stack contents.
 #[derive(Clone, Copy, Debug)]
 enum StackState {
     Reachable(usize),
