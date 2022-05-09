@@ -6,14 +6,19 @@ package validator
 /*
 #cgo CFLAGS: -g -Wall -I../target/include/
 #include "arbitrator.h"
+
+ResolvedPreimage preimageResolverC(size_t context, const uint8_t* hash);
 */
 import "C"
 import (
 	"context"
 	"runtime"
+	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 )
 
@@ -30,15 +35,23 @@ type MachineInterface interface {
 
 // Holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
-	ptr    *C.struct_Machine
-	frozen bool // does not allow anything that changes machine state, not cloned with the machine
+	ptr       *C.struct_Machine
+	contextId *int64 // has a finalizer attached to remove the preimage resolver from the global map
+	frozen    bool   // does not allow anything that changes machine state, not cloned with the machine
 }
 
 // Assert that ArbitratorMachine implements MachineInterface
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
+var preimageResolvers sync.Map
+var lastPreimageResolverId int64 // atomic
+
 func freeMachine(mach *ArbitratorMachine) {
 	C.arbitrator_free_machine(mach.ptr)
+}
+
+func freeContextId(context *int64) {
+	preimageResolvers.Delete(*context)
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
@@ -46,6 +59,7 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 		return nil
 	}
 	mach := &ArbitratorMachine{ptr: ptr}
+	C.arbitrator_set_preimage_resolver(ptr, (*[0]byte)(C.preimageResolverC))
 	runtime.SetFinalizer(mach, freeMachine)
 	return mach
 }
@@ -69,7 +83,9 @@ func (m *ArbitratorMachine) Freeze() {
 // Even if origin is frozen - clone is not
 func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer runtime.KeepAlive(m)
-	return machineFromPointer(C.arbitrator_clone_machine(m.ptr))
+	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
+	newMach.contextId = m.contextId
+	return newMach
 }
 
 func (m *ArbitratorMachine) CloneMachineInterface() MachineInterface {
@@ -151,7 +167,12 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 	conditionByte, cancel := manageConditionByte(ctx)
 	defer cancel()
 
-	C.arbitrator_step(m.ptr, C.uint64_t(count), conditionByte)
+	err := C.arbitrator_step(m.ptr, C.uint64_t(count), conditionByte)
+	if err != nil {
+		errString := C.GoString(err)
+		C.free(unsafe.Pointer(err))
+		return errors.New(errString)
+	}
 
 	return ctx.Err()
 }
@@ -262,14 +283,47 @@ func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) er
 	}
 }
 
-func (m *ArbitratorMachine) AddPreimages(preimages map[common.Hash][]byte) error {
-	for _, val := range preimages {
-		cbyte := CreateCByteArray(val)
-		status := C.arbitrator_add_preimage(m.ptr, cbyte)
-		DestroyCByteArray(cbyte)
-		if status != 0 {
-			return errors.New("failed to add sequencer inbox message")
+type GoPreimageResolver = func(common.Hash) ([]byte, error)
+
+//export preimageResolver
+func preimageResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
+	var hash common.Hash
+	input := (*[1 << 30]byte)(ptr)[:32]
+	copy(hash[:], input)
+	resolver, ok := preimageResolvers.Load(int64(context))
+	if !ok {
+		return C.ResolvedPreimage{
+			len: -1,
 		}
 	}
+	resolverFunc, ok := resolver.(GoPreimageResolver)
+	if !ok {
+		log.Warn("preimage resolver has wrong type")
+		return C.ResolvedPreimage{
+			len: -1,
+		}
+	}
+	preimage, err := resolverFunc(hash)
+	if err != nil {
+		log.Error("preimage resolution failed", "err", err)
+		return C.ResolvedPreimage{
+			len: -1,
+		}
+	}
+	return C.ResolvedPreimage{
+		ptr: (*C.uint8_t)(C.CBytes(preimage)),
+		len: (C.ptrdiff_t)(len(preimage)),
+	}
+}
+
+func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) error {
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	id := atomic.AddInt64(&lastPreimageResolverId, 1)
+	preimageResolvers.Store(id, resolver)
+	m.contextId = &id
+	runtime.SetFinalizer(m.contextId, freeContextId)
+	C.arbitrator_set_context(m.ptr, C.uint64_t(id))
 	return nil
 }

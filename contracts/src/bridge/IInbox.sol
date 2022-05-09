@@ -17,6 +17,12 @@ error AlreadyUnpaused();
 /// @dev The contract is paused
 error Paused();
 
+/// @dev msg.value sent to the inbox isn't high enough
+error InsufficientValue(uint256 expected, uint256 actual);
+
+/// @dev submission cost provided isn't enough to create retryable ticket
+error InsufficientSubmissionCost(uint256 expected, uint256 actual);
+
 interface IInbox is IMessageProvider {
     function sendL2Message(bytes calldata messageData) external returns (uint256);
 
