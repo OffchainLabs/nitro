@@ -185,3 +185,7 @@ func (das *S3DataAvailabilityService) Retrieve(ctx context.Context, certBytes []
 func (das *S3DataAvailabilityService) String() string {
 	return fmt.Sprintf("S3DataAvailabilityService{signersMask:%d}", das.signerMask)
 }
+
+func (das *S3DataAvailabilityService) PrivateKey() blsSignatures.PrivateKey {
+	return das.privKey
+}

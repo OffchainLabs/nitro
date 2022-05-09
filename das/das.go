@@ -21,6 +21,7 @@ import (
 type DataAvailabilityServiceWriter interface {
 	// Requests that the message be stored until timeout (UTC time in unix epoch seconds).
 	Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error)
+	PrivateKey() blsSignatures.PrivateKey
 }
 
 type DataAvailabilityService interface {
@@ -40,6 +41,7 @@ type DataAvailabilityConfig struct {
 	ModeImpl         string        `koanf:"mode"`
 	LocalDiskDataDir string        `koanf:"local-disk-data-dir"`
 	S3Config         conf.S3Config `koanf:"s3"`
+	RedisConfig      RedisConfig   `koanf:"redis"`
 	SignerMask       SignerMask    `koanf:"signer-mask"`
 }
 
@@ -47,6 +49,7 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	ModeImpl:         "onchain",
 	LocalDiskDataDir: "",
 	S3Config:         conf.DefaultS3Config,
+	RedisConfig:      DefaultRedisConfig,
 	SignerMask:       1,
 }
 

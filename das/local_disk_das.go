@@ -143,3 +143,7 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certB
 func (d *LocalDiskDataAvailabilityService) String() string {
 	return fmt.Sprintf("LocalDiskDataAvailabilityService{signersMask:%d,dbPath:%s}", d.signerMask, d.dbPath)
 }
+
+func (d *LocalDiskDataAvailabilityService) PrivateKey() blsSignatures.PrivateKey {
+	return d.privKey
+}
