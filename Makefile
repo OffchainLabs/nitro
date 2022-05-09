@@ -1,6 +1,5 @@
-#
-# Copyright 2020, Offchain Labs, Inc. All rights reserved.
-#
+# Copyright 2021-2022, Offchain Labs, Inc.
+# For license information, see https://github.com/nitro/blob/master/LICENSE
 
 # Docker builds mess up file timestamps. Then again, in docker builds we never
 # have to update an existing file. So - for docker, convert all dependencies
@@ -144,19 +143,19 @@ docker:
 # regular build rules
 
 $(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/nitro
+	go build -o $@ "$(CURDIR)/cmd/nitro"
 
 $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/deploy
+	go build -o $@ "$(CURDIR)/cmd/deploy"
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/relay
+	go build -o $@ "$(CURDIR)/cmd/relay"
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/daserver
+	go build -o $@ "$(CURDIR)/cmd/daserver"
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/seq-coordinator-invalidate
+	go build -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
@@ -305,7 +304,7 @@ contracts/test/prover/proofs/rust-%.json: arbitrator/prover/test-cases/rust/targ
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/data/msg0.bin --inbox arbitrator/prover/test-cases/rust/data/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg1.bin --preimages arbitrator/prover/test-cases/rust/data/preimages.bin
 
 contracts/test/prover/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
-	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000
+	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000 --require-success
 
 # avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
 contracts/test/prover/proofs/read-inboxmsg-10.json:

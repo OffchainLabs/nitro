@@ -35,7 +35,6 @@ type BlockValidator struct {
 
 	validationEntries sync.Map
 	sequencerBatches  sync.Map
-	preimageCache     preimageCache
 	blockMutex        sync.Mutex
 	batchMutex        sync.Mutex
 	reorgMutex        sync.Mutex
@@ -68,6 +67,7 @@ type BlockValidatorConfig struct {
 	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
 	CurrentModuleRoot        string `koanf:"current-module-root"`
 	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
+	StorePreimages           bool   `koanf:"store-preimages"`
 }
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -76,6 +76,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
+	f.Bool(prefix+".store-preimages", DefaultBlockValidatorConfig.StorePreimages, "store preimages of running machines (higher memory cost, better debugging, potentially better performance)")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
@@ -84,6 +85,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
+	StorePreimages:           false,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -92,6 +94,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
+	StorePreimages:           false,
 }
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
@@ -102,7 +105,6 @@ type validationStatus struct {
 	Status      uint32           // atomic: value is one of validationStatus*
 	Cancel      func()           // non-atomic: only read/written to with reorg mutex
 	Entry       *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
-	Preimages   []common.Hash    // non-atomic: only read if Status >= validationStatusPrepared
 	ModuleRoots []common.Hash    // non-atomic: present from the start
 }
 
@@ -204,21 +206,22 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 }
 
 func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
-	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
+	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg, v.config.StorePreimages)
 	if err != nil {
 		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
 		return
 	}
-	hashlist := v.preimageCache.PourToCache(preimages)
-	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead)
+	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages)
 	if err != nil {
 		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
 		return
 	}
 	validationStatus.Entry = validationEntry
-	validationStatus.Preimages = hashlist
 	atomic.StoreUint32(&validationStatus.Status, validationStatusPrepared)
-	v.sendValidationsChan <- struct{}{}
+	select {
+	case v.sendValidationsChan <- struct{}{}:
+	default:
+	}
 }
 
 func (v *BlockValidator) getModuleRootsToValidateLocked() []common.Hash {
@@ -389,27 +392,23 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		return
 	}
 	entry := validationStatus.Entry
-	preimages, err := v.preimageCache.FillHashedValues(validationStatus.Preimages)
-	if err != nil {
-		log.Error("validator: failed prepare arrays", "err", err)
-		return
-	}
-	defer (func() {
+	defer func() {
 		atomic.AddInt32(&v.atomicValidationsRunning, -1)
-		v.sendValidationsChan <- struct{}{}
-		err := v.preimageCache.RemoveFromCache(validationStatus.Preimages)
-		if err != nil {
-			log.Error("validator failed to remove from cache", "err", err)
+		select {
+		case v.sendValidationsChan <- struct{}{}:
+		default:
 		}
-	})()
+	}()
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 		before := time.Now()
-		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, moduleRoot)
+		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, seqMsg, moduleRoot)
 		duration := time.Since(before)
 		if err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				log.Error("Validation of block failed", "err", err)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				log.Info("Validation of block canceled", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "err", err)
+			} else {
+				log.Error("Validation of block failed", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "err", err)
 			}
 			return
 		}
@@ -422,7 +421,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 
 		if writeThisBlock {
-			err = v.writeToFile(entry, moduleRoot, entry.StartPosition, entry.EndPosition, preimages, seqMsg, delayedMsg)
+			err = v.writeToFile(entry, moduleRoot, entry.StartPosition, entry.EndPosition, entry.Preimages, seqMsg, delayedMsg)
 			if err != nil {
 				log.Error("failed to write file", "err", err)
 			}
@@ -433,7 +432,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 			return
 		}
 
-		log.Info("validation succeeded", "blockNr", entry.BlockNumber, "moduleRoot", moduleRoot, "time", duration)
+		log.Info("validation succeeded", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", duration)
 	}
 
 	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
@@ -794,6 +793,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.LaunchThread(func(ctx context.Context) {
 		// `progressValidated` and `sendValidations` should both only do `concurrentRunsLimit` iterations of work,
 		// so they won't stomp on each other and prevent the other from running.
+		v.sendValidations(ctx)
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:
