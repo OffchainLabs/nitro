@@ -6,6 +6,7 @@ package arbos
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math"
 	"math/big"
 	"strconv"
@@ -45,7 +46,10 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	coinbase := common.Address{}
 	if l1info != nil {
 		timestamp = l1info.l1Timestamp
-		coinbase = l1info.poster
+		sequencer, _ := state.L1PricingState().Sequencer()
+		if l1info.poster == sequencer {
+			coinbase = l1pricing.L1PricerFundsPoolAddress
+		}
 	}
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
