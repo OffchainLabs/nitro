@@ -40,11 +40,13 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     function initialize(
         IBridge delayedBridge_,
+        DasKeysetManager dasKeysetManager_,
         address rollup_,
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
         if (delayedBridge != IBridge(address(0))) revert AlreadyInit();
         if (delayedBridge_ == IBridge(address(0))) revert HadZeroInit();
+        dasKeysetManager = dasKeysetManager_;
         delayedBridge = delayedBridge_;
         rollup = rollup_;
         maxTimeVariation = maxTimeVariation_;

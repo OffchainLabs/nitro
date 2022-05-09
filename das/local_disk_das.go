@@ -26,6 +26,7 @@ type LocalDiskDataAvailabilityService struct {
 	pubKey     *blsSignatures.PublicKey
 	privKey    blsSignatures.PrivateKey
 	signerMask uint64
+	keysetHash [32]byte
 }
 
 func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
@@ -87,11 +88,23 @@ func NewLocalDiskDataAvailabilityService(dbPath string, signerMask uint64) (*Loc
 		}
 	}
 
+	keyset := &arbstate.DataAvailabilityKeyset{
+		AssumedHonest: 1,
+		PubKeys:       []blsSignatures.PublicKey{*pubKey},
+	}
+	keysetHashBuf, err := keyset.Hash()
+	if err != nil {
+		return nil, err
+	}
+	var keysetHash [32]byte
+	copy(keysetHash[:], keysetHashBuf)
+
 	return &LocalDiskDataAvailabilityService{
 		dbPath:     dbPath,
 		pubKey:     pubKey,
 		privKey:    privKey,
 		signerMask: signerMask,
+		keysetHash: keysetHash,
 	}, nil
 }
 
@@ -118,6 +131,8 @@ func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message 
 	if err != nil {
 		return nil, err
 	}
+
+	copy(c.KeysetHash[:], das.keysetHash[:])
 
 	return c, nil
 }

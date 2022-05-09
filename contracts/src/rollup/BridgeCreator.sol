@@ -10,6 +10,7 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/Inbox.sol";
 import "../bridge/Outbox.sol";
 import "./RollupEventBridge.sol";
+import "../das/DasKeysetManager.sol";
 
 import "../bridge/IBridge.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -21,6 +22,7 @@ contract BridgeCreator is Ownable {
     Inbox public inboxTemplate;
     RollupEventBridge public rollupEventBridgeTemplate;
     Outbox public outboxTemplate;
+    DasKeysetManager public dasKeysetManagerTemplate;
 
     event TemplatesUpdated();
 
@@ -30,6 +32,7 @@ contract BridgeCreator is Ownable {
         inboxTemplate = new Inbox();
         rollupEventBridgeTemplate = new RollupEventBridge();
         outboxTemplate = new Outbox();
+        dasKeysetManagerTemplate = new DasKeysetManager();
     }
 
     function updateTemplates(
@@ -37,13 +40,15 @@ contract BridgeCreator is Ownable {
         address _sequencerInboxTemplate,
         address _inboxTemplate,
         address _rollupEventBridgeTemplate,
-        address _outboxTemplate
+        address _outboxTemplate,
+        address _dasKeysetManagerTemplate
     ) external onlyOwner {
         delayedBridgeTemplate = Bridge(_delayedBridgeTemplate);
         sequencerInboxTemplate = SequencerInbox(_sequencerInboxTemplate);
         inboxTemplate = Inbox(_inboxTemplate);
         rollupEventBridgeTemplate = RollupEventBridge(_rollupEventBridgeTemplate);
         outboxTemplate = Outbox(_outboxTemplate);
+        dasKeysetManagerTemplate = DasKeysetManager(_dasKeysetManagerTemplate);
 
         emit TemplatesUpdated();
     }
@@ -55,6 +60,7 @@ contract BridgeCreator is Ownable {
         Inbox inbox;
         RollupEventBridge rollupEventBridge;
         Outbox outbox;
+        DasKeysetManager dasKeysetManager;
     }
 
     function createBridge(
@@ -68,7 +74,8 @@ contract BridgeCreator is Ownable {
             SequencerInbox,
             Inbox,
             RollupEventBridge,
-            Outbox
+            Outbox,
+            DasKeysetManager
         )
     {
         CreateBridgeFrame memory frame;
@@ -98,13 +105,28 @@ contract BridgeCreator is Ownable {
             frame.outbox = Outbox(
                 address(new TransparentUpgradeableProxy(address(outboxTemplate), adminProxy, ""))
             );
+            frame.dasKeysetManager = DasKeysetManager(
+                address(
+                    new TransparentUpgradeableProxy(
+                        address(dasKeysetManagerTemplate),
+                        adminProxy,
+                        ""
+                    )
+                )
+            );
         }
 
         frame.delayedBridge.initialize();
-        frame.sequencerInbox.initialize(IBridge(frame.delayedBridge), rollup, maxTimeVariation);
+        frame.sequencerInbox.initialize(
+            IBridge(frame.delayedBridge),
+            frame.dasKeysetManager,
+            rollup,
+            maxTimeVariation
+        );
         frame.inbox.initialize(IBridge(frame.delayedBridge));
         frame.rollupEventBridge.initialize(address(frame.delayedBridge), rollup);
         frame.outbox.initialize(rollup, IBridge(frame.delayedBridge));
+        frame.dasKeysetManager.initialize();
 
         frame.delayedBridge.setInbox(address(frame.inbox), true);
         frame.delayedBridge.transferOwnership(rollup);
@@ -114,7 +136,8 @@ contract BridgeCreator is Ownable {
             frame.sequencerInbox,
             frame.inbox,
             frame.rollupEventBridge,
-            frame.outbox
+            frame.outbox,
+            frame.dasKeysetManager
         );
     }
 }

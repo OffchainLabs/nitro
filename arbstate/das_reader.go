@@ -5,9 +5,12 @@ package arbstate
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"io"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -90,4 +93,67 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 	}
 
 	return c, nil
+}
+
+type DataAvailabilityKeyset struct {
+	AssumedHonest uint64
+	PubKeys       []blsSignatures.PublicKey
+}
+
+func (keyset *DataAvailabilityKeyset) Serialize(wr io.Writer) error {
+	if err := util.Uint64ToWriter(keyset.AssumedHonest, wr); err != nil {
+		return err
+	}
+	if err := util.Uint64ToWriter(uint64(len(keyset.PubKeys)), wr); err != nil {
+		return err
+	}
+	for _, pk := range keyset.PubKeys {
+		buf := blsSignatures.PublicKeyToBytes(pk)
+		_, err := wr.Write(append([]byte{byte(len(buf))}, buf...))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (keyset *DataAvailabilityKeyset) Hash() ([]byte, error) {
+	wr := bytes.NewBuffer([]byte{})
+	if err := keyset.Serialize(wr); err != nil {
+		return nil, err
+	}
+	return crypto.Keccak256(wr.Bytes()), nil
+}
+
+func DeserializeKeyset(rd io.Reader) (*DataAvailabilityKeyset, error) {
+	assumedHonest, err := util.Uint64FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	numKeys, err := util.Uint64FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	if numKeys > 64 {
+		return nil, errors.New("too many keys in serialized DataAvailabilityKeyset")
+	}
+	pubkeys := make([]blsSignatures.PublicKey, numKeys)
+	buf1 := []byte{0}
+	for i := uint64(0); i < numKeys; i++ {
+		if _, err := rd.Read(buf1); err != nil {
+			return nil, err
+		}
+		buf := make([]byte, buf1[0])
+		if _, err := io.ReadFull(rd, buf); err != nil {
+			return nil, err
+		}
+		pubkeys[i], err = blsSignatures.PublicKeyFromBytes(buf, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &DataAvailabilityKeyset{
+		AssumedHonest: assumedHonest,
+		PubKeys:       pubkeys,
+	}, nil
 }

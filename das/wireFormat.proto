@@ -17,10 +17,11 @@ message StoreRequest {
 }
 
 message StoreResponse {
-  bytes dataHash = 1;
+  bytes  dataHash = 1;
   uint64 timeout = 2;
   uint64 signersMask = 3;
-  bytes sig = 4;
+  bytes  keysetHash = 4;
+  bytes  sig = 5;
 }
 
 message RetrieveRequest {

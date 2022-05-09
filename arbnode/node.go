@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/solgen/go/dasgen"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -164,13 +165,19 @@ func deployBridgeCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
 	}
 
+	dasKeysetManagerTemplate, tx, _, err := dasgen.DeployDasKeysetManager(auth, client)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("DAS keyset manager deploy error: %w", err)
+	}
+
 	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
 	}
 
-	tx, err = bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
+	tx, err = bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate, dasKeysetManagerTemplate)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge creator update templates error: %w", err)

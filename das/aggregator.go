@@ -27,6 +27,7 @@ type Aggregator struct {
 	/// calculated fields
 	requiredServicesForStore       int
 	maxAllowedServiceStoreFailures int
+	keysetHash                     [32]byte
 }
 
 type serviceDetails struct {
@@ -48,21 +49,35 @@ func newServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 
 func NewAggregator(config AggregatorConfig, services []serviceDetails) (*Aggregator, error) {
 	var aggSignersMask uint64
+	pubKeys := []blsSignatures.PublicKey{}
 	for _, d := range services {
 		if bits.OnesCount64(d.signersMask) != 1 {
 			return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", d.service, d.signersMask)
 		}
 		aggSignersMask |= d.signersMask
+		pubKeys = append(pubKeys, d.pubKey)
 	}
 	if bits.OnesCount64(aggSignersMask) != len(services) {
 		return nil, errors.New("At least two signers share a mask")
 	}
+
+	keyset := &arbstate.DataAvailabilityKeyset{
+		AssumedHonest: uint64(config.assumedHonest),
+		PubKeys:       pubKeys,
+	}
+	keysetHashBuf, err := keyset.Hash()
+	if err != nil {
+		return nil, err
+	}
+	var keysetHash [32]byte
+	copy(keysetHash[:], keysetHashBuf)
 
 	return &Aggregator{
 		config:                         config,
 		services:                       services,
 		requiredServicesForStore:       len(services) + 1 - config.assumedHonest,
 		maxAllowedServiceStoreFailures: config.assumedHonest - 1,
+		keysetHash:                     keysetHash,
 	}, nil
 }
 
@@ -229,6 +244,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	aggCert.SignersMask = aggSignersMask
 	copy(aggCert.DataHash[:], expectedHash)
 	aggCert.Timeout = timeout
+	aggCert.KeysetHash = a.keysetHash
 
 	verified, err := blsSignatures.VerifySignature(aggCert.Sig, serializeSignableFields(aggCert), aggPubKey)
 	if err != nil {
