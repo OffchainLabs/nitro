@@ -13,7 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 )
 
-// Sequencer address gets something for posting batches
+// L1 Pricer pool address gets something when the sequencer posts batches
 func TestSequencerCompensation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -55,7 +55,7 @@ func TestSequencerCompensation(t *testing.T) {
 	if initialSeqBalance.Sign() != 0 {
 		Fail(t, "Unexpected initial sequencer balance:", initialSeqBalance)
 	}
-	finalSeqBalance, err := l2clientB.BalanceAt(ctx, l1pricing.SequencerAddress, nil)
+	finalSeqBalance, err := l2clientB.BalanceAt(ctx, l1pricing.L1PricerFundsPoolAddress, nil)
 	Require(t, err)
 	if finalSeqBalance.Sign() <= 0 {
 		Fail(t, "Unexpected final sequencer balance:", finalSeqBalance)
