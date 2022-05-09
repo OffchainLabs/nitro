@@ -30,16 +30,17 @@ import (
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader      *L1Reader
-	inbox         *InboxTracker
-	streamer      *TransactionStreamer
-	config        *BatchPosterConfig
-	inboxContract *bridgegen.SequencerInbox
-	gasRefunder   common.Address
-	transactOpts  *bind.TransactOpts
-	building      *buildingBatch
-	nextMessageAt time.Time
-	das           das.DataAvailabilityService
+	l1Reader       *L1Reader
+	inbox          *InboxTracker
+	streamer       *TransactionStreamer
+	config         *BatchPosterConfig
+	inboxContract  *bridgegen.SequencerInbox
+	gasRefunder    common.Address
+	transactOpts   *bind.TransactOpts
+	building       *buildingBatch
+	nextMessageAt  time.Time
+	lastBatchCount uint64
+	das            das.DataAvailabilityService
 }
 
 type BatchPosterConfig struct {
@@ -317,11 +318,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (*types.Transaction, error) {
-	batchSeqNum, err := b.inbox.GetBatchCount()
-	if err != nil {
-		return nil, err
-	}
+func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum uint64) (*types.Transaction, error) {
 	inboxContractCount, err := b.inboxContract.BatchCount(&bind.CallOpts{Context: ctx, Pending: true})
 	if err != nil {
 		return nil, err
@@ -409,13 +406,22 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (*types.Trans
 		return nil, err
 	}
 	highGasThreshold := new(big.Int).SetUint64(uint64(b.config.HighGasThreshold * params.GWei))
-	if b.config.HighGasThreshold != 0 && tx.GasFeeCap().Cmp(highGasThreshold) > 0 && timeSinceNextMessage < b.config.HighGasDelay {
+	if b.config.HighGasThreshold != 0 && tx.GasFeeCap().Cmp(highGasThreshold) >= 0 && timeSinceNextMessage < b.config.HighGasDelay {
 		// The gas fee cap abigen recommended is above the high gas threshold. Check if this is necessary:
 		lastHeader, err := b.l1Reader.LastHeader(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if lastHeader.BaseFee.Cmp(highGasThreshold) <= 0 {
+		if lastHeader.BaseFee.Cmp(highGasThreshold) >= 0 {
+			log.Info(
+				"not posting batch yet as gas price is high",
+				"baseFee", float32(lastHeader.BaseFee.Uint64())/params.GWei,
+				"highGasThreshold", b.config.HighGasThreshold,
+				"timeSinceBatchPosted", timeSinceNextMessage,
+				"highGasDelay", b.config.HighGasDelay,
+			)
+			return nil, nil
+		} else {
 			// The base fee is below the high gas threshold, so let's lower the gas fee cap and try it.
 			tx = types.NewTx(&types.DynamicFeeTx{
 				ChainID:    tx.ChainId(),
@@ -432,15 +438,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (*types.Trans
 			if err != nil {
 				return nil, err
 			}
-		} else {
-			log.Info(
-				"not posting batch yet as gas price is high",
-				"baseFee", float32(lastHeader.BaseFee.Uint64())/params.GWei,
-				"highGasThreshold", b.config.HighGasThreshold,
-				"timeSinceBatchPosted", timeSinceNextMessage,
-				"highGasDelay", b.config.HighGasDelay,
-			)
-			return nil, nil
 		}
 	}
 	err = b.l1Reader.Client().SendTransaction(ctx, tx)
@@ -467,46 +464,50 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (*types.Trans
 }
 
 // Returns the timestamp of the next message to post, or time.Now() if there's no new messages
-func (b *BatchPoster) getNextMessageTime(ctx context.Context) (time.Time, error) {
-	batchCount, err := b.inbox.GetBatchCount()
-	if err != nil {
-		return time.Time{}, err
-	}
+func (b *BatchPoster) recomputeNextMessageTime(ctx context.Context, batchCount uint64) error {
 	if batchCount == 0 {
 		// No batches, therefore batch posting was not required
-		return time.Now(), nil
+		b.nextMessageAt = time.Now()
+		return nil
 	}
 	batchMsgCount, err := b.inbox.GetBatchMessageCount(batchCount - 1)
 	if err != nil {
-		return time.Time{}, err
+		return err
 	}
 	msgCount, err := b.streamer.GetMessageCount()
 	if err != nil {
-		return time.Time{}, err
+		return err
 	}
 	if msgCount <= batchMsgCount {
 		// There's nothing after the newest batch, therefore batch posting was not required
-		return time.Now(), nil
+		b.nextMessageAt = time.Now()
+		return nil
 	}
 	msg, err := b.streamer.GetMessage(batchMsgCount - 1)
 	if err != nil {
-		return time.Time{}, err
+		return err
 	}
-	return time.Unix(int64(msg.Message.Header.Timestamp), 0), nil
+	b.nextMessageAt = time.Unix(int64(msg.Message.Header.Timestamp), 0)
+	return nil
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
-		if b.nextMessageAt == (time.Time{}) {
-			computed, err := b.getNextMessageTime(ctx)
+		batchSeqNum, err := b.inbox.GetBatchCount()
+		if err != nil {
+			log.Error("error getting inbox batch count", "err", err)
+			return b.config.PostingErrorDelay
+		}
+		if batchSeqNum != b.lastBatchCount {
+			err := b.recomputeNextMessageTime(ctx, batchSeqNum)
 			if err != nil {
 				log.Error("error getting next message time", "err", err)
 				return b.config.PostingErrorDelay
 			}
-			b.nextMessageAt = computed
+			b.lastBatchCount = batchSeqNum
 		}
-		_, err := b.maybePostSequencerBatch(ctx)
+		_, err = b.maybePostSequencerBatch(ctx, batchSeqNum)
 		if err != nil {
 			b.building = nil
 			log.Error("error posting batch", "err", err)
