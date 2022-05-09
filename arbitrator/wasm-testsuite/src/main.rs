@@ -1,12 +1,12 @@
-use eyre::{bail, ensure};
+use eyre::bail;
 use prover::{
     console::Color,
-    machine::{GlobalState, Machine, MachineState, MachineStatus},
+    machine::{GlobalState, Machine, MachineStatus},
     value::Value,
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::File,
     io::BufReader,
     path::PathBuf,
@@ -134,7 +134,6 @@ fn main() -> eyre::Result<()> {
 
     let soft_float = PathBuf::from("../../target/machines/latest/soft-float.wasm");
 
-    let mut wasmpath = PathBuf::new();
     let mut wasmfile = String::new();
     let mut machine = None;
     let mut subtest = 0;
@@ -143,13 +142,12 @@ fn main() -> eyre::Result<()> {
         match command {
             Command::Module { filename } => {
                 wasmfile = filename;
-                wasmpath = PathBuf::from("tests").join(&wasmfile);
                 machine = None;
                 subtest = 1;
 
                 let mech = Machine::from_binary(
                     &[soft_float.clone()],
-                    &wasmpath,
+                    &PathBuf::from("tests").join(&wasmfile),
                     false,
                     false,
                     false,
@@ -189,12 +187,31 @@ fn main() -> eyre::Result<()> {
                 };
 
                 let args: Vec<_> = args.into_iter().map(Into::into).collect();
-                
+
                 let machine = machine.as_mut().unwrap();
                 machine.jump_into_function(&func, args.clone());
-                machine.step_n(u64::MAX);
-                
-                let output = machine.get_final_result()?;
+                machine.step_n(10000);
+
+                let output = match machine.get_final_result() {
+                    Ok(output) => output,
+                    Err(error) => {
+                        let expected: Vec<Value> = expected.into_iter().map(Into::into).collect();
+                        println!(
+                            "Divergence in func {} of test {}",
+                            Color::red(func),
+                            Color::red(index),
+                        );
+                        println!("\tArgs     {:?}", args);
+                        println!("\tExpected {:?}", expected);
+                        println!();
+                        bail!("{}", error)
+                    }
+                };
+
+                // i32::max + 1  =>   2147483648  =>  0x4F000000  0x41E0000000000000
+                // i32::min - 1  =>  -2147483649  =>  0xCF000000  0xC1E0000000200000
+                // u32::max + 1  =>   4294967296  =>  0x4F800000  0x41F0000000000000
+                // u32::min - 1  =>           -1  =>  0xBF800000  0xBFF0000000000000
 
                 if expected != output {
                     let expected: Vec<Value> = expected.into_iter().map(Into::into).collect();
@@ -203,9 +220,9 @@ fn main() -> eyre::Result<()> {
                         Color::red(func),
                         Color::red(index),
                     );
+                    println!("\tArgs     {:?}", args);
                     println!("\tExpected {:?}", expected);
                     println!("\tObserved {:?}", output);
-                    println!("\tArgs     {:?}", args);
                     println!();
                     bail!(
                         "Failure in test {}",
@@ -227,19 +244,28 @@ fn main() -> eyre::Result<()> {
                 //machine.step_n(u64::MAX);
                 machine.step_n(1000);
 
+                let test = Color::red(format!("{} #{}", wasmfile, subtest));
+
                 if machine.get_status() == MachineStatus::Running {
-                    bail!("machine failed to trap")
+                    bail!("machine failed to trap in test {}", test)
+                }
+                if let Ok(output) = machine.get_final_result() {
+                    println!(
+                        "Divergence in func {} of test {}",
+                        Color::red(func),
+                        Color::red(index),
+                    );
+                    println!("\tArgs     {:?}", args);
+                    println!("\tOutput   {:?}", output);
+                    println!();
+                    bail!("Unexpected success in test {}", test)
                 }
 
-                if let Ok(output) = machine.get_final_result() {
-                    bail!("machine should have failed {:?}", output)
-                }
-                
                 subtest += 1;
             }
             Command::AssertExhaustion {} => {
-                panic!("unimplemented");
-                subtest += 1;
+                //subtest += 1;
+                unimplemented!("here")
             }
             Command::AssertMalformed { filename } => {
                 let wasmpath = PathBuf::from("tests").join(&filename);
