@@ -3,11 +3,11 @@
 
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
-use prover::machine::{InboxIdentifier, MachineStatus, PreimageResolver};
-use prover::parse_binary;
-use prover::utils::CBytes;
-use prover::{machine::GlobalState, utils::Bytes32};
-use prover::{machine::Machine, wavm::Opcode};
+use prover::{
+    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver},
+    utils::{Bytes32, CBytes},
+    wavm::Opcode,
+};
 use serde::Serialize;
 use sha3::{Digest, Keccak256};
 use std::io::BufWriter;
@@ -132,12 +132,6 @@ const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contr
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
-    let mut libraries = Vec::new();
-    for lib in &opts.libraries {
-        libraries.push(parse_binary(lib)?);
-    }
-    let main_mod = parse_binary(&opts.binary)?;
-
     let mut inbox_contents = HashMap::default();
     let mut inbox_position = opts.inbox_position;
     let mut delayed_position = opts.delayed_inbox_position;
@@ -190,8 +184,8 @@ fn main() -> Result<()> {
     };
 
     let mut mach = Machine::from_binary(
-        libraries.clone(),
-        main_mod,
+        &opts.libraries,
+        &opts.binary,
         opts.always_merkleize,
         opts.allow_hostapi,
         global_state,
@@ -423,7 +417,7 @@ fn main() -> Result<()> {
             };
             let module_name = if module_num == 0 {
                 names.module.clone()
-            } else if module_num == &libraries.len() + 1 {
+            } else if module_num == &opts_libraries.len() + 1 {
                 opts_binary.file_name().unwrap().to_str().unwrap().into()
             } else {
                 opts_libraries[module_num - 1]

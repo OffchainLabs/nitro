@@ -5,8 +5,12 @@ use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     fmt,
+    fs::File,
+    io::Read,
     ops::{Deref, DerefMut},
+    path::Path,
 };
+use wasmparser::{TableType, Type};
 
 /// cbindgen:field-names=[bytes]
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -98,6 +102,19 @@ impl fmt::Debug for Bytes32 {
     }
 }
 
+impl From<DeprecatedTableType> for TableType {
+    fn from(table: DeprecatedTableType) -> Self {
+        Self {
+            element_type: match table.ty {
+                DeprecatedRefType::FuncRef => Type::FuncRef,
+                DeprecatedRefType::ExternRef => Type::ExternRef,
+            },
+            initial: table.limits.minimum_size,
+            maximum: table.limits.maximum_size,
+        }
+    }
+}
+
 /// A Vec<u8> allocated with libc::malloc
 pub struct CBytes {
     ptr: *mut u8,
@@ -123,6 +140,46 @@ impl Default for CBytes {
         Self {
             ptr: std::ptr::null_mut(),
             len: 0,
+        }
+    }
+}
+
+// TODO: remove this when re-initializing the rollup
+// this is kept around to deserialize old binaries
+#[derive(Serialize, Deserialize)]
+pub enum DeprecatedRefType {
+    FuncRef,
+    ExternRef,
+}
+
+// TODO: remove this when re-initializing the rollup
+// this is kept around to deserialize old binaries
+#[derive(Serialize, Deserialize)]
+pub struct DeprecatedLimits {
+    pub minimum_size: u32,
+    pub maximum_size: Option<u32>,
+}
+
+// TODO: remove this when re-initializing the rollup
+// this is kept around to deserialize old binaries
+#[derive(Serialize, Deserialize)]
+pub struct DeprecatedTableType {
+    pub ty: DeprecatedRefType,
+    pub limits: DeprecatedLimits,
+}
+
+impl From<TableType> for DeprecatedTableType {
+    fn from(table: TableType) -> Self {
+        Self {
+            ty: match table.element_type {
+                Type::FuncRef => DeprecatedRefType::FuncRef,
+                Type::ExternRef => DeprecatedRefType::ExternRef,
+                x => panic!("impossible table type {:?}", x),
+            },
+            limits: DeprecatedLimits {
+                minimum_size: table.initial,
+                maximum_size: table.maximum,
+            },
         }
     }
 }
@@ -206,4 +263,11 @@ impl IntoIterator for CBytes {
     fn into_iter(self) -> CBytesIntoIter {
         CBytesIntoIter(self, 0)
     }
+}
+
+pub fn file_bytes(path: &Path) -> eyre::Result<Vec<u8>> {
+    let mut f = File::open(path)?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf)?;
+    Ok(buf)
 }

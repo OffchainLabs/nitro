@@ -4,7 +4,7 @@
 use crate::{
     merkle::{Merkle, MerkleType},
     utils::Bytes32,
-    value::{Value, ValueType},
+    value::{ArbValueType, Value},
 };
 use digest::Digest;
 use rayon::prelude::*;
@@ -152,7 +152,7 @@ impl Memory {
         }
     }
 
-    pub fn get_value(&self, idx: u64, ty: ValueType, bytes: u8, signed: bool) -> Option<Value> {
+    pub fn get_value(&self, idx: u64, ty: ArbValueType, bytes: u8, signed: bool) -> Option<Value> {
         let contents = match (bytes, signed) {
             (1, false) => i64::from(self.get_u8(idx)?),
             (2, false) => i64::from(self.get_u16(idx)?),
@@ -167,13 +167,13 @@ impl Memory {
             ),
         };
         Some(match ty {
-            ValueType::I32 => Value::I32(contents as u32),
-            ValueType::I64 => Value::I64(contents as u64),
-            ValueType::F32 => {
+            ArbValueType::I32 => Value::I32(contents as u32),
+            ArbValueType::I64 => Value::I64(contents as u64),
+            ArbValueType::F32 => {
                 assert!(bytes == 4 && !signed, "Invalid source for f32");
                 Value::F32(f32::from_bits(contents as u32))
             }
-            ValueType::F64 => {
+            ArbValueType::F64 => {
                 assert!(bytes == 8 && !signed, "Invalid source for f64");
                 Value::F64(f64::from_bits(contents as u64))
             }
