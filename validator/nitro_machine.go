@@ -200,7 +200,7 @@ func (l *NitroMachineLoader) createMachineImpl(moduleRoot common.Hash, untilHost
 			return nil, err
 		}
 	} else {
-		_, err := os.Stat(filepath.Join(l.config.getMachinePath(moduleRoot), l.config.ProverBinPath))
+		_, err := os.Stat(filepath.Join(l.config.getMachinePath(moduleRoot), l.config.WavmBinaryPath))
 		if errors.Is(err, os.ErrNotExist) {
 			// Attempt to load the latest module root instead (maybe it's what we're looking for).
 			originalErr := err
