@@ -125,8 +125,7 @@ func (con ArbGasInfo) GetRateEstimateInertia(c ctx, evm mech) (uint64, error) {
 
 // Get the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimate(c ctx, evm mech) (huge, error) {
-	reward, err := c.State.L1PricingState().PerUnitReward()
-	return arbmath.UintToBig(reward), err
+	return c.State.L1PricingState().PricePerUnit()
 }
 
 // Get how slowly ArbOS updates its estimate of the L1 basefee
@@ -136,8 +135,7 @@ func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, erro
 
 // Get the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
-	reward, err := c.State.L1PricingState().PerUnitReward()
-	return arbmath.UintToBig(reward), err
+	return c.State.L1PricingState().PricePerUnit()
 }
 
 // Get the fee paid to the aggregator for posting this tx
