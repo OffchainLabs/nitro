@@ -9,14 +9,12 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
-	"math/bits"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -25,73 +23,38 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 )
 
-type S3DataAvailabilityService struct {
-	s3Config   conf.S3Config
-	pubKey     *blsSignatures.PublicKey
-	privKey    blsSignatures.PrivateKey
-	uploader   *manager.Uploader
-	downloader *manager.Downloader
-	signerMask uint64
+type S3DAS struct {
+	s3Config        conf.S3Config
+	localDiskConfig LocalDiskDASConfig
+	privKey         *blsSignatures.PrivateKey
+	uploader        *manager.Uploader
+	downloader      *manager.Downloader
 }
 
-func readKeysFromS3(ctx context.Context, s3Config conf.S3Config, downloader *manager.Downloader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
-	pubKeyBuf := manager.NewWriteAtBuffer([]byte{})
-	_, err := downloader.Download(ctx, pubKeyBuf, &s3.GetObjectInput{
-		Bucket: aws.String(s3Config.Bucket),
-		Key:    aws.String("pubkey"),
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	privKeyBuf := manager.NewWriteAtBuffer([]byte{})
-	_, err = downloader.Download(ctx, privKeyBuf, &s3.GetObjectInput{
-		Bucket: aws.String(s3Config.Bucket),
-		Key:    aws.String("privkey"),
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pubKey, err := blsSignatures.PublicKeyFromBytes(pubKeyBuf.Bytes(), true)
-	if err != nil {
-		return nil, nil, err
-	}
-	privKey, err := blsSignatures.PrivateKeyFromBytes(privKeyBuf.Bytes())
-	if err != nil {
-		return nil, nil, err
-	}
-	return &pubKey, privKey, nil
-}
-
-func generateAndStoreKeysInS3(ctx context.Context, s3Config conf.S3Config, uploader *manager.Uploader) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
-	pubKey, privKey, err := blsSignatures.GenerateKeys()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	_, err = uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s3Config.Bucket),
-		Key:    aws.String("pubkey"),
-		Body:   bytes.NewReader(blsSignatures.PublicKeyToBytes(pubKey)),
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	_, err = uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s3Config.Bucket),
-		Key:    aws.String("privkey"),
-		Body:   bytes.NewReader(blsSignatures.PrivateKeyToBytes(privKey)),
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return &pubKey, privKey, nil
-}
-
-func NewS3DataAvailabilityService(ctx context.Context, s3Config conf.S3Config, signerMask uint64) (*S3DataAvailabilityService, error) {
-	if bits.OnesCount64(signerMask) != 1 {
-		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signerMask %X", signerMask)
+func NewS3DAS(s3Config conf.S3Config, localDiskConfig LocalDiskDASConfig) (*S3DAS, error) {
+	var privKey *blsSignatures.PrivateKey
+	var err error
+	if len(localDiskConfig.PrivKey) != 0 {
+		privKey, err = DecodeBase64BLSPrivateKey([]byte(localDiskConfig.PrivKey))
+		if err != nil {
+			return nil, fmt.Errorf("'priv-key' was invalid: %w", err)
+		}
+	} else {
+		_, privKey, err = ReadKeysFromFile(localDiskConfig.KeyDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				if localDiskConfig.AllowGenerateKeys {
+					_, privKey, err = GenerateAndStoreKeys(localDiskConfig.KeyDir)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("Required BLS keypair did not exist at %s", localDiskConfig.KeyDir)
+				}
+			} else {
+				return nil, err
+			}
+		}
 	}
 	client := s3.New(s3.Options{
 		Region:      s3Config.Region,
@@ -100,38 +63,24 @@ func NewS3DataAvailabilityService(ctx context.Context, s3Config conf.S3Config, s
 	uploader := manager.NewUploader(client)
 	downloader := manager.NewDownloader(client)
 
-	pubKey, privKey, err := readKeysFromS3(ctx, s3Config, downloader)
-	if err != nil {
-		var nsk *types.NoSuchKey
-		if errors.As(err, &nsk) {
-			pubKey, privKey, err = generateAndStoreKeysInS3(ctx, s3Config, uploader)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
-	}
-
-	return &S3DataAvailabilityService{
-		s3Config:   s3Config,
-		pubKey:     pubKey,
-		privKey:    privKey,
-		uploader:   uploader,
-		downloader: downloader,
-		signerMask: signerMask,
+	return &S3DAS{
+		s3Config:        s3Config,
+		privKey:         privKey,
+		localDiskConfig: localDiskConfig,
+		uploader:        uploader,
+		downloader:      downloader,
 	}, nil
 }
 
-func (das *S3DataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (das *S3DAS) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
 	c.Timeout = timeout
-	c.SignersMask = das.signerMask
+	c.SignersMask = 0 // The aggregator decides on the mask for each signer.
 
 	fields := serializeSignableFields(*c)
-	c.Sig, err = blsSignatures.SignMessage(das.privKey, fields)
+	c.Sig, err = blsSignatures.SignMessage(*das.privKey, fields)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +100,7 @@ func (das *S3DataAvailabilityService) Store(ctx context.Context, message []byte,
 	return c, nil
 }
 
-func (das *S3DataAvailabilityService) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
+func (das *S3DAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
 	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
 		return nil, err
@@ -182,8 +131,8 @@ func (das *S3DataAvailabilityService) Retrieve(ctx context.Context, certBytes []
 	return originalMessage, nil
 }
 
-func (das *S3DataAvailabilityService) String() string {
-	return fmt.Sprintf("S3DataAvailabilityService{signersMask:%d}", das.signerMask)
+func (das *S3DAS) String() string {
+	return fmt.Sprintf("S3DAS{s3Config:%v, localDiskConfig:%v}", das.s3Config, das.localDiskConfig)
 }
 
 func (das *S3DataAvailabilityService) PrivateKey() blsSignatures.PrivateKey {

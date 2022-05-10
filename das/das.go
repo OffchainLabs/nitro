@@ -8,8 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/bits"
-	"strconv"
+	"reflect"
 
 	flag "github.com/spf13/pflag"
 
@@ -35,22 +34,22 @@ type DataAvailabilityMode uint64
 const (
 	OnchainDataAvailability DataAvailabilityMode = iota
 	LocalDataAvailability
+	AggregatorDataAvailability
+	// TODO RemoteDataAvailability
 )
 
 type DataAvailabilityConfig struct {
-	ModeImpl         string        `koanf:"mode"`
-	LocalDiskDataDir string        `koanf:"local-disk-data-dir"`
-	S3Config         conf.S3Config `koanf:"s3"`
-	RedisConfig      RedisConfig   `koanf:"redis"`
-	SignerMask       SignerMask    `koanf:"signer-mask"`
+	ModeImpl           string             `koanf:"mode"`
+	LocalDiskDASConfig LocalDiskDASConfig `koanf:"local-disk"`
+	AggregatorConfig   AggregatorConfig   `koanf:"aggregator"`
+	S3Config           conf.S3Config      `koanf:"s3"`
+	RedisConfig        RedisConfig        `koanf:"redis"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl:         "onchain",
-	LocalDiskDataDir: "",
-	S3Config:         conf.DefaultS3Config,
-	RedisConfig:      DefaultRedisConfig,
-	SignerMask:       1,
+	ModeImpl:    "onchain",
+	S3Config:    conf.DefaultS3Config,
+	RedisConfig: DefaultRedisConfig,
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
@@ -63,42 +62,29 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	}
 
 	if c.ModeImpl == "local" {
-		if c.LocalDiskDataDir == "" {
+		if c.LocalDiskDASConfig.DataDir == "" || (c.LocalDiskDASConfig.KeyDir == "" && c.LocalDiskDASConfig.PrivKey == "") {
 			flag.Usage()
-			return 0, errors.New("--data-availability.local-disk-data-dir must be specified if mode is set to local")
+			return 0, errors.New("--data-availability.local-disk.data-dir and .key-dir must be specified if mode is set to local")
 		}
 		return LocalDataAvailability, nil
+	}
+
+	if c.ModeImpl == "aggregator" {
+		if reflect.DeepEqual(c.AggregatorConfig, DefaultAggregatorConfig) {
+			flag.Usage()
+			return 0, errors.New("--data-availability.aggregator.X config options must be specified if mode is set to aggregator")
+		}
+		return AggregatorDataAvailability, nil
 	}
 
 	flag.Usage()
 	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
 
-type SignerMask uint64
-
-func (m *SignerMask) String() string {
-	return fmt.Sprintf("%X", *m)
-}
-
-func (m *SignerMask) Set(s string) error {
-	res, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	if bits.OnesCount64(res) != 1 {
-		return fmt.Errorf("Got invalid SignerMask %s (%X), must have only 1 bit set, had %d.", s, res, bits.OnesCount64(res))
-	}
-	return nil
-}
-
-func (m *SignerMask) Type() string {
-	return "SignerMask"
-}
-
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode (onchain or local)")
-	f.String(prefix+".local-disk-data-dir", DefaultDataAvailabilityConfig.LocalDiskDataDir, "For local mode, the directory of the data store")
-	f.Var(&DefaultDataAvailabilityConfig.SignerMask, prefix+".signer-mask", "Single bit uint64 unique for this DAS.")
+	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local', or 'aggregator')")
+	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
+	AggregatorConfigAddOptions(prefix+".aggregator", f)
 }
 
 func serializeSignableFields(c arbstate.DataAvailabilityCertificate) []byte {
