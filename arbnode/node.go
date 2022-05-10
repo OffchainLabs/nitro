@@ -686,7 +686,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, dataAvailabilityService, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
