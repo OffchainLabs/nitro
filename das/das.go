@@ -81,7 +81,7 @@ func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
 }
 
-func serializeSignableFields(c arbstate.DataAvailabilityCertificate) []byte {
+func serializeSignableFields(c *arbstate.DataAvailabilityCertificate) []byte {
 	buf := make([]byte, 0, 32+8)
 	buf = append(buf, c.DataHash[:]...)
 
@@ -92,7 +92,7 @@ func serializeSignableFields(c arbstate.DataAvailabilityCertificate) []byte {
 	return buf
 }
 
-func Serialize(c arbstate.DataAvailabilityCertificate) []byte {
+func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {
 	buf := make([]byte, 0)
 
 	buf = append(buf, arbstate.DASMessageHeaderFlag)

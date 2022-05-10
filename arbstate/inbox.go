@@ -72,8 +72,11 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 			if das == nil {
 				log.Error("No DAS configured, but sequencer message found with DAS header")
 			} else {
-				var err error
-				payload, err = das.Retrieve(ctx, data[40:])
+				cert, err := DeserializeDASCertFrom(bytes.NewReader(data[40:]))
+				if err != nil {
+					log.Error("Deserializing DAS cert failed", "err", err)
+				}
+				payload, err = das.Retrieve(ctx, cert)
 				if err != nil {
 					log.Error("Reading from DAS failed", "err", err)
 				}

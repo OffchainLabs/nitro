@@ -6,6 +6,7 @@ package dasrpc
 import (
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/das"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -27,8 +28,9 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 	return &DASRPCClient{clnt: clnt}, nil
 }
 
-func (clnt *DASRPCClient) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
-	response, err := clnt.clnt.Retrieve(ctx, &RetrieveRequest{Cert: cert})
+func (clnt *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
+	certBytes := das.Serialize(cert)
+	response, err := clnt.clnt.Retrieve(ctx, &RetrieveRequest{CertBytes: certBytes})
 	if err != nil {
 		return nil, err
 	}

@@ -102,7 +102,7 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 	c.Timeout = timeout
 	c.SignersMask = 0 // The aggregator decides on the mask for each signer.
 
-	fields := serializeSignableFields(*c)
+	fields := serializeSignableFields(c)
 	c.Sig, err = blsSignatures.SignMessage(*das.privKey, fields)
 	if err != nil {
 		return nil, err
@@ -121,13 +121,7 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 	return c, nil
 }
 
-func (das *LocalDiskDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
-	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
-	if err != nil {
-		fmt.Println("======> AAA")
-		return nil, err
-	}
-
+func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
 	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(cert.DataHash[:])
 	log.Debug("Retrieving message from", "path", path)
 

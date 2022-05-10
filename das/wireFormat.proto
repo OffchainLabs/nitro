@@ -27,7 +27,7 @@ message StoreResponse {
 }
 
 message RetrieveRequest {
-  bytes cert = 1;
+  bytes certBytes = 1;
 }
 
 message RetrieveResponse {

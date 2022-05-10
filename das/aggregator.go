@@ -101,27 +101,22 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 // first successful response where the data matches the requested hash. Otherwise
 // if all requests fail or if its context is canceled (eg via TimeoutWrapper) then
 // it returns an error.
-func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
-	requestedCert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(cert))
-	if err != nil {
-		return nil, err
-	}
-
+func (a *Aggregator) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
 	// Cert is the aggregate cert, validate it against DAS public keys
 	var servicesThatSignedCert []ServiceDetails
 	var pubKeys []blsSignatures.PublicKey
 	for _, d := range a.services {
-		if requestedCert.SignersMask&d.signersMask != 0 {
+		if cert.SignersMask&d.signersMask != 0 {
 			servicesThatSignedCert = append(servicesThatSignedCert, d)
 			pubKeys = append(pubKeys, d.pubKey)
 		}
 	}
 	if len(servicesThatSignedCert) < a.requiredServicesForStore {
-		return nil, fmt.Errorf("Cert %v was only signed by %d DASes, %d required.", requestedCert, len(servicesThatSignedCert), a.requiredServicesForStore)
+		return nil, fmt.Errorf("Cert %v was only signed by %d DASes, %d required.", cert, len(servicesThatSignedCert), a.requiredServicesForStore)
 	}
 
-	signedBlob := serializeSignableFields(*requestedCert)
-	sigMatch, err := blsSignatures.VerifySignature(requestedCert.Sig, signedBlob, blsSignatures.AggregatePublicKeys(pubKeys))
+	signedBlob := serializeSignableFields(cert)
+	sigMatch, err := blsSignatures.VerifySignature(cert.Sig, signedBlob, blsSignatures.AggregatePublicKeys(pubKeys))
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +138,7 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 				errorChan <- err
 				return
 			}
-			if bytes.Equal(crypto.Keccak256(blob), requestedCert.DataHash[:]) {
+			if bytes.Equal(crypto.Keccak256(blob), cert.DataHash[:]) {
 				blobChan <- blob
 			} else {
 				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
@@ -200,7 +195,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 				return
 			}
 
-			verified, err := blsSignatures.VerifySignature(cert.Sig, serializeSignableFields(*cert), d.pubKey)
+			verified, err := blsSignatures.VerifySignature(cert.Sig, serializeSignableFields(cert), d.pubKey)
 			if err != nil {
 				responses <- storeResponse{d, nil, err}
 				return
@@ -260,7 +255,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	aggCert.Timeout = timeout
 	aggCert.KeysetHash = a.keysetHash
 
-	verified, err := blsSignatures.VerifySignature(aggCert.Sig, serializeSignableFields(aggCert), aggPubKey)
+	verified, err := blsSignatures.VerifySignature(aggCert.Sig, serializeSignableFields(&aggCert), aggPubKey)
 	if err != nil {
 		return nil, err
 	}

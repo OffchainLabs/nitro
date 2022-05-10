@@ -4,8 +4,10 @@
 package dasrpc
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das"
 	"google.golang.org/grpc"
@@ -58,7 +60,11 @@ func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreR
 }
 
 func (serv *DASRPCServer) Retrieve(ctx context.Context, req *RetrieveRequest) (*RetrieveResponse, error) {
-	result, err := serv.localDAS.Retrieve(ctx, req.Cert)
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(req.CertBytes))
+	if err != nil {
+		return nil, err
+	}
+	result, err := serv.localDAS.Retrieve(ctx, cert)
 	if err != nil {
 		return nil, err
 	}

@@ -51,7 +51,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	cert, err := aggregator.Store(ctx, rawMsg, 0)
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
+	messageRetrieved, err := aggregator.Retrieve(ctx, cert)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -121,7 +121,7 @@ type WrapRetrieve struct {
 	DataAvailabilityService
 }
 
-func (w *WrapRetrieve) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
+func (w *WrapRetrieve) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
 	switch w.injector.shouldFail() {
 	case success:
 		return w.DataAvailabilityService.Retrieve(ctx, cert)
@@ -233,7 +233,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		return
 	}
 
-	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
+	messageRetrieved, err := aggregator.Retrieve(ctx, cert)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -331,7 +331,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	cert, err := aggregator.Store(ctx, rawMsg, 0)
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
+	messageRetrieved, err := aggregator.Retrieve(ctx, cert)
 	if !shouldFail {
 		Require(t, err, "Error retrieving message")
 	} else {

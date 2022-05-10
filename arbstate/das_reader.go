@@ -17,7 +17,7 @@ import (
 )
 
 type DataAvailabilityServiceReader interface {
-	Retrieve(ctx context.Context, cert []byte) ([]byte, error)
+	Retrieve(ctx context.Context, cert *DataAvailabilityCertificate) ([]byte, error)
 	KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error)
 	CurrentKeysetBytes(ctx context.Context) ([]byte, error)
 }
