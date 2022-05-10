@@ -126,5 +126,5 @@ func (r *RedisDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, erro
 }
 
 func (r *RedisDAS) String() string {
-	return fmt.Sprintf("RedisDAS{redisConfig:%v}", r.redisConfig)
+	return fmt.Sprintf("RedisDAS{redisConfig:%v, localDiskConfig:%v}", r.redisConfig, r.localDiskConfig)
 }
