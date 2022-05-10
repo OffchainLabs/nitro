@@ -134,7 +134,3 @@ func (das *S3DAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error
 func (das *S3DAS) String() string {
 	return fmt.Sprintf("S3DAS{s3Config:%v, localDiskConfig:%v}", das.s3Config, das.localDiskConfig)
 }
-
-func (das *S3DataAvailabilityService) PrivateKey() blsSignatures.PrivateKey {
-	return das.privKey
-}

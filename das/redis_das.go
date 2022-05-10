@@ -8,12 +8,13 @@ import (
 	"context"
 	"encoding/base32"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
@@ -28,35 +29,61 @@ var DefaultRedisConfig = RedisConfig{
 	Expiration: time.Hour,
 }
 
-type RedisDataAvailabilityService struct {
-	das         DataAvailabilityService
-	redisConfig RedisConfig
-	client      redis.UniversalClient
-	signerMask  uint64
+type RedisDAS struct {
+	das             DataAvailabilityService
+	redisConfig     RedisConfig
+	localDiskConfig LocalDiskDASConfig
+	privKey         *blsSignatures.PrivateKey
+	client          redis.UniversalClient
 }
 
-func NewRedisDataAvailabilityService(ctx context.Context, redisConfig RedisConfig, das DataAvailabilityService, signerMask uint64) (*RedisDataAvailabilityService, error) {
+func NewRedisDataAvailabilityService(redisConfig RedisConfig, localDiskConfig LocalDiskDASConfig, das DataAvailabilityService) (*RedisDAS, error) {
+	var privKey *blsSignatures.PrivateKey
+	var err error
+	if len(localDiskConfig.PrivKey) != 0 {
+		privKey, err = DecodeBase64BLSPrivateKey([]byte(localDiskConfig.PrivKey))
+		if err != nil {
+			return nil, fmt.Errorf("'priv-key' was invalid: %w", err)
+		}
+	} else {
+		_, privKey, err = ReadKeysFromFile(localDiskConfig.KeyDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				if localDiskConfig.AllowGenerateKeys {
+					_, privKey, err = GenerateAndStoreKeys(localDiskConfig.KeyDir)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("Required BLS keypair did not exist at %s", localDiskConfig.KeyDir)
+				}
+			} else {
+				return nil, err
+			}
+		}
+	}
 	redisOptions, err := redis.ParseURL(redisConfig.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
-	return &RedisDataAvailabilityService{
-		das:         das,
-		redisConfig: redisConfig,
-		client:      redis.NewClient(redisOptions),
-		signerMask:  signerMask,
+	return &RedisDAS{
+		das:             das,
+		redisConfig:     redisConfig,
+		localDiskConfig: localDiskConfig,
+		privKey:         privKey,
+		client:          redis.NewClient(redisOptions),
 	}, nil
 }
 
-func (r *RedisDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (r *RedisDAS) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
 	c.Timeout = timeout
-	c.SignersMask = r.signerMask
+	c.SignersMask = 0 // The aggregator decides on the mask for each signer.
 
 	fields := serializeSignableFields(*c)
-	c.Sig, err = blsSignatures.SignMessage(r.PrivateKey(), fields)
+	c.Sig, err = blsSignatures.SignMessage(*r.privKey, fields)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +103,7 @@ func (r *RedisDataAvailabilityService) Store(ctx context.Context, message []byte
 	return c, err
 }
 
-func (r *RedisDataAvailabilityService) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
+func (r *RedisDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
 	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
 		return nil, err
@@ -98,10 +125,6 @@ func (r *RedisDataAvailabilityService) Retrieve(ctx context.Context, certBytes [
 	return result, err
 }
 
-func (r *RedisDataAvailabilityService) String() string {
-	return fmt.Sprintf("RedisDataAvailabilityService{signersMask:%d}", r.signerMask)
-}
-
-func (r *RedisDataAvailabilityService) PrivateKey() blsSignatures.PrivateKey {
-	return r.das.PrivateKey()
+func (r *RedisDAS) String() string {
+	return fmt.Sprintf("RedisDAS{redisConfig:%v}", r.redisConfig)
 }

@@ -122,7 +122,3 @@ func (das *LocalDiskDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte
 func (d *LocalDiskDAS) String() string {
 	return fmt.Sprintf("LocalDiskDAS{config:%v}", d.config)
 }
-
-func (d *LocalDiskDataAvailabilityService) PrivateKey() blsSignatures.PrivateKey {
-	return d.privKey
-}

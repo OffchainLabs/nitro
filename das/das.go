@@ -20,7 +20,6 @@ import (
 type DataAvailabilityServiceWriter interface {
 	// Requests that the message be stored until timeout (UTC time in unix epoch seconds).
 	Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error)
-	PrivateKey() blsSignatures.PrivateKey
 }
 
 type DataAvailabilityService interface {
