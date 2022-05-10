@@ -341,8 +341,8 @@ impl Module {
                         code,
                         floating_point_impls,
                         &func_types,
-                        &types,
-                        &func_ty,
+                        types,
+                        func_type_idxs[idx],
                     )
                 },
                 func_ty.clone(),
