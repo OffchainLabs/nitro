@@ -22,21 +22,28 @@ import (
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
 	numBackendDAS := 10
-	var backends []serviceDetails
+	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
+		config := LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+		}
+		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
-		details, err := newServiceDetails(das, *das.pubKey, signerMask)
+		pubKey, _, err := ReadKeysFromFile(dbPath)
+		Require(t, err)
+		signerMask := uint64(1 << i)
+		details, err := NewServiceDetails(das, *pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(AggregatorConfig{1}, backends)
+	aggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: 1}, backends)
 	Require(t, err)
 	ctx := context.Background()
 
@@ -189,22 +196,28 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	log.Trace(fmt.Sprintf("Testing aggregator with K:%d with K=N+1-H, N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
 
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
-	var backends []serviceDetails
+	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
+		config := LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+		}
+		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
-
-		details, err := newServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask)
+		pubKey, _, err := ReadKeysFromFile(dbPath)
+		Require(t, err)
+		signerMask := uint64(1 << i)
+		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
 	}
 
-	unwrappedAggregator, err := NewAggregator(AggregatorConfig{assumedHonest}, backends)
+	unwrappedAggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: assumedHonest}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 	ctx := context.Background()
@@ -283,18 +296,25 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 		nFailures = numBackendDAS - nSuccesses
 	}
 	log.Trace(fmt.Sprintf("Testing aggregator retrieve with %d successes and %d failures", nSuccesses, nFailures))
-	var backends []serviceDetails
+	var backends []ServiceDetails
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
-		Require(t, err)
+		config := LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+		}
 
-		details := serviceDetails{&WrapRetrieve{t, injectedFailures, das}, *das.pubKey, signerMask}
+		das, err := NewLocalDiskDAS(config)
+		Require(t, err)
+		pubKey, _, err := ReadKeysFromFile(dbPath)
+		Require(t, err)
+		signerMask := uint64(1 << i)
+		details := ServiceDetails{&WrapRetrieve{t, injectedFailures, das}, *pubKey, signerMask}
 
 		backends = append(backends, details)
 	}
@@ -302,7 +322,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	unwrappedAggregator, err := NewAggregator(AggregatorConfig{numBackendDAS}, backends)
+	unwrappedAggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: numBackendDAS}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 	ctx := context.Background()
