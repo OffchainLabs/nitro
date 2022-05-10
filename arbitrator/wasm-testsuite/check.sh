@@ -2,6 +2,7 @@
 # For license information, see https://github.com/nitro/blob/master/LICENSE
 
 #rm -f tests/*
+mkdir -p tests
 
 #for file in testsuite/*wast; do
 #    wast="${file##testsuite/}"

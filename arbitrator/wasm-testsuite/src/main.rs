@@ -34,8 +34,9 @@ enum Command {
     AssertTrap {
         action: Action,
     },
-
-    Action {},
+    Action {
+        action: Action,
+    },
     AssertMalformed {
         filename: String,
     },
@@ -146,7 +147,50 @@ fn main() -> eyre::Result<()> {
     let mut subtest = 0;
 
     for (index, command) in case.commands.into_iter().enumerate() {
-        println!();
+        macro_rules! test_success {
+            ($func:expr, $args:expr, $expected:expr) => {
+                let args: Vec<_> = $args.into_iter().map(Into::into).collect();
+
+                let machine = machine.as_mut().unwrap();
+                machine.jump_into_function(&$func, args.clone());
+                machine.step_n(10000);
+
+                let output = match machine.get_final_result() {
+                    Ok(output) => output,
+                    Err(error) => {
+                        let expected: Vec<Value> = $expected.into_iter().map(Into::into).collect();
+                        println!(
+                            "Divergence in func {} of test {}",
+                            Color::red($func),
+                            Color::red(index),
+                        );
+                        pretty_print_values("Args    ", args);
+                        pretty_print_values("Expected", expected);
+                        println!();
+                        bail!("{}", error)
+                    }
+                };
+
+                if $expected != output {
+                    let expected: Vec<Value> = $expected.into_iter().map(Into::into).collect();
+                    println!(
+                        "Divergence in func {} of test {}",
+                        Color::red($func),
+                        Color::red(index),
+                    );
+                    pretty_print_values("Args    ", args);
+                    pretty_print_values("Expected", expected);
+                    pretty_print_values("Observed", output);
+                    println!();
+                    bail!(
+                        "Failure in test {}",
+                        Color::red(format!("{} #{}", wasmfile, subtest))
+                    )
+                }
+                subtest += 1;
+            };
+        }
+
         match command {
             Command::Module { filename } => {
                 wasmfile = filename;
@@ -187,64 +231,36 @@ fn main() -> eyre::Result<()> {
                 }
 
                 machine = mech.ok();
+
+                if let Some(machine) = &mut machine {
+                    machine.step_n(1000);
+                }
             }
             Command::AssertReturn { action, expected } => {
                 let (func, args) = match action {
                     Action::Invoke { field, args } => (field, args),
-                    _ => continue,
+                    _ => bail!("unimplemented"),
                 };
-
-                let args: Vec<_> = args.into_iter().map(Into::into).collect();
-
-                let machine = machine.as_mut().unwrap();
-                machine.jump_into_function(&func, args.clone());
-                machine.step_n(10000);
-
-                let output = match machine.get_final_result() {
-                    Ok(output) => output,
-                    Err(error) => {
-                        let expected: Vec<Value> = expected.into_iter().map(Into::into).collect();
-                        println!(
-                            "Divergence in func {} of test {}",
-                            Color::red(func),
-                            Color::red(index),
-                        );
-                        pretty_print_values("Args    ", args);
-                        pretty_print_values("Expected", expected);
-                        println!();
-                        bail!("{}", error)
-                    }
+                test_success!(func, args, expected);
+            }
+            Command::Action { action } => {
+                let (func, args) = match action {
+                    Action::Invoke { field, args } => (field, args),
+                    _ => bail!("unimplemented"),
                 };
-
-                if expected != output {
-                    let expected: Vec<Value> = expected.into_iter().map(Into::into).collect();
-                    println!(
-                        "Divergence in func {} of test {}",
-                        Color::red(func),
-                        Color::red(index),
-                    );
-                    pretty_print_values("Args    ", args);
-                    pretty_print_values("Expected", expected);
-                    pretty_print_values("Observed", output);
-                    println!();
-                    bail!(
-                        "Failure in test {}",
-                        Color::red(format!("{} #{}", wasmfile, subtest))
-                    )
-                }
-                subtest += 1;
+                let expected: Vec<TextValue> = vec![];
+                test_success!(func, args, expected);
             }
             Command::AssertTrap { action } => {
                 let (func, args) = match action {
                     Action::Invoke { field, args } => (field, args),
-                    _ => continue,
+                    _ => bail!("unimplemented"),
                 };
 
                 let args: Vec<_> = args.into_iter().map(Into::into).collect();
 
                 let machine = machine.as_mut().unwrap();
                 machine.jump_into_function(&func, args.clone());
-                //machine.step_n(u64::MAX);
                 machine.step_n(1000);
 
                 let test = Color::red(format!("{} #{}", wasmfile, subtest));

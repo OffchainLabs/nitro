@@ -1472,12 +1472,10 @@ impl Machine {
                 }
                 Opcode::LocalGet => {
                     let val = self.frame_stack.last().unwrap().locals[inst.argument_data as usize];
-                    println!("local get {} {}", inst.argument_data as usize, val.pretty_print());
                     self.value_stack.push(val);
                 }
                 Opcode::LocalSet => {
                     let val = self.value_stack.pop().unwrap();
-                    println!("local set {} {}", inst.argument_data as usize, val.pretty_print());                    
                     self.frame_stack.last_mut().unwrap().locals[inst.argument_data as usize] = val;
                 }
                 Opcode::GlobalGet => {
@@ -1499,7 +1497,6 @@ impl Machine {
                     if let Some(idx) = inst.argument_data.checked_add(base.into()) {
                         let val = module.memory.get_value(idx, ty, bytes, signed);
                         if let Some(val) = val {
-                            println!("loading   {} {}", idx, val.pretty_print());
                             self.value_stack.push(val);
                         } else {
                             error!();
@@ -1527,14 +1524,6 @@ impl Machine {
                         ),
                     };
                     if let Some(idx) = inst.argument_data.checked_add(base.into()) {
-                        let old = match ty {
-                            ArbValueType::I32 | ArbValueType::I64 => module.memory.get_value(idx, ty, bytes, true),
-                            _ => None,
-                        };
-                        match old {
-                            Some(old) => println!("storing   {} {} over {}", idx, val, old.pretty_print()),
-                            None => println!("storing   {} {}", idx, val),
-                        }
                         if !module.memory.store_value(idx, val, bytes) {
                             error!();
                         }
