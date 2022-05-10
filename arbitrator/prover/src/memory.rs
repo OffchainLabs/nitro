@@ -17,7 +17,7 @@ pub struct Memory {
     buffer: Vec<u8>,
     #[serde(skip)]
     merkle: Option<Merkle>,
-    pub max_size: Option<u32>, // TODO make this no longer optional next re-init
+    pub max_size: u32,
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -49,7 +49,7 @@ fn div_round_up(num: usize, denom: usize) -> usize {
 impl Memory {
     pub const LEAF_SIZE: usize = 32;
     /// Only used when initializing a memory to determine its size
-    pub const PAGE_SIZE: usize = 65536;
+    pub const PAGE_SIZE: u64 = 65536;
     /// The number of layers in the memory merkle tree
     /// 1 + log2(2^32 / LEAF_SIZE) = 1 + log2(2^(32 - log2(LEAF_SIZE))) = 1 + 32 - 5
     const MEMORY_LAYERS: usize = 1 + 32 - 5;
@@ -58,7 +58,7 @@ impl Memory {
         Memory {
             buffer: vec![0u8; size],
             merkle: None,
-            max_size: Some(max_size),
+            max_size,
         }
     }
 

@@ -16,7 +16,7 @@ use crate::{
     }
 };
 use digest::Digest;
-use eyre::{bail, ensure, eyre, Result, WrapErr};
+use eyre::{bail, ensure, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use rayon::prelude::*;
@@ -354,18 +354,21 @@ impl Module {
             bin.memories.len() <= 1,
             "Multiple memories are not supported"
         );
-        if let Some(limits) = bin.memories.get(0) {
-            // We ignore the maximum size
-            let size = usize::try_from(limits.initial)
-                .ok()
-                .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
-                .ok_or_else(|| eyre!("Memory size is too large"))?;
-
+        if let Some(limits) = bin.memories.get(0) {            
+            let page_size = Memory::PAGE_SIZE;
+            let initial = limits.initial;  // validate() checks this is less than max::u32
+            let allowed = u32::MAX as u64 / Memory::PAGE_SIZE - 1;  // we require the size remain *below* 2^32
+            
             let max_size = match limits.maximum {
-                Some(value) if value < u32::MAX as u64 => value,
-                _ => u32::MAX as u64,
+                Some(pages) => u64::min(allowed, pages),
+                _ => allowed,
             };
-            memory = Memory::new(size, max_size as u32);
+            if initial > max_size {
+                bail!("Memory inits to a size larger than its max: {} vs {}", limits.initial, max_size);
+            }
+            let size = initial * page_size;
+
+            memory = Memory::new(size as usize, max_size as u32);
         }
 
         let mut globals = vec![];
@@ -1505,7 +1508,7 @@ impl Machine {
                         error!();
                     }
                 }
-                Opcode::MemoryStore { ty, bytes } => {
+                Opcode::MemoryStore { ty: _, bytes } => {
                     let val = match self.value_stack.pop() {
                         Some(Value::I32(x)) => x.into(),
                         Some(Value::I64(x)) => x,
@@ -1605,21 +1608,12 @@ impl Machine {
                         Some(Value::I32(x)) => x,
                         v => panic!("WASM validation failed: bad value for memory.grow {:?}", v),
                     };
-                    let page_size = Memory::PAGE_SIZE as u64;
-                    let max_size = match module.memory.max_size {
-                        Some(value) => {
-                            let max = page_size * value as u64;
-                            match max <= u32::MAX as u64 {
-                                true => max,
-                                false => u32::MAX as u64,
-                            }
-                        },
-                        None => u32::MAX as u64,
-                    };
+                    let page_size = Memory::PAGE_SIZE;
+                    let max_size = module.memory.max_size as u64 * page_size;
+                    
                     let new_size = (|| {
                         let adding_size = u64::from(adding_pages).checked_mul(page_size)?;
                         let new_size = old_size.checked_add(adding_size)?;
-                        // Note: we require the size remain *below* 2^32, meaning the actual limit is 2^32-PAGE_SIZE
 
                         println!("{} {} {}", old_size, new_size, max_size);
                         
