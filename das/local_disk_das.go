@@ -33,8 +33,9 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type LocalDiskDAS struct {
-	config  LocalDiskDASConfig
-	privKey *blsSignatures.PrivateKey
+	config     LocalDiskDASConfig
+	privKey    *blsSignatures.PrivateKey
+	keysetHash [32]byte
 }
 
 func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
@@ -63,9 +64,26 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 		}
 	}
 
+	publicKey, err := blsSignatures.PublicKeyFromPrivateKey(*privKey)
+	if err != nil {
+		return nil, err
+	}
+
+	keyset := &arbstate.DataAvailabilityKeyset{
+		AssumedHonest: 1,
+		PubKeys:       []blsSignatures.PublicKey{publicKey},
+	}
+	ksHashBuf, err := keyset.Hash()
+	if err != nil {
+		return nil, err
+	}
+	var ksHash [32]byte
+	copy(ksHash[:], ksHashBuf)
+
 	return &LocalDiskDAS{
-		config:  config,
-		privKey: privKey,
+		config:     config,
+		privKey:    privKey,
+		keysetHash: ksHash,
 	}, nil
 }
 
@@ -90,7 +108,7 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 		return nil, err
 	}
 
-	// leave the keyset field of c as zeroes
+	c.KeysetHash = das.keysetHash
 
 	return c, nil
 }
