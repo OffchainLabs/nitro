@@ -61,7 +61,7 @@ type ClientStoreConfig struct {
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
-	f := flag.NewFlagSet("client", flag.ContinueOnError)
+	f := flag.NewFlagSet("datool client store", flag.ContinueOnError)
 	f.String("url", "", "URL of DAS server to connect to.")
 	f.String("message", "", "Message to send.")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
@@ -114,7 +114,7 @@ type ClientRetrieveConfig struct {
 }
 
 func parseClientRetrieveConfig(args []string) (*ClientRetrieveConfig, error) {
-	f := flag.NewFlagSet("client", flag.ContinueOnError)
+	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
 	f.String("url", "", "URL of DAS server to connect to.")
 	f.String("cert", "", "Base64 encodeded DAS certificate of message to retrieve.")
 	conf.ConfConfigAddOptions("conf", f)
@@ -164,7 +164,7 @@ type KeyGenConfig struct {
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
-	f := flag.NewFlagSet("client", flag.ContinueOnError)
+	f := flag.NewFlagSet("datool keygen", flag.ContinueOnError)
 	f.String("dir", "", "The directory to generate the keys in")
 	conf.ConfConfigAddOptions("conf", f)
 
