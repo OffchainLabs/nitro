@@ -33,12 +33,16 @@ contract DasKeysetManager is OwnableUpgradeable, DelegateCallAware {
         return validKeysetIndex[ksHash] != 0;
     }
 
-    function addKeyset(bytes calldata keyset) external onlyOwner {
+    function addKeysetHash(bytes32 ksHash) external {
         if (validKeysets.length >= MAX_VALID_KEYSETS) revert TooManyValidKeysets();
-        bytes32 ksHash = keccak256(keyset);
         if (this.isValidKeysetHash(ksHash)) revert KeysetAlreadyValid();
         validKeysetIndex[ksHash] = validKeysets.length + 1;
         validKeysets.push(ksHash);
+    }
+
+    function addKeyset(bytes calldata keyset) external {
+        bytes32 ksHash = keccak256(keyset);
+        this.addKeysetHash(ksHash);
         contents[ksHash] = keyset;
     }
 

@@ -9,7 +9,7 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -32,6 +32,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
+
 	if dasModeString == "local" {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
@@ -45,32 +46,25 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		chainConfig = params.ArbitrumDevTestDASChainConfig()
 	}
 	_, err = l1NodeConfigA.DataAvailability.Mode()
+
 	Require(t, err)
+
 	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+
 	defer l1stack.Close()
 
-	usingDas := l1info.Das
+	usingDas := nodeA.DataAvailService
+
 	if usingDas != nil {
 		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
 		Require(t, err)
-		abiBytes := []byte{0x62, 0x30, 0xde, 0x17}
-		abiBytes = append(abiBytes, make([]byte, 31)...)
-		abiBytes = append(abiBytes, 0x02)
-		abiBytes = append(abiBytes, make([]byte, 30)...)
-		abiBytes = append(abiBytes, byte(len(keysetBytes)/256))
-		abiBytes = append(abiBytes, byte(len(keysetBytes)%256))
-		abiBytes = append(abiBytes, keysetBytes...)
-		for len(abiBytes)%32 != 4 {
-			abiBytes = append(abiBytes, 0)
-		}
-		tx := l1info.PrepareTx("Owner", "DasKeysetManager", 100000, big.NewInt(0), abiBytes)
+		abiBytes := []byte{0xb6, 0x40, 0x26, 0x98}
+		abiBytes = append(abiBytes, crypto.Keccak256(keysetBytes)...)
+		tx := l1info.PrepareTx("RollupOwner", "DasKeysetManager", 100000, big.NewInt(0), abiBytes)
 		err = l1client.SendTransaction(ctx, tx)
 		Require(t, err)
-		fmt.Println("======================= trying")
 		_, err = EnsureTxSucceeded(ctx, l1client, tx)
-		fmt.Println("======================= checking")
 		Require(t, err)
-		fmt.Println("======================= success")
 	}
 
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
@@ -140,6 +134,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	if l2balance.Cmp(big.NewInt(2e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
+
 	lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 	Require(t, err)
 	testDeadLine, _ := t.Deadline()
