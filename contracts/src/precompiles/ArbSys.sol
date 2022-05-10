@@ -119,6 +119,20 @@ interface ArbSys {
         bytes data
     );
 
+    /// @dev DEPRECATED in favour of the new L2ToL1Transaction event above after the nitro upgrade
+    event L2ToL1Transaction(
+        address caller,
+        address indexed destination,
+        uint256 indexed uniqueId,
+        uint256 indexed batchNumber,
+        uint256 indexInBatch,
+        uint256 arbBlockNum,
+        uint256 ethBlockNum,
+        uint256 timestamp,
+        uint256 callvalue,
+        bytes data
+    );
+
     /**
      * @notice logs a merkle branch for proof sythesis
      * @param reserved an index meant only to align the 4th index with L2ToL1Transaction's 4th event
