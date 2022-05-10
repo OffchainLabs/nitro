@@ -25,7 +25,19 @@ error InsufficientSubmissionCost(uint256 expected, uint256 actual);
 
 /// @dev used to convey retryable tx data in eth calls without requiring a tx trace
 /// this follows a pattern similar to EIP-3668 where reverts surface call information
-error RetryableData(address sender, uint256 dataLength, bytes data);
+error RetryableData(
+    address from,
+    address to,
+    uint256 l2CallValue,
+    uint256 deposit,
+    uint256 maxSubmissionCost,
+    address excessFeeRefundAddress,
+    address callValueRefundAddress,
+    uint256 gasLimit,
+    uint256 maxFeePerGas,
+    uint256 dataLength,
+    bytes data
+);
 
 interface IInbox is IMessageProvider {
     function sendL2Message(bytes calldata messageData) external returns (uint256);

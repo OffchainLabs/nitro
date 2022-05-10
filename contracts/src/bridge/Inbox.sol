@@ -354,7 +354,20 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     ) public payable virtual override whenNotPaused returns (uint256) {
         // gas price and limit of 1 should never be a valid input, so instead they are used as
         // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
-        if(gasLimit == 1 && maxFeePerGas == 1) revert RetryableData(msg.sender, data.length, data);
+        if (gasLimit == 1 && maxFeePerGas == 1)
+            revert RetryableData(
+                msg.sender,
+                to,
+                l2CallValue,
+                msg.value,
+                maxSubmissionCost,
+                excessFeeRefundAddress,
+                callValueRefundAddress,
+                gasLimit,
+                maxFeePerGas,
+                data.length,
+                data
+            );
 
         uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
         if (maxSubmissionCost < submissionFee)
