@@ -153,7 +153,7 @@ fn main() -> eyre::Result<()> {
 
                 let machine = machine.as_mut().unwrap();
                 machine.jump_into_function(&$func, args.clone());
-                machine.step_n(10000);
+                machine.step_n(10_000_000);
 
                 let output = match machine.get_final_result() {
                     Ok(output) => output,
@@ -239,14 +239,14 @@ fn main() -> eyre::Result<()> {
             Command::AssertReturn { action, expected } => {
                 let (func, args) = match action {
                     Action::Invoke { field, args } => (field, args),
-                    _ => bail!("unimplemented"),
+                    _ => bail!("unimplemented 1"),
                 };
                 test_success!(func, args, expected);
             }
             Command::Action { action } => {
                 let (func, args) = match action {
                     Action::Invoke { field, args } => (field, args),
-                    _ => bail!("unimplemented"),
+                    _ => bail!("unimplemented 2"),
                 };
                 let expected: Vec<TextValue> = vec![];
                 test_success!(func, args, expected);
@@ -254,7 +254,7 @@ fn main() -> eyre::Result<()> {
             Command::AssertTrap { action } => {
                 let (func, args) = match action {
                     Action::Invoke { field, args } => (field, args),
-                    _ => bail!("unimplemented"),
+                    _ => bail!("unimplemented 3"),
                 };
 
                 let args: Vec<_> = args.into_iter().map(Into::into).collect();
@@ -283,7 +283,8 @@ fn main() -> eyre::Result<()> {
                 subtest += 1;
             }
             Command::AssertExhaustion {} => {
-                //subtest += 1;
+
+                subtest += 1;
                 unimplemented!("here")
             }
             Command::AssertMalformed { filename } => {

@@ -1239,7 +1239,7 @@ impl Machine {
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
         if self.frame_stack.len() != 0 {
-            bail!("machine has not successfully computed a final result")
+            bail!("machine has not successfully computed a final result {:?}", self.status)
         }
         Ok(self.value_stack.clone())
     }
@@ -1614,9 +1614,6 @@ impl Machine {
                     let new_size = (|| {
                         let adding_size = u64::from(adding_pages).checked_mul(page_size)?;
                         let new_size = old_size.checked_add(adding_size)?;
-
-                        println!("{} {} {}", old_size, new_size, max_size);
-                        
                         if new_size <= max_size as u64 {
                             Some(new_size)
                         } else {
