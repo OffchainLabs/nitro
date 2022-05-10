@@ -76,7 +76,7 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 }
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode (onchain or local)")
+	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local', or 'aggregator')")
 	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
 }
