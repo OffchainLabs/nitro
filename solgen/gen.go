@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package main
 
@@ -39,6 +38,19 @@ func (m *moduleInfo) addArtifact(artifact HardHatArtifact) {
 	m.contractNames = append(m.contractNames, artifact.ContractName)
 	m.abis = append(m.abis, string(abi))
 	m.bytecodes = append(m.bytecodes, artifact.Bytecode)
+}
+
+func (m *moduleInfo) exportABIs(dest string) {
+	for i, name := range m.contractNames {
+		path := filepath.Join(dest, name+".abi")
+		abi := m.abis[i] + "\n"
+
+		// #nosec G306
+		err := ioutil.WriteFile(path, []byte(abi), 0o644)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func main() {
@@ -86,6 +98,7 @@ func main() {
 	}
 
 	for module, info := range modules {
+
 		code, err := bind.Bind(
 			info.contractNames,
 			info.abis,
@@ -118,4 +131,13 @@ func main() {
 	}
 
 	fmt.Println("successfully generated go abi files")
+
+	blockscout := filepath.Join(parent, "blockscout", "init", "data")
+	if _, err := os.Stat(blockscout); err != nil {
+		fmt.Println("skipping abi export since blockscout is not present")
+	} else {
+		modules["precompilesgen"].exportABIs(blockscout)
+		modules["node_interfacegen"].exportABIs(blockscout)
+		fmt.Println("successfully exported abi files")
+	}
 }

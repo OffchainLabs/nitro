@@ -10,11 +10,11 @@ type Bips int64
 const OneInBips Bips = 10000
 
 func NaturalToBips(natural int64) Bips {
-	return Bips(natural) * OneInBips
+	return Bips(SaturatingMul(natural, int64(OneInBips)))
 }
 
 func PercentToBips(percentage int64) Bips {
-	return Bips(percentage) * 100
+	return Bips(SaturatingMul(percentage, 100))
 }
 
 func BigToBips(natural *big.Int) Bips {
