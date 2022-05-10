@@ -108,6 +108,42 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 	return buf
 }
 
+func (cert *DataAvailabilityCertificate) VerifyNonPayloadParts(
+	ctx context.Context,
+	das DataAvailabilityServiceReader,
+) error {
+	keysetBytes, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+	if err != nil {
+		return err
+	}
+	keyset, err := DeserializeKeyset(bytes.NewReader(keysetBytes))
+	if err != nil {
+		return err
+	}
+	pubkeys := []blsSignatures.PublicKey{}
+	numNonSigners := uint64(0)
+	for i := 0; i < len(keyset.PubKeys); i++ {
+		if (1<<i)&cert.SignersMask != 0 {
+			pubkeys = append(pubkeys, keyset.PubKeys[i])
+		} else {
+			numNonSigners++
+		}
+	}
+	if numNonSigners >= keyset.AssumedHonest {
+		return errors.New("not enough signers")
+	}
+	aggregatedPubKey := blsSignatures.AggregatePublicKeys(pubkeys)
+	success, err := blsSignatures.VerifySignature(cert.Sig, cert.SerializeSignableFields(), aggregatedPubKey)
+
+	if err != nil {
+		return err
+	}
+	if !success {
+		return errors.New("bad signature")
+	}
+	return nil
+}
+
 type DataAvailabilityKeyset struct {
 	AssumedHonest uint64
 	PubKeys       []blsSignatures.PublicKey
