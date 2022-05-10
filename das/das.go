@@ -56,7 +56,7 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	}
 
 	if c.ModeImpl == "local" {
-		if c.LocalDiskDASConfig.DataDir == "" || c.LocalDiskDASConfig.KeyDir == "" {
+		if c.LocalDiskDASConfig.DataDir == "" || (c.LocalDiskDASConfig.KeyDir == "" && c.LocalDiskDASConfig.PrivKey == "") {
 			flag.Usage()
 			return 0, errors.New("--data-availability.local-disk.data-dir and .key-dir must be specified if mode is set to local")
 		}
