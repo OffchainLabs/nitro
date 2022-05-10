@@ -97,6 +97,17 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 	return c, nil
 }
 
+func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
+	buf := make([]byte, 0, 32+8)
+	buf = append(buf, c.DataHash[:]...)
+
+	var intData [8]byte
+	binary.BigEndian.PutUint64(intData[:], c.Timeout)
+	buf = append(buf, intData[:]...)
+
+	return buf
+}
+
 type DataAvailabilityKeyset struct {
 	AssumedHonest uint64
 	PubKeys       []blsSignatures.PublicKey
@@ -110,8 +121,9 @@ func (keyset *DataAvailabilityKeyset) Serialize(wr io.Writer) error {
 		return err
 	}
 	for _, pk := range keyset.PubKeys {
-		buf := blsSignatures.PublicKeyToBytes(pk)
-		_, err := wr.Write(append([]byte{byte(len(buf))}, buf...))
+		pkBuf := blsSignatures.PublicKeyToBytes(pk)
+		buf := []byte{byte(len(pkBuf) / 256), byte(len(pkBuf) % 256)}
+		_, err := wr.Write(append(buf, pkBuf...))
 		if err != nil {
 			return err
 		}
@@ -140,12 +152,12 @@ func DeserializeKeyset(rd io.Reader) (*DataAvailabilityKeyset, error) {
 		return nil, errors.New("too many keys in serialized DataAvailabilityKeyset")
 	}
 	pubkeys := make([]blsSignatures.PublicKey, numKeys)
-	buf1 := []byte{0}
+	buf2 := []byte{0, 0}
 	for i := uint64(0); i < numKeys; i++ {
-		if _, err := rd.Read(buf1); err != nil {
+		if _, err := io.ReadFull(rd, buf2); err != nil {
 			return nil, err
 		}
-		buf := make([]byte, buf1[0])
+		buf := make([]byte, int(buf2[0])*256+int(buf2[1]))
 		if _, err := io.ReadFull(rd, buf); err != nil {
 			return nil, err
 		}

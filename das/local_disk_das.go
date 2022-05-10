@@ -100,9 +100,9 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
 	c.Timeout = timeout
-	c.SignersMask = 0 // The aggregator decides on the mask for each signer.
+	c.SignersMask = 1 // The aggregator will override this if we're part of a committee.
 
-	fields := serializeSignableFields(c)
+	fields := c.SerializeSignableFields()
 	c.Sig, err = blsSignatures.SignMessage(*das.privKey, fields)
 	if err != nil {
 		return nil, err

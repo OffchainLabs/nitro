@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/zeroheavy"
 	"io"
 	"math/big"
@@ -74,13 +76,17 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 			} else {
 				cert, err := DeserializeDASCertFrom(bytes.NewReader(data[40:]))
 				if err != nil {
-					log.Error("Deserializing DAS cert failed", "err", err)
+					log.Error("Deserializing data availability cert failed", "err", err)
+					return nil
 				}
-				payload, err = das.Retrieve(ctx, cert)
-				if err != nil {
-					log.Error("Reading from DAS failed", "err", err)
+				if err := verifyDataAvailabilityCert(ctx, das, cert); err != nil { // safe because L1 verified keyset hash
+					log.Error("Invalid data availability cert", "err", err)
+					return nil
 				}
-				//BUGBUG: FETCH AND CHECK SIGNATURE HERE
+				payload, err = das.Retrieve(ctx, cert) // safe because DA cert was verified
+				if err != nil || !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
+					panic("DAS retrieve failed") // should never happen--best to halt execution if it does
+				}
 			}
 		} else if data[40] == 0 {
 			payload = data[40:]
@@ -363,4 +369,41 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 
 func (r *inboxMultiplexer) DelayedMessagesRead() uint64 {
 	return r.delayedMessagesRead
+}
+
+func verifyDataAvailabilityCert(
+	ctx context.Context,
+	das DataAvailabilityServiceReader,
+	cert *DataAvailabilityCertificate,
+) error {
+	keysetBytes, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+	if err != nil {
+		return err
+	}
+	keyset, err := DeserializeKeyset(bytes.NewReader(keysetBytes))
+	if err != nil {
+		return err
+	}
+	pubkeys := []blsSignatures.PublicKey{}
+	numNonSigners := uint64(0)
+	for i := 0; i < len(keyset.PubKeys); i++ {
+		if (1<<i)&cert.SignersMask != 0 {
+			pubkeys = append(pubkeys, keyset.PubKeys[i])
+		} else {
+			numNonSigners++
+		}
+	}
+	if numNonSigners >= keyset.AssumedHonest {
+		return errors.New("not enough signers")
+	}
+	aggregatedPubKey := blsSignatures.AggregatePublicKeys(pubkeys)
+	success, err := blsSignatures.VerifySignature(cert.Sig, cert.SerializeSignableFields(), aggregatedPubKey)
+
+	if err != nil {
+		return err
+	}
+	if !success {
+		return errors.New("bad signature")
+	}
+	return nil
 }
