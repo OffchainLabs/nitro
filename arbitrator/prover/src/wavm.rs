@@ -1,6 +1,8 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use std::ops::{Add, AddAssign, Sub, SubAssign};
+
 use crate::{
     binary::FloatInstruction,
     utils::Bytes32,
@@ -379,6 +381,87 @@ impl Instruction {
     }
 }
 
+/// Note: An Unreachable stack state is equal to any other stack state.
+/// That's because an unreachable code path merging with another code path
+/// will not have a mismatch in the stack contents.
+#[derive(Clone, Copy, Debug)]
+enum StackState {
+    Reachable(usize),
+    Unreachable,
+}
+
+impl StackState {
+    fn stack_height(&self) -> Option<usize> {
+        match self {
+            Self::Reachable(x) => Some(*x),
+            Self::Unreachable => None,
+        }
+    }
+}
+
+impl Add<isize> for StackState {
+    type Output = Self;
+
+    fn add(self, rhs: isize) -> Self {
+        match self {
+            Self::Reachable(x) => {
+                if rhs > 0 {
+                    Self::Reachable(x.checked_add(rhs as usize).unwrap())
+                } else {
+                    Self::Reachable(
+                        x.checked_sub(rhs.unsigned_abs())
+                            .expect("Stack state underflow"),
+                    )
+                }
+            }
+            Self::Unreachable => self,
+        }
+    }
+}
+
+impl AddAssign<isize> for StackState {
+    fn add_assign(&mut self, rhs: isize) {
+        *self = *self + rhs;
+    }
+}
+
+impl SubAssign<isize> for StackState {
+    #[allow(clippy::suspicious_op_assign_impl)]
+    fn sub_assign(&mut self, rhs: isize) {
+        *self += rhs.checked_neg().unwrap();
+    }
+}
+
+impl PartialEq for StackState {
+    fn eq(&self, other: &Self) -> bool {
+        let x = match self {
+            Self::Reachable(x) => x,
+            Self::Unreachable => return true,
+        };
+        let y = match other {
+            Self::Reachable(y) => y,
+            Self::Unreachable => return true,
+        };
+        x == y
+    }
+}
+
+impl Sub for StackState {
+    type Output = isize;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let s = match self {
+            Self::Reachable(s) => s,
+            Self::Unreachable => return 0,
+        };
+        let rhs = match rhs {
+            Self::Reachable(rhs) => rhs,
+            Self::Unreachable => return 0,
+        };
+        s as isize - rhs as isize
+    }
+}
+
 pub fn wasm_to_wavm<'a>(
     code: &[Operator<'a>],
     out: &mut Vec<Instruction>,
@@ -389,9 +472,7 @@ pub fn wasm_to_wavm<'a>(
 ) -> Result<()> {
     use Operator::*;
 
-    type StackHeight = isize;
-    let mut stack: StackHeight = 0;
-    let mut unreachable = false;
+    let mut stack = StackState::Reachable(0);
 
     macro_rules! op {
         ($first:ident $(,$opcode:ident)*) => {
@@ -538,7 +619,7 @@ pub fn wasm_to_wavm<'a>(
                 _ => panic!("Floating point op {:?} should have 1 output but has {}", func, outputs.len()),
             }
 
-            stack += outputs.len() as StackHeight - sig.inputs.len() as StackHeight;
+            stack += outputs.len() as isize - sig.inputs.len() as isize;
         }};
     }
 
@@ -546,13 +627,16 @@ pub fn wasm_to_wavm<'a>(
     #[derive(Debug)]
     enum Scope {
         /// jumps and height afterward
-        Simple(Vec<usize>, StackHeight),
+        Simple(Vec<usize>, StackState),
         /// start, height before, and height afterward
-        Loop(usize, StackHeight, StackHeight),
+        Loop(usize, StackState, StackState),
         /// jumps, start, height before, and height afterward
-        IfElse(Vec<usize>, Option<usize>, StackHeight, StackHeight),
+        IfElse(Vec<usize>, Option<usize>, StackState, StackState),
     }
-    let mut scopes = vec![Scope::Simple(vec![], func_ty.outputs.len() as StackHeight)]; // start with the func's scope
+    let mut scopes = vec![Scope::Simple(
+        vec![],
+        StackState::Reachable(func_ty.outputs.len()),
+    )]; // start with the func's scope
 
     macro_rules! branch {
         ($kind:ident, $depth:expr) => {{
@@ -572,14 +656,15 @@ pub fn wasm_to_wavm<'a>(
             }
             let stack_if_not_taken = stack;
             let mut jump_to_after = None;
-            if !unreachable && stack != height {
+            if stack != height {
                 if jump_op == Opcode::ArbitraryJumpIf {
                     opcode!(I32Eqz);
                     jump_to_after = Some(out.len());
                     opcode!(ArbitraryJumpIf);
                 }
-                assert!(stack >= height, "stack doesn't have needed elements for branch");
-                for _ in height..stack {
+                let diff = stack - height;
+                assert!(diff > 0, "stack doesn't have needed elements for branch");
+                for _ in 0..diff {
                     opcode!(Drop, @pop 1);
                 }
                 assert_eq!(stack, height);
@@ -596,10 +681,10 @@ pub fn wasm_to_wavm<'a>(
             out.push(Instruction::with_data(jump_op, dest as u64));
             if let Some(jump_to_after) = jump_to_after {
                 out[jump_to_after].argument_data = out.len() as u64;
+                stack = stack_if_not_taken;
             } else if jump_op == Opcode::ArbitraryJump {
-                unreachable = true;
+                stack = StackState::Unreachable;
             }
-            stack = stack_if_not_taken;
         }};
     }
     macro_rules! height_after_block {
@@ -609,7 +694,7 @@ pub fn wasm_to_wavm<'a>(
                 BlockType::Type(_) => 1,
                 BlockType::FuncType(index) => {
                     let func_ty = &all_types[*index as usize];
-                    func_ty.outputs.len() as StackHeight - func_ty.inputs.len() as StackHeight
+                    func_ty.outputs.len() as isize - func_ty.inputs.len() as isize
                 }
             };
             stack + delta
@@ -621,7 +706,7 @@ pub fn wasm_to_wavm<'a>(
         match op {
             Unreachable => {
                 opcode!(Unreachable);
-                unreachable = true;
+                stack = StackState::Unreachable;
             },
             Nop => opcode!(Nop),
             Block { ty } => {
@@ -666,12 +751,8 @@ pub fn wasm_to_wavm<'a>(
                 for jump in jumps {
                     out[jump].argument_data = dest as u64;
                 }
-                if unreachable {
-                    stack = height;
-                } else {
-                    assert_eq!(stack, height, "unexpected stack height at end of block");
-                }
-                unreachable = false;
+                assert_eq!(stack, height, "unexpected stack height at end of block");
+                stack = height;
             }
             Br { relative_depth } => branch!(ArbitraryJump, *relative_depth),
             BrIf { relative_depth } => branch!(ArbitraryJumpIf, *relative_depth),
@@ -689,9 +770,9 @@ pub fn wasm_to_wavm<'a>(
                 branch!(ArbitraryJump, table.default());
             }
             Return => {
-                let return_count = func_ty.outputs.len() as StackHeight;
+                let return_count = func_ty.outputs.len();
 
-                if stack != return_count {
+                if let Some(stack) = stack.stack_height().filter(|h| *h != return_count) {
                     // Hold the return values on the internal stack while we drop extraneous stack values
                     for _ in 0..return_count {
                         opcode!(MoveFromStackToInternal);
@@ -709,7 +790,7 @@ pub fn wasm_to_wavm<'a>(
                     }
                 }
                 opcode!(Return);
-                unreachable = true;
+                stack = StackState::Unreachable;
             }
             Call { function_index } => {
                 let ty = &func_types[*function_index as usize];
