@@ -65,6 +65,14 @@ func (clnt *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]
 	return response.Result, nil
 }
 
+func (clnt *DASRPCClient) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
+	response, err := clnt.clnt.CurrentKeysetBytes(ctx, &CurrentKeysetBytesRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return response.Result, nil
+}
+
 func (clnt *DASRPCClient) String() string {
 	return fmt.Sprintf("DASRPCClient{clnt:%v}", clnt.clnt)
 }

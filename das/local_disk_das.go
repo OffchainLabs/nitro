@@ -155,6 +155,10 @@ func (das *LocalDiskDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]b
 	return das.keysetBytes, nil
 }
 
+func (das *LocalDiskDAS) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
+	return das.keysetBytes, nil
+}
+
 func (d *LocalDiskDAS) String() string {
 	return fmt.Sprintf("LocalDiskDAS{config:%v}", d.config)
 }

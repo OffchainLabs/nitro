@@ -19,6 +19,7 @@ import (
 type DataAvailabilityServiceReader interface {
 	Retrieve(ctx context.Context, cert []byte) ([]byte, error)
 	KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error)
+	CurrentKeysetBytes(ctx context.Context) ([]byte, error)
 }
 
 // Indicates that this data is a certificate for the data availability service,

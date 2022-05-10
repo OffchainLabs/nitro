@@ -64,3 +64,19 @@ func (serv *DASRPCServer) Retrieve(ctx context.Context, req *RetrieveRequest) (*
 	}
 	return &RetrieveResponse{Result: result}, nil
 }
+
+func (serv *DASRPCServer) KeysetFromHash(ctx context.Context, req *KeysetFromHashRequest) (*KeysetFromHashResponse, error) {
+	resp, err := serv.localDAS.KeysetFromHash(ctx, req.KsHash)
+	if err != nil {
+		return nil, err
+	}
+	return &KeysetFromHashResponse{Result: resp}, nil
+}
+
+func (serv *DASRPCServer) CurrentKeysetBytes(ctx context.Context, req *CurrentKeysetBytesRequest) (*CurrentKeysetBytesResponse, error) {
+	resp, err := serv.localDAS.CurrentKeysetBytes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &CurrentKeysetBytesResponse{Result: resp}, nil
+}
