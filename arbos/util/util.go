@@ -83,7 +83,7 @@ func init() {
 	}
 
 	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
-	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
+	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Tx")
 
 	acts := precompilesgen.ArbosActsABI
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")

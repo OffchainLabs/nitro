@@ -308,7 +308,7 @@ func ProduceBlockAdvanced(
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
 				// L2->L1 withdrawals remove eth from the system
-				event := &precompilesgen.ArbSysL2ToL1Transaction{}
+				event := &precompilesgen.ArbSysL2ToL1Tx{}
 				err := util.ParseL2ToL1TransactionLog(event, txLog)
 				if err != nil {
 					log.Error("Failed to parse L2ToL1Transaction log", "err", err)

@@ -107,7 +107,7 @@ interface ArbSys {
      * @notice creates a send txn from L2 to L1
      * @param position = (level << 192) + leaf = (0 << 192) + leaf = leaf
      */
-    event L2ToL1Transaction(
+    event L2ToL1Tx(
         address caller,
         address indexed destination,
         uint256 indexed hash,
@@ -119,7 +119,7 @@ interface ArbSys {
         bytes data
     );
 
-    /// @dev DEPRECATED in favour of the new L2ToL1Transaction event above after the nitro upgrade
+    /// @dev DEPRECATED in favour of the new L2ToL1Tx event above after the nitro upgrade
     event L2ToL1Transaction(
         address caller,
         address indexed destination,

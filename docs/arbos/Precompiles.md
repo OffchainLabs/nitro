@@ -464,7 +464,7 @@ Provides system-level functionality for interacting with L1 and understanding th
 
 | Events                                                              |                                                                 |
 |:--------------------------------------------------------------------|:----------------------------------------------------------------|
-| [<img src=e.png height=16>][Ses0] [`L2ToL1Transaction`][Se0] &nbsp; | Logs a send tx from L2 to L1, including data for outbox proving |
+| [<img src=e.png height=16>][Ses0] [`L2ToL1Tx`][Se0] &nbsp;          | Logs a send tx from L2 to L1, including data for outbox proving |
 | [<img src=e.png height=16>][Ses1] [`SendMerkleUpdate`][Se1]         | Logs a new merkle branch needed for constructing outbox proofs  |
 
 [Se0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbSys.go#L152
