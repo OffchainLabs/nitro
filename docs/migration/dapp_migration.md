@@ -25,7 +25,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 ## Breaking changes
 
 #### Dapps
-- **Gas Accounting**: it is now consistent with the L1 EVM, any hard-coded gas values should be changed accordingly (the same applies to any gas amount used in conjuntion with `gasleft`).
+- **Gas Accounting**: it is now consistent with the L1 EVM, L2 gas usage will change due to different accounting from ArbGas. Any hard-coded gas values should be changed accordingly (the same applies to any gas amount used in conjuntion with `gasleft`).
 - **No more storage gas**: there is no more concept of a separate pool of storage gas, and opcodes are priced identically to the L1 EVM.
 - **Retryable Tickets**: 
     - The submission cost is now enforced in the L1 inbox and checked against the L1 transaction's `msg.value`; contracts shouldn't rely on funds pooled in the L2 destination to cover this cost.
