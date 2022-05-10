@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/pkg/errors"
 )
@@ -67,6 +68,7 @@ type ChallengeManager struct {
 	inboxTracker      InboxTrackerInterface
 	txStreamer        TransactionStreamerInterface
 	blockchain        *core.BlockChain
+	das               das.DataAvailabilityService
 	machineLoader     *NitroMachineLoader
 	targetNumMachines int
 	wasmModuleRoot    common.Hash
@@ -87,6 +89,7 @@ func NewChallengeManager(
 	challengeManagerAddr common.Address,
 	challengeIndex uint64,
 	l2blockChain *core.BlockChain,
+	das das.DataAvailabilityService,
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
@@ -154,6 +157,7 @@ func NewChallengeManager(
 		inboxTracker:          inboxTracker,
 		txStreamer:            txStreamer,
 		blockchain:            l2blockChain,
+		das:                   das,
 		machineLoader:         machineLoader,
 		targetNumMachines:     targetNumMachines,
 		wasmModuleRoot:        challengeInfo.WasmModuleRoot,
@@ -418,7 +422,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		if err != nil {
 			return err
 		}
-		err = machine.AddPreimages(preimages)
+		err = SetMachinePreimageResolver(ctx, machine, preimages, nil, m.blockchain, m.das)
 		if err != nil {
 			return err
 		}
@@ -436,11 +440,15 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		if nextHeader == nil {
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
-		preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message)
+		preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message, false)
 		if err != nil {
 			return err
 		}
-		err = machine.AddPreimages(preimages)
+		batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
+		if err != nil {
+			return err
+		}
+		err = SetMachinePreimageResolver(ctx, machine, preimages, batchBytes, m.blockchain, m.das)
 		if err != nil {
 			return err
 		}
@@ -453,10 +461,6 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			if err != nil {
 				return err
 			}
-		}
-		batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
-		if err != nil {
-			return err
 		}
 		err = machine.AddSequencerInboxMessage(startGlobalState.Batch, batchBytes)
 		if err != nil {
