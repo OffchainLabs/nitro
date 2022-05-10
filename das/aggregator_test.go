@@ -33,9 +33,9 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 			DataDir:           dbPath,
 			AllowGenerateKeys: true,
 		}
-		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDAS(config, signerMask)
+		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
+		signerMask := uint64(1 << i)
 		details, err := NewServiceDetails(das, *das.pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
@@ -200,15 +200,15 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		signerMask := uint64(1 << i)
 		config := LocalDiskDASConfig{
 			KeyDir:            dbPath,
 			DataDir:           dbPath,
 			AllowGenerateKeys: true,
 		}
-		das, err := NewLocalDiskDAS(config, signerMask)
+		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
 
+		signerMask := uint64(1 << i)
 		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
@@ -305,10 +305,11 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 			DataDir:           dbPath,
 			AllowGenerateKeys: true,
 		}
-		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDAS(config, signerMask)
+
+		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
 
+		signerMask := uint64(1 << i)
 		details := ServiceDetails{&WrapRetrieve{t, injectedFailures, das}, *das.pubKey, signerMask}
 
 		backends = append(backends, details)

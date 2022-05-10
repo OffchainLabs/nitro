@@ -9,7 +9,6 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
-	"math/bits"
 	"os"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -32,17 +31,12 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type LocalDiskDAS struct {
-	config     LocalDiskDASConfig
-	pubKey     *blsSignatures.PublicKey
-	privKey    blsSignatures.PrivateKey
-	signerMask uint64
+	config  LocalDiskDASConfig
+	pubKey  *blsSignatures.PublicKey
+	privKey blsSignatures.PrivateKey
 }
 
-func NewLocalDiskDAS(config LocalDiskDASConfig, signerMask uint64 /* TODO remove */) (*LocalDiskDAS, error) {
-	if bits.OnesCount64(signerMask) != 1 {
-		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signerMask %X", signerMask)
-	}
-
+func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 	pubKey, privKey, err := ReadKeysFromFile(config.KeyDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -60,10 +54,9 @@ func NewLocalDiskDAS(config LocalDiskDASConfig, signerMask uint64 /* TODO remove
 	}
 
 	return &LocalDiskDAS{
-		config:     config,
-		pubKey:     pubKey,
-		privKey:    privKey,
-		signerMask: signerMask,
+		config:  config,
+		pubKey:  pubKey,
+		privKey: privKey,
 	}, nil
 }
 
@@ -72,7 +65,7 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
 	c.Timeout = timeout
-	c.SignersMask = das.signerMask
+	c.SignersMask = 0 // The aggregator decides on the mask for each signer.
 
 	fields := serializeSignableFields(*c)
 	c.Sig, err = blsSignatures.SignMessage(das.privKey, fields)
@@ -118,5 +111,5 @@ func (das *LocalDiskDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte
 }
 
 func (d *LocalDiskDAS) String() string {
-	return fmt.Sprintf("LocalDiskDAS{config:%v, signersMask:%d}", d.config, d.signerMask)
+	return fmt.Sprintf("LocalDiskDAS{config:%v}", d.config)
 }

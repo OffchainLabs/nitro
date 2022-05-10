@@ -189,10 +189,8 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 				return
 			}
 
-			if cert.SignersMask != d.signersMask {
-				responses <- storeResponse{d, nil, fmt.Errorf("Signers mask was %X, expected %X", cert.SignersMask, d.signersMask)}
-				return
-			}
+			// SignersMask from backend DAS is ignored.
+
 			if !bytes.Equal(cert.DataHash[:], expectedHash) {
 				responses <- storeResponse{d, nil, errors.New("Hash verification failed.")}
 				return
