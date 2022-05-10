@@ -1,6 +1,5 @@
-#
-# Copyright 2020, Offchain Labs, Inc. All rights reserved.
-#
+# Copyright 2021-2022, Offchain Labs, Inc.
+# For license information, see https://github.com/nitro/blob/master/LICENSE
 
 # Docker builds mess up file timestamps. Then again, in docker builds we never
 # have to update an existing file. So - for docker, convert all dependencies
@@ -305,7 +304,7 @@ contracts/test/prover/proofs/rust-%.json: arbitrator/prover/test-cases/rust/targ
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/data/msg0.bin --inbox arbitrator/prover/test-cases/rust/data/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg1.bin --preimages arbitrator/prover/test-cases/rust/data/preimages.bin
 
 contracts/test/prover/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
-	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000
+	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000 --require-success
 
 # avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
 contracts/test/prover/proofs/read-inboxmsg-10.json:
