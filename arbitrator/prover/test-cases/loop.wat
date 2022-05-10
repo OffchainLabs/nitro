@@ -11,6 +11,16 @@
 	)
 	(br_if 0)
 
+	(block
+		(i32.const 0)
+		(loop (param i32)
+			(br_if 1)
+			(i64.const 123)
+			(i32.const 1)
+			(br 0)
+		)
+	)
+
 	(i32.const 1)
 	(loop
 		(br 0)
