@@ -569,7 +569,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
+	case das.OnchainDataAvailability:
+		// Batches stored onchain, don't create a DAS.
 	default:
+		return nil, fmt.Errorf("Unknown data availability mode %v", dataAvailabilityMode)
 	}
 
 	var l1Reader *L1Reader

@@ -12,13 +12,10 @@ import (
 	"syscall"
 
 	"github.com/ethereum/go-ethereum/log"
-	koanfjson "github.com/knadh/koanf/parsers/json"
-	"github.com/knadh/koanf/providers/confmap"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dasrpc"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
@@ -59,23 +56,12 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 		return nil, err
 	}
 	if serverConfig.ConfConfig.Dump {
-		// Print out current configuration
-
-		// Don't keep printing configuration file
-		err := k.Load(confmap.Provider(map[string]interface{}{
-			"conf.dump": false,
-		}, "."), nil)
+		err = util.DumpConfig(k, map[string]interface{}{
+			"data-availability.local-disk.priv-key": "",
+		})
 		if err != nil {
-			return nil, errors.Wrap(err, "error removing extra parameters before dump")
+			return nil, err
 		}
-
-		c, err := k.Marshal(koanfjson.Parser())
-		if err != nil {
-			return nil, errors.Wrap(err, "unable to marshal config file to JSON")
-		}
-
-		fmt.Println(string(c))
-		os.Exit(0)
 	}
 
 	return &serverConfig, nil
