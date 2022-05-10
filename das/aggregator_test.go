@@ -35,8 +35,10 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		}
 		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
+		pubKey, _, err := ReadKeysFromFile(dbPath)
+		Require(t, err)
 		signerMask := uint64(1 << i)
-		details, err := NewServiceDetails(das, *das.pubKey, signerMask)
+		details, err := NewServiceDetails(das, *pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
 	}
@@ -207,9 +209,10 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		}
 		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
-
+		pubKey, _, err := ReadKeysFromFile(dbPath)
+		Require(t, err)
 		signerMask := uint64(1 << i)
-		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask)
+		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
 	}
@@ -308,9 +311,10 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 
 		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
-
+		pubKey, _, err := ReadKeysFromFile(dbPath)
+		Require(t, err)
 		signerMask := uint64(1 << i)
-		details := ServiceDetails{&WrapRetrieve{t, injectedFailures, das}, *das.pubKey, signerMask}
+		details := ServiceDetails{&WrapRetrieve{t, injectedFailures, das}, *pubKey, signerMask}
 
 		backends = append(backends, details)
 	}

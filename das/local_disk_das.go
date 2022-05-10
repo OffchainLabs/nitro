@@ -43,7 +43,7 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 	if len(config.PrivKey) != 0 {
 		privKey, err = DecodeBase64BLSPrivateKey([]byte(config.PrivKey))
 		if err != nil {
-			return nil, fmt.Errorf("'priv-key' was invalid: %v", err)
+			return nil, fmt.Errorf("'priv-key' was invalid: %w", err)
 		}
 	} else {
 		_, privKey, err = ReadKeysFromFile(config.KeyDir)
