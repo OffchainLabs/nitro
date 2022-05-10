@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -19,7 +20,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/pkg/errors"
 )
@@ -31,7 +31,7 @@ type StatelessBlockValidator struct {
 	streamer        TransactionStreamerInterface
 	blockchain      *core.BlockChain
 	db              ethdb.Database
-	das             das.DataAvailabilityService
+	Das             das.DataAvailabilityService
 	genesisBlockNum uint64
 }
 
@@ -208,7 +208,7 @@ func NewStatelessBlockValidator(
 		streamer:        streamer,
 		blockchain:      blockchain,
 		db:              db,
-		das:             das,
+		Das:             das,
 		genesisBlockNum: genesisBlockNum,
 	}
 	return validator, nil
@@ -359,7 +359,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 	mach := basemachine.Clone()
-	err = SetMachinePreimageResolver(ctx, mach, entry.Preimages, seqMsg, v.blockchain, v.das)
+	err = SetMachinePreimageResolver(ctx, mach, entry.Preimages, seqMsg, v.blockchain, v.Das)
 	if err != nil {
 		return GoGlobalState{}, nil, err
 	}

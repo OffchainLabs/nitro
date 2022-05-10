@@ -9,6 +9,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -47,6 +48,30 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	Require(t, err)
 	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
+
+	usingDas := l1info.Das
+	if usingDas != nil {
+		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
+		Require(t, err)
+		abiBytes := []byte{0x62, 0x30, 0xde, 0x17}
+		abiBytes = append(abiBytes, make([]byte, 31)...)
+		abiBytes = append(abiBytes, 0x02)
+		abiBytes = append(abiBytes, make([]byte, 30)...)
+		abiBytes = append(abiBytes, byte(len(keysetBytes)/256))
+		abiBytes = append(abiBytes, byte(len(keysetBytes)%256))
+		abiBytes = append(abiBytes, keysetBytes...)
+		for len(abiBytes)%32 != 4 {
+			abiBytes = append(abiBytes, 0)
+		}
+		tx := l1info.PrepareTx("Owner", "DasKeysetManager", 100000, big.NewInt(0), abiBytes)
+		err = l1client.SendTransaction(ctx, tx)
+		Require(t, err)
+		fmt.Println("======================= trying")
+		_, err = EnsureTxSucceeded(ctx, l1client, tx)
+		fmt.Println("======================= checking")
+		Require(t, err)
+		fmt.Println("======================= success")
+	}
 
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false

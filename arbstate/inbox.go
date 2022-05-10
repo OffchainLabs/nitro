@@ -77,7 +77,7 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 				if err != nil {
 					log.Error("Reading from DAS failed", "err", err)
 				}
-
+				//BUGBUG: FETCH AND CHECK SIGNATURE HERE
 			}
 		} else if data[40] == 0 {
 			payload = data[40:]
