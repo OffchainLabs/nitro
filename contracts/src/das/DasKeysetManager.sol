@@ -21,6 +21,10 @@ contract DasKeysetManager is OwnableUpgradeable, DelegateCallAware {
     mapping(bytes32 => uint256) private validKeysetIndex; // if keyset is at index in validKeysets, this is index+1
     mapping(bytes32 => bytes) private contents;
 
+    error TooManyValidKeysets();
+    error KeysetAlreadyValid();
+    error InvalidKeysetHash();
+
     function initialize() external initializer onlyDelegated {
         __Ownable_init();
     }
@@ -30,18 +34,16 @@ contract DasKeysetManager is OwnableUpgradeable, DelegateCallAware {
     }
 
     function addKeyset(bytes calldata keyset) external onlyOwner {
-        require(validKeysets.length >= MAX_VALID_KEYSETS, "too many keysets");
+        if (validKeysets.length >= MAX_VALID_KEYSETS) revert TooManyValidKeysets();
         bytes32 ksHash = keccak256(keyset);
-        if (this.isValidKeysetHash(ksHash)) {
-            return;
-        }
+        if (this.isValidKeysetHash(ksHash)) revert KeysetAlreadyValid();
         validKeysetIndex[ksHash] = validKeysets.length + 1;
         validKeysets.push(ksHash);
         contents[ksHash] = keyset;
     }
 
     function invalidateKeyset(bytes32 ksHash) external onlyOwner {
-        require(this.isValidKeysetHash(ksHash), "keyset is not valid");
+        if (!this.isValidKeysetHash(ksHash)) revert InvalidKeysetHash();
         uint256 slot = validKeysetIndex[ksHash] - 1;
         if (slot != validKeysets.length - 1) {
             bytes32 lastItem = validKeysets[validKeysets.length - 1];
