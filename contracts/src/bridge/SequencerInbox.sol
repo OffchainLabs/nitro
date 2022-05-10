@@ -139,9 +139,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
         bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
-        // if (dasKeysetHash != bytes32(0)) {
+        // if (dasKeysetHash != bytes32(0))
         // if (!dasKeysetManager.isValidKeysetHash(dasKeysetHash))
-        //    revert InvalidDASKeyset(dasKeysetHash);
+        // revert InvalidDASKeyset(dasKeysetHash);
         // }
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,

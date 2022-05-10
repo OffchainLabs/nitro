@@ -94,6 +94,10 @@ func (das *PreimageDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte,
 	return wavmio.ResolvePreImage(common.BytesToHash(cert.DataHash[:])), nil
 }
 
+func (das *PreimageDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	return wavmio.ResolvePreImage(common.BytesToHash(ksHash)), nil
+}
+
 func main() {
 	wavmio.StubInit()
 

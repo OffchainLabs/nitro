@@ -40,6 +40,8 @@ func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uin
 	if err != nil {
 		return nil, err
 	}
+	var keysetHash [32]byte
+	copy(keysetHash[:], response.KeysetHash)
 	var dataHash [32]byte
 	copy(dataHash[:], response.DataHash)
 	sig, err := blsSignatures.SignatureFromBytes(response.Sig)
@@ -51,7 +53,16 @@ func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uin
 		Timeout:     response.Timeout,
 		SignersMask: response.SignersMask,
 		Sig:         sig,
+		KeysetHash:  keysetHash,
 	}, nil
+}
+
+func (clnt *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	response, err := clnt.clnt.KeysetFromHash(ctx, &KeysetFromHashRequest{KsHash: ksHash})
+	if err != nil {
+		return nil, err
+	}
+	return response.Result, nil
 }
 
 func (clnt *DASRPCClient) String() string {

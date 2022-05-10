@@ -38,6 +38,7 @@ type Aggregator struct {
 	requiredServicesForStore       int
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
+	keysetBytes                    []byte
 }
 
 type ServiceDetails struct {
@@ -75,6 +76,10 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 		AssumedHonest: uint64(config.AssumedHonest),
 		PubKeys:       pubKeys,
 	}
+	ksBuf := bytes.NewBuffer([]byte{})
+	if err := keyset.Serialize(ksBuf); err != nil {
+		return nil, err
+	}
 	keysetHashBuf, err := keyset.Hash()
 	if err != nil {
 		return nil, err
@@ -88,6 +93,7 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 		requiredServicesForStore:       len(services) + 1 - config.AssumedHonest,
 		maxAllowedServiceStoreFailures: config.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
+		keysetBytes:                    ksBuf.Bytes(),
 	}, nil
 }
 
@@ -262,6 +268,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		return nil, errors.New("Failed aggregate signature check")
 	}
 	return &aggCert, nil
+}
+
+func (a *Aggregator) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	if !bytes.Equal(ksHash, a.keysetHash[:]) {
+		return nil, ErrDasKeysetNotFound
+	}
+	return a.keysetBytes, nil
 }
 
 func (a *Aggregator) String() string {

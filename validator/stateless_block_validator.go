@@ -307,11 +307,17 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, pr
 			if err != nil {
 				log.Error("Failed to deserialize DAS message", "err", err)
 			} else {
+				keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+				if err != nil {
+					return fmt.Errorf("couldn't keyset from DAS %w", err)
+				}
 				dasPreimage, err := das.Retrieve(ctx, seqMsg[40:])
 				if err != nil {
 					return fmt.Errorf("couldn't retrieve message from DAS %w", err)
 				}
+				preimages[common.BytesToHash(cert.KeysetHash[:])] = keysetPreimage
 				preimages[common.BytesToHash(cert.DataHash[:])] = dasPreimage
+
 			}
 		}
 	}

@@ -53,6 +53,7 @@ type RollupAddresses struct {
 	Rollup                 common.Address `json:"rollup"`
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
+	DasKeysetManager       common.Address `json:"das-keyset-manager"`
 	DeployedAt             uint64         `json:"deployed-at"`
 }
 
@@ -63,6 +64,7 @@ type RollupAddressesConfig struct {
 	Rollup                 string `koanf:"rollup"`
 	ValidatorUtils         string `koanf:"validator-utils"`
 	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
+	DasKeysetManager       string `koanf:"das-keyset-manager"`
 	DeployedAt             uint64 `koanf:"deployed-at"`
 }
 
@@ -75,6 +77,7 @@ func RollupAddressesConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".rollup", "", "the rollup contract address")
 	f.String(prefix+".validator-utils", "", "the validator utils contract address")
 	f.String(prefix+".validator-wallet-creator", "", "the validator wallet creator contract address")
+	f.String(prefix+".das-keyset-manager", "", "the DAS keyset manager contract address")
 	f.Uint64(prefix+".deployed-at", 0, "the block number at which the rollup was deployed")
 }
 
@@ -89,6 +92,7 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 		c.Rollup,
 		c.ValidatorUtils,
 		c.ValidatorWalletCreator,
+		c.DasKeysetManager,
 	}
 	addrs := []*common.Address{
 		&a.Bridge,
@@ -97,6 +101,7 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 		&a.Rollup,
 		&a.ValidatorUtils,
 		&a.ValidatorWalletCreator,
+		&a.DasKeysetManager,
 	}
 	names := []string{
 		"Bridge",
@@ -105,6 +110,7 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 		"Rollup",
 		"ValidatorUtils",
 		"ValidatorWalletCreator",
+		"DasKeysetManager",
 	}
 	if len(strs) != len(addrs) {
 		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
@@ -375,6 +381,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		Rollup:                 info.RollupAddress,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
+		DasKeysetManager:       info.DasKeysetManager,
 	}, nil
 }
 

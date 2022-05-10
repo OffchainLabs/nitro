@@ -18,6 +18,8 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
+var ErrDasKeysetNotFound = errors.New("no such keyset")
+
 type LocalDiskDASConfig struct {
 	KeyDir            string `koanf:"key-dir"`
 	PrivKey           string `koanf:"priv-key"`
@@ -33,9 +35,10 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type LocalDiskDAS struct {
-	config     LocalDiskDASConfig
-	privKey    *blsSignatures.PrivateKey
-	keysetHash [32]byte
+	config      LocalDiskDASConfig
+	privKey     *blsSignatures.PrivateKey
+	keysetHash  [32]byte
+	keysetBytes []byte
 }
 
 func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
@@ -73,6 +76,10 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 		AssumedHonest: 1,
 		PubKeys:       []blsSignatures.PublicKey{publicKey},
 	}
+	ksBuf := bytes.NewBuffer([]byte{})
+	if err := keyset.Serialize(ksBuf); err != nil {
+		return nil, err
+	}
 	ksHashBuf, err := keyset.Hash()
 	if err != nil {
 		return nil, err
@@ -81,9 +88,10 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 	copy(ksHash[:], ksHashBuf)
 
 	return &LocalDiskDAS{
-		config:     config,
-		privKey:    privKey,
-		keysetHash: ksHash,
+		config:      config,
+		privKey:     privKey,
+		keysetHash:  ksHash,
+		keysetBytes: ksBuf.Bytes(),
 	}, nil
 }
 
@@ -116,6 +124,7 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 func (das *LocalDiskDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
 	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
+		fmt.Println("======> AAA")
 		return nil, err
 	}
 
@@ -137,6 +146,13 @@ func (das *LocalDiskDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte
 	// check the signature against this DAS's public key here.
 
 	return originalMessage, nil
+}
+
+func (das *LocalDiskDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	if !bytes.Equal(ksHash, das.keysetHash[:]) {
+		return nil, ErrDasKeysetNotFound
+	}
+	return das.keysetBytes, nil
 }
 
 func (d *LocalDiskDAS) String() string {

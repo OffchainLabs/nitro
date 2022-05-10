@@ -49,6 +49,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreR
 		return nil, err
 	}
 	return &StoreResponse{
+		KeysetHash:  cert.KeysetHash[:],
 		DataHash:    cert.DataHash[:],
 		Timeout:     cert.Timeout,
 		SignersMask: cert.SignersMask,
