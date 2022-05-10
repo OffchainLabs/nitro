@@ -146,6 +146,7 @@ fn main() -> eyre::Result<()> {
     let mut subtest = 0;
 
     for (index, command) in case.commands.into_iter().enumerate() {
+        println!();
         match command {
             Command::Module { filename } => {
                 wasmfile = filename;

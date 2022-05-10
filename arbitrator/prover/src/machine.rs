@@ -1285,6 +1285,11 @@ impl Machine {
                 self.status = MachineStatus::Errored;
                 break;
             }};
+            ($($message:tt),+) => {{
+                println!($($message),+);
+                self.status = MachineStatus::Errored;
+                break;
+            }};
         }
 
         for _ in 0..n {
@@ -1467,10 +1472,12 @@ impl Machine {
                 }
                 Opcode::LocalGet => {
                     let val = self.frame_stack.last().unwrap().locals[inst.argument_data as usize];
+                    println!("local get {} {}", inst.argument_data as usize, val.pretty_print());
                     self.value_stack.push(val);
                 }
                 Opcode::LocalSet => {
                     let val = self.value_stack.pop().unwrap();
+                    println!("local set {} {}", inst.argument_data as usize, val.pretty_print());                    
                     self.frame_stack.last_mut().unwrap().locals[inst.argument_data as usize] = val;
                 }
                 Opcode::GlobalGet => {
@@ -1492,6 +1499,7 @@ impl Machine {
                     if let Some(idx) = inst.argument_data.checked_add(base.into()) {
                         let val = module.memory.get_value(idx, ty, bytes, signed);
                         if let Some(val) = val {
+                            println!("loading   {} {}", idx, val.pretty_print());
                             self.value_stack.push(val);
                         } else {
                             error!();
@@ -1500,7 +1508,7 @@ impl Machine {
                         error!();
                     }
                 }
-                Opcode::MemoryStore { ty: _, bytes } => {
+                Opcode::MemoryStore { ty, bytes } => {
                     let val = match self.value_stack.pop() {
                         Some(Value::I32(x)) => x.into(),
                         Some(Value::I64(x)) => x,
@@ -1519,6 +1527,14 @@ impl Machine {
                         ),
                     };
                     if let Some(idx) = inst.argument_data.checked_add(base.into()) {
+                        let old = match ty {
+                            ArbValueType::I32 | ArbValueType::I64 => module.memory.get_value(idx, ty, bytes, true),
+                            _ => None,
+                        };
+                        match old {
+                            Some(old) => println!("storing   {} {} over {}", idx, val, old.pretty_print()),
+                            None => println!("storing   {} {}", idx, val),
+                        }
                         if !module.memory.store_value(idx, val, bytes) {
                             error!();
                         }
@@ -1654,6 +1670,7 @@ impl Machine {
                     }
                 }
                 Opcode::IBinOp(w, op) => {
+                    use IBinOpType::*;
                     let vb = self.value_stack.pop();
                     let va = self.value_stack.pop();
                     match w {
@@ -1663,7 +1680,7 @@ impl Machine {
                                     Some(value) => value,
                                     None => error!(),
                                 };
-                                if value > i32::MAX as u32 && op.signed() {
+                                if op == DivS && (value as i32) < 0 && ((a as i32) > 0) == ((b as i32) > 0) {
                                     error!();
                                 }
                                 self.value_stack.push(Value::I32(value))
@@ -1677,7 +1694,7 @@ impl Machine {
                                     Some(value) => value,
                                     None => error!(),
                                 };
-                                if value > i64::MAX as u64 && op.signed() {
+                                if op == DivS && (value as i64) < 0 && ((a as i64) > 0) == ((b as i64) > 0) {
                                     error!();
                                 }
                                 self.value_stack.push(Value::I64(value))
