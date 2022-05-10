@@ -11,6 +11,7 @@ use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 use wasmparser::{BlockType, Operator};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -372,18 +373,98 @@ impl Instruction {
     }
 }
 
+/// Note: An Unreachable stack state is equal to any other stack state.
+/// That's because an unreachable code path merging with another code path
+/// will not have a mismatch in the stack contents.
+#[derive(Clone, Copy, Debug)]
+enum StackState {
+    Reachable(usize),
+    Unreachable,
+}
+
+impl Add<isize> for StackState {
+    type Output = Self;
+
+    fn add(self, rhs: isize) -> Self {
+        match self {
+            Self::Reachable(x) => {
+                if rhs > 0 {
+                    Self::Reachable(x.checked_add(rhs as usize).unwrap())
+                } else {
+                    Self::Reachable(
+                        x.checked_sub(rhs.unsigned_abs())
+                            .expect("Stack state underflow"),
+                    )
+                }
+            }
+            Self::Unreachable => self,
+        }
+    }
+}
+
+impl Sub<isize> for StackState {
+    type Output = Self;
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn sub(self, rhs: isize) -> Self {
+        self + rhs.checked_neg().unwrap()
+    }
+}
+
+impl AddAssign<isize> for StackState {
+    fn add_assign(&mut self, rhs: isize) {
+        *self = *self + rhs;
+    }
+}
+
+impl SubAssign<isize> for StackState {
+    fn sub_assign(&mut self, rhs: isize) {
+        *self = *self - rhs;
+    }
+}
+
+impl PartialEq for StackState {
+    fn eq(&self, other: &Self) -> bool {
+        let x = match self {
+            Self::Reachable(x) => x,
+            Self::Unreachable => return true,
+        };
+        let y = match other {
+            Self::Reachable(y) => y,
+            Self::Unreachable => return true,
+        };
+        x == y
+    }
+}
+
+impl Sub for StackState {
+    type Output = isize;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let s = match self {
+            Self::Reachable(s) => s,
+            Self::Unreachable => return 0,
+        };
+        let rhs = match rhs {
+            Self::Reachable(rhs) => rhs,
+            Self::Unreachable => return 0,
+        };
+        s as isize - rhs as isize
+    }
+}
+
 pub fn wasm_to_wavm<'a>(
     code: &[Operator<'a>],
     out: &mut Vec<Instruction>,
     fp_impls: &FloatingPointImpls,
     func_types: &[FunctionType],
     all_types: &[FunctionType],
-    func_ty: &FunctionType,
+    all_types_func_idx: u32,
 ) -> Result<()> {
     use Operator::*;
 
-    type StackHeight = isize;
-    let mut stack: StackHeight = 0;
+    let mut stack = StackState::Reachable(0);
+    let func_ty = &all_types[all_types_func_idx as usize];
 
     macro_rules! op {
         ($first:ident $(,$opcode:ident)*) => {
@@ -530,66 +611,125 @@ pub fn wasm_to_wavm<'a>(
                 _ => panic!("Floating point op {:?} should have 1 output but has {}", func, outputs.len()),
             }
 
-            stack += outputs.len() as StackHeight - sig.inputs.len() as StackHeight;
+            stack += outputs.len() as isize - sig.inputs.len() as isize;
         }};
     }
 
     /// represents a wasm scope
     #[derive(Debug)]
     enum Scope {
-        /// jumps and height afterward
-        Simple(Vec<usize>, StackHeight),
-        /// start and height afterward
-        Loop(usize, StackHeight),
-        /// jumps, start, height before, and height afterward
-        IfElse(Vec<usize>, Option<usize>, StackHeight, StackHeight),
+        /// block type, jumps, and height afterward
+        Simple(BlockType, Vec<usize>, StackState),
+        /// block type, start, height before, and height afterward
+        Loop(BlockType, usize, StackState, StackState),
+        /// block type, jumps, start, height before, and height afterward
+        IfElse(BlockType, Vec<usize>, Option<usize>, StackState, StackState),
     }
-    let mut scopes = vec![Scope::Simple(vec![], 0)]; // start with the func's scope
+    let mut scopes = vec![Scope::Simple(
+        BlockType::FuncType(all_types_func_idx),
+        vec![],
+        StackState::Reachable(func_ty.outputs.len()),
+    )]; // start with the func's scope
+
+    let block_type_params = |ty: BlockType| -> usize {
+        match ty {
+            BlockType::Empty => 0,
+            BlockType::Type(_) => 0,
+            BlockType::FuncType(idx) => all_types[idx as usize].inputs.len(),
+        }
+    };
+
+    let block_type_results = |ty: BlockType| -> usize {
+        match ty {
+            BlockType::Empty => 0,
+            BlockType::Type(_) => 1,
+            BlockType::FuncType(idx) => all_types[idx as usize].outputs.len(),
+        }
+    };
 
     macro_rules! branch {
         ($kind:ident, $depth:expr) => {{
             use Scope::*;
             let mut dest = 0;
             let scope = scopes.len() - $depth as usize - 1;
-            match &mut scopes[scope] {
-                Simple(jumps, _) | IfElse(jumps, ..) => jumps.push(out.len()), // dest not yet known
-                Loop(start, _) => dest = *start,
+            let (branch_params, height) = match &scopes[scope] {
+                Simple(ty, _, height) | IfElse(ty, _, _, _, height) => {
+                    (block_type_results(*ty), *height)
+                }
+                Loop(ty, _, height, _) => {
+                    (block_type_params(*ty), *height)
+                }
             };
-            if Opcode::$kind == Opcode::ArbitraryJumpIf {
+            let mut jump_op = Opcode::$kind;
+            if jump_op == Opcode::ArbitraryJumpIf {
                 stack -= 1;
+            } else {
+                assert_eq!(jump_op, Opcode::ArbitraryJump, "unrecognized jump op");
             }
-            opcode!($kind, dest as u64)
+            let stack_if_not_taken = stack;
+            let mut jump_to_after = None;
+            if stack != height {
+                if jump_op == Opcode::ArbitraryJumpIf {
+                    opcode!(I32Eqz);
+                    jump_to_after = Some(out.len());
+                    opcode!(ArbitraryJumpIf);
+                }
+                let diff = stack - height;
+                assert!(diff > 0, "stack doesn't have needed elements for branch");
+                for _ in 0..branch_params {
+                    opcode!(MoveFromStackToInternal, @pop 1);
+                }
+                for _ in 0..diff {
+                    opcode!(Drop, @pop 1);
+                }
+                for _ in 0..branch_params {
+                    opcode!(MoveFromInternalToStack, @push 1);
+                }
+                assert_eq!(stack, height);
+                jump_op = Opcode::ArbitraryJump;
+            }
+            match &mut scopes[scope] {
+                Simple(_, jumps, ..) | IfElse(_, jumps, ..) => {
+                    jumps.push(out.len()); // dest not yet known
+                }
+                Loop(_, start, ..) => {
+                    dest = *start;
+                }
+            }
+            out.push(Instruction::with_data(jump_op, dest as u64));
+            if let Some(jump_to_after) = jump_to_after {
+                out[jump_to_after].argument_data = out.len() as u64;
+                stack = stack_if_not_taken;
+            } else if jump_op == Opcode::ArbitraryJump {
+                stack = StackState::Unreachable;
+            }
         }};
     }
     macro_rules! height_after_block {
         ($ty:expr) => {{
-            let delta = match $ty {
-                BlockType::Empty => 0,
-                BlockType::Type(_) => 1,
-                BlockType::FuncType(index) => {
-                    let func_ty = &all_types[*index as usize];
-                    func_ty.outputs.len() as StackHeight - func_ty.inputs.len() as StackHeight
-                }
-            };
-            stack + delta
+            let ty = $ty;
+            stack + block_type_results(*ty) as isize - block_type_params(*ty) as isize
         }};
     }
 
     for op in code {
         #[rustfmt::skip]
         match op {
-            Unreachable => opcode!(Unreachable),
+            Unreachable => {
+                opcode!(Unreachable);
+                stack = StackState::Unreachable;
+            },
             Nop => opcode!(Nop),
             Block { ty } => {
-                scopes.push(Scope::Simple(vec![], height_after_block!(ty)));
+                scopes.push(Scope::Simple(*ty, vec![], height_after_block!(ty)));
             }
             Loop { ty } => {
-                scopes.push(Scope::Loop(out.len(), height_after_block!(ty)));
+                scopes.push(Scope::Loop(*ty, out.len(), stack, height_after_block!(ty)));
             }
             If { ty } => {
                 opcode!(I32Eqz);
                 stack -= 1; // the else block shouldn't have the conditional that gets popped next instruction
-                scopes.push(Scope::IfElse(vec![], Some(out.len()), stack, height_after_block!(ty)));
+                scopes.push(Scope::IfElse(*ty, vec![], Some(out.len()), stack, height_after_block!(ty)));
                 opcode!(ArbitraryJumpIf);
             }
             Else => {
@@ -597,7 +737,7 @@ pub fn wasm_to_wavm<'a>(
                 let _ = stack; // silence warning from above (we overwrite stack below so the assignment is unused)
 
                 match scopes.last_mut() {
-                    Some(Scope::IfElse(_, cond, if_height, _)) if cond.is_some() => {
+                    Some(Scope::IfElse(_, _, cond, if_height, _)) if cond.is_some() => {
                         out[cond.unwrap()].argument_data = out.len() as u64;
                         *cond = None;
                         stack = *if_height;
@@ -612,9 +752,9 @@ pub fn wasm_to_wavm<'a>(
 
             End => {
                 let (jumps, dest, height) = match scopes.pop().unwrap() {
-                    Scope::Simple(jumps, height) => (jumps, out.len(), height),
-                    Scope::Loop(dest, height) => (vec![], dest, height),
-                    Scope::IfElse(mut jumps, cond, _, height) => {
+                    Scope::Simple(_, jumps, height) => (jumps, out.len(), height),
+                    Scope::Loop(_, dest, _, height) => (vec![], dest, height),
+                    Scope::IfElse(_, mut jumps, cond, _, height) => {
                         jumps.extend(cond);
                         (jumps, out.len(), height)
                     },
@@ -622,19 +762,21 @@ pub fn wasm_to_wavm<'a>(
                 for jump in jumps {
                     out[jump].argument_data = dest as u64;
                 }
+                assert_eq!(stack, height, "unexpected stack height at end of block");
                 stack = height;
             }
             Br { relative_depth } => branch!(ArbitraryJump, *relative_depth),
             BrIf { relative_depth } => branch!(ArbitraryJumpIf, *relative_depth),
             BrTable { table } => {
+                let start_stack = stack;
                 // evaluate each branch
                 let mut subjumps = vec![];
                 for (index, target) in table.targets().enumerate() {
-                    opcode!(Dup);
-                    opcode!(I32Const, index as u64);
+                    opcode!(Dup, @push 1);
+                    opcode!(I32Const, index as u64, @push 1);
                     compare!(I32, Eq, false);
                     subjumps.push((out.len(), target?));
-                    opcode!(ArbitraryJumpIf);
+                    opcode!(ArbitraryJumpIf, @pop 1);
                 }
 
                 // nothing matched: drop the index and jump to the default.
@@ -644,35 +786,12 @@ pub fn wasm_to_wavm<'a>(
                 // simulate a jump table of branches
                 for (jump, branch) in subjumps {
                     out[jump].argument_data = out.len() as u64;
-                    opcode!(Drop);
+                    stack = start_stack;
+                    opcode!(Drop, @pop 1);
                     branch!(ArbitraryJump, branch);
                 }
-
-                // The stack delta would be off by the number of subjump Drops, but this point is unreachable
             }
-            Return => {
-                let return_count = func_ty.outputs.len() as StackHeight;
-
-                if stack != return_count {
-                    // Hold the return values on the internal stack while we drop extraneous stack values
-                    for _ in 0..return_count {
-                        opcode!(MoveFromStackToInternal);
-                    }
-
-                    // Pop the values left on the stack
-                    ensure!(stack >= return_count, "stack accounting is wrong: {} {}", stack, return_count);
-                    for _ in return_count..stack {
-                        opcode!(Drop);
-                    }
-
-                    // Move the return values back from the internal stack to the value stack
-                    for _ in 0..return_count {
-                        opcode!(MoveFromInternalToStack);
-                    }
-                }
-                stack = 0;
-                opcode!(Return);
-            }
+            Return => branch!(ArbitraryJump, scopes.len() - 1),
             Call { function_index } => {
                 let ty = &func_types[*function_index as usize];
                 let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
