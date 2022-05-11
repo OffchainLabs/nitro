@@ -41,7 +41,7 @@ func dasStoreHash(data []byte, timeout uint64) []byte {
 }
 
 type StoreSigningDAS struct {
-	inner  DataAvailabilityService
+	DataAvailabilityService
 	signer DasSigner
 }
 
@@ -49,24 +49,12 @@ func NewStoreSigningDAS(inner DataAvailabilityService, signer DasSigner) DataAva
 	return &StoreSigningDAS{inner, signer}
 }
 
-func (s *StoreSigningDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	return s.inner.Retrieve(ctx, cert)
-}
-
-func (s *StoreSigningDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	return s.inner.KeysetFromHash(ctx, ksHash)
-}
-
-func (s *StoreSigningDAS) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
-	return s.inner.CurrentKeysetBytes(ctx)
-}
-
 func (s *StoreSigningDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	mySig, err := applyDasSigner(s.signer, message, timeout)
 	if err != nil {
 		return nil, err
 	}
-	return s.inner.Store(ctx, message, timeout, mySig)
+	return s.DataAvailabilityService.Store(ctx, message, timeout, mySig)
 }
 
 func (s *StoreSigningDAS) String() string {
@@ -75,7 +63,7 @@ func (s *StoreSigningDAS) String() string {
 	if err == nil {
 		addrStr = addr.Hex()
 	}
-	return "StoreSigningDAS (" + addrStr + " ," + s.inner.String() + ")"
+	return "StoreSigningDAS (" + addrStr + " ," + s.DataAvailabilityService.String() + ")"
 }
 
 func (s *StoreSigningDAS) SignerAddress() (common.Address, error) {
