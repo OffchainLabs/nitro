@@ -35,7 +35,6 @@ error RetryableData(
     address callValueRefundAddress,
     uint256 gasLimit,
     uint256 maxFeePerGas,
-    uint256 dataLength,
     bytes data
 );
 

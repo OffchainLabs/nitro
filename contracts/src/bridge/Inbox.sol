@@ -365,7 +365,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 callValueRefundAddress,
                 gasLimit,
                 maxFeePerGas,
-                data.length,
                 data
             );
 
