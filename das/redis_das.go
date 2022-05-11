@@ -64,8 +64,7 @@ func NewRedisDataAvailabilityService(redisConfig RedisConfig, das DataAvailabili
 var keyIsHexRegex = regexp.MustCompile("^(0x)?[a-fA-F0-9]{64}$")
 
 func (r *RedisDAS) signMessage(message []byte) []byte {
-	var hmac [32]byte
-	hmac = crypto.Keccak256Hash(r.signingKey[:], message)
+	hmac := crypto.Keccak256Hash(r.signingKey[:], message)
 	return append(hmac[:], message...)
 }
 
