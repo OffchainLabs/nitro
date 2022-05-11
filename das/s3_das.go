@@ -43,14 +43,7 @@ func NewS3DAS(s3Config conf.S3Config, localDiskConfig LocalDiskDASConfig) (*S3DA
 		_, privKey, err = ReadKeysFromFile(localDiskConfig.KeyDir)
 		if err != nil {
 			if os.IsNotExist(err) {
-				if localDiskConfig.AllowGenerateKeys {
-					_, privKey, err = GenerateAndStoreKeys(localDiskConfig.KeyDir)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					return nil, fmt.Errorf("Required BLS keypair did not exist at %s", localDiskConfig.KeyDir)
-				}
+				return nil, fmt.Errorf("Required BLS keypair did not exist at %s", localDiskConfig.KeyDir)
 			} else {
 				return nil, err
 			}
