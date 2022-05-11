@@ -25,7 +25,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 ## Breaking changes
 
 #### Dapps
-- **Gas Accounting**: it is now consistent with the L1 EVM, any hard-coded gas values should be changed accordingly (the same applies to any gas amount used in conjuntion with `gasleft`).
+- **Gas Accounting**: it is now consistent with the L1 EVM, L2 gas usage will change due to different accounting from ArbGas. Any hard-coded gas values should be changed accordingly (the same applies to any gas amount used in conjuntion with `gasleft`). That said, you shouldn't be hard-coding any gas values just like in Ethereum, since both the L1 and L2 gas schedule may change in the future.
 - **No more storage gas**: there is no more concept of a separate pool of storage gas, and opcodes are priced identically to the L1 EVM.
 - **New L2 to L1 event signature**: The function signature for the [L2 to L1 event](../../contracts/src/precompiles/ArbSys.sol#L110) emitted by ArbSys has now changed.
 - **Retryable Tickets**: 
