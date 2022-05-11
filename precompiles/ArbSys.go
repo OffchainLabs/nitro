@@ -16,11 +16,11 @@ import (
 
 // Provides system-level functionality for interacting with L1 and understanding the call stack.
 type ArbSys struct {
-	Address                  addr
-	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, []byte) error
-	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
-	SendMerkleUpdate         func(ctx, mech, huge, bytes32, huge) error
-	SendMerkleUpdateGasCost  func(huge, bytes32, huge) (uint64, error)
+	Address                 addr
+	L2ToL1Tx                func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, []byte) error
+	L2ToL1TxGasCost         func(addr, addr, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
+	SendMerkleUpdate        func(ctx, mech, huge, bytes32, huge) error
+	SendMerkleUpdateGasCost func(huge, bytes32, huge) (uint64, error)
 }
 
 var InvalidBlockNum = errors.New("Invalid block number")
@@ -147,7 +147,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 
 	leafNum := big.NewInt(int64(size - 1))
 
-	err = con.L2ToL1Transaction(
+	err = con.L2ToL1Tx(
 		c,
 		evm,
 		c.caller,
