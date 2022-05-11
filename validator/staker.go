@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -139,6 +140,7 @@ func NewStaker(
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
 	l2Blockchain *core.BlockChain,
+	das das.DataAvailabilityService,
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
@@ -151,7 +153,7 @@ func NewStaker(
 		return nil, err
 	}
 	client := l1Reader.Client()
-	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, inboxTracker, txStreamer, blockValidator)
+	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, das, inboxTracker, txStreamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +437,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.challengeManagerAddress,
 			*info.CurrentChallenge,
 			s.l2Blockchain,
+			s.das,
 			s.inboxReader,
 			s.inboxTracker,
 			s.txStreamer,

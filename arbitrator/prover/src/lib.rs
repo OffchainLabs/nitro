@@ -14,57 +14,21 @@ pub mod utils;
 mod value;
 pub mod wavm;
 
-use crate::{
-    binary::WasmBinary,
-    machine::{argument_data_to_inbox, Machine},
-};
-use eyre::{bail, Result};
-use machine::{GlobalState, MachineStatus};
+use crate::machine::{argument_data_to_inbox, Machine};
+use eyre::Result;
+use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
 use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
-    fs::File,
-    io::Read,
     os::raw::{c_char, c_int},
     path::Path,
-    process::Command,
-    sync::atomic::{self, AtomicU8},
+    sync::{
+        atomic::{self, AtomicU8},
+        Arc,
+    },
 };
-
-pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
-    let mut f = File::open(path)?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf)?;
-
-    let mut cmd = Command::new("wasm-validate");
-    if path.starts_with("-") {
-        // Escape the path and ensure it isn't treated as a flag.
-        // Unfortunately, older versions of wasm-validate don't support this,
-        // so we only pass in this option if the path looks like a flag.
-        cmd.arg("--");
-    }
-    let status = cmd.arg(path).status()?;
-    if !status.success() {
-        bail!("failed to validate WASM binary at {:?}", path);
-    }
-
-    let bin = match binary::parse(&buf) {
-        Ok(bin) => bin,
-        Err(err) => {
-            eprintln!("Parsing error:");
-            for (mut input, kind) in err.errors {
-                if input.len() > 64 {
-                    input = &input[..64];
-                }
-                eprintln!("Got {:?} while parsing {}", kind, hex::encode(input));
-            }
-            bail!("failed to parse binary");
-        }
-    };
-
-    Ok(bin)
-}
+use utils::{Bytes32, CBytes};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -101,27 +65,23 @@ unsafe fn arbitrator_load_machine_impl(
     library_paths: *const *const c_char,
     library_paths_size: isize,
 ) -> Result<*mut Machine> {
-    let main_mod = {
-        let binary_path = cstr_to_string(binary_path);
-        let binary_path = Path::new(&binary_path);
-        parse_binary(binary_path)?
-    };
+    let binary_path = cstr_to_string(binary_path);
+    let binary_path = Path::new(&binary_path);
 
-    let mut libraries = Vec::new();
+    let mut libraries = vec![];
     for i in 0..library_paths_size {
-        let library_path = cstr_to_string(*(library_paths.offset(i)));
-        let library_path = Path::new(&library_path);
-        libraries.push(parse_binary(library_path)?);
+        let path = cstr_to_string(*(library_paths.offset(i)));
+        libraries.push(Path::new(&path).to_owned());
     }
 
     let mach = Machine::from_binary(
-        libraries,
-        main_mod,
+        &libraries,
+        binary_path,
         false,
         false,
         Default::default(),
         Default::default(),
-        Default::default(),
+        get_empty_preimage_resolver(),
     )?;
     Ok(Box::into_raw(Box::new(mach)))
 }
@@ -164,6 +124,9 @@ fn err_to_c_string(err: eyre::Report) -> *mut libc::c_char {
     let err = format!("{:#}", err);
     unsafe {
         let buf = libc::malloc(err.len() + 1);
+        if buf.is_null() {
+            panic!("Failed to allocate memory for error string");
+        }
         std::ptr::copy_nonoverlapping(err.as_ptr(), buf as *mut u8, err.len());
         *(buf.add(err.len()) as *mut u8) = 0;
         buf as *mut libc::c_char
@@ -323,16 +286,40 @@ pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: Glo
     (*mach).set_global_state(gs);
 }
 
+#[repr(C)]
+pub struct ResolvedPreimage {
+    pub ptr: *mut u8,
+    pub len: isize, // negative if not found
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_add_preimage(
+pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
-    c_preimage: CByteArray,
-) -> c_int {
-    let slice = std::slice::from_raw_parts(c_preimage.ptr, c_preimage.len);
-    let data = slice.to_vec();
-    let hash = Keccak256::digest(&data);
-    (*mach).add_preimage(hash.into(), data);
-    0
+    resolver: unsafe extern "C" fn(u64, *const u8) -> ResolvedPreimage,
+) {
+    (*mach).set_preimage_resolver(
+        Arc::new(move |context: u64, hash: Bytes32| -> Option<CBytes> {
+            let res = resolver(context, hash.as_ptr());
+            if res.len < 0 {
+                return None;
+            }
+            let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
+            let have_hash = Keccak256::digest(&data);
+            if have_hash.as_slice() != *hash {
+                panic!(
+                    "Resolved incorrect data for hash {}: got {}",
+                    hash,
+                    hex::encode(data),
+                );
+            }
+            Some(data)
+        }) as PreimageResolver,
+    );
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_set_context(mach: *mut Machine, context: u64) {
+    (*mach).set_context(context);
 }
 
 #[no_mangle]

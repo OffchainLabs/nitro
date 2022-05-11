@@ -190,11 +190,37 @@ func SaturatingUAdd(augend uint64, addend uint64) uint64 {
 	return sum
 }
 
+// subtract an int64 from another without overflow
+func SaturatingSub(minuend, subtrahend int64) int64 {
+	return SaturatingAdd(minuend, -subtrahend)
+}
+
+// subtract a uint64 from another without underflow
+func SaturatingUSub(minuend uint64, subtrahend uint64) uint64 {
+	if subtrahend >= minuend {
+		return 0
+	}
+	return minuend - subtrahend
+}
+
 // multiply two uint64's without overflow
 func SaturatingUMul(multiplicand uint64, multiplier uint64) uint64 {
 	product := multiplicand * multiplier
 	if multiplier != 0 && product/multiplier != multiplicand {
 		product = math.MaxUint64
+	}
+	return product
+}
+
+// multiply two int64's without over/underflow
+func SaturatingMul(multiplicand int64, multiplier int64) int64 {
+	product := multiplicand * multiplier
+	if multiplier != 0 && product/multiplier != multiplicand {
+		if (multiplicand > 0 && multiplier > 0) || (multiplicand < 0 && multiplier < 0) {
+			product = math.MaxInt64
+		} else {
+			product = math.MinInt64
+		}
 	}
 	return product
 }
@@ -205,6 +231,14 @@ func SaturatingCast(value uint64) int64 {
 		return math.MaxInt64
 	}
 	return int64(value)
+}
+
+// cast an int64 to a uint64, clipping to [0, 2^63-1]
+func SaturatingUCast(value int64) uint64 {
+	if value < 0 {
+		return 0
+	}
+	return uint64(value)
 }
 
 // the number of eth-words needed to store n bytes
