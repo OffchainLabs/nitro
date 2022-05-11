@@ -29,16 +29,22 @@ contract Outbox is DelegateCallAware, IOutbox {
     L2ToL1Context internal context;
     uint128 public constant OUTBOX_VERSION = 2;
 
+    uint128 constant L2BLOCK_CONTEXT = type(uint128).max;
+    uint128 constant L1BLOCK_CONTEXT = type(uint128).max;
+    uint128 constant TIMESTAMP_CONTEXT = type(uint128).max;
+    bytes32 constant OUTPUTID_CONTEXT = bytes32(type(uint256).max);
+    address constant SENDER_CONTEXT = address(type(uint160).max);
+
     /// @dev returns default values to be used in storage instead of zero, to save on storage refunds
     /// @dev solidity doesn't support constant structs, so instead we return it in a pure function
     /// @dev it is assumed that arb-os never assigns these values to a valid leaf to be redeemed
     function getDefaultContext() internal pure returns (L2ToL1Context memory) {
         return L2ToL1Context({
-            l2Block: type(uint128).max,
-            l1Block: type(uint128).max,
-            timestamp: type(uint128).max,
-            outputId: bytes32(type(uint256).max),
-            sender: address(type(uint160).max)
+            l2Block: L2BLOCK_CONTEXT,
+            l1Block: L1BLOCK_CONTEXT,
+            timestamp: TIMESTAMP_CONTEXT,
+            outputId: OUTPUTID_CONTEXT,
+            sender: SENDER_CONTEXT
         });
     }
 
@@ -64,7 +70,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     function l2ToL1Sender() external view override returns (address) {
         address sender = context.sender;
         // we don't return the default context value to avoid a breaking change in the API
-        if(sender == getDefaultContext().sender) return address(0);
+        if(sender == SENDER_CONTEXT) return address(0);
         return sender;
     }
 
@@ -73,7 +79,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     function l2ToL1Block() external view override returns (uint256) {
         uint128 l2Block = context.l2Block;
         // we don't return the default context value to avoid a breaking change in the API
-        if(l2Block == getDefaultContext().l2Block) return uint256(0);
+        if(l2Block == L1BLOCK_CONTEXT) return uint256(0);
         return uint256(l2Block);
     }
 
@@ -82,7 +88,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     function l2ToL1EthBlock() external view override returns (uint256) {
         uint128 l1Block = context.l1Block;
         // we don't return the default context value to avoid a breaking change in the API
-        if(l1Block == getDefaultContext().l1Block) return uint256(0);
+        if(l1Block == L1BLOCK_CONTEXT) return uint256(0);
         return uint256(l1Block);
     }
 
@@ -91,7 +97,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     function l2ToL1Timestamp() external view override returns (uint256) {
         uint128 timestamp = context.timestamp;
         // we don't return the default context value to avoid a breaking change in the API
-        if(timestamp == getDefaultContext().timestamp) return uint256(0);
+        if(timestamp == TIMESTAMP_CONTEXT) return uint256(0);
         return uint256(timestamp);
     }
 
@@ -105,7 +111,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     function l2ToL1OutputId() external view override returns (bytes32) {
         bytes32 outputId = context.outputId;
         // we don't return the default context value to avoid a breaking change in the API
-        if(outputId == getDefaultContext().outputId) return bytes32(0);
+        if(outputId == OUTPUTID_CONTEXT) return bytes32(0);
         return outputId;
     }
 
