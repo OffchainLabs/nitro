@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -19,6 +20,7 @@ import (
 )
 
 func TestRetryableEncoding(t *testing.T) {
+	rand.Seed(time.Now().UnixMilli())
 	fakeAddr := testhelpers.RandomAddress()
 	key, err := crypto.GenerateKey()
 	testhelpers.RequireImpl(t, err)
@@ -49,7 +51,7 @@ func TestRetryableEncoding(t *testing.T) {
 		Beneficiary:      testhelpers.RandomAddress(),
 		MaxSubmissionFee: big.NewInt(567356),
 		FeeRefundAddr:    testhelpers.RandomAddress(),
-		RetryData:        testhelpers.RandomizeSlice(make([]byte, 231)),
+		RetryData:        testhelpers.RandomizeSlice(make([]byte, rand.Int()%512)),
 	}
 
 	con, err := precompilesgen.NewArbRetryableTx(fakeAddr, client)
