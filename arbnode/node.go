@@ -552,7 +552,7 @@ type Node struct {
 	DataAvailService das.DataAvailabilityService
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (*Node, error) {
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -576,6 +576,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 			return nil, err
 		}
 	default:
+	}
+
+	if dataAvailabilityService != nil && daSigner != nil {
+		dataAvailabilityService = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -734,8 +738,8 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (newNode *Node, err error) {
+	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
 	if err != nil {
 		return nil, err
 	}
