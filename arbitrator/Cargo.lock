@@ -734,6 +734,7 @@ name = "wasm-testsuite"
 version = "0.1.0"
 dependencies = [
  "eyre",
+ "hex",
  "prover",
  "serde",
  "serde_json",

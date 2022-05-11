@@ -16,7 +16,7 @@ use std::{borrow::Cow, convert::TryFrom};
 pub struct Memory {
     buffer: Vec<u8>,
     #[serde(skip)]
-    merkle: Option<Merkle>,
+    pub merkle: Option<Merkle>,
     pub max_size: u32,
 }
 

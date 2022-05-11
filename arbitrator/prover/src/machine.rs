@@ -628,6 +628,19 @@ impl GlobalState {
     }
 }
 
+#[derive(Serialize)]
+pub struct ProofInfo {
+    pub before: String,
+    pub proof: String,
+    pub after: String,
+}
+
+impl ProofInfo {
+    pub fn new(before: String, proof: String, after: String) -> Self {
+        Self { before, proof, after }
+    }
+}
+
 /// cbindgen:ignore
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -1213,6 +1226,23 @@ impl Machine {
         self.pc = new_state.pc;
         self.stdio_output = new_state.stdio_output.into_owned();
         Ok(())
+    }
+
+    pub fn start_merkle_caching(&mut self) {
+        for module in &mut self.modules {
+            module.memory.cache_merkle_tree();
+        }
+        self.modules_merkle = Some(Merkle::new(
+            MerkleType::Module,
+            self.modules.iter().map(Module::hash).collect(),
+        ));
+    }
+
+    pub fn stop_merkle_caching(&mut self) {
+        self.modules_merkle = None;
+        for module in &mut self.modules {
+            module.memory.merkle = None;
+        }
     }
 
     pub fn jump_into_function(&mut self, func: &str, mut args: Vec<Value>) {

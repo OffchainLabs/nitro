@@ -4,11 +4,10 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
-    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus},
+    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, ProofInfo},
     utils::Bytes32,
     wavm::Opcode,
 };
-use serde::Serialize;
 use sha3::{Digest, Keccak256};
 use std::io::BufWriter;
 use std::{
@@ -72,13 +71,6 @@ struct Opts {
     /// Generate WAVM binary, until host io state, and module root and exit
     #[structopt(long)]
     generate_binaries: Option<PathBuf>,
-}
-
-#[derive(Serialize)]
-struct ProofInfo {
-    before: String,
-    proof: String,
-    after: String,
 }
 
 fn parse_size_delim(path: &Path) -> Result<Vec<Vec<u8>>> {

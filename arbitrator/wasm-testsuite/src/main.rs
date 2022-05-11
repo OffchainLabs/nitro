@@ -1,11 +1,14 @@
+// Copyright 2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use eyre::bail;
 use prover::{
     console::Color,
-    machine::{GlobalState, Machine, MachineStatus},
+    machine::{GlobalState, Machine, MachineStatus, ProofInfo},
     value::Value,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs::File, io::BufReader, path::PathBuf};
+use std::{collections::HashMap, fs::File, io::BufReader, path::PathBuf, time::Instant};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -141,6 +144,7 @@ fn main() -> eyre::Result<()> {
 
     let reader = BufReader::new(File::open(path)?);
     let case: Case = serde_json::from_reader(reader)?;
+    let start_time = Instant::now();
 
     let soft_float = PathBuf::from("../../target/machines/latest/soft-float.wasm");
 
@@ -148,6 +152,55 @@ fn main() -> eyre::Result<()> {
     let mut machine = None;
     let mut subtest = 0;
     let mut skip = false;
+
+    macro_rules! run {
+        ($machine:expr, $bound:expr, $path:expr, $prove:expr) => {{
+            let mut proofs = vec![];
+            let mut count = 0;
+            let mut leap = 1;
+
+            if !$prove {
+                $machine.step_n($bound);
+            }
+
+            while count + leap < $bound && $prove {
+                count += 1;
+
+                let prior = $machine.hash().to_string();
+                let proof = hex::encode($machine.serialize_proof());
+                $machine.step_n(1);
+                let after = $machine.hash().to_string();
+                proofs.push(ProofInfo::new(prior, proof, after));
+                $machine.step_n(leap - 1);
+
+                if count % 100 == 0 {
+                    leap *= leap + 1;
+                    if leap > 6 {
+                        let message = format!("backing off {} {} {}", leap, count, $bound);
+                        println!("{}", Color::grey(message));
+                        $machine.stop_merkle_caching();
+                    }
+                }
+                if $machine.is_halted() {
+                    break;
+                }
+            }
+            let out = File::create($path)?;
+            serde_json::to_writer_pretty(out, &proofs)?;
+        }};
+    }
+    macro_rules! action {
+        ($action:expr) => {
+            match $action {
+                Action::Invoke { field, args } => (field, args),
+                Action::Get { .. } => {
+                    // get() is only used in the export test, which we don't support
+                    println!("skipping unsupported action {}", Color::red("get"));
+                    continue;
+                }
+            }
+        };
+    }
 
     for (index, command) in case.commands.into_iter().enumerate() {
         macro_rules! test_success {
@@ -159,9 +212,11 @@ fn main() -> eyre::Result<()> {
                     continue;
                 }
 
+                let outname = format!("proofs/{}-{}", wasmfile, subtest);
                 let machine = machine.as_mut().expect("no machine");
                 machine.jump_into_function(&$func, args.clone());
-                machine.step_n(10_000_000);
+                machine.start_merkle_caching();
+                run!(machine, 10_000_000, outname, true);
 
                 let output = match machine.get_final_result() {
                     Ok(output) => output,
@@ -196,18 +251,6 @@ fn main() -> eyre::Result<()> {
                     )
                 }
                 subtest += 1;
-            };
-        }
-        macro_rules! action {
-            ($action:expr) => {
-                match $action {
-                    Action::Invoke { field, args } => (field, args),
-                    Action::Get { .. } => {
-                        // get() is only used in the export test, which we don't support
-                        println!("skipping unsupported action {}", Color::red("get"));
-                        continue;
-                    }
-                }
             };
         }
 
@@ -256,6 +299,7 @@ fn main() -> eyre::Result<()> {
 
                 if let Some(machine) = &mut machine {
                     machine.step_n(1000); // run init
+                    machine.start_merkle_caching();
                 }
             }
             Command::AssertReturn { action, expected } => {
@@ -274,7 +318,7 @@ fn main() -> eyre::Result<()> {
 
                 let machine = machine.as_mut().unwrap();
                 machine.jump_into_function(&func, args.clone());
-                machine.step_n(1000);
+                run!(machine, 1000, format!("proofs/{}-{}", wasmfile, subtest), true);
 
                 if machine.get_status() == MachineStatus::Running {
                     bail!("machine failed to trap in test {}", test)
@@ -297,9 +341,10 @@ fn main() -> eyre::Result<()> {
                 let args: Vec<_> = args.into_iter().map(Into::into).collect();
                 let test = Color::red(format!("{} #{}", wasmfile, subtest));
 
+                let outname = format!("proofs/{}-{}", wasmfile, subtest);
                 let machine = machine.as_mut().unwrap();
                 machine.jump_into_function(&func, args.clone());
-                machine.step_n(100_000);  // this is proportional to the amount of RAM
+                run!(machine, 100_000, outname, false); // this is proportional to the amount of RAM
 
                 if machine.get_status() != MachineStatus::Running {
                     bail!("machine should spin {}", test)
@@ -325,5 +370,10 @@ fn main() -> eyre::Result<()> {
         }
     }
 
+    println!(
+        "{} {}",
+        Color::grey("done in"),
+        Color::pink(format!("{}ms", start_time.elapsed().as_millis()))
+    );
     Ok(())
 }
