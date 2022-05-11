@@ -108,18 +108,25 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 	return buf
 }
 
+func (cert *DataAvailabilityCertificate) RecoverKeyset(
+	ctx context.Context,
+	das DataAvailabilityServiceReader,
+) (*DataAvailabilityKeyset, error) {
+	keysetBytes, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(crypto.Keccak256(keysetBytes), cert.KeysetHash[:]) {
+		return nil, errors.New("keyset hash does not match cert")
+	}
+	return DeserializeKeyset(bytes.NewReader(keysetBytes))
+}
+
 func (cert *DataAvailabilityCertificate) VerifyNonPayloadParts(
 	ctx context.Context,
 	das DataAvailabilityServiceReader,
 ) error {
-	keysetBytes, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(crypto.Keccak256(keysetBytes), cert.KeysetHash[:]) {
-		return errors.New("keyset hash does not match cert")
-	}
-	keyset, err := DeserializeKeyset(bytes.NewReader(keysetBytes))
+	keyset, err := cert.RecoverKeyset(ctx, das)
 	if err != nil {
 		return err
 	}
