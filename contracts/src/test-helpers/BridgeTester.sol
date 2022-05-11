@@ -45,7 +45,7 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
     }
 
     function activeOutbox() public view returns (address) {
-        if(_activeOutbox == EMPTY_ACTIVEOUTBOX) return address(uint160(0));
+        if (_activeOutbox == EMPTY_ACTIVEOUTBOX) return address(uint160(0));
         return _activeOutbox;
     }
 
@@ -174,7 +174,5 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
         return inboxAccs.length;
     }
 
-    receive() payable external{
-
-    }
+    receive() external payable {}
 }

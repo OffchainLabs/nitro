@@ -51,7 +51,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         // is non-zero to save users some gas (as storage refunds are usually maxed out)
         // EIP-1153 would help here.
         // we don't return `EMPTY_ACTIVEOUTBOX` to avoid a breaking change on the current api
-        if(outbox == EMPTY_ACTIVEOUTBOX) return address(0);
+        if (outbox == EMPTY_ACTIVEOUTBOX) return address(0);
         return outbox;
     }
 
@@ -159,7 +159,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     }
 
     function setOutbox(address outbox, bool enabled) external override onlyOwner {
-        if(outbox == EMPTY_ACTIVEOUTBOX) revert InvalidOutboxSet(outbox);
+        if (outbox == EMPTY_ACTIVEOUTBOX) revert InvalidOutboxSet(outbox);
 
         InOutInfo storage info = allowedOutboxesMap[outbox];
         bool alreadyEnabled = info.allowed;
