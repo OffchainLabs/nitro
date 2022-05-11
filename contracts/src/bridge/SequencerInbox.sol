@@ -142,10 +142,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
-        bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
-        if (dasKeysetHash != bytes32(0)) {
-            if (!isValidKeysetHash[dasKeysetHash]) revert InvalidDASKeyset(dasKeysetHash);
-        }
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
             afterDelayedMessagesRead
@@ -228,6 +224,10 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         view
         returns (bytes32, TimeBounds memory)
     {
+        bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
+        if (dasKeysetHash != bytes32(0)) {
+            if (!isValidKeysetHash[dasKeysetHash]) revert InvalidDASKeyset(dasKeysetHash);
+        }
         uint256 fullDataLen = HEADER_LENGTH + data.length;
         if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
         if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
