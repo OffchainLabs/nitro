@@ -6,7 +6,7 @@ package genericconf
 import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
-	"github.com/spf13/pflag"
+	flag "github.com/spf13/pflag"
 )
 
 type ConfConfig struct {
@@ -17,7 +17,7 @@ type ConfConfig struct {
 	String    string   `koanf:"string"`
 }
 
-func ConfConfigAddOptions(prefix string, f *pflag.FlagSet) {
+func ConfConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".dump", ConfConfigDefault.Dump, "print out currently active configuration file")
 	f.String(prefix+".env-prefix", ConfConfigDefault.EnvPrefix, "environment variables with given prefix will be loaded as configuration values")
 	f.StringSlice(prefix+".file", ConfConfigDefault.File, "name of configuration file")
@@ -41,7 +41,7 @@ type S3Config struct {
 	SecretKey string `koanf:"secret-key"`
 }
 
-func S3ConfigAddOptions(prefix string, f *pflag.FlagSet) {
+func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".access-key", DefaultS3Config.AccessKey, "S3 access key")
 	f.String(prefix+".bucket", DefaultS3Config.Bucket, "S3 bucket")
 	f.String(prefix+".object-key", DefaultS3Config.ObjectKey, "S3 object key")

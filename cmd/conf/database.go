@@ -1,11 +1,12 @@
 package conf
 
 import (
-	"github.com/pkg/errors"
-	"github.com/spf13/pflag"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+
+	flag "github.com/spf13/pflag"
 )
 
 type PersistentConfig struct {
@@ -18,7 +19,7 @@ var PersistentConfigDefault = PersistentConfig{
 	Chain:        "",
 }
 
-func PersistentConfigAddOptions(prefix string, f *pflag.FlagSet) {
+func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
 	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
 }
@@ -26,7 +27,7 @@ func PersistentConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func (c *PersistentConfig) ResolveDirectoryNames() error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return errors.Wrap(err, "Unable to read users home directory")
+		return fmt.Errorf("unable to read users home directory: %w", err)
 	}
 
 	// Make persistent storage directory relative to home directory if not already absolute
@@ -35,7 +36,7 @@ func (c *PersistentConfig) ResolveDirectoryNames() error {
 	}
 	err = os.MkdirAll(c.GlobalConfig, os.ModePerm)
 	if err != nil {
-		return errors.Wrap(err, "Unable to create global configuration directory")
+		return fmt.Errorf("unable to create global configuration directory: %w", err)
 	}
 
 	// Make chain directory relative to persistent storage directory if not already absolute
@@ -44,10 +45,10 @@ func (c *PersistentConfig) ResolveDirectoryNames() error {
 	}
 	err = os.MkdirAll(c.Chain, os.ModePerm)
 	if err != nil {
-		return errors.Wrap(err, "Unable to create chain directory")
+		return fmt.Errorf("unable to create chain directory: %w", err)
 	}
 	if DatabaseInDirectory(c.Chain) {
-		return errors.Errorf("Database in --persistent.chain (%s) directory, try specifying parent directory", c.Chain)
+		return fmt.Errorf("database in --persistent.chain (%s) directory, try specifying parent directory", c.Chain)
 	}
 
 	return nil
