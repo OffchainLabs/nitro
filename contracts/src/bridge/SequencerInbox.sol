@@ -6,6 +6,7 @@ pragma solidity ^0.8.0;
 
 import "./IBridge.sol";
 import "./ISequencerInbox.sol";
+import "../rollup/IRollupLogic.sol";
 import "./Messages.sol";
 
 import {GasRefundEnabled, IGasRefunder} from "../libraries/IGasRefunder.sol";
@@ -37,6 +38,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     mapping(bytes32 => bool) public isValidKeysetHash;
     mapping(bytes32 => uint256) public keysetHashCreationBlock;
+
+    modifier onlyRollupOwner() {
+        if (msg.sender != IRollupUserAbs(rollup).owner()) revert NotOwner(msg.sender, rollup);
+        _;
+    }
 
     function initialize(
         IBridge delayedBridge_,
@@ -199,19 +205,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return temp;
     }
 
-    function setValidKeysetHash(bytes32 ksHash) external {
-        if (isValidKeysetHash[ksHash]) revert AlreadyValidDASKeyset(ksHash);
-        isValidKeysetHash[ksHash] = true;
-        keysetHashCreationBlock[ksHash] = block.number;
-        emit SetValidKeyset(ksHash);
-    }
-
-    function invalidateKeysetHash(bytes32 ksHash) external {
-        if (!isValidKeysetHash[ksHash]) revert InvalidDASKeyset(ksHash);
-        isValidKeysetHash[ksHash] = false;
-        emit InvalidateKeyset(ksHash);
-    }
-
     function packHeader(uint256 afterDelayedMessagesRead)
         internal
         view
@@ -290,16 +283,40 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return inboxAccs.length;
     }
 
+    /**
+     * @notice Set max delay for sequencer inbox
+     * @param maxTimeVariation_ the maximum time variation parameters
+     */
     function setMaxTimeVariation(ISequencerInbox.MaxTimeVariation memory maxTimeVariation_)
         external
-        override
+        onlyRollupOwner
     {
-        if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         maxTimeVariation = maxTimeVariation_;
+        emit OwnerFunctionCalled(0);
     }
 
-    function setIsBatchPoster(address addr, bool isBatchPoster_) external override {
-        if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
+    /**
+     * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
+     * @param addr the address
+     * @param isBatchPoster_ if the specified address should be authorized as a batch poster
+     */
+    function setIsBatchPoster(address addr, bool isBatchPoster_) external onlyRollupOwner {
         isBatchPoster[addr] = isBatchPoster_;
+        emit OwnerFunctionCalled(1);
+    }
+
+    function setValidKeysetHash(bytes32 ksHash) external onlyRollupOwner {
+        if (isValidKeysetHash[ksHash]) revert AlreadyValidDASKeyset(ksHash);
+        isValidKeysetHash[ksHash] = true;
+        keysetHashCreationBlock[ksHash] = block.number;
+        emit SetValidKeyset(ksHash);
+        emit OwnerFunctionCalled(2);
+    }
+
+    function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
+        if (!isValidKeysetHash[ksHash]) revert InvalidDASKeyset(ksHash);
+        isValidKeysetHash[ksHash] = false;
+        emit InvalidateKeyset(ksHash);
+        emit OwnerFunctionCalled(3);
     }
 }

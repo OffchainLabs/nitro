@@ -324,11 +324,11 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error parsing rollup created log: %w", err)
 	}
 
-	rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
+	sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, l1client)
 	if err != nil {
-		return nil, fmt.Errorf("error getting rollup admin: %w", err)
+		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
 	}
-	tx, err = rollup.SetIsBatchPoster(deployAuth, sequencer, true)
+	tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("error setting is batch poster: %w", err)
@@ -353,6 +353,10 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		allowValidators = append(allowValidators, true)
 	}
 	if len(validatorAddrs) > 0 {
+		rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
+		if err != nil {
+			return nil, fmt.Errorf("error getting rollup admin: %w", err)
+		}
 		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
 		err = andTxSucceeded(ctx, l1Reader, tx, err)
 		if err != nil {

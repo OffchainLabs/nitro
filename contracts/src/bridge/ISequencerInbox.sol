@@ -38,6 +38,8 @@ interface ISequencerInbox {
         BatchDataLocation dataLocation
     );
 
+    event OwnerFunctionCalled(uint256 indexed id);
+
     /// @dev a separate event that emits batch data when this isn't easily accessible in the tx.input
     event SequencerBatchData(uint256 indexed batchSequenceNumber, bytes data);
 
@@ -84,14 +86,27 @@ interface ISequencerInbox {
 
     function batchCount() external view returns (uint256);
 
-    function setMaxTimeVariation(MaxTimeVariation memory timeVariation) external;
-
-    function setIsBatchPoster(address addr, bool isBatchPoster_) external;
-
     function addSequencerL2Batch(
         uint256 sequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
     ) external;
+
+    // Methods only callable by rollup owner
+
+    /**
+     * @notice Set max time variation from actual time for sequencer inbox
+     * @param timeVariation the maximum time variation parameters
+     */
+    function setMaxTimeVariation(MaxTimeVariation memory timeVariation) external;
+
+    /**
+     * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
+     * @param addr the address
+     * @param isBatchPoster if the specified address should be authorized as a batch poster
+     */
+    function setIsBatchPoster(address addr, bool isBatchPoster) external;
+
+    function setValidKeysetHash(bytes32 ksHash) external;
 }
