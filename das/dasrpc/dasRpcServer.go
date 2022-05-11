@@ -46,7 +46,7 @@ func (serv *DASRPCServer) Stop() {
 }
 
 func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreResponse, error) {
-	cert, err := serv.localDAS.Store(ctx, req.Message, req.Timeout)
+	cert, err := serv.localDAS.Store(ctx, req.Message, req.Timeout, req.Sig)
 	if err != nil {
 		return nil, err
 	}

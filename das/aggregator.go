@@ -183,13 +183,13 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
-func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
+func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	responses := make(chan storeResponse, len(a.services))
 
 	expectedHash := crypto.Keccak256(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
-			cert, err := d.service.Store(ctx, message, timeout)
+			cert, err := d.service.Store(ctx, message, timeout, sig)
 			if err != nil {
 				responses <- storeResponse{d, nil, err}
 				return

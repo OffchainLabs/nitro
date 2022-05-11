@@ -48,7 +48,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0)
+	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
 	messageRetrieved, err := aggregator.Retrieve(ctx, cert)
@@ -142,17 +142,17 @@ func (w *WrapRetrieve) Retrieve(ctx context.Context, cert *arbstate.DataAvailabi
 	return nil, nil
 }
 
-func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
+func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DataAvailabilityService.Store(ctx, message, timeout)
+		return w.DataAvailabilityService.Store(ctx, message, timeout, sig)
 	case immediateError:
 		return nil, errors.New("Expected Store failure")
 	case tooSlow:
 		<-ctx.Done()
 		return nil, errors.New("Canceled")
 	case dataCorruption:
-		cert, err := w.DataAvailabilityService.Store(ctx, message, timeout)
+		cert, err := w.DataAvailabilityService.Store(ctx, message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
@@ -223,7 +223,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0)
+	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	if !shouldFailAggregation {
 		Require(t, err, "Error storing message")
 	} else {
@@ -328,7 +328,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0)
+	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
 	messageRetrieved, err := aggregator.Retrieve(ctx, cert)
