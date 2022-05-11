@@ -86,8 +86,12 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 						segments:             segments,
 					}, nil
 				}
-				if err := cert.VerifyNonPayloadParts(ctx, das); err != nil { // safe because L1 verified keyset hash
-					log.Error("Invalid data availability cert", "err", err)
+				keyset, err := cert.RecoverKeyset(ctx, das)
+				if err != nil {
+					return nil, errors.New("unable to recover keyset even though L1 thought it was valid")
+				}
+				if err := keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig); err != nil { // safe because L1 verified keyset hash
+					log.Error("Bad signature on DAS batch", "err", err)
 					return &sequencerMessage{
 						minTimestamp:         minTimestamp,
 						maxTimestamp:         maxTimestamp,

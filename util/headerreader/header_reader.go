@@ -1,4 +1,4 @@
-package arbnode
+package headerreader
 
 import (
 	"context"
@@ -17,9 +17,9 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-type L1Reader struct {
+type HeaderReader struct {
 	stopwaiter.StopWaiter
-	config L1ReaderConfig
+	config Config
 	client arbutil.L1Interface
 
 	chanMutex sync.Mutex
@@ -32,7 +32,7 @@ type L1Reader struct {
 	requiresPendingCallUpdates int
 }
 
-type L1ReaderConfig struct {
+type Config struct {
 	Enable               bool          `koanf:"enable"`
 	PollOnly             bool          `koanf:"poll-only"`
 	PollInterval         time.Duration `koanf:"poll-interval"`
@@ -40,7 +40,7 @@ type L1ReaderConfig struct {
 	TxTimeout            time.Duration `koanf:"tx-timeout"`
 }
 
-var DefaultL1ReaderConfig = L1ReaderConfig{
+var DefaultConfig = Config{
 	Enable:               true,
 	PollOnly:             false,
 	PollInterval:         15 * time.Second,
@@ -48,22 +48,22 @@ var DefaultL1ReaderConfig = L1ReaderConfig{
 	TxTimeout:            5 * time.Minute,
 }
 
-func L1ReaderAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultL1ReaderConfig.Enable, "enable l1 connection")
-	f.Bool(prefix+".poll-only", DefaultL1ReaderConfig.PollOnly, "do not attempt to subscribe to L1 events")
-	f.Duration(prefix+".poll-interval", DefaultL1ReaderConfig.PollInterval, "interval when polling L1")
-	f.Duration(prefix+".tx-timeout", DefaultL1ReaderConfig.TxTimeout, "timeout when waiting for a transaction")
+func AddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultConfig.Enable, "enable reader connection")
+	f.Bool(prefix+".poll-only", DefaultConfig.PollOnly, "do not attempt to subscribe to header events")
+	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval when polling endpoint")
+	f.Duration(prefix+".tx-timeout", DefaultConfig.TxTimeout, "timeout when waiting for a transaction")
 }
 
-var TestL1ReaderConfig = L1ReaderConfig{
+var TestConfig = Config{
 	Enable:       true,
 	PollOnly:     false,
 	PollInterval: time.Millisecond * 10,
 	TxTimeout:    time.Second * 5,
 }
 
-func NewL1Reader(client arbutil.L1Interface, config L1ReaderConfig) *L1Reader {
-	return &L1Reader{
+func New(client arbutil.L1Interface, config Config) *HeaderReader {
+	return &HeaderReader{
 		client:            client,
 		config:            config,
 		outChannels:       make(map[chan<- *types.Header]struct{}),
@@ -75,7 +75,7 @@ func NewL1Reader(client arbutil.L1Interface, config L1ReaderConfig) *L1Reader {
 // Channel could be missing headers and have duplicates.
 // Listening to the channel will make sure listenere is notified when header changes.
 // Warning: listeners must not modify the header or its number, as they're shared between listeners.
-func (s *L1Reader) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Header, func()) {
+func (s *HeaderReader) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Header, func()) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 
@@ -89,7 +89,7 @@ func (s *L1Reader) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Header, 
 	return result, unsubscribeFunc
 }
 
-func (s *L1Reader) unsubscribe(requireBlockNrUpdates bool, from chan<- *types.Header) {
+func (s *HeaderReader) unsubscribe(requireBlockNrUpdates bool, from chan<- *types.Header) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 
@@ -107,7 +107,7 @@ func (s *L1Reader) unsubscribe(requireBlockNrUpdates bool, from chan<- *types.He
 	}
 }
 
-func (s *L1Reader) closeAll() {
+func (s *HeaderReader) closeAll() {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 
@@ -123,7 +123,7 @@ func (s *L1Reader) closeAll() {
 	}
 }
 
-func (s *L1Reader) possiblyBroadcast(h *types.Header) {
+func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 
@@ -170,7 +170,7 @@ func (s *L1Reader) possiblyBroadcast(h *types.Header) {
 	}
 }
 
-func (s *L1Reader) broadcastLoop(ctx context.Context) {
+func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 	var clientSubscription ethereum.Subscription = nil
 	defer func() {
 		if clientSubscription != nil {
@@ -196,7 +196,7 @@ func (s *L1Reader) broadcastLoop(ctx context.Context) {
 		case <-ticker.C:
 			h, err := s.client.HeaderByNumber(ctx, nil)
 			if err != nil {
-				log.Warn("failed reading l1 header", "err", err)
+				log.Warn("failed reading header", "err", err)
 			} else {
 				s.possiblyBroadcast(h)
 			}
@@ -217,14 +217,14 @@ func (s *L1Reader) broadcastLoop(ctx context.Context) {
 				return
 			}
 			clientSubscription = nil
-			log.Warn("error in subscription to L1 headers", "err", err)
+			log.Warn("error in subscription to headers", "err", err)
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (s *L1Reader) WaitForTxApproval(ctxIn context.Context, tx *types.Transaction) (*types.Receipt, error) {
+func (s *HeaderReader) WaitForTxApproval(ctxIn context.Context, tx *types.Transaction) (*types.Receipt, error) {
 	headerchan, unsubscribe := s.Subscribe(true)
 	defer unsubscribe()
 	ctx, cancel := context.WithTimeout(ctxIn, s.config.TxTimeout)
@@ -250,7 +250,7 @@ func (s *L1Reader) WaitForTxApproval(ctxIn context.Context, tx *types.Transactio
 	}
 }
 
-func (s *L1Reader) LastHeader(ctx context.Context) (*types.Header, error) {
+func (s *HeaderReader) LastHeader(ctx context.Context) (*types.Header, error) {
 	s.chanMutex.Lock()
 	storedHeader := s.lastBroadcastHeader
 	s.chanMutex.Unlock()
@@ -260,7 +260,7 @@ func (s *L1Reader) LastHeader(ctx context.Context) (*types.Header, error) {
 	return s.client.HeaderByNumber(ctx, nil)
 }
 
-func (s *L1Reader) UpdatingPendingCallBlockNr() bool {
+func (s *HeaderReader) UpdatingPendingCallBlockNr() bool {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 	return s.requiresPendingCallUpdates > 0
@@ -268,22 +268,22 @@ func (s *L1Reader) UpdatingPendingCallBlockNr() bool {
 
 // blocknumber used by pending calls.
 // only updated if UpdatingPendingCallBlockNr returns true
-func (s *L1Reader) LastPendingCallBlockNr() uint64 {
+func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 	return s.lastPendingCallBlockNr
 }
 
-func (s *L1Reader) Client() arbutil.L1Interface {
+func (s *HeaderReader) Client() arbutil.L1Interface {
 	return s.client
 }
 
-func (s *L1Reader) Start(ctxIn context.Context) {
+func (s *HeaderReader) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
 	s.LaunchThread(s.broadcastLoop)
 }
 
-func (s *L1Reader) StopAndWait() {
+func (s *HeaderReader) StopAndWait() {
 	s.StopWaiter.StopAndWait()
 	s.closeAll()
 }

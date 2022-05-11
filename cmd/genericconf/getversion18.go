@@ -1,6 +1,6 @@
 //go:build go1.18
 
-package conf
+package genericconf
 
 import "runtime/debug"
 
