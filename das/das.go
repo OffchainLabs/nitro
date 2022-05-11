@@ -8,7 +8,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"reflect"
+	"strings"
 
 	flag "github.com/spf13/pflag"
 
@@ -40,10 +42,12 @@ type DataAvailabilityConfig struct {
 	ModeImpl           string             `koanf:"mode"`
 	LocalDiskDASConfig LocalDiskDASConfig `koanf:"local-disk"`
 	AggregatorConfig   AggregatorConfig   `koanf:"aggregator"`
+	StoreSignerAddress string             `koanf:"store-signer"` // if empty string, no signer is required
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl: "onchain",
+	ModeImpl:           "onchain",
+	StoreSignerAddress: "",
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
@@ -75,10 +79,20 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
 
+func StoreSignerAddressFromString(s string) *common.Address {
+	if s == "" {
+		return nil
+	}
+	s = strings.TrimPrefix(s, "0x")
+	addr := common.HexToAddress(s)
+	return &addr
+}
+
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local', or 'aggregator')")
 	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
+	f.String(prefix+".store-signer", DefaultDataAvailabilityConfig.StoreSignerAddress, "hex-encoded address of required Store signer, or empty string if none")
 }
 
 func serializeSignableFields(c *arbstate.DataAvailabilityCertificate) []byte {

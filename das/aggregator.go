@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"math/bits"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -19,11 +20,14 @@ import (
 
 type AggregatorConfig struct {
 	// sequencer public key
-	AssumedHonest int    `koanf:"assumed-honest"`
-	Backends      string `koanf:"backends"`
+	AssumedHonest      int    `koanf:"assumed-honest"`
+	Backends           string `koanf:"backends"`
+	StoreSignerAddress string `koanf:"store-signer-address"`
 }
 
-var DefaultAggregatorConfig = AggregatorConfig{}
+var DefaultAggregatorConfig = AggregatorConfig{
+	StoreSignerAddress: "",
+}
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
@@ -39,6 +43,7 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
+	storeSignerAddr                *common.Address
 }
 
 type ServiceDetails struct {
@@ -94,6 +99,7 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 		maxAllowedServiceStoreFailures: config.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    ksBuf.Bytes(),
+		storeSignerAddr:                StoreSignerAddressFromString(config.StoreSignerAddress),
 	}, nil
 }
 
@@ -184,6 +190,16 @@ type storeResponse struct {
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	if a.storeSignerAddr != nil {
+		actualSigner, err := DasRecoverSigner(message, timeout, sig)
+		if err != nil {
+			return nil, err
+		}
+		if actualSigner != *a.storeSignerAddr {
+			return nil, errors.New("store request not properly signed")
+		}
+	}
+
 	responses := make(chan storeResponse, len(a.services))
 
 	expectedHash := crypto.Keccak256(message)
