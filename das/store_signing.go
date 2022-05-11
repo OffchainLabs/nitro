@@ -14,7 +14,7 @@ import (
 
 var uniquifyingPrefix = []byte("Arbitrum Nitro DAS API Store:")
 
-type DasSigner func([]byte) ([]byte, error)
+type DasSigner func([]byte) ([]byte, error) // takes 32-byte array (hash of data) and produces signature bytes (and/or error)
 
 func DasSignerFromPrivateKey(privateKey *ecdsa.PrivateKey) DasSigner {
 	return func(data []byte) ([]byte, error) {
