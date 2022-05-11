@@ -55,8 +55,9 @@ type sequencerMessage struct {
 const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
+const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) *sequencerMessage {
+func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
@@ -76,15 +77,36 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 				cert, err := DeserializeDASCertFrom(bytes.NewReader(data[40:]))
 				if err != nil {
 					log.Error("Deserializing data availability cert failed", "err", err)
-					return nil
+					return &sequencerMessage{
+						minTimestamp:         minTimestamp,
+						maxTimestamp:         maxTimestamp,
+						minL1Block:           minL1Block,
+						maxL1Block:           maxL1Block,
+						afterDelayedMessages: afterDelayedMessages,
+						segments:             segments,
+					}, nil
 				}
 				if err := cert.VerifyNonPayloadParts(ctx, das); err != nil { // safe because L1 verified keyset hash
 					log.Error("Invalid data availability cert", "err", err)
-					return nil
+					return &sequencerMessage{
+						minTimestamp:         minTimestamp,
+						maxTimestamp:         maxTimestamp,
+						minL1Block:           minL1Block,
+						maxL1Block:           maxL1Block,
+						afterDelayedMessages: afterDelayedMessages,
+						segments:             segments,
+					}, nil
 				}
-				if cert.Timeout < maxTimestamp+7*24*60*60 {
+				if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
 					log.Error("Data availability cert expires too soon", "err", "")
-					return nil
+					return &sequencerMessage{
+						minTimestamp:         minTimestamp,
+						maxTimestamp:         maxTimestamp,
+						minL1Block:           minL1Block,
+						maxL1Block:           maxL1Block,
+						afterDelayedMessages: afterDelayedMessages,
+						segments:             segments,
+					}, nil
 				}
 				payload, err = das.Retrieve(ctx, cert) // safe because DA cert was verified
 				if err != nil || !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
@@ -137,7 +159,7 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 		maxL1Block:           maxL1Block,
 		afterDelayedMessages: afterDelayedMessages,
 		segments:             segments,
-	}
+	}, nil
 }
 
 type inboxMultiplexer struct {
@@ -181,7 +203,11 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
-		r.cachedSequencerMessage = parseSequencerMessage(ctx, bytes, r.das)
+		var err error
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, bytes, r.das)
+		if err != nil {
+			return nil, err
+		}
 	}
 	msg, err := r.getNextMsg()
 	// advance even if there was an error

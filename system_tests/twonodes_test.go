@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -47,19 +48,11 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	if usingDas != nil {
 		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
 		Require(t, err)
-		abiBytes := []byte{0xd1, 0xce, 0x8d, 0xa8}
-		var buf [32]byte
-		buf[31] = 0x20
-		abiBytes = append(abiBytes, buf[:]...)
-		buf[30] = byte(len(keysetBytes) / 256)
-		buf[31] = byte(len(keysetBytes) % 256)
-		abiBytes = append(abiBytes, buf[:]...)
-		abiBytes = append(abiBytes, keysetBytes...)
-		for len(abiBytes)%32 != 4 {
-			abiBytes = append(abiBytes, byte(0))
-		}
-		tx := l1info.PrepareTx("RollupOwner", "SequencerInbox", 2000000, big.NewInt(0), abiBytes)
-		err = l1client.SendTransaction(ctx, tx)
+
+		sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
+		Require(t, err)
+		trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+		tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l1client, tx)
 		Require(t, err)

@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"errors"
-	"github.com/offchainlabs/nitro/das"
 	"math/big"
 	"testing"
 
@@ -38,7 +37,6 @@ type BlockchainTestInfo struct {
 	Signer      types.Signer
 	Accounts    map[string]*AccountInfo
 	ArbInitData statetransfer.ArbosInitializationInfo
-	Das         das.DataAvailabilityService
 	GasPrice    *big.Int
 	// The amount of gas needed for a simple transfer tx.
 	TransferGas uint64
