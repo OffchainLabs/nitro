@@ -593,6 +593,12 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
+	case das.RemoteDataAvailability:
+		var err error
+		dataAvailabilityService, err = das.NewS3DAS(config.DataAvailability.S3Config, config.DataAvailability.LocalDiskDASConfig)
+		if err != nil {
+			return nil, err
+		}
 	case das.AggregatorDataAvailability:
 		dataAvailabilityService, err = dasrpc.NewRPCAggregator(config.DataAvailability.AggregatorConfig)
 		if err != nil {

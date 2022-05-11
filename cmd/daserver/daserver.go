@@ -116,6 +116,11 @@ func startup() error {
 		if err != nil {
 			return err
 		}
+	case das.RemoteDataAvailability:
+		dasImpl, err = das.NewS3DAS(serverConfig.DAConf.S3Config, serverConfig.DAConf.LocalDiskDASConfig)
+		if err != nil {
+			return err
+		}
 	case das.AggregatorDataAvailability:
 		dasImpl, err = dasrpc.NewRPCAggregator(serverConfig.DAConf.AggregatorConfig)
 		if err != nil {

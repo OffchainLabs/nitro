@@ -34,7 +34,7 @@ const (
 	OnchainDataAvailability DataAvailabilityMode = iota
 	LocalDataAvailability
 	AggregatorDataAvailability
-	// TODO RemoteDataAvailability
+	RemoteDataAvailability
 )
 
 type DataAvailabilityConfig struct {
@@ -50,32 +50,33 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
-	if c.ModeImpl == "" {
+	switch c.ModeImpl {
+	case "":
 		return 0, errors.New("--data-availability.mode missing")
-	}
-
-	if c.ModeImpl == "onchain" {
+	case "onchain":
 		return OnchainDataAvailability, nil
-	}
-
-	if c.ModeImpl == "local" {
+	case "local":
 		if c.LocalDiskDASConfig.DataDir == "" || (c.LocalDiskDASConfig.KeyDir == "" && c.LocalDiskDASConfig.PrivKey == "") {
 			flag.Usage()
 			return 0, errors.New("--data-availability.local-disk.data-dir and .key-dir must be specified if mode is set to local")
 		}
 		return LocalDataAvailability, nil
-	}
-
-	if c.ModeImpl == "aggregator" {
+	case "s3":
+		if c.S3Config.AccessKey == "" || c.S3Config.SecretKey == "" || c.S3Config.Region == "" || c.S3Config.Bucket == "" {
+			flag.Usage()
+			return 0, errors.New("--data-availability.s3.access-key, .secret-key, .region and .bucket  must be specified if mode is set to s3")
+		}
+		return RemoteDataAvailability, nil
+	case "aggregator":
 		if reflect.DeepEqual(c.AggregatorConfig, DefaultAggregatorConfig) {
 			flag.Usage()
 			return 0, errors.New("--data-availability.aggregator.X config options must be specified if mode is set to aggregator")
 		}
 		return AggregatorDataAvailability, nil
+	default:
+		flag.Usage()
+		return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 	}
-
-	flag.Usage()
-	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
