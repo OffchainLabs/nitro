@@ -24,11 +24,10 @@ import (
 )
 
 type S3DAS struct {
-	s3Config        conf.S3Config
-	localDiskConfig LocalDiskDASConfig
-	privKey         *blsSignatures.PrivateKey
-	uploader        *manager.Uploader
-	downloader      *manager.Downloader
+	s3Config   conf.S3Config
+	privKey    *blsSignatures.PrivateKey
+	uploader   *manager.Uploader
+	downloader *manager.Downloader
 }
 
 func NewS3DAS(s3Config conf.S3Config, localDiskConfig LocalDiskDASConfig) (*S3DAS, error) {
@@ -43,14 +42,7 @@ func NewS3DAS(s3Config conf.S3Config, localDiskConfig LocalDiskDASConfig) (*S3DA
 		_, privKey, err = ReadKeysFromFile(localDiskConfig.KeyDir)
 		if err != nil {
 			if os.IsNotExist(err) {
-				if localDiskConfig.AllowGenerateKeys {
-					_, privKey, err = GenerateAndStoreKeys(localDiskConfig.KeyDir)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					return nil, fmt.Errorf("Required BLS keypair did not exist at %s", localDiskConfig.KeyDir)
-				}
+				return nil, fmt.Errorf("Required BLS keypair did not exist at %s", localDiskConfig.KeyDir)
 			} else {
 				return nil, err
 			}
@@ -64,11 +56,10 @@ func NewS3DAS(s3Config conf.S3Config, localDiskConfig LocalDiskDASConfig) (*S3DA
 	downloader := manager.NewDownloader(client)
 
 	return &S3DAS{
-		s3Config:        s3Config,
-		privKey:         privKey,
-		localDiskConfig: localDiskConfig,
-		uploader:        uploader,
-		downloader:      downloader,
+		s3Config:   s3Config,
+		privKey:    privKey,
+		uploader:   uploader,
+		downloader: downloader,
 	}, nil
 }
 
@@ -132,5 +123,5 @@ func (das *S3DAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error
 }
 
 func (das *S3DAS) String() string {
-	return fmt.Sprintf("S3DAS{s3Config:%v, localDiskConfig:%v}", das.s3Config, das.localDiskConfig)
+	return fmt.Sprintf("S3DAS{s3Config:%v}", das.s3Config)
 }
