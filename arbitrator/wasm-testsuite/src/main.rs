@@ -30,7 +30,9 @@ enum Command {
         action: Action,
         expected: Vec<TextValue>,
     },
-    AssertExhaustion {},
+    AssertExhaustion {
+        action: Action,
+    },
     AssertTrap {
         action: Action,
     },
@@ -145,13 +147,19 @@ fn main() -> eyre::Result<()> {
     let mut wasmfile = String::new();
     let mut machine = None;
     let mut subtest = 0;
+    let mut skip = false;
 
     for (index, command) in case.commands.into_iter().enumerate() {
         macro_rules! test_success {
             ($func:expr, $args:expr, $expected:expr) => {
                 let args: Vec<_> = $args.into_iter().map(Into::into).collect();
+                if skip {
+                    println!("skipping {}", Color::red($func));
+                    subtest += 1;
+                    continue;
+                }
 
-                let machine = machine.as_mut().unwrap();
+                let machine = machine.as_mut().expect("no machine");
                 machine.jump_into_function(&$func, args.clone());
                 machine.step_n(10_000_000);
 
@@ -190,6 +198,18 @@ fn main() -> eyre::Result<()> {
                 subtest += 1;
             };
         }
+        macro_rules! action {
+            ($action:expr) => {
+                match $action {
+                    Action::Invoke { field, args } => (field, args),
+                    Action::Get { .. } => {
+                        // get() is only used in the export test, which we don't support
+                        println!("skipping unsupported action {}", Color::red("get"));
+                        continue;
+                    }
+                }
+            };
+        }
 
         match command {
             Command::Module { filename } => {
@@ -210,6 +230,7 @@ fn main() -> eyre::Result<()> {
 
                 if let Err(error) = &mech {
                     let error = error.root_cause().to_string();
+                    skip = true;
 
                     if error.contains("Module has no code") {
                         // We don't support metadata-only modules that have no code
@@ -231,39 +252,29 @@ fn main() -> eyre::Result<()> {
                 }
 
                 machine = mech.ok();
+                skip = false;
 
                 if let Some(machine) = &mut machine {
-                    machine.step_n(1000);
+                    machine.step_n(1000); // run init
                 }
             }
             Command::AssertReturn { action, expected } => {
-                let (func, args) = match action {
-                    Action::Invoke { field, args } => (field, args),
-                    _ => bail!("unimplemented 1"),
-                };
+                let (func, args) = action!(action);
                 test_success!(func, args, expected);
             }
             Command::Action { action } => {
-                let (func, args) = match action {
-                    Action::Invoke { field, args } => (field, args),
-                    _ => bail!("unimplemented 2"),
-                };
+                let (func, args) = action!(action);
                 let expected: Vec<TextValue> = vec![];
                 test_success!(func, args, expected);
             }
             Command::AssertTrap { action } => {
-                let (func, args) = match action {
-                    Action::Invoke { field, args } => (field, args),
-                    _ => bail!("unimplemented 3"),
-                };
-
+                let (func, args) = action!(action);
                 let args: Vec<_> = args.into_iter().map(Into::into).collect();
+                let test = Color::red(format!("{} #{}", wasmfile, subtest));
 
                 let machine = machine.as_mut().unwrap();
                 machine.jump_into_function(&func, args.clone());
                 machine.step_n(1000);
-
-                let test = Color::red(format!("{} #{}", wasmfile, subtest));
 
                 if machine.get_status() == MachineStatus::Running {
                     bail!("machine failed to trap in test {}", test)
@@ -279,13 +290,21 @@ fn main() -> eyre::Result<()> {
                     println!();
                     bail!("Unexpected success in test {}", test)
                 }
-
                 subtest += 1;
             }
-            Command::AssertExhaustion {} => {
+            Command::AssertExhaustion { action } => {
+                let (func, args) = action!(action);
+                let args: Vec<_> = args.into_iter().map(Into::into).collect();
+                let test = Color::red(format!("{} #{}", wasmfile, subtest));
 
+                let machine = machine.as_mut().unwrap();
+                machine.jump_into_function(&func, args.clone());
+                machine.step_n(100_000);  // this is proportional to the amount of RAM
+
+                if machine.get_status() != MachineStatus::Running {
+                    bail!("machine should spin {}", test)
+                }
                 subtest += 1;
-                unimplemented!("here")
             }
             Command::AssertMalformed { filename } => {
                 let wasmpath = PathBuf::from("tests").join(&filename);
