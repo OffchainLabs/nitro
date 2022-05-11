@@ -310,11 +310,13 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         isValidKeysetHash[ksHash] = true;
         keysetHashCreationBlock[ksHash] = block.number;
         emit SetValidKeyset(ksHash);
+        emit OwnerFunctionCalled(2);
     }
 
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
         if (!isValidKeysetHash[ksHash]) revert InvalidDASKeyset(ksHash);
         isValidKeysetHash[ksHash] = false;
         emit InvalidateKeyset(ksHash);
+        emit OwnerFunctionCalled(3);
     }
 }
