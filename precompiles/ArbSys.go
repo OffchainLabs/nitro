@@ -21,7 +21,10 @@ type ArbSys struct {
 	L2ToL1TxGasCost         func(addr, addr, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
 	SendMerkleUpdate        func(ctx, mech, huge, bytes32, huge) error
 	SendMerkleUpdateGasCost func(huge, bytes32, huge) (uint64, error)
-	L2ToL1Transaction       func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error // deprecated
+
+	// deprecated event
+	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
+	L2ToL1TransactionGasCost func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
 }
 
 var InvalidBlockNum = errors.New("Invalid block number")
