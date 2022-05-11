@@ -6,7 +6,7 @@ package util
 import (
 	"errors"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-func GetTransactOptsFromWallet(walletConfig *conf.WalletConfig, chainId *big.Int) (*bind.TransactOpts, error) {
+func GetTransactOptsFromWallet(walletConfig *genericconf.WalletConfig, chainId *big.Int) (*bind.TransactOpts, error) {
 	if walletConfig.PrivateKey != "" {
 		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
 		if err != nil {

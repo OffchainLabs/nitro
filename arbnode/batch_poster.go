@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"time"
 
@@ -29,7 +30,7 @@ import (
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader      *L1Reader
+	l1Reader      *headerreader.HeaderReader
 	inbox         *InboxTracker
 	streamer      *TransactionStreamer
 	config        *BatchPosterConfig
@@ -80,7 +81,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DASRetentionPeriod:   time.Hour * 24 * 15,
 }
 
-func NewBatchPoster(l1Reader *L1Reader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
