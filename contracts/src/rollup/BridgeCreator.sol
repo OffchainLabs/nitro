@@ -117,6 +117,7 @@ contract BridgeCreator is Ownable {
         }
 
         frame.delayedBridge.initialize();
+        frame.dasKeysetManager.initialize();
         frame.sequencerInbox.initialize(
             IBridge(frame.delayedBridge),
             frame.dasKeysetManager,
@@ -126,10 +127,10 @@ contract BridgeCreator is Ownable {
         frame.inbox.initialize(IBridge(frame.delayedBridge));
         frame.rollupEventBridge.initialize(address(frame.delayedBridge), rollup);
         frame.outbox.initialize(rollup, IBridge(frame.delayedBridge));
-        frame.dasKeysetManager.initialize();
 
         frame.delayedBridge.setInbox(address(frame.inbox), true);
         frame.delayedBridge.transferOwnership(rollup);
+        frame.dasKeysetManager.transferOwnership(rollup);
 
         return (
             frame.delayedBridge,
