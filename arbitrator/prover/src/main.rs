@@ -3,13 +3,15 @@
 
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
-use prover::machine::{InboxIdentifier, MachineStatus};
-use prover::parse_binary;
-use prover::{machine::GlobalState, utils::Bytes32};
-use prover::{machine::Machine, wavm::Opcode};
+use prover::{
+    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver},
+    utils::{Bytes32, CBytes},
+    wavm::Opcode,
+};
 use serde::Serialize;
 use sha3::{Digest, Keccak256};
 use std::io::BufWriter;
+use std::sync::Arc;
 use std::{
     fs::File,
     io::{BufReader, ErrorKind, Read, Write},
@@ -130,12 +132,6 @@ const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contr
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
-    let mut libraries = Vec::new();
-    for lib in &opts.libraries {
-        libraries.push(parse_binary(lib)?);
-    }
-    let main_mod = parse_binary(&opts.binary)?;
-
     let mut inbox_contents = HashMap::default();
     let mut inbox_position = opts.inbox_position;
     let mut delayed_position = opts.delayed_inbox_position;
@@ -165,17 +161,19 @@ fn main() -> Result<()> {
         delayed_position += 1;
     }
 
-    let mut preimages = HashMap::default();
+    let mut preimages: HashMap<Bytes32, CBytes> = HashMap::default();
     if let Some(path) = opts.preimages {
         preimages = parse_size_delim(&path)?
             .into_iter()
             .map(|b| {
                 let mut hasher = Keccak256::new();
                 hasher.update(&b);
-                (hasher.finalize().into(), b)
+                (hasher.finalize().into(), CBytes::from(b.as_slice()))
             })
             .collect();
     }
+    let preimage_resolver =
+        Arc::new(move |_, hash| preimages.get(&hash).cloned()) as PreimageResolver;
 
     let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
     let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
@@ -186,13 +184,13 @@ fn main() -> Result<()> {
     };
 
     let mut mach = Machine::from_binary(
-        libraries.clone(),
-        main_mod,
+        &opts.libraries,
+        &opts.binary,
         opts.always_merkleize,
         opts.allow_hostapi,
         global_state,
         inbox_contents,
-        preimages,
+        preimage_resolver,
     )?;
     if let Some(output_path) = opts.generate_binaries {
         let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
@@ -419,7 +417,7 @@ fn main() -> Result<()> {
             };
             let module_name = if module_num == 0 {
                 names.module.clone()
-            } else if module_num == &libraries.len() + 1 {
+            } else if module_num == &opts_libraries.len() + 1 {
                 opts_binary.file_name().unwrap().to_str().unwrap().into()
             } else {
                 opts_libraries[module_num - 1]
