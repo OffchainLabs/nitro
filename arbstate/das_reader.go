@@ -116,6 +116,9 @@ func (cert *DataAvailabilityCertificate) VerifyNonPayloadParts(
 	if err != nil {
 		return err
 	}
+	if !bytes.Equal(crypto.Keccak256(keysetBytes), cert.KeysetHash[:]) {
+		return errors.New("keyset hash does not match cert")
+	}
 	keyset, err := DeserializeKeyset(bytes.NewReader(keysetBytes))
 	if err != nil {
 		return err
