@@ -163,7 +163,8 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	withdrawTopic = arbSys.Events["L2ToL1Tx"].ID
+	l2ToL1TxTopic = arbSys.Events["L2ToL1Tx"].ID
+	l2ToL1TransactionTopic = arbSys.Events["L2ToL1Transaction"].ID
 	merkleTopic = arbSys.Events["SendMerkleUpdate"].ID
 }
 

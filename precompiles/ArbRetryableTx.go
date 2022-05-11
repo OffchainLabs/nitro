@@ -28,7 +28,7 @@ type ArbRetryableTx struct {
 	CanceledGasCost         func(bytes32) (uint64, error)
 
 	// deprecated event
-	Redeemed        func(bytes32) (uint64, error)
+	Redeemed        func(ctx, mech, bytes32) error
 	RedeemedGasCost func(bytes32) (uint64, error)
 
 	NoTicketWithIDError func() error

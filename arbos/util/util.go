@@ -21,6 +21,7 @@ var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
 var ParseRedeemScheduledLog func(interface{}, *types.Log) error
 var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
+var ParseL2ToL1TxLog func(interface{}, *types.Log) error
 var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataStartBlock func([]byte) ([]interface{}, error)
 var PackArbRetryableTxSubmitRetryable func(...interface{}) ([]byte, error)
@@ -83,7 +84,8 @@ func init() {
 	}
 
 	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
-	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Tx")
+	ParseL2ToL1TxLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Tx")
+	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
 
 	acts := precompilesgen.ArbosActsABI
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")
