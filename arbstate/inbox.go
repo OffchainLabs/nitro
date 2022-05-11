@@ -82,6 +82,10 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 					log.Error("Invalid data availability cert", "err", err)
 					return nil
 				}
+				if cert.Timeout < maxTimestamp+7*24*60*60 {
+					log.Error("Data availability cert expires too soon", "err", "")
+					return nil
+				}
 				payload, err = das.Retrieve(ctx, cert) // safe because DA cert was verified
 				if err != nil || !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
 					panic("DAS retrieve failed") // should never happen--best to halt execution if it does
