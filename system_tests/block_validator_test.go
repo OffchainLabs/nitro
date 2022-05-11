@@ -58,9 +58,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	if usingDas != nil {
 		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
 		Require(t, err)
-		abiBytes := []byte{0xb6, 0x40, 0x26, 0x98}
+		abiBytes := []byte{0x47, 0x3d, 0x9a, 0x85}
 		abiBytes = append(abiBytes, crypto.Keccak256(keysetBytes)...)
-		tx := l1info.PrepareTx("RollupOwner", "DasKeysetManager", 100000, big.NewInt(0), abiBytes)
+		tx := l1info.PrepareTx("RollupOwner", "SequencerInbox", 500000, big.NewInt(0), abiBytes)
 		err = l1client.SendTransaction(ctx, tx)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l1client, tx)

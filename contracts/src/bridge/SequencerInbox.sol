@@ -38,6 +38,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
+    mapping(bytes32 => bool) public isValidKeysetHash;
+
     function initialize(
         IBridge delayedBridge_,
         DasKeysetManager dasKeysetManager_,
@@ -139,10 +141,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
         bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
-        // if (dasKeysetHash != bytes32(0))
-        // if (!dasKeysetManager.isValidKeysetHash(dasKeysetHash))
-        // revert InvalidDASKeyset(dasKeysetHash);
-        // }
+        if (dasKeysetHash != bytes32(0)) {
+            if (!isValidKeysetHash[dasKeysetHash]) revert InvalidDASKeyset(dasKeysetHash);
+        }
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
             afterDelayedMessagesRead
@@ -192,14 +193,18 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32) {
-        if (data.length < 33 || data[0] != 0x80) {
+        if (data.length < 33 || data[0] & 0x80 == 0) {
             return bytes32(0);
         }
         bytes32 temp;
         assembly {
-            temp := mload(add(data, 1))
+            temp := mload(add(data, 33))
         }
         return temp;
+    }
+
+    function setValidKeysetHash(bytes32 ksHash) external {
+        isValidKeysetHash[ksHash] = true;
     }
 
     function packHeader(uint256 afterDelayedMessagesRead)

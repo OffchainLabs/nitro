@@ -6,6 +6,7 @@ package arbtest
 import (
 	"context"
 	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
 	"io/ioutil"
 	"math/big"
 	"net"
@@ -145,8 +146,22 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		}
 		nodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig
 	}
-	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
+	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
 	defer l1stack.Close()
+
+	usingDas := nodeA.DataAvailService
+
+	if usingDas != nil {
+		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
+		Require(t, err)
+		abiBytes := []byte{0x47, 0x3d, 0x9a, 0x85}
+		abiBytes = append(abiBytes, crypto.Keccak256(keysetBytes)...)
+		tx := l1info.PrepareTx("RollupOwner", "SequencerInbox", 500000, big.NewInt(0), abiBytes)
+		err = l1client.SendTransaction(ctx, tx)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l1client, tx)
+		Require(t, err)
+	}
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
