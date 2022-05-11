@@ -77,15 +77,36 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 				cert, err := DeserializeDASCertFrom(bytes.NewReader(data[40:]))
 				if err != nil {
 					log.Error("Deserializing data availability cert failed", "err", err)
-					return nil, err
+					return &sequencerMessage{
+						minTimestamp:         minTimestamp,
+						maxTimestamp:         maxTimestamp,
+						minL1Block:           minL1Block,
+						maxL1Block:           maxL1Block,
+						afterDelayedMessages: afterDelayedMessages,
+						segments:             segments,
+					}, nil
 				}
 				if err := cert.VerifyNonPayloadParts(ctx, das); err != nil { // safe because L1 verified keyset hash
 					log.Error("Invalid data availability cert", "err", err)
-					return nil, err
+					return &sequencerMessage{
+						minTimestamp:         minTimestamp,
+						maxTimestamp:         maxTimestamp,
+						minL1Block:           minL1Block,
+						maxL1Block:           maxL1Block,
+						afterDelayedMessages: afterDelayedMessages,
+						segments:             segments,
+					}, nil
 				}
 				if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
 					log.Error("Data availability cert expires too soon", "err", "")
-					return nil, errors.New("Data availability cert expires too soon")
+					return &sequencerMessage{
+						minTimestamp:         minTimestamp,
+						maxTimestamp:         maxTimestamp,
+						minL1Block:           minL1Block,
+						maxL1Block:           maxL1Block,
+						afterDelayedMessages: afterDelayedMessages,
+						segments:             segments,
+					}, nil
 				}
 				payload, err = das.Retrieve(ctx, cert) // safe because DA cert was verified
 				if err != nil || !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
