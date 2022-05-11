@@ -55,7 +55,7 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 		return OnchainDataAvailability, nil
 	}
 
-	if c.ModeImpl == "local" {
+	if c.ModeImpl == "local-disk" {
 		if c.LocalDiskDASConfig.DataDir == "" || (c.LocalDiskDASConfig.KeyDir == "" && c.LocalDiskDASConfig.PrivKey == "") {
 			flag.Usage()
 			return 0, errors.New("--data-availability.local-disk.data-dir and .key-dir must be specified if mode is set to local")
@@ -76,7 +76,7 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 }
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local', or 'aggregator')")
+	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local-disk', or 'aggregator')")
 	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
 }

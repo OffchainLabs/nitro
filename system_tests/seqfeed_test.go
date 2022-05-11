@@ -133,7 +133,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
-	if dasModeStr == "local" {
+	if dasModeStr == "local-disk" {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
@@ -272,5 +272,5 @@ func TestLyingSequencer(t *testing.T) {
 }
 
 func TestLyingSequencerLocalDAS(t *testing.T) {
-	testLyingSequencer(t, "local")
+	testLyingSequencer(t, "local-disk")
 }
