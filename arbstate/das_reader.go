@@ -120,28 +120,8 @@ func (cert *DataAvailabilityCertificate) VerifyNonPayloadParts(
 	if err != nil {
 		return err
 	}
-	pubkeys := []blsSignatures.PublicKey{}
-	numNonSigners := uint64(0)
-	for i := 0; i < len(keyset.PubKeys); i++ {
-		if (1<<i)&cert.SignersMask != 0 {
-			pubkeys = append(pubkeys, keyset.PubKeys[i])
-		} else {
-			numNonSigners++
-		}
-	}
-	if numNonSigners >= keyset.AssumedHonest {
-		return errors.New("not enough signers")
-	}
-	aggregatedPubKey := blsSignatures.AggregatePublicKeys(pubkeys)
-	success, err := blsSignatures.VerifySignature(cert.Sig, cert.SerializeSignableFields(), aggregatedPubKey)
 
-	if err != nil {
-		return err
-	}
-	if !success {
-		return errors.New("bad signature")
-	}
-	return nil
+	return keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
 }
 
 type DataAvailabilityKeyset struct {
@@ -206,4 +186,29 @@ func DeserializeKeyset(rd io.Reader) (*DataAvailabilityKeyset, error) {
 		AssumedHonest: assumedHonest,
 		PubKeys:       pubkeys,
 	}, nil
+}
+
+func (keyset *DataAvailabilityKeyset) VerifySignature(signersMask uint64, data []byte, sig blsSignatures.Signature) error {
+	pubkeys := []blsSignatures.PublicKey{}
+	numNonSigners := uint64(0)
+	for i := 0; i < len(keyset.PubKeys); i++ {
+		if (1<<i)&signersMask != 0 {
+			pubkeys = append(pubkeys, keyset.PubKeys[i])
+		} else {
+			numNonSigners++
+		}
+	}
+	if numNonSigners >= keyset.AssumedHonest {
+		return errors.New("not enough signers")
+	}
+	aggregatedPubKey := blsSignatures.AggregatePublicKeys(pubkeys)
+	success, err := blsSignatures.VerifySignature(sig, data, aggregatedPubKey)
+
+	if err != nil {
+		return err
+	}
+	if !success {
+		return errors.New("bad signature")
+	}
+	return nil
 }

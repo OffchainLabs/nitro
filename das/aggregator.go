@@ -102,26 +102,9 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 // if all requests fail or if its context is canceled (eg via TimeoutWrapper) then
 // it returns an error.
 func (a *Aggregator) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	// Cert is the aggregate cert, validate it against DAS public keys
-	var servicesThatSignedCert []ServiceDetails
-	var pubKeys []blsSignatures.PublicKey
-	for _, d := range a.services {
-		if cert.SignersMask&d.signersMask != 0 {
-			servicesThatSignedCert = append(servicesThatSignedCert, d)
-			pubKeys = append(pubKeys, d.pubKey)
-		}
-	}
-	if len(servicesThatSignedCert) < a.requiredServicesForStore {
-		return nil, fmt.Errorf("Cert %v was only signed by %d DASes, %d required.", cert, len(servicesThatSignedCert), a.requiredServicesForStore)
-	}
-
-	signedBlob := serializeSignableFields(cert)
-	sigMatch, err := blsSignatures.VerifySignature(cert.Sig, signedBlob, blsSignatures.AggregatePublicKeys(pubKeys))
+	err := cert.VerifyNonPayloadParts(ctx, a)
 	if err != nil {
 		return nil, err
-	}
-	if !sigMatch {
-		return nil, errors.New("Signature of data in cert passed in doesn't match")
 	}
 
 	// Query all services, even those that didn't sign.
