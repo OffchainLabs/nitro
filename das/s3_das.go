@@ -24,11 +24,10 @@ import (
 )
 
 type S3DAS struct {
-	s3Config        conf.S3Config
-	localDiskConfig LocalDiskDASConfig
-	privKey         *blsSignatures.PrivateKey
-	uploader        *manager.Uploader
-	downloader      *manager.Downloader
+	s3Config   conf.S3Config
+	privKey    *blsSignatures.PrivateKey
+	uploader   *manager.Uploader
+	downloader *manager.Downloader
 }
 
 func NewS3DAS(s3Config conf.S3Config, localDiskConfig LocalDiskDASConfig) (*S3DAS, error) {
@@ -57,11 +56,10 @@ func NewS3DAS(s3Config conf.S3Config, localDiskConfig LocalDiskDASConfig) (*S3DA
 	downloader := manager.NewDownloader(client)
 
 	return &S3DAS{
-		s3Config:        s3Config,
-		privKey:         privKey,
-		localDiskConfig: localDiskConfig,
-		uploader:        uploader,
-		downloader:      downloader,
+		s3Config:   s3Config,
+		privKey:    privKey,
+		uploader:   uploader,
+		downloader: downloader,
 	}, nil
 }
 
@@ -125,5 +123,5 @@ func (das *S3DAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error
 }
 
 func (das *S3DAS) String() string {
-	return fmt.Sprintf("S3DAS{s3Config:%v, localDiskConfig:%v}", das.s3Config, das.localDiskConfig)
+	return fmt.Sprintf("S3DAS{s3Config:%v}", das.s3Config)
 }
