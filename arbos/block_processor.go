@@ -311,6 +311,7 @@ func ProduceBlockAdvanced(
 				// L2ToL1TransactionEventID is deprecated in upgrade 4, but it should to safe to make this code handle
 				// both events ignoring the version.
 				// TODO: Remove L2ToL1Transaction handling on next chain reset
+				// L2->L1 withdrawals remove eth from the system
 				switch txLog.Topics[0] {
 				case L2ToL1TransactionEventID:
 					event := &precompilesgen.ArbSysL2ToL1Transaction{}
@@ -328,10 +329,6 @@ func ProduceBlockAdvanced(
 					} else {
 						expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
 					}
-				}
-				if txLog.Topics[0] == L2ToL1TransactionEventID {
-					// L2->L1 withdrawals remove eth from the system
-
 				}
 			}
 		}
