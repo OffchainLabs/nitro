@@ -156,7 +156,6 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
-	l1info.SetContract("DasKeysetManager", addresses.DasKeysetManager)
 	return addresses
 }
 

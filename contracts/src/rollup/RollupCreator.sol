@@ -18,8 +18,7 @@ contract RollupCreator is Ownable {
         address inboxAddress,
         address adminProxy,
         address sequencerInbox,
-        address delayedBridge,
-        address dasKeysetManager
+        address delayedBridge
     );
     event TemplatesUpdated();
 
@@ -53,7 +52,6 @@ contract RollupCreator is Ownable {
         IInbox inbox;
         IRollupEventBridge rollupEventBridge;
         IOutbox outbox;
-        DasKeysetManager dasKeysetManager;
         ArbitrumProxy rollup;
     }
 
@@ -74,8 +72,7 @@ contract RollupCreator is Ownable {
             frame.sequencerInbox,
             frame.inbox,
             frame.rollupEventBridge,
-            frame.outbox,
-            frame.dasKeysetManager
+            frame.outbox
         ) = bridgeCreator.createBridge(
             address(frame.admin),
             expectedRollupAddr,
@@ -119,8 +116,7 @@ contract RollupCreator is Ownable {
             address(frame.inbox),
             address(frame.admin),
             address(frame.sequencerInbox),
-            address(frame.delayedBridge),
-            address(frame.dasKeysetManager)
+            address(frame.delayedBridge)
         );
         return address(frame.rollup);
     }

@@ -7,7 +7,6 @@ pragma solidity ^0.8.0;
 import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
-import "../das/DasKeysetManager.sol";
 
 import {GasRefundEnabled, IGasRefunder} from "../libraries/IGasRefunder.sol";
 import "../libraries/DelegateCallAware.sol";
@@ -26,8 +25,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     IBridge public delayedBridge;
 
-    DasKeysetManager private dasKeysetManager;
-
     /// @dev The size of the batch header
     uint256 public constant HEADER_LENGTH = 40;
     /// @dev If the first batch data byte after the header has this bit set,
@@ -42,13 +39,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     function initialize(
         IBridge delayedBridge_,
-        DasKeysetManager dasKeysetManager_,
         address rollup_,
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
         if (delayedBridge != IBridge(address(0))) revert AlreadyInit();
         if (delayedBridge_ == IBridge(address(0))) revert HadZeroInit();
-        dasKeysetManager = dasKeysetManager_;
         delayedBridge = delayedBridge_;
         rollup = rollup_;
         maxTimeVariation = maxTimeVariation_;
