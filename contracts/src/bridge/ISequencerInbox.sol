@@ -41,6 +41,12 @@ interface ISequencerInbox {
     /// @dev a separate event that emits batch data when this isn't easily accessible in the tx.input
     event SequencerBatchData(uint256 indexed batchSequenceNumber, bytes data);
 
+    /// @dev a valid keyset was added
+    event SetValidKeyset(bytes32 indexed keysetHash);
+
+    /// @dev a keyset was invalidated
+    event InvalidateKeyset(bytes32 indexed keysetHash);
+
     /// @dev Thrown when someone attempts to read fewer messages than have already been read
     error DelayedBackwards();
 
@@ -68,7 +74,10 @@ interface ISequencerInbox {
     /// @dev The batch data has the inbox authenticated bit set, but the batch data was not authenticated by the inbox
     error DataNotAuthenticated();
 
-    /// @dev An invalid Data Availability Service keyset was submitted
+    /// @dev Tried to create an already valid Data Availability Service keyset
+    error AlreadyValidDASKeyset(bytes32);
+
+    /// @dev Tried to use or invalidate an already invalid Data Availability Service keyset
     error InvalidDASKeyset(bytes32);
 
     function inboxAccs(uint256 index) external view returns (bytes32);

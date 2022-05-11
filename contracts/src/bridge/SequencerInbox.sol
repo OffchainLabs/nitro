@@ -36,6 +36,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
     mapping(bytes32 => bool) public isValidKeysetHash;
+    mapping(bytes32 => uint256) public keysetHashCreationBlock;
 
     function initialize(
         IBridge delayedBridge_,
@@ -199,7 +200,16 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     function setValidKeysetHash(bytes32 ksHash) external {
+        if (isValidKeysetHash[ksHash]) revert AlreadyValidDASKeyset(ksHash);
         isValidKeysetHash[ksHash] = true;
+        keysetHashCreationBlock[ksHash] = block.number;
+        emit SetValidKeyset(ksHash);
+    }
+
+    function invalidateKeysetHash(bytes32 ksHash) external {
+        if (!isValidKeysetHash[ksHash]) revert InvalidDASKeyset(ksHash);
+        isValidKeysetHash[ksHash] = false;
+        emit InvalidateKeyset(ksHash);
     }
 
     function packHeader(uint256 afterDelayedMessagesRead)
