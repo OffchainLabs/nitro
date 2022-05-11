@@ -309,14 +309,15 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, pr
 			} else {
 				keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
 				if err != nil {
-					return fmt.Errorf("couldn't keyset from DAS %w", err)
+					log.Error("Couldn't get keyset from DAS", "err", err)
+				} else {
+					preimages[common.BytesToHash(cert.KeysetHash[:])] = keysetPreimage
+					dasPreimage, err := das.Retrieve(ctx, cert)
+					if err != nil {
+						return fmt.Errorf("couldn't retrieve message from DAS %w", err)
+					}
+					preimages[common.BytesToHash(cert.DataHash[:])] = dasPreimage
 				}
-				preimages[common.BytesToHash(cert.KeysetHash[:])] = keysetPreimage
-				dasPreimage, err := das.Retrieve(ctx, cert)
-				if err != nil {
-					return fmt.Errorf("couldn't retrieve message from DAS %w", err)
-				}
-				preimages[common.BytesToHash(cert.DataHash[:])] = dasPreimage
 			}
 		}
 	}
