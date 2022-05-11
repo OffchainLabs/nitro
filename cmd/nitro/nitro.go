@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ethereum/go-ethereum/graphql"
+
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -149,6 +151,7 @@ func main() {
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.GraphQL.Apply(&stackConf)
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
@@ -312,6 +315,12 @@ func main() {
 			}
 		}
 	}
+	gqlConf := nodeConfig.GraphQL
+	if gqlConf.Enable {
+		if err := graphql.New(stack, currentNode.Backend.APIBackend(), gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+			panic(fmt.Sprintf("Failed to register the GraphQL service: %v", err))
+		}
+	}
 	if err := stack.Start(); err != nil {
 		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
@@ -338,6 +347,7 @@ type NodeConfig struct {
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
+	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
 	DevInit       bool                            `koanf:"dev-init"`
 	NoInit        bool                            `koanf:"no-init"`
 	ImportFile    string                          `koanf:"import-file"`
@@ -371,6 +381,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.PersistentConfigAddOptions("persistent", f)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
+	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.Bool("no-init", NodeConfigDefault.DevInit, "Do not init chain. Data must be valid in database.")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
