@@ -23,7 +23,6 @@ var ParseRedeemScheduledLog func(interface{}, *types.Log) error
 var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
 var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataStartBlock func([]byte) ([]interface{}, error)
-var PackArbRetryableTxSubmitRetryable func(...interface{}) ([]byte, error)
 var PackArbRetryableTxRedeem func(...interface{}) ([]byte, error)
 
 func init() {
@@ -87,7 +86,6 @@ func init() {
 
 	acts := precompilesgen.ArbosActsABI
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")
-	PackArbRetryableTxSubmitRetryable, _ = callParser(precompilesgen.ArbRetryableTxABI, "submitRetryable")
 	PackArbRetryableTxRedeem, _ = callParser(precompilesgen.ArbRetryableTxABI, "redeem")
 }
 

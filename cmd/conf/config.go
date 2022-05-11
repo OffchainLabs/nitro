@@ -244,6 +244,24 @@ func WSConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".expose-all", WSConfigDefault.ExposeAll, "expose private api via websocket")
 }
 
+type GraphQLConfig struct {
+	Enable     bool     `koanf:"enable"`
+	CORSDomain []string `koanf:"corsdomain"`
+	VHosts     []string `koanf:"vhosts"`
+}
+
+var GraphQLConfigDefault = GraphQLConfig{
+	Enable:     false,
+	CORSDomain: node.DefaultConfig.GraphQLCors,
+	VHosts:     node.DefaultConfig.GraphQLVirtualHosts,
+}
+
+func GraphQLConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", GraphQLConfigDefault.Enable, "Enable graphql endpoint on the rpc endpoint")
+	f.StringSlice(prefix+".corsdomain", GraphQLConfigDefault.CORSDomain, "Comma separated list of domains from which to accept cross origin requests (browser enforced)")
+	f.StringSlice(prefix+".vhosts", GraphQLConfigDefault.VHosts, "Comma separated list of virtual hostnames from which to accept requests (server enforced). Accepts '*' wildcard")
+}
+
 func ParseLogType(logType string) (log.Format, error) {
 	if logType == "plaintext" {
 		return log.TerminalFormat(false), nil
