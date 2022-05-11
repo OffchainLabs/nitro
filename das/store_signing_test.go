@@ -20,7 +20,8 @@ func TestStoreSigning(t *testing.T) {
 	weirdMessage := []byte("The quick brown fox jumped over the lazy dog.")
 	timeout := uint64(time.Now().Unix())
 
-	sig, err := DasSignStore(weirdMessage, timeout, privateKey)
+	signer := DasSignerFromPrivateKey(privateKey)
+	sig, err := applyDasSigner(signer, weirdMessage, timeout)
 	Require(t, err)
 
 	recoveredAddr, err := DasRecoverSigner(weirdMessage, timeout, sig)

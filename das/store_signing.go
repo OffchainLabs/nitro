@@ -14,8 +14,16 @@ import (
 
 var uniquifyingPrefix = []byte("Arbitrum Nitro DAS API Store:")
 
-func DasSignStore(data []byte, timeout uint64, privateKey *ecdsa.PrivateKey) ([]byte, error) {
-	return crypto.Sign(dasStoreHash(data, timeout), privateKey)
+type DasSigner func([]byte) ([]byte, error)
+
+func DasSignerFromPrivateKey(privateKey *ecdsa.PrivateKey) DasSigner {
+	return func(data []byte) ([]byte, error) {
+		return crypto.Sign(data, privateKey)
+	}
+}
+
+func applyDasSigner(signer DasSigner, data []byte, timeout uint64) ([]byte, error) {
+	return signer(dasStoreHash(data, timeout))
 }
 
 func DasRecoverSigner(data []byte, timeout uint64, sig []byte) (common.Address, error) {
@@ -33,12 +41,12 @@ func dasStoreHash(data []byte, timeout uint64) []byte {
 }
 
 type StoreSigningDAS struct {
-	inner      DataAvailabilityService
-	privateKey *ecdsa.PrivateKey
+	inner  DataAvailabilityService
+	signer DasSigner
 }
 
-func NewStoreSigningDAS(inner DataAvailabilityService, privateKey *ecdsa.PrivateKey) DataAvailabilityService {
-	return &StoreSigningDAS{inner, privateKey}
+func NewStoreSigningDAS(inner DataAvailabilityService, signer DasSigner) DataAvailabilityService {
+	return &StoreSigningDAS{inner, signer}
 }
 
 func (s *StoreSigningDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
@@ -54,7 +62,7 @@ func (s *StoreSigningDAS) CurrentKeysetBytes(ctx context.Context) ([]byte, error
 }
 
 func (s *StoreSigningDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
-	mySig, err := DasSignStore(message, timeout, s.privateKey)
+	mySig, err := applyDasSigner(s.signer, message, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -62,10 +70,18 @@ func (s *StoreSigningDAS) Store(ctx context.Context, message []byte, timeout uin
 }
 
 func (s *StoreSigningDAS) String() string {
-	return "StoreSigningDAS (" + s.SignerAddress().Hex() + " ," + s.inner.String() + ")"
+	addrStr := "[error]"
+	addr, err := s.SignerAddress()
+	if err == nil {
+		addrStr = addr.Hex()
+	}
+	return "StoreSigningDAS (" + addrStr + " ," + s.inner.String() + ")"
 }
 
-func (s *StoreSigningDAS) SignerAddress() common.Address {
-	publicKey := s.privateKey.Public()
-	return crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
+func (s *StoreSigningDAS) SignerAddress() (common.Address, error) {
+	sig, err := applyDasSigner(s.signer, []byte{}, 0)
+	if err != nil {
+		return common.Address{}, err
+	}
+	return DasRecoverSigner([]byte{}, 0, sig)
 }
