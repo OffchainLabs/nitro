@@ -6,7 +6,6 @@ package arbtest
 import (
 	"context"
 	"fmt"
-	"github.com/ethereum/go-ethereum/crypto"
 	"io/ioutil"
 	"math/big"
 	"net"
@@ -154,9 +153,18 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	if usingDas != nil {
 		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
 		Require(t, err)
-		abiBytes := []byte{0x47, 0x3d, 0x9a, 0x85}
-		abiBytes = append(abiBytes, crypto.Keccak256(keysetBytes)...)
-		tx := l1info.PrepareTx("RollupOwner", "SequencerInbox", 500000, big.NewInt(0), abiBytes)
+		abiBytes := []byte{0xd1, 0xce, 0x8d, 0xa8}
+		var buf [32]byte
+		buf[31] = 0x20
+		abiBytes = append(abiBytes, buf[:]...)
+		buf[30] = byte(len(keysetBytes) / 256)
+		buf[31] = byte(len(keysetBytes) % 256)
+		abiBytes = append(abiBytes, buf[:]...)
+		abiBytes = append(abiBytes, keysetBytes...)
+		for len(abiBytes)%32 != 4 {
+			abiBytes = append(abiBytes, byte(0))
+		}
+		tx := l1info.PrepareTx("RollupOwner", "SequencerInbox", 2000000, big.NewInt(0), abiBytes)
 		err = l1client.SendTransaction(ctx, tx)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l1client, tx)

@@ -44,7 +44,7 @@ interface ISequencerInbox {
     event SequencerBatchData(uint256 indexed batchSequenceNumber, bytes data);
 
     /// @dev a valid keyset was added
-    event SetValidKeyset(bytes32 indexed keysetHash);
+    event SetValidKeyset(bytes32 indexed keysetHash, bytes keysetBytes);
 
     /// @dev a keyset was invalidated
     event InvalidateKeyset(bytes32 indexed keysetHash);
@@ -108,5 +108,7 @@ interface ISequencerInbox {
      */
     function setIsBatchPoster(address addr, bool isBatchPoster) external;
 
-    function setValidKeysetHash(bytes32 ksHash) external;
+    function setValidKeyset(bytes calldata keysetBytes) external;
+
+    function invalidateKeysetHash(bytes32 ksHash) external;
 }

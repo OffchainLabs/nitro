@@ -305,14 +305,23 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         emit OwnerFunctionCalled(1);
     }
 
-    function setValidKeysetHash(bytes32 ksHash) external onlyRollupOwner {
+    /**
+     * @notice Makes Data Availability Service keyset valid
+     * @param keysetBytes bytes of the serialized keyset
+     */
+    function setValidKeyset(bytes calldata keysetBytes) external onlyRollupOwner {
+        bytes32 ksHash = keccak256(keysetBytes);
         if (isValidKeysetHash[ksHash]) revert AlreadyValidDASKeyset(ksHash);
         isValidKeysetHash[ksHash] = true;
         keysetHashCreationBlock[ksHash] = block.number;
-        emit SetValidKeyset(ksHash);
+        emit SetValidKeyset(ksHash, keysetBytes);
         emit OwnerFunctionCalled(2);
     }
 
+    /**
+     * @notice Invalidates a Data Availability Service keyset
+     * @param ksHash hash of the keyset
+     */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
         if (!isValidKeysetHash[ksHash]) revert InvalidDASKeyset(ksHash);
         isValidKeysetHash[ksHash] = false;
