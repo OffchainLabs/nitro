@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"errors"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"time"
 
@@ -21,7 +22,7 @@ import (
 
 type DelayedSequencer struct {
 	stopwaiter.StopWaiter
-	l1Reader        *L1Reader
+	l1Reader        *headerreader.HeaderReader
 	bridge          *DelayedBridge
 	inbox           *InboxTracker
 	txStreamer      *TransactionStreamer
@@ -54,7 +55,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	TimeAggregate:    time.Second,
 }
 
-func NewDelayedSequencer(l1Reader *L1Reader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"strings"
 	"sync"
@@ -58,7 +59,7 @@ type InboxReader struct {
 	sequencerInbox *SequencerInbox
 	caughtUpChan   chan bool
 	client         arbutil.L1Interface
-	l1Reader       *L1Reader
+	l1Reader       *headerreader.HeaderReader
 
 	// Behind the mutex
 	lastReadMutex      sync.RWMutex
@@ -66,7 +67,7 @@ type InboxReader struct {
 	lastReadBatchCount uint64
 }
 
-func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *L1Reader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
 	return &InboxReader{
 		tracker:           tracker,
 		delayedBridge:     delayedBridge,

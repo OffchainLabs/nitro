@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 	"io/ioutil"
 	"math/big"
@@ -17,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/util"
 )
 
@@ -43,7 +44,7 @@ func main() {
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
-	wallet := conf.WalletConfig{
+	wallet := genericconf.WalletConfig{
 		Pathname:     *l1keystore,
 		Account:      *deployAccount,
 		PasswordImpl: *l1passphrase,
@@ -65,7 +66,7 @@ func main() {
 	machineConfig := validator.DefaultNitroMachineConfig
 	machineConfig.RootPath = *wasmrootpath
 
-	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, arbnode.DefaultL1ReaderConfig, machineConfig)
+	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, headerreader.DefaultConfig, machineConfig)
 	if err != nil {
 		flag.Usage()
 		log.Error("error deploying on l1")
