@@ -841,7 +841,6 @@ impl Machine {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source)
             .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
-
         let mut libraries = vec![];
         let mut lib_sources = vec![];
         for path in library_paths {

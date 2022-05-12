@@ -124,8 +124,9 @@ clean:
 	rm -rf arbitrator/prover/test-cases/rust/target
 	rm -f arbitrator/prover/test-cases/*.wasm
 	rm -f arbitrator/prover/test-cases/go/main
+	rm -rf arbitrator/wasm-testsuite/tests
 	rm -rf $(output_root)
-	rm -f contracts/test/prover/proofs/*.json
+	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
 	rm -rf arbitrator/target
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
@@ -297,11 +298,6 @@ contracts/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbit
 .make/yarndeps: $(DEP_PREDICATE) contracts/package.json contracts/yarn.lock $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd contracts install
 	@touch $@
-
-.make/wasm-testsuite: $(DEP_PREDICATE) arbitrator/wasm-testsuite/testsuite/*.wast $(ORDER_ONLY_PREDICATE) .make
-	mkdir -p arbitrator/wasm-testsuite/tests
-	wast2json arbitrator/wasm-testsuite/testsuite/fac.wast -o arbitrator/wasm-testsuite/tests/hehe.json
-#@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
 	@printf "%btesting cbrotli local build exists. If this step fails, run ./build-brotli.sh -l%b\n" $(color_pink) $(color_reset)

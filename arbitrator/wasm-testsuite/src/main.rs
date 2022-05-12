@@ -201,6 +201,11 @@ fn main() -> eyre::Result<()> {
             }
         };
     }
+    macro_rules! outname {
+        () => {
+            format!("../../contracts/test/prover/spec-proofs/{}-{}.json", wasmfile, subtest)
+        };
+    }
 
     for (index, command) in case.commands.into_iter().enumerate() {
         macro_rules! test_success {
@@ -212,11 +217,10 @@ fn main() -> eyre::Result<()> {
                     continue;
                 }
 
-                let outname = format!("proofs/{}-{}", wasmfile, subtest);
                 let machine = machine.as_mut().expect("no machine");
                 machine.jump_into_function(&$func, args.clone());
                 machine.start_merkle_caching();
-                run!(machine, 10_000_000, outname, true);
+                run!(machine, 10_000_000, outname!(), true);
 
                 let output = match machine.get_final_result() {
                     Ok(output) => output,
@@ -318,7 +322,7 @@ fn main() -> eyre::Result<()> {
 
                 let machine = machine.as_mut().unwrap();
                 machine.jump_into_function(&func, args.clone());
-                run!(machine, 1000, format!("proofs/{}-{}", wasmfile, subtest), true);
+                run!(machine, 1000, outname!(), true);
 
                 if machine.get_status() == MachineStatus::Running {
                     bail!("machine failed to trap in test {}", test)
@@ -341,10 +345,9 @@ fn main() -> eyre::Result<()> {
                 let args: Vec<_> = args.into_iter().map(Into::into).collect();
                 let test = Color::red(format!("{} #{}", wasmfile, subtest));
 
-                let outname = format!("proofs/{}-{}", wasmfile, subtest);
                 let machine = machine.as_mut().unwrap();
                 machine.jump_into_function(&func, args.clone());
-                run!(machine, 100_000, outname, false); // this is proportional to the amount of RAM
+                run!(machine, 100_000, outname!(), false); // this is proportional to the amount of RAM
 
                 if machine.get_status() != MachineStatus::Running {
                     bail!("machine should spin {}", test)
