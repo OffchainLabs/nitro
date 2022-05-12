@@ -143,10 +143,16 @@ func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvaila
 }
 
 func (das *LocalDiskDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	if !bytes.Equal(ksHash, das.keysetHash[:]) {
-		return nil, ErrDasKeysetNotFound
+	if bytes.Equal(ksHash, das.keysetHash[:]) {
+		return das.keysetBytes, nil
 	}
-	return das.keysetBytes, nil
+	var ksHash32 [32]byte
+	copy(ksHash32[:], ksHash)
+	contents, err := das.Retrieve(ctx, &arbstate.DataAvailabilityCertificate{DataHash: ksHash32})
+	if err == nil {
+		return contents, nil
+	}
+	return nil, ErrDasKeysetNotFound
 }
 
 func (das *LocalDiskDAS) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
