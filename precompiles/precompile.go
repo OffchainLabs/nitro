@@ -547,6 +547,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbSys := insert(MakePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
+	arbos.L2ToL1TxEventID = ArbSys.events["L2ToL1Tx"].template.ID
 
 	ArbOwnerImpl := &ArbOwner{Address: hex("70")}
 	emitOwnerActs := func(evm mech, method bytes4, owner addr, data []byte) error {
