@@ -73,6 +73,9 @@ describe("OneStepProof", function () {
 
       let stillWaiting = []
       do {
+        if (promises.length == 0) {
+          break;
+        }
         const finished: any = await Promise.race(promises.map((p, k) => p.then((_: any) => k)));
         if (finished == promises.length - 1) {
           promises.pop()

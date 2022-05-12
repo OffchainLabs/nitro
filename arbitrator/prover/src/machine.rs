@@ -1689,7 +1689,7 @@ impl Machine {
                                     Some(value) => value,
                                     None => error!(),
                                 };
-                                if op == DivS && (value as i32) < 0 && ((a as i32) > 0) == ((b as i32) > 0) {
+                                if op == DivS && (a as i32) == i32::MIN && (b as i32) == -1 {
                                     error!();
                                 }
                                 self.value_stack.push(Value::I32(value))
@@ -1703,7 +1703,7 @@ impl Machine {
                                     Some(value) => value,
                                     None => error!(),
                                 };
-                                if op == DivS && (value as i64) < 0 && ((a as i64) > 0) == ((b as i64) > 0) {
+                                if op == DivS && (a as i64) == i64::MIN && (b as i64) == -1 {
                                     error!();
                                 }
                                 self.value_stack.push(Value::I64(value))

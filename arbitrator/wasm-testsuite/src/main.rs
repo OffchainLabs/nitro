@@ -8,7 +8,7 @@ use prover::{
     value::Value,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs::File, io::BufReader, path::PathBuf, time::Instant};
+use std::{collections::{HashMap, HashSet}, fs::File, io::BufReader, path::PathBuf, time::Instant};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -148,6 +148,20 @@ fn main() -> eyre::Result<()> {
 
     let soft_float = PathBuf::from("../../target/machines/latest/soft-float.wasm");
 
+    // The modules listed below will be tested for compliance with the spec, but won't produce proofs for the OSP test.
+    // We list the soft-float modules because, while compliance is necessary, the funcs are comprised of opcodes
+    // better tested elsewhere and aren't worth 10x the test time.
+    let mut do_not_prove = HashSet::new();
+    do_not_prove.insert(PathBuf::from("f32.json"));
+    do_not_prove.insert(PathBuf::from("f64.json"));
+    do_not_prove.insert(PathBuf::from("f32_cmp.json"));
+    do_not_prove.insert(PathBuf::from("f64_cmp.json"));
+    do_not_prove.insert(PathBuf::from("float_exprs.json"));
+    let export_proofs = !do_not_prove.contains(&opts.json);
+    if !export_proofs {
+        println!("{}", Color::grey("skipping OSP proof generation"));
+    }
+
     let mut wasmfile = String::new();
     let mut machine = None;
     let mut subtest = 0;
@@ -158,12 +172,13 @@ fn main() -> eyre::Result<()> {
             let mut proofs = vec![];
             let mut count = 0;
             let mut leap = 1;
+            let prove = $prove && export_proofs;
 
-            if !$prove {
+            if !prove {
                 $machine.step_n($bound);
             }
 
-            while count + leap < $bound && $prove {
+            while count + leap < $bound && prove {
                 count += 1;
 
                 let prior = $machine.hash().to_string();
@@ -185,8 +200,10 @@ fn main() -> eyre::Result<()> {
                     break;
                 }
             }
-            let out = File::create($path)?;
-            serde_json::to_writer_pretty(out, &proofs)?;
+            if prove {
+                let out = File::create($path)?;
+                serde_json::to_writer_pretty(out, &proofs)?;
+            }
         }};
     }
     macro_rules! action {
@@ -203,7 +220,7 @@ fn main() -> eyre::Result<()> {
     }
     macro_rules! outname {
         () => {
-            format!("../../contracts/test/prover/spec-proofs/{}-{}.json", wasmfile, subtest)
+            format!("../../contracts/test/prover/spec-proofs/{}-{:04}.json", wasmfile, subtest)
         };
     }
 
