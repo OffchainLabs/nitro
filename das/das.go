@@ -6,9 +6,12 @@ package das
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"reflect"
+	"strings"
 
 	flag "github.com/spf13/pflag"
 
@@ -18,7 +21,7 @@ import (
 
 type DataAvailabilityServiceWriter interface {
 	// Requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error)
+	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error)
 }
 
 type DataAvailabilityService interface {
@@ -40,10 +43,12 @@ type DataAvailabilityConfig struct {
 	ModeImpl           string             `koanf:"mode"`
 	LocalDiskDASConfig LocalDiskDASConfig `koanf:"local-disk"`
 	AggregatorConfig   AggregatorConfig   `koanf:"aggregator"`
+	StoreSignerAddress string             `koanf:"store-signer"` // if empty string, no signer is required
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl: "onchain",
+	ModeImpl:           "onchain",
+	StoreSignerAddress: "",
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
@@ -75,10 +80,24 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
 
+func StoreSignerAddressFromString(s string) (*common.Address, error) {
+	if s == "none" {
+		return nil, nil
+	}
+	s = strings.TrimPrefix(s, "0x")
+	addrBytes, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, err
+	}
+	addr := common.BytesToAddress(addrBytes)
+	return &addr, nil
+}
+
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local', or 'aggregator')")
 	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
+	f.String(prefix+".store-signer", DefaultDataAvailabilityConfig.StoreSignerAddress, "hex-encoded address of required Store signer, or empty string if none")
 }
 
 func serializeSignableFields(c *arbstate.DataAvailabilityCertificate) []byte {
