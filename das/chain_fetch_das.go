@@ -18,6 +18,7 @@ type ChainFetchDAS struct {
 	DataAvailabilityService
 	seqInboxCaller   *bridgegen.SequencerInboxCaller
 	seqInboxFilterer *bridgegen.SequencerInboxFilterer
+	keysetCache      map[[32]byte][]byte
 }
 
 func NewChainFetchDAS(inner DataAvailabilityService, l1Url string, seqInboxAddr common.Address) (*ChainFetchDAS, error) {
@@ -30,19 +31,32 @@ func NewChainFetchDAS(inner DataAvailabilityService, l1Url string, seqInboxAddr 
 		return nil, err
 	}
 
-	return &ChainFetchDAS{inner, &seqInbox.SequencerInboxCaller, &seqInbox.SequencerInboxFilterer}, nil
+	return &ChainFetchDAS{
+		inner,
+		&seqInbox.SequencerInboxCaller,
+		&seqInbox.SequencerInboxFilterer,
+		make(map[[32]byte][]byte),
+	}, nil
 }
 
 func (das *ChainFetchDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	var ksHash32 [32]byte
+	copy(ksHash32[:], ksHash)
+
+	// try to fetch from the cache
+	res, ok := das.keysetCache[ksHash32]
+	if ok {
+		return res, nil
+	}
+
 	// try to fetch from the inner DAS
 	innerRes, err := das.DataAvailabilityService.KeysetFromHash(ctx, ksHash)
 	if err == nil && bytes.Equal(ksHash, crypto.Keccak256(innerRes)) {
+		das.keysetCache[ksHash32] = innerRes
 		return innerRes, nil
 	}
 
 	// try to fetch from the L1 chain
-	var ksHash32 [32]byte
-	copy(ksHash32[:], ksHash)
 	blockNumBig, err := das.seqInboxCaller.GetKeysetCreationBlock(&bind.CallOpts{Context: ctx}, ksHash32)
 	if err != nil {
 		return nil, err
@@ -64,6 +78,7 @@ func (das *ChainFetchDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]
 	}
 	for iter.Next() {
 		if bytes.Equal(iter.Event.KeysetHash[:], ksHash) {
+			das.keysetCache[ksHash32] = iter.Event.KeysetBytes
 			return iter.Event.KeysetBytes, nil
 		}
 	}
