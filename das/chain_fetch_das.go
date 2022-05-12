@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -21,11 +21,7 @@ type ChainFetchDAS struct {
 	keysetCache      map[[32]byte][]byte
 }
 
-func NewChainFetchDAS(inner DataAvailabilityService, l1Url string, seqInboxAddr common.Address) (*ChainFetchDAS, error) {
-	l1client, err := ethclient.Dial(l1Url)
-	if err != nil {
-		return nil, err
-	}
+func NewChainFetchDAS(inner DataAvailabilityService, l1client arbutil.L1Interface, seqInboxAddr common.Address) (*ChainFetchDAS, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(seqInboxAddr, l1client)
 	if err != nil {
 		return nil, err
@@ -77,7 +73,7 @@ func (das *ChainFetchDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]
 		return nil, err
 	}
 	for iter.Next() {
-		if bytes.Equal(iter.Event.KeysetHash[:], ksHash) {
+		if bytes.Equal(ksHash, crypto.Keccak256(iter.Event.KeysetBytes)) {
 			das.keysetCache[ksHash32] = iter.Event.KeysetBytes
 			return iter.Event.KeysetBytes, nil
 		}
@@ -86,5 +82,5 @@ func (das *ChainFetchDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]
 		return nil, iter.Error()
 	}
 
-	return nil, errors.New("Keyset not found on chain")
+	return nil, errors.New("Keyset not found")
 }

@@ -583,6 +583,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
+		dataAvailabilityService, err = das.NewChainFetchDAS(dataAvailabilityService, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var l1Reader *headerreader.HeaderReader
