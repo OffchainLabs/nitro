@@ -4,7 +4,6 @@
 package validator
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -31,7 +30,7 @@ type StatelessBlockValidator struct {
 	streamer        TransactionStreamerInterface
 	blockchain      *core.BlockChain
 	db              ethdb.Database
-	Das             das.DataAvailabilityService
+	daService       das.DataAvailabilityService
 	genesisBlockNum uint64
 }
 
@@ -208,7 +207,7 @@ func NewStatelessBlockValidator(
 		streamer:        streamer,
 		blockchain:      blockchain,
 		db:              db,
-		Das:             das,
+		daService:       das,
 		genesisBlockNum: genesisBlockNum,
 	}
 	return validator, nil
@@ -303,21 +302,9 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, pr
 				return errors.New("processing data availability chain without DAS configured")
 			}
 		} else {
-			cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(seqMsg[40:]))
+			_, err := arbstate.RecoverPayloadFromDasBatch(ctx, seqMsg, das, preimages)
 			if err != nil {
-				log.Error("Failed to deserialize DAS message", "err", err)
-			} else {
-				keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
-				if err != nil {
-					return fmt.Errorf("couldn't keyset from DAS %w", err)
-				}
-				dasPreimage, err := das.Retrieve(ctx, cert)
-				if err != nil {
-					return fmt.Errorf("couldn't retrieve message from DAS %w", err)
-				}
-				preimages[common.BytesToHash(cert.KeysetHash[:])] = keysetPreimage
-				preimages[common.BytesToHash(cert.DataHash[:])] = dasPreimage
-
+				return err
 			}
 		}
 	}
@@ -359,7 +346,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 	mach := basemachine.Clone()
-	err = SetMachinePreimageResolver(ctx, mach, entry.Preimages, seqMsg, v.blockchain, v.Das)
+	err = SetMachinePreimageResolver(ctx, mach, entry.Preimages, seqMsg, v.blockchain, v.daService)
 	if err != nil {
 		return GoGlobalState{}, nil, err
 	}

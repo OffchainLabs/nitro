@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"math/bits"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -19,11 +20,14 @@ import (
 
 type AggregatorConfig struct {
 	// sequencer public key
-	AssumedHonest int    `koanf:"assumed-honest"`
-	Backends      string `koanf:"backends"`
+	AssumedHonest      int    `koanf:"assumed-honest"`
+	Backends           string `koanf:"backends"`
+	StoreSignerAddress string `koanf:"store-signer-address"`
 }
 
-var DefaultAggregatorConfig = AggregatorConfig{}
+var DefaultAggregatorConfig = AggregatorConfig{
+	StoreSignerAddress: "",
+}
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
@@ -39,6 +43,7 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
+	storeSignerAddr                *common.Address
 }
 
 type ServiceDetails struct {
@@ -87,6 +92,11 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 	var keysetHash [32]byte
 	copy(keysetHash[:], keysetHashBuf)
 
+	storeSignerAddr, err := StoreSignerAddressFromString(config.StoreSignerAddress)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Aggregator{
 		config:                         config,
 		services:                       services,
@@ -94,6 +104,7 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 		maxAllowedServiceStoreFailures: config.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    ksBuf.Bytes(),
+		storeSignerAddr:                storeSignerAddr,
 	}, nil
 }
 
@@ -102,26 +113,9 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 // if all requests fail or if its context is canceled (eg via TimeoutWrapper) then
 // it returns an error.
 func (a *Aggregator) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	// Cert is the aggregate cert, validate it against DAS public keys
-	var servicesThatSignedCert []ServiceDetails
-	var pubKeys []blsSignatures.PublicKey
-	for _, d := range a.services {
-		if cert.SignersMask&d.signersMask != 0 {
-			servicesThatSignedCert = append(servicesThatSignedCert, d)
-			pubKeys = append(pubKeys, d.pubKey)
-		}
-	}
-	if len(servicesThatSignedCert) < a.requiredServicesForStore {
-		return nil, fmt.Errorf("Cert %v was only signed by %d DASes, %d required.", cert, len(servicesThatSignedCert), a.requiredServicesForStore)
-	}
-
-	signedBlob := serializeSignableFields(cert)
-	sigMatch, err := blsSignatures.VerifySignature(cert.Sig, signedBlob, blsSignatures.AggregatePublicKeys(pubKeys))
+	err := cert.VerifyNonPayloadParts(ctx, a)
 	if err != nil {
 		return nil, err
-	}
-	if !sigMatch {
-		return nil, errors.New("Signature of data in cert passed in doesn't match")
 	}
 
 	// Query all services, even those that didn't sign.
@@ -183,13 +177,23 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
-func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
+func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	if a.storeSignerAddr != nil {
+		actualSigner, err := DasRecoverSigner(message, timeout, sig)
+		if err != nil {
+			return nil, err
+		}
+		if actualSigner != *a.storeSignerAddr {
+			return nil, errors.New("store request not properly signed")
+		}
+	}
+
 	responses := make(chan storeResponse, len(a.services))
 
 	expectedHash := crypto.Keccak256(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
-			cert, err := d.service.Store(ctx, message, timeout)
+			cert, err := d.service.Store(ctx, message, timeout, sig)
 			if err != nil {
 				responses <- storeResponse{d, nil, err}
 				return

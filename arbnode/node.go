@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -122,7 +123,7 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 	return a, nil
 }
 
-func andTxSucceeded(ctx context.Context, l1Reader *L1Reader, tx *types.Transaction, err error) error {
+func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
 	if err != nil {
 		return fmt.Errorf("error submitting tx: %w", err)
 	}
@@ -133,7 +134,7 @@ func andTxSucceeded(ctx context.Context, l1Reader *L1Reader, tx *types.Transacti
 	return nil
 }
 
-func deployBridgeCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, error) {
 	client := l1Reader.Client()
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
@@ -180,7 +181,7 @@ func deployBridgeCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	return bridgeCreatorAddr, nil
 }
 
-func deployChallengeFactory(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (common.Address, common.Address, error) {
+func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, common.Address, error) {
 	client := l1Reader.Client()
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
@@ -221,7 +222,7 @@ func deployChallengeFactory(ctx context.Context, l1Reader *L1Reader, auth *bind.
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, error) {
+func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
 	if err != nil {
 		return nil, common.Address{}, err
@@ -266,8 +267,8 @@ func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
-	l1Reader := NewL1Reader(l1client, readerConfig)
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
+	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
@@ -378,7 +379,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 type Config struct {
 	RPC                  arbitrum.Config                `koanf:"rpc"`
 	Sequencer            SequencerConfig                `koanf:"sequencer"`
-	L1Reader             L1ReaderConfig                 `koanf:"l1-reader"`
+	L1Reader             headerreader.Config            `koanf:"l1-reader"`
 	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
@@ -404,7 +405,7 @@ func (c *Config) ForwardingTarget() string {
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
-	L1ReaderAddOptions(prefix+".l1-reader", f)
+	headerreader.AddOptions(prefix+".l1-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
@@ -422,7 +423,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 var ConfigDefault = Config{
 	RPC:                  arbitrum.DefaultConfig,
 	Sequencer:            DefaultSequencerConfig,
-	L1Reader:             DefaultL1ReaderConfig,
+	L1Reader:             headerreader.DefaultConfig,
 	InboxReader:          DefaultInboxReaderConfig,
 	DelayedSequencer:     DefaultDelayedSequencerConfig,
 	BatchPoster:          DefaultBatchPosterConfig,
@@ -440,7 +441,7 @@ var ConfigDefault = Config{
 func ConfigDefaultL1Test() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
-	config.L1Reader = TestL1ReaderConfig
+	config.L1Reader = headerreader.TestConfig
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
@@ -535,7 +536,7 @@ var DefaultWasmConfig = WasmConfig{
 type Node struct {
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
-	L1Reader         *L1Reader
+	L1Reader         *headerreader.HeaderReader
 	TxStreamer       *TransactionStreamer
 	TxPublisher      TransactionPublisher
 	DeployInfo       *RollupAddresses
@@ -551,7 +552,7 @@ type Node struct {
 	DataAvailService das.DataAvailabilityService
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (*Node, error) {
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -577,9 +578,16 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	default:
 	}
 
-	var l1Reader *L1Reader
+	if dataAvailabilityService != nil && daSigner != nil {
+		dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
-		l1Reader = NewL1Reader(l1client, config.L1Reader)
+		l1Reader = headerreader.New(l1client, config.L1Reader)
 	}
 
 	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)
@@ -733,8 +741,8 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (newNode *Node, err error) {
+	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
 	if err != nil {
 		return nil, err
 	}

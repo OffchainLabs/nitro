@@ -16,6 +16,7 @@ service DASServiceImpl {
 message StoreRequest {
   bytes message = 1;
   uint64 timeout = 2;
+  bytes  sig = 3;
 }
 
 message StoreResponse {
