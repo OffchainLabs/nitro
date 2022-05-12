@@ -1,6 +1,6 @@
 [workspace]
 members = [
-	"prover",
+        "prover",
         "wasm-testsuite",
 ]
 
