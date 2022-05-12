@@ -26,7 +26,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
-	if dasModeStr == "local-disk" {
+	if dasModeStr == das.LocalDiskDataAvailabilityString {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
@@ -112,9 +112,9 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 }
 
 func TestTwoNodesSimple(t *testing.T) {
-	testTwoNodesSimple(t, "onchain")
+	testTwoNodesSimple(t, das.OnchainDataAvailabilityString)
 }
 
 func TestTwoNodesSimpleLocalDAS(t *testing.T) {
-	testTwoNodesSimple(t, "local-disk")
+	testTwoNodesSimple(t, das.LocalDiskDataAvailabilityString)
 }

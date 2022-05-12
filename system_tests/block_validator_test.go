@@ -32,7 +32,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	var dbPath string
 	var err error
 
-	if dasModeString == "local-disk" {
+	if dasModeString == das.LocalDiskDataAvailabilityString {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
@@ -154,9 +154,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 }
 
 func TestBlockValidatorSimple(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", false)
+	testBlockValidatorSimple(t, das.OnchainDataAvailabilityString, false)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, "local-disk", false)
+	testBlockValidatorSimple(t, das.LocalDiskDataAvailabilityString, false)
 }
