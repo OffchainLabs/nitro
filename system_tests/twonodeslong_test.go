@@ -9,11 +9,8 @@ package arbtest
 
 import (
 	"context"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"io/ioutil"
 	"math/big"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
@@ -21,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/das"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 )
 
@@ -43,40 +39,12 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	var dbPath string
-	var err error
-	if dasModeStr == "local" {
-		dbPath, err = ioutil.TempDir("/tmp", "das_test")
-		Require(t, err)
-		defer os.RemoveAll(dbPath)
-		chainConfig = params.ArbitrumDevTestDASChainConfig()
-		dasConfig := das.LocalDiskDASConfig{
-			KeyDir:            dbPath,
-			DataDir:           dbPath,
-			AllowGenerateKeys: true,
-		}
-		l1NodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig
-	}
+	chainConfig, l1NodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
+
 	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
-	usingDas := nodeA.DataAvailService
-
-	if usingDas != nil {
-		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
-		Require(t, err)
-
-		sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
-		Require(t, err)
-		trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-		tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
-		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, l1client, tx)
-		Require(t, err)
-	}
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false
