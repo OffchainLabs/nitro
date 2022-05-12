@@ -4,8 +4,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -86,12 +86,16 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 type PreimageDAS struct {
 }
 
-func (das *PreimageDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
-	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
-	if err != nil {
-		return nil, err
-	}
+func (das *PreimageDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
 	return wavmio.ResolvePreImage(common.BytesToHash(cert.DataHash[:])), nil
+}
+
+func (das *PreimageDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	return wavmio.ResolvePreImage(common.BytesToHash(ksHash)), nil
+}
+
+func (das *PreimageDAS) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
+	return nil, errors.New("Not implemented, should never be called")
 }
 
 func main() {

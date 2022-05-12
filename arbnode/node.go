@@ -325,11 +325,11 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error parsing rollup created log: %w", err)
 	}
 
-	rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
+	sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, l1client)
 	if err != nil {
-		return nil, fmt.Errorf("error getting rollup admin: %w", err)
+		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
 	}
-	tx, err = rollup.SetIsBatchPoster(deployAuth, sequencer, true)
+	tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("error setting is batch poster: %w", err)
@@ -354,6 +354,10 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		allowValidators = append(allowValidators, true)
 	}
 	if len(validatorAddrs) > 0 {
+		rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
+		if err != nil {
+			return nil, fmt.Errorf("error getting rollup admin: %w", err)
+		}
 		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
 		err = andTxSucceeded(ctx, l1Reader, tx, err)
 		if err != nil {
@@ -545,9 +549,10 @@ type Node struct {
 	BroadcastServer  *broadcaster.Broadcaster
 	BroadcastClients []*broadcastclient.BroadcastClient
 	SeqCoordinator   *SeqCoordinator
+	DataAvailService das.DataAvailabilityService
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (*Node, error) {
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -571,6 +576,13 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 			return nil, err
 		}
 	default:
+	}
+
+	if dataAvailabilityService != nil && daSigner != nil {
+		dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -636,7 +648,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 	if !config.L1Reader.Enable {
-		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
+		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, dataAvailabilityService}, nil
 	}
 
 	if deployInfo == nil {
@@ -713,7 +725,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dataAvailabilityService}, nil
 }
 
 type arbNodeLifecycle struct {
@@ -729,8 +741,8 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (newNode *Node, err error) {
+	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
 	if err != nil {
 		return nil, err
 	}

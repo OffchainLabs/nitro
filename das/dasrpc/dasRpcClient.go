@@ -6,6 +6,7 @@ package dasrpc
 import (
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/das"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -27,22 +28,25 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 	return &DASRPCClient{clnt: clnt}, nil
 }
 
-func (clnt *DASRPCClient) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
-	response, err := clnt.clnt.Retrieve(ctx, &RetrieveRequest{Cert: cert})
+func (clnt *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
+	certBytes := das.Serialize(cert)
+	response, err := clnt.clnt.Retrieve(ctx, &RetrieveRequest{CertBytes: certBytes})
 	if err != nil {
 		return nil, err
 	}
 	return response.Result, nil
 }
 
-func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
-	response, err := clnt.clnt.Store(ctx, &StoreRequest{Message: message, Timeout: timeout})
+func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	response, err := clnt.clnt.Store(ctx, &StoreRequest{Message: message, Timeout: timeout, Sig: reqSig})
 	if err != nil {
 		return nil, err
 	}
+	var keysetHash [32]byte
+	copy(keysetHash[:], response.KeysetHash)
 	var dataHash [32]byte
 	copy(dataHash[:], response.DataHash)
-	sig, err := blsSignatures.SignatureFromBytes(response.Sig)
+	respSig, err := blsSignatures.SignatureFromBytes(response.Sig)
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +54,25 @@ func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uin
 		DataHash:    dataHash,
 		Timeout:     response.Timeout,
 		SignersMask: response.SignersMask,
-		Sig:         sig,
+		Sig:         respSig,
+		KeysetHash:  keysetHash,
 	}, nil
+}
+
+func (clnt *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	response, err := clnt.clnt.KeysetFromHash(ctx, &KeysetFromHashRequest{KsHash: ksHash})
+	if err != nil {
+		return nil, err
+	}
+	return response.Result, nil
+}
+
+func (clnt *DASRPCClient) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
+	response, err := clnt.clnt.CurrentKeysetBytes(ctx, &CurrentKeysetBytesRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return response.Result, nil
 }
 
 func (clnt *DASRPCClient) String() string {
