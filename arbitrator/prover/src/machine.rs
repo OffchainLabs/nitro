@@ -26,6 +26,7 @@ use sha3::Keccak256;
 use std::{
     borrow::Cow,
     convert::TryFrom,
+    fmt,
     fs::File,
     io::{BufReader, BufWriter, Write},
     num::Wrapping,
@@ -690,6 +691,12 @@ struct PreimageResolverWrapper {
     last_resolved: Option<(Bytes32, CBytes)>,
 }
 
+impl fmt::Debug for PreimageResolverWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "resolver...")
+    }
+}
+
 impl PreimageResolverWrapper {
     pub fn new(resolver: PreimageResolver) -> PreimageResolverWrapper {
         PreimageResolverWrapper {
@@ -723,7 +730,7 @@ impl PreimageResolverWrapper {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
     status: MachineStatus,

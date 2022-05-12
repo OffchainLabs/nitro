@@ -5,6 +5,7 @@ use eyre::bail;
 use prover::{
     console::Color,
     machine::{GlobalState, Machine, MachineStatus, ProofInfo},
+    machine,
     value::Value,
 };
 use serde::{Deserialize, Serialize};
@@ -181,7 +182,7 @@ fn main() -> eyre::Result<()> {
             let prove = $prove && export_proofs;
 
             if !prove {
-                $machine.step_n($bound);
+                $machine.step_n($bound)?;
             }
 
             while count + leap < $bound && prove {
@@ -189,10 +190,10 @@ fn main() -> eyre::Result<()> {
 
                 let prior = $machine.hash().to_string();
                 let proof = hex::encode($machine.serialize_proof());
-                $machine.step_n(1);
+                $machine.step_n(1)?;
                 let after = $machine.hash().to_string();
                 proofs.push(ProofInfo::new(prior, proof, after));
-                $machine.step_n(leap - 1);
+                $machine.step_n(leap - 1)?;
 
                 if count % 100 == 0 {
                     leap *= leap + 1;
@@ -298,7 +299,7 @@ fn main() -> eyre::Result<()> {
                     false,
                     GlobalState::default(),
                     HashMap::default(),
-                    HashMap::default(),
+                    machine::get_empty_preimage_resolver(),
                 );
 
                 if let Err(error) = &mech {
@@ -328,7 +329,7 @@ fn main() -> eyre::Result<()> {
                 skip = false;
 
                 if let Some(machine) = &mut machine {
-                    machine.step_n(1000); // run init
+                    machine.step_n(1000)?; // run init
                     machine.start_merkle_caching();
                 }
             }
@@ -391,7 +392,7 @@ fn main() -> eyre::Result<()> {
                     false,
                     GlobalState::default(),
                     HashMap::default(),
-                    HashMap::default(),
+                    machine::get_empty_preimage_resolver(),
                 )
                 .expect_err(&format!("failed to reject invalid module {}", filename));
             }

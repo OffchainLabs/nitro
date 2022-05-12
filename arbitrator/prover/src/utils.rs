@@ -144,6 +144,12 @@ impl Default for CBytes {
     }
 }
 
+impl fmt::Debug for CBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.as_slice())
+    }
+}
+
 // TODO: remove this when re-initializing the rollup
 // this is kept around to deserialize old binaries
 #[derive(Serialize, Deserialize)]
