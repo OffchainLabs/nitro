@@ -229,7 +229,7 @@ fn main() -> Result<()> {
     unsafe {
         cycles_bigloop_start = core::arch::x86_64::_rdtsc();
     }
-    mach.step_n(opts.proving_start);
+    mach.step_n(opts.proving_start)?;
     while !mach.is_halted() {
         let next_inst = mach.get_next_instruction().unwrap();
         let next_opcode = next_inst.opcode;
