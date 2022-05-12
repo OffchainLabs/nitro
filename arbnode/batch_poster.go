@@ -378,7 +378,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, timeSinceBatc
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
 		} else {
-			sequencerMsg = das.Serialize(*cert)
+			sequencerMsg = das.Serialize(cert)
 		}
 	}
 

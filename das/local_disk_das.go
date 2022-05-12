@@ -18,6 +18,8 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
+var ErrDasKeysetNotFound = errors.New("no such keyset")
+
 type LocalDiskDASConfig struct {
 	KeyDir            string `koanf:"key-dir"`
 	PrivKey           string `koanf:"priv-key"`
@@ -33,8 +35,10 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type LocalDiskDAS struct {
-	config  LocalDiskDASConfig
-	privKey *blsSignatures.PrivateKey
+	config      LocalDiskDASConfig
+	privKey     *blsSignatures.PrivateKey
+	keysetHash  [32]byte
+	keysetBytes []byte
 }
 
 func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
@@ -63,9 +67,31 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 		}
 	}
 
+	publicKey, err := blsSignatures.PublicKeyFromPrivateKey(*privKey)
+	if err != nil {
+		return nil, err
+	}
+
+	keyset := &arbstate.DataAvailabilityKeyset{
+		AssumedHonest: 1,
+		PubKeys:       []blsSignatures.PublicKey{publicKey},
+	}
+	ksBuf := bytes.NewBuffer([]byte{})
+	if err := keyset.Serialize(ksBuf); err != nil {
+		return nil, err
+	}
+	ksHashBuf, err := keyset.Hash()
+	if err != nil {
+		return nil, err
+	}
+	var ksHash [32]byte
+	copy(ksHash[:], ksHashBuf)
+
 	return &LocalDiskDAS{
-		config:  config,
-		privKey: privKey,
+		config:      config,
+		privKey:     privKey,
+		keysetHash:  ksHash,
+		keysetBytes: ksBuf.Bytes(),
 	}, nil
 }
 
@@ -74,9 +100,9 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
 	c.Timeout = timeout
-	c.SignersMask = 0 // The aggregator decides on the mask for each signer.
+	c.SignersMask = 1 // The aggregator will override this if we're part of a committee.
 
-	fields := serializeSignableFields(*c)
+	fields := c.SerializeSignableFields()
 	c.Sig, err = blsSignatures.SignMessage(*das.privKey, fields)
 	if err != nil {
 		return nil, err
@@ -90,15 +116,12 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 		return nil, err
 	}
 
+	c.KeysetHash = das.keysetHash
+
 	return c, nil
 }
 
-func (das *LocalDiskDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
-	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
-	if err != nil {
-		return nil, err
-	}
-
+func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
 	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(cert.DataHash[:])
 	log.Debug("Retrieving message from", "path", path)
 
@@ -117,6 +140,23 @@ func (das *LocalDiskDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte
 	// check the signature against this DAS's public key here.
 
 	return originalMessage, nil
+}
+
+func (das *LocalDiskDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	if bytes.Equal(ksHash, das.keysetHash[:]) {
+		return das.keysetBytes, nil
+	}
+	var ksHash32 [32]byte
+	copy(ksHash32[:], ksHash)
+	contents, err := das.Retrieve(ctx, &arbstate.DataAvailabilityCertificate{DataHash: ksHash32})
+	if err == nil {
+		return contents, nil
+	}
+	return nil, ErrDasKeysetNotFound
+}
+
+func (das *LocalDiskDAS) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
+	return das.keysetBytes, nil
 }
 
 func (d *LocalDiskDAS) String() string {

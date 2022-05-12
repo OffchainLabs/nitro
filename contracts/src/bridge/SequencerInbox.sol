@@ -6,6 +6,7 @@ pragma solidity ^0.8.0;
 
 import "./IBridge.sol";
 import "./ISequencerInbox.sol";
+import "../rollup/IRollupLogic.sol";
 import "./Messages.sol";
 
 import {GasRefundEnabled, IGasRefunder} from "../libraries/IGasRefunder.sol";
@@ -34,6 +35,14 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     address public rollup;
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
+
+    mapping(bytes32 => bool) public isValidKeysetHash;
+    mapping(bytes32 => uint256) public keysetHashCreationBlock;
+
+    modifier onlyRollupOwner() {
+        if (msg.sender != IRollupUserAbs(rollup).owner()) revert NotOwner(msg.sender, rollup);
+        _;
+    }
 
     function initialize(
         IBridge delayedBridge_,
@@ -181,6 +190,17 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         emit SequencerBatchData(sequenceNumber, data);
     }
 
+    function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32) {
+        if (data.length < 33 || data[0] & 0x80 == 0) {
+            return bytes32(0);
+        }
+        bytes32 temp;
+        assembly {
+            temp := mload(add(data, 33))
+        }
+        return temp;
+    }
+
     function packHeader(uint256 afterDelayedMessagesRead)
         internal
         view
@@ -204,6 +224,10 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         view
         returns (bytes32, TimeBounds memory)
     {
+        bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
+        if (dasKeysetHash != bytes32(0)) {
+            if (!isValidKeysetHash[dasKeysetHash]) revert NoSuchKeyset(dasKeysetHash);
+        }
         uint256 fullDataLen = HEADER_LENGTH + data.length;
         if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
         if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
@@ -259,16 +283,55 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return inboxAccs.length;
     }
 
+    /**
+     * @notice Set max delay for sequencer inbox
+     * @param maxTimeVariation_ the maximum time variation parameters
+     */
     function setMaxTimeVariation(ISequencerInbox.MaxTimeVariation memory maxTimeVariation_)
         external
-        override
+        onlyRollupOwner
     {
-        if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         maxTimeVariation = maxTimeVariation_;
+        emit OwnerFunctionCalled(0);
     }
 
-    function setIsBatchPoster(address addr, bool isBatchPoster_) external override {
-        if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
+    /**
+     * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
+     * @param addr the address
+     * @param isBatchPoster_ if the specified address should be authorized as a batch poster
+     */
+    function setIsBatchPoster(address addr, bool isBatchPoster_) external onlyRollupOwner {
         isBatchPoster[addr] = isBatchPoster_;
+        emit OwnerFunctionCalled(1);
+    }
+
+    /**
+     * @notice Makes Data Availability Service keyset valid
+     * @param keysetBytes bytes of the serialized keyset
+     */
+    function setValidKeyset(bytes calldata keysetBytes) external onlyRollupOwner {
+        bytes32 ksHash = keccak256(keysetBytes);
+        if (isValidKeysetHash[ksHash]) revert AlreadyValidDASKeyset(ksHash);
+        isValidKeysetHash[ksHash] = true;
+        keysetHashCreationBlock[ksHash] = block.number;
+        emit SetValidKeyset(ksHash, keysetBytes);
+        emit OwnerFunctionCalled(2);
+    }
+
+    /**
+     * @notice Invalidates a Data Availability Service keyset
+     * @param ksHash hash of the keyset
+     */
+    function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
+        if (!isValidKeysetHash[ksHash]) revert NoSuchKeyset(ksHash);
+        isValidKeysetHash[ksHash] = false;
+        emit InvalidateKeyset(ksHash);
+        emit OwnerFunctionCalled(3);
+    }
+
+    function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
+        uint256 bnum = keysetHashCreationBlock[ksHash];
+        if (bnum == 0) revert NoSuchKeyset(ksHash);
+        return bnum;
     }
 }

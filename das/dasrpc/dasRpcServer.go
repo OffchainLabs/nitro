@@ -4,8 +4,10 @@
 package dasrpc
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das"
 	"google.golang.org/grpc"
@@ -49,6 +51,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreR
 		return nil, err
 	}
 	return &StoreResponse{
+		KeysetHash:  cert.KeysetHash[:],
 		DataHash:    cert.DataHash[:],
 		Timeout:     cert.Timeout,
 		SignersMask: cert.SignersMask,
@@ -57,9 +60,29 @@ func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreR
 }
 
 func (serv *DASRPCServer) Retrieve(ctx context.Context, req *RetrieveRequest) (*RetrieveResponse, error) {
-	result, err := serv.localDAS.Retrieve(ctx, req.Cert)
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(req.CertBytes))
+	if err != nil {
+		return nil, err
+	}
+	result, err := serv.localDAS.Retrieve(ctx, cert)
 	if err != nil {
 		return nil, err
 	}
 	return &RetrieveResponse{Result: result}, nil
+}
+
+func (serv *DASRPCServer) KeysetFromHash(ctx context.Context, req *KeysetFromHashRequest) (*KeysetFromHashResponse, error) {
+	resp, err := serv.localDAS.KeysetFromHash(ctx, req.KsHash)
+	if err != nil {
+		return nil, err
+	}
+	return &KeysetFromHashResponse{Result: resp}, nil
+}
+
+func (serv *DASRPCServer) CurrentKeysetBytes(ctx context.Context, req *CurrentKeysetBytesRequest) (*CurrentKeysetBytesResponse, error) {
+	resp, err := serv.localDAS.CurrentKeysetBytes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &CurrentKeysetBytesResponse{Result: resp}, nil
 }

@@ -9,6 +9,8 @@ option go_package = "das/dasrpc";
 service DASServiceImpl {
   rpc Store(StoreRequest) returns (StoreResponse) {}
   rpc Retrieve(RetrieveRequest) returns (RetrieveResponse) {}
+  rpc KeysetFromHash(KeysetFromHashRequest) returns (KeysetFromHashResponse) {}
+  rpc CurrentKeysetBytes(CurrentKeysetBytesRequest) returns (CurrentKeysetBytesResponse) {}
 }
 
 message StoreRequest {
@@ -17,16 +19,32 @@ message StoreRequest {
 }
 
 message StoreResponse {
-  bytes dataHash = 1;
+  bytes  dataHash = 1;
   uint64 timeout = 2;
   uint64 signersMask = 3;
-  bytes sig = 4;
+  bytes  keysetHash = 4;
+  bytes  sig = 5;
 }
 
 message RetrieveRequest {
-  bytes cert = 1;
+  bytes certBytes = 1;
 }
 
 message RetrieveResponse {
+  bytes result = 1;
+}
+
+message KeysetFromHashRequest {
+  bytes ksHash = 1;
+}
+
+message KeysetFromHashResponse {
+  bytes result = 1;
+}
+
+message CurrentKeysetBytesRequest {
+}
+
+message CurrentKeysetBytesResponse {
   bytes result = 1;
 }
