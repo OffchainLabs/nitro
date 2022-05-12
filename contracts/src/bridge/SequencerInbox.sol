@@ -226,7 +226,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     {
         bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
         if (dasKeysetHash != bytes32(0)) {
-            if (!isValidKeysetHash[dasKeysetHash]) revert InvalidDASKeyset(dasKeysetHash);
+            if (!isValidKeysetHash[dasKeysetHash]) revert NoSuchKeyset(dasKeysetHash);
         }
         uint256 fullDataLen = HEADER_LENGTH + data.length;
         if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
@@ -323,9 +323,15 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @param ksHash hash of the keyset
      */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
-        if (!isValidKeysetHash[ksHash]) revert InvalidDASKeyset(ksHash);
+        if (!isValidKeysetHash[ksHash]) revert NoSuchKeyset(ksHash);
         isValidKeysetHash[ksHash] = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
+    }
+
+    function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
+        uint256 bnum = keysetHashCreationBlock[ksHash];
+        if (bnum == 0) revert NoSuchKeyset(ksHash);
+        return bnum;
     }
 }

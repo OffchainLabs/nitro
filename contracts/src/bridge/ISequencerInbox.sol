@@ -80,7 +80,7 @@ interface ISequencerInbox {
     error AlreadyValidDASKeyset(bytes32);
 
     /// @dev Tried to use or invalidate an already invalid Data Availability Service keyset
-    error InvalidDASKeyset(bytes32);
+    error NoSuchKeyset(bytes32);
 
     function inboxAccs(uint256 index) external view returns (bytes32);
 
