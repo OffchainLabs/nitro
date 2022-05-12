@@ -9,6 +9,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"os"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -21,10 +22,11 @@ import (
 var ErrDasKeysetNotFound = errors.New("no such keyset")
 
 type LocalDiskDASConfig struct {
-	KeyDir            string `koanf:"key-dir"`
-	PrivKey           string `koanf:"priv-key"`
-	DataDir           string `koanf:"data-dir"`
-	AllowGenerateKeys bool   `koanf:"allow-generate-keys"`
+	KeyDir             string `koanf:"key-dir"`
+	PrivKey            string `koanf:"priv-key"`
+	DataDir            string `koanf:"data-dir"`
+	AllowGenerateKeys  bool   `koanf:"allow-generate-keys"`
+	StoreSignerAddress string `koanf:"store-signer-address"`
 }
 
 func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -32,13 +34,15 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".priv-key", "", "The base64 BLS private key to use for signing DAS certificates")
 	f.String(prefix+".data-dir", "", "The directory to use as the DAS file-based database")
 	f.Bool(prefix+".allow-generate-keys", false, "Allow the local disk DAS to generate its own keys in key-dir if they don't already exist")
+	f.String(prefix+".store-signer-address", "", "Address required to sign stores, or empty if anyone can store")
 }
 
 type LocalDiskDAS struct {
-	config      LocalDiskDASConfig
-	privKey     *blsSignatures.PrivateKey
-	keysetHash  [32]byte
-	keysetBytes []byte
+	config          LocalDiskDASConfig
+	privKey         *blsSignatures.PrivateKey
+	keysetHash      [32]byte
+	keysetBytes     []byte
+	storeSignerAddr *common.Address
 }
 
 func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
@@ -87,15 +91,31 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 	var ksHash [32]byte
 	copy(ksHash[:], ksHashBuf)
 
+	storeSignerAddr, err := StoreSignerAddressFromString(config.StoreSignerAddress)
+	if err != nil {
+		return nil, err
+	}
+
 	return &LocalDiskDAS{
-		config:      config,
-		privKey:     privKey,
-		keysetHash:  ksHash,
-		keysetBytes: ksBuf.Bytes(),
+		config:          config,
+		privKey:         privKey,
+		keysetHash:      ksHash,
+		keysetBytes:     ksBuf.Bytes(),
+		storeSignerAddr: storeSignerAddr,
 	}, nil
 }
 
-func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+	if das.storeSignerAddr != nil {
+		actualSigner, err := DasRecoverSigner(message, timeout, sig)
+		if err != nil {
+			return nil, err
+		}
+		if actualSigner != *das.storeSignerAddr {
+			return nil, errors.New("store request not properly signed")
+		}
+	}
+
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 

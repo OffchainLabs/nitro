@@ -37,8 +37,8 @@ func (clnt *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvail
 	return response.Result, nil
 }
 
-func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
-	response, err := clnt.clnt.Store(ctx, &StoreRequest{Message: message, Timeout: timeout})
+func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	response, err := clnt.clnt.Store(ctx, &StoreRequest{Message: message, Timeout: timeout, Sig: reqSig})
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uin
 	copy(keysetHash[:], response.KeysetHash)
 	var dataHash [32]byte
 	copy(dataHash[:], response.DataHash)
-	sig, err := blsSignatures.SignatureFromBytes(response.Sig)
+	respSig, err := blsSignatures.SignatureFromBytes(response.Sig)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uin
 		DataHash:    dataHash,
 		Timeout:     response.Timeout,
 		SignersMask: response.SignersMask,
-		Sig:         sig,
+		Sig:         respSig,
 		KeysetHash:  keysetHash,
 	}, nil
 }

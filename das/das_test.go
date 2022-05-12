@@ -21,9 +21,10 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	Require(t, err)
 
 	config := LocalDiskDASConfig{
-		KeyDir:            dbPath,
-		DataDir:           dbPath,
-		AllowGenerateKeys: true,
+		KeyDir:             dbPath,
+		DataDir:            dbPath,
+		AllowGenerateKeys:  true,
+		StoreSignerAddress: "none",
 	}
 	das, err := NewLocalDiskDAS(config)
 	Require(t, err, "no das")
@@ -32,7 +33,7 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(ctx, messageSaved, timeout)
+	cert, err := das.Store(ctx, messageSaved, timeout, []byte{})
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
@@ -61,9 +62,10 @@ func TestDASMissingMessage(t *testing.T) {
 	Require(t, err)
 
 	config := LocalDiskDASConfig{
-		KeyDir:            dbPath,
-		DataDir:           dbPath,
-		AllowGenerateKeys: true,
+		KeyDir:             dbPath,
+		DataDir:            dbPath,
+		AllowGenerateKeys:  true,
+		StoreSignerAddress: "none",
 	}
 	das, err := NewLocalDiskDAS(config)
 	Require(t, err, "no das")
@@ -72,7 +74,7 @@ func TestDASMissingMessage(t *testing.T) {
 
 	messageSaved := []byte("hello world")
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
-	cert, err := das.Store(ctx, messageSaved, timeout)
+	cert, err := das.Store(ctx, messageSaved, timeout, []byte{})
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
