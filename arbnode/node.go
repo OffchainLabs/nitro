@@ -579,7 +579,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	}
 
 	if dataAvailabilityService != nil && daSigner != nil {
-		dataAvailabilityService = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+		dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var l1Reader *headerreader.HeaderReader

@@ -43,10 +43,19 @@ func dasStoreHash(data []byte, timeout uint64) []byte {
 type StoreSigningDAS struct {
 	DataAvailabilityService
 	signer DasSigner
+	addr   common.Address
 }
 
-func NewStoreSigningDAS(inner DataAvailabilityService, signer DasSigner) DataAvailabilityService {
-	return &StoreSigningDAS{inner, signer}
+func NewStoreSigningDAS(inner DataAvailabilityService, signer DasSigner) (DataAvailabilityService, error) {
+	sig, err := applyDasSigner(signer, []byte{}, 0)
+	if err != nil {
+		return nil, err
+	}
+	addr, err := DasRecoverSigner([]byte{}, 0, sig)
+	if err != nil {
+		return nil, err
+	}
+	return &StoreSigningDAS{inner, signer, addr}, nil
 }
 
 func (s *StoreSigningDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
@@ -58,18 +67,9 @@ func (s *StoreSigningDAS) Store(ctx context.Context, message []byte, timeout uin
 }
 
 func (s *StoreSigningDAS) String() string {
-	addrStr := "[error]"
-	addr, err := s.SignerAddress()
-	if err == nil {
-		addrStr = addr.Hex()
-	}
-	return "StoreSigningDAS (" + addrStr + " ," + s.DataAvailabilityService.String() + ")"
+	return "StoreSigningDAS (" + s.SignerAddress().Hex() + " ," + s.DataAvailabilityService.String() + ")"
 }
 
-func (s *StoreSigningDAS) SignerAddress() (common.Address, error) {
-	sig, err := applyDasSigner(s.signer, []byte{}, 0)
-	if err != nil {
-		return common.Address{}, err
-	}
-	return DasRecoverSigner([]byte{}, 0, sig)
+func (s *StoreSigningDAS) SignerAddress() common.Address {
+	return s.addr
 }

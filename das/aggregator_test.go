@@ -29,9 +29,10 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		defer os.RemoveAll(dbPath)
 
 		config := LocalDiskDASConfig{
-			KeyDir:            dbPath,
-			DataDir:           dbPath,
-			AllowGenerateKeys: true,
+			KeyDir:             dbPath,
+			DataDir:            dbPath,
+			AllowGenerateKeys:  true,
+			StoreSignerAddress: "none",
 		}
 		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
@@ -43,7 +44,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: 1}, backends)
+	aggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: 1, StoreSignerAddress: "none"}, backends)
 	Require(t, err)
 	ctx := context.Background()
 
@@ -203,9 +204,10 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		defer os.RemoveAll(dbPath)
 
 		config := LocalDiskDASConfig{
-			KeyDir:            dbPath,
-			DataDir:           dbPath,
-			AllowGenerateKeys: true,
+			KeyDir:             dbPath,
+			DataDir:            dbPath,
+			AllowGenerateKeys:  true,
+			StoreSignerAddress: "none",
 		}
 		das, err := NewLocalDiskDAS(config)
 		Require(t, err)
@@ -217,7 +219,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, *details)
 	}
 
-	unwrappedAggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: assumedHonest}, backends)
+	unwrappedAggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: assumedHonest, StoreSignerAddress: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 	ctx := context.Background()
@@ -304,9 +306,10 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 		defer os.RemoveAll(dbPath)
 
 		config := LocalDiskDASConfig{
-			KeyDir:            dbPath,
-			DataDir:           dbPath,
-			AllowGenerateKeys: true,
+			KeyDir:             dbPath,
+			DataDir:            dbPath,
+			AllowGenerateKeys:  true,
+			StoreSignerAddress: "none",
 		}
 
 		das, err := NewLocalDiskDAS(config)
@@ -322,7 +325,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	unwrappedAggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: numBackendDAS}, backends)
+	unwrappedAggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: numBackendDAS, StoreSignerAddress: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 	ctx := context.Background()

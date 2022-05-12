@@ -299,10 +299,14 @@ func main() {
 	}
 
 	var daSigner das.DasSigner
-	privateKey, err := crypto.HexToECDSA(l1Wallet.PrivateKey)
-	if err == nil {
+	if l1Wallet.PrivateKey != "" {
+		privateKey, err := crypto.HexToECDSA(l1Wallet.PrivateKey)
+		if err != nil {
+			panic(err)
+		}
 		daSigner = das.DasSignerFromPrivateKey(privateKey)
 	}
+
 	currentNode, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
 	if err != nil {
 		panic(err)

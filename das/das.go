@@ -6,6 +6,7 @@ package das
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
@@ -79,13 +80,17 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
 
-func StoreSignerAddressFromString(s string) *common.Address {
-	if s == "" {
-		return nil
+func StoreSignerAddressFromString(s string) (*common.Address, error) {
+	if s == "none" {
+		return nil, nil
 	}
 	s = strings.TrimPrefix(s, "0x")
-	addr := common.HexToAddress(s)
-	return &addr
+	addrBytes, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, err
+	}
+	addr := common.BytesToAddress(addrBytes)
+	return &addr, nil
 }
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {

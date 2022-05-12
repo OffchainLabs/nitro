@@ -92,6 +92,11 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 	var keysetHash [32]byte
 	copy(keysetHash[:], keysetHashBuf)
 
+	storeSignerAddr, err := StoreSignerAddressFromString(config.StoreSignerAddress)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Aggregator{
 		config:                         config,
 		services:                       services,
@@ -99,7 +104,7 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 		maxAllowedServiceStoreFailures: config.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    ksBuf.Bytes(),
-		storeSignerAddr:                StoreSignerAddressFromString(config.StoreSignerAddress),
+		storeSignerAddr:                storeSignerAddr,
 	}, nil
 }
 

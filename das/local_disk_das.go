@@ -91,12 +91,17 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 	var ksHash [32]byte
 	copy(ksHash[:], ksHashBuf)
 
+	storeSignerAddr, err := StoreSignerAddressFromString(config.StoreSignerAddress)
+	if err != nil {
+		return nil, err
+	}
+
 	return &LocalDiskDAS{
 		config:          config,
 		privKey:         privKey,
 		keysetHash:      ksHash,
 		keysetBytes:     ksBuf.Bytes(),
-		storeSignerAddr: StoreSignerAddressFromString(config.StoreSignerAddress),
+		storeSignerAddr: storeSignerAddr,
 	}, nil
 }
 
