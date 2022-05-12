@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/zeroheavy"
 	"io"
@@ -61,12 +62,14 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
-	minTimestamp := binary.BigEndian.Uint64(data[:8])
-	maxTimestamp := binary.BigEndian.Uint64(data[8:16])
-	minL1Block := binary.BigEndian.Uint64(data[16:24])
-	maxL1Block := binary.BigEndian.Uint64(data[24:32])
-	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
-	var segments [][]byte
+	parsedMsg := &sequencerMessage{
+		minTimestamp:         binary.BigEndian.Uint64(data[:8]),
+		maxTimestamp:         binary.BigEndian.Uint64(data[8:16]),
+		minL1Block:           binary.BigEndian.Uint64(data[16:24]),
+		maxL1Block:           binary.BigEndian.Uint64(data[24:32]),
+		afterDelayedMessages: binary.BigEndian.Uint64(data[32:40]),
+		segments:             [][]byte{},
+	}
 
 	var payload []byte
 	if len(data) >= 41 {
@@ -74,68 +77,13 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 			if das == nil {
 				log.Error("No DAS configured, but sequencer message found with DAS header")
 			} else {
-				cert, err := DeserializeDASCertFrom(bytes.NewReader(data[40:]))
+				var err error
+				payload, err = RecoverPayloadFromDasBatch(ctx, data, das, nil)
 				if err != nil {
-					log.Error("Deserializing data availability cert failed", "err", err)
-					return &sequencerMessage{
-						minTimestamp:         minTimestamp,
-						maxTimestamp:         maxTimestamp,
-						minL1Block:           minL1Block,
-						maxL1Block:           maxL1Block,
-						afterDelayedMessages: afterDelayedMessages,
-						segments:             segments,
-					}, nil
-				}
-				keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
-				if err == nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
-					err = errors.New("keysetPreimage inconsistent with hash")
-				}
-				if err != nil {
-					log.Error("Couldn't get keyset", "err", err)
 					return nil, err
 				}
-				keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage))
-				if err != nil {
-					log.Error("Couldn't deserialize keyset", "err", err)
-					return &sequencerMessage{
-						minTimestamp:         minTimestamp,
-						maxTimestamp:         maxTimestamp,
-						minL1Block:           minL1Block,
-						maxL1Block:           maxL1Block,
-						afterDelayedMessages: afterDelayedMessages,
-						segments:             segments,
-					}, nil
-				}
-
-				if err := keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig); err != nil {
-					log.Error("Bad signature on DAS batch", "err", err)
-					return &sequencerMessage{
-						minTimestamp:         minTimestamp,
-						maxTimestamp:         maxTimestamp,
-						minL1Block:           minL1Block,
-						maxL1Block:           maxL1Block,
-						afterDelayedMessages: afterDelayedMessages,
-						segments:             segments,
-					}, nil
-				}
-				if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
-					log.Error("Data availability cert expires too soon", "err", "")
-					return &sequencerMessage{
-						minTimestamp:         minTimestamp,
-						maxTimestamp:         maxTimestamp,
-						minL1Block:           minL1Block,
-						maxL1Block:           maxL1Block,
-						afterDelayedMessages: afterDelayedMessages,
-						segments:             segments,
-					}, nil
-				}
-				payload, err = das.Retrieve(ctx, cert) // safe because DA cert was verified
-				if err == nil && !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
-					err = errors.New("DAS batch doesn't match hash")
-				}
-				if err != nil {
-					log.Error("Couldn't fetch DAS batch contents", "err", err)
-					return nil, err
+				if payload == nil {
+					return parsedMsg, nil
 				}
 			}
 		} else if data[40] == 0 {
@@ -164,11 +112,11 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 						}
 						break
 					}
-					if len(segments) >= MaxSegmentsPerSequencerMessage {
+					if len(parsedMsg.segments) >= MaxSegmentsPerSequencerMessage {
 						log.Warn("too many segments in sequence batch")
 						break
 					}
-					segments = append(segments, segment)
+					parsedMsg.segments = append(parsedMsg.segments, segment)
 				}
 			} else {
 				log.Warn("sequencer msg decompression failed", "err", err)
@@ -177,14 +125,59 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 			log.Warn("unknown sequencer message format")
 		}
 	}
-	return &sequencerMessage{
-		minTimestamp:         minTimestamp,
-		maxTimestamp:         maxTimestamp,
-		minL1Block:           minL1Block,
-		maxL1Block:           maxL1Block,
-		afterDelayedMessages: afterDelayedMessages,
-		segments:             segments,
-	}, nil
+	return parsedMsg, nil
+}
+
+func RecoverPayloadFromDasBatch(
+	ctx context.Context,
+	sequencerMsg []byte,
+	das DataAvailabilityServiceReader,
+	preimages map[common.Hash][]byte,
+) ([]byte, error) {
+	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
+	if err != nil {
+		log.Error("Failed to deserialize DAS message", "err", err)
+		return nil, nil
+	}
+	keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+	if err != nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
+		err = errors.New("keysetPreimage inconsistent with hash")
+	}
+	if err != nil {
+		log.Error("Couldn't get keyset", "err", err)
+		return nil, err
+	}
+	if preimages != nil {
+		preimages[common.BytesToHash(cert.KeysetHash[:])] = keysetPreimage
+	}
+	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage))
+	if err != nil {
+		log.Error("Couldn't deserialize keyset", "err", err)
+		return nil, nil
+	}
+	err = keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
+	if err != nil {
+		log.Error("Bad signature on DAS batch", "err", err)
+		return nil, nil
+	}
+	maxTimestamp := binary.BigEndian.Uint64(sequencerMsg[8:16])
+	if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
+		log.Error("Data availability cert expires too soon", "err", "")
+		return nil, nil
+	}
+	payload, err := das.Retrieve(ctx, cert)
+	if err == nil && !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
+		err = errors.New("DAS batch doesn't match hash")
+	}
+	if err != nil {
+		log.Error("Couldn't fetch DAS batch contents", "err", err)
+		return nil, err
+	}
+	if preimages != nil {
+		preimages[common.BytesToHash(cert.DataHash[:])] = payload
+	}
+
+	return payload, nil
 }
 
 type inboxMultiplexer struct {

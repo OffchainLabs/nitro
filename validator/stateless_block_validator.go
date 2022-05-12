@@ -4,11 +4,8 @@
 package validator
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -305,43 +302,9 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, pr
 				return errors.New("processing data availability chain without DAS configured")
 			}
 		} else {
-			cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(seqMsg[40:]))
+			_, err := arbstate.RecoverPayloadFromDasBatch(ctx, seqMsg, das, preimages)
 			if err != nil {
-				log.Error("Failed to deserialize DAS message", "err", err)
-			} else {
-				keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
-				if err != nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
-					err = errors.New("keysetPreimage inconsistent with hash")
-				}
-				if err != nil {
-					log.Error("Couldn't get keyset", "err", err)
-					return err
-				}
-				preimages[common.BytesToHash(cert.KeysetHash[:])] = keysetPreimage
-				keyset, err := arbstate.DeserializeKeyset(bytes.NewReader(keysetPreimage))
-				if err != nil {
-					log.Error("Couldn't deserialize keyset", "err", err)
-				} else {
-					err = keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
-					if err != nil {
-						log.Error("Bad signature on DAS batch", "err", err)
-					} else {
-						maxTimestamp := binary.BigEndian.Uint64(seqMsg[8:16])
-						if cert.Timeout < maxTimestamp+arbstate.MinLifetimeSecondsForDataAvailabilityCert {
-							log.Error("Data availability cert expires too soon", "err", "")
-						} else {
-							payload, err := das.Retrieve(ctx, cert)
-							if err == nil && !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
-								err = errors.New("DAS batch doesn't match hash")
-							}
-							if err != nil {
-								log.Error("Couldn't fetch DAS batch contents", "err", err)
-								return err
-							}
-							preimages[common.BytesToHash(cert.DataHash[:])] = payload
-						}
-					}
-				}
+				return err
 			}
 		}
 	}
