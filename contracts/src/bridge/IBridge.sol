@@ -14,6 +14,10 @@ error NotInbox(address sender);
 /// @param sender The un-authorized sender
 error NotOutbox(address sender);
 
+/// @dev the provided outbox address isn't valid
+/// @param outbox address of outbox being set
+error InvalidOutboxSet(address outbox);
+
 interface IBridge {
     event MessageDelivered(
         uint256 indexed messageIndex,
