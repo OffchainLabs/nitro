@@ -4,8 +4,8 @@
 use eyre::bail;
 use prover::{
     console::Color,
-    machine::{GlobalState, Machine, MachineStatus, ProofInfo},
     machine,
+    machine::{GlobalState, Machine, MachineStatus, ProofInfo},
     value::Value,
 };
 use serde::{Deserialize, Serialize};

@@ -16,5 +16,7 @@ cargo build --release
 for file in tests/*.json; do
     base="${file#tests/}"
     name="${base%.wasm}"
-    ../target/release/wasm-testsuite $name
+    ../target/release/wasm-testsuite $name &
 done
+
+wait

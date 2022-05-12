@@ -4,6 +4,7 @@
 #![allow(clippy::missing_safety_doc)] // We have a lot of unsafe ABI
 
 pub mod binary;
+/// cbindgen:ignore
 pub mod console;
 mod host;
 pub mod machine;
