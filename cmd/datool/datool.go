@@ -4,9 +4,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbstate"
 	"os"
 	"strings"
 	"time"
@@ -92,12 +94,12 @@ func startClientStore(args []string) error {
 	}
 
 	ctx := context.Background()
-	cert, err := client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
+	cert, err := client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	if err != nil {
 		return err
 	}
 
-	serializedCert := das.Serialize(*cert)
+	serializedCert := das.Serialize(cert)
 	encodedCert := make([]byte, base64.StdEncoding.EncodedLen(len(serializedCert)))
 	base64.StdEncoding.Encode(encodedCert, serializedCert)
 
@@ -148,8 +150,12 @@ func startClientRetrieve(args []string) error {
 	if err != nil {
 		return err
 	}
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(decodedCert))
+	if err != nil {
+		return err
+	}
 	ctx := context.Background()
-	message, err := client.Retrieve(ctx, decodedCert)
+	message, err := client.Retrieve(ctx, cert)
 	if err != nil {
 		return err
 	}

@@ -487,6 +487,10 @@ abstract contract AbsRollupUserLogic is
         return currentRequiredStake(blockNumber, firstUnresolvedNodeNum, latestCreatedNode);
     }
 
+    function owner() external view returns (address) {
+        return _getAdmin();
+    }
+
     function currentRequiredStake() public view returns (uint256) {
         uint64 firstUnresolvedNodeNum = firstUnresolvedNode();
 

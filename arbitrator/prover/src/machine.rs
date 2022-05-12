@@ -1125,6 +1125,11 @@ impl Machine {
         };
         modules[0] = entrypoint;
 
+        ensure!(
+            u32::try_from(modules.len()).is_ok(),
+            "module count doesn't fit in a u32",
+        );
+
         // Merkleize things if requested
         for module in &mut modules {
             for table in module.tables.iter_mut() {
@@ -2082,9 +2087,9 @@ impl Machine {
                 h.update(&hash_pc_stack(&self.block_stack));
                 h.update(hash_stack_frame_stack(&self.frame_stack));
                 h.update(self.global_state.hash());
-                h.update(&(self.pc.module as u32).to_be_bytes());
-                h.update(&(self.pc.func as u32).to_be_bytes());
-                h.update(&(self.pc.inst as u32).to_be_bytes());
+                h.update(&u32::try_from(self.pc.module).unwrap().to_be_bytes());
+                h.update(&u32::try_from(self.pc.func).unwrap().to_be_bytes());
+                h.update(&u32::try_from(self.pc.inst).unwrap().to_be_bytes());
                 h.update(self.get_modules_root());
             }
             MachineStatus::Finished => {

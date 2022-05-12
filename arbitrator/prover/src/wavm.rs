@@ -432,15 +432,10 @@ impl SubAssign<isize> for StackState {
 
 impl PartialEq for StackState {
     fn eq(&self, other: &Self) -> bool {
-        let x = match self {
-            Self::Reachable(x) => x,
-            Self::Unreachable => return true,
-        };
-        let y = match other {
-            Self::Reachable(y) => y,
-            Self::Unreachable => return true,
-        };
-        x == y
+        match (self, other) {
+            (Self::Reachable(x), Self::Reachable(y)) => x == y,
+            _ => true,
+        }
     }
 }
 
@@ -660,7 +655,7 @@ pub fn wasm_to_wavm<'a>(
             let mut dest = 0;
             let scope = scopes.len() - $depth as usize - 1;
             let (branch_params, height) = match &scopes[scope] {
-                Simple(ty, _, height) | IfElse(ty, _, _, _, height) => {
+                Simple(ty, _, height) | IfElse(ty, .., height) => {
                     (block_type_results(*ty), *height)
                 }
                 Loop(ty, _, height, _) => {
