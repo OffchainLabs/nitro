@@ -86,11 +86,28 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 						segments:             segments,
 					}, nil
 				}
-				keyset, err := cert.RecoverKeyset(ctx, das)
-				if err != nil {
-					return nil, errors.New("unable to recover keyset even though L1 thought it was valid")
+				keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+				if err == nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
+					err = errors.New("keysetPreimage inconsistent with hash")
 				}
-				if err := keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig); err != nil { // safe because L1 verified keyset hash
+				if err != nil {
+					log.Error("Couldn't get keyset", "err", err)
+					return nil, err
+				}
+				keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage))
+				if err != nil {
+					log.Error("Couldn't deserialize keyset", "err", err)
+					return &sequencerMessage{
+						minTimestamp:         minTimestamp,
+						maxTimestamp:         maxTimestamp,
+						minL1Block:           minL1Block,
+						maxL1Block:           maxL1Block,
+						afterDelayedMessages: afterDelayedMessages,
+						segments:             segments,
+					}, nil
+				}
+
+				if err := keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig); err != nil {
 					log.Error("Bad signature on DAS batch", "err", err)
 					return &sequencerMessage{
 						minTimestamp:         minTimestamp,
@@ -113,8 +130,12 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 					}, nil
 				}
 				payload, err = das.Retrieve(ctx, cert) // safe because DA cert was verified
-				if err != nil || !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
-					panic("DAS retrieve failed") // should never happen--best to halt execution if it does
+				if err == nil && !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
+					err = errors.New("DAS batch doesn't match hash")
+				}
+				if err != nil {
+					log.Error("Couldn't fetch DAS batch contents", "err", err)
+					return nil, err
 				}
 			}
 		} else if data[40] == 0 {
