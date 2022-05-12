@@ -140,7 +140,7 @@ func RecoverPayloadFromDasBatch(
 		return nil, nil
 	}
 	keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
-	if err != nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
+	if err == nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
 		err = errors.New("keysetPreimage inconsistent with hash")
 	}
 	if err != nil {
