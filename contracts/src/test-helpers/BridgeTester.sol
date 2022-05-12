@@ -7,8 +7,8 @@ pragma solidity ^0.8.4;
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
-import "./IBridge.sol";
-import "./Messages.sol";
+import "../bridge/IBridge.sol";
+import "../bridge/Messages.sol";
 import "../libraries/DelegateCallAware.sol";
 
 /**
@@ -18,7 +18,7 @@ import "../libraries/DelegateCallAware.sol";
  * Since the escrow is held here, this contract also contains a list of allowed
  * outboxes that can make calls from here and withdraw this escrow.
  */
-contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
+contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
     using AddressUpgradeable for address;
 
     struct InOutInfo {
@@ -39,20 +39,14 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
 
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
-    function initialize() external initializer onlyDelegated {
+    function initialize() external initializer {
         _activeOutbox = EMPTY_ACTIVEOUTBOX;
         __Ownable_init();
     }
 
-    /// @dev returns the address of current active Outbox, or zero if no outbox is active
     function activeOutbox() public view returns (address) {
-        address outbox = _activeOutbox;
-        // address zero is returned if no outbox is set, but the value used in storage
-        // is non-zero to save users some gas (as storage refunds are usually maxed out)
-        // EIP-1153 would help here.
-        // we don't return `EMPTY_ACTIVEOUTBOX` to avoid a breaking change on the current api
-        if (outbox == EMPTY_ACTIVEOUTBOX) return address(0);
-        return outbox;
+        if (_activeOutbox == EMPTY_ACTIVEOUTBOX) return address(uint160(0));
+        return _activeOutbox;
     }
 
     function allowedInboxes(address inbox) external view override returns (bool) {
@@ -159,8 +153,6 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     }
 
     function setOutbox(address outbox, bool enabled) external override onlyOwner {
-        if (outbox == EMPTY_ACTIVEOUTBOX) revert InvalidOutboxSet(outbox);
-
         InOutInfo storage info = allowedOutboxesMap[outbox];
         bool alreadyEnabled = info.allowed;
         emit OutboxToggle(outbox, enabled);
@@ -181,4 +173,6 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     function messageCount() external view override returns (uint256) {
         return inboxAccs.length;
     }
+
+    receive() external payable {}
 }

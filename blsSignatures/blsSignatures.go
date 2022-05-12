@@ -23,28 +23,27 @@ type Signature *bls12381.PointG1
 
 func GenerateKeys() (PublicKey, PrivateKey, error) {
 	g2 := bls12381.NewG2()
-	seed, err := cryptorand.Int(cryptorand.Reader, g2.Q())
+	privateKey, err := cryptorand.Int(cryptorand.Reader, g2.Q())
 	if err != nil {
 		return PublicKey{}, nil, err
 	}
-	return internalDeterministicGenerateKeys(seed)
+	publicKey, err := PublicKeyFromPrivateKey(privateKey)
+	return publicKey, privateKey, err
 }
 
-// Don't call this directly, except in testing.
-func internalDeterministicGenerateKeys(seed *big.Int) (PublicKey, PrivateKey, error) {
-	privateKey := seed
+func PublicKeyFromPrivateKey(privateKey PrivateKey) (PublicKey, error) {
 	pubKey := &bls12381.PointG2{}
 	g2 := bls12381.NewG2()
 	g2.MulScalar(pubKey, g2.One(), privateKey)
 	proof, err := KeyValidityProof(pubKey, privateKey)
 	if err != nil {
-		return PublicKey{}, nil, err
+		return PublicKey{}, err
 	}
 	publicKey, err := NewPublicKey(pubKey, proof)
 	if err != nil {
-		return PublicKey{}, nil, err
+		return PublicKey{}, err
 	}
-	return publicKey, privateKey, nil
+	return publicKey, nil
 }
 
 // This key validity proof mechanism is sufficient to prevent rogue key attacks, if applied to all keys

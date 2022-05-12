@@ -13,11 +13,11 @@ import (
 	"syscall"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -41,7 +41,7 @@ func printSampleUsage() {
 func startup() error {
 	ctx := context.Background()
 
-	vcsRevision, vcsTime := conf.GetVersion()
+	vcsRevision, vcsTime := genericconf.GetVersion()
 	relayConfig, err := ParseRelay(ctx, os.Args[1:])
 	if err != nil {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
@@ -53,7 +53,7 @@ func startup() error {
 		return nil
 	}
 
-	logFormat, err := conf.ParseLogType(relayConfig.LogType)
+	logFormat, err := genericconf.ParseLogType(relayConfig.LogType)
 	if err != nil {
 		flag.Usage()
 		panic(fmt.Sprintf("Error parsing log type: %v", err))
@@ -96,21 +96,21 @@ func startup() error {
 }
 
 type RelayConfig struct {
-	Conf     conf.ConfConfig `koanf:"conf"`
-	LogLevel int             `koanf:"log-level"`
-	LogType  string          `koanf:"log-type"`
-	Node     RelayNodeConfig `koanf:"node"`
+	Conf     genericconf.ConfConfig `koanf:"conf"`
+	LogLevel int                    `koanf:"log-level"`
+	LogType  string                 `koanf:"log-type"`
+	Node     RelayNodeConfig        `koanf:"node"`
 }
 
 var RelayConfigDefault = RelayConfig{
-	Conf:     conf.ConfConfigDefault,
+	Conf:     genericconf.ConfConfigDefault,
 	LogLevel: int(log.LvlInfo),
 	LogType:  "plaintext",
 	Node:     RelayNodeConfigDefault,
 }
 
 func RelayConfigAddOptions(f *flag.FlagSet) {
-	conf.ConfConfigAddOptions("conf", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
 	f.String("log-type", RelayConfigDefault.LogType, "log type")
 	RelayNodeConfigAddOptions("node", f)

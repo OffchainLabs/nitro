@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -42,6 +43,20 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	Require(t, err)
 	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
+
+	usingDas := nodeA.DataAvailService
+	if usingDas != nil {
+		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
+		Require(t, err)
+
+		sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
+		Require(t, err)
+		trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+		tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l1client, tx)
+		Require(t, err)
+	}
 
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false

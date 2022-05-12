@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"testing"
 	"time"
@@ -151,7 +152,7 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, common.Hash{}, chainId, arbnode.TestL1ReaderConfig, validator.DefaultNitroMachineConfig)
+	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, common.Hash{}, chainId, headerreader.TestConfig, validator.DefaultNitroMachineConfig)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
@@ -204,7 +205,7 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 	if !isSequencer {
 		nodeConfig.BatchPoster.Enable = false
 	}
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 
 	Require(t, err)
 	Require(t, node.Start(ctx))
@@ -221,7 +222,7 @@ func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbn
 
 func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info, params.ArbitrumDevTestChainConfig())
-	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
+	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil)
 	Require(t, err)
 
 	// Give the node an init message
@@ -279,7 +280,7 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, 0, first.ArbInterface.BlockChain().Config())
 	Require(t, err)
 
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil)
 	Require(t, err)
 
 	err = node.Start(ctx)

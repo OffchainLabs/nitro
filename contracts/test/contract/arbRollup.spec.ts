@@ -189,11 +189,11 @@ const setup = async () => {
     [true, true, true]
   );
 
-  await rollupAdmin.setIsBatchPoster(await sequencer.getAddress(), true);
-
   sequencerInbox = ((await ethers.getContractFactory(
     "SequencerInbox"
   )) as SequencerInbox__factory).attach(rollupCreatedEvent.sequencerInbox);
+
+  await sequencerInbox.setIsBatchPoster(await sequencer.getAddress(), true);
 
   challengeManager = ((await ethers.getContractFactory(
     "ChallengeManager"

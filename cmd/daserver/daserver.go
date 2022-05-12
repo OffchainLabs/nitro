@@ -11,19 +11,22 @@ import (
 	"strings"
 	"syscall"
 
+	koanfjson "github.com/knadh/koanf/parsers/json"
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/cmd/conf"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dasrpc"
-	flag "github.com/spf13/pflag"
 )
 
 type DAServerConfig struct {
 	Port       uint64                     `koanf:"port"`
 	LogLevel   int                        `koanf:"log-level"`
 	DAConf     das.DataAvailabilityConfig `koanf:"data-availability"`
-	ConfConfig conf.ConfConfig            `koanf:"conf"`
+	ConfConfig genericconf.ConfConfig     `koanf:"conf"`
 }
 
 func main() {
@@ -44,7 +47,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Int("log-level", int(log.LvlInfo), "log level")
 	f.Uint64("port", 9876, "Port to listen on")
 	das.DataAvailabilityConfigAddOptions("data-availability", f)
-	conf.ConfConfigAddOptions("conf", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
@@ -60,15 +63,23 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 			"data-availability.local-disk.priv-key": "",
 		})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
 		}
+
+		c, err := k.Marshal(koanfjson.Parser())
+		if err != nil {
+			return nil, fmt.Errorf("unable to marshal config file to JSON: %w", err)
+		}
+
+		fmt.Println(string(c))
+		os.Exit(0)
 	}
 
 	return &serverConfig, nil
 }
 
 func startup() error {
-	vcsRevision, vcsTime := conf.GetVersion()
+	vcsRevision, vcsTime := genericconf.GetVersion()
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)

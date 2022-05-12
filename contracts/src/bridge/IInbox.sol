@@ -23,6 +23,21 @@ error InsufficientValue(uint256 expected, uint256 actual);
 /// @dev submission cost provided isn't enough to create retryable ticket
 error InsufficientSubmissionCost(uint256 expected, uint256 actual);
 
+/// @dev used to convey retryable tx data in eth calls without requiring a tx trace
+/// this follows a pattern similar to EIP-3668 where reverts surface call information
+error RetryableData(
+    address from,
+    address to,
+    uint256 l2CallValue,
+    uint256 deposit,
+    uint256 maxSubmissionCost,
+    address excessFeeRefundAddress,
+    address callValueRefundAddress,
+    uint256 gasLimit,
+    uint256 maxFeePerGas,
+    bytes data
+);
+
 interface IInbox is IMessageProvider {
     function sendL2Message(bytes calldata messageData) external returns (uint256);
 
@@ -58,6 +73,7 @@ interface IInbox is IMessageProvider {
         bytes calldata data
     ) external payable returns (uint256);
 
+    /// @dev Gas limit and maxFeePerGas should not be set to 1 as that is used to trigger the RetryableData error
     function createRetryableTicket(
         address to,
         uint256 arbTxCallValue,
@@ -69,6 +85,7 @@ interface IInbox is IMessageProvider {
         bytes calldata data
     ) external payable returns (uint256);
 
+    /// @dev Gas limit and maxFeePerGas should not be set to 1 as that is used to trigger the RetryableData error
     function unsafeCreateRetryableTicket(
         address to,
         uint256 arbTxCallValue,
