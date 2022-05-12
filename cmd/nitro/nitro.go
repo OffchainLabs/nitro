@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"github.com/offchainlabs/nitro/das"
 	"math"
 	"math/big"
 	"os"
@@ -39,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
 
@@ -55,7 +57,7 @@ func printSampleUsage(name string) {
 func main() {
 	ctx := context.Background()
 
-	vcsRevision, vcsTime := conf.GetVersion()
+	vcsRevision, vcsTime := genericconf.GetVersion()
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
 	if err != nil {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
@@ -66,7 +68,7 @@ func main() {
 
 		return
 	}
-	logFormat, err := conf.ParseLogType(nodeConfig.LogType)
+	logFormat, err := genericconf.ParseLogType(nodeConfig.LogType)
 	if err != nil {
 		flag.Usage()
 		panic(fmt.Sprintf("Error parsing log type: %v", err))
@@ -148,18 +150,9 @@ func main() {
 
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
-	stackConf.HTTPHost = nodeConfig.HTTP.Addr
-	stackConf.HTTPPort = nodeConfig.HTTP.Port
-	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
-	stackConf.HTTPModules = nodeConfig.HTTP.API
-	stackConf.HTTPCors = nodeConfig.HTTP.CORSDomain
-	stackConf.WSHost = nodeConfig.WS.Addr
-	stackConf.WSPort = nodeConfig.WS.Port
-	stackConf.WSOrigins = nodeConfig.WS.Origins
-	stackConf.WSModules = nodeConfig.WS.API
-	stackConf.WSExposeAll = nodeConfig.WS.ExposeAll
-	stackConf.GraphQLCors = nodeConfig.GraphQL.CORSDomain
-	stackConf.GraphQLVirtualHosts = nodeConfig.GraphQL.VHosts
+	nodeConfig.HTTP.Apply(&stackConf)
+	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.GraphQL.Apply(&stackConf)
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
@@ -297,7 +290,7 @@ func main() {
 	}
 
 	if nodeConfig.Metrics {
-		go metrics.CollectProcessMetrics(3 * time.Second)
+		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
 
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
@@ -305,7 +298,16 @@ func main() {
 		}
 	}
 
-	currentNode, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts)
+	var daSigner das.DasSigner
+	if l1Wallet.PrivateKey != "" {
+		privateKey, err := crypto.HexToECDSA(l1Wallet.PrivateKey)
+		if err != nil {
+			panic(err)
+		}
+		daSigner = das.DasSignerFromPrivateKey(privateKey)
+	}
+
+	currentNode, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
 	if err != nil {
 		panic(err)
 	}
@@ -346,55 +348,55 @@ func main() {
 }
 
 type NodeConfig struct {
-	Conf          conf.ConfConfig          `koanf:"conf"`
-	Node          arbnode.Config           `koanf:"node"`
-	L1            conf.L1Config            `koanf:"l1"`
-	L2            conf.L2Config            `koanf:"l2"`
-	LogLevel      int                      `koanf:"log-level"`
-	LogType       string                   `koanf:"log-type"`
-	Persistent    conf.PersistentConfig    `koanf:"persistent"`
-	HTTP          conf.HTTPConfig          `koanf:"http"`
-	WS            conf.WSConfig            `koanf:"ws"`
-	GraphQL       conf.GraphQLConfig       `koanf:"graphql"`
-	DevInit       bool                     `koanf:"dev-init"`
-	NoInit        bool                     `koanf:"no-init"`
-	ImportFile    string                   `koanf:"import-file"`
-	Metrics       bool                     `koanf:"metrics"`
-	MetricsServer conf.MetricsServerConfig `koanf:"metrics-server"`
+	Conf          genericconf.ConfConfig          `koanf:"conf"`
+	Node          arbnode.Config                  `koanf:"node"`
+	L1            conf.L1Config                   `koanf:"l1"`
+	L2            conf.L2Config                   `koanf:"l2"`
+	LogLevel      int                             `koanf:"log-level"`
+	LogType       string                          `koanf:"log-type"`
+	Persistent    conf.PersistentConfig           `koanf:"persistent"`
+	HTTP          genericconf.HTTPConfig          `koanf:"http"`
+	WS            genericconf.WSConfig            `koanf:"ws"`
+	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
+	DevInit       bool                            `koanf:"dev-init"`
+	NoInit        bool                            `koanf:"no-init"`
+	ImportFile    string                          `koanf:"import-file"`
+	Metrics       bool                            `koanf:"metrics"`
+	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:          conf.ConfConfigDefault,
+	Conf:          genericconf.ConfConfigDefault,
 	Node:          arbnode.ConfigDefault,
 	L1:            conf.L1ConfigDefault,
 	L2:            conf.L2ConfigDefault,
 	LogLevel:      int(log.LvlInfo),
 	LogType:       "plaintext",
 	Persistent:    conf.PersistentConfigDefault,
-	HTTP:          conf.HTTPConfigDefault,
-	WS:            conf.WSConfigDefault,
+	HTTP:          genericconf.HTTPConfigDefault,
+	WS:            genericconf.WSConfigDefault,
 	DevInit:       false,
 	ImportFile:    "",
 	Metrics:       false,
-	MetricsServer: conf.MetricsServerConfigDefault,
+	MetricsServer: genericconf.MetricsServerConfigDefault,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
-	conf.ConfConfigAddOptions("conf", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
 	conf.L1ConfigAddOptions("l1", f)
 	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	conf.PersistentConfigAddOptions("persistent", f)
-	conf.HTTPConfigAddOptions("http", f)
-	conf.WSConfigAddOptions("ws", f)
-	conf.GraphQLConfigAddOptions("graphql", f)
+	genericconf.HTTPConfigAddOptions("http", f)
+	genericconf.WSConfigAddOptions("ws", f)
+	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.Bool("no-init", NodeConfigDefault.DevInit, "Do not init chain. Data must be valid in database.")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
-	conf.MetricsServerAddOptions("metrics-server", f)
+	genericconf.MetricsServerAddOptions("metrics-server", f)
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -408,7 +410,7 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	return nil
 }
 
-func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletConfig, *conf.WalletConfig, *ethclient.Client, *big.Int, error) {
+func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
@@ -535,8 +537,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletCon
 	// Don't pass around wallet contents with normal configuration
 	l1Wallet := nodeConfig.L1.Wallet
 	l2DevWallet := nodeConfig.L2.DevWallet
-	nodeConfig.L1.Wallet = conf.WalletConfigDefault
-	nodeConfig.L2.DevWallet = conf.WalletConfigDefault
+	nodeConfig.L1.Wallet = genericconf.WalletConfigDefault
+	nodeConfig.L2.DevWallet = genericconf.WalletConfigDefault
 
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }

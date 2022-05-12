@@ -38,8 +38,16 @@ interface ISequencerInbox {
         BatchDataLocation dataLocation
     );
 
+    event OwnerFunctionCalled(uint256 indexed id);
+
     /// @dev a separate event that emits batch data when this isn't easily accessible in the tx.input
     event SequencerBatchData(uint256 indexed batchSequenceNumber, bytes data);
+
+    /// @dev a valid keyset was added
+    event SetValidKeyset(bytes32 indexed keysetHash, bytes keysetBytes);
+
+    /// @dev a keyset was invalidated
+    event InvalidateKeyset(bytes32 indexed keysetHash);
 
     /// @dev Thrown when someone attempts to read fewer messages than have already been read
     error DelayedBackwards();
@@ -68,13 +76,15 @@ interface ISequencerInbox {
     /// @dev The batch data has the inbox authenticated bit set, but the batch data was not authenticated by the inbox
     error DataNotAuthenticated();
 
+    /// @dev Tried to create an already valid Data Availability Service keyset
+    error AlreadyValidDASKeyset(bytes32);
+
+    /// @dev Tried to use or invalidate an already invalid Data Availability Service keyset
+    error NoSuchKeyset(bytes32);
+
     function inboxAccs(uint256 index) external view returns (bytes32);
 
     function batchCount() external view returns (uint256);
-
-    function setMaxTimeVariation(MaxTimeVariation memory timeVariation) external;
-
-    function setIsBatchPoster(address addr, bool isBatchPoster_) external;
 
     function addSequencerL2Batch(
         uint256 sequenceNumber,
@@ -82,4 +92,23 @@ interface ISequencerInbox {
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
     ) external;
+
+    // Methods only callable by rollup owner
+
+    /**
+     * @notice Set max time variation from actual time for sequencer inbox
+     * @param timeVariation the maximum time variation parameters
+     */
+    function setMaxTimeVariation(MaxTimeVariation memory timeVariation) external;
+
+    /**
+     * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
+     * @param addr the address
+     * @param isBatchPoster if the specified address should be authorized as a batch poster
+     */
+    function setIsBatchPoster(address addr, bool isBatchPoster) external;
+
+    function setValidKeyset(bytes calldata keysetBytes) external;
+
+    function invalidateKeysetHash(bytes32 ksHash) external;
 }

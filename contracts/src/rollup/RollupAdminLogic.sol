@@ -53,8 +53,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
 
         stakeToken = config.stakeToken;
 
-        sequencerBridge.setMaxTimeVariation(config.sequencerInboxMaxTimeVariation);
-
         emit RollupInitialized(config.wasmModuleRoot, config.chainId);
     }
 
@@ -222,27 +220,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         require(totalWithdrawableFunds == 0, "NO_PENDING_WITHDRAW");
         stakeToken = newStakeToken;
         emit OwnerFunctionCalled(13);
-    }
-
-    /**
-     * @notice Set max delay for sequencer inbox
-     * @param maxTimeVariation the maximum time variation parameters
-     */
-    function setSequencerInboxMaxTimeVariation(
-        ISequencerInbox.MaxTimeVariation calldata maxTimeVariation
-    ) external override {
-        sequencerBridge.setMaxTimeVariation(maxTimeVariation);
-        emit OwnerFunctionCalled(14);
-    }
-
-    /**
-     * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
-     * @param addr the address
-     * @param isBatchPoster if the specified address should be authorized as a batch poster
-     */
-    function setIsBatchPoster(address addr, bool isBatchPoster) external override {
-        ISequencerInbox(sequencerBridge).setIsBatchPoster(addr, isBatchPoster);
-        emit OwnerFunctionCalled(19);
     }
 
     /**

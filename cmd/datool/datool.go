@@ -4,14 +4,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbstate"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dasrpc"
@@ -57,7 +60,7 @@ type ClientStoreConfig struct {
 	Message            string        `koanf:"message"`
 	DASRetentionPeriod time.Duration `koanf:"das-retention-period"`
 	// TODO ECDSA private key to sign message with
-	ConfConfig conf.ConfConfig `koanf:"conf"`
+	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -65,7 +68,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("url", "", "URL of DAS server to connect to.")
 	f.String("message", "", "Message to send.")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
-	conf.ConfConfigAddOptions("conf", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
@@ -91,12 +94,12 @@ func startClientStore(args []string) error {
 	}
 
 	ctx := context.Background()
-	cert, err := client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
+	cert, err := client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	if err != nil {
 		return err
 	}
 
-	serializedCert := das.Serialize(*cert)
+	serializedCert := das.Serialize(cert)
 	encodedCert := make([]byte, base64.StdEncoding.EncodedLen(len(serializedCert)))
 	base64.StdEncoding.Encode(encodedCert, serializedCert)
 
@@ -108,16 +111,16 @@ func startClientStore(args []string) error {
 // datool client retrieve
 
 type ClientRetrieveConfig struct {
-	URL        string          `koanf:"url"`
-	Cert       string          `koanf:"cert"`
-	ConfConfig conf.ConfConfig `koanf:"conf"`
+	URL        string                 `koanf:"url"`
+	Cert       string                 `koanf:"cert"`
+	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientRetrieveConfig(args []string) (*ClientRetrieveConfig, error) {
 	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
 	f.String("url", "", "URL of DAS server to connect to.")
 	f.String("cert", "", "Base64 encodeded DAS certificate of message to retrieve.")
-	conf.ConfConfigAddOptions("conf", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
@@ -147,8 +150,12 @@ func startClientRetrieve(args []string) error {
 	if err != nil {
 		return err
 	}
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(decodedCert))
+	if err != nil {
+		return err
+	}
 	ctx := context.Background()
-	message, err := client.Retrieve(ctx, decodedCert)
+	message, err := client.Retrieve(ctx, cert)
 	if err != nil {
 		return err
 	}
@@ -160,13 +167,13 @@ func startClientRetrieve(args []string) error {
 
 type KeyGenConfig struct {
 	Dir        string
-	ConfConfig conf.ConfConfig `koanf:"conf"`
+	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f := flag.NewFlagSet("datool keygen", flag.ContinueOnError)
 	f.String("dir", "", "The directory to generate the keys in")
-	conf.ConfConfigAddOptions("conf", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
 	if err != nil {

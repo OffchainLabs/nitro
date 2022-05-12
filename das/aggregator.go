@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"math/bits"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -19,11 +20,14 @@ import (
 
 type AggregatorConfig struct {
 	// sequencer public key
-	AssumedHonest int    `koanf:"assumed-honest"`
-	Backends      string `koanf:"backends"`
+	AssumedHonest      int    `koanf:"assumed-honest"`
+	Backends           string `koanf:"backends"`
+	StoreSignerAddress string `koanf:"store-signer-address"`
 }
 
-var DefaultAggregatorConfig = AggregatorConfig{}
+var DefaultAggregatorConfig = AggregatorConfig{
+	StoreSignerAddress: "",
+}
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
@@ -37,6 +41,9 @@ type Aggregator struct {
 	/// calculated fields
 	requiredServicesForStore       int
 	maxAllowedServiceStoreFailures int
+	keysetHash                     [32]byte
+	keysetBytes                    []byte
+	storeSignerAddr                *common.Address
 }
 
 type ServiceDetails struct {
@@ -58,14 +65,36 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 
 func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
 	var aggSignersMask uint64
+	pubKeys := []blsSignatures.PublicKey{}
 	for _, d := range services {
 		if bits.OnesCount64(d.signersMask) != 1 {
 			return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", d.service, d.signersMask)
 		}
 		aggSignersMask |= d.signersMask
+		pubKeys = append(pubKeys, d.pubKey)
 	}
 	if bits.OnesCount64(aggSignersMask) != len(services) {
 		return nil, errors.New("At least two signers share a mask")
+	}
+
+	keyset := &arbstate.DataAvailabilityKeyset{
+		AssumedHonest: uint64(config.AssumedHonest),
+		PubKeys:       pubKeys,
+	}
+	ksBuf := bytes.NewBuffer([]byte{})
+	if err := keyset.Serialize(ksBuf); err != nil {
+		return nil, err
+	}
+	keysetHashBuf, err := keyset.Hash()
+	if err != nil {
+		return nil, err
+	}
+	var keysetHash [32]byte
+	copy(keysetHash[:], keysetHashBuf)
+
+	storeSignerAddr, err := StoreSignerAddressFromString(config.StoreSignerAddress)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Aggregator{
@@ -73,6 +102,9 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 		services:                       services,
 		requiredServicesForStore:       len(services) + 1 - config.AssumedHonest,
 		maxAllowedServiceStoreFailures: config.AssumedHonest - 1,
+		keysetHash:                     keysetHash,
+		keysetBytes:                    ksBuf.Bytes(),
+		storeSignerAddr:                storeSignerAddr,
 	}, nil
 }
 
@@ -80,32 +112,10 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 // first successful response where the data matches the requested hash. Otherwise
 // if all requests fail or if its context is canceled (eg via TimeoutWrapper) then
 // it returns an error.
-func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
-	requestedCert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(cert))
+func (a *Aggregator) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
+	err := cert.VerifyNonPayloadParts(ctx, a)
 	if err != nil {
 		return nil, err
-	}
-
-	// Cert is the aggregate cert, validate it against DAS public keys
-	var servicesThatSignedCert []ServiceDetails
-	var pubKeys []blsSignatures.PublicKey
-	for _, d := range a.services {
-		if requestedCert.SignersMask&d.signersMask != 0 {
-			servicesThatSignedCert = append(servicesThatSignedCert, d)
-			pubKeys = append(pubKeys, d.pubKey)
-		}
-	}
-	if len(servicesThatSignedCert) < a.requiredServicesForStore {
-		return nil, fmt.Errorf("Cert %v was only signed by %d DASes, %d required.", requestedCert, len(servicesThatSignedCert), a.requiredServicesForStore)
-	}
-
-	signedBlob := serializeSignableFields(*requestedCert)
-	sigMatch, err := blsSignatures.VerifySignature(requestedCert.Sig, signedBlob, blsSignatures.AggregatePublicKeys(pubKeys))
-	if err != nil {
-		return nil, err
-	}
-	if !sigMatch {
-		return nil, errors.New("Signature of data in cert passed in doesn't match")
 	}
 
 	// Query all services, even those that didn't sign.
@@ -122,7 +132,7 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 				errorChan <- err
 				return
 			}
-			if bytes.Equal(crypto.Keccak256(blob), requestedCert.DataHash[:]) {
+			if bytes.Equal(crypto.Keccak256(blob), cert.DataHash[:]) {
 				blobChan <- blob
 			} else {
 				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
@@ -167,19 +177,29 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
-func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
+func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	if a.storeSignerAddr != nil {
+		actualSigner, err := DasRecoverSigner(message, timeout, sig)
+		if err != nil {
+			return nil, err
+		}
+		if actualSigner != *a.storeSignerAddr {
+			return nil, errors.New("store request not properly signed")
+		}
+	}
+
 	responses := make(chan storeResponse, len(a.services))
 
 	expectedHash := crypto.Keccak256(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
-			cert, err := d.service.Store(ctx, message, timeout)
+			cert, err := d.service.Store(ctx, message, timeout, sig)
 			if err != nil {
 				responses <- storeResponse{d, nil, err}
 				return
 			}
 
-			verified, err := blsSignatures.VerifySignature(cert.Sig, serializeSignableFields(*cert), d.pubKey)
+			verified, err := blsSignatures.VerifySignature(cert.Sig, serializeSignableFields(cert), d.pubKey)
 			if err != nil {
 				responses <- storeResponse{d, nil, err}
 				return
@@ -237,8 +257,9 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	aggCert.SignersMask = aggSignersMask
 	copy(aggCert.DataHash[:], expectedHash)
 	aggCert.Timeout = timeout
+	aggCert.KeysetHash = a.keysetHash
 
-	verified, err := blsSignatures.VerifySignature(aggCert.Sig, serializeSignableFields(aggCert), aggPubKey)
+	verified, err := blsSignatures.VerifySignature(aggCert.Sig, serializeSignableFields(&aggCert), aggPubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +267,17 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		return nil, errors.New("Failed aggregate signature check")
 	}
 	return &aggCert, nil
+}
+
+func (a *Aggregator) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	if !bytes.Equal(ksHash, a.keysetHash[:]) {
+		return nil, ErrDasKeysetNotFound
+	}
+	return a.keysetBytes, nil
+}
+
+func (a *Aggregator) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
+	return a.keysetBytes, nil
 }
 
 func (a *Aggregator) String() string {
