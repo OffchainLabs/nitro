@@ -3,6 +3,7 @@ import 'hardhat-deploy'
 import '@nomiclabs/hardhat-ethers'
 import '@typechain/hardhat'
 import 'solidity-coverage'
+import 'hardhat-gas-reporter'
 import prodConfig from "./hardhat.prod-config"
 
 /**

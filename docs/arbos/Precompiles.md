@@ -208,6 +208,10 @@ Provides insight into the cost of using the chain. These methods have been adjus
 | [<img src=e.png height=16>][GIs12] [`GetL1BaseFeeEstimateInertia`][GI12]`()`             | Get how slowly ArbOS updates its estimate of the L1 basefee                                      |
 | [<img src=e.png height=16>][GIs13] [`GetL1GasPriceEstimate`][GI13]`()`                   | Deprecated -- Same as getL1BaseFeeEstimate()                                                     |
 | [<img src=e.png height=16>][GIs14] [`GetCurrentTxL1GasFees`][GI14]`()`                   | Get L1 gas fees paid by the current transaction                                                  |
+| [<img src=e.png height=16>][GIs15] [`GetGasBacklog`][GI15]`()`                           | Get the backlogged amount of gas burnt in excess of the speed limit                              |
+| [<img src=e.png height=16>][GIs16] [`GetPricingInertia`][GI16]`()`                       | Get how slowly ArbOS updates the L2 basefee in response to backlogged gas                        |
+| [<img src=e.png height=16>][GIs17] [`GetGasBacklogTolerance`][GI17]`()`                  | Get the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee           |
+
 
 
 [GI0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L27
@@ -225,6 +229,9 @@ Provides insight into the cost of using the chain. These methods have been adjus
 [GI12]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L155
 [GI13]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L160
 [GI14]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L165
+[GI15]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/precompiles/ArbGasInfo.go#L170
+[GI16]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/precompiles/ArbGasInfo.go#L175
+[GI17]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/precompiles/ArbGasInfo.go#L180
 
 [GIs0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L36
 [GIs1]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L58
@@ -241,6 +248,9 @@ Provides insight into the cost of using the chain. These methods have been adjus
 [GIs12]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L125
 [GIs13]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L128
 [GIs14]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L131
+[GIs15]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/contracts/src/precompiles/ArbGasInfo.sol#L123
+[GIs16]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/contracts/src/precompiles/ArbGasInfo.sol#L126
+[GIs17]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/contracts/src/precompiles/ArbGasInfo.sol#L129
 
 
 # [ArbInfo][ArbInfo_link]<a name=ArbInfo></a>
@@ -464,7 +474,7 @@ Provides system-level functionality for interacting with L1 and understanding th
 
 | Events                                                              |                                                                 |
 |:--------------------------------------------------------------------|:----------------------------------------------------------------|
-| [<img src=e.png height=16>][Ses0] [`L2ToL1Transaction`][Se0] &nbsp; | Logs a send tx from L2 to L1, including data for outbox proving |
+| [<img src=e.png height=16>][Ses0] [`L2ToL1Tx`][Se0] &nbsp;          | Logs a send tx from L2 to L1, including data for outbox proving |
 | [<img src=e.png height=16>][Ses1] [`SendMerkleUpdate`][Se1]         | Logs a new merkle branch needed for constructing outbox proofs  |
 
 [Se0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbSys.go#L152

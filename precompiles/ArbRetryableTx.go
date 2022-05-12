@@ -27,6 +27,10 @@ type ArbRetryableTx struct {
 	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr) (uint64, error)
 	CanceledGasCost         func(bytes32) (uint64, error)
 
+	// deprecated event
+	Redeemed        func(ctx, mech, bytes32) error
+	RedeemedGasCost func(bytes32) (uint64, error)
+
 	NoTicketWithIDError func() error
 	NotCallableError    func() error
 }
@@ -114,7 +118,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
+	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate), c.State.FormatVersion())
 }
 
 // Gets the default lifetime period a retryable has at creation

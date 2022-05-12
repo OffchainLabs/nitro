@@ -84,6 +84,9 @@ interface ArbRetryableTx {
     );
     event Canceled(bytes32 indexed ticketId);
 
+    /// @dev DEPRECATED in favour of new RedeemScheduled event after the nitro upgrade
+    event Redeemed(bytes32 indexed userTxHash);
+
     error NoTicketWithID();
     error NotCallable();
 }
