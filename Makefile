@@ -1,6 +1,5 @@
-#
-# Copyright 2020, Offchain Labs, Inc. All rights reserved.
-#
+# Copyright 2021-2022, Offchain Labs, Inc.
+# For license information, see https://github.com/nitro/blob/master/LICENSE
 
 # Docker builds mess up file timestamps. Then again, in docker builds we never
 # have to update an existing file. So - for docker, convert all dependencies
@@ -62,7 +61,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/seq-coordinator-invalidate
+build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/datool $(output_root)/bin/seq-coordinator-invalidate
 	@printf $(done)
 
 build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
@@ -145,19 +144,22 @@ docker:
 # regular build rules
 
 $(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/nitro
+	go build -o $@ "$(CURDIR)/cmd/nitro"
 
 $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/deploy
+	go build -o $@ "$(CURDIR)/cmd/deploy"
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/relay
+	go build -o $@ "$(CURDIR)/cmd/relay"
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/daserver
+	go build -o $@ "$(CURDIR)/cmd/daserver"
+
+$(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ "$(CURDIR)/cmd/datool"
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ ./cmd/seq-coordinator-invalidate
+	go build -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen

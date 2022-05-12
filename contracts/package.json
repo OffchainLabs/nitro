@@ -1,6 +1,6 @@
 {
   "name": "@arbitrum/nitro-contracts",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.5",
   "description": "Layer 2 precompiles and rollup for Arbitrum Nitro",
   "author": "Offchain Labs, Inc.",
   "license": "BUSL-1.1",
@@ -9,6 +9,11 @@
     "url": "git+https://github.com/offchainlabs/nitro.git",
     "directory": "contracts"
   },
+  "files": [
+    "src/",
+    "scripts/build.bash",
+    "hardhat.prod-config.js"
+  ],
   "bugs": {
     "url": "https://github.com/offchainlabs/nitro/issues"
   },
@@ -36,6 +41,7 @@
     "ethereum-waffle": "^3.4.0",
     "ethers": "^5.5.2",
     "hardhat-deploy": "^0.11.4",
+    "hardhat-gas-reporter": "^1.0.8",
     "prettier": "^2.5.1",
     "prettier-plugin-solidity": "^1.0.0-beta.19",
     "solhint": "^3.3.7",

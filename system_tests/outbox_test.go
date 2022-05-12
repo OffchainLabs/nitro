@@ -31,7 +31,7 @@ func TestOutboxProofs(t *testing.T) {
 
 	arbSysAbi, err := precompilesgen.ArbSysMetaData.GetAbi()
 	Require(t, err, "failed to get abi")
-	withdrawTopic := arbSysAbi.Events["L2ToL1Transaction"].ID
+	withdrawTopic := arbSysAbi.Events["L2ToL1Tx"].ID
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
 
 	l2info, _, client := CreateTestL2(t, ctx)
@@ -96,7 +96,7 @@ func TestOutboxProofs(t *testing.T) {
 		for _, log := range receipt.Logs {
 
 			if log.Topics[0] == withdrawTopic {
-				parsedLog, err := arbSys.ParseL2ToL1Transaction(*log)
+				parsedLog, err := arbSys.ParseL2ToL1Tx(*log)
 				Require(t, err, "Failed to parse log")
 
 				provables = append(provables, proofPair{

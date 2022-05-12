@@ -18,9 +18,14 @@ import (
 func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	dbPath, err := ioutil.TempDir("/tmp", "das_test")
 	defer os.RemoveAll(dbPath)
-
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath)
+
+	config := LocalDiskDASConfig{
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+	}
+	das, err := NewLocalDiskDAS(config)
 	Require(t, err, "no das")
 
 	ctx := context.Background()
@@ -42,7 +47,7 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	}
 
 	// 2nd das instance can read keys from disk
-	das2, err := NewLocalDiskDataAvailabilityService(dbPath)
+	das2, err := NewLocalDiskDAS(config)
 	Require(t, err, "no das")
 
 	messageRetrieved2, err := das2.Retrieve(ctx, certBytes)
@@ -55,9 +60,14 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 func TestDASMissingMessage(t *testing.T) {
 	dbPath, err := ioutil.TempDir("/tmp", "das_test")
 	defer os.RemoveAll(dbPath)
-
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath)
+
+	config := LocalDiskDASConfig{
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+	}
+	das, err := NewLocalDiskDAS(config)
 	Require(t, err, "no das")
 
 	ctx := context.Background()

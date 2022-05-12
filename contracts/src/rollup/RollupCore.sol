@@ -9,7 +9,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "./Node.sol";
 import "./IRollupCore.sol";
 import "./RollupLib.sol";
-import "./RollupEventBridge.sol";
+import "./IRollupEventBridge.sol";
 import "./IRollupCore.sol";
 
 import "../challenge/IChallengeManager.sol";
@@ -34,7 +34,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     IBridge public delayedBridge;
     ISequencerInbox public sequencerBridge;
     IOutbox public outbox;
-    RollupEventBridge public rollupEventBridge;
+    IRollupEventBridge public rollupEventBridge;
     IChallengeManager public override challengeManager;
     // when a staker loses a challenge, half of their funds get escrowed in this address
     address public loserStakeEscrow;

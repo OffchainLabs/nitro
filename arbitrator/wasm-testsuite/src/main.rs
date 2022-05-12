@@ -8,7 +8,13 @@ use prover::{
     value::Value,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::{HashMap, HashSet}, fs::File, io::BufReader, path::PathBuf, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::BufReader,
+    path::PathBuf,
+    time::Instant,
+};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -220,7 +226,10 @@ fn main() -> eyre::Result<()> {
     }
     macro_rules! outname {
         () => {
-            format!("../../contracts/test/prover/spec-proofs/{}-{:04}.json", wasmfile, subtest)
+            format!(
+                "../../contracts/test/prover/spec-proofs/{}-{:04}.json",
+                wasmfile, subtest
+            )
         };
     }
 

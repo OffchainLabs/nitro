@@ -8,15 +8,15 @@ use crate::{
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
-    utils::{file_bytes, Bytes32, DeprecatedTableType},
+    utils::{file_bytes, Bytes32, CBytes, DeprecatedTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
-    }
+    },
 };
 use digest::Digest;
-use eyre::{bail, ensure, Result, WrapErr};
+use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use rayon::prelude::*;
@@ -354,17 +354,21 @@ impl Module {
             bin.memories.len() <= 1,
             "Multiple memories are not supported"
         );
-        if let Some(limits) = bin.memories.get(0) {            
+        if let Some(limits) = bin.memories.get(0) {
             let page_size = Memory::PAGE_SIZE;
-            let initial = limits.initial;  // validate() checks this is less than max::u32
-            let allowed = u32::MAX as u64 / Memory::PAGE_SIZE - 1;  // we require the size remain *below* 2^32
-            
+            let initial = limits.initial; // validate() checks this is less than max::u32
+            let allowed = u32::MAX as u64 / Memory::PAGE_SIZE - 1; // we require the size remain *below* 2^32
+
             let max_size = match limits.maximum {
                 Some(pages) => u64::min(allowed, pages),
                 _ => allowed,
             };
             if initial > max_size {
-                bail!("Memory inits to a size larger than its max: {} vs {}", limits.initial, max_size);
+                bail!(
+                    "Memory inits to a size larger than its max: {} vs {}",
+                    limits.initial,
+                    max_size
+                );
             }
             let size = initial * page_size;
 
@@ -637,7 +641,11 @@ pub struct ProofInfo {
 
 impl ProofInfo {
     pub fn new(before: String, proof: String, after: String) -> Self {
-        Self { before, proof, after }
+        Self {
+            before,
+            proof,
+            after,
+        }
     }
 }
 
@@ -672,7 +680,50 @@ pub struct MachineState<'a> {
     initial_hash: Bytes32,
 }
 
-#[derive(Clone, Debug)]
+pub type PreimageResolver = Arc<dyn Fn(u64, Bytes32) -> Option<CBytes>>;
+
+/// Wraps a preimage resolver to provide an easier API
+/// and cache the last preimage retrieved.
+#[derive(Clone)]
+struct PreimageResolverWrapper {
+    resolver: PreimageResolver,
+    last_resolved: Option<(Bytes32, CBytes)>,
+}
+
+impl PreimageResolverWrapper {
+    pub fn new(resolver: PreimageResolver) -> PreimageResolverWrapper {
+        PreimageResolverWrapper {
+            resolver,
+            last_resolved: None,
+        }
+    }
+
+    pub fn get(&mut self, context: u64, hash: Bytes32) -> Option<&[u8]> {
+        // TODO: this is unnecessarily complicated by the rust borrow checker.
+        // This will probably be simplifiable when Polonius is shipped.
+        if matches!(&self.last_resolved, Some(r) if r.0 != hash) {
+            self.last_resolved = None;
+        }
+        match &mut self.last_resolved {
+            Some(resolved) => Some(&resolved.1),
+            x => {
+                let data = (self.resolver)(context, hash)?;
+                Some(&x.insert((hash, data)).1)
+            }
+        }
+    }
+
+    pub fn get_const(&self, context: u64, hash: Bytes32) -> Option<CBytes> {
+        if let Some(resolved) = &self.last_resolved {
+            if resolved.0 == hash {
+                return Some(resolved.1.clone());
+            }
+        }
+        (self.resolver)(context, hash)
+    }
+}
+
+#[derive(Clone)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
     status: MachineStatus,
@@ -686,8 +737,9 @@ pub struct Machine {
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-    preimages: HashMap<Bytes32, Vec<u8>>,
+    preimage_resolver: PreimageResolverWrapper,
     initial_hash: Bytes32,
+    context: u64,
 }
 
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -776,7 +828,7 @@ where
         IBinOpType::DivS | IBinOpType::DivU | IBinOpType::RemS | IBinOpType::RemU,
     ) && b.is_zero()
     {
-        return None
+        return None;
     }
     let res = match op {
         IBinOpType::Add => a + b,
@@ -825,6 +877,10 @@ where
     Value::I32(res as u32)
 }
 
+pub fn get_empty_preimage_resolver() -> PreimageResolver {
+    Arc::new(|_, _| None) as _
+}
+
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
 
@@ -836,7 +892,7 @@ impl Machine {
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-        preimages: HashMap<Bytes32, Vec<u8>>,
+        preimage_resolver: PreimageResolver,
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source)
@@ -975,7 +1031,7 @@ impl Machine {
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
             ensure!(
-                dbg!(&main_module.func_types[f as usize]) == &expected_type,
+                &main_module.func_types[f as usize] == &expected_type,
                 "Run function doesn't match expected signature of [argc, argv]",
             );
             // Go's flags library panics if the argument list is empty.
@@ -1098,14 +1154,15 @@ impl Machine {
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_contents,
-            preimages,
+            preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             initial_hash: Bytes32::default(),
+            context: 0,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
     }
 
-    pub fn new_from_wavm(wavm_binary: &Path) -> eyre::Result<Machine> {
+    pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let f = BufReader::new(File::open(wavm_binary)?);
         let decompressor = brotli2::read::BrotliDecoder::new(f);
         let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
@@ -1145,14 +1202,15 @@ impl Machine {
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_contents: Default::default(),
-            preimages: Default::default(),
+            preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             initial_hash: Bytes32::default(),
+            context: 0,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
     }
 
-    pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
+    pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         ensure!(
             self.hash() == self.initial_hash,
             "serialize_binary can only be called on initial machine",
@@ -1202,7 +1260,7 @@ impl Machine {
         let reader = BufReader::new(File::open(path)?);
         let new_state: MachineState = bincode::deserialize_from(reader)?;
         if self.initial_hash != new_state.initial_hash {
-            eyre::bail!(
+            bail!(
                 "attempted to load deserialize machine with initial hash {} into machine with initial hash {}",
                 new_state.initial_hash, self.initial_hash,
             );
@@ -1268,7 +1326,10 @@ impl Machine {
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
         if self.frame_stack.len() != 0 {
-            bail!("machine has not successfully computed a final result {:?}", self.status)
+            bail!(
+                "machine has not successfully computed a final result {:?}",
+                self.status
+            )
         }
         Ok(self.value_stack.clone())
     }
@@ -1298,9 +1359,9 @@ impl Machine {
         self.steps
     }
 
-    pub fn step_n(&mut self, n: u64) {
+    pub fn step_n(&mut self, n: u64) -> Result<()> {
         if self.is_halted() {
-            return;
+            return Ok(());
         }
         let mut module = &mut self.modules[self.pc.module];
         let mut func = &module.funcs[self.pc.func];
@@ -1422,7 +1483,7 @@ impl Machine {
                             }
                             func = &module.funcs[self.pc.func];
                         }
-                        v => panic!("Attempted to return into an invalid reference: {:?}", v),
+                        v => bail!("attempted to return into an invalid reference: {:?}", v),
                     }
                 }
                 Opcode::Call => {
@@ -1475,7 +1536,7 @@ impl Machine {
                     let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
                     let idx = match self.value_stack.pop() {
                         Some(Value::I32(i)) => usize::try_from(i).unwrap(),
-                        x => panic!(
+                        x => bail!(
                             "WASM validation failed: top of stack before call_indirect is {:?}",
                             x,
                         ),
@@ -1496,7 +1557,7 @@ impl Machine {
                                 func = &module.funcs[self.pc.func];
                             }
                             Value::RefNull => error!(),
-                            v => panic!("Invalid table element value {:?}", v),
+                            v => bail!("invalid table element value {:?}", v),
                         }
                     } else {
                         error!();
@@ -1521,7 +1582,7 @@ impl Machine {
                 Opcode::MemoryLoad { ty, bytes, signed } => {
                     let base = match self.value_stack.pop() {
                         Some(Value::I32(x)) => x,
-                        x => panic!(
+                        x => bail!(
                             "WASM validation failed: top of stack before memory load is {:?}",
                             x,
                         ),
@@ -1543,14 +1604,14 @@ impl Machine {
                         Some(Value::I64(x)) => x,
                         Some(Value::F32(x)) => x.to_bits().into(),
                         Some(Value::F64(x)) => x.to_bits(),
-                        x => panic!(
+                        x => bail!(
                             "WASM validation failed: attempted to memory store type {:?}",
                             x,
                         ),
                     };
                     let base = match self.value_stack.pop() {
                         Some(Value::I32(x)) => x,
-                        x => panic!(
+                        x => bail!(
                             "WASM validation failed: attempted to memory store with index type {:?}",
                             x,
                         ),
@@ -1597,7 +1658,7 @@ impl Machine {
                                     self.value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
-                                panic!("WASM validation failed: wrong types for i32relop");
+                                bail!("WASM validation failed: wrong types for i32relop");
                             }
                         }
                         IntegerValType::I64 => {
@@ -1608,7 +1669,7 @@ impl Machine {
                                     self.value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
-                                panic!("WASM validation failed: wrong types for i64relop");
+                                bail!("WASM validation failed: wrong types for i64relop");
                             }
                         }
                     }
@@ -1635,11 +1696,11 @@ impl Machine {
                     let old_size = module.memory.size();
                     let adding_pages = match self.value_stack.pop() {
                         Some(Value::I32(x)) => x,
-                        v => panic!("WASM validation failed: bad value for memory.grow {:?}", v),
+                        v => bail!("WASM validation failed: bad value for memory.grow {:?}", v),
                     };
                     let page_size = Memory::PAGE_SIZE;
                     let max_size = module.memory.max_size as u64 * page_size;
-                    
+
                     let new_size = (|| {
                         let adding_size = u64::from(adding_pages).checked_mul(page_size)?;
                         let new_size = old_size.checked_add(adding_size)?;
@@ -1666,14 +1727,14 @@ impl Machine {
                             if let Some(Value::I32(a)) = va {
                                 self.value_stack.push(Value::I32(exec_iun_op(a, op)));
                             } else {
-                                panic!("WASM validation failed: wrong types for i32unop");
+                                bail!("WASM validation failed: wrong types for i32unop");
                             }
                         }
                         IntegerValType::I64 => {
                             if let Some(Value::I64(a)) = va {
                                 self.value_stack.push(Value::I64(exec_iun_op(a, op) as u64));
                             } else {
-                                panic!("WASM validation failed: wrong types for i64unop");
+                                bail!("WASM validation failed: wrong types for i64unop");
                             }
                         }
                     }
@@ -1694,7 +1755,7 @@ impl Machine {
                                 }
                                 self.value_stack.push(Value::I32(value))
                             } else {
-                                panic!("WASM validation failed: wrong types for i32binop");
+                                bail!("WASM validation failed: wrong types for i32binop");
                             }
                         }
                         IntegerValType::I64 => {
@@ -1708,7 +1769,7 @@ impl Machine {
                                 }
                                 self.value_stack.push(Value::I64(value))
                             } else {
-                                panic!("WASM validation failed: wrong types for i64binop");
+                                bail!("WASM validation failed: wrong types for i64binop");
                             }
                         }
                     }
@@ -1716,7 +1777,7 @@ impl Machine {
                 Opcode::I32WrapI64 => {
                     let x = match self.value_stack.pop() {
                         Some(Value::I64(x)) => x,
-                        v => panic!(
+                        v => bail!(
                             "WASM validation failed: wrong type for i32.wrapi64: {:?}",
                             v,
                         ),
@@ -1749,7 +1810,7 @@ impl Machine {
                             assert_eq!(dest, ArbValueType::I64, "Unsupported reinterpret");
                             Value::I64(x.to_bits())
                         }
-                        v => panic!("Bad reinterpret: val {:?} source {:?}", v, source),
+                        v => bail!("bad reinterpret: val {:?} source {:?}", v, source),
                     };
                     self.value_stack.push(val);
                 }
@@ -1833,7 +1894,7 @@ impl Machine {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
                     if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                        if let Some(preimage) = self.preimages.get(&hash) {
+                        if let Some(preimage) = self.preimage_resolver.get(self.context, hash) {
                             let offset = usize::try_from(offset).unwrap();
                             let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
                             let read = preimage.get(offset..(offset + len)).unwrap_or_default();
@@ -1853,7 +1914,7 @@ impl Machine {
                                     module, func, pc
                                 );
                             }
-                            panic!("Missing requested preimage for hash {}", hash);
+                            bail!("missing requested preimage for hash {}", hash);
                         }
                     } else {
                         error!();
@@ -1899,6 +1960,7 @@ impl Machine {
             );
             self.stdio_output.clear();
         }
+        Ok(())
     }
 
     fn host_call_hook(
@@ -1907,7 +1969,7 @@ impl Machine {
         stdio_output: &mut Vec<u8>,
         module_name: &str,
         name: &str,
-    ) -> eyre::Result<()> {
+    ) -> Result<()> {
         macro_rules! pull_arg {
             ($offset:expr, $t:ident) => {
                 value_stack
@@ -1916,7 +1978,7 @@ impl Machine {
                         Value::$t(x) => Some(*x),
                         _ => None,
                     })
-                    .ok_or_else(|| eyre::eyre!("Exit code not on top of stack"))?
+                    .ok_or_else(|| eyre!("exit code not on top of stack"))?
             };
         }
         macro_rules! read_u32_ptr {
@@ -1924,7 +1986,7 @@ impl Machine {
                 module
                     .memory
                     .get_u32($ptr.into())
-                    .ok_or_else(|| eyre::eyre!("Pointer out of bounds"))?
+                    .ok_or_else(|| eyre!("pointer out of bounds"))?
             };
         }
         macro_rules! read_bytes_segment {
@@ -1932,7 +1994,7 @@ impl Machine {
                 module
                     .memory
                     .get_range($ptr as usize, $size as usize)
-                    .ok_or_else(|| eyre::eyre!("Bytes segment out of bounds"))?
+                    .ok_or_else(|| eyre!("bytes segment out of bounds"))?
             };
         }
         match (module_name, name) {
@@ -2171,7 +2233,8 @@ impl Machine {
                         // For stores, prove the second merkle against a state after the first leaf is set.
                         // This state also happens to have the second leaf set, but that's irrelevant.
                         let mut copy = self.clone();
-                        copy.step_n(1);
+                        copy.step_n(1)
+                            .expect("Failed to step machine forward for proof");
                         copy.modules[self.pc.module].memory.merkelize().into_owned()
                     } else {
                         mem_merkle.into_owned()
@@ -2242,7 +2305,7 @@ impl Machine {
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
                     if next_inst.opcode == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
-                        let preimage = match self.preimages.get(&hash) {
+                        let preimage = match self.preimage_resolver.get_const(self.context, hash) {
                             Some(b) => b,
                             None => panic!("Missing requested preimage for hash {}", hash),
                         };
@@ -2284,8 +2347,12 @@ impl Machine {
         self.global_state = gs;
     }
 
-    pub fn add_preimage(&mut self, key: Bytes32, val: Vec<u8>) {
-        self.preimages.insert(key, val);
+    pub fn set_preimage_resolver(&mut self, resolver: PreimageResolver) {
+        self.preimage_resolver.resolver = resolver;
+    }
+
+    pub fn set_context(&mut self, context: u64) {
+        self.context = context;
     }
 
     pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {

@@ -49,7 +49,7 @@ func TestEstimate(t *testing.T) {
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
-	gasPrice := big.NewInt(2 * params.GWei)
+	gasPrice := big.NewInt(params.GWei / 10)
 
 	// set the gas price
 	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)

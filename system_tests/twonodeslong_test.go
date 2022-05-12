@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/das"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -51,7 +52,12 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 		chainConfig = params.ArbitrumDevTestDASChainConfig()
-		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
+		dasConfig := das.LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+		}
+		l1NodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig
 	}
 	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
@@ -60,7 +66,12 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
-	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	dasConfig := das.LocalDiskDASConfig{
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+	}
+	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")

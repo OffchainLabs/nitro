@@ -172,7 +172,10 @@ impl FromStr for FloatInstruction {
             map(
                 all_consuming(tuple((
                     parse_int_type,
-                    alt((value(true, tag("_trunc_sat_")), value(false, tag("_trunc_")))),
+                    alt((
+                        value(true, tag("_trunc_sat_")),
+                        value(false, tag("_trunc_")),
+                    )),
                     parse_fp_type,
                     tag("_"),
                     parse_signedness,

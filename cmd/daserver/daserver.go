@@ -11,17 +11,23 @@ import (
 	"strings"
 	"syscall"
 
+	koanfjson "github.com/knadh/koanf/parsers/json"
+	"github.com/knadh/koanf/providers/confmap"
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dasrpc"
-	flag "github.com/spf13/pflag"
 )
 
 type DAServerConfig struct {
-	Port     uint64                     `koanf:"port"`
-	LogLevel int                        `koanf:"log-level"`
-	DAConf   das.DataAvailabilityConfig `koanf:"data-availability"`
+	Port       uint64                     `koanf:"port"`
+	LogLevel   int                        `koanf:"log-level"`
+	DAConf     das.DataAvailabilityConfig `koanf:"data-availability"`
+	ConfConfig genericconf.ConfConfig     `koanf:"conf"`
 }
 
 func main() {
@@ -42,6 +48,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Int("log-level", int(log.LvlInfo), "log level")
 	f.Uint64("port", 9876, "Port to listen on")
 	das.DataAvailabilityConfigAddOptions("data-availability", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
@@ -52,16 +59,38 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	if err := util.EndCommonParse(k, &serverConfig); err != nil {
 		return nil, err
 	}
+	if serverConfig.ConfConfig.Dump {
+		// Print out current configuration
+
+		// Don't keep printing configuration file
+		err := k.Load(confmap.Provider(map[string]interface{}{
+			"conf.dump": false,
+		}, "."), nil)
+		if err != nil {
+			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
+		}
+
+		c, err := k.Marshal(koanfjson.Parser())
+		if err != nil {
+			return nil, fmt.Errorf("unable to marshal config file to JSON: %w", err)
+		}
+
+		fmt.Println(string(c))
+		os.Exit(0)
+	}
+
 	return &serverConfig, nil
 }
 
 func startup() error {
+	vcsRevision, vcsTime := genericconf.GetVersion()
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
+		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
+		printSampleUsage()
 		if !strings.Contains(err.Error(), "help requested") {
 			fmt.Printf("%s\n", err.Error())
 		}
-		printSampleUsage()
 		return nil
 	}
 
@@ -82,12 +111,18 @@ func startup() error {
 		return err
 	}
 	var dasImpl das.DataAvailabilityService
-	if mode == das.LocalDataAvailability {
-		dasImpl, err = das.NewLocalDiskDataAvailabilityService(serverConfig.DAConf.LocalDiskDataDir)
+	switch mode {
+	case das.LocalDataAvailability:
+		dasImpl, err = das.NewLocalDiskDAS(serverConfig.DAConf.LocalDiskDASConfig)
 		if err != nil {
 			return err
 		}
-	} else {
+	case das.AggregatorDataAvailability:
+		dasImpl, err = dasrpc.NewRPCAggregator(serverConfig.DAConf.AggregatorConfig)
+		if err != nil {
+			return err
+		}
+	default:
 		panic("Only local DAS implementation supported for daserver currently.")
 	}
 

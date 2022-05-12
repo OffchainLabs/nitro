@@ -31,6 +31,7 @@ var ArbRetryableTxAddress common.Address
 var ArbSysAddress common.Address
 var RedeemScheduledEventID common.Hash
 var L2ToL1TransactionEventID common.Hash
+var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
@@ -145,7 +146,7 @@ func ProduceBlockAdvanced(
 
 	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
-	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit(state.FormatVersion())
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
@@ -306,14 +307,28 @@ func ProduceBlockAdvanced(
 		redeems = append(redeems, scheduled...)
 
 		for _, txLog := range receipt.Logs {
-			if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
+			if txLog.Address == ArbSysAddress {
+				// L2ToL1TransactionEventID is deprecated in upgrade 4, but it should to safe to make this code handle
+				// both events ignoring the version.
+				// TODO: Remove L2ToL1Transaction handling on next chain reset
 				// L2->L1 withdrawals remove eth from the system
-				event := &precompilesgen.ArbSysL2ToL1Transaction{}
-				err := util.ParseL2ToL1TransactionLog(event, txLog)
-				if err != nil {
-					log.Error("Failed to parse L2ToL1Transaction log", "err", err)
-				} else {
-					expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
+				switch txLog.Topics[0] {
+				case L2ToL1TransactionEventID:
+					event := &precompilesgen.ArbSysL2ToL1Transaction{}
+					err := util.ParseL2ToL1TransactionLog(event, txLog)
+					if err != nil {
+						log.Error("Failed to parse L2ToL1Transaction log", "err", err)
+					} else {
+						expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
+					}
+				case L2ToL1TxEventID:
+					event := &precompilesgen.ArbSysL2ToL1Tx{}
+					err := util.ParseL2ToL1TxLog(event, txLog)
+					if err != nil {
+						log.Error("Failed to parse L2ToL1Tx log", "err", err)
+					} else {
+						expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
+					}
 				}
 			}
 		}
