@@ -373,7 +373,7 @@ impl Module {
             }
             let size = initial * page_size;
 
-            memory = Memory::new(size as usize, max_size as u32);
+            memory = Memory::new(size as usize, max_size);
         }
 
         let mut globals = vec![];

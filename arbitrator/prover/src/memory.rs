@@ -54,11 +54,11 @@ impl Memory {
     /// 1 + log2(2^32 / LEAF_SIZE) = 1 + log2(2^(32 - log2(LEAF_SIZE))) = 1 + 32 - 5
     const MEMORY_LAYERS: usize = 1 + 32 - 5;
 
-    pub fn new(size: usize, max_size: u32) -> Memory {
+    pub fn new(size: usize, max_size: u64) -> Memory {
         Memory {
             buffer: vec![0u8; size],
             merkle: None,
-            max_size: max_size as u64,
+            max_size,
         }
     }
 
