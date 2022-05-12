@@ -7,6 +7,7 @@ replace github.com/VictoriaMetrics/fastcache => ./fastcache
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 require (
+	github.com/allegro/bigcache/v3 v3.0.2
 	github.com/andybalholm/brotli v1.0.3
 	github.com/aws/aws-sdk-go-v2 v1.16.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.12.0

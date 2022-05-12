@@ -43,12 +43,14 @@ type DataAvailabilityConfig struct {
 	AggregatorConfig   AggregatorConfig   `koanf:"aggregator"`
 	S3Config           conf.S3Config      `koanf:"s3"`
 	RedisConfig        RedisConfig        `koanf:"redis"`
+	BigCacheConfig     BigCacheConfig     `koanf:"big-cache"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl:    "onchain",
-	S3Config:    conf.DefaultS3Config,
-	RedisConfig: DefaultRedisConfig,
+	ModeImpl:       "onchain",
+	S3Config:       conf.DefaultS3Config,
+	RedisConfig:    DefaultRedisConfig,
+	BigCacheConfig: DefaultBigCacheConfig,
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {

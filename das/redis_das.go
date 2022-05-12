@@ -22,8 +22,8 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
-const messageKeyPrefix string = "redisDas.msg."
-const certKeyPrefix string = "redisDas.cert."
+const redisMessageKeyPrefix string = "redisDas.msg."
+const redisCertKeyPrefix string = "redisDas.cert."
 
 type RedisConfig struct {
 	RedisUrl   string        `koanf:"redis-url"`
@@ -43,7 +43,7 @@ type RedisDAS struct {
 	client      redis.UniversalClient
 }
 
-func NewRedisDataAvailabilityService(redisConfig RedisConfig, das DataAvailabilityService) (*RedisDAS, error) {
+func NewRedisDAS(redisConfig RedisConfig, das DataAvailabilityService) (*RedisDAS, error) {
 	redisOptions, err := redis.ParseURL(redisConfig.RedisUrl)
 	if err != nil {
 		return nil, err
@@ -69,12 +69,12 @@ func (r *RedisDAS) signMessage(message []byte) []byte {
 }
 
 func (r *RedisDAS) setMessageAndCert(ctx context.Context, message []byte, c *arbstate.DataAvailabilityCertificate, path string) error {
-	r.client.Set(ctx, messageKeyPrefix+path, r.signMessage(message), r.redisConfig.Expiration)
+	r.client.Set(ctx, redisMessageKeyPrefix+path, r.signMessage(message), r.redisConfig.Expiration)
 	cBytes, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
-	r.client.Set(ctx, certKeyPrefix+path, r.signMessage(cBytes), r.redisConfig.Expiration)
+	r.client.Set(ctx, redisCertKeyPrefix+path, r.signMessage(cBytes), r.redisConfig.Expiration)
 	return nil
 }
 
@@ -106,7 +106,7 @@ func (r *RedisDAS) getVerifiedData(ctx context.Context, key string) ([]byte, err
 
 func (r *RedisDAS) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
 	path := base32.StdEncoding.EncodeToString(crypto.Keccak256(message))
-	cBytes, err := r.getVerifiedData(ctx, certKeyPrefix+path)
+	cBytes, err := r.getVerifiedData(ctx, redisCertKeyPrefix+path)
 	if err != nil {
 		c, err := r.das.Store(ctx, message, timeout)
 		if err != nil {
@@ -134,7 +134,7 @@ func (r *RedisDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, erro
 
 	path := base32.StdEncoding.EncodeToString(cert.DataHash[:])
 
-	result, err := r.getVerifiedData(ctx, messageKeyPrefix+path)
+	result, err := r.getVerifiedData(ctx, redisMessageKeyPrefix+path)
 	if err != nil {
 		result, err = r.das.Retrieve(ctx, certBytes)
 		if err != nil {
