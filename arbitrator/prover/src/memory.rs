@@ -17,7 +17,7 @@ pub struct Memory {
     buffer: Vec<u8>,
     #[serde(skip)]
     pub merkle: Option<Merkle>,
-    pub max_size: u32,
+    pub max_size: u64,
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -58,7 +58,7 @@ impl Memory {
         Memory {
             buffer: vec![0u8; size],
             merkle: None,
-            max_size,
+            max_size: max_size as u64,
         }
     }
 
@@ -108,6 +108,7 @@ impl Memory {
         let mut h = Keccak256::new();
         h.update("Memory:");
         h.update((self.buffer.len() as u64).to_be_bytes());
+        h.update(self.max_size.to_be_bytes());
         h.update(self.merkelize().root());
         h.finalize().into()
     }

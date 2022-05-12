@@ -582,6 +582,7 @@ impl Module {
         );
 
         data.extend(self.memory.size().to_be_bytes());
+        data.extend(self.memory.max_size.to_be_bytes());
         data.extend(mem_merkle.root());
 
         data.extend(self.tables_merkle.root());
@@ -1706,12 +1707,12 @@ impl Machine {
                         v => bail!("WASM validation failed: bad value for memory.grow {:?}", v),
                     };
                     let page_size = Memory::PAGE_SIZE;
-                    let max_size = module.memory.max_size as u64 * page_size;
+                    let max_size = module.memory.max_size * page_size;
 
                     let new_size = (|| {
                         let adding_size = u64::from(adding_pages).checked_mul(page_size)?;
                         let new_size = old_size.checked_add(adding_size)?;
-                        if new_size <= max_size as u64 {
+                        if new_size <= max_size {
                             Some(new_size)
                         } else {
                             None

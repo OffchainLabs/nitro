@@ -199,10 +199,12 @@ library Deserialize {
     {
         offset = startOffset;
         uint64 size;
+        uint64 maxSize;
         bytes32 root;
         (size, offset) = u64(proof, offset);
+        (maxSize, offset) = u64(proof, offset);
         (root, offset) = b32(proof, offset);
-        mem = ModuleMemory({size: size, merkleRoot: root});
+        mem = ModuleMemory({size: size, maxSize: maxSize, merkleRoot: root});
     }
 
     function module(bytes calldata proof, uint256 startOffset)

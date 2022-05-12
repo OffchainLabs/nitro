@@ -58,7 +58,7 @@ describe("OneStepProof", function () {
         const inboxLimit = 1000000;
         const promise = osp.proveOneStep([inboxLimit, seqInbox.address, bridge.address], i, [...Buffer.from(proof.before, "hex")], [...Buffer.from(proof.proof, "hex")])
           .catch((err: any) => {
-            console.error("Error executing proof " + i);
+            console.error("Error executing proof " + i, err.reason);
             throw err;
           })
           .then((after: any) => assert.equal(after, "0x" + proof.after, "After state doesn't match after proof " + i))
