@@ -4,7 +4,6 @@
 package validator
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -303,21 +302,9 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, pr
 				return errors.New("processing data availability chain without DAS configured")
 			}
 		} else {
-			cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(seqMsg[40:]))
+			_, err := arbstate.RecoverPayloadFromDasBatch(ctx, seqMsg, das, preimages)
 			if err != nil {
-				log.Error("Failed to deserialize DAS message", "err", err)
-			} else {
-				keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
-				if err != nil {
-					log.Error("Couldn't get keyset from DAS", "err", err)
-				} else {
-					preimages[common.BytesToHash(cert.KeysetHash[:])] = keysetPreimage
-					dasPreimage, err := das.Retrieve(ctx, cert)
-					if err != nil {
-						return fmt.Errorf("couldn't retrieve message from DAS %w", err)
-					}
-					preimages[common.BytesToHash(cert.DataHash[:])] = dasPreimage
-				}
+				return err
 			}
 		}
 	}
