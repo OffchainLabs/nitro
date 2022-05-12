@@ -564,7 +564,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	}
 	var dataAvailabilityService das.DataAvailabilityService
 	switch dataAvailabilityMode {
-	case das.LocalDataAvailability:
+	case das.LocalDiskDataAvailability:
 		var err error
 		dataAvailabilityService, err = das.NewLocalDiskDAS(config.DataAvailability.LocalDiskDASConfig)
 		if err != nil {
