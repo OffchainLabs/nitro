@@ -21,8 +21,8 @@ type DASRPCServer struct {
 	localDAS                          das.DataAvailabilityService
 }
 
-func StartDASRPCServer(ctx context.Context, portNum uint64, localDAS das.DataAvailabilityService) (*DASRPCServer, error) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", portNum))
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, localDAS das.DataAvailabilityService) (*DASRPCServer, error) {
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
 	}
