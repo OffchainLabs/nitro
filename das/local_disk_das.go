@@ -135,6 +135,10 @@ func NewLocalDiskDASWithSeqInboxCaller(ctx context.Context, config LocalDiskDASC
 		if err != nil {
 			return nil, err
 		}
+		go func() {
+			<-ctx.Done()
+			storageService.Close(context.Background())
+		}()
 	} else {
 		return nil, errors.New("Storage service type not recognized: " + config.StorageType)
 	}
