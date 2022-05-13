@@ -918,6 +918,7 @@ impl Machine {
         Self::from_binaries(
             &libraries,
             bin,
+            language_support,
             always_merkleize,
             allow_hostapi_from_main,
             global_state,
@@ -929,6 +930,7 @@ impl Machine {
     pub fn from_binaries(
         libraries: &[WasmBinary<'_>],
         bin: WasmBinary<'_>,
+        language_support: bool,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,

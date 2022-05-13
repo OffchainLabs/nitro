@@ -291,7 +291,7 @@ fn main() -> eyre::Result<()> {
                 machine = None;
                 subtest = 1;
 
-                let mech = Machine::from_binary(
+                let mech = Machine::from_paths(
                     &[soft_float.clone()],
                     &PathBuf::from("tests").join(&wasmfile),
                     false,
@@ -384,7 +384,7 @@ fn main() -> eyre::Result<()> {
             Command::AssertMalformed { filename } => {
                 let wasmpath = PathBuf::from("tests").join(&filename);
 
-                Machine::from_binary(
+                Machine::from_paths(
                     &[soft_float.clone()],
                     &wasmpath,
                     false,
