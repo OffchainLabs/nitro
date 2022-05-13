@@ -58,7 +58,7 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 	if err != nil {
 		return nil, err
 	}
-	seqInboxAddress, err := StoreSignerAddressFromString(config.SequencerInboxAddress)
+	seqInboxAddress, err := OptionalAddressFromString(config.SequencerInboxAddress)
 	if err != nil {
 		return nil, err
 	}

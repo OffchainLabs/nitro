@@ -729,7 +729,7 @@ func setUpDataAvailabilityService(
 			return nil, err
 		}
 	case das.AggregatorDataAvailability:
-		dataAvailabilityService, err = dasrpc.NewRPCAggregator(config.DataAvailability.AggregatorConfig)
+		dataAvailabilityService, err = dasrpc.NewRPCAggregatorWithL1Info(config.DataAvailability.AggregatorConfig, l1client, deployInfo.SequencerInbox)
 		if err != nil {
 			return nil, err
 		}

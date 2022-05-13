@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"sync"
 	"time"
 )
 
@@ -15,28 +16,57 @@ type BatchPosterVerifier struct {
 	seqInboxCaller *bridgegen.SequencerInboxCaller
 	cache          map[common.Address]bool
 	cacheExpiry    time.Time
+	mutex          sync.Mutex
 }
+
+// Note that we only cache positive instances, not negative ones. That's because we're willing to accept the
+// consequences of a false positive (accepting a Store from a recently retired batch poster), but we don't want
+// to accept the consequences of a false negative (rejecting a Store from a recently added batch poster).
 
 var batchPosterVerifierLifetime = time.Hour
 
 func NewBatchPosterVerifier(seqInboxCaller *bridgegen.SequencerInboxCaller) *BatchPosterVerifier {
-	return &BatchPosterVerifier{seqInboxCaller, make(map[common.Address]bool), time.Now()}
+	return &BatchPosterVerifier{
+		seqInboxCaller: seqInboxCaller,
+		cache:          make(map[common.Address]bool),
+		cacheExpiry:    time.Now().Add(batchPosterVerifierLifetime),
+	}
 }
 
 func (bpv *BatchPosterVerifier) IsBatchPoster(ctx context.Context, addr common.Address) (bool, error) {
+	bpv.mutex.Lock()
 	if time.Now().After(bpv.cacheExpiry) {
-		bpv.cache = make(map[common.Address]bool)
-		bpv.cacheExpiry = time.Now().Add(batchPosterVerifierLifetime)
+		if err := bpv.flushCache_locked(ctx); err != nil {
+			bpv.mutex.Unlock()
+			return false, err
+		}
 	}
 	if bpv.cache[addr] {
+		bpv.mutex.Unlock()
 		return true, nil
 	}
+	bpv.mutex.Unlock()
+
 	isBatchPoster, err := bpv.seqInboxCaller.IsBatchPoster(&bind.CallOpts{Context: ctx}, addr)
 	if err != nil {
 		return false, err
 	}
 	if isBatchPoster {
+		bpv.mutex.Lock()
 		bpv.cache[addr] = true
+		bpv.mutex.Unlock()
 	}
 	return isBatchPoster, nil
+}
+
+func (bpv *BatchPosterVerifier) FlushCache(ctx context.Context) error {
+	bpv.mutex.Lock()
+	defer bpv.mutex.Unlock()
+	return bpv.flushCache_locked(ctx)
+}
+
+func (bpv *BatchPosterVerifier) flushCache_locked(ctx context.Context) error {
+	bpv.cache = make(map[common.Address]bool)
+	bpv.cacheExpiry = time.Now().Add(batchPosterVerifierLifetime)
+	return nil
 }

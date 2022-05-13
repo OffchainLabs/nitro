@@ -78,7 +78,7 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 	if err != nil {
 		return nil, err
 	}
-	seqInboxAddress, err := StoreSignerAddressFromString(config.SequencerInboxAddress)
+	seqInboxAddress, err := OptionalAddressFromString(config.SequencerInboxAddress)
 	if err != nil {
 		return nil, err
 	}

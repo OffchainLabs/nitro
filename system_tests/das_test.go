@@ -65,7 +65,6 @@ func aggConfigForBackend(t *testing.T, backendConfig dasrpc.BackendConfig) das.A
 	return das.AggregatorConfig{
 		AssumedHonest: 1,
 		Backends:      string(backendsJsonByte),
-		L1NodeURL:     "none",
 	}
 }
 
