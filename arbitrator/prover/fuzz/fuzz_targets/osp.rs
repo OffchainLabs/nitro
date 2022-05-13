@@ -18,6 +18,7 @@ use std::{collections::BTreeMap, fs::File, rc::Rc};
 const MAX_STEPS: u64 = 200;
 const DEBUG: bool = false;
 const EVM_CONFIG: evm::Config = evm::Config::london();
+const MAX_OSP_GAS: u64 = 15_000_000;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,7 +100,7 @@ fn make_evm_executor() -> evm_stack::StackExecutor<
     (),
 > {
     let stack = evm_stack::MemoryStackState::new(
-        StackSubstateMetadata::new(u64::MAX, &EVM_CONFIG),
+        StackSubstateMetadata::new(MAX_OSP_GAS, &EVM_CONFIG),
         &*EVM_BACKEND,
     );
     evm_stack::StackExecutor::new_with_precompiles(stack, &EVM_CONFIG, &())
@@ -189,7 +190,7 @@ fn fuzz_impl(data: &[u8]) -> Result<()> {
         false,
         GlobalState::default(),
         Default::default(),
-        Default::default(),
+        prover::machine::get_empty_preimage_resolver(),
     )?;
     let mut last_hash = mach.hash();
     while mach.get_steps() <= MAX_STEPS {
@@ -198,7 +199,7 @@ fn fuzz_impl(data: &[u8]) -> Result<()> {
         if DEBUG {
             println!("Executing {:?} with stack {:?}", op, mach.get_data_stack());
         }
-        mach.step_n(1);
+        mach.step_n(1).expect("Failed to execute machine step");
         let new_hash = mach.hash();
         test_proof(last_hash, mach.get_steps(), op, proof, new_hash)
             .expect("Failed to validate proof");
