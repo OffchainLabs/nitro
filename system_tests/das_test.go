@@ -47,7 +47,7 @@ func startLocalDASServer(
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, localDas)
 	Require(t, err)
 	config := dasrpc.BackendConfig{
-		URL:                 lis.Addr().String(),
+		URL:                 "http://" + lis.Addr().String(),
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
 		SignerMask:          1,
 	}
