@@ -126,6 +126,7 @@ WORKDIR /workspace/machines
 #RUN bash -c 'r=0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810; mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
 RUN bash -c 'r=0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3; mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
 RUN bash -c 'r=0xdd45c240cfe6624a7dfd0b0c965bf21301ebeea7a6a2a696781a6e03b04dc288; mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v3/machine.wavm.br'
+RUN bash -c 'r=0x3d946791b42cc1069694cfab9feedc5d5ccd36cb792a2a7ed57b8cba412f65ac mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v3.1/machine.wavm.br'
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
