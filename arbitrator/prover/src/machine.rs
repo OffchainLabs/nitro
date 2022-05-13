@@ -70,7 +70,6 @@ impl Function {
         add_body: F,
         func_ty: FunctionType,
         module_types: &[FunctionType],
-        fp_impls: &FloatingPointImpls,
     ) -> Result<Function> {
         let mut locals_with_params = func_ty.inputs.clone();
         locals_with_params.extend(locals.iter().map(|x| x.value));
@@ -95,15 +94,9 @@ impl Function {
                 proving_argument_data: None,
             });
         }
-        insts.push(Instruction::simple(Opcode::PushStackBoundary));
 
         add_body(&mut insts)?;
-        wasm_to_wavm(
-            &[Operator::Return],
-            &mut insts,
-            fp_impls,
-            func_ty.outputs.len(),
-        )?;
+        insts.push(Instruction::simple(Opcode::Return));
 
         // Insert missing proving argument data
         for inst in insts.iter_mut() {
@@ -339,13 +332,20 @@ impl Module {
         for c in &bin.codes {
             let idx = code.len();
             let func_ty = func_types[idx].clone();
-            let return_count = func_ty.outputs.len();
             code.push(Function::new(
                 &c.locals,
-                |code| wasm_to_wavm(&c.expr, code, floating_point_impls, return_count),
-                func_ty,
-                &bin.types,
-                floating_point_impls,
+                |code| {
+                    wasm_to_wavm(
+                        &c.expr,
+                        code,
+                        floating_point_impls,
+                        &func_types,
+                        types,
+                        func_type_idxs[idx],
+                    )
+                },
+                func_ty.clone(),
+                &types,
             )?);
             host_call_hooks.push(None);
         }
@@ -1066,7 +1066,6 @@ impl Machine {
             },
             FunctionType::default(),
             &entrypoint_types,
-            &floating_point_impls,
         )?];
         let entrypoint = Module {
             globals: Vec::new(),
@@ -1087,6 +1086,11 @@ impl Machine {
             exports: Arc::new(HashMap::default()),
         };
         modules[0] = entrypoint;
+
+        ensure!(
+            u32::try_from(modules.len()).is_ok(),
+            "module count doesn't fit in a u32",
+        );
 
         // Merkleize things if requested
         for module in &mut modules {
@@ -1992,9 +1996,9 @@ impl Machine {
                 h.update(&hash_pc_stack(&self.block_stack));
                 h.update(hash_stack_frame_stack(&self.frame_stack));
                 h.update(self.global_state.hash());
-                h.update(&(self.pc.module as u32).to_be_bytes());
-                h.update(&(self.pc.func as u32).to_be_bytes());
-                h.update(&(self.pc.inst as u32).to_be_bytes());
+                h.update(&u32::try_from(self.pc.module).unwrap().to_be_bytes());
+                h.update(&u32::try_from(self.pc.func).unwrap().to_be_bytes());
+                h.update(&u32::try_from(self.pc.inst).unwrap().to_be_bytes());
                 h.update(self.get_modules_root());
             }
             MachineStatus::Finished => {
