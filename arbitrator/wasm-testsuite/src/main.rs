@@ -384,7 +384,7 @@ fn main() -> eyre::Result<()> {
             Command::AssertMalformed { filename } => {
                 let wasmpath = PathBuf::from("tests").join(&filename);
 
-                Machine::from_paths(
+                let _ = Machine::from_paths(
                     &[soft_float.clone()],
                     &wasmpath,
                     false,

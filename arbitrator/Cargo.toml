@@ -1,7 +1,6 @@
 [workspace]
 members = [
         "prover",
-        "wasm-testsuite",
 ]
 
 [profile.release]
