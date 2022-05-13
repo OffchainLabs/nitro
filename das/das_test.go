@@ -23,11 +23,11 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	Require(t, err)
 
 	config := LocalDiskDASConfig{
-		KeyDir:             dbPath,
-		DataDir:            dbPath,
-		AllowGenerateKeys:  true,
-		StoreSignerAddress: "none",
-		StorageType:        storageType,
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+		L1NodeURL:         "none",
+		StorageType:       storageType,
 	}
 	das, err := NewLocalDiskDAS(firstCtx, config)
 	Require(t, err, "no das")
@@ -80,11 +80,11 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	Require(t, err)
 
 	config := LocalDiskDASConfig{
-		KeyDir:             dbPath,
-		DataDir:            dbPath,
-		AllowGenerateKeys:  true,
-		StoreSignerAddress: "none",
-		StorageType:        storageType,
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+		L1NodeURL:         "none",
+		StorageType:       storageType,
 	}
 	das, err := NewLocalDiskDAS(ctx, config)
 	Require(t, err, "no das")

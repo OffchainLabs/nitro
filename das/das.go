@@ -89,7 +89,7 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
 
-func StoreSignerAddressFromString(s string) (*common.Address, error) {
+func OptionalAddressFromString(s string) (*common.Address, error) {
 	if s == "none" {
 		return nil, nil
 	}

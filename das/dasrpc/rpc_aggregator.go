@@ -6,6 +6,8 @@ package dasrpc
 import (
 	"context"
 	"encoding/json"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/das"
 )
@@ -17,6 +19,22 @@ type BackendConfig struct {
 }
 
 func NewRPCAggregator(ctx context.Context, config das.AggregatorConfig) (*das.Aggregator, error) {
+	services, err := setUpServices(config)
+	if err != nil {
+		return nil, err
+	}
+	return das.NewAggregator(ctx, config, services)
+}
+
+func NewRPCAggregatorWithL1Info(ctx context.Context, config das.AggregatorConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*das.Aggregator, error) {
+	services, err := setUpServices(config)
+	if err != nil {
+		return nil, err
+	}
+	return das.NewAggregatorWithL1Info(ctx, config, services, l1client, seqInboxAddress)
+}
+
+func setUpServices(config das.AggregatorConfig) ([]das.ServiceDetails, error) {
 	var cs []BackendConfig
 	err := json.Unmarshal([]byte(config.Backends), &cs)
 	if err != nil {
@@ -44,5 +62,5 @@ func NewRPCAggregator(ctx context.Context, config das.AggregatorConfig) (*das.Ag
 		services = append(services, *d)
 	}
 
-	return das.NewAggregator(ctx, config, services)
+	return services, nil
 }
