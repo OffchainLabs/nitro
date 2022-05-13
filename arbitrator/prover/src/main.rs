@@ -185,7 +185,7 @@ fn main() -> Result<()> {
         bytes32_vals: [last_block_hash, last_send_root],
     };
 
-    let mut mach = Machine::from_binary(
+    let mut mach = Machine::from_paths(
         &opts.libraries,
         &opts.binary,
         opts.always_merkleize,

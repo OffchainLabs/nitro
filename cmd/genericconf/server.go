@@ -96,8 +96,8 @@ var GraphQLConfigDefault = GraphQLConfig{
 }
 
 func (c GraphQLConfig) Apply(stackConf *node.Config) {
-	stackConf.HTTPCors = c.CORSDomain
-	stackConf.HTTPVirtualHosts = c.VHosts
+	stackConf.GraphQLCors = c.CORSDomain
+	stackConf.GraphQLVirtualHosts = c.VHosts
 }
 
 func GraphQLConfigAddOptions(prefix string, f *flag.FlagSet) {
