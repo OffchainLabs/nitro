@@ -128,7 +128,6 @@ func startup() error {
 		return err
 	}
 	<-sigint
-	server.Stop()
 
-	return nil
+	return server.Shutdown(ctx)
 }
