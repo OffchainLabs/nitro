@@ -7,8 +7,12 @@
 
 package arbtest
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/offchainlabs/nitro/das"
+)
 
 func TestBlockValidatorBenchmark(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", true)
+	testBlockValidatorSimple(t, das.OnchainDataAvailabilityString, true)
 }

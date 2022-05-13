@@ -7,11 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -564,7 +565,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	}
 	var dataAvailabilityService das.DataAvailabilityService
 	switch dataAvailabilityMode {
-	case das.LocalDataAvailability:
+	case das.LocalDiskDataAvailability:
 		var err error
 		dataAvailabilityService, err = das.NewLocalDiskDAS(config.DataAvailability.LocalDiskDASConfig)
 		if err != nil {
@@ -575,11 +576,20 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
+	case das.OnchainDataAvailability:
+		// Batches stored onchain, don't create a DAS.
 	default:
+		return nil, fmt.Errorf("Unknown data availability mode %v", dataAvailabilityMode)
 	}
 
-	if dataAvailabilityService != nil && daSigner != nil {
-		dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+	if dataAvailabilityService != nil {
+		if daSigner != nil {
+			dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+			if err != nil {
+				return nil, err
+			}
+		}
+		dataAvailabilityService, err = das.NewChainFetchDAS(dataAvailabilityService, l1client, deployInfo.SequencerInbox)
 		if err != nil {
 			return nil, err
 		}

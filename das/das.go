@@ -6,13 +6,11 @@ package das
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 	"reflect"
-	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -30,12 +28,23 @@ type DataAvailabilityService interface {
 	fmt.Stringer
 }
 
+type dataAvailabilityInjectedService interface {
+	retrieve(context.Context, *arbstate.DataAvailabilityCertificate, arbstate.DataAvailabilityServiceReader) ([]byte, error)
+}
+
 type DataAvailabilityMode uint64
 
 const (
 	OnchainDataAvailability DataAvailabilityMode = iota
-	LocalDataAvailability
+	LocalDiskDataAvailability
 	AggregatorDataAvailability
+	// TODO RemoteDataAvailability
+)
+
+const (
+	OnchainDataAvailabilityString    = "onchain"
+	LocalDiskDataAvailabilityString  = "local-disk"
+	AggregatorDataAvailabilityString = "aggregator"
 	// TODO RemoteDataAvailability
 )
 
@@ -47,7 +56,7 @@ type DataAvailabilityConfig struct {
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl:           "onchain",
+	ModeImpl:           OnchainDataAvailabilityString,
 	StoreSignerAddress: "",
 }
 
@@ -56,19 +65,19 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 		return 0, errors.New("--data-availability.mode missing")
 	}
 
-	if c.ModeImpl == "onchain" {
+	if c.ModeImpl == OnchainDataAvailabilityString {
 		return OnchainDataAvailability, nil
 	}
 
-	if c.ModeImpl == "local" {
+	if c.ModeImpl == LocalDiskDataAvailabilityString {
 		if c.LocalDiskDASConfig.DataDir == "" || (c.LocalDiskDASConfig.KeyDir == "" && c.LocalDiskDASConfig.PrivKey == "") {
 			flag.Usage()
 			return 0, errors.New("--data-availability.local-disk.data-dir and .key-dir must be specified if mode is set to local")
 		}
-		return LocalDataAvailability, nil
+		return LocalDiskDataAvailability, nil
 	}
 
-	if c.ModeImpl == "aggregator" {
+	if c.ModeImpl == AggregatorDataAvailabilityString {
 		if reflect.DeepEqual(c.AggregatorConfig, DefaultAggregatorConfig) {
 			flag.Usage()
 			return 0, errors.New("--data-availability.aggregator.X config options must be specified if mode is set to aggregator")
@@ -84,17 +93,18 @@ func StoreSignerAddressFromString(s string) (*common.Address, error) {
 	if s == "none" {
 		return nil, nil
 	}
-	s = strings.TrimPrefix(s, "0x")
-	addrBytes, err := hex.DecodeString(s)
-	if err != nil {
-		return nil, err
+	if s == "" {
+		return nil, errors.New("must provide address for signer or specify 'none'")
 	}
-	addr := common.BytesToAddress(addrBytes)
+	if !common.IsHexAddress(s) {
+		return nil, fmt.Errorf("invalid address for signer: %v", s)
+	}
+	addr := common.HexToAddress(s)
 	return &addr, nil
 }
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local', or 'aggregator')")
+	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local-disk', or 'aggregator')")
 	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
 	f.String(prefix+".store-signer", DefaultDataAvailabilityConfig.StoreSignerAddress, "hex-encoded address of required Store signer, or empty string if none")

@@ -4,11 +4,19 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/das"
+
+	"github.com/offchainlabs/nitro/blsSignatures"
+
+	"github.com/offchainlabs/nitro/arbstate"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -294,4 +302,51 @@ func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, acc
 	balance, err := client.BalanceAt(ctx, account, nil)
 	Require(t, err, "could not get balance")
 	return balance
+}
+
+func authorizeDASKeyset(t *testing.T, ctx context.Context, dasSignerKey *blsSignatures.PublicKey, l1info info, l1client arbutil.L1Interface) {
+	if dasSignerKey == nil {
+		return
+	}
+	keyset := &arbstate.DataAvailabilityKeyset{
+		AssumedHonest: 1,
+		PubKeys:       []blsSignatures.PublicKey{*dasSignerKey},
+	}
+	wr := bytes.NewBuffer([]byte{})
+	err := keyset.Serialize(wr)
+	Require(t, err)
+	keysetBytes := wr.Bytes()
+	sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
+	Require(t, err)
+	trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
+}
+
+func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig, *arbnode.Config, string, *blsSignatures.PublicKey) {
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability.ModeImpl = dasModeString
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	var dbPath string
+	var err error
+
+	var dasSignerKey *blsSignatures.PublicKey
+	if dasModeString == das.LocalDiskDataAvailabilityString {
+		dbPath = t.TempDir()
+		dasSignerKey, _, err = das.GenerateAndStoreKeys(dbPath)
+		Require(t, err)
+		dasConfig := das.LocalDiskDASConfig{
+			KeyDir:             dbPath,
+			DataDir:            dbPath,
+			AllowGenerateKeys:  true,
+			StoreSignerAddress: "none",
+		}
+		l1NodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
+	}
+	_, err = l1NodeConfigA.DataAvailability.Mode()
+	Require(t, err)
+	return chainConfig, l1NodeConfigA, dbPath, dasSignerKey
 }
