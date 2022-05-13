@@ -4,6 +4,7 @@
 package dasrpc
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/offchainlabs/nitro/das"
@@ -15,7 +16,7 @@ type BackendConfig struct {
 	SignerMask          uint64 `json:"signermask"`
 }
 
-func NewRPCAggregator(config das.AggregatorConfig) (*das.Aggregator, error) {
+func NewRPCAggregator(ctx context.Context, config das.AggregatorConfig) (*das.Aggregator, error) {
 	var cs []BackendConfig
 	err := json.Unmarshal([]byte(config.Backends), &cs)
 	if err != nil {
@@ -43,5 +44,5 @@ func NewRPCAggregator(config das.AggregatorConfig) (*das.Aggregator, error) {
 		services = append(services, *d)
 	}
 
-	return das.NewAggregator(config, services)
+	return das.NewAggregator(ctx, config, services)
 }

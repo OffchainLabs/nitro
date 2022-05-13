@@ -554,6 +554,8 @@ type Node struct {
 }
 
 func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (*Node, error) {
+	ctx := context.Background()
+
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -567,12 +569,12 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	switch dataAvailabilityMode {
 	case das.LocalDiskDataAvailability:
 		var err error
-		dataAvailabilityService, err = das.NewLocalDiskDAS(config.DataAvailability.LocalDiskDASConfig)
+		dataAvailabilityService, err = das.NewLocalDiskDAS(ctx, config.DataAvailability.LocalDiskDASConfig)
 		if err != nil {
 			return nil, err
 		}
 	case das.AggregatorDataAvailability:
-		dataAvailabilityService, err = dasrpc.NewRPCAggregator(config.DataAvailability.AggregatorConfig)
+		dataAvailabilityService, err = dasrpc.NewRPCAggregator(ctx, config.DataAvailability.AggregatorConfig)
 		if err != nil {
 			return nil, err
 		}

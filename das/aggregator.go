@@ -64,7 +64,7 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 	}, nil
 }
 
-func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
+func NewAggregator(ctx context.Context, config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
 	var aggSignersMask uint64
 	pubKeys := []blsSignatures.PublicKey{}
 	for _, d := range services {

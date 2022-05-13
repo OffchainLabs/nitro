@@ -33,7 +33,7 @@ func startLocalDASServer(t *testing.T, ctx context.Context, dataDir string) (*da
 		DataDir:            dataDir,
 		StoreSignerAddress: "none",
 	}
-	localDas, err := das.NewLocalDiskDAS(dasConfig)
+	localDas, err := das.NewLocalDiskDAS(ctx, dasConfig)
 	Require(t, err)
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, localDas)
 	Require(t, err)

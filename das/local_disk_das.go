@@ -26,6 +26,7 @@ type LocalDiskDASConfig struct {
 	DataDir            string `koanf:"data-dir"`
 	AllowGenerateKeys  bool   `koanf:"allow-generate-keys"`
 	StoreSignerAddress string `koanf:"store-signer-address"`
+	StorageType        string `koanf:"storage-type"`
 }
 
 func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -34,6 +35,7 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".data-dir", "", "The directory to use as the DAS file-based database")
 	f.Bool(prefix+".allow-generate-keys", false, "Allow the local disk DAS to generate its own keys in key-dir if they don't already exist")
 	f.String(prefix+".store-signer-address", "", "Address required to sign stores, or empty if anyone can store")
+	f.String(prefix+".storage-type", "", "Type of storage to use")
 }
 
 type LocalDiskDAS struct {
@@ -45,7 +47,7 @@ type LocalDiskDAS struct {
 	storageService  StorageService
 }
 
-func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
+func NewLocalDiskDAS(ctx context.Context, config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 	var privKey *blsSignatures.PrivateKey
 	var err error
 	if len(config.PrivKey) != 0 {
@@ -96,13 +98,25 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 		return nil, err
 	}
 
+	var storageService StorageService
+	if config.StorageType == "" || config.StorageType == "files" {
+		storageService = NewLocalDiskStorageService(config.DataDir)
+	} else if config.StorageType == "db" {
+		storageService, err = NewDBStorageService(ctx, config.DataDir, false)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, errors.New("Storage service type not recognized: " + config.StorageType)
+	}
+
 	return &LocalDiskDAS{
 		config:          config,
 		privKey:         privKey,
 		keysetHash:      ksHash,
 		keysetBytes:     ksBuf.Bytes(),
 		storeSignerAddr: storeSignerAddr,
-		storageService:  NewLocalDiskStorageService(config.DataDir),
+		storageService:  storageService,
 	}, nil
 }
 

@@ -25,7 +25,7 @@ type LocalDiskStorageService struct {
 	mutex   sync.RWMutex
 }
 
-func NewLocalDiskStorageService(dataDir string) *LocalDiskStorageService {
+func NewLocalDiskStorageService(dataDir string) StorageService {
 	return &LocalDiskStorageService{dataDir: dataDir}
 }
 
