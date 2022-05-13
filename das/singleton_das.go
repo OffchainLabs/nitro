@@ -86,7 +86,7 @@ func NewSingletonDAS(config SingletonDASConfig, storageService StorageService) (
 	var ksHash [32]byte
 	copy(ksHash[:], ksHashBuf)
 
-	storeSignerAddr, err := StoreSignerAddressFromString(config.StoreSignerAddress)
+	storeSignerAddr, err := OptionalAddressFromString(config.StoreSignerAddress)
 	if err != nil {
 		return nil, err
 	}

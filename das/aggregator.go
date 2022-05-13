@@ -72,7 +72,7 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 
 func NewAggregator(ctx context.Context, config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
 	if config.L1NodeURL == "none" {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
+		return NewAggregatorWithSeqInboxCaller(ctx, config, services, nil)
 	}
 	l1client, err := ethclient.Dial(config.L1NodeURL)
 	if err != nil {

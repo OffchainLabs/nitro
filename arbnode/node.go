@@ -624,7 +624,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 	if !config.L1Reader.Enable {
-		dataAvailabilityService, err := setUpDataAvailabilityService(config, nil, nil, daSigner)
+		dataAvailabilityService, err := setUpDataAvailabilityService(ctx, config, nil, nil, daSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -642,7 +642,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
-	dataAvailabilityService, err := setUpDataAvailabilityService(config, l1client, deployInfo, daSigner)
+	dataAvailabilityService, err := setUpDataAvailabilityService(ctx, config, l1client, deployInfo, daSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -713,6 +713,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 }
 
 func setUpDataAvailabilityService(
+	ctx context.Context,
 	config *Config,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
@@ -726,7 +727,7 @@ func setUpDataAvailabilityService(
 	switch dataAvailabilityMode {
 	case das.LocalDiskDataAvailability:
 		var err error
-		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(config.DataAvailability.LocalDiskDASConfig, l1client, deployInfo.SequencerInbox)
+		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(ctx, config.DataAvailability.LocalDiskDASConfig, l1client, deployInfo.SequencerInbox)
 		if err != nil {
 			return nil, err
 		}
