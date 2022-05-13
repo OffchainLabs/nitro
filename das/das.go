@@ -86,8 +86,11 @@ func StoreSignerAddressFromString(s string) (*common.Address, error) {
 	if s == "none" {
 		return nil, nil
 	}
+	if s == "" {
+		return nil, errors.New("must provide address for signer or specify 'none'")
+	}
 	if !common.IsHexAddress(s) {
-		return nil, fmt.Errorf("invalid address: %v", s)
+		return nil, fmt.Errorf("invalid address for signer: %v", s)
 	}
 	addr := common.HexToAddress(s)
 	return &addr, nil

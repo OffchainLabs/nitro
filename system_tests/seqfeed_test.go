@@ -137,9 +137,10 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability.ModeImpl = dasModeStr
 	dasConfig := das.LocalDiskDASConfig{
-		KeyDir:            dbPath,
-		DataDir:           dbPath,
-		AllowGenerateKeys: true,
+		KeyDir:             dbPath,
+		DataDir:            dbPath,
+		AllowGenerateKeys:  true,
+		StoreSignerAddress: "none",
 	}
 	nodeConfigC.DataAvailability.LocalDiskDASConfig = dasConfig
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest(0)
@@ -154,9 +155,10 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability.ModeImpl = dasModeStr
 	dasConfigB := das.LocalDiskDASConfig{
-		KeyDir:            dbPath,
-		DataDir:           dbPath,
-		AllowGenerateKeys: true,
+		KeyDir:             dbPath,
+		DataDir:            dbPath,
+		AllowGenerateKeys:  true,
+		StoreSignerAddress: "none",
 	}
 	nodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfigB
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
