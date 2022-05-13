@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/das"
 )
 
 func testTwoNodesSimple(t *testing.T, dasModeStr string) {
@@ -25,23 +27,47 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
-	if dasModeStr == "local" {
+	if dasModeStr == das.LocalDiskDataAvailabilityString {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 		chainConfig = params.ArbitrumDevTestDASChainConfig()
-		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
+		dasConfig := das.LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+		}
+		l1NodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig
 	}
 	_, err = l1NodeConfigA.DataAvailability.Mode()
 	Require(t, err)
 	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
+	usingDas := nodeA.DataAvailService
+	if usingDas != nil {
+		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
+		Require(t, err)
+
+		sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
+		Require(t, err)
+		trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+		tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
+		Require(t, err)
+		_, err = EnsureTxSucceeded(ctx, l1client, tx)
+		Require(t, err)
+	}
+
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
-	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	dasConfig := das.LocalDiskDASConfig{
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+	}
+	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
@@ -79,9 +105,9 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 }
 
 func TestTwoNodesSimple(t *testing.T) {
-	testTwoNodesSimple(t, "onchain")
+	testTwoNodesSimple(t, das.OnchainDataAvailabilityString)
 }
 
 func TestTwoNodesSimpleLocalDAS(t *testing.T) {
-	testTwoNodesSimple(t, "local")
+	testTwoNodesSimple(t, das.LocalDiskDataAvailabilityString)
 }

@@ -18,34 +18,38 @@ import (
 func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	dbPath, err := ioutil.TempDir("/tmp", "das_test")
 	defer os.RemoveAll(dbPath)
-
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
+
+	config := LocalDiskDASConfig{
+		KeyDir:             dbPath,
+		DataDir:            dbPath,
+		AllowGenerateKeys:  true,
+		StoreSignerAddress: "none",
+	}
+	das, err := NewLocalDiskDAS(config)
 	Require(t, err, "no das")
 
 	ctx := context.Background()
 
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(ctx, messageSaved, timeout)
+	cert, err := das.Store(ctx, messageSaved, timeout, []byte{})
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
 	}
 
-	certBytes := Serialize(*cert)
-
-	messageRetrieved, err := das.Retrieve(ctx, certBytes)
+	messageRetrieved, err := das.Retrieve(ctx, cert)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
 
 	// 2nd das instance can read keys from disk
-	das2, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
+	das2, err := NewLocalDiskDAS(config)
 	Require(t, err, "no das")
 
-	messageRetrieved2, err := das2.Retrieve(ctx, certBytes)
+	messageRetrieved2, err := das2.Retrieve(ctx, cert)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved2) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -55,16 +59,22 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 func TestDASMissingMessage(t *testing.T) {
 	dbPath, err := ioutil.TempDir("/tmp", "das_test")
 	defer os.RemoveAll(dbPath)
-
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
+
+	config := LocalDiskDASConfig{
+		KeyDir:             dbPath,
+		DataDir:            dbPath,
+		AllowGenerateKeys:  true,
+		StoreSignerAddress: "none",
+	}
+	das, err := NewLocalDiskDAS(config)
 	Require(t, err, "no das")
 
 	ctx := context.Background()
 
 	messageSaved := []byte("hello world")
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
-	cert, err := das.Store(ctx, messageSaved, timeout)
+	cert, err := das.Store(ctx, messageSaved, timeout, []byte{})
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
@@ -73,9 +83,7 @@ func TestDASMissingMessage(t *testing.T) {
 	// Change the hash to look up
 	cert.DataHash[0] += 1
 
-	certBytes := Serialize(*cert)
-
-	_, err = das.Retrieve(ctx, certBytes)
+	_, err = das.Retrieve(ctx, cert)
 	if err == nil {
 		Fail(t, "Expected an error when retrieving message that is not in the store.")
 	}

@@ -246,31 +246,31 @@ func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *Arb
 
 func TestChallengeToOSP(t *testing.T) {
 	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
-	IncorrectMachine := NewIncorrectMachine(machine, 500)
+	IncorrectMachine := NewIncorrectMachine(machine, 200)
 	runChallengeTest(t, machine, IncorrectMachine, false, false, 0)
 }
 
 func TestChallengeToFailedOSP(t *testing.T) {
 	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
-	IncorrectMachine := NewIncorrectMachine(machine, 500)
+	IncorrectMachine := NewIncorrectMachine(machine, 200)
 	runChallengeTest(t, machine, IncorrectMachine, true, false, 0)
 }
 
 func TestChallengeToErroredOSP(t *testing.T) {
 	machine := createBaseMachine(t, "const.wasm", nil)
-	IncorrectMachine := NewIncorrectMachine(machine, 20)
+	IncorrectMachine := NewIncorrectMachine(machine, 10)
 	runChallengeTest(t, machine, IncorrectMachine, false, false, 0)
 }
 
 func TestChallengeToFailedErroredOSP(t *testing.T) {
 	machine := createBaseMachine(t, "const.wasm", nil)
-	IncorrectMachine := NewIncorrectMachine(machine, 20)
+	IncorrectMachine := NewIncorrectMachine(machine, 10)
 	runChallengeTest(t, machine, IncorrectMachine, true, false, 0)
 }
 
 func TestChallengeToTimeout(t *testing.T) {
 	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
-	IncorrectMachine := NewIncorrectMachine(machine, 500)
+	IncorrectMachine := NewIncorrectMachine(machine, 200)
 	runChallengeTest(t, machine, IncorrectMachine, false, true, 0)
 }
 

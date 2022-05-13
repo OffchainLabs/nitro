@@ -4,7 +4,7 @@
 use crate::{
     machine::{Function, InboxIdentifier},
     value::{ArbValueType, FunctionType},
-    wavm::{FloatingPointImpls, Instruction, Opcode},
+    wavm::{Instruction, Opcode},
 };
 
 pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
@@ -104,5 +104,5 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
         Ok(())
     };
 
-    Function::new(&[], append, ty, &[], &FloatingPointImpls::default())
+    Function::new(&[], append, ty, &[])
 }
