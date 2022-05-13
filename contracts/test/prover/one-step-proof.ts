@@ -35,9 +35,11 @@ describe("OneStepProof", function () {
     if (!file.endsWith(".json")) continue;
     proofs.push([arbProofsRoot + file, file]);
   }
-  for (let file of fs.readdirSync(specProofsRoot)) {
-    if (!file.endsWith(".json")) continue;
-    proofs.push([specProofsRoot + file, file]);
+  if (fs.existsSync(specProofsRoot)) {
+    for (let file of fs.readdirSync(specProofsRoot)) {
+      if (!file.endsWith(".json")) continue;
+      proofs.push([specProofsRoot + file, file]);
+    }
   }
 
   it("should deploy test harness with " + proofs.length + " proofs", function() {})
