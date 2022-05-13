@@ -31,7 +31,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/knadh/koanf"
-	koanfjson "github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -501,28 +500,17 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		return nil, nil, nil, nil, nil, err
 	}
 
+	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
-		// Print out current configuration
-
-		// Don't keep printing configuration file and don't print wallet passwords
-		err := k.Load(confmap.Provider(map[string]interface{}{
-			"conf.dump":             false,
+		err = util.DumpConfig(k, map[string]interface{}{
 			"l1.wallet.password":    "",
 			"l1.wallet.private-key": "",
 			"l2.wallet.password":    "",
 			"l2.wallet.private-key": "",
-		}, "."), nil)
+		})
 		if err != nil {
-			return nil, nil, nil, nil, nil, errors.Wrap(err, "error removing extra parameters before dump")
+			return nil, nil, nil, nil, nil, err
 		}
-
-		c, err := k.Marshal(koanfjson.Parser())
-		if err != nil {
-			return nil, nil, nil, nil, nil, errors.Wrap(err, "unable to marshal config file to JSON")
-		}
-
-		fmt.Println(string(c))
-		os.Exit(0)
 	}
 
 	if nodeConfig.Persistent.Chain == "" {

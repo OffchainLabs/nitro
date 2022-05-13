@@ -13,10 +13,7 @@ import (
 	"syscall"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/knadh/koanf/parsers/json"
-	"github.com/knadh/koanf/providers/confmap"
 	"github.com/offchainlabs/nitro/cmd/util"
-	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -147,23 +144,10 @@ func ParseRelay(_ context.Context, args []string) (*RelayConfig, error) {
 	}
 
 	if relayConfig.Conf.Dump {
-		// Print out current configuration
-
-		// Don't keep printing configuration file and don't print wallet passwords
-		err := k.Load(confmap.Provider(map[string]interface{}{
-			"conf.dump": false,
-		}, "."), nil)
+		err = util.DumpConfig(k, map[string]interface{}{})
 		if err != nil {
-			return nil, errors.Wrap(err, "error removing extra parameters before dump")
+			return nil, err
 		}
-
-		c, err := k.Marshal(json.Parser())
-		if err != nil {
-			return nil, errors.Wrap(err, "unable to marshal config file to JSON")
-		}
-
-		fmt.Println(string(c))
-		os.Exit(0)
 	}
 
 	return &relayConfig, nil

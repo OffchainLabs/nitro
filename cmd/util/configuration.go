@@ -1,10 +1,14 @@
 package util
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/json"
+	koanfjson "github.com/knadh/koanf/parsers/json"
+	"github.com/knadh/koanf/providers/confmap"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/posflag"
@@ -138,4 +142,27 @@ func EndCommonParse(k *koanf.Koanf, config interface{}) error {
 	}
 
 	return nil
+}
+
+func DumpConfig(k *koanf.Koanf, extraOverrideFields map[string]interface{}) error {
+	overrideFields := map[string]interface{}{"conf.dump": false}
+
+	// Don't keep printing configuration file
+	for k, v := range extraOverrideFields {
+		overrideFields[k] = v
+	}
+
+	err := k.Load(confmap.Provider(overrideFields, "."), nil)
+	if err != nil {
+		return errors.Wrap(err, "error removing extra parameters before dump")
+	}
+
+	c, err := k.Marshal(koanfjson.Parser())
+	if err != nil {
+		return errors.Wrap(err, "unable to marshal config file to JSON")
+	}
+
+	fmt.Println(string(c))
+	os.Exit(0)
+	return errors.New("Unreachable")
 }

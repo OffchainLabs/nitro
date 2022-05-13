@@ -564,7 +564,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	}
 	var dataAvailabilityService das.DataAvailabilityService
 	switch dataAvailabilityMode {
-	case das.LocalDataAvailability:
+	case das.LocalDiskDataAvailability:
 		var err error
 		dataAvailabilityService, err = das.NewLocalDiskDAS(config.DataAvailability.LocalDiskDASConfig)
 		if err != nil {
@@ -575,7 +575,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
+	case das.OnchainDataAvailability:
+		// Batches stored onchain, don't create a DAS.
 	default:
+		return nil, fmt.Errorf("Unknown data availability mode %v", dataAvailabilityMode)
 	}
 
 	if dataAvailabilityService != nil && daSigner != nil {
