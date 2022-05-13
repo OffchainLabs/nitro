@@ -33,7 +33,7 @@ func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, localDA
 
 func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, localDAS das.DataAvailabilityService) (*http.Server, error) {
 	rpcServer := rpc.NewServer()
-	err := rpcServer.RegisterName("das", localDAS)
+	err := rpcServer.RegisterName("das", &DASRPCServer{localDAS: localDAS})
 	if err != nil {
 		return nil, err
 	}
