@@ -1109,13 +1109,18 @@ func GetSignerFromWallet(
 			return crypto.Sign(data, privateKey)
 		}
 	} else {
-		ks, account, newKeystoreCreated, err := openKeystore("account", walletConfig.Pathname, walletConfig.Password())
+		ks, account, newKeystoreCreated, err := openKeystore(
+			"account",
+			walletConfig.Pathname,
+			walletConfig.Password(),
+			walletConfig.OnlyCreateKey,
+		)
 		if err != nil {
 			return nil, err
 		}
 
 		if newKeystoreCreated {
-			return nil, errors.New("wallet key created, backup key (" + walletConfig.Pathname + ") and remove --wallet.local.only-create-key to start normally")
+			return nil, errors.New("wallet key created, backup key (" + walletConfig.Pathname + ") and remove --wallet.only-create-key to start normally")
 		}
 
 		signer = func(data []byte) ([]byte, error) {
@@ -1126,7 +1131,7 @@ func GetSignerFromWallet(
 	return signer, nil
 }
 
-func openKeystore(description string, walletPath string, walletPassword *string) (*keystore.KeyStore, *accounts.Account, bool, error) {
+func openKeystore(description string, walletPath string, walletPassword *string, onlyCreateKey bool) (*keystore.KeyStore, *accounts.Account, bool, error) {
 	ks := keystore.NewKeyStore(
 		walletPath,
 		keystore.StandardScryptN,
@@ -1134,7 +1139,7 @@ func openKeystore(description string, walletPath string, walletPassword *string)
 	)
 
 	creatingNew := len(ks.Accounts()) == 0
-	if creatingNew {
+	if creatingNew && !onlyCreateKey {
 		return nil, nil, false, errors.New("No wallet exists, re-run with --wallet.local.only-create-key to create a wallet")
 	}
 	passOpt := walletPassword
