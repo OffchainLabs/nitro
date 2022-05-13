@@ -7,11 +7,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das"
 	"google.golang.org/grpc"
-	"net"
 )
 
 type DASRPCServer struct {
@@ -21,11 +22,15 @@ type DASRPCServer struct {
 }
 
 func StartDASRPCServer(ctx context.Context, portNum uint64, localDAS das.DataAvailabilityService) (*DASRPCServer, error) {
-	grpcServer := grpc.NewServer()
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", portNum))
 	if err != nil {
 		return nil, err
 	}
+	return StartDASRPCServerOnListener(ctx, listener, localDAS)
+}
+
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, localDAS das.DataAvailabilityService) (*DASRPCServer, error) {
+	grpcServer := grpc.NewServer()
 	dasServer := &DASRPCServer{grpcServer: grpcServer, localDAS: localDAS}
 	RegisterDASServiceImplServer(grpcServer, dasServer)
 	go func() {

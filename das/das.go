@@ -6,13 +6,11 @@ package das
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 	"reflect"
-	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -84,12 +82,10 @@ func StoreSignerAddressFromString(s string) (*common.Address, error) {
 	if s == "none" {
 		return nil, nil
 	}
-	s = strings.TrimPrefix(s, "0x")
-	addrBytes, err := hex.DecodeString(s)
-	if err != nil {
-		return nil, err
+	if !common.IsHexAddress(s) {
+		return nil, fmt.Errorf("invalid address: %v", s)
 	}
-	addr := common.BytesToAddress(addrBytes)
+	addr := common.HexToAddress(s)
 	return &addr, nil
 }
 
