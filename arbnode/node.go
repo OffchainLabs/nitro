@@ -7,11 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -578,10 +579,12 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	default:
 	}
 
-	if dataAvailabilityService != nil && daSigner != nil {
-		dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
-		if err != nil {
-			return nil, err
+	if dataAvailabilityService != nil {
+		if daSigner != nil {
+			dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+			if err != nil {
+				return nil, err
+			}
 		}
 		dataAvailabilityService, err = das.NewChainFetchDAS(dataAvailabilityService, l1client, deployInfo.SequencerInbox)
 		if err != nil {
