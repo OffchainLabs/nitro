@@ -63,8 +63,8 @@ type StoreResult struct {
 	Sig         hexutil.Bytes  `json:"sig,omitempty"`
 }
 
-func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreResult, error) {
-	cert, err := serv.localDAS.Store(ctx, req.Message, req.Timeout, req.Sig)
+func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+	cert, err := serv.localDAS.Store(ctx, message, uint64(timeout), sig)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +77,8 @@ func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreR
 	}, nil
 }
 
-func (serv *DASRPCServer) Retrieve(ctx context.Context, req *RetrieveRequest) (hexutil.Bytes, error) {
-	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(req.CertBytes))
+func (serv *DASRPCServer) Retrieve(ctx context.Context, certBytes hexutil.Bytes) (hexutil.Bytes, error) {
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -89,15 +89,15 @@ func (serv *DASRPCServer) Retrieve(ctx context.Context, req *RetrieveRequest) (h
 	return result, nil
 }
 
-func (serv *DASRPCServer) KeysetFromHash(ctx context.Context, req *KeysetFromHashRequest) (hexutil.Bytes, error) {
-	resp, err := serv.localDAS.KeysetFromHash(ctx, req.KsHash)
+func (serv *DASRPCServer) KeysetFromHash(ctx context.Context, ksHash hexutil.Bytes) (hexutil.Bytes, error) {
+	resp, err := serv.localDAS.KeysetFromHash(ctx, ksHash)
 	if err != nil {
 		return nil, err
 	}
 	return resp, nil
 }
 
-func (serv *DASRPCServer) CurrentKeysetBytes(ctx context.Context, req *CurrentKeysetBytesRequest) (hexutil.Bytes, error) {
+func (serv *DASRPCServer) CurrentKeysetBytes(ctx context.Context) (hexutil.Bytes, error) {
 	resp, err := serv.localDAS.CurrentKeysetBytes(ctx)
 	if err != nil {
 		return nil, err
