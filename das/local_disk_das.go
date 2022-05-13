@@ -10,6 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"os"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -22,11 +25,12 @@ import (
 var ErrDasKeysetNotFound = errors.New("no such keyset")
 
 type LocalDiskDASConfig struct {
-	KeyDir             string `koanf:"key-dir"`
-	PrivKey            string `koanf:"priv-key"`
-	DataDir            string `koanf:"data-dir"`
-	AllowGenerateKeys  bool   `koanf:"allow-generate-keys"`
-	StoreSignerAddress string `koanf:"store-signer-address"`
+	KeyDir                string `koanf:"key-dir"`
+	PrivKey               string `koanf:"priv-key"`
+	DataDir               string `koanf:"data-dir"`
+	AllowGenerateKeys     bool   `koanf:"allow-generate-keys"`
+	L1NodeURL             string `koanf:"l1-node-url"`
+	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
 }
 
 func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -34,18 +38,45 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".priv-key", "", "The base64 BLS private key to use for signing DAS certificates")
 	f.String(prefix+".data-dir", "", "The directory to use as the DAS file-based database")
 	f.Bool(prefix+".allow-generate-keys", false, "Allow the local disk DAS to generate its own keys in key-dir if they don't already exist")
-	f.String(prefix+".store-signer-address", "", "Address required to sign stores, or empty if anyone can store")
+	f.String(prefix+".l1-node-url", "", "URL of L1 Ethereum node")
+	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
 }
 
 type LocalDiskDAS struct {
-	config          LocalDiskDASConfig
-	privKey         *blsSignatures.PrivateKey
-	keysetHash      [32]byte
-	keysetBytes     []byte
-	storeSignerAddr *common.Address
+	config      LocalDiskDASConfig
+	privKey     *blsSignatures.PrivateKey
+	keysetHash  [32]byte
+	keysetBytes []byte
+	bpVerifier  *BatchPosterVerifier
 }
 
 func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
+	if config.L1NodeURL == "none" {
+		return NewLocalDiskDASWithSeqInboxCaller(config, nil)
+	}
+	l1client, err := ethclient.Dial(config.L1NodeURL)
+	if err != nil {
+		return nil, err
+	}
+	seqInboxAddress, err := OptionalAddressFromString(config.SequencerInboxAddress)
+	if err != nil {
+		return nil, err
+	}
+	if seqInboxAddress == nil {
+		return NewLocalDiskDASWithSeqInboxCaller(config, nil)
+	}
+	return NewLocalDiskDASWithL1Info(config, l1client, *seqInboxAddress)
+}
+
+func NewLocalDiskDASWithL1Info(config LocalDiskDASConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*LocalDiskDAS, error) {
+	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
+	if err != nil {
+		return nil, err
+	}
+	return NewLocalDiskDASWithSeqInboxCaller(config, seqInboxCaller)
+}
+
+func NewLocalDiskDASWithSeqInboxCaller(config LocalDiskDASConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*LocalDiskDAS, error) {
 	var privKey *blsSignatures.PrivateKey
 	var err error
 	if len(config.PrivKey) != 0 {
@@ -91,27 +122,31 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 	var ksHash [32]byte
 	copy(ksHash[:], ksHashBuf)
 
-	storeSignerAddr, err := StoreSignerAddressFromString(config.StoreSignerAddress)
-	if err != nil {
-		return nil, err
+	var bpVerifier *BatchPosterVerifier
+	if seqInboxCaller != nil {
+		bpVerifier = NewBatchPosterVerifier(seqInboxCaller)
 	}
 
 	return &LocalDiskDAS{
-		config:          config,
-		privKey:         privKey,
-		keysetHash:      ksHash,
-		keysetBytes:     ksBuf.Bytes(),
-		storeSignerAddr: storeSignerAddr,
+		config:      config,
+		privKey:     privKey,
+		keysetHash:  ksHash,
+		keysetBytes: ksBuf.Bytes(),
+		bpVerifier:  bpVerifier,
 	}, nil
 }
 
 func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
-	if das.storeSignerAddr != nil {
+	if das.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
-		if actualSigner != *das.storeSignerAddr {
+		isBatchPoster, err := das.bpVerifier.IsBatchPoster(ctx, actualSigner)
+		if err != nil {
+			return nil, err
+		}
+		if !isBatchPoster {
 			return nil, errors.New("store request not properly signed")
 		}
 	}

@@ -76,7 +76,7 @@ unsafe fn arbitrator_load_machine_impl(
         libraries.push(Path::new(&path).to_owned());
     }
 
-    let mach = Machine::from_binary(
+    let mach = Machine::from_paths(
         &libraries,
         binary_path,
         true,
