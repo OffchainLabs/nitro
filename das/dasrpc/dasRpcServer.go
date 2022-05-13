@@ -8,6 +8,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
+
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -21,7 +24,7 @@ type DASRPCServer struct {
 	localDAS                          das.DataAvailabilityService
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, localDAS das.DataAvailabilityService) (*DASRPCServer, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, localDAS das.DataAvailabilityService) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
@@ -29,21 +32,28 @@ func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, localDA
 	return StartDASRPCServerOnListener(ctx, listener, localDAS)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, localDAS das.DataAvailabilityService) (*DASRPCServer, error) {
-	grpcServer := grpc.NewServer()
-	dasServer := &DASRPCServer{grpcServer: grpcServer, localDAS: localDAS}
-	RegisterDASServiceImplServer(grpcServer, dasServer)
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, localDAS das.DataAvailabilityService) (*http.Server, error) {
+	rpcServer := rpc.NewServer()
+	err := rpcServer.RegisterName("das", localDAS)
+	if err != nil {
+		return nil, err
+	}
+
+	srv := &http.Server{
+		Handler: rpcServer,
+	}
+
 	go func() {
-		err := grpcServer.Serve(listener)
+		err := srv.Serve(listener)
 		if err != nil {
 			return
 		}
 	}()
 	go func() {
 		<-ctx.Done()
-		grpcServer.GracefulStop()
+		srv.Shutdown(context.Background())
 	}()
-	return dasServer, nil
+	return srv, nil
 }
 
 func (serv *DASRPCServer) Stop() {
