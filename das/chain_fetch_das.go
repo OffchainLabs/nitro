@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -83,4 +85,11 @@ func (das *ChainFetchDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]
 	}
 
 	return nil, errors.New("Keyset not found")
+}
+
+func (a *ChainFetchDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
+	if d, ok := a.DataAvailabilityService.(dataAvailabilityInjectedService); ok {
+		return d.retrieve(ctx, cert, a)
+	}
+	return a.DataAvailabilityService.Retrieve(ctx, cert)
 }

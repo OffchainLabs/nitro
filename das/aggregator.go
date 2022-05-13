@@ -8,8 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 	"math/bits"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -108,12 +109,16 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 	}, nil
 }
 
-// Retrieve calls  on each backend DAS in parallel and returns immediately on the
+func (a *Aggregator) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
+	return a.retrieve(ctx, cert, a)
+}
+
+// retrieve calls  on each backend DAS in parallel and returns immediately on the
 // first successful response where the data matches the requested hash. Otherwise
 // if all requests fail or if its context is canceled (eg via TimeoutWrapper) then
 // it returns an error.
-func (a *Aggregator) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	err := cert.VerifyNonPayloadParts(ctx, a)
+func (a *Aggregator) retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate, dasReaer arbstate.DataAvailabilityServiceReader) ([]byte, error) {
+	err := cert.VerifyNonPayloadParts(ctx, dasReaer)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +169,7 @@ type storeResponse struct {
 	err     error
 }
 
-// Store calls Store on each backend DAS in parallel and collects responses.
+// store calls Store on each backend DAS in parallel and collects responses.
 // If there were at least K responses then it aggregates the signatures and
 // signersMasks from each DAS together into the DataAvailabilityCertificate
 // then Store returns immediately. If there were any backend Store subroutines
