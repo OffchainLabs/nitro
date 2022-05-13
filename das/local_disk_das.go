@@ -138,22 +138,18 @@ func NewLocalDiskDASWithSeqInboxCaller(ctx context.Context, config LocalDiskDASC
 
 	var storageService StorageService
 	switch config.StorageType {
-	case "":
-	case "files":
+	case "", "files":
 		storageService = NewLocalDiskStorageService(config.DataDir)
-		break
 	case "db":
 		storageService, err = NewDBStorageService(ctx, config.DataDir, false)
 		if err != nil {
 			return nil, err
 		}
-		break
 	case "s3":
 		storageService, err = NewS3StorageService(config.S3Config)
 		if err != nil {
 			return nil, err
 		}
-		break
 	case "redis":
 		s3StorageService, err := NewS3StorageService(config.S3Config)
 		if err != nil {
@@ -163,7 +159,6 @@ func NewLocalDiskDASWithSeqInboxCaller(ctx context.Context, config LocalDiskDASC
 		if err != nil {
 			return nil, err
 		}
-		break
 	case "bigCache":
 		s3StorageService, err := NewS3StorageService(config.S3Config)
 		if err != nil {
@@ -177,7 +172,6 @@ func NewLocalDiskDASWithSeqInboxCaller(ctx context.Context, config LocalDiskDASC
 		if err != nil {
 			return nil, err
 		}
-		break
 	default:
 		return nil, errors.New("Storage service type not recognized: " + config.StorageType)
 	}
