@@ -13,10 +13,11 @@ import (
 const PASSWORD_NOT_SET = "PASSWORD_NOT_SET"
 
 type WalletConfig struct {
-	Pathname     string `koanf:"pathname"`
-	PasswordImpl string `koanf:"password"`
-	PrivateKey   string `koanf:"private-key"`
-	Account      string `koanf:"account"`
+	Pathname      string `koanf:"pathname"`
+	PasswordImpl  string `koanf:"password"`
+	PrivateKey    string `koanf:"private-key"`
+	Account       string `koanf:"account"`
+	OnlyCreateKey bool   `koanf:"only-create-key"`
 }
 
 func (w *WalletConfig) Password() *string {
@@ -27,10 +28,11 @@ func (w *WalletConfig) Password() *string {
 }
 
 var WalletConfigDefault = WalletConfig{
-	Pathname:     "",
-	PasswordImpl: "",
-	PrivateKey:   "",
-	Account:      "",
+	Pathname:      "",
+	PasswordImpl:  "",
+	PrivateKey:    "",
+	Account:       "",
+	OnlyCreateKey: false,
 }
 
 func WalletConfigAddOptions(prefix string, f *flag.FlagSet, defaultPathname string) {
@@ -38,6 +40,7 @@ func WalletConfigAddOptions(prefix string, f *flag.FlagSet, defaultPathname stri
 	f.String(prefix+".password", WalletConfigDefault.PasswordImpl, "wallet passphrase")
 	f.String(prefix+".private-key", WalletConfigDefault.PasswordImpl, "private key for wallet")
 	f.String(prefix+".account", WalletConfigDefault.Account, "account to use (default is first account in keystore)")
+	f.Bool(prefix+".only-create-key", WalletConfigDefault.OnlyCreateKey, "if true, creates new key then exits")
 }
 
 func (w *WalletConfig) ResolveDirectoryNames(chain string) {
