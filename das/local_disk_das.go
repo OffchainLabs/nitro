@@ -6,7 +6,6 @@ package das
 import (
 	"bytes"
 	"context"
-	"encoding/base32"
 	"errors"
 	"fmt"
 	"os"
@@ -14,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	flag "github.com/spf13/pflag"
@@ -44,6 +42,7 @@ type LocalDiskDAS struct {
 	keysetHash      [32]byte
 	keysetBytes     []byte
 	storeSignerAddr *common.Address
+	storageService  StorageService
 }
 
 func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
@@ -103,6 +102,7 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 		keysetHash:      ksHash,
 		keysetBytes:     ksBuf.Bytes(),
 		storeSignerAddr: storeSignerAddr,
+		storageService:  NewLocalDiskStorageService(config.DataDir),
 	}, nil
 }
 
@@ -129,10 +129,11 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 		return nil, err
 	}
 
-	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(c.DataHash[:])
-	log.Debug("Storing message at", "path", path)
-
-	err = os.WriteFile(path, message, 0600)
+	err = das.storageService.Write(ctx, c.DataHash[:], message, timeout)
+	if err != nil {
+		return nil, err
+	}
+	err = das.storageService.Sync(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -143,10 +144,7 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 }
 
 func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(cert.DataHash[:])
-	log.Debug("Retrieving message from", "path", path)
-
-	originalMessage, err := os.ReadFile(path)
+	originalMessage, err := das.storageService.Read(ctx, cert.DataHash[:])
 	if err != nil {
 		return nil, err
 	}

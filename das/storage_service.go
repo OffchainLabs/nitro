@@ -8,6 +8,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"os"
+	"sync"
 )
 
 var ErrNotFound = errors.New("Not found")
@@ -21,18 +22,23 @@ type StorageService interface {
 
 type LocalDiskStorageService struct {
 	dataDir string
+	mutex   sync.RWMutex
 }
 
 func NewLocalDiskStorageService(dataDir string) *LocalDiskStorageService {
-	return &LocalDiskStorageService{dataDir}
+	return &LocalDiskStorageService{dataDir: dataDir}
 }
 
 func (s *LocalDiskStorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
 	return os.ReadFile(pathname)
 }
 
 func (s *LocalDiskStorageService) Write(ctx context.Context, key []byte, value []byte, timeout uint64) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
 	return os.WriteFile(pathname, value, 0600)
 }
