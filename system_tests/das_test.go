@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"net"
 	"testing"
@@ -97,7 +96,8 @@ func TestDASRekey(t *testing.T) {
 	defer dasServerB.Stop()
 	authorizeDASKeyset(t, ctx, pubkeyB, l1info, l1client)
 
-	fmt.Println("Initial run stopped")
+	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
+
 	l2stack, err = arbnode.CreateDefaultStack()
 	Require(t, err)
 	l2blockchain, err = arbnode.GetBlockChain(l2chainDb, nil, chainConfig)
