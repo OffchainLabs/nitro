@@ -9,8 +9,9 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 	"os"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
