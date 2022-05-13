@@ -13,6 +13,7 @@ type DBStorageService struct {
 	db                  *badger.DB
 	discardAfterTimeout bool
 	dirPath             string
+	shutdownFunc        func()
 }
 
 func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeout bool) (StorageService, error) {
@@ -21,6 +22,7 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		return nil, err
 	}
 
+	shutdownCtx, cancel := context.WithCancel(context.Background())
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -30,7 +32,7 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 			case <-ticker.C:
 				for db.RunValueLogGC(0.7) == nil {
 					select {
-					case <-ctx.Done():
+					case <-shutdownCtx.Done():
 						return
 					default:
 					}
@@ -41,7 +43,12 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		}
 	}()
 
-	return &DBStorageService{db, discardAfterTimeout, dirPath}, nil
+	return &DBStorageService{
+		db:                  db,
+		discardAfterTimeout: discardAfterTimeout,
+		dirPath:             dirPath,
+		shutdownFunc:        cancel,
+	}, nil
 }
 
 func (dbs *DBStorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
@@ -67,6 +74,11 @@ func (dbs *DBStorageService) Write(ctx context.Context, key []byte, value []byte
 
 func (dbs *DBStorageService) Sync(ctx context.Context) error {
 	return dbs.db.Sync()
+}
+
+func (dbs *DBStorageService) Close(ctx context.Context) error {
+	dbs.shutdownFunc()
+	return dbs.db.Close()
 }
 
 func (dbs *DBStorageService) String() string {

@@ -17,6 +17,7 @@ type StorageService interface {
 	Read(ctx context.Context, key []byte) ([]byte, error)
 	Write(ctx context.Context, key []byte, value []byte, expirationTime uint64) error
 	Sync(ctx context.Context) error
+	Close(ctx context.Context) error
 	String() string
 }
 
@@ -44,6 +45,10 @@ func (s *LocalDiskStorageService) Write(ctx context.Context, key []byte, value [
 }
 
 func (s *LocalDiskStorageService) Sync(ctx context.Context) error {
+	return nil
+}
+
+func (s *LocalDiskStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
