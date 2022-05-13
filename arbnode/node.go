@@ -559,42 +559,6 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
 	}
 
-	dataAvailabilityMode, err := config.DataAvailability.Mode()
-	if err != nil {
-		return nil, err
-	}
-	var dataAvailabilityService das.DataAvailabilityService
-	switch dataAvailabilityMode {
-	case das.LocalDiskDataAvailability:
-		var err error
-		dataAvailabilityService, err = das.NewLocalDiskDAS(config.DataAvailability.LocalDiskDASConfig)
-		if err != nil {
-			return nil, err
-		}
-	case das.AggregatorDataAvailability:
-		dataAvailabilityService, err = dasrpc.NewRPCAggregator(config.DataAvailability.AggregatorConfig)
-		if err != nil {
-			return nil, err
-		}
-	case das.OnchainDataAvailability:
-		// Batches stored onchain, don't create a DAS.
-	default:
-		return nil, fmt.Errorf("Unknown data availability mode %v", dataAvailabilityMode)
-	}
-
-	if dataAvailabilityService != nil {
-		if daSigner != nil {
-			dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
-			if err != nil {
-				return nil, err
-			}
-		}
-		dataAvailabilityService, err = das.NewChainFetchDAS(dataAvailabilityService, l1client, deployInfo.SequencerInbox)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
 		l1Reader = headerreader.New(l1client, config.L1Reader)
@@ -658,6 +622,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 	if !config.L1Reader.Enable {
+		dataAvailabilityService, err := setUpDataAvailabilityService(config, nil, nil, daSigner)
+		if err != nil {
+			return nil, err
+		}
 		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, dataAvailabilityService}, nil
 	}
 
@@ -669,6 +637,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, err
 	}
 	sequencerInbox, err := NewSequencerInbox(l1client, deployInfo.SequencerInbox, int64(deployInfo.DeployedAt))
+	if err != nil {
+		return nil, err
+	}
+	dataAvailabilityService, err := setUpDataAvailabilityService(config, l1client, deployInfo, daSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -736,6 +708,50 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	}
 
 	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dataAvailabilityService}, nil
+}
+
+func setUpDataAvailabilityService(
+	config *Config,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	daSigner das.DasSigner,
+) (das.DataAvailabilityService, error) {
+	dataAvailabilityMode, err := config.DataAvailability.Mode()
+	if err != nil {
+		return nil, err
+	}
+	var dataAvailabilityService das.DataAvailabilityService
+	switch dataAvailabilityMode {
+	case das.LocalDiskDataAvailability:
+		var err error
+		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(config.DataAvailability.LocalDiskDASConfig, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+	case das.AggregatorDataAvailability:
+		dataAvailabilityService, err = dasrpc.NewRPCAggregator(config.DataAvailability.AggregatorConfig)
+		if err != nil {
+			return nil, err
+		}
+	case das.OnchainDataAvailability:
+		// Batches stored onchain, don't create a DAS.
+	default:
+		return nil, fmt.Errorf("Unknown data availability mode %v", dataAvailabilityMode)
+	}
+
+	if dataAvailabilityService != nil {
+		if daSigner != nil {
+			dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+			if err != nil {
+				return nil, err
+			}
+		}
+		dataAvailabilityService, err = das.NewChainFetchDAS(dataAvailabilityService, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return dataAvailabilityService, nil
 }
 
 type arbNodeLifecycle struct {

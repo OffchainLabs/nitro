@@ -36,10 +36,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	l1NodeConfigB.BlockValidator.Enable = true
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeString
 	dasConfig := das.LocalDiskDASConfig{
-		KeyDir:             dbPath,
-		DataDir:            dbPath,
-		AllowGenerateKeys:  true,
-		StoreSignerAddress: "none",
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
 	}
 	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)

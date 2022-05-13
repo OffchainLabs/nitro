@@ -9,11 +9,12 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"os"
-	
+
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -42,14 +43,40 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type LocalDiskDAS struct {
-	config         LocalDiskDASConfig
-	privKey        *blsSignatures.PrivateKey
-	keysetHash     [32]byte
-	keysetBytes    []byte
-	seqInboxCaller *bridgegen.SequencerInboxCaller
+	config      LocalDiskDASConfig
+	privKey     *blsSignatures.PrivateKey
+	keysetHash  [32]byte
+	keysetBytes []byte
+	bpVerifier  *BatchPosterVerifier
 }
 
 func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
+	if config.L1NodeURL == "none" {
+		return NewLocalDiskDASWithSeqInboxCaller(config, nil)
+	}
+	l1client, err := ethclient.Dial(config.L1NodeURL)
+	if err != nil {
+		return nil, err
+	}
+	seqInboxAddress, err := StoreSignerAddressFromString(config.SequencerInboxAddress)
+	if err != nil {
+		return nil, err
+	}
+	if seqInboxAddress == nil {
+		return NewLocalDiskDASWithSeqInboxCaller(config, nil)
+	}
+	return NewLocalDiskDASWithL1Info(config, l1client, *seqInboxAddress)
+}
+
+func NewLocalDiskDASWithL1Info(config LocalDiskDASConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*LocalDiskDAS, error) {
+	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
+	if err != nil {
+		return nil, err
+	}
+	return NewLocalDiskDASWithSeqInboxCaller(config, seqInboxCaller)
+}
+
+func NewLocalDiskDASWithSeqInboxCaller(config LocalDiskDASConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*LocalDiskDAS, error) {
 	var privKey *blsSignatures.PrivateKey
 	var err error
 	if len(config.PrivKey) != 0 {
@@ -95,38 +122,27 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 	var ksHash [32]byte
 	copy(ksHash[:], ksHashBuf)
 
-	var seqInboxCaller *bridgegen.SequencerInboxCaller
-	if config.L1NodeURL != "none" {
-		l1client, err := ethclient.Dial(config.L1NodeURL)
-		if err != nil {
-			return nil, err
-		}
-		seqInboxAddress, err := StoreSignerAddressFromString(config.SequencerInboxAddress)
-		if err != nil {
-			return nil, err
-		}
-		seqInboxCaller, err = bridgegen.NewSequencerInboxCaller(*seqInboxAddress, l1client)
-		if err != nil {
-			return nil, err
-		}
+	var bpVerifier *BatchPosterVerifier
+	if seqInboxCaller != nil {
+		bpVerifier = NewBatchPosterVerifier(seqInboxCaller)
 	}
 
 	return &LocalDiskDAS{
-		config:         config,
-		privKey:        privKey,
-		keysetHash:     ksHash,
-		keysetBytes:    ksBuf.Bytes(),
-		seqInboxCaller: seqInboxCaller,
+		config:      config,
+		privKey:     privKey,
+		keysetHash:  ksHash,
+		keysetBytes: ksBuf.Bytes(),
+		bpVerifier:  bpVerifier,
 	}, nil
 }
 
 func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
-	if das.seqInboxCaller != nil {
+	if das.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
-		isBatchPoster, err := das.seqInboxCaller.IsBatchPoster(&bind.CallOpts{Context: ctx}, actualSigner)
+		isBatchPoster, err := das.bpVerifier.IsBatchPoster(ctx, actualSigner)
 		if err != nil {
 			return nil, err
 		}

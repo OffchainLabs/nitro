@@ -8,6 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"math/bits"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -21,18 +24,21 @@ import (
 
 type AggregatorConfig struct {
 	// sequencer public key
-	AssumedHonest      int    `koanf:"assumed-honest"`
-	Backends           string `koanf:"backends"`
-	StoreSignerAddress string `koanf:"store-signer-address"`
+	AssumedHonest         int    `koanf:"assumed-honest"`
+	Backends              string `koanf:"backends"`
+	L1NodeURL             string `koanf:"l1-node-url"`
+	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
-	StoreSignerAddress: "",
+	L1NodeURL: "",
 }
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
+	f.String(prefix+".l1-node-url", DefaultAggregatorConfig.L1NodeURL, "URL for L1 node")
+	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
 }
 
 type Aggregator struct {
@@ -44,7 +50,7 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
-	storeSignerAddr                *common.Address
+	bpVerifier                     *BatchPosterVerifier
 }
 
 type ServiceDetails struct {
@@ -65,6 +71,41 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 }
 
 func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
+	if config.L1NodeURL == "none" {
+		return NewAggregatorWithSeqInboxCaller(config, services, nil)
+	}
+	l1client, err := ethclient.Dial(config.L1NodeURL)
+	if err != nil {
+		return nil, err
+	}
+	seqInboxAddress, err := StoreSignerAddressFromString(config.SequencerInboxAddress)
+	if err != nil {
+		return nil, err
+	}
+	if seqInboxAddress == nil {
+		return NewAggregatorWithSeqInboxCaller(config, services, nil)
+	}
+	return NewAggregatorWithL1Info(config, services, l1client, *seqInboxAddress)
+}
+
+func NewAggregatorWithL1Info(
+	config AggregatorConfig,
+	services []ServiceDetails,
+	l1client arbutil.L1Interface,
+	seqInboxAddress common.Address,
+) (*Aggregator, error) {
+	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
+	if err != nil {
+		return nil, err
+	}
+	return NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
+}
+
+func NewAggregatorWithSeqInboxCaller(
+	config AggregatorConfig,
+	services []ServiceDetails,
+	seqInboxCaller *bridgegen.SequencerInboxCaller,
+) (*Aggregator, error) {
 	var aggSignersMask uint64
 	pubKeys := []blsSignatures.PublicKey{}
 	for _, d := range services {
@@ -93,9 +134,9 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 	var keysetHash [32]byte
 	copy(keysetHash[:], keysetHashBuf)
 
-	storeSignerAddr, err := StoreSignerAddressFromString(config.StoreSignerAddress)
-	if err != nil {
-		return nil, err
+	var bpVerifier *BatchPosterVerifier
+	if seqInboxCaller != nil {
+		bpVerifier = NewBatchPosterVerifier(seqInboxCaller)
 	}
 
 	return &Aggregator{
@@ -105,7 +146,7 @@ func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggrega
 		maxAllowedServiceStoreFailures: config.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    ksBuf.Bytes(),
-		storeSignerAddr:                storeSignerAddr,
+		bpVerifier:                     bpVerifier,
 	}, nil
 }
 
@@ -183,12 +224,16 @@ type storeResponse struct {
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
-	if a.storeSignerAddr != nil {
+	if a.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
-		if actualSigner != *a.storeSignerAddr {
+		isBatchPoster, err := a.bpVerifier.IsBatchPoster(ctx, actualSigner)
+		if err != nil {
+			return nil, err
+		}
+		if !isBatchPoster {
 			return nil, errors.New("store request not properly signed")
 		}
 	}
