@@ -6,39 +6,39 @@ package dasrpc
 import (
 	"context"
 	"fmt"
+
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/das"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
-	clnt DASServiceImplClient
+	clnt *rpc.Client
 }
 
 func NewDASRPCClient(target string) (*DASRPCClient, error) {
-	// TODO revisit insecure setting
-	conn, err := grpc.Dial(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	clnt, err := rpc.Dial(target)
 	if err != nil {
 		return nil, err
 	}
-	clnt := NewDASServiceImplClient(conn)
 	return &DASRPCClient{clnt: clnt}, nil
 }
 
-func (clnt *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
+func (c *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
 	certBytes := das.Serialize(cert)
-	response, err := clnt.clnt.Retrieve(ctx, &RetrieveRequest{CertBytes: certBytes})
+	var 
+	c.clnt.Call("", "")
+	response, err := c.clnt.Retrieve(ctx, &RetrieveRequest{CertBytes: certBytes})
 	if err != nil {
 		return nil, err
 	}
 	return response.Result, nil
 }
 
-func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
-	response, err := clnt.clnt.Store(ctx, &StoreRequest{Message: message, Timeout: timeout, Sig: reqSig})
+func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	response, err := c.clnt.Store(ctx, &StoreRequest{Message: message, Timeout: timeout, Sig: reqSig})
 	if err != nil {
 		return nil, err
 	}
@@ -59,22 +59,22 @@ func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uin
 	}, nil
 }
 
-func (clnt *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	response, err := clnt.clnt.KeysetFromHash(ctx, &KeysetFromHashRequest{KsHash: ksHash})
+func (c *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	response, err := c.clnt.KeysetFromHash(ctx, &KeysetFromHashRequest{KsHash: ksHash})
 	if err != nil {
 		return nil, err
 	}
 	return response.Result, nil
 }
 
-func (clnt *DASRPCClient) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
-	response, err := clnt.clnt.CurrentKeysetBytes(ctx, &CurrentKeysetBytesRequest{})
+func (c *DASRPCClient) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
+	response, err := c.clnt.CurrentKeysetBytes(ctx, &CurrentKeysetBytesRequest{})
 	if err != nil {
 		return nil, err
 	}
 	return response.Result, nil
 }
 
-func (clnt *DASRPCClient) String() string {
-	return fmt.Sprintf("DASRPCClient{clnt:%v}", clnt.clnt)
+func (c *DASRPCClient) String() string {
+	return fmt.Sprintf("DASRPCClient{c:%v}", c.clnt)
 }
