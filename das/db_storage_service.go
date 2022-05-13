@@ -77,7 +77,11 @@ func (dbs *DBStorageService) Read(ctx context.Context, key []byte) ([]byte, erro
 
 func (dbs *DBStorageService) Write(ctx context.Context, key []byte, value []byte, timeout uint64) error {
 	return dbs.db.Update(func(txn *badger.Txn) error {
-		return txn.Set(key, value) // TODO: honor discardAfterTimeout
+		e := badger.NewEntry(key, value)
+		if dbs.discardAfterTimeout {
+			e = e.WithTTL(time.Until(time.Unix(int64(timeout), 0)))
+		}
+		return txn.SetEntry(e)
 	})
 }
 
