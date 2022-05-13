@@ -35,7 +35,11 @@ func TestRPC(t *testing.T) {
 	localDas, err := das.NewLocalDiskDASWithSeqInboxCaller(dasConfig, nil)
 	testhelpers.RequireImpl(t, err)
 	dasServer, err := StartDASRPCServerOnListener(ctx, lis, localDas)
-	defer dasServer.Shutdown(ctx)
+	defer func() {
+		if err := dasServer.Shutdown(ctx); err != nil {
+			panic(err)
+		}
+	}()
 	testhelpers.RequireImpl(t, err)
 	config := BackendConfig{
 		URL:                 "http://" + lis.Addr().String(),
