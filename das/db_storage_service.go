@@ -39,7 +39,7 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 					default:
 					}
 				}
-			case <-ctx.Done():
+			case <-shutdownCtx.Done():
 				return
 			}
 		}
