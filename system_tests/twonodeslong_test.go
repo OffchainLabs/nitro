@@ -38,7 +38,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	chainConfig, l1NodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 
 	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
