@@ -30,7 +30,7 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 
 func (c *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
 	certBytes := das.Serialize(cert)
-	var ret []byte
+	var ret hexutil.Bytes
 	if err := c.clnt.CallContext(ctx, &ret, "das_retrieve", hexutil.Bytes(certBytes)); err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 }
 
 func (c *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	var ret []byte
+	var ret hexutil.Bytes
 	if err := c.clnt.CallContext(ctx, &ret, "das_keysetFromHash", hexutil.Bytes(ksHash)); err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (c *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byt
 }
 
 func (c *DASRPCClient) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
-	var ret []byte
+	var ret hexutil.Bytes
 	if err := c.clnt.CallContext(ctx, &ret, "das_currentKeysetBytes"); err != nil {
 		return nil, err
 	}
