@@ -50,7 +50,7 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, loc
 	}()
 	go func() {
 		<-ctx.Done()
-		srv.Shutdown(context.Background())
+		_ = srv.Shutdown(context.Background())
 	}()
 	return srv, nil
 }
