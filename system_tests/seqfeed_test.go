@@ -6,16 +6,12 @@ package arbtest
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"io/ioutil"
 	"math/big"
 	"net"
-	"os"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/das"
@@ -127,42 +123,13 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	// The truthful sequencer
-	nodeConfigA := arbnode.ConfigDefaultL1Test()
+	chainConfig, nodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	nodeConfigA.DataAvailability.ModeImpl = dasModeStr
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	var dbPath string
-	var err error
-	if dasModeStr == das.LocalDiskDataAvailabilityString {
-		dbPath, err = ioutil.TempDir("/tmp", "das_test")
-		Require(t, err)
-		defer os.RemoveAll(dbPath)
-		chainConfig = params.ArbitrumDevTestDASChainConfig()
-		dasConfig := das.LocalDiskDASConfig{
-			KeyDir:            dbPath,
-			DataDir:           dbPath,
-			AllowGenerateKeys: true,
-		}
-		nodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig
-	}
 	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
 	defer l1stack.Close()
 
-	usingDas := nodeA.DataAvailService
-
-	if usingDas != nil {
-		keysetBytes, err := usingDas.CurrentKeysetBytes(ctx)
-		Require(t, err)
-
-		sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
-		Require(t, err)
-		trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-		tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
-		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, l1client, tx)
-		Require(t, err)
-	}
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
@@ -200,7 +167,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
 	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
 
-	err = l2clientC.SendTransaction(ctx, fraudTx)
+	err := l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}

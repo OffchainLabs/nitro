@@ -6,13 +6,11 @@ package das
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 	"reflect"
-	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -28,6 +26,10 @@ type DataAvailabilityService interface {
 	arbstate.DataAvailabilityServiceReader
 	DataAvailabilityServiceWriter
 	fmt.Stringer
+}
+
+type dataAvailabilityInjectedService interface {
+	retrieve(context.Context, *arbstate.DataAvailabilityCertificate, arbstate.DataAvailabilityServiceReader) ([]byte, error)
 }
 
 type DataAvailabilityMode uint64
@@ -87,16 +89,17 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
 
-func StoreSignerAddressFromString(s string) (*common.Address, error) {
+func OptionalAddressFromString(s string) (*common.Address, error) {
 	if s == "none" {
 		return nil, nil
 	}
-	s = strings.TrimPrefix(s, "0x")
-	addrBytes, err := hex.DecodeString(s)
-	if err != nil {
-		return nil, err
+	if s == "" {
+		return nil, errors.New("must provide address for signer or specify 'none'")
 	}
-	addr := common.BytesToAddress(addrBytes)
+	if !common.IsHexAddress(s) {
+		return nil, fmt.Errorf("invalid address for signer: %v", s)
+	}
+	addr := common.HexToAddress(s)
 	return &addr, nil
 }
 
