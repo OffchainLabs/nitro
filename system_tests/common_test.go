@@ -338,10 +338,9 @@ func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig
 		dasSignerKey, _, err = das.GenerateAndStoreKeys(dbPath)
 		Require(t, err)
 		dasConfig := das.LocalDiskDASConfig{
-			KeyDir:             dbPath,
-			DataDir:            dbPath,
-			AllowGenerateKeys:  true,
-			StoreSignerAddress: "none",
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
 		}
 		l1NodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig
 		chainConfig = params.ArbitrumDevTestDASChainConfig()

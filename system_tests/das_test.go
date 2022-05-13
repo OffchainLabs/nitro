@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
 	"math/big"
 	"net"
 	"testing"
@@ -22,18 +24,23 @@ import (
 	"github.com/offchainlabs/nitro/das"
 )
 
-func startLocalDASServer(t *testing.T, ctx context.Context, dataDir string) (*dasrpc.DASRPCServer, *blsSignatures.PublicKey, dasrpc.BackendConfig) {
+func startLocalDASServer(
+	t *testing.T,
+	ctx context.Context,
+	dataDir string,
+	l1client arbutil.L1Interface,
+	seqInboxAddress common.Address,
+) (*dasrpc.DASRPCServer, *blsSignatures.PublicKey, dasrpc.BackendConfig) {
 	lis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	keyDir := t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 	dasConfig := das.LocalDiskDASConfig{
-		KeyDir:             keyDir,
-		DataDir:            dataDir,
-		StoreSignerAddress: "none",
+		KeyDir:  keyDir,
+		DataDir: dataDir,
 	}
-	localDas, err := das.NewLocalDiskDAS(dasConfig)
+	localDas, err := das.NewLocalDiskDASWithL1Info(dasConfig, l1client, seqInboxAddress)
 	Require(t, err)
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, localDas)
 	Require(t, err)
@@ -56,9 +63,8 @@ func aggConfigForBackend(t *testing.T, backendConfig dasrpc.BackendConfig) das.A
 	backendsJsonByte, err := json.Marshal([]dasrpc.BackendConfig{backendConfig})
 	Require(t, err)
 	return das.AggregatorConfig{
-		AssumedHonest:      1,
-		Backends:           string(backendsJsonByte),
-		StoreSignerAddress: "none",
+		AssumedHonest: 1,
+		Backends:      string(backendsJsonByte),
 	}
 }
 
@@ -74,7 +80,7 @@ func TestDASRekey(t *testing.T) {
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
-	dasServerA, pubkeyA, backendConfigA := startLocalDASServer(t, ctx, dasDataDir)
+	dasServerA, pubkeyA, backendConfigA := startLocalDASServer(t, ctx, dasDataDir, l1client, addresses.SequencerInbox)
 	authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
 
 	// Setup L2 chain
@@ -104,7 +110,7 @@ func TestDASRekey(t *testing.T) {
 	nodeB.StopAndWait()
 
 	dasServerA.Stop()
-	dasServerB, pubkeyB, backendConfigB := startLocalDASServer(t, ctx, dasDataDir)
+	dasServerB, pubkeyB, backendConfigB := startLocalDASServer(t, ctx, dasDataDir, l1client, addresses.SequencerInbox)
 	defer dasServerB.Stop()
 	authorizeDASKeyset(t, ctx, pubkeyB, l1info, l1client)
 
