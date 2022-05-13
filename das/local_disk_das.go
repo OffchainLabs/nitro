@@ -8,34 +8,43 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"os"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+
 	flag "github.com/spf13/pflag"
 )
 
 var ErrDasKeysetNotFound = errors.New("no such keyset")
 
 type LocalDiskDASConfig struct {
-	KeyDir                string `koanf:"key-dir"`
-	PrivKey               string `koanf:"priv-key"`
-	DataDir               string `koanf:"data-dir"`
-	AllowGenerateKeys     bool   `koanf:"allow-generate-keys"`
-	L1NodeURL             string `koanf:"l1-node-url"`
-	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
-	StorageType           string `koanf:"storage-type"`
+	KeyDir                string               `koanf:"key-dir"`
+	PrivKey               string               `koanf:"priv-key"`
+	DataDir               string               `koanf:"data-dir"`
+	S3Config              genericconf.S3Config `koanf:"s3"`
+	RedisConfig           RedisConfig          `koanf:"redis"`
+	BigCacheConfig        BigCacheConfig       `koanf:"big-cache"`
+	AllowGenerateKeys     bool                 `koanf:"allow-generate-keys"`
+	L1NodeURL             string               `koanf:"l1-node-url"`
+	SequencerInboxAddress string               `koanf:"sequencer-inbox-address"`
+	StorageType           string               `koanf:"storage-type"`
 }
 
 func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".key-dir", "", fmt.Sprintf("The directory to read the bls keypair ('%s' and '%s') from", DefaultPubKeyFilename, DefaultPrivKeyFilename))
 	f.String(prefix+".priv-key", "", "The base64 BLS private key to use for signing DAS certificates")
 	f.String(prefix+".data-dir", "", "The directory to use as the DAS file-based database")
+	genericconf.S3ConfigAddOptions(prefix+".s3", f)
+	RedisConfigAddOptions(prefix+".redis", f)
+	BigCacheConfigAddOptions(prefix+".big-cache", f)
 	f.Bool(prefix+".allow-generate-keys", false, "Allow the local disk DAS to generate its own keys in key-dir if they don't already exist")
 	f.String(prefix+".l1-node-url", "", "URL of L1 Ethereum node")
 	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
@@ -128,14 +137,48 @@ func NewLocalDiskDASWithSeqInboxCaller(ctx context.Context, config LocalDiskDASC
 	}
 
 	var storageService StorageService
-	if config.StorageType == "" || config.StorageType == "files" {
+	switch config.StorageType {
+	case "":
+	case "files":
 		storageService = NewLocalDiskStorageService(config.DataDir)
-	} else if config.StorageType == "db" {
+		break
+	case "db":
 		storageService, err = NewDBStorageService(ctx, config.DataDir, false)
 		if err != nil {
 			return nil, err
 		}
-	} else {
+		break
+	case "s3":
+		storageService, err = NewS3StorageService(config.S3Config)
+		if err != nil {
+			return nil, err
+		}
+		break
+	case "redis":
+		s3StorageService, err := NewS3StorageService(config.S3Config)
+		if err != nil {
+			return nil, err
+		}
+		storageService, err = NewRedisStorageService(config.RedisConfig, s3StorageService)
+		if err != nil {
+			return nil, err
+		}
+		break
+	case "bigCache":
+		s3StorageService, err := NewS3StorageService(config.S3Config)
+		if err != nil {
+			return nil, err
+		}
+		redisStorageService, err := NewRedisStorageService(config.RedisConfig, s3StorageService)
+		if err != nil {
+			return nil, err
+		}
+		storageService, err = NewBigCacheStorageService(config.BigCacheConfig, redisStorageService)
+		if err != nil {
+			return nil, err
+		}
+		break
+	default:
 		return nil, errors.New("Storage service type not recognized: " + config.StorageType)
 	}
 
