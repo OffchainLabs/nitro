@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	koanfjson "github.com/knadh/koanf/parsers/json"
-	"github.com/knadh/koanf/providers/confmap"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -60,12 +59,9 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 		return nil, err
 	}
 	if serverConfig.ConfConfig.Dump {
-		// Print out current configuration
-
-		// Don't keep printing configuration file
-		err := k.Load(confmap.Provider(map[string]interface{}{
-			"conf.dump": false,
-		}, "."), nil)
+		err = util.DumpConfig(k, map[string]interface{}{
+			"data-availability.local-disk.priv-key": "",
+		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
 		}
