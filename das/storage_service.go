@@ -15,7 +15,7 @@ var ErrNotFound = errors.New("Not found")
 
 type StorageService interface {
 	Read(ctx context.Context, key []byte) ([]byte, error)
-	Write(ctx context.Context, key []byte, value []byte, timeout uint64) error
+	Write(ctx context.Context, key []byte, value []byte, expirationTime uint64) error
 	Sync(ctx context.Context) error
 	String() string
 }
