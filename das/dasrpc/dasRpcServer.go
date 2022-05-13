@@ -10,18 +10,17 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
+
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das"
-	"google.golang.org/grpc"
 )
 
 type DASRPCServer struct {
-	UnimplementedDASServiceImplServer // this allows grpc to verify its version invariant
-	grpcServer                        *grpc.Server
-	localDAS                          das.DataAvailabilityService
+	localDAS das.DataAvailabilityService
 }
 
 func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, localDAS das.DataAvailabilityService) (*http.Server, error) {
@@ -56,25 +55,29 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, loc
 	return srv, nil
 }
 
-func (serv *DASRPCServer) Stop() {
-	serv.grpcServer.GracefulStop()
+type StoreResult struct {
+	DataHash    hexutil.Bytes  `json:"dataHash,omitempty"`
+	Timeout     hexutil.Uint64 `json:"timeout,omitempty"`
+	SignersMask hexutil.Uint64 `json:"signersMask,omitempty"`
+	KeysetHash  hexutil.Bytes  `json:"keysetHash,omitempty"`
+	Sig         hexutil.Bytes  `json:"sig,omitempty"`
 }
 
-func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreResponse, error) {
+func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreResult, error) {
 	cert, err := serv.localDAS.Store(ctx, req.Message, req.Timeout, req.Sig)
 	if err != nil {
 		return nil, err
 	}
-	return &StoreResponse{
+	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],
 		DataHash:    cert.DataHash[:],
-		Timeout:     cert.Timeout,
-		SignersMask: cert.SignersMask,
+		Timeout:     hexutil.Uint64(cert.Timeout),
+		SignersMask: hexutil.Uint64(cert.SignersMask),
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
 	}, nil
 }
 
-func (serv *DASRPCServer) Retrieve(ctx context.Context, req *RetrieveRequest) (*RetrieveResponse, error) {
+func (serv *DASRPCServer) Retrieve(ctx context.Context, req *RetrieveRequest) (hexutil.Bytes, error) {
 	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(req.CertBytes))
 	if err != nil {
 		return nil, err
@@ -83,21 +86,21 @@ func (serv *DASRPCServer) Retrieve(ctx context.Context, req *RetrieveRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	return &RetrieveResponse{Result: result}, nil
+	return result, nil
 }
 
-func (serv *DASRPCServer) KeysetFromHash(ctx context.Context, req *KeysetFromHashRequest) (*KeysetFromHashResponse, error) {
+func (serv *DASRPCServer) KeysetFromHash(ctx context.Context, req *KeysetFromHashRequest) (hexutil.Bytes, error) {
 	resp, err := serv.localDAS.KeysetFromHash(ctx, req.KsHash)
 	if err != nil {
 		return nil, err
 	}
-	return &KeysetFromHashResponse{Result: resp}, nil
+	return resp, nil
 }
 
-func (serv *DASRPCServer) CurrentKeysetBytes(ctx context.Context, req *CurrentKeysetBytesRequest) (*CurrentKeysetBytesResponse, error) {
+func (serv *DASRPCServer) CurrentKeysetBytes(ctx context.Context, req *CurrentKeysetBytesRequest) (hexutil.Bytes, error) {
 	resp, err := serv.localDAS.CurrentKeysetBytes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &CurrentKeysetBytesResponse{Result: resp}, nil
+	return resp, nil
 }
