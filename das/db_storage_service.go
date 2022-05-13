@@ -6,6 +6,7 @@ package das
 import (
 	"context"
 	"github.com/dgraph-io/badger"
+	"sync"
 	"time"
 )
 
@@ -14,6 +15,7 @@ type DBStorageService struct {
 	discardAfterTimeout bool
 	dirPath             string
 	shutdownFunc        func()
+	shutdownMutex       sync.Mutex
 }
 
 func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeout bool) (StorageService, error) {
@@ -43,12 +45,19 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		}
 	}()
 
-	return &DBStorageService{
+	ret := &DBStorageService{
 		db:                  db,
 		discardAfterTimeout: discardAfterTimeout,
 		dirPath:             dirPath,
 		shutdownFunc:        cancel,
-	}, nil
+	}
+
+	go func() {
+		<-ctx.Done()
+		_ = ret.Close(context.Background())
+	}()
+
+	return ret, nil
 }
 
 func (dbs *DBStorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
@@ -77,6 +86,8 @@ func (dbs *DBStorageService) Sync(ctx context.Context) error {
 }
 
 func (dbs *DBStorageService) Close(ctx context.Context) error {
+	dbs.shutdownMutex.Lock()
+	defer dbs.shutdownMutex.Unlock()
 	dbs.shutdownFunc()
 	return dbs.db.Close()
 }
