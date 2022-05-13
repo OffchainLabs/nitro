@@ -126,7 +126,6 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	chainConfig, nodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-
 	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
 	defer l1stack.Close()
 
@@ -231,9 +230,9 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 }
 
 func TestLyingSequencer(t *testing.T) {
-	testLyingSequencer(t, "onchain")
+	testLyingSequencer(t, das.OnchainDataAvailabilityString)
 }
 
 func TestLyingSequencerLocalDAS(t *testing.T) {
-	testLyingSequencer(t, "local")
+	testLyingSequencer(t, das.LocalDiskDataAvailabilityString)
 }

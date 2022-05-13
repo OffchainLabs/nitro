@@ -111,9 +111,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 }
 
 func TestBlockValidatorSimple(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", false)
+	testBlockValidatorSimple(t, das.OnchainDataAvailabilityString, false)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, "local", false)
+	testBlockValidatorSimple(t, das.LocalDiskDataAvailabilityString, false)
 }

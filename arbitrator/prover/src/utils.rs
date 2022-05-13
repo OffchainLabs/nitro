@@ -242,7 +242,7 @@ impl Iterator for CBytesIntoIter {
     type Item = u8;
 
     fn next(&mut self) -> Option<u8> {
-        if self.0.len >= self.1 {
+        if self.1 >= self.0.len {
             return None;
         }
         let byte = self.0[self.1];

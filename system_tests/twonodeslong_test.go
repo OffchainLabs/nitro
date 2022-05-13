@@ -38,7 +38,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
+	
 	chainConfig, l1NodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 
 	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
@@ -196,9 +196,9 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 }
 
 func TestTwoNodesLong(t *testing.T) {
-	testTwoNodesLong(t, "onchain")
+	testTwoNodesLong(t, das.OnchainDataAvailabilityString)
 }
 
 func TestTwoNodesLongLocalDAS(t *testing.T) {
-	testTwoNodesLong(t, "local")
+	testTwoNodesLong(t, das.LocalDiskDataAvailabilityString)
 }
