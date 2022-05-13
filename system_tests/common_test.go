@@ -333,7 +333,7 @@ func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig
 	var err error
 
 	var dasSignerKey *blsSignatures.PublicKey
-	if dasModeString == "local" {
+	if dasModeString == das.LocalDiskDataAvailabilityString {
 		dbPath = t.TempDir()
 		dasSignerKey, _, err = das.GenerateAndStoreKeys(dbPath)
 		Require(t, err)

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/offchainlabs/nitro/blsSignatures"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -77,6 +79,7 @@ func TestDASRekey(t *testing.T) {
 
 	// Setup L2 chain
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
+	l2info.GenerateAccount("User2")
 
 	// Setup DAS config
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
@@ -88,8 +91,17 @@ func TestDASRekey(t *testing.T) {
 	nodeA, err := arbnode.CreateNode(l2stack, l2chainDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
+	l2clientA := ClientForArbBackend(t, nodeA.Backend)
 
+	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigB.BatchPoster.Enable = false
+	l1NodeConfigB.BlockValidator.Enable = false
+	l1NodeConfigB.DataAvailability.ModeImpl = "aggregator"
+	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	checkBatchPosting(t, ctx, l1client, l2clientA, l2clientB, l1info, l2info, big.NewInt(1e12))
 	nodeA.StopAndWait()
+	nodeB.StopAndWait()
 
 	dasServerA.Stop()
 	dasServerB, pubkeyB, backendConfigB := startLocalDASServer(t, ctx, dasDataDir)
@@ -106,21 +118,19 @@ func TestDASRekey(t *testing.T) {
 	nodeA, err = arbnode.CreateNode(l2stack, l2chainDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
+	l2clientA = ClientForArbBackend(t, nodeA.Backend)
 
-	l2clientA := ClientForArbBackend(t, nodeA.Backend)
-
-	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigB.BatchPoster.Enable = false
-	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigB.DataAvailability.ModeImpl = "aggregator"
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	l2clientB, nodeB = Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	checkBatchPosting(t, ctx, l1client, l2clientA, l2clientB, l1info, l2info, big.NewInt(2e12))
 
-	l2info.GenerateAccount("User2")
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
+}
 
+func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA, l2clientB *ethclient.Client, l1info, l2info info, expectedBalance *big.Int) {
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
-
-	err = l2clientA.SendTransaction(ctx, tx)
+	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
 	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
@@ -142,10 +152,7 @@ func TestDASRekey(t *testing.T) {
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 
-	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+	if l2balance.Cmp(expectedBalance) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
-
-	nodeA.StopAndWait()
-	nodeB.StopAndWait()
 }
