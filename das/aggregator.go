@@ -8,10 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/bits"
+	"os"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"math/bits"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -28,6 +31,7 @@ type AggregatorConfig struct {
 	Backends              string `koanf:"backends"`
 	L1NodeURL             string `koanf:"l1-node-url"`
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+	DumpKeyset            bool   `koanf:"dump-keyset"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
@@ -39,6 +43,7 @@ func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
 	f.String(prefix+".l1-node-url", DefaultAggregatorConfig.L1NodeURL, "URL for L1 node")
 	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
+	f.Bool(prefix+".dump-keyset", DefaultAggregatorConfig.DumpKeyset, "Dump the keyset encoded in hexadecimal for the backends string")
 }
 
 type Aggregator struct {
@@ -133,6 +138,11 @@ func NewAggregatorWithSeqInboxCaller(
 	}
 	var keysetHash [32]byte
 	copy(keysetHash[:], keysetHashBuf)
+	if config.DumpKeyset {
+		fmt.Printf("Keyset: %s\n", hexutil.Encode(ksBuf.Bytes()))
+		fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))
+		os.Exit(0)
+	}
 
 	var bpVerifier *BatchPosterVerifier
 	if seqInboxCaller != nil {
