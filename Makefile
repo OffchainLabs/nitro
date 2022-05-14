@@ -61,7 +61,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/datool $(output_root)/bin/seq-coordinator-invalidate
+build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/datool $(output_root)/bin/dasrest $(output_root)/bin/seq-coordinator-invalidate
 	@printf $(done)
 
 build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
@@ -156,6 +156,9 @@ $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ "$(CURDIR)/cmd/datool"
+
+$(output_root)/bin/dasrest: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ "$(CURDIR)/cmd/dasrest"
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
