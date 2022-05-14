@@ -13,6 +13,7 @@ require (
 	github.com/knadh/koanf v1.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/pflag v1.0.5
+	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1
 	google.golang.org/grpc v1.44.0
 	google.golang.org/protobuf v1.27.1
 )

@@ -6,6 +6,9 @@ package dasrpc
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
 
@@ -32,6 +35,14 @@ func NewRPCAggregatorWithL1Info(ctx context.Context, config das.AggregatorConfig
 		return nil, err
 	}
 	return das.NewAggregatorWithL1Info(ctx, config, services, l1client, seqInboxAddress)
+}
+
+func NewRPCAggregatorWithSeqInboxCaller(config das.AggregatorConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*das.Aggregator, error) {
+	services, err := setUpServices(config)
+	if err != nil {
+		return nil, err
+	}
+	return das.NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
 }
 
 func setUpServices(config das.AggregatorConfig) ([]das.ServiceDetails, error) {

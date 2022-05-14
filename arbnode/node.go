@@ -7,9 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"golang.org/x/term"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -1090,4 +1096,98 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 // Don't preserve reorg'd out blocks
 func shouldPreserveFalse(header *types.Header) bool {
 	return false
+}
+
+func GetSignerFromWallet(
+	walletConfig *genericconf.WalletConfig,
+) (func([]byte) ([]byte, error), error) {
+	var signer func(data []byte) ([]byte, error)
+
+	if len(walletConfig.PrivateKey) != 0 {
+		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		signer = func(data []byte) ([]byte, error) {
+			return crypto.Sign(data, privateKey)
+		}
+	} else {
+		ks, account, newKeystoreCreated, err := openKeystore(
+			"account",
+			walletConfig.Pathname,
+			walletConfig.Password(),
+			walletConfig.OnlyCreateKey,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if newKeystoreCreated {
+			return nil, errors.New("wallet key created, backup key (" + walletConfig.Pathname + ") and remove --wallet.only-create-key to start normally")
+		}
+
+		signer = func(data []byte) ([]byte, error) {
+			return ks.SignHash(*account, data)
+		}
+	}
+
+	return signer, nil
+}
+
+func openKeystore(description string, walletPath string, walletPassword *string, onlyCreateKey bool) (*keystore.KeyStore, *accounts.Account, bool, error) {
+	ks := keystore.NewKeyStore(
+		walletPath,
+		keystore.StandardScryptN,
+		keystore.StandardScryptP,
+	)
+
+	creatingNew := len(ks.Accounts()) == 0
+	if creatingNew && !onlyCreateKey {
+		return nil, nil, false, errors.New("No wallet exists, re-run with --wallet.local.only-create-key to create a wallet")
+	}
+	passOpt := walletPassword
+	var password string
+	if passOpt != nil {
+		password = *passOpt
+	} else {
+		if creatingNew {
+			fmt.Print("Enter new account password: ")
+		} else {
+			fmt.Print("Enter account password: ")
+		}
+		var err error
+		password, err = readPass()
+		if err != nil {
+			return nil, nil, false, err
+		}
+	}
+
+	var account accounts.Account
+	if creatingNew {
+		var err error
+		account, err = ks.NewAccount(password)
+		if err != nil {
+			return nil, &accounts.Account{}, false, err
+		}
+
+	} else {
+		account = ks.Accounts()[0]
+	}
+
+	err := ks.Unlock(account, password)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	return ks, &account, creatingNew, nil
+}
+
+func readPass() (string, error) {
+	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return "", err
+	}
+	passphrase := string(bytePassword)
+	passphrase = strings.TrimSpace(passphrase)
+	return passphrase, nil
 }

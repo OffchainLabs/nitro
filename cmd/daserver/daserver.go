@@ -23,6 +23,7 @@ import (
 )
 
 type DAServerConfig struct {
+	Addr       string                     `koanf:"addr"`
 	Port       uint64                     `koanf:"port"`
 	LogLevel   int                        `koanf:"log-level"`
 	DAConf     das.DataAvailabilityConfig `koanf:"data-availability"`
@@ -43,8 +44,8 @@ func printSampleUsage() {
 
 func parseDAServer(args []string) (*DAServerConfig, error) {
 	f := flag.NewFlagSet("daserver", flag.ContinueOnError)
-
 	f.Int("log-level", int(log.LvlInfo), "log level")
+	f.String("addr", "localhost", "HTTP-RPC server listening interface")
 	f.Uint64("port", 9876, "Port to listen on")
 	das.DataAvailabilityConfigAddOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
@@ -122,12 +123,11 @@ func startup() error {
 		panic("Only local DAS implementation supported for daserver currently.")
 	}
 
-	server, err := dasrpc.StartDASRPCServer(ctx, serverConfig.Port, dasImpl)
+	server, err := dasrpc.StartDASRPCServer(ctx, serverConfig.Addr, serverConfig.Port, dasImpl)
 	if err != nil {
 		return err
 	}
 	<-sigint
-	server.Stop()
 
-	return nil
+	return server.Shutdown(ctx)
 }

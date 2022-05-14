@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbutil"
 	"math/big"
 	"net"
+	"net/http"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -30,7 +32,7 @@ func startLocalDASServer(
 	dataDir string,
 	l1client arbutil.L1Interface,
 	seqInboxAddress common.Address,
-) (*dasrpc.DASRPCServer, *blsSignatures.PublicKey, dasrpc.BackendConfig) {
+) (*http.Server, *blsSignatures.PublicKey, dasrpc.BackendConfig) {
 	lis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	keyDir := t.TempDir()
@@ -45,7 +47,7 @@ func startLocalDASServer(
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, localDas)
 	Require(t, err)
 	config := dasrpc.BackendConfig{
-		URL:                 lis.Addr().String(),
+		URL:                 "http://" + lis.Addr().String(),
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
 		SignerMask:          1,
 	}
@@ -109,9 +111,13 @@ func TestDASRekey(t *testing.T) {
 	nodeA.StopAndWait()
 	nodeB.StopAndWait()
 
-	dasServerA.Stop()
+	err = dasServerA.Shutdown(ctx)
+	Require(t, err)
 	dasServerB, pubkeyB, backendConfigB := startLocalDASServer(t, ctx, dasDataDir, l1client, addresses.SequencerInbox)
-	defer dasServerB.Stop()
+	defer func() {
+		err = dasServerB.Shutdown(ctx)
+		Require(t, err)
+	}()
 	authorizeDASKeyset(t, ctx, pubkeyB, l1info, l1client)
 
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
