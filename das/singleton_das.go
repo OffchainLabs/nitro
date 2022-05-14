@@ -124,7 +124,7 @@ func (das *SingletonDAS) Store(ctx context.Context, message []byte, timeout uint
 		return nil, err
 	}
 
-	err = das.storageService.Write(ctx, c.DataHash[:], message, timeout)
+	err = das.storageService.PutByHash(ctx, c.DataHash[:], message, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (das *SingletonDAS) Store(ctx context.Context, message []byte, timeout uint
 }
 
 func (das *SingletonDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	originalMessage, err := das.storageService.Read(ctx, cert.DataHash[:])
+	originalMessage, err := das.storageService.GetByHash(ctx, cert.DataHash[:])
 	if err != nil {
 		return nil, err
 	}

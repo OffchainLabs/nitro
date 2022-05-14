@@ -24,7 +24,7 @@ func NewMemoryBackedStorageService(ctx context.Context) StorageService {
 	}
 }
 
-func (m *MemoryBackedStorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
+func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	m.rwmutex.RLock()
 	defer m.rwmutex.RUnlock()
 	if m.closed {
@@ -40,7 +40,7 @@ func (m *MemoryBackedStorageService) Read(ctx context.Context, key []byte) ([]by
 	return res, nil
 }
 
-func (m *MemoryBackedStorageService) Write(ctx context.Context, key []byte, value []byte, expirationTime uint64) error {
+func (m *MemoryBackedStorageService) PutByHash(ctx context.Context, key []byte, value []byte, expirationTime uint64) error {
 	m.rwmutex.Lock()
 	defer m.rwmutex.Unlock()
 	if m.closed {

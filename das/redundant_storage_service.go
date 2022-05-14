@@ -26,7 +26,7 @@ type readResponse struct {
 	err  error
 }
 
-func (r *RedundantStorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
+func (r *RedundantStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var anyError error
@@ -34,7 +34,7 @@ func (r *RedundantStorageService) Read(ctx context.Context, key []byte) ([]byte,
 	resultChan := make(chan readResponse, responsesExpected)
 	for _, serv := range r.innerServices {
 		go func(s StorageService) {
-			data, err := s.Read(subCtx, key)
+			data, err := s.GetByHash(subCtx, key)
 			resultChan <- readResponse{data, err}
 		}(serv)
 	}
@@ -53,14 +53,14 @@ func (r *RedundantStorageService) Read(ctx context.Context, key []byte) ([]byte,
 	return nil, anyError
 }
 
-func (r *RedundantStorageService) Write(ctx context.Context, key []byte, value []byte, expirationTime uint64) error {
+func (r *RedundantStorageService) PutByHash(ctx context.Context, key []byte, value []byte, expirationTime uint64) error {
 	var wg sync.WaitGroup
 	var errorMutex sync.Mutex
 	var anyError error
 	wg.Add(len(r.innerServices))
 	for _, serv := range r.innerServices {
 		go func(s StorageService) {
-			err := s.Write(ctx, key, value, expirationTime)
+			err := s.PutByHash(ctx, key, value, expirationTime)
 			if err != nil {
 				errorMutex.Lock()
 				anyError = err

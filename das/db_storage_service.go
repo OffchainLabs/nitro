@@ -60,7 +60,7 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 	return ret, nil
 }
 
-func (dbs *DBStorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
+func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	var ret []byte
 	err := dbs.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
@@ -75,7 +75,7 @@ func (dbs *DBStorageService) Read(ctx context.Context, key []byte) ([]byte, erro
 	return ret, err
 }
 
-func (dbs *DBStorageService) Write(ctx context.Context, key []byte, value []byte, timeout uint64) error {
+func (dbs *DBStorageService) PutByHash(ctx context.Context, key []byte, value []byte, timeout uint64) error {
 	return dbs.db.Update(func(txn *badger.Txn) error {
 		e := badger.NewEntry(key, value)
 		if dbs.discardAfterTimeout {

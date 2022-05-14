@@ -27,19 +27,19 @@ func TestRedundantStorageService(t *testing.T) {
 	key2 := []byte("The second key")
 	val1 := []byte("The first value")
 
-	_, err = redundantService.Read(ctx, key1)
+	_, err = redundantService.GetByHash(ctx, key1)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
 	}
 
-	err = redundantService.Write(ctx, key1, val1, timeout)
+	err = redundantService.PutByHash(ctx, key1, val1, timeout)
 	Require(t, err)
 
-	_, err = redundantService.Read(ctx, key2)
+	_, err = redundantService.GetByHash(ctx, key2)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
 	}
-	val, err := redundantService.Read(ctx, key1)
+	val, err := redundantService.GetByHash(ctx, key1)
 	Require(t, err)
 	if !bytes.Equal(val, val1) {
 		t.Fatal(val, val1)
@@ -48,7 +48,7 @@ func TestRedundantStorageService(t *testing.T) {
 	err = redundantService.Close(ctx)
 	Require(t, err)
 
-	_, err = redundantService.Read(ctx, key1)
+	_, err = redundantService.GetByHash(ctx, key1)
 	if !errors.Is(err, ErrClosed) {
 		t.Fatal(err)
 	}
