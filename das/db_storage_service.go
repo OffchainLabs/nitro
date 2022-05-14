@@ -6,7 +6,6 @@ package das
 import (
 	"context"
 	"github.com/dgraph-io/badger"
-	"sync"
 	"time"
 )
 
@@ -15,7 +14,6 @@ type DBStorageService struct {
 	discardAfterTimeout bool
 	dirPath             string
 	shutdownFunc        func()
-	shutdownMutex       sync.Mutex
 }
 
 func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeout bool) (StorageService, error) {
@@ -24,11 +22,19 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		return nil, err
 	}
 
-	shutdownCtx, cancel := context.WithCancel(context.Background())
+	shutdownCtx, cancel := context.WithCancel(ctx)
+
+	ret := &DBStorageService{
+		db:                  db,
+		discardAfterTimeout: discardAfterTimeout,
+		dirPath:             dirPath,
+		shutdownFunc:        cancel,
+	}
+
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		defer func() { _ = db.Close() }()
+		defer func() { _ = ret.db.Close() }()
 		for {
 			select {
 			case <-ticker.C:
@@ -43,18 +49,6 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 				return
 			}
 		}
-	}()
-
-	ret := &DBStorageService{
-		db:                  db,
-		discardAfterTimeout: discardAfterTimeout,
-		dirPath:             dirPath,
-		shutdownFunc:        cancel,
-	}
-
-	go func() {
-		<-ctx.Done()
-		_ = ret.Close(context.Background())
 	}()
 
 	return ret, nil
@@ -90,10 +84,8 @@ func (dbs *DBStorageService) Sync(ctx context.Context) error {
 }
 
 func (dbs *DBStorageService) Close(ctx context.Context) error {
-	dbs.shutdownMutex.Lock()
-	defer dbs.shutdownMutex.Unlock()
 	dbs.shutdownFunc()
-	return dbs.db.Close()
+	return nil
 }
 
 func (dbs *DBStorageService) String() string {
