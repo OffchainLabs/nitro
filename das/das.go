@@ -52,12 +52,10 @@ type DataAvailabilityConfig struct {
 	ModeImpl           string             `koanf:"mode"`
 	LocalDiskDASConfig LocalDiskDASConfig `koanf:"local-disk"`
 	AggregatorConfig   AggregatorConfig   `koanf:"aggregator"`
-	StoreSignerAddress string             `koanf:"store-signer"` // if empty string, no signer is required
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl:           OnchainDataAvailabilityString,
-	StoreSignerAddress: "",
+	ModeImpl: OnchainDataAvailabilityString,
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
@@ -107,7 +105,6 @@ func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local-disk', or 'aggregator')")
 	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
-	f.String(prefix+".store-signer", DefaultDataAvailabilityConfig.StoreSignerAddress, "hex-encoded address of required Store signer, or empty string if none")
 }
 
 func serializeSignableFields(c *arbstate.DataAvailabilityCertificate) []byte {
