@@ -21,8 +21,6 @@ output_root=target
 repo_dirs = arbos arbnode arbstate cmd precompiles solgen system_tests util validator wavmio
 go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 
-das_rpc_files = das/dasrpc/wireFormat.pb.go das/dasrpc/wireFormat_grpc.pb.go
-
 color_pink = "\e[38;5;161;1m"
 color_reset = "\e[0;0m"
 
@@ -86,9 +84,6 @@ build-wasm-libs: $(arbitrator_wasm_libs)
 build-wasm-bin: $(replay_wasm)
 
 build-solidity: .make/solidity
-
-$(das_rpc_files): das/wireFormat.proto
-	cd das && protoc -I=. --go_out=.. --go-grpc_out=.. ./wireFormat.proto
 
 contracts: .make/solgen
 	@printf $(done)
