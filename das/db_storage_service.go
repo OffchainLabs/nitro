@@ -14,6 +14,7 @@ type DBStorageService struct {
 	discardAfterTimeout bool
 	dirPath             string
 	shutdownFunc        func()
+	closeOnShutdown     chan interface{}
 }
 
 func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeout bool) (StorageService, error) {
@@ -29,12 +30,16 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		discardAfterTimeout: discardAfterTimeout,
 		dirPath:             dirPath,
 		shutdownFunc:        cancel,
+		closeOnShutdown:     make(chan interface{}),
 	}
 
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		defer func() { _ = ret.db.Close() }()
+		defer func() {
+			_ = ret.db.Close()
+			close(ret.closeOnShutdown)
+		}()
 		for {
 			select {
 			case <-ticker.C:
@@ -85,7 +90,12 @@ func (dbs *DBStorageService) Sync(ctx context.Context) error {
 
 func (dbs *DBStorageService) Close(ctx context.Context) error {
 	dbs.shutdownFunc()
-	return nil
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-dbs.closeOnShutdown:
+		return nil
+	}
 }
 
 func (dbs *DBStorageService) String() string {
