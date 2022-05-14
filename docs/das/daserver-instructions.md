@@ -128,7 +128,7 @@ spec:
         - bash
         - -c
         - |
-        	mkdir -p /home/user/data/db
+          mkdir -p /home/user/data/db
           /usr/local/bin/daserver --data-availability.local-disk.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT> --addr '0.0.0.0' --data-availability.mode local-disk --data-availability.local-disk.key-dir /home/user/data/keys --data-availability.local-disk.data-dir /home/user/data/db --data-availability.local-disk.sequencer-inbox-address '0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf'
         image: offchainlabs/nitro-node:v2.0.0-alpha.4
         imagePullPolicy: Always
