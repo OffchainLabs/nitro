@@ -82,10 +82,10 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
-type PreimageDAS struct {
+type PreimageDASReader struct {
 }
 
-func (das *PreimageDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	return wavmio.ResolvePreImage(common.BytesToHash(hash)), nil
 }
 
@@ -120,7 +120,7 @@ func main() {
 		}
 		var dasReader arbstate.SimpleDASReader
 		if dasEnabled {
-			dasReader = &PreimageDAS{}
+			dasReader = &PreimageDASReader{}
 		}
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead, dasReader)
 		ctx := context.Background()
