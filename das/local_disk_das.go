@@ -177,7 +177,11 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 }
 
 func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(cert.DataHash[:])
+	return das.GetByHash(ctx, cert.DataHash[:])
+}
+
+func (das *LocalDiskDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(hash)
 	log.Debug("Retrieving message from", "path", path)
 
 	originalMessage, err := os.ReadFile(path)
@@ -185,9 +189,7 @@ func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvaila
 		return nil, err
 	}
 
-	var originalMessageHash [32]byte
-	copy(originalMessageHash[:], crypto.Keccak256(originalMessage))
-	if originalMessageHash != cert.DataHash {
+	if !bytes.Equal(crypto.Keccak256(originalMessage), hash) {
 		return nil, errors.New("Retrieved message stored hash doesn't match calculated hash.")
 	}
 

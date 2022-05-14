@@ -66,4 +66,11 @@ func TestRPC(t *testing.T) {
 	if !bytes.Equal(msg, retrievedMessage) {
 		testhelpers.FailImpl(t, "failed to retrieve correct message")
 	}
+
+	retrievedMessage, err = rpcAgg.GetByHash(ctx, cert.DataHash[:])
+	testhelpers.RequireImpl(t, err)
+
+	if !bytes.Equal(msg, retrievedMessage) {
+		testhelpers.FailImpl(t, "failed to getByHash correct message")
+	}
 }

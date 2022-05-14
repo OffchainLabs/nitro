@@ -16,7 +16,12 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
+type SimpleDASReader interface {
+	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
+}
+
 type DataAvailabilityServiceReader interface {
+	SimpleDASReader
 	Retrieve(ctx context.Context, cert *DataAvailabilityCertificate) ([]byte, error)
 	KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error)
 	CurrentKeysetBytes(ctx context.Context) ([]byte, error)
