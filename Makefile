@@ -62,7 +62,7 @@ all: build build-replay-env test-gen-proofs
 build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/datool $(output_root)/bin/seq-coordinator-invalidate
 	@printf $(done)
 
-build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
+build-node-deps: $(go_source) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
 
 test-go-deps: \
 	build-replay-env \
@@ -126,7 +126,6 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
-	rm -f $(das_rpc_files)
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
 
