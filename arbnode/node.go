@@ -559,9 +559,17 @@ type Node struct {
 	DataAvailService das.DataAvailabilityService
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (*Node, error) {
-	ctx := context.Background()
-
+func createNodeImpl(
+	ctx context.Context,
+	stack *node.Node,
+	chainDb ethdb.Database,
+	config *Config,
+	l2BlockChain *core.BlockChain,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	txOpts *bind.TransactOpts,
+	daSigner das.DasSigner,
+) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -738,7 +746,7 @@ func setUpDataAvailabilityService(
 			return nil, err
 		}
 	case das.AggregatorDataAvailability:
-		dataAvailabilityService, err = dasrpc.NewRPCAggregatorWithL1Info(ctx, config.DataAvailability.AggregatorConfig, l1client, deployInfo.SequencerInbox)
+		dataAvailabilityService, err = dasrpc.NewRPCAggregatorWithL1Info(config.DataAvailability.AggregatorConfig, l1client, deployInfo.SequencerInbox)
 		if err != nil {
 			return nil, err
 		}
@@ -776,8 +784,18 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
+func CreateNode(
+	ctx context.Context,
+	stack *node.Node,
+	chainDb ethdb.Database,
+	config *Config,
+	l2BlockChain *core.BlockChain,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	txOpts *bind.TransactOpts,
+	daSigner das.DasSigner,
+) (newNode *Node, err error) {
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
 	if err != nil {
 		return nil, err
 	}

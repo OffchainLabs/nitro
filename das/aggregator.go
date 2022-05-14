@@ -77,9 +77,9 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 
 func NewAggregator(ctx context.Context, config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
 	if config.L1NodeURL == "none" {
-		return NewAggregatorWithSeqInboxCaller(ctx, config, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config, services, nil)
 	}
-	l1client, err := ethclient.Dial(config.L1NodeURL)
+	l1client, err := ethclient.DialContext(ctx, config.L1NodeURL)
 	if err != nil {
 		return nil, err
 	}
@@ -88,13 +88,12 @@ func NewAggregator(ctx context.Context, config AggregatorConfig, services []Serv
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewAggregatorWithSeqInboxCaller(ctx, config, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config, services, nil)
 	}
-	return NewAggregatorWithL1Info(ctx, config, services, l1client, *seqInboxAddress)
+	return NewAggregatorWithL1Info(config, services, l1client, *seqInboxAddress)
 }
 
 func NewAggregatorWithL1Info(
-	ctx context.Context,
 	config AggregatorConfig,
 	services []ServiceDetails,
 	l1client arbutil.L1Interface,
@@ -104,11 +103,10 @@ func NewAggregatorWithL1Info(
 	if err != nil {
 		return nil, err
 	}
-	return NewAggregatorWithSeqInboxCaller(ctx, config, services, seqInboxCaller)
+	return NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
 }
 
 func NewAggregatorWithSeqInboxCaller(
-	ctx context.Context,
 	config AggregatorConfig,
 	services []ServiceDetails,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,

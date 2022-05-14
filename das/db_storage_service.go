@@ -6,6 +6,7 @@ package das
 import (
 	"context"
 	"github.com/dgraph-io/badger"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"time"
 )
 
@@ -13,7 +14,7 @@ type DBStorageService struct {
 	db                  *badger.DB
 	discardAfterTimeout bool
 	dirPath             string
-	shutdownFunc        func()
+	stopWaiter          stopwaiter.StopWaiterSafe
 }
 
 func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeout bool) (StorageService, error) {
@@ -22,16 +23,15 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		return nil, err
 	}
 
-	shutdownCtx, cancel := context.WithCancel(ctx)
-
 	ret := &DBStorageService{
 		db:                  db,
 		discardAfterTimeout: discardAfterTimeout,
 		dirPath:             dirPath,
-		shutdownFunc:        cancel,
 	}
-
-	go func() {
+	if err := ret.stopWaiter.Start(ctx); err != nil {
+		return nil, err
+	}
+	err = ret.stopWaiter.LaunchThread(func(myCtx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		defer func() { _ = ret.db.Close() }()
@@ -40,16 +40,19 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 			case <-ticker.C:
 				for db.RunValueLogGC(0.7) == nil {
 					select {
-					case <-shutdownCtx.Done():
+					case <-myCtx.Done():
 						return
 					default:
 					}
 				}
-			case <-shutdownCtx.Done():
+			case <-myCtx.Done():
 				return
 			}
 		}
-	}()
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	return ret, nil
 }
@@ -84,7 +87,7 @@ func (dbs *DBStorageService) Sync(ctx context.Context) error {
 }
 
 func (dbs *DBStorageService) Close(ctx context.Context) error {
-	dbs.shutdownFunc()
+	dbs.stopWaiter.StopAndWait()
 	return nil
 }
 

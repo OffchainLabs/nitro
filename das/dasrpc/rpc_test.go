@@ -53,7 +53,7 @@ func TestRPC(t *testing.T) {
 		AssumedHonest: 1,
 		Backends:      string(backendsJsonByte),
 	}
-	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(ctx, aggConf, nil)
+	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil)
 	testhelpers.RequireImpl(t, err)
 
 	msg := testhelpers.RandomizeSlice(make([]byte, 100))
