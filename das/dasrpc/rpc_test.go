@@ -32,7 +32,7 @@ func TestRPC(t *testing.T) {
 		KeyDir:  keyDir,
 		DataDir: dataDir,
 	}
-	localDas, err := das.NewLocalDiskDASWithSeqInboxCaller(dasConfig, nil)
+	localDas, err := das.NewLocalDiskDASWithSeqInboxCaller(ctx, dasConfig, nil)
 	testhelpers.RequireImpl(t, err)
 	dasServer, err := StartDASRPCServerOnListener(ctx, lis, localDas)
 	defer func() {
@@ -53,7 +53,7 @@ func TestRPC(t *testing.T) {
 		AssumedHonest: 1,
 		Backends:      string(backendsJsonByte),
 	}
-	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil)
+	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(ctx, aggConf, nil)
 	testhelpers.RequireImpl(t, err)
 
 	msg := testhelpers.RandomizeSlice(make([]byte, 100))
