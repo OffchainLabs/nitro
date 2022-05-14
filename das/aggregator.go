@@ -216,6 +216,47 @@ func (a *Aggregator) retrieve(ctx context.Context, cert *arbstate.DataAvailabili
 	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS: %v", errorCollection)
 }
 
+func (a *Aggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	// Query all services, even those that didn't sign.
+	// They may have been late in returning a response after storing the data,
+	// or got the data by some other means.
+	blobChan := make(chan []byte, len(a.services))
+	errorChan := make(chan error, len(a.services))
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for _, d := range a.services {
+		go func(ctx context.Context, d ServiceDetails) {
+			blob, err := d.service.GetByHash(ctx, hash)
+			if err != nil {
+				errorChan <- err
+				return
+			}
+			if bytes.Equal(crypto.Keccak256(blob), hash) {
+				blobChan <- blob
+			} else {
+				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
+			}
+		}(subCtx, d)
+	}
+
+	errorCount := 0
+	var errorCollection []error
+	for errorCount < len(a.services) {
+		select {
+		case blob := <-blobChan:
+			return blob, nil
+		case err := <-errorChan:
+			errorCollection = append(errorCollection, err)
+			log.Warn("Couldn't retrieve message from DAS", "err", err)
+			errorCount++
+		case <-ctx.Done():
+			break
+		}
+	}
+
+	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS: %v", errorCollection)
+}
+
 type storeResponse struct {
 	details ServiceDetails
 	sig     blsSignatures.Signature

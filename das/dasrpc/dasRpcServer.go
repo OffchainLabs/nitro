@@ -82,11 +82,11 @@ func (serv *DASRPCServer) Retrieve(ctx context.Context, certBytes hexutil.Bytes)
 	if err != nil {
 		return nil, err
 	}
-	result, err := serv.localDAS.Retrieve(ctx, cert)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return serv.localDAS.Retrieve(ctx, cert)
+}
+
+func (serv *DASRPCServer) GetByHash(ctx context.Context, certBytes hexutil.Bytes) (hexutil.Bytes, error) {
+	return serv.localDAS.GetByHash(ctx, certBytes)
 }
 
 func (serv *DASRPCServer) KeysetFromHash(ctx context.Context, ksHash hexutil.Bytes) (hexutil.Bytes, error) {

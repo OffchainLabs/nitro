@@ -46,6 +46,12 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
 
+	messageRetrieved, err = das.GetByHash(firstCtx, cert.DataHash[:])
+	Require(t, err, "Failed to getByHash message")
+	if !bytes.Equal(messageSaved, messageRetrieved) {
+		Fail(t, "Retrieved message is not the same as stored one.")
+	}
+
 	firstCancel()
 	time.Sleep(100 * time.Millisecond)
 
@@ -58,6 +64,12 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 
 	messageRetrieved2, err := das2.Retrieve(secondCtx, cert)
 	Require(t, err, "Failed to retrieve message")
+	if !bytes.Equal(messageSaved, messageRetrieved2) {
+		Fail(t, "Retrieved message is not the same as stored one.")
+	}
+
+	messageRetrieved2, err = das2.GetByHash(ctx, cert.DataHash[:])
+	Require(t, err, "Failed to getByHash message")
 	if !bytes.Equal(messageSaved, messageRetrieved2) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
@@ -103,6 +115,11 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	_, err = das.Retrieve(ctx, cert)
 	if err == nil {
 		Fail(t, "Expected an error when retrieving message that is not in the store.")
+	}
+
+	_, err = das.GetByHash(ctx, cert.DataHash[:])
+	if err == nil {
+		Fail(t, "Expected an error when getting by hash a message that is not in the store.")
 	}
 }
 

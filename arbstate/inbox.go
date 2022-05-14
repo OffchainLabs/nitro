@@ -58,7 +58,7 @@ const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, data []byte, dasReader SimpleDASReader) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
@@ -74,11 +74,11 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 	var payload []byte
 	if len(data) >= 41 {
 		if IsDASMessageHeaderByte(data[40]) {
-			if das == nil {
-				log.Error("No DAS configured, but sequencer message found with DAS header")
+			if dasReader == nil {
+				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 			} else {
 				var err error
-				payload, err = RecoverPayloadFromDasBatch(ctx, data, das, nil)
+				payload, err = RecoverPayloadFromDasBatch(ctx, data, dasReader, nil)
 				if err != nil {
 					return nil, err
 				}
@@ -131,7 +131,7 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 func RecoverPayloadFromDasBatch(
 	ctx context.Context,
 	sequencerMsg []byte,
-	das DataAvailabilityServiceReader,
+	dasReader SimpleDASReader,
 	preimages map[common.Hash][]byte,
 ) ([]byte, error) {
 	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
@@ -139,7 +139,7 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Failed to deserialize DAS message", "err", err)
 		return nil, nil
 	}
-	keysetPreimage, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+	keysetPreimage, err := dasReader.GetByHash(ctx, cert.KeysetHash[:])
 	if err == nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
 		err = errors.New("Keyset preimage inconsistent with hash")
 	}
@@ -165,7 +165,7 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Data availability cert expires too soon", "err", "")
 		return nil, nil
 	}
-	payload, err := das.Retrieve(ctx, cert)
+	payload, err := dasReader.GetByHash(ctx, cert.DataHash[:])
 	if err == nil && !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
 		err = errors.New("DAS batch doesn't match hash")
 	}
@@ -183,7 +183,7 @@ func RecoverPayloadFromDasBatch(
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
-	das                       DataAvailabilityServiceReader
+	dasReader                 SimpleDASReader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -192,11 +192,11 @@ type inboxMultiplexer struct {
 	cachedSubMessageNumber    uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, das DataAvailabilityServiceReader) InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader SimpleDASReader) InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:             backend,
 		delayedMessagesRead: delayedMessagesRead,
-		das:                 das,
+		dasReader:           dasReader,
 	}
 }
 
@@ -222,7 +222,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, bytes, r.das)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, bytes, r.dasReader)
 		if err != nil {
 			return nil, err
 		}

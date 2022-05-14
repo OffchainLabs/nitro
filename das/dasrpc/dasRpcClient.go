@@ -37,6 +37,14 @@ func (c *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvailabi
 	return ret, nil
 }
 
+func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	var ret hexutil.Bytes
+	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash)); err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	var ret StoreResult
 	if err := c.clnt.CallContext(ctx, &ret, "das_store", hexutil.Bytes(message), hexutil.Uint64(timeout), hexutil.Bytes(reqSig)); err != nil {
