@@ -6,12 +6,10 @@ package das
 import (
 	"bytes"
 	"context"
-	"encoding/base32"
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"os"
@@ -218,24 +216,11 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
 	// The cert passed in may have an aggregate signature, so we don't
 	// check the signature against this DAS's public key here.
-	return das.GetByHash(ctx, cert.DataHash[:])
+	return das.storageService.GetByHash(ctx, cert.DataHash[:])
 }
 
 func (das *LocalDiskDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(hash)
-	log.Debug("Retrieving message from", "path", path)
-
-	originalMessage, err := os.ReadFile(path)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if !bytes.Equal(crypto.Keccak256(originalMessage), hash) {
-		return nil, errors.New("Retrieved message stored hash doesn't match calculated hash.")
-	}
-
-	return originalMessage, nil
+	return das.storageService.GetByHash(ctx, hash)
 }
 
 func (das *LocalDiskDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
