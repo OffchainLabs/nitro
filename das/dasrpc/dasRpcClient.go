@@ -10,8 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/das"
-
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
@@ -26,15 +24,6 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 		return nil, err
 	}
 	return &DASRPCClient{clnt: clnt}, nil
-}
-
-func (c *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	certBytes := das.Serialize(cert)
-	var ret hexutil.Bytes
-	if err := c.clnt.CallContext(ctx, &ret, "das_retrieve", hexutil.Bytes(certBytes)); err != nil {
-		return nil, err
-	}
-	return ret, nil
 }
 
 func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {

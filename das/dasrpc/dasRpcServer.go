@@ -4,7 +4,6 @@
 package dasrpc
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das"
 )
@@ -75,14 +73,6 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		SignersMask: hexutil.Uint64(cert.SignersMask),
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
 	}, nil
-}
-
-func (serv *DASRPCServer) Retrieve(ctx context.Context, certBytes hexutil.Bytes) (hexutil.Bytes, error) {
-	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
-	if err != nil {
-		return nil, err
-	}
-	return serv.localDAS.Retrieve(ctx, cert)
 }
 
 func (serv *DASRPCServer) GetByHash(ctx context.Context, certBytes hexutil.Bytes) (hexutil.Bytes, error) {

@@ -54,7 +54,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := aggregator.Retrieve(ctx, cert)
+	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash[:])
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -118,23 +118,23 @@ type WrapStore struct {
 	DataAvailabilityService
 }
 
-type WrapRetrieve struct {
+type WrapGetByHash struct {
 	t        *testing.T
 	injector failureInjector
 	DataAvailabilityService
 }
 
-func (w *WrapRetrieve) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
+func (w *WrapGetByHash) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DataAvailabilityService.Retrieve(ctx, cert)
+		return w.DataAvailabilityService.GetByHash(ctx, hash)
 	case immediateError:
 		return nil, errors.New("Expected Retrieve failure")
 	case tooSlow:
 		<-ctx.Done()
 		return nil, errors.New("Canceled")
 	case dataCorruption:
-		data, err := w.DataAvailabilityService.Retrieve(ctx, cert)
+		data, err := w.DataAvailabilityService.GetByHash(ctx, hash)
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +239,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		return
 	}
 
-	messageRetrieved, err := aggregator.Retrieve(ctx, cert)
+	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash[:])
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -324,7 +324,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
 		signerMask := uint64(1 << i)
-		details := ServiceDetails{&WrapRetrieve{t, injectedFailures, das}, *pubKey, signerMask}
+		details := ServiceDetails{&WrapGetByHash{t, injectedFailures, das}, *pubKey, signerMask}
 
 		backends = append(backends, details)
 	}
@@ -340,7 +340,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := aggregator.Retrieve(ctx, cert)
+	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash[:])
 	if !shouldFail {
 		Require(t, err, "Error retrieving message")
 	} else {

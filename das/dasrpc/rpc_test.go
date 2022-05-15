@@ -62,7 +62,7 @@ func TestRPC(t *testing.T) {
 	cert, err := rpcAgg.Store(ctx, msg, 0, nil)
 	testhelpers.RequireImpl(t, err)
 
-	retrievedMessage, err := rpcAgg.Retrieve(ctx, cert)
+	retrievedMessage, err := rpcAgg.GetByHash(ctx, cert.DataHash[:])
 	testhelpers.RequireImpl(t, err)
 
 	if !bytes.Equal(msg, retrievedMessage) {
