@@ -42,7 +42,9 @@ func startLocalDASServer(
 		KeyDir:  keyDir,
 		DataDir: dataDir,
 	}
-	localDas, err := das.NewLocalDiskDASWithL1Info(dasConfig, l1client, seqInboxAddress)
+	storageService, err := das.NewStorageServiceFromLocalConfig(ctx, dasConfig)
+	Require(t, err)
+	localDas, err := das.NewLocalDiskDASWithL1Info(ctx, dasConfig, l1client, seqInboxAddress, storageService)
 	Require(t, err)
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, localDas)
 	Require(t, err)
@@ -96,7 +98,7 @@ func TestDASRekey(t *testing.T) {
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	nodeA, err := arbnode.CreateNode(l2stack, l2chainDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
+	nodeA, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForArbBackend(t, nodeA.Backend)
@@ -127,7 +129,7 @@ func TestDASRekey(t *testing.T) {
 	l2blockchain, err = arbnode.GetBlockChain(l2chainDb, nil, chainConfig)
 	Require(t, err)
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	nodeA, err = arbnode.CreateNode(l2stack, l2chainDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
+	nodeA, err = arbnode.CreateNode(ctx, l2stack, l2chainDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
 	l2clientA = ClientForArbBackend(t, nodeA.Backend)

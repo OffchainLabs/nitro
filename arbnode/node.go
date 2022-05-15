@@ -559,7 +559,17 @@ type Node struct {
 	DataAvailService das.DataAvailabilityService
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (*Node, error) {
+func createNodeImpl(
+	ctx context.Context,
+	stack *node.Node,
+	chainDb ethdb.Database,
+	config *Config,
+	l2BlockChain *core.BlockChain,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	txOpts *bind.TransactOpts,
+	daSigner das.DasSigner,
+) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -628,7 +638,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 	if !config.L1Reader.Enable {
-		dataAvailabilityService, err := setUpDataAvailabilityService(config, nil, nil, daSigner)
+		dataAvailabilityService, err := setUpDataAvailabilityService(ctx, config, nil, nil, daSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -646,7 +656,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
-	dataAvailabilityService, err := setUpDataAvailabilityService(config, l1client, deployInfo, daSigner)
+	dataAvailabilityService, err := setUpDataAvailabilityService(ctx, config, l1client, deployInfo, daSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -717,6 +727,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 }
 
 func setUpDataAvailabilityService(
+	ctx context.Context,
 	config *Config,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
@@ -729,8 +740,17 @@ func setUpDataAvailabilityService(
 	var dataAvailabilityService das.DataAvailabilityService
 	switch dataAvailabilityMode {
 	case das.LocalDiskDataAvailability:
-		var err error
-		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(config.DataAvailability.LocalDiskDASConfig, l1client, deployInfo.SequencerInbox)
+		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.LocalDiskDASConfig)
+		if err != nil {
+			return nil, err
+		}
+		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(
+			ctx,
+			config.DataAvailability.LocalDiskDASConfig,
+			l1client,
+			deployInfo.SequencerInbox,
+			storageService,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -773,8 +793,18 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
+func CreateNode(
+	ctx context.Context,
+	stack *node.Node,
+	chainDb ethdb.Database,
+	config *Config,
+	l2BlockChain *core.BlockChain,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	txOpts *bind.TransactOpts,
+	daSigner das.DasSigner,
+) (newNode *Node, err error) {
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
 	if err != nil {
 		return nil, err
 	}

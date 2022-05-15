@@ -4,6 +4,7 @@
 package dasrpc
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -20,12 +21,12 @@ type BackendConfig struct {
 	SignerMask          uint64 `json:"signermask"`
 }
 
-func NewRPCAggregator(config das.AggregatorConfig) (*das.Aggregator, error) {
+func NewRPCAggregator(ctx context.Context, config das.AggregatorConfig) (*das.Aggregator, error) {
 	services, err := setUpServices(config)
 	if err != nil {
 		return nil, err
 	}
-	return das.NewAggregator(config, services)
+	return das.NewAggregator(ctx, config, services)
 }
 
 func NewRPCAggregatorWithL1Info(config das.AggregatorConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*das.Aggregator, error) {
@@ -71,5 +72,6 @@ func setUpServices(config das.AggregatorConfig) ([]das.ServiceDetails, error) {
 
 		services = append(services, *d)
 	}
+
 	return services, nil
 }

@@ -21,6 +21,9 @@ import (
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	numBackendDAS := 10
 	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
@@ -34,7 +37,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 			AllowGenerateKeys: true,
 			L1NodeURL:         "none",
 		}
-		das, err := NewLocalDiskDAS(config)
+		das, err := NewLocalDiskDAS(ctx, config)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -44,9 +47,8 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: 1, L1NodeURL: "none"}, backends)
+	aggregator, err := NewAggregator(ctx, AggregatorConfig{AssumedHonest: 1, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
@@ -185,6 +187,9 @@ func enableLogging() {
 }
 
 func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	numBackendDAS := (rand.Int() % 20) + 1
 	assumedHonest := (rand.Int() % numBackendDAS) + 1
 	var nFailures int
@@ -209,7 +214,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 			AllowGenerateKeys: true,
 			L1NodeURL:         "none",
 		}
-		das, err := NewLocalDiskDAS(config)
+		das, err := NewLocalDiskDAS(ctx, config)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -219,10 +224,9 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, *details)
 	}
 
-	unwrappedAggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: assumedHonest, L1NodeURL: "none"}, backends)
+	unwrappedAggregator, err := NewAggregator(ctx, AggregatorConfig{AssumedHonest: assumedHonest, L1NodeURL: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
-	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
@@ -288,6 +292,9 @@ func TestDAS_AtLeastHStorageFailures(t *testing.T) {
 }
 
 func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	numBackendDAS := (rand.Int() % 20) + 1
 	var nSuccesses, nFailures int
 	if shouldFail {
@@ -312,7 +319,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 			L1NodeURL:         "none",
 		}
 
-		das, err := NewLocalDiskDAS(config)
+		das, err := NewLocalDiskDAS(ctx, config)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -325,10 +332,9 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	unwrappedAggregator, err := NewAggregator(AggregatorConfig{AssumedHonest: numBackendDAS, L1NodeURL: "none"}, backends)
+	unwrappedAggregator, err := NewAggregator(ctx, AggregatorConfig{AssumedHonest: numBackendDAS, L1NodeURL: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
-	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
