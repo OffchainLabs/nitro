@@ -11,12 +11,12 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"os"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	flag "github.com/spf13/pflag"
@@ -31,6 +31,7 @@ type LocalDiskDASConfig struct {
 	AllowGenerateKeys     bool   `koanf:"allow-generate-keys"`
 	L1NodeURL             string `koanf:"l1-node-url"`
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+	StorageType           string `koanf:"storage-type"`
 }
 
 func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -43,16 +44,21 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type LocalDiskDAS struct {
-	config      LocalDiskDASConfig
-	privKey     *blsSignatures.PrivateKey
-	keysetHash  [32]byte
-	keysetBytes []byte
-	bpVerifier  *BatchPosterVerifier
+	config         LocalDiskDASConfig
+	privKey        *blsSignatures.PrivateKey
+	keysetHash     [32]byte
+	keysetBytes    []byte
+	storageService StorageService
+	bpVerifier     *BatchPosterVerifier
 }
 
-func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
+func NewLocalDiskDAS(ctx context.Context, config LocalDiskDASConfig) (*LocalDiskDAS, error) {
+	storageService, err := NewStorageServiceFromLocalConfig(ctx, config)
+	if err != nil {
+		return nil, err
+	}
 	if config.L1NodeURL == "none" {
-		return NewLocalDiskDASWithSeqInboxCaller(config, nil)
+		return NewLocalDiskDASWithSeqInboxCaller(ctx, config, nil, storageService)
 	}
 	l1client, err := ethclient.Dial(config.L1NodeURL)
 	if err != nil {
@@ -63,20 +69,31 @@ func NewLocalDiskDAS(config LocalDiskDASConfig) (*LocalDiskDAS, error) {
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewLocalDiskDASWithSeqInboxCaller(config, nil)
+		return NewLocalDiskDASWithSeqInboxCaller(ctx, config, nil, storageService)
 	}
-	return NewLocalDiskDASWithL1Info(config, l1client, *seqInboxAddress)
+	return NewLocalDiskDASWithL1Info(ctx, config, l1client, *seqInboxAddress, storageService)
 }
 
-func NewLocalDiskDASWithL1Info(config LocalDiskDASConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*LocalDiskDAS, error) {
+func NewLocalDiskDASWithL1Info(
+	ctx context.Context,
+	config LocalDiskDASConfig,
+	l1client arbutil.L1Interface,
+	seqInboxAddress common.Address,
+	storageService StorageService,
+) (*LocalDiskDAS, error) {
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	if err != nil {
 		return nil, err
 	}
-	return NewLocalDiskDASWithSeqInboxCaller(config, seqInboxCaller)
+	return NewLocalDiskDASWithSeqInboxCaller(ctx, config, seqInboxCaller, storageService)
 }
 
-func NewLocalDiskDASWithSeqInboxCaller(config LocalDiskDASConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*LocalDiskDAS, error) {
+func NewLocalDiskDASWithSeqInboxCaller(
+	ctx context.Context,
+	config LocalDiskDASConfig,
+	seqInboxCaller *bridgegen.SequencerInboxCaller,
+	storageService StorageService,
+) (*LocalDiskDAS, error) {
 	var privKey *blsSignatures.PrivateKey
 	var err error
 	if len(config.PrivKey) != 0 {
@@ -128,12 +145,33 @@ func NewLocalDiskDASWithSeqInboxCaller(config LocalDiskDASConfig, seqInboxCaller
 	}
 
 	return &LocalDiskDAS{
-		config:      config,
-		privKey:     privKey,
-		keysetHash:  ksHash,
-		keysetBytes: ksBuf.Bytes(),
-		bpVerifier:  bpVerifier,
+		config:         config,
+		privKey:        privKey,
+		keysetHash:     ksHash,
+		keysetBytes:    ksBuf.Bytes(),
+		storageService: storageService,
+		bpVerifier:     bpVerifier,
 	}, nil
+}
+
+func NewStorageServiceFromLocalConfig(ctx context.Context, config LocalDiskDASConfig) (StorageService, error) {
+	var storageService StorageService
+	if config.StorageType == "" || config.StorageType == "files" {
+		storageService = NewLocalDiskStorageService(config.DataDir)
+	} else if config.StorageType == "db" {
+		var err error
+		storageService, err = NewDBStorageService(ctx, config.DataDir, false)
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			<-ctx.Done()
+			_ = storageService.Close(context.Background())
+		}()
+	} else {
+		return nil, errors.New("Storage service type not recognized: " + config.StorageType)
+	}
+	return storageService, nil
 }
 
 func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
@@ -163,10 +201,11 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 		return nil, err
 	}
 
-	path := das.config.DataDir + "/" + base32.StdEncoding.EncodeToString(c.DataHash[:])
-	log.Debug("Storing message at", "path", path)
-
-	err = os.WriteFile(path, message, 0600)
+	err = das.storageService.PutByHash(ctx, c.DataHash[:], message, timeout)
+	if err != nil {
+		return nil, err
+	}
+	err = das.storageService.Sync(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +216,8 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 }
 
 func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
+	// The cert passed in may have an aggregate signature, so we don't
+	// check the signature against this DAS's public key here.
 	return das.GetByHash(ctx, cert.DataHash[:])
 }
 
@@ -185,6 +226,7 @@ func (das *LocalDiskDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, er
 	log.Debug("Retrieving message from", "path", path)
 
 	originalMessage, err := os.ReadFile(path)
+
 	if err != nil {
 		return nil, err
 	}
@@ -192,9 +234,6 @@ func (das *LocalDiskDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, er
 	if !bytes.Equal(crypto.Keccak256(originalMessage), hash) {
 		return nil, errors.New("Retrieved message stored hash doesn't match calculated hash.")
 	}
-
-	// The cert passed in may have an aggregate signature, so we don't
-	// check the signature against this DAS's public key here.
 
 	return originalMessage, nil
 }
