@@ -54,6 +54,8 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	ModeImpl: OnchainDataAvailabilityString,
 }
 
+var ErrHashMismatch = errors.New("Retrieved data does not match expected hash")
+
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	if c.ModeImpl == "" {
 		return 0, errors.New("--data-availability.mode missing")
