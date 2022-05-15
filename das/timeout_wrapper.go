@@ -16,12 +16,12 @@ type TimeoutWrapper struct {
 	DataAvailabilityService
 }
 
-func (w *TimeoutWrapper) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
+func (w *TimeoutWrapper) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(w.t))
 	// For Retrieve we want fast cancellation of all goroutines started by
 	// the aggregator as soon as one returns.
 	defer cancel()
-	return w.DataAvailabilityService.Retrieve(deadlineCtx, cert)
+	return w.DataAvailabilityService.GetByHash(deadlineCtx, hash)
 }
 
 func (w *TimeoutWrapper) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {

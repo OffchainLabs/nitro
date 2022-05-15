@@ -32,7 +32,9 @@ func TestRPC(t *testing.T) {
 		KeyDir:  keyDir,
 		DataDir: dataDir,
 	}
-	localDas, err := das.NewLocalDiskDASWithSeqInboxCaller(ctx, dasConfig, nil)
+	storageService, err := das.NewStorageServiceFromLocalConfig(ctx, dasConfig)
+	testhelpers.RequireImpl(t, err)
+	localDas, err := das.NewLocalDiskDASWithSeqInboxCaller(ctx, dasConfig, nil, storageService)
 	testhelpers.RequireImpl(t, err)
 	dasServer, err := StartDASRPCServerOnListener(ctx, lis, localDas)
 	defer func() {
@@ -53,14 +55,14 @@ func TestRPC(t *testing.T) {
 		AssumedHonest: 1,
 		Backends:      string(backendsJsonByte),
 	}
-	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(ctx, aggConf, nil)
+	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil)
 	testhelpers.RequireImpl(t, err)
 
 	msg := testhelpers.RandomizeSlice(make([]byte, 100))
 	cert, err := rpcAgg.Store(ctx, msg, 0, nil)
 	testhelpers.RequireImpl(t, err)
 
-	retrievedMessage, err := rpcAgg.Retrieve(ctx, cert)
+	retrievedMessage, err := rpcAgg.GetByHash(ctx, cert.DataHash[:])
 	testhelpers.RequireImpl(t, err)
 
 	if !bytes.Equal(msg, retrievedMessage) {

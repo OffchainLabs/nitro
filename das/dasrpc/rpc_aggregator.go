@@ -29,20 +29,20 @@ func NewRPCAggregator(ctx context.Context, config das.AggregatorConfig) (*das.Ag
 	return das.NewAggregator(ctx, config, services)
 }
 
-func NewRPCAggregatorWithL1Info(ctx context.Context, config das.AggregatorConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*das.Aggregator, error) {
+func NewRPCAggregatorWithL1Info(config das.AggregatorConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*das.Aggregator, error) {
 	services, err := setUpServices(config)
 	if err != nil {
 		return nil, err
 	}
-	return das.NewAggregatorWithL1Info(ctx, config, services, l1client, seqInboxAddress)
+	return das.NewAggregatorWithL1Info(config, services, l1client, seqInboxAddress)
 }
 
-func NewRPCAggregatorWithSeqInboxCaller(ctx context.Context, config das.AggregatorConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*das.Aggregator, error) {
+func NewRPCAggregatorWithSeqInboxCaller(config das.AggregatorConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*das.Aggregator, error) {
 	services, err := setUpServices(config)
 	if err != nil {
 		return nil, err
 	}
-	return das.NewAggregatorWithSeqInboxCaller(ctx, config, services, seqInboxCaller)
+	return das.NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
 }
 
 func setUpServices(config das.AggregatorConfig) ([]das.ServiceDetails, error) {
