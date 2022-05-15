@@ -160,60 +160,6 @@ func NewAggregatorWithSeqInboxCaller(
 	}, nil
 }
 
-func (a *Aggregator) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	return a.retrieve(ctx, cert, a)
-}
-
-// retrieve calls  on each backend DAS in parallel and returns immediately on the
-// first successful response where the data matches the requested hash. Otherwise
-// if all requests fail or if its context is canceled (eg via TimeoutWrapper) then
-// it returns an error.
-func (a *Aggregator) retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate, dasReaer arbstate.DataAvailabilityServiceReader) ([]byte, error) {
-	err := cert.VerifyNonPayloadParts(ctx, dasReaer)
-	if err != nil {
-		return nil, err
-	}
-
-	// Query all services, even those that didn't sign.
-	// They may have been late in returning a response after storing the data,
-	// or got the data by some other means.
-	blobChan := make(chan []byte, len(a.services))
-	errorChan := make(chan error, len(a.services))
-	subCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	for _, d := range a.services {
-		go func(ctx context.Context, d ServiceDetails) {
-			blob, err := d.service.Retrieve(ctx, cert)
-			if err != nil {
-				errorChan <- err
-				return
-			}
-			if bytes.Equal(crypto.Keccak256(blob), cert.DataHash[:]) {
-				blobChan <- blob
-			} else {
-				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
-			}
-		}(subCtx, d)
-	}
-
-	errorCount := 0
-	var errorCollection []error
-	for errorCount < len(a.services) {
-		select {
-		case blob := <-blobChan:
-			return blob, nil
-		case err = <-errorChan:
-			errorCollection = append(errorCollection, err)
-			log.Warn("Couldn't retrieve message from DAS", "err", err)
-			errorCount++
-		case <-ctx.Done():
-			break
-		}
-	}
-
-	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS: %v", errorCollection)
-}
-
 func (a *Aggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	// Query all services, even those that didn't sign.
 	// They may have been late in returning a response after storing the data,

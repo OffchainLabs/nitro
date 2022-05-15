@@ -213,12 +213,6 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 	return c, nil
 }
 
-func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	// The cert passed in may have an aggregate signature, so we don't
-	// check the signature against this DAS's public key here.
-	return das.storageService.GetByHash(ctx, cert.DataHash[:])
-}
-
 func (das *LocalDiskDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	return das.storageService.GetByHash(ctx, hash)
 }
@@ -227,9 +221,7 @@ func (das *LocalDiskDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]b
 	if bytes.Equal(ksHash, das.keysetHash[:]) {
 		return das.keysetBytes, nil
 	}
-	var ksHash32 [32]byte
-	copy(ksHash32[:], ksHash)
-	contents, err := das.Retrieve(ctx, &arbstate.DataAvailabilityCertificate{DataHash: ksHash32})
+	contents, err := das.GetByHash(ctx, ksHash)
 	if err == nil {
 		return contents, nil
 	}

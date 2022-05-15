@@ -22,7 +22,6 @@ type SimpleDASReader interface {
 
 type DataAvailabilityServiceReader interface {
 	SimpleDASReader
-	Retrieve(ctx context.Context, cert *DataAvailabilityCertificate) ([]byte, error)
 	KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error)
 	CurrentKeysetBytes(ctx context.Context) ([]byte, error)
 }
