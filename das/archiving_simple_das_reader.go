@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"sync"
+	"time"
 )
 
 var ErrArchiveTimeout = errors.New("Archiver timed out")
@@ -53,7 +55,8 @@ func NewArchivingSimpleDASReader(
 					// we successfully archived everything, and our input chan is closed, so shut down cleanly
 					return
 				}
-				err := archiveTo.PutByHash(hardStopCtx, item.key, item.value, archiveExpirationSeconds)
+				expiration := arbmath.SaturatingUAdd(uint64(time.Now().Unix()), archiveExpirationSeconds)
+				err := archiveTo.PutByHash(hardStopCtx, item.key, item.value, expiration)
 				if err != nil {
 					// we hit an error writing to the archive, so record the error and stop archiving
 					ret.archiverError = err
