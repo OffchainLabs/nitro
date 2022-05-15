@@ -47,7 +47,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	}
 
 	firstCancel()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	// 2nd das instance can read keys from disk
 	secondCtx, secondCancel := context.WithCancel(context.Background())

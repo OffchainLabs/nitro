@@ -740,8 +740,17 @@ func setUpDataAvailabilityService(
 	var dataAvailabilityService das.DataAvailabilityService
 	switch dataAvailabilityMode {
 	case das.LocalDiskDataAvailability:
-		var err error
-		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(ctx, config.DataAvailability.LocalDiskDASConfig, l1client, deployInfo.SequencerInbox)
+		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.LocalDiskDASConfig)
+		if err != nil {
+			return nil, err
+		}
+		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(
+			ctx,
+			config.DataAvailability.LocalDiskDASConfig,
+			l1client,
+			deployInfo.SequencerInbox,
+			storageService,
+		)
 		if err != nil {
 			return nil, err
 		}

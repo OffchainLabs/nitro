@@ -42,7 +42,9 @@ func startLocalDASServer(
 		KeyDir:  keyDir,
 		DataDir: dataDir,
 	}
-	localDas, err := das.NewLocalDiskDASWithL1Info(ctx, dasConfig, l1client, seqInboxAddress)
+	storageService, err := das.NewStorageServiceFromLocalConfig(ctx, dasConfig)
+	Require(t, err)
+	localDas, err := das.NewLocalDiskDASWithL1Info(ctx, dasConfig, l1client, seqInboxAddress, storageService)
 	Require(t, err)
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, localDas)
 	Require(t, err)

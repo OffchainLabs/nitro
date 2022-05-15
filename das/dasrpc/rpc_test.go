@@ -32,7 +32,9 @@ func TestRPC(t *testing.T) {
 		KeyDir:  keyDir,
 		DataDir: dataDir,
 	}
-	localDas, err := das.NewLocalDiskDASWithSeqInboxCaller(ctx, dasConfig, nil)
+	storageService, err := das.NewStorageServiceFromLocalConfig(ctx, dasConfig)
+	testhelpers.RequireImpl(t, err)
+	localDas, err := das.NewLocalDiskDASWithSeqInboxCaller(ctx, dasConfig, nil, storageService)
 	testhelpers.RequireImpl(t, err)
 	dasServer, err := StartDASRPCServerOnListener(ctx, lis, localDas)
 	defer func() {
