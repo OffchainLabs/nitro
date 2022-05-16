@@ -46,12 +46,6 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
 
-	messageRetrieved, err = das.GetByHash(firstCtx, cert.DataHash[:])
-	Require(t, err, "Failed to getByHash message")
-	if !bytes.Equal(messageSaved, messageRetrieved) {
-		Fail(t, "Retrieved message is not the same as stored one.")
-	}
-
 	firstCancel()
 	time.Sleep(500 * time.Millisecond)
 

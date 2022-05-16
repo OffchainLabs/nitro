@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"testing"
@@ -24,9 +23,8 @@ func TestRestfulServer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dbPath, err := ioutil.TempDir("/tmp", "das_test")
+	dbPath := t.TempDir()
 	defer func() { _ = os.RemoveAll(dbPath) }()
-	Require(t, err)
 
 	storage := NewLocalDiskStorageService(dbPath)
 	data := []byte("Testing a restful server now.")
@@ -34,7 +32,7 @@ func TestRestfulServer(t *testing.T) {
 
 	server := NewRestfulDasServerHTTP(LocalServerAddressForTest, LocalServerPortForTest, storage)
 
-	err = storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
+	err := storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
 
 	urlString := fmt.Sprint("http://", LocalServerAddressForTest, ":", LocalServerPortForTest, "/get-by-hash/", hexutil.Encode(dataHash)[2:])

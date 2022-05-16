@@ -188,12 +188,7 @@ func (a *Aggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error)
 	for errorCount < len(a.services) {
 		select {
 		case blob := <-blobChan:
-			if !bytes.Equal(hash, crypto.Keccak256(blob)) {
-				errorCollection = append(errorCollection, arbstate.ErrHashMismatch)
-				log.Warn("Couldn't retrieve message from DAS", "err", arbstate.ErrHashMismatch)
-			} else {
-				return blob, nil
-			}
+			return blob, nil
 		case err := <-errorChan:
 			errorCollection = append(errorCollection, err)
 			log.Warn("Couldn't retrieve message from DAS", "err", err)

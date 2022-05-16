@@ -11,12 +11,17 @@ import (
 )
 
 type RestfulDasServer struct {
-	server  *http.Server
-	storage StorageService
+	server               *http.Server
+	storage              StorageService
+	httpServerExitedChan chan interface{}
+	httpServerError      error
 }
 
 func NewRestfulDasServerHTTP(address string, port uint64, storageService StorageService) *RestfulDasServer {
-	ret := &RestfulDasServer{storage: storageService}
+	ret := &RestfulDasServer{
+		storage:              storageService,
+		httpServerExitedChan: make(chan interface{}),
+	}
 
 	ret.server = &http.Server{
 		Addr:    fmt.Sprint(address, ":", port),
@@ -24,7 +29,9 @@ func NewRestfulDasServerHTTP(address string, port uint64, storageService Storage
 	}
 
 	go func() {
-		_ = ret.server.ListenAndServe()
+		err := ret.server.ListenAndServe()
+		ret.httpServerError = err
+		close(ret.httpServerExitedChan)
 	}()
 
 	return ret
@@ -49,6 +56,18 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(responseBytes) // w.Write will deal with errors itself
 }
 
+func (rds *RestfulDasServer) GetServerExitedChan() <-chan interface{} { // channel will close when server terminates
+	return rds.httpServerExitedChan
+}
+
+func (rds *RestfulDasServer) GetServerError() error {
+	return rds.httpServerError
+}
+
 func (rds *RestfulDasServer) Shutdown() error {
-	return rds.server.Close()
+	err := rds.server.Close()
+	if err != nil {
+		return err
+	}
+	return rds.httpServerError
 }

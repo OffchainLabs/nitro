@@ -22,6 +22,7 @@ type ArchivingStorageService struct {
 	archiveChanClosedMutex sync.Mutex
 	hardStopFunc           func()
 	stoppedSignal          chan interface{}
+	archiverErrorSignal    chan interface{}
 	archiverError          error
 }
 
@@ -34,15 +35,17 @@ func NewArchivingStorageService(
 	archiveChan := make(chan []byte, 256)
 	hardStopCtx, hardStopFunc := context.WithCancel(ctx)
 	ret := &ArchivingStorageService{
-		inner:         inner,
-		archiveTo:     archiveTo,
-		archiveChan:   archiveChan,
-		hardStopFunc:  hardStopFunc,
-		stoppedSignal: make(chan interface{}),
+		inner:               inner,
+		archiveTo:           archiveTo,
+		archiveChan:         archiveChan,
+		hardStopFunc:        hardStopFunc,
+		stoppedSignal:       make(chan interface{}),
+		archiverErrorSignal: make(chan interface{}),
 	}
 
 	go func() {
 		defer close(ret.stoppedSignal)
+		anyErrors := false
 		for {
 			select {
 			case data, stillOpen := <-archiveChan:
@@ -53,13 +56,19 @@ func NewArchivingStorageService(
 				expiration := arbmath.SaturatingUAdd(uint64(time.Now().Unix()), archiveExpirationSeconds)
 				err := archiveTo.Put(hardStopCtx, data, expiration)
 				if err != nil {
-					// we hit an error writing to the archive, so record the error and stop archiving
+					// we hit an error writing to the archive; record the error and keep going
 					ret.archiverError = err
-					return
+					if !anyErrors {
+						close(ret.archiverErrorSignal)
+						anyErrors = true
+					}
 				}
 			case <-hardStopCtx.Done():
 				// hard stop was requested, so terminate early
 				ret.archiverError = hardStopCtx.Err()
+				if !anyErrors {
+					close(ret.archiverErrorSignal)
+				}
 				return
 			}
 		}
@@ -117,6 +126,14 @@ func (serv *ArchivingStorageService) Close(ctx context.Context) error {
 	}
 }
 
+func (serv *ArchivingStorageService) GetArchiverErrorSignalChan() <-chan interface{} {
+	return serv.archiverErrorSignal
+}
+
+func (serv *ArchivingStorageService) GetArchiverError() error {
+	return serv.archiverError
+}
+
 func (serv *ArchivingStorageService) String() string {
 	return "ArchivingStorageService(" + serv.inner.String() + ")"
 }
@@ -144,6 +161,14 @@ func (asdr *ArchivingSimpleDASReader) GetByHash(ctx context.Context, hash []byte
 
 func (asdr *ArchivingSimpleDASReader) Close(ctx context.Context) error {
 	return asdr.wrapped.Close(ctx)
+}
+
+func (serv *ArchivingSimpleDASReader) GetArchiverErrorSignalChan() <-chan interface{} {
+	return serv.wrapped.GetArchiverErrorSignalChan()
+}
+
+func (serv *ArchivingSimpleDASReader) GetArchiverError() error {
+	return serv.wrapped.GetArchiverError()
 }
 
 type limitedStorageService struct {
