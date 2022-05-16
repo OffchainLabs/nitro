@@ -95,10 +95,10 @@ func (rs *RedisStorageService) signMessage(message []byte) []byte {
 	return append(hmac[:], message...)
 }
 
-func (rs *RedisStorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
+func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	ret, err := rs.getVerifiedData(ctx, key)
 	if err != nil {
-		ret, err = rs.baseStorageService.Read(ctx, key)
+		ret, err = rs.baseStorageService.GetByHash(ctx, key)
 		if err != nil {
 			return nil, err
 		}
@@ -113,8 +113,8 @@ func (rs *RedisStorageService) Read(ctx context.Context, key []byte) ([]byte, er
 	return ret, err
 }
 
-func (rs *RedisStorageService) Write(ctx context.Context, key []byte, value []byte, timeout uint64) error {
-	err := rs.baseStorageService.Write(ctx, key, value, timeout)
+func (rs *RedisStorageService) PutByHash(ctx context.Context, key []byte, value []byte, timeout uint64) error {
+	err := rs.baseStorageService.PutByHash(ctx, key, value, timeout)
 	if err != nil {
 		return err
 	}

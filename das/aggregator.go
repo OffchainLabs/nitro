@@ -8,10 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/bits"
+	"os"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"math/bits"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -28,6 +31,7 @@ type AggregatorConfig struct {
 	Backends              string `koanf:"backends"`
 	L1NodeURL             string `koanf:"l1-node-url"`
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+	DumpKeyset            bool   `koanf:"dump-keyset"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
@@ -39,6 +43,7 @@ func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
 	f.String(prefix+".l1-node-url", DefaultAggregatorConfig.L1NodeURL, "URL for L1 node")
 	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
+	f.Bool(prefix+".dump-keyset", DefaultAggregatorConfig.DumpKeyset, "Dump the keyset encoded in hexadecimal for the backends string")
 }
 
 type Aggregator struct {
@@ -72,9 +77,9 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 
 func NewAggregator(ctx context.Context, config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
 	if config.L1NodeURL == "none" {
-		return NewAggregatorWithSeqInboxCaller(ctx, config, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config, services, nil)
 	}
-	l1client, err := ethclient.Dial(config.L1NodeURL)
+	l1client, err := ethclient.DialContext(ctx, config.L1NodeURL)
 	if err != nil {
 		return nil, err
 	}
@@ -83,13 +88,12 @@ func NewAggregator(ctx context.Context, config AggregatorConfig, services []Serv
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewAggregatorWithSeqInboxCaller(ctx, config, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config, services, nil)
 	}
-	return NewAggregatorWithL1Info(ctx, config, services, l1client, *seqInboxAddress)
+	return NewAggregatorWithL1Info(config, services, l1client, *seqInboxAddress)
 }
 
 func NewAggregatorWithL1Info(
-	ctx context.Context,
 	config AggregatorConfig,
 	services []ServiceDetails,
 	l1client arbutil.L1Interface,
@@ -99,11 +103,10 @@ func NewAggregatorWithL1Info(
 	if err != nil {
 		return nil, err
 	}
-	return NewAggregatorWithSeqInboxCaller(ctx, config, services, seqInboxCaller)
+	return NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
 }
 
 func NewAggregatorWithSeqInboxCaller(
-	ctx context.Context,
 	config AggregatorConfig,
 	services []ServiceDetails,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
@@ -135,6 +138,11 @@ func NewAggregatorWithSeqInboxCaller(
 	}
 	var keysetHash [32]byte
 	copy(keysetHash[:], keysetHashBuf)
+	if config.DumpKeyset {
+		fmt.Printf("Keyset: %s\n", hexutil.Encode(ksBuf.Bytes()))
+		fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))
+		os.Exit(0)
+	}
 
 	var bpVerifier *BatchPosterVerifier
 	if seqInboxCaller != nil {

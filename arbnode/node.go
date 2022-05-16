@@ -7,9 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"golang.org/x/term"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -553,9 +559,17 @@ type Node struct {
 	DataAvailService das.DataAvailabilityService
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (*Node, error) {
-	ctx := context.Background()
-
+func createNodeImpl(
+	ctx context.Context,
+	stack *node.Node,
+	chainDb ethdb.Database,
+	config *Config,
+	l2BlockChain *core.BlockChain,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	txOpts *bind.TransactOpts,
+	daSigner das.DasSigner,
+) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -726,13 +740,22 @@ func setUpDataAvailabilityService(
 	var dataAvailabilityService das.DataAvailabilityService
 	switch dataAvailabilityMode {
 	case das.LocalDiskDataAvailability:
-		var err error
-		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(ctx, config.DataAvailability.LocalDiskDASConfig, l1client, deployInfo.SequencerInbox)
+		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.LocalDiskDASConfig)
+		if err != nil {
+			return nil, err
+		}
+		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(
+			ctx,
+			config.DataAvailability.LocalDiskDASConfig,
+			l1client,
+			deployInfo.SequencerInbox,
+			storageService,
+		)
 		if err != nil {
 			return nil, err
 		}
 	case das.AggregatorDataAvailability:
-		dataAvailabilityService, err = dasrpc.NewRPCAggregatorWithL1Info(ctx, config.DataAvailability.AggregatorConfig, l1client, deployInfo.SequencerInbox)
+		dataAvailabilityService, err = dasrpc.NewRPCAggregatorWithL1Info(config.DataAvailability.AggregatorConfig, l1client, deployInfo.SequencerInbox)
 		if err != nil {
 			return nil, err
 		}
@@ -770,8 +793,18 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts, daSigner das.DasSigner) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
+func CreateNode(
+	ctx context.Context,
+	stack *node.Node,
+	chainDb ethdb.Database,
+	config *Config,
+	l2BlockChain *core.BlockChain,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	txOpts *bind.TransactOpts,
+	daSigner das.DasSigner,
+) (newNode *Node, err error) {
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -1090,4 +1123,98 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 // Don't preserve reorg'd out blocks
 func shouldPreserveFalse(header *types.Header) bool {
 	return false
+}
+
+func GetSignerFromWallet(
+	walletConfig *genericconf.WalletConfig,
+) (func([]byte) ([]byte, error), error) {
+	var signer func(data []byte) ([]byte, error)
+
+	if len(walletConfig.PrivateKey) != 0 {
+		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		signer = func(data []byte) ([]byte, error) {
+			return crypto.Sign(data, privateKey)
+		}
+	} else {
+		ks, account, newKeystoreCreated, err := openKeystore(
+			"account",
+			walletConfig.Pathname,
+			walletConfig.Password(),
+			walletConfig.OnlyCreateKey,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if newKeystoreCreated {
+			return nil, errors.New("wallet key created, backup key (" + walletConfig.Pathname + ") and remove --wallet.only-create-key to start normally")
+		}
+
+		signer = func(data []byte) ([]byte, error) {
+			return ks.SignHash(*account, data)
+		}
+	}
+
+	return signer, nil
+}
+
+func openKeystore(description string, walletPath string, walletPassword *string, onlyCreateKey bool) (*keystore.KeyStore, *accounts.Account, bool, error) {
+	ks := keystore.NewKeyStore(
+		walletPath,
+		keystore.StandardScryptN,
+		keystore.StandardScryptP,
+	)
+
+	creatingNew := len(ks.Accounts()) == 0
+	if creatingNew && !onlyCreateKey {
+		return nil, nil, false, errors.New("No wallet exists, re-run with --wallet.local.only-create-key to create a wallet")
+	}
+	passOpt := walletPassword
+	var password string
+	if passOpt != nil {
+		password = *passOpt
+	} else {
+		if creatingNew {
+			fmt.Print("Enter new account password: ")
+		} else {
+			fmt.Print("Enter account password: ")
+		}
+		var err error
+		password, err = readPass()
+		if err != nil {
+			return nil, nil, false, err
+		}
+	}
+
+	var account accounts.Account
+	if creatingNew {
+		var err error
+		account, err = ks.NewAccount(password)
+		if err != nil {
+			return nil, &accounts.Account{}, false, err
+		}
+
+	} else {
+		account = ks.Accounts()[0]
+	}
+
+	err := ks.Unlock(account, password)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	return ks, &account, creatingNew, nil
+}
+
+func readPass() (string, error) {
+	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return "", err
+	}
+	passphrase := string(bytePassword)
+	passphrase = strings.TrimSpace(passphrase)
+	return passphrase, nil
 }

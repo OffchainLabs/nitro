@@ -44,10 +44,10 @@ func NewBigCacheStorageService(bigCacheConfig BigCacheConfig, baseStorageService
 	}, nil
 }
 
-func (bcs *BigCacheStorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
+func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	ret, err := bcs.bigCache.Get(base32.StdEncoding.EncodeToString(key))
 	if err != nil {
-		ret, err = bcs.baseStorageService.Read(ctx, key)
+		ret, err = bcs.baseStorageService.GetByHash(ctx, key)
 		if err != nil {
 			return nil, err
 		}
@@ -62,8 +62,8 @@ func (bcs *BigCacheStorageService) Read(ctx context.Context, key []byte) ([]byte
 	return ret, err
 }
 
-func (bcs *BigCacheStorageService) Write(ctx context.Context, key []byte, value []byte, timeout uint64) error {
-	err := bcs.baseStorageService.Write(ctx, key, value, timeout)
+func (bcs *BigCacheStorageService) PutByHash(ctx context.Context, key []byte, value []byte, timeout uint64) error {
+	err := bcs.baseStorageService.PutByHash(ctx, key, value, timeout)
 	if err != nil {
 		return err
 	}

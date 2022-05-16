@@ -6,7 +6,7 @@ package das
 import (
 	"context"
 	"github.com/dgraph-io/badger"
-	"sync"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"time"
 )
 
@@ -14,8 +14,7 @@ type DBStorageService struct {
 	db                  *badger.DB
 	discardAfterTimeout bool
 	dirPath             string
-	shutdownFunc        func()
-	shutdownMutex       sync.Mutex
+	stopWaiter          stopwaiter.StopWaiterSafe
 }
 
 func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeout bool) (StorageService, error) {
@@ -24,43 +23,41 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		return nil, err
 	}
 
-	shutdownCtx, cancel := context.WithCancel(context.Background())
-	go func() {
+	ret := &DBStorageService{
+		db:                  db,
+		discardAfterTimeout: discardAfterTimeout,
+		dirPath:             dirPath,
+	}
+	if err := ret.stopWaiter.Start(ctx); err != nil {
+		return nil, err
+	}
+	err = ret.stopWaiter.LaunchThread(func(myCtx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		defer func() { _ = db.Close() }()
+		defer func() { _ = ret.db.Close() }()
 		for {
 			select {
 			case <-ticker.C:
 				for db.RunValueLogGC(0.7) == nil {
 					select {
-					case <-shutdownCtx.Done():
+					case <-myCtx.Done():
 						return
 					default:
 					}
 				}
-			case <-shutdownCtx.Done():
+			case <-myCtx.Done():
 				return
 			}
 		}
-	}()
-
-	ret := &DBStorageService{
-		db:                  db,
-		discardAfterTimeout: discardAfterTimeout,
-		dirPath:             dirPath,
-		shutdownFunc:        cancel,
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	go func() {
-		<-ctx.Done()
-		_ = ret.Close(context.Background())
-	}()
 
 	return ret, nil
 }
 
-func (dbs *DBStorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
+func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	var ret []byte
 	err := dbs.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
@@ -75,7 +72,7 @@ func (dbs *DBStorageService) Read(ctx context.Context, key []byte) ([]byte, erro
 	return ret, err
 }
 
-func (dbs *DBStorageService) Write(ctx context.Context, key []byte, value []byte, timeout uint64) error {
+func (dbs *DBStorageService) PutByHash(ctx context.Context, key []byte, value []byte, timeout uint64) error {
 	return dbs.db.Update(func(txn *badger.Txn) error {
 		e := badger.NewEntry(key, value)
 		if dbs.discardAfterTimeout {
@@ -90,10 +87,8 @@ func (dbs *DBStorageService) Sync(ctx context.Context) error {
 }
 
 func (dbs *DBStorageService) Close(ctx context.Context) error {
-	dbs.shutdownMutex.Lock()
-	defer dbs.shutdownMutex.Unlock()
-	dbs.shutdownFunc()
-	return dbs.db.Close()
+	dbs.stopWaiter.StopAndWait()
+	return nil
 }
 
 func (dbs *DBStorageService) String() string {

@@ -35,7 +35,7 @@ func NewS3StorageService(s3Config genericconf.S3Config) (StorageService, error) 
 		downloader: manager.NewDownloader(client)}, nil
 }
 
-func (s3s *S3StorageService) Read(ctx context.Context, key []byte) ([]byte, error) {
+func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	var ret []byte
 	_, err := s3s.downloader.Download(ctx, manager.NewWriteAtBuffer(ret), &s3.GetObjectInput{
 		Bucket: aws.String(s3s.s3Config.Bucket),
@@ -45,7 +45,7 @@ func (s3s *S3StorageService) Read(ctx context.Context, key []byte) ([]byte, erro
 	return ret, err
 }
 
-func (s3s *S3StorageService) Write(ctx context.Context, key []byte, value []byte, timeout uint64) error {
+func (s3s *S3StorageService) PutByHash(ctx context.Context, key []byte, value []byte, timeout uint64) error {
 	expires := time.Unix(time.Now().Unix()+int64(timeout), 0)
 	_, err := s3s.uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket:  aws.String(s3s.s3Config.Bucket),

@@ -60,8 +60,12 @@ type LocalDiskDAS struct {
 }
 
 func NewLocalDiskDAS(ctx context.Context, config LocalDiskDASConfig) (*LocalDiskDAS, error) {
+	storageService, err := NewStorageServiceFromLocalConfig(ctx, config)
+	if err != nil {
+		return nil, err
+	}
 	if config.L1NodeURL == "none" {
-		return NewLocalDiskDASWithSeqInboxCaller(ctx, config, nil)
+		return NewLocalDiskDASWithSeqInboxCaller(ctx, config, nil, storageService)
 	}
 	l1client, err := ethclient.Dial(config.L1NodeURL)
 	if err != nil {
@@ -72,20 +76,31 @@ func NewLocalDiskDAS(ctx context.Context, config LocalDiskDASConfig) (*LocalDisk
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewLocalDiskDASWithSeqInboxCaller(ctx, config, nil)
+		return NewLocalDiskDASWithSeqInboxCaller(ctx, config, nil, storageService)
 	}
-	return NewLocalDiskDASWithL1Info(ctx, config, l1client, *seqInboxAddress)
+	return NewLocalDiskDASWithL1Info(ctx, config, l1client, *seqInboxAddress, storageService)
 }
 
-func NewLocalDiskDASWithL1Info(ctx context.Context, config LocalDiskDASConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*LocalDiskDAS, error) {
+func NewLocalDiskDASWithL1Info(
+	ctx context.Context,
+	config LocalDiskDASConfig,
+	l1client arbutil.L1Interface,
+	seqInboxAddress common.Address,
+	storageService StorageService,
+) (*LocalDiskDAS, error) {
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	if err != nil {
 		return nil, err
 	}
-	return NewLocalDiskDASWithSeqInboxCaller(ctx, config, seqInboxCaller)
+	return NewLocalDiskDASWithSeqInboxCaller(ctx, config, seqInboxCaller, storageService)
 }
 
-func NewLocalDiskDASWithSeqInboxCaller(ctx context.Context, config LocalDiskDASConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*LocalDiskDAS, error) {
+func NewLocalDiskDASWithSeqInboxCaller(
+	ctx context.Context,
+	config LocalDiskDASConfig,
+	seqInboxCaller *bridgegen.SequencerInboxCaller,
+	storageService StorageService,
+) (*LocalDiskDAS, error) {
 	var privKey *blsSignatures.PrivateKey
 	var err error
 	if len(config.PrivKey) != 0 {
@@ -136,7 +151,19 @@ func NewLocalDiskDASWithSeqInboxCaller(ctx context.Context, config LocalDiskDASC
 		bpVerifier = NewBatchPosterVerifier(seqInboxCaller)
 	}
 
+	return &LocalDiskDAS{
+		config:         config,
+		privKey:        privKey,
+		keysetHash:     ksHash,
+		keysetBytes:    ksBuf.Bytes(),
+		storageService: storageService,
+		bpVerifier:     bpVerifier,
+	}, nil
+}
+
+func NewStorageServiceFromLocalConfig(ctx context.Context, config LocalDiskDASConfig) (StorageService, error) {
 	var storageService StorageService
+	var err error
 	switch config.StorageType {
 	case "", "files":
 		storageService = NewLocalDiskStorageService(config.DataDir)
@@ -145,6 +172,10 @@ func NewLocalDiskDASWithSeqInboxCaller(ctx context.Context, config LocalDiskDASC
 		if err != nil {
 			return nil, err
 		}
+		go func() {
+			<-ctx.Done()
+			_ = storageService.Close(context.Background())
+		}()
 	case "s3":
 		storageService, err = NewS3StorageService(config.S3Config)
 		if err != nil {
@@ -175,15 +206,7 @@ func NewLocalDiskDASWithSeqInboxCaller(ctx context.Context, config LocalDiskDASC
 	default:
 		return nil, errors.New("Storage service type not recognized: " + config.StorageType)
 	}
-
-	return &LocalDiskDAS{
-		config:         config,
-		privKey:        privKey,
-		keysetHash:     ksHash,
-		keysetBytes:    ksBuf.Bytes(),
-		storageService: storageService,
-		bpVerifier:     bpVerifier,
-	}, nil
+	return storageService, nil
 }
 
 func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
@@ -213,7 +236,7 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 		return nil, err
 	}
 
-	err = das.storageService.Write(ctx, c.DataHash[:], message, timeout)
+	err = das.storageService.PutByHash(ctx, c.DataHash[:], message, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +251,7 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 }
 
 func (das *LocalDiskDAS) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	originalMessage, err := das.storageService.Read(ctx, cert.DataHash[:])
+	originalMessage, err := das.storageService.GetByHash(ctx, cert.DataHash[:])
 	if err != nil {
 		return nil, err
 	}

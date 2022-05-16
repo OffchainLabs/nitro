@@ -65,9 +65,6 @@ func (c NitroMachineConfig) ReadLatestWasmModuleRoot() (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	s := strings.TrimSpace(string(fileBytes))
-	if len(s) > 64 {
-		s = s[0:64]
-	}
 	return common.HexToHash(s), nil
 }
 
