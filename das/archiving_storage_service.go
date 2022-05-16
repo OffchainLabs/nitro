@@ -17,17 +17,12 @@ var ErrArchiveTimeout = errors.New("Archiver timed out")
 type ArchivingStorageService struct {
 	inner                  StorageService
 	archiveTo              StorageService
-	archiveChan            chan archiveItem
+	archiveChan            chan []byte
 	archiveChanClosed      bool
 	archiveChanClosedMutex sync.Mutex
 	hardStopFunc           func()
 	stoppedSignal          chan interface{}
 	archiverError          error
-}
-
-type archiveItem struct {
-	key   []byte
-	value []byte
 }
 
 func NewArchivingStorageService(
@@ -36,7 +31,7 @@ func NewArchivingStorageService(
 	archiveTo StorageService,
 	archiveExpirationSeconds uint64,
 ) (*ArchivingStorageService, error) {
-	archiveChan := make(chan archiveItem, 256)
+	archiveChan := make(chan []byte, 256)
 	hardStopCtx, hardStopFunc := context.WithCancel(ctx)
 	ret := &ArchivingStorageService{
 		inner:         inner,
@@ -50,13 +45,13 @@ func NewArchivingStorageService(
 		defer close(ret.stoppedSignal)
 		for {
 			select {
-			case item, stillOpen := <-archiveChan:
+			case data, stillOpen := <-archiveChan:
 				if !stillOpen {
 					// we successfully archived everything, and our input chan is closed, so shut down cleanly
 					return
 				}
 				expiration := arbmath.SaturatingUAdd(uint64(time.Now().Unix()), archiveExpirationSeconds)
-				err := archiveTo.PutByHash(hardStopCtx, item.key, item.value, expiration)
+				err := archiveTo.Put(hardStopCtx, data, expiration)
 				if err != nil {
 					// we hit an error writing to the archive, so record the error and stop archiving
 					ret.archiverError = err
@@ -81,19 +76,19 @@ func (serv *ArchivingStorageService) GetByHash(ctx context.Context, hash []byte)
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case serv.archiveChan <- archiveItem{hash, data}:
+	case serv.archiveChan <- data:
 		return data, nil
 	}
 }
 
-func (serv *ArchivingStorageService) PutByHash(ctx context.Context, hash []byte, data []byte, expiration uint64) error {
-	if err := serv.inner.PutByHash(ctx, hash, data, expiration); err != nil {
+func (serv *ArchivingStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
+	if err := serv.inner.Put(ctx, data, expiration); err != nil {
 		return err
 	}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case serv.archiveChan <- archiveItem{hash, data}:
+	case serv.archiveChan <- data:
 		return nil
 	}
 }
@@ -155,7 +150,7 @@ type limitedStorageService struct {
 	arbstate.SimpleDASReader
 }
 
-func (lss *limitedStorageService) PutByHash(ctx context.Context, hash []byte, val []byte, expiration uint64) error {
+func (lss *limitedStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
 	return errors.New("invalid operation")
 }
 

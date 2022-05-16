@@ -25,7 +25,7 @@ func TestArchivingStorageService(t *testing.T) {
 	firstStorage := NewMemoryBackedStorageService(ctx)
 	archiveTo := NewMemoryBackedStorageService(ctx)
 
-	err := firstStorage.PutByHash(ctx, hash1, val1, futureTime)
+	err := firstStorage.Put(ctx, val1, futureTime)
 	Require(t, err)
 
 	archServ, err := NewArchivingStorageService(ctx, firstStorage, archiveTo, 60*60)
@@ -36,7 +36,7 @@ func TestArchivingStorageService(t *testing.T) {
 	_ = ss
 
 	result1, err1 := archServ.GetByHash(ctx, hash1)
-	err2 := archServ.PutByHash(ctx, hash2, val2, futureTime)
+	err2 := archServ.Put(ctx, val2, futureTime)
 	// don't check results yet, in the hope that we call asdr.Close with some ops still in the archive queue
 	err3 := archServ.Close(ctx)
 

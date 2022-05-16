@@ -34,7 +34,7 @@ func TestRestfulServer(t *testing.T) {
 
 	server := NewRestfulDasServerHTTP(LocalServerAddressForTest, LocalServerPortForTest, storage)
 
-	err = storage.PutByHash(ctx, dataHash, data, uint64(time.Now().Add(time.Hour).Unix()))
+	err = storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
 
 	urlString := fmt.Sprint("http://", LocalServerAddressForTest, ":", LocalServerPortForTest, "/get-by-hash/", hexutil.Encode(dataHash)[2:])

@@ -199,7 +199,7 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 		return nil, err
 	}
 
-	err = das.storageService.PutByHash(ctx, c.DataHash[:], message, timeout)
+	err = das.storageService.Put(ctx, message, timeout)
 	if err != nil {
 		return nil, err
 	}
