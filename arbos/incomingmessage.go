@@ -29,6 +29,7 @@ const (
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
 	L1MessageType_Initialize            = 11
 	L1MessageType_EthDeposit            = 12
+	L1MessageType_BatchPostingReport    = 13
 	L1MessageType_Invalid               = 0xFF
 )
 
@@ -220,6 +221,12 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	case L1MessageType_RollupEvent:
 		log.Debug("ignoring rollup event message")
 		return types.Transactions{}, nil
+	case L1MessageType_BatchPostingReport:
+		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId)
+		if err != nil {
+			return nil, err
+		}
+		return types.Transactions{tx}, nil
 	case L1MessageType_Invalid:
 		// intentionally invalid message
 		return nil, errors.New("invalid message")
@@ -494,4 +501,27 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		RetryData:        retryData,
 	}
 	return types.NewTx(tx), err
+}
+
+func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int) (*types.Transaction, error) {
+	batchPosterAddr, err := util.AddressFrom256FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	batchNum, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+
+	l1BaseFee, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	tx := &types.ArbitrumBatchPostingReportTx{
+		ChainId:         chainId,
+		BatchPosterAddr: batchPosterAddr,
+		BatchNum:        batchNum.Big(),
+		L1BaseFee:       l1BaseFee.Big(),
+	}
+	return types.NewTx(tx), nil
 }
