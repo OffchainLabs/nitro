@@ -4,8 +4,11 @@
 package dasrpc
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/das"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
@@ -30,6 +33,9 @@ func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, erro
 	var ret hexutil.Bytes
 	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash)); err != nil {
 		return nil, err
+	}
+	if !bytes.Equal(hash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
+		return nil, das.ErrHashMismatch
 	}
 	return ret, nil
 }
@@ -60,6 +66,9 @@ func (c *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byt
 	var ret hexutil.Bytes
 	if err := c.clnt.CallContext(ctx, &ret, "das_keysetFromHash", hexutil.Bytes(ksHash)); err != nil {
 		return nil, err
+	}
+	if !bytes.Equal(ksHash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
+		return nil, das.ErrHashMismatch
 	}
 	return ret, nil
 }

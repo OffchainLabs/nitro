@@ -10,6 +10,7 @@ import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/zeroheavy"
 	"io"
 	"math/big"
@@ -141,7 +142,7 @@ func RecoverPayloadFromDasBatch(
 	}
 	keysetPreimage, err := dasReader.GetByHash(ctx, cert.KeysetHash[:])
 	if err == nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
-		err = errors.New("Keyset preimage inconsistent with hash")
+		err = das.ErrHashMismatch
 	}
 	if err != nil {
 		log.Error("Couldn't get keyset", "err", err)
@@ -167,7 +168,7 @@ func RecoverPayloadFromDasBatch(
 	}
 	payload, err := dasReader.GetByHash(ctx, cert.DataHash[:])
 	if err == nil && !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
-		err = errors.New("DAS batch doesn't match hash")
+		err = das.ErrHashMismatch
 	}
 	if err != nil {
 		log.Error("Couldn't fetch DAS batch contents", "err", err)
