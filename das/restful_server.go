@@ -15,11 +15,11 @@ type RestfulDasServer struct {
 	storage StorageService
 }
 
-func NewRestfulDasServerHTTP(address string, storageService StorageService) *RestfulDasServer {
+func NewRestfulDasServerHTTP(address string, port uint64, storageService StorageService) *RestfulDasServer {
 	ret := &RestfulDasServer{storage: storageService}
 
 	ret.server = &http.Server{
-		Addr:    address,
+		Addr:    fmt.Sprint(address, ":", port),
 		Handler: ret,
 	}
 

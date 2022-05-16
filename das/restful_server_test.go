@@ -6,6 +6,7 @@ package das
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"io"
@@ -16,7 +17,8 @@ import (
 	"time"
 )
 
-const LocalServerAddressForTest = "localhost:9877"
+const LocalServerAddressForTest = "localhost"
+const LocalServerPortForTest = uint64(9877)
 
 func TestRestfulServer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -30,12 +32,12 @@ func TestRestfulServer(t *testing.T) {
 	data := []byte("Testing a restful server now.")
 	dataHash := crypto.Keccak256(data)
 
-	server := NewRestfulDasServerHTTP(LocalServerAddressForTest, storage)
+	server := NewRestfulDasServerHTTP(LocalServerAddressForTest, LocalServerPortForTest, storage)
 
 	err = storage.PutByHash(ctx, dataHash, data, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
 
-	urlString := "http://" + LocalServerAddressForTest + "/get-by-hash/" + (hexutil.Encode(dataHash)[2:])
+	urlString := fmt.Sprint("http://", LocalServerAddressForTest, ":", LocalServerPortForTest, "/get-by-hash/", hexutil.Encode(dataHash)[2:])
 	resp, err := http.Get(urlString) //nolint:gosec
 	Require(t, err)
 	if resp.StatusCode != http.StatusOK {

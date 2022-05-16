@@ -18,6 +18,7 @@ import (
 
 type RESTServerConfig struct {
 	Addr       string                 `koanf:"addr"`
+	Port       uint64                 `koanf:"port"`
 	LogLevel   int                    `koanf:"log-level"`
 	StorageDir string                 `koanf:"storage-dir"`
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
@@ -31,9 +32,11 @@ func main() {
 
 func parseRESTServer(args []string) (*RESTServerConfig, error) {
 	f := flag.NewFlagSet("dasrest", flag.ContinueOnError)
-	f.String("addr", "localhost:9877", "address (e.g. hostname:port) to listen on ")
+	f.String("addr", "localhost:9877", "address to listen on ")
+	f.Uint64("port", 9877, "port number to listen on")
 	f.Int("log-level", int(log.LvlInfo), "log level")
 	f.String("storage-dir", "", "directory path for DAS storage files")
+	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
@@ -68,7 +71,7 @@ func startup() error {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	storage := das.NewLocalDiskStorageService(serverConfig.StorageDir)
-	restServer := das.NewRestfulDasServerHTTP(serverConfig.Addr, storage)
+	restServer := das.NewRestfulDasServerHTTP(serverConfig.Addr, serverConfig.Port, storage)
 
 	<-sigint
 	return restServer.Shutdown()

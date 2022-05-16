@@ -7,11 +7,12 @@ import (
 	"bytes"
 	"context"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbstate"
 	"testing"
 	"time"
 )
 
-func TestArchivingSimpleDASReader(t *testing.T) {
+func TestArchivingStorageService(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -26,24 +27,23 @@ func TestArchivingSimpleDASReader(t *testing.T) {
 
 	err := firstStorage.PutByHash(ctx, hash1, val1, futureTime)
 	Require(t, err)
-	err = firstStorage.PutByHash(ctx, hash2, val2, futureTime)
+
+	archServ, err := NewArchivingStorageService(ctx, firstStorage, archiveTo, 60*60)
 	Require(t, err)
 
-	asdr, err := NewArchivingSimpleDASReader(ctx, firstStorage, archiveTo, 60*60)
-	Require(t, err)
+	// verify that archServ is a StorageService
+	var ss StorageService = archServ
+	_ = ss
 
-	result1, err1 := asdr.GetByHash(ctx, hash1)
-	result2, err2 := asdr.GetByHash(ctx, hash2)
+	result1, err1 := archServ.GetByHash(ctx, hash1)
+	err2 := archServ.PutByHash(ctx, hash2, val2, futureTime)
 	// don't check results yet, in the hope that we call asdr.Close with some ops still in the archive queue
-	err3 := asdr.Close(ctx)
+	err3 := archServ.Close(ctx)
 
 	if !bytes.Equal(val1, result1) {
 		t.Fatal()
 	}
 	Require(t, err1)
-	if !bytes.Equal(val2, result2) {
-		t.Fatal()
-	}
 	Require(t, err2)
 	Require(t, err3)
 
@@ -52,9 +52,16 @@ func TestArchivingSimpleDASReader(t *testing.T) {
 		t.Fatal()
 	}
 	Require(t, err1)
-	result2, err2 = archiveTo.GetByHash(ctx, hash2)
+	result2, err2 := archiveTo.GetByHash(ctx, hash2)
 	if !bytes.Equal(val2, result2) {
 		t.Fatal()
 	}
 	Require(t, err2)
+
+	// verify that an ArchivingSimpleDASReader is a SimpleDASReader
+	var firstSDR arbstate.SimpleDASReader = firstStorage
+	asdr, err := NewArchivingSimpleDASReader(ctx, firstSDR, archiveTo, 60*60)
+	Require(t, err)
+	var secondSDR arbstate.SimpleDASReader = asdr
+	_ = secondSDR
 }
