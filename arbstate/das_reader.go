@@ -26,6 +26,8 @@ type DataAvailabilityServiceReader interface {
 	CurrentKeysetBytes(ctx context.Context) ([]byte, error)
 }
 
+var ErrHashMismatch = errors.New("Result does not match expected hash")
+
 // Indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.
 const DASMessageHeaderFlag byte = 0x80

@@ -7,10 +7,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/das"
-
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -35,7 +33,7 @@ func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, erro
 		return nil, err
 	}
 	if !bytes.Equal(hash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
-		return nil, das.ErrHashMismatch
+		return nil, arbstate.ErrHashMismatch
 	}
 	return ret, nil
 }
@@ -68,7 +66,7 @@ func (c *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byt
 		return nil, err
 	}
 	if !bytes.Equal(ksHash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
-		return nil, das.ErrHashMismatch
+		return nil, arbstate.ErrHashMismatch
 	}
 	return ret, nil
 }
