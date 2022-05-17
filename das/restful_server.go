@@ -43,13 +43,11 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hexEncodedHash := strings.TrimPrefix(requestPath, "/get-by-hash/")
 	hashBytes, err := hex.DecodeString(hexEncodedHash)
 	if err != nil || len(hashBytes) != 32 {
-		fmt.Println("A")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	responseBytes, err := rds.storage.GetByHash(r.Context(), hashBytes)
 	if err != nil {
-		fmt.Println("B")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
