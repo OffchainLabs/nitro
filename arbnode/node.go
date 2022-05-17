@@ -823,6 +823,12 @@ func setUpDataAvailabilityReader(
 		return nil, fmt.Errorf("Unknown data availability mode %v", dataAvailabilityMode)
 	}
 
+	if daReader != nil {
+		daReader, err = das.NewChainFetchSimpleDASReader(daReader, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return daReader, nil
 }
 
