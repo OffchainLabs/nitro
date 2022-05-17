@@ -5,7 +5,7 @@ package das
 
 import (
 	"context"
-	"github.com/dgraph-io/badger"
+	badger "github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"time"
