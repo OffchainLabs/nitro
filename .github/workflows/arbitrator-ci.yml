@@ -126,7 +126,7 @@ jobs:
         run: echo "$HOME/wabt-prefix/bin" >> "$GITHUB_PATH"
 
       - name: Make arbitrator libraries
-        run: make -j wasm-ci-build
+        run: go mod download github.com/dgraph-io/badger; make -j wasm-ci-build
 
       - name: Enable rust instrumentation
         run: |
