@@ -19,7 +19,7 @@ import (
 const LocalServerAddressForTest = "localhost"
 const LocalServerPortForTest = uint64(9877)
 
-func TestRestfulServer(t *testing.T) {
+func disabled_TestRestfulServer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
