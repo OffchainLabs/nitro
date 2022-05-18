@@ -5,7 +5,6 @@ package das
 
 import (
 	"context"
-	"encoding/base32"
 	"fmt"
 	"time"
 
@@ -47,14 +46,14 @@ func NewBigCacheStorageService(bigCacheConfig BigCacheConfig, baseStorageService
 }
 
 func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	ret, err := bcs.bigCache.Get(base32.StdEncoding.EncodeToString(key))
+	ret, err := bcs.bigCache.Get(string(key))
 	if err != nil {
 		ret, err = bcs.baseStorageService.GetByHash(ctx, key)
 		if err != nil {
 			return nil, err
 		}
 
-		err = bcs.bigCache.Set(base32.StdEncoding.EncodeToString(key), ret)
+		err = bcs.bigCache.Set(string(key), ret)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +68,7 @@ func (bcs *BigCacheStorageService) Put(ctx context.Context, value []byte, timeou
 	if err != nil {
 		return err
 	}
-	err = bcs.bigCache.Set(base32.StdEncoding.EncodeToString(crypto.Keccak256(value)), value)
+	err = bcs.bigCache.Set(string(crypto.Keccak256(value)), value)
 	return err
 }
 

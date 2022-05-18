@@ -6,7 +6,6 @@ package das
 import (
 	"context"
 	"crypto/hmac"
-	"encoding/base32"
 	"fmt"
 	"regexp"
 	"time"
@@ -54,7 +53,7 @@ func NewRedisStorageService(redisConfig RedisConfig, baseStorageService StorageS
 		return nil, err
 	}
 	keyIsHex := keyIsHexRegex.Match([]byte(redisConfig.KeyConfig))
-	if keyIsHex {
+	if !keyIsHex {
 		return nil, errors.New("signing key file contents are not 32 bytes of hex")
 	}
 	signingKey := common.HexToHash(redisConfig.KeyConfig)
@@ -76,14 +75,14 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 	mac := hmac.New(sha3.NewLegacyKeccak256, rs.signingKey[:])
 	mac.Write(message)
 	expectHmac := mac.Sum(nil)
-	if hmac.Equal(haveHmac[:], expectHmac) {
-		return message, nil
+	if !hmac.Equal(haveHmac[:], expectHmac) {
+		return nil, errors.New("HMAC signature doesn't match expected value(s)")
 	}
-	return nil, errors.New("HMAC signature doesn't match expected value(s)")
+	return message, nil
 }
 
 func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key []byte) ([]byte, error) {
-	data, err := rs.client.Get(ctx, base32.StdEncoding.EncodeToString(key)).Bytes()
+	data, err := rs.client.Get(ctx, string(key)).Bytes()
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +107,7 @@ func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byt
 			return nil, err
 		}
 
-		err = rs.client.Set(ctx, base32.StdEncoding.EncodeToString(key), rs.signMessage(ret), rs.redisConfig.Expiration).Err()
+		err = rs.client.Set(ctx, string(key), rs.signMessage(ret), rs.redisConfig.Expiration).Err()
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +122,7 @@ func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout ui
 	if err != nil {
 		return err
 	}
-	err = rs.client.Set(ctx, base32.StdEncoding.EncodeToString(crypto.Keccak256(value)), rs.signMessage(value), rs.redisConfig.Expiration).Err()
+	err = rs.client.Set(ctx, string(crypto.Keccak256(value)), rs.signMessage(value), rs.redisConfig.Expiration).Err()
 	return err
 }
 
