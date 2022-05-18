@@ -11,6 +11,8 @@ import (
 
 	"github.com/allegro/bigcache"
 	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type BigCacheConfig struct {
@@ -62,12 +64,12 @@ func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key []byte) ([
 	return ret, err
 }
 
-func (bcs *BigCacheStorageService) PutByHash(ctx context.Context, key []byte, value []byte, timeout uint64) error {
-	err := bcs.baseStorageService.PutByHash(ctx, key, value, timeout)
+func (bcs *BigCacheStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
+	err := bcs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
 	}
-	err = bcs.bigCache.Set(base32.StdEncoding.EncodeToString(key), value)
+	err = bcs.bigCache.Set(base32.StdEncoding.EncodeToString(crypto.Keccak256(value)), value)
 	return err
 }
 

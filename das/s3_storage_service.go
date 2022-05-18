@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
 
@@ -45,11 +47,11 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 	return ret, err
 }
 
-func (s3s *S3StorageService) PutByHash(ctx context.Context, key []byte, value []byte, timeout uint64) error {
+func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
 	expires := time.Unix(time.Now().Unix()+int64(timeout), 0)
 	_, err := s3s.uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket:  aws.String(s3s.s3Config.Bucket),
-		Key:     aws.String(base32.StdEncoding.EncodeToString(key)),
+		Key:     aws.String(base32.StdEncoding.EncodeToString(crypto.Keccak256(value))),
 		Body:    bytes.NewReader(value),
 		Expires: &expires,
 	})

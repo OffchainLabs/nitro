@@ -113,12 +113,12 @@ func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byt
 	return ret, err
 }
 
-func (rs *RedisStorageService) PutByHash(ctx context.Context, key []byte, value []byte, timeout uint64) error {
-	err := rs.baseStorageService.PutByHash(ctx, key, value, timeout)
+func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
+	err := rs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
 	}
-	err = rs.client.Set(ctx, base32.StdEncoding.EncodeToString(key), rs.signMessage(value), rs.redisConfig.Expiration).Err()
+	err = rs.client.Set(ctx, base32.StdEncoding.EncodeToString(crypto.Keccak256(value)), rs.signMessage(value), rs.redisConfig.Expiration).Err()
 	return err
 }
 
