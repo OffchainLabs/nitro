@@ -155,7 +155,7 @@ func startClientRetrieve(args []string) error {
 		return err
 	}
 	ctx := context.Background()
-	message, err := client.Retrieve(ctx, cert)
+	message, err := client.GetByHash(ctx, cert.DataHash[:])
 	if err != nil {
 		return err
 	}
