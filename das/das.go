@@ -28,10 +28,6 @@ type DataAvailabilityService interface {
 	fmt.Stringer
 }
 
-type dataAvailabilityInjectedService interface {
-	retrieve(context.Context, *arbstate.DataAvailabilityCertificate, arbstate.DataAvailabilityServiceReader) ([]byte, error)
-}
-
 type DataAvailabilityMode uint64
 
 const (

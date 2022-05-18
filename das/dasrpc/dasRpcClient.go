@@ -4,14 +4,13 @@
 package dasrpc
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/das"
-
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
@@ -28,11 +27,13 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 	return &DASRPCClient{clnt: clnt}, nil
 }
 
-func (c *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	certBytes := das.Serialize(cert)
+func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	var ret hexutil.Bytes
-	if err := c.clnt.CallContext(ctx, &ret, "das_retrieve", hexutil.Bytes(certBytes)); err != nil {
+	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash)); err != nil {
 		return nil, err
+	}
+	if !bytes.Equal(hash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
+		return nil, arbstate.ErrHashMismatch
 	}
 	return ret, nil
 }
@@ -63,6 +64,9 @@ func (c *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byt
 	var ret hexutil.Bytes
 	if err := c.clnt.CallContext(ctx, &ret, "das_keysetFromHash", hexutil.Bytes(ksHash)); err != nil {
 		return nil, err
+	}
+	if !bytes.Equal(ksHash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
+		return nil, arbstate.ErrHashMismatch
 	}
 	return ret, nil
 }
