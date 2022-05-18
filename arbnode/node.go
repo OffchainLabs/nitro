@@ -557,6 +557,7 @@ type Node struct {
 	BroadcastClients []*broadcastclient.BroadcastClient
 	SeqCoordinator   *SeqCoordinator
 	DataAvailService das.DataAvailabilityService
+	DataAvailReader  arbstate.SimpleDASReader
 }
 
 func createNodeImpl(
@@ -638,11 +639,11 @@ func createNodeImpl(
 		}
 	}
 	if !config.L1Reader.Enable {
-		dataAvailabilityService, err := setUpDataAvailabilityService(ctx, config, nil, nil, daSigner)
+		daReader, err := setUpDataAvailabilityReader(ctx, config, nil, nil)
 		if err != nil {
 			return nil, err
 		}
-		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, dataAvailabilityService}, nil
+		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, nil, daReader}, nil
 	}
 
 	if deployInfo == nil {
@@ -660,7 +661,8 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityService)
+	var dataAvailabilityReader arbstate.SimpleDASReader = dataAvailabilityService
+	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityReader)
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +686,7 @@ func createNodeImpl(
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityService)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader)
 		if err != nil {
 			return nil, err
 		}
@@ -697,7 +699,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, dataAvailabilityService, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, dataAvailabilityReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -723,7 +725,10 @@ func createNodeImpl(
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dataAvailabilityService}, nil
+	if batchPoster != nil {
+		dataAvailabilityService = nil
+	}
+	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dataAvailabilityService, dataAvailabilityReader}, nil
 }
 
 func setUpDataAvailabilityService(
@@ -778,6 +783,53 @@ func setUpDataAvailabilityService(
 		}
 	}
 	return dataAvailabilityService, nil
+}
+
+func setUpDataAvailabilityReader(
+	ctx context.Context,
+	config *Config,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+) (arbstate.SimpleDASReader, error) {
+	dataAvailabilityMode, err := config.DataAvailability.Mode()
+	if err != nil {
+		return nil, err
+	}
+	var daReader arbstate.SimpleDASReader
+	switch dataAvailabilityMode {
+	case das.LocalDiskDataAvailability:
+		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.LocalDiskDASConfig)
+		if err != nil {
+			return nil, err
+		}
+		daReader, err = das.NewLocalDiskDASWithL1Info(
+			ctx,
+			config.DataAvailability.LocalDiskDASConfig,
+			l1client,
+			deployInfo.SequencerInbox,
+			storageService,
+		)
+		if err != nil {
+			return nil, err
+		}
+	case das.AggregatorDataAvailability:
+		daReader, err = dasrpc.NewRPCAggregatorWithL1Info(config.DataAvailability.AggregatorConfig, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+	case das.OnchainDataAvailability:
+		// Batches stored onchain, don't create a DAS.
+	default:
+		return nil, fmt.Errorf("Unknown data availability mode %v", dataAvailabilityMode)
+	}
+
+	if daReader != nil {
+		daReader, err = das.NewChainFetchSimpleDASReader(daReader, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return daReader, nil
 }
 
 type arbNodeLifecycle struct {

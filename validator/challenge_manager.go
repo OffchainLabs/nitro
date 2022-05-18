@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -17,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/pkg/errors"
 )
@@ -68,7 +68,7 @@ type ChallengeManager struct {
 	inboxTracker      InboxTrackerInterface
 	txStreamer        TransactionStreamerInterface
 	blockchain        *core.BlockChain
-	das               das.DataAvailabilityService
+	das               arbstate.SimpleDASReader
 	machineLoader     *NitroMachineLoader
 	targetNumMachines int
 	wasmModuleRoot    common.Hash
@@ -89,7 +89,7 @@ func NewChallengeManager(
 	challengeManagerAddr common.Address,
 	challengeIndex uint64,
 	l2blockChain *core.BlockChain,
-	das das.DataAvailabilityService,
+	das arbstate.SimpleDASReader,
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
