@@ -4,10 +4,17 @@
 package das
 
 import (
-	"encoding/hex"
+	"bytes"
+	"encoding/base32"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type RestfulDasServer struct {
@@ -37,21 +44,51 @@ func NewRestfulDasServerHTTP(address string, port uint64, storageService Storage
 	return ret
 }
 
+type RestfulDasServerResponse struct {
+	Data string `json:"data"`
+}
+
 func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("in ServeHttp")
 	requestPath := r.URL.Path
-	hexEncodedHash := strings.TrimPrefix(requestPath, "/get-by-hash/")
-	hashBytes, err := hex.DecodeString(hexEncodedHash)
-	if err != nil || len(hashBytes) != 32 {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	responseBytes, err := rds.storage.GetByHash(r.Context(), hashBytes)
+	urlEncodedBase32Hash := strings.TrimPrefix(requestPath, "/get-by-hash/")
+	log.Debug("Got request", "requestPath", requestPath)
+
+	// The DataHash bytes are base32 encoded, then URL encoded.
+	// Base64 is not used since the '+' character is confused for
+	// the URL encoding of ' '.
+	base32Hash, err := url.QueryUnescape(urlEncodedBase32Hash)
 	if err != nil {
+		log.Warn("Bad URL encoding", "path", requestPath, "err", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	hashDecoder := base32.NewDecoder(base32.StdEncoding, bytes.NewReader([]byte(base32Hash)))
+	hashBytes, err := ioutil.ReadAll(hashDecoder)
+	if err != nil || len(hashBytes) < 32 {
+		log.Warn("Base32 decoding of hash failed", "base32Hash", base32Hash, "len(hashBytes)", len(hashBytes), "err", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	responseData, err := rds.storage.GetByHash(r.Context(), hashBytes[:32])
+	if err != nil {
+		log.Warn("Unable to find data", "base32Hash", base32Hash, "err", err)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	_, _ = w.Write(responseBytes) // w.Write will deal with errors itself
+
+	encodedResponseData := make([]byte, base64.StdEncoding.EncodedLen(len(responseData)))
+	base64.StdEncoding.Encode(encodedResponseData, responseData)
+	var response RestfulDasServerResponse
+	response.Data = string(encodedResponseData)
+
+	err = json.NewEncoder(w).Encode(response)
+	if err != nil {
+		log.Warn("Failed encoding and writing response", "requestPath", requestPath, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 func (rds *RestfulDasServer) GetServerExitedChan() <-chan interface{} { // channel will close when server terminates

@@ -49,6 +49,8 @@ func startClient(args []string) error {
 		return startClientStore(args[1:])
 	case "retrieve":
 		return startClientRetrieve(args[1:])
+	case "getbyhash":
+		return startClientGetByHash(args[1:])
 	}
 	return fmt.Errorf("datool client '%s' not supported, valid arguments are 'store' and 'retrieve'", args[0])
 }
@@ -102,8 +104,11 @@ func startClientStore(args []string) error {
 	serializedCert := das.Serialize(cert)
 	encodedCert := make([]byte, base64.StdEncoding.EncodedLen(len(serializedCert)))
 	base64.StdEncoding.Encode(encodedCert, serializedCert)
-
 	fmt.Printf("Base64 Encoded Cert: %s\n", string(encodedCert))
+
+	encodedDataHash := make([]byte, base64.StdEncoding.EncodedLen(len(cert.DataHash)))
+	base64.StdEncoding.Encode(encodedDataHash, cert.DataHash[:])
+	fmt.Printf("Base64 Encoded Data Hash: %s\n", string(encodedDataHash))
 
 	return nil
 }
@@ -156,6 +161,54 @@ func startClientRetrieve(args []string) error {
 	}
 	ctx := context.Background()
 	message, err := client.GetByHash(ctx, cert.DataHash[:])
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Message: %s\n", message)
+	return nil
+}
+
+// datool client getbyhash
+
+type ClientGetByHashConfig struct {
+	URL        string                 `koanf:"url"`
+	DataHash   string                 `koanf:"data-hash"`
+	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+}
+
+func parseClientGetByHashConfig(args []string) (*ClientGetByHashConfig, error) {
+	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
+	f.String("url", "", "URL of DAS server to connect to.")
+	f.String("data-hash", "", "Base64 encodeded hash of the message to retrieve.")
+	genericconf.ConfConfigAddOptions("conf", f)
+
+	k, err := util.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var config ClientGetByHashConfig
+	if err := util.EndCommonParse(k, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+func startClientGetByHash(args []string) error {
+	config, err := parseClientGetByHashConfig(args)
+	if err != nil {
+		return err
+	}
+
+	client := das.NewRestfulDasClient(config.URL)
+
+	decodedHash := make([]byte, base64.StdEncoding.DecodedLen(len(config.DataHash)))
+	_, err = base64.StdEncoding.Decode(decodedHash, []byte(config.DataHash))
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	message, err := client.GetByHash(ctx, decodedHash)
 	if err != nil {
 		return err
 	}
