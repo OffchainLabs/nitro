@@ -5,11 +5,13 @@ package das
 
 import (
 	"context"
-	"crypto/subtle"
+	"crypto/hmac"
 	"encoding/base32"
 	"fmt"
 	"regexp"
 	"time"
+
+	"golang.org/x/crypto/sha3"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
@@ -68,11 +70,13 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 	if len(data) < 32 {
 		return nil, errors.New("data is too short to contain message signature")
 	}
-	message := data[32:]
+	message := data[:len(data)-32]
 	var haveHmac common.Hash
-	copy(haveHmac[:], data[:32])
-	expectHmac := crypto.Keccak256Hash(rs.signingKey[:], message)
-	if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
+	copy(haveHmac[:], data[len(data)-32:])
+	mac := hmac.New(sha3.NewLegacyKeccak256, rs.signingKey[:])
+	mac.Write(message)
+	expectHmac := mac.Sum(nil)
+	if hmac.Equal(haveHmac[:], expectHmac) {
 		return message, nil
 	}
 	return nil, errors.New("HMAC signature doesn't match expected value(s)")
@@ -91,8 +95,9 @@ func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key []byte) 
 }
 
 func (rs *RedisStorageService) signMessage(message []byte) []byte {
-	hmac := crypto.Keccak256Hash(rs.signingKey[:], message)
-	return append(hmac[:], message...)
+	mac := hmac.New(sha3.NewLegacyKeccak256, rs.signingKey[:])
+	mac.Write(message)
+	return mac.Sum(message)
 }
 
 func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
