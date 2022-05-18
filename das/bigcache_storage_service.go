@@ -74,7 +74,7 @@ func (bcs *BigCacheStorageService) Put(ctx context.Context, value []byte, timeou
 }
 
 func (bcs *BigCacheStorageService) Sync(ctx context.Context) error {
-	return nil
+	return bcs.baseStorageService.Sync(ctx)
 }
 
 func (bcs *BigCacheStorageService) Close(ctx context.Context) error {

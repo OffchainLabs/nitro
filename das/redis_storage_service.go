@@ -123,7 +123,7 @@ func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout ui
 }
 
 func (rs *RedisStorageService) Sync(ctx context.Context) error {
-	return nil
+	return rs.baseStorageService.Sync(ctx)
 }
 
 func (rs *RedisStorageService) Close(ctx context.Context) error {
