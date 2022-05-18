@@ -13,7 +13,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     address public rollup; // the rollup contract
     IBridge public bridge; // the bridge contract
 
-    mapping(uint256 => bool) public spent; // maps leaf number => if spent
+    mapping(uint256 => bytes32) public spent; // packed spent bitmap
     mapping(bytes32 => bytes32) public roots; // maps root hashes => L2 block hash
 
     struct L2ToL1Context {
@@ -182,8 +182,12 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
         if (roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
 
-        if (spent[index]) revert AlreadySpent(index);
-        spent[index] = true;
+        uint256 spentIndex = index / 256;
+        uint256 bitOffset = index - spentIndex * 256;
+
+        bytes32 replay = spent[spentIndex];
+        if (((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0)) revert AlreadySpent(index);
+        spent[spentIndex] = (replay | bytes32(1 << bitOffset));
 
         return bytes32(index);
     }
