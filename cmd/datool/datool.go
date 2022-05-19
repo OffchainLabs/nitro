@@ -171,14 +171,18 @@ func startClientRetrieve(args []string) error {
 // datool client getbyhash
 
 type ClientGetByHashConfig struct {
-	URL        string                 `koanf:"url"`
+	Host       string                 `koanf:"host"`
+	Port       int                    `koanf:"port"`
+	Protocol   string                 `koanf:"protocol"`
 	DataHash   string                 `koanf:"data-hash"`
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientGetByHashConfig(args []string) (*ClientGetByHashConfig, error) {
 	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
-	f.String("url", "", "URL of DAS server to connect to.")
+	f.String("host", "localhost", "Host (fqdn) of DAS server to connect to.")
+	f.Int("port", 9877, "Port of DAS server to connect to.")
+	f.String("protocol", "http", "Protocol to use to connect to DAS server.")
 	f.String("data-hash", "", "Base64 encodeded hash of the message to retrieve.")
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -200,7 +204,7 @@ func startClientGetByHash(args []string) error {
 		return err
 	}
 
-	client := das.NewRestfulDasClient(config.URL)
+	client := das.NewRestfulDasClient(config.Protocol, config.Host, config.Port)
 
 	decodedHash := make([]byte, base64.StdEncoding.DecodedLen(len(config.DataHash)))
 	_, err = base64.StdEncoding.Decode(decodedHash, []byte(config.DataHash))

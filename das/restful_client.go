@@ -20,10 +20,9 @@ type RestfulDasClient struct {
 	url string
 }
 
-func NewRestfulDasClient(url string) *RestfulDasClient {
-
+func NewRestfulDasClient(protocol string, host string, port int) *RestfulDasClient {
 	return &RestfulDasClient{
-		url: url,
+		url: fmt.Sprintf("%s://%s:%d/get-by-hash/", protocol, host, port),
 	}
 }
 
@@ -31,7 +30,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	base32EncodedHash := make([]byte, base32.StdEncoding.EncodedLen(len(hash)))
 	base32.StdEncoding.Encode(base32EncodedHash, hash)
 
-	res, err := http.Get(c.url + "/get-by-hash/" + url.QueryEscape(string(base32EncodedHash)))
+	res, err := http.Get(c.url + url.QueryEscape(string(base32EncodedHash)))
 	if err != nil {
 		return nil, err
 	}
@@ -43,8 +42,6 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Printf("%s\n", body)
 
 	var response RestfulDasServerResponse
 	err = json.Unmarshal(body, &response)
