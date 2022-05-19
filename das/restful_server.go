@@ -98,7 +98,8 @@ func (rds *RestfulDasServer) GetServerExitedChan() <-chan interface{} { // chann
 	return rds.httpServerExitedChan
 }
 
-func (rds *RestfulDasServer) GetServerError() error {
+func (rds *RestfulDasServer) WaitForShutdown() error {
+	<-rds.httpServerExitedChan
 	return rds.httpServerError
 }
 
