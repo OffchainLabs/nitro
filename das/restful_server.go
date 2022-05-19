@@ -4,16 +4,13 @@
 package das
 
 import (
-	"bytes"
-	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"net/url"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -50,30 +47,23 @@ type RestfulDasServerResponse struct {
 
 func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestPath := r.URL.Path
-	urlEncodedBase32Hash := strings.TrimPrefix(requestPath, "/get-by-hash/")
 	log.Debug("Got request", "requestPath", requestPath)
 
-	// The DataHash bytes are base32 encoded, then URL encoded.
-	// Base64 is not used since the '+' character is confused for
-	// the URL encoding of ' '.
-	base32Hash, err := url.QueryUnescape(urlEncodedBase32Hash)
+	hashBytes, err := hexutil.Decode(strings.TrimPrefix(requestPath, "/get-by-hash/"))
 	if err != nil {
-		log.Warn("Bad URL encoding", "path", requestPath, "err", err)
+		log.Warn("Failed to decode hex-encoded hash", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
-	hashDecoder := base32.NewDecoder(base32.StdEncoding, bytes.NewReader([]byte(base32Hash)))
-	hashBytes, err := ioutil.ReadAll(hashDecoder)
-	if err != nil || len(hashBytes) < 32 {
-		log.Warn("Base32 decoding of hash failed", "base32Hash", base32Hash, "len(hashBytes)", len(hashBytes), "err", err)
+	if len(hashBytes) < 32 {
+		log.Warn("Decoded hash was too short", "path", requestPath, "len(hashBytes)", len(hashBytes))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	responseData, err := rds.storage.GetByHash(r.Context(), hashBytes[:32])
 	if err != nil {
-		log.Warn("Unable to find data", "base32Hash", base32Hash, "err", err)
+		log.Warn("Unable to find data", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -85,7 +75,7 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	err = json.NewEncoder(w).Encode(response)
 	if err != nil {
-		log.Warn("Failed encoding and writing response", "requestPath", requestPath, "err", err)
+		log.Warn("Failed encoding and writing response", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

@@ -6,13 +6,13 @@ package das
 import (
 	"bytes"
 	"context"
-	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // Implements SimpleDASReader
@@ -27,10 +27,7 @@ func NewRestfulDasClient(protocol string, host string, port int) *RestfulDasClie
 }
 
 func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	base32EncodedHash := make([]byte, base32.StdEncoding.EncodedLen(len(hash)))
-	base32.StdEncoding.Encode(base32EncodedHash, hash)
-
-	res, err := http.Get(c.url + url.QueryEscape(string(base32EncodedHash)))
+	res, err := http.Get(c.url + hexutil.Encode(hash))
 	if err != nil {
 		return nil, err
 	}
