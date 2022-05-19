@@ -92,11 +92,11 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	err = json.NewEncoder(w).Encode(response)
 	if err != nil {
-		w.Header()[cacheControlKey] = []string{cacheControlValue}
 		log.Warn("Failed encoding and writing response", "requestPath", requestPath, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	w.Header()[cacheControlKey] = []string{cacheControlValue}
 }
 
 func (rds *RestfulDasServer) GetServerExitedChan() <-chan interface{} { // channel will close when server terminates
