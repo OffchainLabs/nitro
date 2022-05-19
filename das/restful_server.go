@@ -8,6 +8,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -37,7 +38,9 @@ func NewRestfulDasServerHTTP(address string, port uint64, storageService Storage
 
 	go func() {
 		err := ret.server.ListenAndServe()
-		ret.httpServerError = err
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			ret.httpServerError = err
+		}
 		close(ret.httpServerExitedChan)
 	}()
 
@@ -104,5 +107,6 @@ func (rds *RestfulDasServer) Shutdown() error {
 	if err != nil {
 		return err
 	}
+	<-rds.httpServerExitedChan
 	return rds.httpServerError
 }
