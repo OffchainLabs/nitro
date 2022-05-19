@@ -6,6 +6,7 @@ package das
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -34,7 +35,9 @@ func NewRestfulDasServerHTTP(address string, port uint64, storageService Storage
 
 	go func() {
 		err := ret.server.ListenAndServe()
-		ret.httpServerError = err
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			ret.httpServerError = err
+		}
 		close(ret.httpServerExitedChan)
 	}()
 
@@ -44,6 +47,10 @@ func NewRestfulDasServerHTTP(address string, port uint64, storageService Storage
 type RestfulDasServerResponse struct {
 	Data string `json:"data"`
 }
+
+var cacheControlKey = http.CanonicalHeaderKey("cache-control")
+
+const cacheControlValue = "public, max-age=2419200, immutable" // cache for up to 28 days
 
 func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestPath := r.URL.Path
@@ -79,13 +86,15 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	w.Header()[cacheControlKey] = []string{cacheControlValue}
 }
 
 func (rds *RestfulDasServer) GetServerExitedChan() <-chan interface{} { // channel will close when server terminates
 	return rds.httpServerExitedChan
 }
 
-func (rds *RestfulDasServer) GetServerError() error {
+func (rds *RestfulDasServer) WaitForShutdown() error {
+	<-rds.httpServerExitedChan
 	return rds.httpServerError
 }
 
@@ -94,5 +103,6 @@ func (rds *RestfulDasServer) Shutdown() error {
 	if err != nil {
 		return err
 	}
+	<-rds.httpServerExitedChan
 	return rds.httpServerError
 }
