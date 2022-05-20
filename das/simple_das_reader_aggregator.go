@@ -7,47 +7,69 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	flag "github.com/spf13/pflag"
 )
 
 // Most of the time we will use the SimpleDASReaderAggregator only to  aggregate
 // RestfulDasClients, so the configuration and factory function are given more
 // specific names.
 type RestfulClientAggregatorConfig struct {
-	urls []string `koanf:"urls"`
-	//	policy string   `koanf:"policy"`
+	Urls                               []string                           `koanf:"urls"`
+	Strategy                           string                             `koanf:"strategy"`
+	StrategyUpdateInterval             time.Duration                      `koanf:"strategy-update-interval"`
+	WaitBeforeTryNext                  time.Duration                      `koanf:"wait-before-try-next"`
+	MaxPerEndpointStats                int                                `koanf:"max-per-endpoint-stats"`
+	SimpleExploreExploitStrategyConfig SimpleExploreExploitStrategyConfig `koanf:"simple-explore-exploit-strategy"`
 }
 
-/*
-type restfulAggregatorPolicy int
+type SimpleExploreExploitStrategyConfig struct {
+	exploreIterations int `koanf:"explore-iterations"`
+	exploitIterations int `koanf:"exploit-iterations"`
+}
 
-const (
-	sequentialPolicy restfulAggregatorPolicy = iota
-	broadcastPolicy
-	expandingBroadcastPolicy
-	pairwise
-)
-*/
+func RestfulClientAggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.StringSlice("urls", []string{}, "List of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints.")
+	f.String("strategy", "simple-explore-exploit", "Strategy to use to determine order and parallelism of calling REST endpoint URLs. Valid options are 'simple-explore-exploit'")
+	f.Duration("strategy-update-interval", 10*time.Second, "How frequently to update the strategy with endpoint latency and error rate data.")
+	f.Duration("wait-before-try-next", 2*time.Second, "Time to wait until trying the next set of REST endpoints while waiting for a response. The next set of REST endpoints is determined by the strategy selected.")
+	f.Int("max-per-endpoint-stats", 20, "Number of stats entries (latency and success rate) to keep for each REST endpoint.")
+	SimpleExploreExploitStrategyConfigAddOptions(prefix+"simple-explore-exploit-strategy", f)
+}
 
-const maxStatsHistory = 20
+func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Int("explore-iterations", 20, "Number of consecutive GetByHash calls to the aggregator where each call will cause it to randomly select from REST endpoints until one returns successfully.")
+	f.Int("exploit-iterations", 1000, "Number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate.")
+}
 
 func NewRestfulClientAggregator(config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
-	var a SimpleDASReaderAggregator
-	for _, url := range config.urls {
+	a := SimpleDASReaderAggregator{config: config}
+	for _, url := range config.Urls {
 		reader, err := NewRestfulDasClientFromURL(url)
 		if err != nil {
 			return nil, err
 		}
 		a.readers = append(a.readers, reader)
-		a.stats[reader] = make([]readerStat, 0, maxStatsHistory)
+		a.stats[reader] = make([]readerStat, 0, config.MaxPerEndpointStats)
 	}
-	a.statMessages = make(chan readerStatMessage, len(config.urls)*2)
-	a.strategy = &simpleExploreExploitStrategy{}
+	a.statMessages = make(chan readerStatMessage, len(config.Urls)*2)
+
+	switch strings.ToLower(config.Strategy) {
+	case "simple-explore-exploit":
+		a.strategy = &simpleExploreExploitStrategy{
+			exploreIterations: uint32(config.SimpleExploreExploitStrategyConfig.exploreIterations),
+			exploitIterations: uint32(config.SimpleExploreExploitStrategyConfig.exploitIterations),
+		}
+	default:
+		return nil, fmt.Errorf("Unknown RestfulClientAggregator strategy '%s', use --help to see available strategies.", config.Strategy)
+	}
+	a.strategy.update(a.readers, a.stats)
 	return &a, nil
 }
 
@@ -71,33 +93,6 @@ func (s *readerStats) successRatioWeightedMeanLatency() time.Duration {
 	return time.Duration((float64(totalLatency) * totalAttempts) / successes)
 }
 
-/*
-func (s *readerStats) meanLatency() (time.Duration, error) {
-	successes := int64(0)
-	var total time.Duration
-	for _, stat := range *s {
-		if stat.success {
-			successes++
-			total += stat.latency
-		}
-	}
-	if successes == 0 {
-		return 0, errors.New("No readers have succeeded.")
-	}
-	return time.Duration(int64(total) / successes), nil
-}
-
-func (s *readerStats) successes() int {
-	successes := 0
-	for _, stat := range *s {
-		if stat.success {
-			successes++
-		}
-	}
-	return successes
-}
-*/
-
 type readerStat struct {
 	latency time.Duration
 	success bool
@@ -110,6 +105,10 @@ type readerStatMessage struct {
 
 type SimpleDASReaderAggregator struct {
 	stopwaiter.StopWaiter
+
+	config *RestfulClientAggregatorConfig
+
+	// readers and stats are only to be updated by the stats goroutine
 	readers []arbstate.SimpleDASReader
 	stats   map[arbstate.SimpleDASReader]readerStats
 
@@ -127,16 +126,23 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) 
 	results := make(chan dataErrorPair, len(a.readers))
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	si := a.strategy.newInstance()
-	for readers := si.nextReaders(); len(readers) != 0 && subCtx.Err() == nil; readers = si.nextReaders() {
-		for _, reader := range readers {
-			go func(reader arbstate.SimpleDASReader) {
-				data, err := a.tryGetByHash(subCtx, hash, reader)
-				results <- dataErrorPair{data, err}
-			}(reader)
+
+	go func() {
+		si := a.strategy.newInstance()
+		for readers := si.nextReaders(); len(readers) != 0 && subCtx.Err() == nil; readers = si.nextReaders() {
+			for _, reader := range readers {
+				go func(reader arbstate.SimpleDASReader) {
+					data, err := a.tryGetByHash(subCtx, hash, reader)
+					results <- dataErrorPair{data, err}
+				}(reader)
+			}
+			select {
+			case <-subCtx.Done():
+				return
+			case <-time.After(a.config.WaitBeforeTryNext):
+			}
 		}
-		time.Sleep(time.Second * 5) // TODO make this configurable
-	}
+	}()
 
 	var errorCollection []error
 	for i := 0; i < len(a.readers); i++ {
@@ -185,13 +191,21 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 	a.StopWaiter.Start(ctx)
 
 	a.StopWaiter.LaunchThread(func(ctx context.Context) {
-		select {
-		case <-ctx.Done():
-		case stat := <-a.statMessages:
-			a.stats[stat.reader] = append(a.stats[stat.reader], stat.readerStat)
-			statsLen := len(a.stats[stat.reader])
-			if statsLen > maxStatsHistory {
-				a.stats[stat.reader] = a.stats[stat.reader][statsLen-maxStatsHistory:]
+		updateStrategyTicker := time.NewTicker(a.config.StrategyUpdateInterval)
+		defer updateStrategyTicker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+			case stat := <-a.statMessages:
+				a.stats[stat.reader] = append(a.stats[stat.reader], stat.readerStat)
+				statsLen := len(a.stats[stat.reader])
+				if statsLen > a.config.MaxPerEndpointStats {
+					a.stats[stat.reader] = a.stats[stat.reader][statsLen-a.config.MaxPerEndpointStats:]
+				}
+			case <-updateStrategyTicker.C:
+				// Strategy update happens in same goroutine as updates to the stats
+				// to avoid needing extra synchronization.
+				a.strategy.update(a.readers, a.stats)
 			}
 		}
 	})

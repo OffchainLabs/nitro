@@ -17,7 +17,7 @@ var ErrNoReadersResponded = errors.New("No DAS readers responded successfully.")
 
 type aggregatorStrategy interface {
 	newInstance() aggregatorStrategyInstance
-	update(*SimpleDASReaderAggregator)
+	update([]arbstate.SimpleDASReader, map[arbstate.SimpleDASReader]readerStats)
 }
 
 type aggregatorStrategyInstance interface {
@@ -57,7 +57,6 @@ func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance 
 			a, b := s.stats[readers[i]], s.stats[readers[j]]
 			return a.successRatioWeightedMeanLatency() < b.successRatioWeightedMeanLatency()
 		})
-
 	}
 
 	for i, maxTake := 0, 1; i < len(readers); i, maxTake = i+1, maxTake*2 {
@@ -71,13 +70,13 @@ func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance 
 	return &simpleExploreExploitStrategyInstance{readerSets: readerSets}
 }
 
-func (s *simpleExploreExploitStrategy) update(a *SimpleDASReaderAggregator) {
+func (s *simpleExploreExploitStrategy) update(readers []arbstate.SimpleDASReader, stats map[arbstate.SimpleDASReader]readerStats) {
 	s.Lock()
 	defer s.Unlock()
 
-	copy(s.readers, a.readers)
+	copy(s.readers, readers)
 	s.stats = make(map[arbstate.SimpleDASReader]readerStats)
-	for k, v := range a.stats {
+	for k, v := range stats {
 		s.stats[k] = v
 	}
 }
