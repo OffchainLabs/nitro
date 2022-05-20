@@ -2,11 +2,14 @@ package das
 
 import (
 	"context"
+	"errors"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"time"
 )
 
 func SyncStorageServiceFromChain(
@@ -50,8 +53,13 @@ func SyncStorageServiceFromChain(
 				if _, err = arbstate.RecoverPayloadFromDasBatch(ctx, data, dataSource, preimages); err != nil {
 					return err
 				}
-				for _, contents := range preimages {
-					if err := syncTo.Put(ctx, contents, expirationTime); err != nil {
+				for hash, contents := range preimages {
+					_, err := syncTo.GetByHash(ctx, hash.Bytes())
+					if errors.Is(err, ErrNotFound) {
+						if err := syncTo.Put(ctx, contents, arbmath.SaturatingUAdd(uint64(time.Now().Unix()), expirationTime); err != nil {
+							return err
+						}
+					} else if err != nil {
 						return err
 					}
 				}
@@ -61,6 +69,9 @@ func SyncStorageServiceFromChain(
 					return syncTo.Sync(ctx)
 				}
 				latestL1BlockNumber, err = l1client.BlockNumber(ctx)
+				if err != nil {
+					return err
+				}
 			}
 		case <-ctx.Done():
 			return ctx.Err()
