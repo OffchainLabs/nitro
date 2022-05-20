@@ -4,8 +4,10 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"time"
@@ -18,6 +20,9 @@ type FallbackStorageService struct {
 	ignoreRetentionWriteErrors bool
 }
 
+// This is a StorageService that relies on a "primary" StorageService and a "backup". Puts go to the primary.
+// GetByHashes are tried first in the primary. If they aren't found in the primary, the backup is tried, and
+//     a successful GetByHash result from the backup is Put into the primary.
 func NewFallbackStorageService(
 	primary StorageService,
 	backup arbstate.SimpleDASReader,
@@ -39,11 +44,11 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]b
 		if err != nil {
 			return nil, err
 		}
-
-		// write data to the primary, ignore errors because nothing breaks if this doesn't succeed
-		putErr := f.StorageService.Put(ctx, data, arbmath.SaturatingUAdd(uint64(time.Now().Unix()), f.backupRetentionSeconds))
-		if putErr != nil && !f.ignoreRetentionWriteErrors {
-			return nil, err
+		if bytes.Equal(key, crypto.Keccak256(data)) {
+			putErr := f.StorageService.Put(ctx, data, arbmath.SaturatingUAdd(uint64(time.Now().Unix()), f.backupRetentionSeconds))
+			if putErr != nil && !f.ignoreRetentionWriteErrors {
+				return nil, err
+			}
 		}
 	}
 	return data, err
