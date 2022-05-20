@@ -7,9 +7,10 @@ import (
 	"context"
 	"encoding/base32"
 	"errors"
-	"github.com/ethereum/go-ethereum/crypto"
 	"os"
 	"sync"
+
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 var ErrNotFound = errors.New("Not found")
