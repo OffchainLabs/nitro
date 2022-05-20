@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -49,7 +50,11 @@ func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet
 }
 
 func NewRestfulClientAggregator(config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
-	a := SimpleDASReaderAggregator{config: config}
+	a := SimpleDASReaderAggregator{
+		config: config,
+		stats:  make(map[arbstate.SimpleDASReader]readerStats),
+	}
+
 	for _, url := range config.Urls {
 		reader, err := NewRestfulDasClientFromURL(url)
 		if err != nil {
@@ -66,6 +71,8 @@ func NewRestfulClientAggregator(config *RestfulClientAggregatorConfig) (*SimpleD
 			exploreIterations: uint32(config.SimpleExploreExploitStrategyConfig.exploreIterations),
 			exploitIterations: uint32(config.SimpleExploreExploitStrategyConfig.exploitIterations),
 		}
+	case "testing-sequential":
+		a.strategy = &testingSequentialStrategy{}
 	default:
 		return nil, fmt.Errorf("Unknown RestfulClientAggregator strategy '%s', use --help to see available strategies.", config.Strategy)
 	}
@@ -132,16 +139,27 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) 
 	go func() {
 		si := a.strategy.newInstance()
 		for readers := si.nextReaders(); len(readers) != 0 && subCtx.Err() == nil; readers = si.nextReaders() {
+			wg := sync.WaitGroup{}
+			waitChan := make(chan interface{})
 			for _, reader := range readers {
+				wg.Add(1)
 				go func(reader arbstate.SimpleDASReader) {
+					defer wg.Done()
 					data, err := a.tryGetByHash(subCtx, hash, reader)
 					results <- dataErrorPair{data, err}
 				}(reader)
 			}
+			go func() {
+				wg.Wait()
+				close(waitChan)
+			}()
 			select {
 			case <-subCtx.Done():
 				return
 			case <-time.After(a.config.WaitBeforeTryNext):
+			case <-waitChan:
+				// Yield to give the collector a chance to run in case a request succeeded
+				time.Sleep(10 * time.Millisecond)
 			}
 		}
 	}()

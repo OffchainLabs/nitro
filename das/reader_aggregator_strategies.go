@@ -20,22 +20,32 @@ type aggregatorStrategy interface {
 	update([]arbstate.SimpleDASReader, map[arbstate.SimpleDASReader]readerStats)
 }
 
-type aggregatorStrategyInstance interface {
-	nextReaders() []arbstate.SimpleDASReader
-}
-
-type simpleExploreExploitStrategy struct {
-	iterations        uint32
-	exploreIterations uint32
-	exploitIterations uint32
-
+type abstractAggregatorStrategy struct {
 	sync.RWMutex
 	readers []arbstate.SimpleDASReader
 	stats   map[arbstate.SimpleDASReader]readerStats
 }
 
-type simpleExploreExploitStrategyInstance struct {
-	readerSets [][]arbstate.SimpleDASReader
+func (s *abstractAggregatorStrategy) update(readers []arbstate.SimpleDASReader, stats map[arbstate.SimpleDASReader]readerStats) {
+	s.Lock()
+	defer s.Unlock()
+
+	s.readers = make([]arbstate.SimpleDASReader, len(readers))
+	copy(s.readers, readers)
+
+	s.stats = make(map[arbstate.SimpleDASReader]readerStats)
+	for k, v := range stats {
+		s.stats[k] = v
+	}
+}
+
+// Exponentially growing Explore Exploit Strategy
+type simpleExploreExploitStrategy struct {
+	iterations        uint32
+	exploreIterations uint32
+	exploitIterations uint32
+
+	abstractAggregatorStrategy
 }
 
 func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance {
@@ -67,22 +77,36 @@ func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance 
 		readerSets = append(readerSets, readerSet)
 	}
 
-	return &simpleExploreExploitStrategyInstance{readerSets: readerSets}
+	return &basicStrategyInstance{readerSets: readerSets}
 }
 
-func (s *simpleExploreExploitStrategy) update(readers []arbstate.SimpleDASReader, stats map[arbstate.SimpleDASReader]readerStats) {
-	s.Lock()
-	defer s.Unlock()
+// Sequential Strategy for Testing
+type testingSequentialStrategy struct {
+	abstractAggregatorStrategy
+}
 
-	s.readers = make([]arbstate.SimpleDASReader, len(readers))
-	copy(s.readers, readers)
-	s.stats = make(map[arbstate.SimpleDASReader]readerStats)
-	for k, v := range stats {
-		s.stats[k] = v
+func (s *testingSequentialStrategy) newInstance() aggregatorStrategyInstance {
+	s.RLock()
+	defer s.RUnlock()
+
+	si := basicStrategyInstance{}
+	for _, reader := range s.readers {
+		si.readerSets = append(si.readerSets, []arbstate.SimpleDASReader{reader})
 	}
+
+	return &si
 }
 
-func (si *simpleExploreExploitStrategyInstance) nextReaders() []arbstate.SimpleDASReader {
+// Instance of a strategy that returns readers in an order according to the strategy
+type aggregatorStrategyInstance interface {
+	nextReaders() []arbstate.SimpleDASReader
+}
+
+type basicStrategyInstance struct {
+	readerSets [][]arbstate.SimpleDASReader
+}
+
+func (si *basicStrategyInstance) nextReaders() []arbstate.SimpleDASReader {
 	if len(si.readerSets) == 0 {
 		return nil
 	}
