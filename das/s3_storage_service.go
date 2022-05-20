@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -19,10 +20,18 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
 
+type S3Uploader interface {
+	Upload(ctx context.Context, input *s3.PutObjectInput, opts ...func(*manager.Uploader)) (*manager.UploadOutput, error)
+}
+
+type S3Downloader interface {
+	Download(ctx context.Context, w io.WriterAt, input *s3.GetObjectInput, options ...func(*manager.Downloader)) (n int64, err error)
+}
+
 type S3StorageService struct {
 	s3Config   genericconf.S3Config
-	uploader   *manager.Uploader
-	downloader *manager.Downloader
+	uploader   S3Uploader
+	downloader S3Downloader
 }
 
 func NewS3StorageService(s3Config genericconf.S3Config) (StorageService, error) {
@@ -37,13 +46,13 @@ func NewS3StorageService(s3Config genericconf.S3Config) (StorageService, error) 
 }
 
 func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	var ret []byte
-	_, err := s3s.downloader.Download(ctx, manager.NewWriteAtBuffer(ret), &s3.GetObjectInput{
+	buf := manager.NewWriteAtBuffer([]byte{})
+	_, err := s3s.downloader.Download(ctx, buf, &s3.GetObjectInput{
 		Bucket: aws.String(s3s.s3Config.Bucket),
 		Key:    aws.String(string(key)),
 	})
 
-	return ret, err
+	return buf.Bytes(), err
 }
 
 func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
