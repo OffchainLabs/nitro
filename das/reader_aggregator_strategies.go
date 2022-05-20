@@ -45,7 +45,7 @@ func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance 
 	s.RLock()
 	defer s.RUnlock()
 
-	var readers []arbstate.SimpleDASReader
+	readers := make([]arbstate.SimpleDASReader, len(s.readers))
 	copy(readers, s.readers)
 
 	if iterations%(s.exploreIterations+s.exploitIterations) < s.exploreIterations {
@@ -59,7 +59,7 @@ func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance 
 		})
 	}
 
-	for i, maxTake := 0, 1; i < len(readers); i, maxTake = i+1, maxTake*2 {
+	for i, maxTake := 0, 1; i < len(readers); maxTake = maxTake * 2 {
 		readerSet := make([]arbstate.SimpleDASReader, 0, maxTake)
 		for taken := 0; taken < maxTake && i < len(readers); i, taken = i+1, taken+1 {
 			readerSet = append(readerSet, readers[i])
@@ -74,6 +74,7 @@ func (s *simpleExploreExploitStrategy) update(readers []arbstate.SimpleDASReader
 	s.Lock()
 	defer s.Unlock()
 
+	s.readers = make([]arbstate.SimpleDASReader, len(readers))
 	copy(s.readers, readers)
 	s.stats = make(map[arbstate.SimpleDASReader]readerStats)
 	for k, v := range stats {

@@ -44,8 +44,8 @@ func RestfulClientAggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int("explore-iterations", 20, "Number of consecutive GetByHash calls to the aggregator where each call will cause it to randomly select from REST endpoints until one returns successfully.")
-	f.Int("exploit-iterations", 1000, "Number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate.")
+	f.Int("explore-iterations", 20, "Number of consecutive GetByHash calls to the aggregator where each call will cause it to randomly select from REST endpoints until one returns successfully, before switching to exploit mode.")
+	f.Int("exploit-iterations", 1000, "Number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode.")
 }
 
 func NewRestfulClientAggregator(config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
@@ -90,7 +90,9 @@ func (s *readerStats) successRatioWeightedMeanLatency() time.Duration {
 	if successes == 0 {
 		return time.Duration(^(uint64(1) << 63)) // max int64
 	}
-	return time.Duration((float64(totalLatency) * totalAttempts) / successes)
+	avgLatency := float64(totalLatency) / successes
+	successRatio := successes / totalAttempts
+	return time.Duration(avgLatency / successRatio)
 }
 
 type readerStat struct {
