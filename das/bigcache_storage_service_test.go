@@ -42,7 +42,7 @@ func TestBigCacheStorageService(t *testing.T) {
 		t.Fatal(val, val1)
 	}
 
-	//For Case where the value is present in the base storage but not present in the cache.
+	// For Case where the value is present in the base storage but not present in the cache.
 	val2 := []byte("The Second value")
 	val2CorrectKey := crypto.Keccak256(val2)
 	val2IncorrectKey := crypto.Keccak256(append(val2, 0))
@@ -60,7 +60,7 @@ func TestBigCacheStorageService(t *testing.T) {
 		t.Fatal(val, val2)
 	}
 
-	//Closes the base storage properly.
+	// Closes the base storage properly.
 	err = bigCacheService.Close(ctx)
 	Require(t, err)
 	_, err = baseStorageService.GetByHash(ctx, val1CorrectKey)

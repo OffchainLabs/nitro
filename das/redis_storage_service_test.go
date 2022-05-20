@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	
+
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -52,7 +52,7 @@ func TestRedisStorageService(t *testing.T) {
 		t.Fatal(val, val1)
 	}
 
-	//For Case where the value is present in the base storage but not present in the cache.
+	// For Case where the value is present in the base storage but not present in the cache.
 	val2 := []byte("The Second value")
 	val2CorrectKey := crypto.Keccak256(val2)
 	val2IncorrectKey := crypto.Keccak256(append(val2, 0))
@@ -76,7 +76,7 @@ func TestRedisStorageService(t *testing.T) {
 	if !errors.Is(err, ErrClosed) {
 		t.Fatal(err)
 	}
-	//Closes the base storage properly.
+	// Closes the base storage properly.
 	_, err = baseStorageService.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrClosed) {
 		t.Fatal(err)
