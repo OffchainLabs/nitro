@@ -19,6 +19,7 @@ type FallbackStorageService struct {
 	backup                     arbstate.SimpleDASReader
 	backupRetentionSeconds     uint64
 	ignoreRetentionWriteErrors bool
+	preventRecursiveGets       bool
 	currentlyFetching          map[[32]byte]bool
 	currentlyFetchingMutex     sync.RWMutex
 }
@@ -31,37 +32,45 @@ func NewFallbackStorageService(
 	backup arbstate.SimpleDASReader,
 	backupRetentionSeconds uint64, // how long to retain data that we copy in from the backup (MaxUint64 means forever)
 	ignoreRetentionWriteErrors bool, // if true, don't return error if write of retention data to primary fails
+	preventRecursiveGets bool, // if true, return NotFound on simultaneous calls to Gets that miss in primary (prevents infinite recursion)
 ) *FallbackStorageService {
 	return &FallbackStorageService{
 		primary,
 		backup,
 		backupRetentionSeconds,
 		ignoreRetentionWriteErrors,
+		preventRecursiveGets,
 		make(map[[32]byte]bool),
 		sync.RWMutex{},
 	}
 }
 
 func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	f.currentlyFetchingMutex.RLock()
 	var key32 [32]byte
-	copy(key32[:], key)
-	if f.currentlyFetching[key32] {
-		// This is a recursive call, so return not-found
+	if f.preventRecursiveGets {
+		f.currentlyFetchingMutex.RLock()
+		copy(key32[:], key)
+		if f.currentlyFetching[key32] {
+			// This is a recursive call, so return not-found
+			f.currentlyFetchingMutex.RUnlock()
+			return nil, ErrNotFound
+		}
 		f.currentlyFetchingMutex.RUnlock()
-		return nil, ErrNotFound
 	}
-	f.currentlyFetchingMutex.RUnlock()
 
 	data, err := f.StorageService.GetByHash(ctx, key)
 	if errors.Is(err, ErrNotFound) {
-		f.currentlyFetchingMutex.Lock()
-		f.currentlyFetching[key32] = true
-		f.currentlyFetchingMutex.Unlock()
+		if f.preventRecursiveGets {
+			f.currentlyFetchingMutex.Lock()
+			f.currentlyFetching[key32] = true
+			f.currentlyFetchingMutex.Unlock()
+		}
 		data, err = f.backup.GetByHash(ctx, key)
-		f.currentlyFetchingMutex.Lock()
-		delete(f.currentlyFetching, key32)
-		f.currentlyFetchingMutex.Unlock()
+		if f.preventRecursiveGets {
+			f.currentlyFetchingMutex.Lock()
+			delete(f.currentlyFetching, key32)
+			f.currentlyFetchingMutex.Unlock()
+		}
 		if err != nil {
 			return nil, err
 		}
