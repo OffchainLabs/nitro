@@ -1,0 +1,48 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+package das
+
+import (
+	"bytes"
+	"context"
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/crypto"
+	"testing"
+)
+
+func TestFallbackStorageService(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	val1 := []byte("First value")
+	hash1 := crypto.Keccak256(val1)
+	val2 := []byte("Second value")
+	hash2 := crypto.Keccak256(val2)
+
+	primary := NewMemoryBackedStorageService(ctx)
+	err := primary.Put(ctx, val1, math.MaxUint64)
+	Require(t, err)
+	fallback := NewMemoryBackedStorageService(ctx)
+	err = fallback.Put(ctx, val2, math.MaxUint64)
+	Require(t, err)
+
+	fss := NewFallbackStorageService(primary, fallback, 60*60, true)
+
+	res1, err := fss.GetByHash(ctx, hash1)
+	Require(t, err)
+	if !bytes.Equal(res1, val1) {
+		t.Fatal()
+	}
+	res2, err := fss.GetByHash(ctx, hash2)
+	Require(t, err)
+	if !bytes.Equal(res2, val2) {
+		t.Fatal()
+	}
+
+	res2, err = primary.GetByHash(ctx, hash2)
+	Require(t, err)
+	if !bytes.Equal(res2, val2) {
+		t.Fatal()
+	}
+}
