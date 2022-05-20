@@ -6,6 +6,7 @@ package das
 import (
 	"bytes"
 	"context"
+	"errors"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 	"testing"
@@ -44,5 +45,25 @@ func TestFallbackStorageService(t *testing.T) {
 	Require(t, err)
 	if !bytes.Equal(res2, val2) {
 		t.Fatal()
+	}
+}
+
+func TestFallbackStorageServiceRecursive(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	val1 := []byte("First value")
+	hash1 := crypto.Keccak256(val1)
+
+	ss := NewMemoryBackedStorageService(ctx)
+	fss := NewFallbackStorageService(ss, ss, 60*60, true)
+
+	// artificially make fss recursive
+	fss.backup = fss
+
+	// try a recursive read of a non-existent item -- should give ErrNotFound
+	_, err := fss.GetByHash(ctx, hash1)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatal(err)
 	}
 }
