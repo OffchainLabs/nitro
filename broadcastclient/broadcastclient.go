@@ -208,7 +208,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					log.Debug("received broadcast with no messages populated", "length", len(msg))
 				}
 
-				if res.Version == 1 {
+				if res.Version == 1 || res.Version == 2 {
 					if len(res.Messages) > 0 {
 						messages := []arbstate.MessageWithMetadata{}
 						for _, message := range res.Messages {
