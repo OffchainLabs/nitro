@@ -60,13 +60,17 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]b
 
 	data, err := f.StorageService.GetByHash(ctx, key)
 	if errors.Is(err, ErrNotFound) {
+		doDelete := false
 		if f.preventRecursiveGets {
 			f.currentlyFetchingMutex.Lock()
-			f.currentlyFetching[key32] = true
+			if !f.currentlyFetching[key32] {
+				f.currentlyFetching[key32] = true
+				doDelete = true
+			}
 			f.currentlyFetchingMutex.Unlock()
 		}
 		data, err = f.backup.GetByHash(ctx, key)
-		if f.preventRecursiveGets {
+		if doDelete {
 			f.currentlyFetchingMutex.Lock()
 			delete(f.currentlyFetching, key32)
 			f.currentlyFetchingMutex.Unlock()
