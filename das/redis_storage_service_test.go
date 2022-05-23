@@ -78,6 +78,7 @@ func TestRedisStorageService(t *testing.T) {
 			time.Hour,
 			"b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
 		}, emptyBaseStorageService)
+	Require(t, err)
 	val, err = redisServiceWithEmptyBaseStorage.GetByHash(ctx, val1CorrectKey)
 	Require(t, err)
 	if !bytes.Equal(val, val1) {
