@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/bits"
+	"runtime/debug"
+
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"math/bits"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -321,6 +323,8 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 func (a *Aggregator) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
 	if !bytes.Equal(ksHash, a.keysetHash[:]) {
+		stack := debug.Stack()
+		fmt.Println("das.Aggregator.KeysetFromHash error stack:", string(stack))
 		return nil, ErrDasKeysetNotFound
 	}
 	return a.keysetBytes, nil
