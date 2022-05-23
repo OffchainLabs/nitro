@@ -52,7 +52,7 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".key-dir", "", fmt.Sprintf("The directory to read the bls keypair ('%s' and '%s') from", DefaultPubKeyFilename, DefaultPrivKeyFilename))
 	f.String(prefix+".priv-key", "", "The base64 BLS private key to use for signing DAS certificates")
 	f.String(prefix+".data-dir", "", "The directory to use as the DAS file-based database")
-	f.Bool(prefix+"discard-after-timeout", false, "Discard data after timeout in DAS")
+	f.Bool(prefix+".discard-after-timeout", false, "Discard data after timeout in DAS")
 	genericconf.S3ConfigAddOptions(prefix+".s3", f)
 	RedisConfigAddOptions(prefix+".redis", f)
 	BigCacheConfigAddOptions(prefix+".big-cache", f)
