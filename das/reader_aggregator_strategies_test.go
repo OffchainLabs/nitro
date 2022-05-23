@@ -25,27 +25,27 @@ func TestDAS_SimpleExploreExploit(t *testing.T) {
 	readers := []arbstate.SimpleDASReader{&dummyReader{0}, &dummyReader{1}, &dummyReader{2}, &dummyReader{3}, &dummyReader{4}, &dummyReader{5}}
 	stats := make(map[arbstate.SimpleDASReader]readerStats)
 	stats[readers[0]] = []readerStat{ // weighted avg 10s
-		readerStat{10 * time.Second, true},
+		{10 * time.Second, true},
 	}
 	stats[readers[1]] = []readerStat{ // weighted avg 5s
-		readerStat{6 * time.Second, true},
-		readerStat{4 * time.Second, true},
+		{6 * time.Second, true},
+		{4 * time.Second, true},
 	}
-	stats[readers[2]] = []readerStat{ //weighted avg 3 / (1/2) = 6s
-		readerStat{3 * time.Second, true},
-		readerStat{3 * time.Second, false},
+	stats[readers[2]] = []readerStat{ // weighted avg 3 / (1/2) = 6s
+		{3 * time.Second, true},
+		{3 * time.Second, false},
 	}
 	stats[readers[3]] = []readerStat{ // weighted avg max int
-		readerStat{1 * time.Second, false},
-		readerStat{1 * time.Second, false},
+		{1 * time.Second, false},
+		{1 * time.Second, false},
 	}
 	stats[readers[4]] = []readerStat{ // weighted avg 3 / (1/3) = 9s
-		readerStat{3 * time.Second, true},
-		readerStat{3 * time.Second, false},
-		readerStat{3 * time.Second, false},
+		{3 * time.Second, true},
+		{3 * time.Second, false},
+		{3 * time.Second, false},
 	}
 	stats[readers[5]] = []readerStat{ // weighted avg 8s
-		readerStat{8 * time.Second, true},
+		{8 * time.Second, true},
 	}
 
 	expectedOrdering := []arbstate.SimpleDASReader{readers[1], readers[2], readers[5], readers[4], readers[0], readers[3]}
