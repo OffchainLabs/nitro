@@ -6,6 +6,7 @@ package das
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -146,6 +147,11 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) 
 				go func(reader arbstate.SimpleDASReader) {
 					defer wg.Done()
 					data, err := a.tryGetByHash(subCtx, hash, reader)
+					if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+						// Don't record a stats data point when a different
+						// client returned faster than this one.
+						return
+					}
 					results <- dataErrorPair{data, err}
 				}(reader)
 			}
@@ -168,6 +174,7 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) 
 	for i := 0; i < len(a.readers); i++ {
 		select {
 		case <-ctx.Done():
+			return nil, ctx.Err()
 		case result := <-results:
 			if result.err != nil {
 				errorCollection = append(errorCollection, result.err)
@@ -195,8 +202,6 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(ctx context.Context, hash []byt
 	}
 	stat.latency = time.Since(start)
 
-	// TODO: context cancelations including when one of n parallel requests finishes before the
-	// other n-1 will be counted as failures, do we want this?
 	select {
 	case a.statMessages <- stat:
 		// Non-blocking write to stat channel
@@ -210,12 +215,13 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(ctx context.Context, hash []byt
 func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 	a.StopWaiter.Start(ctx)
 
-	a.StopWaiter.LaunchThread(func(ctx context.Context) {
+	a.StopWaiter.LaunchThread(func(innerCtx context.Context) {
 		updateStrategyTicker := time.NewTicker(a.config.StrategyUpdateInterval)
 		defer updateStrategyTicker.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-innerCtx.Done():
+				return
 			case stat := <-a.statMessages:
 				a.stats[stat.reader] = append(a.stats[stat.reader], stat.readerStat)
 				statsLen := len(a.stats[stat.reader])
