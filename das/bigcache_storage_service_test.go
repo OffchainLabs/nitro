@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/allegro/bigcache"
+
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -17,7 +19,13 @@ func TestBigCacheStorageService(t *testing.T) {
 	ctx := context.Background()
 	timeout := uint64(time.Now().Add(time.Hour).Unix())
 	baseStorageService := NewMemoryBackedStorageService(ctx)
-	bigCacheService, err := NewBigCacheStorageService(BigCacheConfig{time.Hour}, baseStorageService)
+	bigCache, err := bigcache.NewBigCache(bigcache.DefaultConfig(DefaultBigCacheConfig.Expiration))
+	Require(t, err)
+	bigCacheService := &BigCacheStorageService{
+		baseStorageService: baseStorageService,
+		bigCacheConfig:     DefaultBigCacheConfig,
+		bigCache:           bigCache,
+	}
 	Require(t, err)
 
 	val1 := []byte("The first value")
@@ -58,6 +66,19 @@ func TestBigCacheStorageService(t *testing.T) {
 	Require(t, err)
 	if !bytes.Equal(val, val2) {
 		t.Fatal(val, val2)
+	}
+
+	// For Case where the value is present in the cache storage but not present in the base.
+	emptyBaseStorageService := NewMemoryBackedStorageService(ctx)
+	bigCacheServiceWithEmptyBaseStorage := &BigCacheStorageService{
+		baseStorageService: emptyBaseStorageService,
+		bigCacheConfig:     DefaultBigCacheConfig,
+		bigCache:           bigCache,
+	}
+	val, err = bigCacheServiceWithEmptyBaseStorage.GetByHash(ctx, val1CorrectKey)
+	Require(t, err)
+	if !bytes.Equal(val, val1) {
+		t.Fatal(val, val1)
 	}
 
 	// Closes the base storage properly.

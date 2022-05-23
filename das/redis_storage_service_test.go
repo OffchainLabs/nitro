@@ -70,6 +70,20 @@ func TestRedisStorageService(t *testing.T) {
 		t.Fatal(val, val2)
 	}
 
+	// For Case where the value is present in the cache storage but not present in the base.
+	emptyBaseStorageService := NewMemoryBackedStorageService(ctx)
+	redisServiceWithEmptyBaseStorage, err := NewRedisStorageService(
+		RedisConfig{
+			"redis://" + server.Addr(),
+			time.Hour,
+			"b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
+		}, emptyBaseStorageService)
+	val, err = redisServiceWithEmptyBaseStorage.GetByHash(ctx, val1CorrectKey)
+	Require(t, err)
+	if !bytes.Equal(val, val1) {
+		t.Fatal(val, val1)
+	}
+
 	err = redisService.Close(ctx)
 	Require(t, err)
 	_, err = redisService.GetByHash(ctx, val1CorrectKey)

@@ -34,7 +34,7 @@ type BigCacheStorageService struct {
 }
 
 func NewBigCacheStorageService(bigCacheConfig BigCacheConfig, baseStorageService StorageService) (StorageService, error) {
-	bigCache, err := bigcache.NewBigCache(bigcache.DefaultConfig(10 * time.Minute))
+	bigCache, err := bigcache.NewBigCache(bigcache.DefaultConfig(bigCacheConfig.Expiration))
 	if err != nil {
 		return nil, err
 	}
