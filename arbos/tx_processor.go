@@ -332,7 +332,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
-		refund := arbmath.BigMulByUint(gasPrice, gasLeft)
+		refund := arbmath.BigSub(
+			arbmath.BigMulByUint(&inner.GasFeeCap, &inner.Gas),
+			arbmath.BigMulByUint(gasPrice, gasUsed)
+		)
 
 		// undo Geth's refund to the From address
 		err := util.TransferBalance(&inner.From, nil, refund, p.evm, util.TracingAfterEVM)
