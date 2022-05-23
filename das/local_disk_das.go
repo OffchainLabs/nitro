@@ -25,10 +25,20 @@ import (
 
 var ErrDasKeysetNotFound = errors.New("no such keyset")
 
+type ExpirationPolicy int64
+
+const (
+	KeepAfterTimeout ExpirationPolicy = iota
+	KeptInArchive
+	DiscardAfterTimeout
+	// Add more type of expiration policy.
+)
+
 type LocalDiskDASConfig struct {
 	KeyDir                string               `koanf:"key-dir"`
 	PrivKey               string               `koanf:"priv-key"`
 	DataDir               string               `koanf:"data-dir"`
+	DiscardAfterTimeout   bool                 `koanf:"discard-after-timeout"`
 	S3Config              genericconf.S3Config `koanf:"s3"`
 	RedisConfig           RedisConfig          `koanf:"redis"`
 	BigCacheConfig        BigCacheConfig       `koanf:"big-cache"`
@@ -42,6 +52,7 @@ func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".key-dir", "", fmt.Sprintf("The directory to read the bls keypair ('%s' and '%s') from", DefaultPubKeyFilename, DefaultPrivKeyFilename))
 	f.String(prefix+".priv-key", "", "The base64 BLS private key to use for signing DAS certificates")
 	f.String(prefix+".data-dir", "", "The directory to use as the DAS file-based database")
+	f.Bool(prefix+"discard-after-timeout", false, "Discard data after timeout in DAS")
 	genericconf.S3ConfigAddOptions(prefix+".s3", f)
 	RedisConfigAddOptions(prefix+".redis", f)
 	BigCacheConfigAddOptions(prefix+".big-cache", f)
@@ -168,7 +179,7 @@ func NewStorageServiceFromLocalConfig(ctx context.Context, config LocalDiskDASCo
 	case "", "files":
 		storageService = NewLocalDiskStorageService(config.DataDir)
 	case "db":
-		storageService, err = NewDBStorageService(ctx, config.DataDir, false)
+		storageService, err = NewDBStorageService(ctx, config.DataDir, config.DiscardAfterTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -177,12 +188,12 @@ func NewStorageServiceFromLocalConfig(ctx context.Context, config LocalDiskDASCo
 			_ = storageService.Close(context.Background())
 		}()
 	case "s3":
-		storageService, err = NewS3StorageService(config.S3Config)
+		storageService, err = NewS3StorageService(config.S3Config, config.DiscardAfterTimeout)
 		if err != nil {
 			return nil, err
 		}
 	case "redis":
-		s3StorageService, err := NewS3StorageService(config.S3Config)
+		s3StorageService, err := NewS3StorageService(config.S3Config, config.DiscardAfterTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +202,7 @@ func NewStorageServiceFromLocalConfig(ctx context.Context, config LocalDiskDASCo
 			return nil, err
 		}
 	case "bigCache":
-		s3StorageService, err := NewS3StorageService(config.S3Config)
+		s3StorageService, err := NewS3StorageService(config.S3Config, config.DiscardAfterTimeout)
 		if err != nil {
 			return nil, err
 		}

@@ -20,6 +20,7 @@ type StorageService interface {
 	Put(ctx context.Context, data []byte, expirationTime uint64) error
 	Sync(ctx context.Context) error
 	Close(ctx context.Context) error
+	ExpirationPolicy(ctx context.Context) ExpirationPolicy
 	String() string
 }
 
@@ -52,6 +53,10 @@ func (s *LocalDiskStorageService) Sync(ctx context.Context) error {
 
 func (s *LocalDiskStorageService) Close(ctx context.Context) error {
 	return nil
+}
+
+func (s *LocalDiskStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return KeepAfterTimeout
 }
 
 func (s *LocalDiskStorageService) String() string {
