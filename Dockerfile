@@ -124,17 +124,16 @@ FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
 # Download old WASM module roots
-#RUN bash -c 'mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && ln -sfT $_ latest && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
-RUN bash -c 'mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && ln -sfT $_ latest && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
-RUN bash -c 'mkdir 0xdd45c240cfe6624a7dfd0b0c965bf21301ebeea7a6a2a696781a6e03b04dc288 && ln -sfT $_ latest && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v3/machine.wavm.br'
+#RUN bash -c 'r=0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
+RUN bash -c 'r=0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
+RUN bash -c 'r=0xdd45c240cfe6624a7dfd0b0c965bf21301ebeea7a6a2a696781a6e03b04dc288 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v3/machine.wavm.br'
+RUN bash -c 'r=0x3d946791b42cc1069694cfab9feedc5d5ccd36cb792a2a7ed57b8cba412f65ac && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v3.1/machine.wavm.br'
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y protobuf-compiler wabt
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.26 && \
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.1
+    apt-get install -y wabt
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/

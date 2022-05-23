@@ -8,10 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/bits"
+	"os"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"math/bits"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -28,6 +31,7 @@ type AggregatorConfig struct {
 	Backends              string `koanf:"backends"`
 	L1NodeURL             string `koanf:"l1-node-url"`
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+	DumpKeyset            bool   `koanf:"dump-keyset"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
@@ -39,6 +43,7 @@ func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
 	f.String(prefix+".l1-node-url", DefaultAggregatorConfig.L1NodeURL, "URL for L1 node")
 	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
+	f.Bool(prefix+".dump-keyset", DefaultAggregatorConfig.DumpKeyset, "Dump the keyset encoded in hexadecimal for the backends string")
 }
 
 type Aggregator struct {
@@ -70,11 +75,11 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 	}, nil
 }
 
-func NewAggregator(config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
+func NewAggregator(ctx context.Context, config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
 	if config.L1NodeURL == "none" {
 		return NewAggregatorWithSeqInboxCaller(config, services, nil)
 	}
-	l1client, err := ethclient.Dial(config.L1NodeURL)
+	l1client, err := ethclient.DialContext(ctx, config.L1NodeURL)
 	if err != nil {
 		return nil, err
 	}
@@ -133,6 +138,11 @@ func NewAggregatorWithSeqInboxCaller(
 	}
 	var keysetHash [32]byte
 	copy(keysetHash[:], keysetHashBuf)
+	if config.DumpKeyset {
+		fmt.Printf("Keyset: %s\n", hexutil.Encode(ksBuf.Bytes()))
+		fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))
+		os.Exit(0)
+	}
 
 	var bpVerifier *BatchPosterVerifier
 	if seqInboxCaller != nil {
@@ -150,20 +160,7 @@ func NewAggregatorWithSeqInboxCaller(
 	}, nil
 }
 
-func (a *Aggregator) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	return a.retrieve(ctx, cert, a)
-}
-
-// retrieve calls  on each backend DAS in parallel and returns immediately on the
-// first successful response where the data matches the requested hash. Otherwise
-// if all requests fail or if its context is canceled (eg via TimeoutWrapper) then
-// it returns an error.
-func (a *Aggregator) retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate, dasReaer arbstate.DataAvailabilityServiceReader) ([]byte, error) {
-	err := cert.VerifyNonPayloadParts(ctx, dasReaer)
-	if err != nil {
-		return nil, err
-	}
-
+func (a *Aggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	// Query all services, even those that didn't sign.
 	// They may have been late in returning a response after storing the data,
 	// or got the data by some other means.
@@ -173,12 +170,12 @@ func (a *Aggregator) retrieve(ctx context.Context, cert *arbstate.DataAvailabili
 	defer cancel()
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
-			blob, err := d.service.Retrieve(ctx, cert)
+			blob, err := d.service.GetByHash(ctx, hash)
 			if err != nil {
 				errorChan <- err
 				return
 			}
-			if bytes.Equal(crypto.Keccak256(blob), cert.DataHash[:]) {
+			if bytes.Equal(crypto.Keccak256(blob), hash) {
 				blobChan <- blob
 			} else {
 				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
@@ -192,7 +189,7 @@ func (a *Aggregator) retrieve(ctx context.Context, cert *arbstate.DataAvailabili
 		select {
 		case blob := <-blobChan:
 			return blob, nil
-		case err = <-errorChan:
+		case err := <-errorChan:
 			errorCollection = append(errorCollection, err)
 			log.Warn("Couldn't retrieve message from DAS", "err", err)
 			errorCount++

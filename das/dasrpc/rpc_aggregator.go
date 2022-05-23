@@ -4,7 +4,11 @@
 package dasrpc
 
 import (
+	"context"
 	"encoding/json"
+
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
 
@@ -17,12 +21,12 @@ type BackendConfig struct {
 	SignerMask          uint64 `json:"signermask"`
 }
 
-func NewRPCAggregator(config das.AggregatorConfig) (*das.Aggregator, error) {
+func NewRPCAggregator(ctx context.Context, config das.AggregatorConfig) (*das.Aggregator, error) {
 	services, err := setUpServices(config)
 	if err != nil {
 		return nil, err
 	}
-	return das.NewAggregator(config, services)
+	return das.NewAggregator(ctx, config, services)
 }
 
 func NewRPCAggregatorWithL1Info(config das.AggregatorConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*das.Aggregator, error) {
@@ -31,6 +35,14 @@ func NewRPCAggregatorWithL1Info(config das.AggregatorConfig, l1client arbutil.L1
 		return nil, err
 	}
 	return das.NewAggregatorWithL1Info(config, services, l1client, seqInboxAddress)
+}
+
+func NewRPCAggregatorWithSeqInboxCaller(config das.AggregatorConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*das.Aggregator, error) {
+	services, err := setUpServices(config)
+	if err != nil {
+		return nil, err
+	}
+	return das.NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
 }
 
 func setUpServices(config das.AggregatorConfig) ([]das.ServiceDetails, error) {
@@ -60,5 +72,6 @@ func setUpServices(config das.AggregatorConfig) ([]das.ServiceDetails, error) {
 
 		services = append(services, *d)
 	}
+
 	return services, nil
 }

@@ -4,77 +4,81 @@
 package dasrpc
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/das"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
-	clnt DASServiceImplClient
+	clnt *rpc.Client
 }
 
 func NewDASRPCClient(target string) (*DASRPCClient, error) {
-	// TODO revisit insecure setting
-	conn, err := grpc.Dial(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	clnt, err := rpc.Dial(target)
 	if err != nil {
 		return nil, err
 	}
-	clnt := NewDASServiceImplClient(conn)
 	return &DASRPCClient{clnt: clnt}, nil
 }
 
-func (clnt *DASRPCClient) Retrieve(ctx context.Context, cert *arbstate.DataAvailabilityCertificate) ([]byte, error) {
-	certBytes := das.Serialize(cert)
-	response, err := clnt.clnt.Retrieve(ctx, &RetrieveRequest{CertBytes: certBytes})
-	if err != nil {
+func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	var ret hexutil.Bytes
+	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash)); err != nil {
 		return nil, err
 	}
-	return response.Result, nil
+	if !bytes.Equal(hash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
+		return nil, arbstate.ErrHashMismatch
+	}
+	return ret, nil
 }
 
-func (clnt *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
-	response, err := clnt.clnt.Store(ctx, &StoreRequest{Message: message, Timeout: timeout, Sig: reqSig})
-	if err != nil {
+func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	var ret StoreResult
+	if err := c.clnt.CallContext(ctx, &ret, "das_store", hexutil.Bytes(message), hexutil.Uint64(timeout), hexutil.Bytes(reqSig)); err != nil {
 		return nil, err
 	}
 	var keysetHash [32]byte
-	copy(keysetHash[:], response.KeysetHash)
+	copy(keysetHash[:], ret.KeysetHash)
 	var dataHash [32]byte
-	copy(dataHash[:], response.DataHash)
-	respSig, err := blsSignatures.SignatureFromBytes(response.Sig)
+	copy(dataHash[:], ret.DataHash)
+	respSig, err := blsSignatures.SignatureFromBytes(ret.Sig)
 	if err != nil {
 		return nil, err
 	}
 	return &arbstate.DataAvailabilityCertificate{
 		DataHash:    dataHash,
-		Timeout:     response.Timeout,
-		SignersMask: response.SignersMask,
+		Timeout:     uint64(ret.Timeout),
+		SignersMask: uint64(ret.SignersMask),
 		Sig:         respSig,
 		KeysetHash:  keysetHash,
 	}, nil
 }
 
-func (clnt *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	response, err := clnt.clnt.KeysetFromHash(ctx, &KeysetFromHashRequest{KsHash: ksHash})
-	if err != nil {
+func (c *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	var ret hexutil.Bytes
+	if err := c.clnt.CallContext(ctx, &ret, "das_keysetFromHash", hexutil.Bytes(ksHash)); err != nil {
 		return nil, err
 	}
-	return response.Result, nil
+	if !bytes.Equal(ksHash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
+		return nil, arbstate.ErrHashMismatch
+	}
+	return ret, nil
 }
 
-func (clnt *DASRPCClient) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
-	response, err := clnt.clnt.CurrentKeysetBytes(ctx, &CurrentKeysetBytesRequest{})
-	if err != nil {
+func (c *DASRPCClient) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
+	var ret hexutil.Bytes
+	if err := c.clnt.CallContext(ctx, &ret, "das_currentKeysetBytes"); err != nil {
 		return nil, err
 	}
-	return response.Result, nil
+	return ret, nil
 }
 
-func (clnt *DASRPCClient) String() string {
-	return fmt.Sprintf("DASRPCClient{clnt:%v}", clnt.clnt)
+func (c *DASRPCClient) String() string {
+	return fmt.Sprintf("DASRPCClient{c:%v}", c.clnt)
 }

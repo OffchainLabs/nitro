@@ -19,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/pkg/errors"
 )
 
@@ -30,7 +29,7 @@ type StatelessBlockValidator struct {
 	streamer        TransactionStreamerInterface
 	blockchain      *core.BlockChain
 	db              ethdb.Database
-	daService       das.DataAvailabilityService
+	daService       arbstate.SimpleDASReader
 	genesisBlockNum uint64
 }
 
@@ -194,7 +193,7 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	blockchain *core.BlockChain,
 	db ethdb.Database,
-	das das.DataAvailabilityService,
+	das arbstate.SimpleDASReader,
 ) (*StatelessBlockValidator, error) {
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
 	if err != nil {
@@ -288,7 +287,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	return
 }
 
-func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, preimages map[common.Hash][]byte, seqMsg []byte, bc *core.BlockChain, das das.DataAvailabilityService) error {
+func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, preimages map[common.Hash][]byte, seqMsg []byte, bc *core.BlockChain, das arbstate.SimpleDASReader) error {
 	recordNewPreimages := true
 	if preimages == nil {
 		preimages = make(map[common.Hash][]byte)

@@ -113,6 +113,7 @@ func main() {
 
 	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
+	var daSigner func([]byte) ([]byte, error)
 	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
@@ -126,6 +127,11 @@ func main() {
 				l1Wallet,
 				new(big.Int).SetUint64(nodeConfig.L1.ChainID),
 			)
+			if err != nil {
+				panic(err)
+			}
+
+			daSigner, err = arbnode.GetSignerFromWallet(l1Wallet)
 			if err != nil {
 				panic(err)
 			}
@@ -296,12 +302,7 @@ func main() {
 		}
 	}
 
-	daSigner, err := arbnode.GetSignerFromWallet(l1Wallet)
-	if err != nil {
-		panic(err)
-	}
-
-	currentNode, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
 	if err != nil {
 		panic(err)
 	}

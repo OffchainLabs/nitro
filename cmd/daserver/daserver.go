@@ -110,12 +110,12 @@ func startup() error {
 	var dasImpl das.DataAvailabilityService
 	switch mode {
 	case das.LocalDiskDataAvailability:
-		dasImpl, err = das.NewLocalDiskDAS(serverConfig.DAConf.LocalDiskDASConfig)
+		dasImpl, err = das.NewLocalDiskDAS(ctx, serverConfig.DAConf.LocalDiskDASConfig)
 		if err != nil {
 			return err
 		}
 	case das.AggregatorDataAvailability:
-		dasImpl, err = dasrpc.NewRPCAggregator(serverConfig.DAConf.AggregatorConfig)
+		dasImpl, err = dasrpc.NewRPCAggregator(ctx, serverConfig.DAConf.AggregatorConfig)
 		if err != nil {
 			return err
 		}
@@ -128,7 +128,6 @@ func startup() error {
 		return err
 	}
 	<-sigint
-	server.Stop()
 
-	return nil
+	return server.Shutdown(ctx)
 }
