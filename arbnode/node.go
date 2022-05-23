@@ -746,15 +746,21 @@ func setUpDataAvailabilityService(
 	}
 
 	if dataAvailabilityService != nil {
+		// WARNING: The ChainFetchDAS needs to be the innermost wrapper of the
+		// actual underlying DAS implementation for the Retrieve/retrieve
+		// forwarding to work correctly. If we have more wrapper ordering issues
+		// we should make it so wrapped classes can find their wrappers, eg
+		// by aggregating a reference to parent.
+		dataAvailabilityService, err = das.NewChainFetchDAS(dataAvailabilityService, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+
 		if daSigner != nil {
 			dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
 			if err != nil {
 				return nil, err
 			}
-		}
-		dataAvailabilityService, err = das.NewChainFetchDAS(dataAvailabilityService, l1client, deployInfo.SequencerInbox)
-		if err != nil {
-			return nil, err
 		}
 	}
 	return dataAvailabilityService, nil
