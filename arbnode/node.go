@@ -7,10 +7,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"golang.org/x/term"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -36,6 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/das/dasrpc"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -121,7 +130,7 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 	return a, nil
 }
 
-func andTxSucceeded(ctx context.Context, l1Reader *L1Reader, tx *types.Transaction, err error) error {
+func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx *types.Transaction, err error) error {
 	if err != nil {
 		return fmt.Errorf("error submitting tx: %w", err)
 	}
@@ -132,7 +141,7 @@ func andTxSucceeded(ctx context.Context, l1Reader *L1Reader, tx *types.Transacti
 	return nil
 }
 
-func deployBridgeCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, error) {
 	client := l1Reader.Client()
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
@@ -179,7 +188,7 @@ func deployBridgeCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	return bridgeCreatorAddr, nil
 }
 
-func deployChallengeFactory(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (common.Address, common.Address, error) {
+func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (common.Address, common.Address, error) {
 	client := l1Reader.Client()
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
@@ -220,7 +229,7 @@ func deployChallengeFactory(ctx context.Context, l1Reader *L1Reader, auth *bind.
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, error) {
+func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
 	if err != nil {
 		return nil, common.Address{}, err
@@ -265,8 +274,8 @@ func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
-	l1Reader := NewL1Reader(l1client, readerConfig)
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
+	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
@@ -323,11 +332,11 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error parsing rollup created log: %w", err)
 	}
 
-	rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
+	sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, l1client)
 	if err != nil {
-		return nil, fmt.Errorf("error getting rollup admin: %w", err)
+		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
 	}
-	tx, err = rollup.SetIsBatchPoster(deployAuth, sequencer, true)
+	tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("error setting is batch poster: %w", err)
@@ -352,6 +361,10 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		allowValidators = append(allowValidators, true)
 	}
 	if len(validatorAddrs) > 0 {
+		rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
+		if err != nil {
+			return nil, fmt.Errorf("error getting rollup admin: %w", err)
+		}
 		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
 		err = andTxSucceeded(ctx, l1Reader, tx, err)
 		if err != nil {
@@ -373,7 +386,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 type Config struct {
 	RPC                  arbitrum.Config                `koanf:"rpc"`
 	Sequencer            SequencerConfig                `koanf:"sequencer"`
-	L1Reader             L1ReaderConfig                 `koanf:"l1-reader"`
+	L1Reader             headerreader.Config            `koanf:"l1-reader"`
 	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
@@ -399,7 +412,7 @@ func (c *Config) ForwardingTarget() string {
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
-	L1ReaderAddOptions(prefix+".l1-reader", f)
+	headerreader.AddOptions(prefix+".l1-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
@@ -417,7 +430,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 var ConfigDefault = Config{
 	RPC:                  arbitrum.DefaultConfig,
 	Sequencer:            DefaultSequencerConfig,
-	L1Reader:             DefaultL1ReaderConfig,
+	L1Reader:             headerreader.DefaultConfig,
 	InboxReader:          DefaultInboxReaderConfig,
 	DelayedSequencer:     DefaultDelayedSequencerConfig,
 	BatchPoster:          DefaultBatchPosterConfig,
@@ -435,7 +448,7 @@ var ConfigDefault = Config{
 func ConfigDefaultL1Test() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
-	config.L1Reader = TestL1ReaderConfig
+	config.L1Reader = headerreader.TestConfig
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
@@ -530,7 +543,7 @@ var DefaultWasmConfig = WasmConfig{
 type Node struct {
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
-	L1Reader         *L1Reader
+	L1Reader         *headerreader.HeaderReader
 	TxStreamer       *TransactionStreamer
 	TxPublisher      TransactionPublisher
 	DeployInfo       *RollupAddresses
@@ -543,30 +556,29 @@ type Node struct {
 	BroadcastServer  *broadcaster.Broadcaster
 	BroadcastClients []*broadcastclient.BroadcastClient
 	SeqCoordinator   *SeqCoordinator
+	DataAvailService das.DataAvailabilityService
+	DataAvailReader  arbstate.SimpleDASReader
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (*Node, error) {
+func createNodeImpl(
+	ctx context.Context,
+	stack *node.Node,
+	chainDb ethdb.Database,
+	config *Config,
+	l2BlockChain *core.BlockChain,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	txOpts *bind.TransactOpts,
+	daSigner das.DasSigner,
+) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
 	}
 
-	dataAvailabilityMode, err := config.DataAvailability.Mode()
-	if err != nil {
-		return nil, err
-	}
-	var dataAvailabilityService das.DataAvailabilityService
-	if dataAvailabilityMode == das.LocalDataAvailability {
-		var err error
-		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailability.LocalDiskDataDir, uint64(config.DataAvailability.SignerMask))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	var l1Reader *L1Reader
+	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
-		l1Reader = NewL1Reader(l1client, config.L1Reader)
+		l1Reader = headerreader.New(l1client, config.L1Reader)
 	}
 
 	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)
@@ -627,7 +639,11 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 	if !config.L1Reader.Enable {
-		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
+		daReader, err := setUpDataAvailabilityReader(ctx, config, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, nil, daReader}, nil
 	}
 
 	if deployInfo == nil {
@@ -641,7 +657,12 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
-	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityService)
+	dataAvailabilityService, err := setUpDataAvailabilityService(ctx, config, l1client, deployInfo, daSigner)
+	if err != nil {
+		return nil, err
+	}
+	var dataAvailabilityReader arbstate.SimpleDASReader = dataAvailabilityService
+	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityReader)
 	if err != nil {
 		return nil, err
 	}
@@ -665,7 +686,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityService)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader)
 		if err != nil {
 			return nil, err
 		}
@@ -678,7 +699,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, dataAvailabilityService, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, dataAvailabilityReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -704,7 +725,111 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	if batchPoster != nil {
+		dataAvailabilityService = nil
+	}
+	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dataAvailabilityService, dataAvailabilityReader}, nil
+}
+
+func setUpDataAvailabilityService(
+	ctx context.Context,
+	config *Config,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	daSigner das.DasSigner,
+) (das.DataAvailabilityService, error) {
+	dataAvailabilityMode, err := config.DataAvailability.Mode()
+	if err != nil {
+		return nil, err
+	}
+	var dataAvailabilityService das.DataAvailabilityService
+	switch dataAvailabilityMode {
+	case das.LocalDiskDataAvailability:
+		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.LocalDiskDASConfig)
+		if err != nil {
+			return nil, err
+		}
+		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(
+			ctx,
+			config.DataAvailability.LocalDiskDASConfig,
+			l1client,
+			deployInfo.SequencerInbox,
+			storageService,
+		)
+		if err != nil {
+			return nil, err
+		}
+	case das.AggregatorDataAvailability:
+		dataAvailabilityService, err = dasrpc.NewRPCAggregatorWithL1Info(config.DataAvailability.AggregatorConfig, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+	case das.OnchainDataAvailability:
+		// Batches stored onchain, don't create a DAS.
+	default:
+		return nil, fmt.Errorf("Unknown data availability mode %v", dataAvailabilityMode)
+	}
+
+	if dataAvailabilityService != nil {
+		if daSigner != nil {
+			dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+			if err != nil {
+				return nil, err
+			}
+		}
+		dataAvailabilityService, err = das.NewChainFetchDAS(dataAvailabilityService, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return dataAvailabilityService, nil
+}
+
+func setUpDataAvailabilityReader(
+	ctx context.Context,
+	config *Config,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+) (arbstate.SimpleDASReader, error) {
+	dataAvailabilityMode, err := config.DataAvailability.Mode()
+	if err != nil {
+		return nil, err
+	}
+	var daReader arbstate.SimpleDASReader
+	switch dataAvailabilityMode {
+	case das.LocalDiskDataAvailability:
+		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.LocalDiskDASConfig)
+		if err != nil {
+			return nil, err
+		}
+		daReader, err = das.NewLocalDiskDASWithL1Info(
+			ctx,
+			config.DataAvailability.LocalDiskDASConfig,
+			l1client,
+			deployInfo.SequencerInbox,
+			storageService,
+		)
+		if err != nil {
+			return nil, err
+		}
+	case das.AggregatorDataAvailability:
+		daReader, err = dasrpc.NewRPCAggregatorWithL1Info(config.DataAvailability.AggregatorConfig, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+	case das.OnchainDataAvailability:
+		// Batches stored onchain, don't create a DAS.
+	default:
+		return nil, fmt.Errorf("Unknown data availability mode %v", dataAvailabilityMode)
+	}
+
+	if daReader != nil {
+		daReader, err = das.NewChainFetchSimpleDASReader(daReader, l1client, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return daReader, nil
 }
 
 type arbNodeLifecycle struct {
@@ -720,8 +845,18 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
+func CreateNode(
+	ctx context.Context,
+	stack *node.Node,
+	chainDb ethdb.Database,
+	config *Config,
+	l2BlockChain *core.BlockChain,
+	l1client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
+	txOpts *bind.TransactOpts,
+	daSigner das.DasSigner,
+) (newNode *Node, err error) {
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -1040,4 +1175,98 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 // Don't preserve reorg'd out blocks
 func shouldPreserveFalse(header *types.Header) bool {
 	return false
+}
+
+func GetSignerFromWallet(
+	walletConfig *genericconf.WalletConfig,
+) (func([]byte) ([]byte, error), error) {
+	var signer func(data []byte) ([]byte, error)
+
+	if len(walletConfig.PrivateKey) != 0 {
+		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		signer = func(data []byte) ([]byte, error) {
+			return crypto.Sign(data, privateKey)
+		}
+	} else {
+		ks, account, newKeystoreCreated, err := openKeystore(
+			"account",
+			walletConfig.Pathname,
+			walletConfig.Password(),
+			walletConfig.OnlyCreateKey,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if newKeystoreCreated {
+			return nil, errors.New("wallet key created, backup key (" + walletConfig.Pathname + ") and remove --wallet.only-create-key to start normally")
+		}
+
+		signer = func(data []byte) ([]byte, error) {
+			return ks.SignHash(*account, data)
+		}
+	}
+
+	return signer, nil
+}
+
+func openKeystore(description string, walletPath string, walletPassword *string, onlyCreateKey bool) (*keystore.KeyStore, *accounts.Account, bool, error) {
+	ks := keystore.NewKeyStore(
+		walletPath,
+		keystore.StandardScryptN,
+		keystore.StandardScryptP,
+	)
+
+	creatingNew := len(ks.Accounts()) == 0
+	if creatingNew && !onlyCreateKey {
+		return nil, nil, false, errors.New("No wallet exists, re-run with --wallet.local.only-create-key to create a wallet")
+	}
+	passOpt := walletPassword
+	var password string
+	if passOpt != nil {
+		password = *passOpt
+	} else {
+		if creatingNew {
+			fmt.Print("Enter new account password: ")
+		} else {
+			fmt.Print("Enter account password: ")
+		}
+		var err error
+		password, err = readPass()
+		if err != nil {
+			return nil, nil, false, err
+		}
+	}
+
+	var account accounts.Account
+	if creatingNew {
+		var err error
+		account, err = ks.NewAccount(password)
+		if err != nil {
+			return nil, &accounts.Account{}, false, err
+		}
+
+	} else {
+		account = ks.Accounts()[0]
+	}
+
+	err := ks.Unlock(account, password)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	return ks, &account, creatingNew, nil
+}
+
+func readPass() (string, error) {
+	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return "", err
+	}
+	passphrase := string(bytePassword)
+	passphrase = strings.TrimSpace(passphrase)
+	return passphrase, nil
 }

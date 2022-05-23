@@ -15,56 +15,89 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
+func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
+	firstCtx, firstCancel := context.WithCancel(context.Background())
+
 	dbPath, err := ioutil.TempDir("/tmp", "das_test")
 	defer os.RemoveAll(dbPath)
-
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
-	Require(t, err, "no das")
 
-	ctx := context.Background()
+	config := LocalDiskDASConfig{
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+		L1NodeURL:         "none",
+		StorageType:       storageType,
+	}
+	das, err := NewLocalDiskDAS(firstCtx, config)
+	Require(t, err, "no das")
 
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(ctx, messageSaved, timeout)
+	cert, err := das.Store(firstCtx, messageSaved, timeout, []byte{})
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
 	}
 
-	certBytes := Serialize(*cert)
-
-	messageRetrieved, err := das.Retrieve(ctx, certBytes)
+	messageRetrieved, err := das.GetByHash(firstCtx, cert.DataHash[:])
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
 
+	firstCancel()
+	time.Sleep(500 * time.Millisecond)
+
 	// 2nd das instance can read keys from disk
-	das2, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
+	secondCtx, secondCancel := context.WithCancel(context.Background())
+	defer secondCancel()
+
+	das2, err := NewLocalDiskDAS(secondCtx, config)
 	Require(t, err, "no das")
 
-	messageRetrieved2, err := das2.Retrieve(ctx, certBytes)
+	messageRetrieved2, err := das2.GetByHash(secondCtx, cert.DataHash[:])
 	Require(t, err, "Failed to retrieve message")
+	if !bytes.Equal(messageSaved, messageRetrieved2) {
+		Fail(t, "Retrieved message is not the same as stored one.")
+	}
+
+	messageRetrieved2, err = das2.GetByHash(secondCtx, cert.DataHash[:])
+	Require(t, err, "Failed to getByHash message")
 	if !bytes.Equal(messageSaved, messageRetrieved2) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
 }
 
-func TestDASMissingMessage(t *testing.T) {
+func TestDASStoreRetrieveMultipleInstancesFiles(t *testing.T) {
+	testDASStoreRetrieveMultipleInstances(t, "files")
+}
+
+func TestDASStoreRetrieveMultipleInstancesDB(t *testing.T) {
+	testDASStoreRetrieveMultipleInstances(t, "db")
+}
+
+func testDASMissingMessage(t *testing.T, storageType string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	dbPath, err := ioutil.TempDir("/tmp", "das_test")
 	defer os.RemoveAll(dbPath)
-
 	Require(t, err)
-	das, err := NewLocalDiskDataAvailabilityService(dbPath, 1)
-	Require(t, err, "no das")
 
-	ctx := context.Background()
+	config := LocalDiskDASConfig{
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+		L1NodeURL:         "none",
+		StorageType:       storageType,
+	}
+	das, err := NewLocalDiskDAS(ctx, config)
+	Require(t, err, "no das")
 
 	messageSaved := []byte("hello world")
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
-	cert, err := das.Store(ctx, messageSaved, timeout)
+	cert, err := das.Store(ctx, messageSaved, timeout, []byte{})
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
@@ -73,12 +106,23 @@ func TestDASMissingMessage(t *testing.T) {
 	// Change the hash to look up
 	cert.DataHash[0] += 1
 
-	certBytes := Serialize(*cert)
-
-	_, err = das.Retrieve(ctx, certBytes)
+	_, err = das.GetByHash(ctx, cert.DataHash[:])
 	if err == nil {
 		Fail(t, "Expected an error when retrieving message that is not in the store.")
 	}
+
+	_, err = das.GetByHash(ctx, cert.DataHash[:])
+	if err == nil {
+		Fail(t, "Expected an error when getting by hash a message that is not in the store.")
+	}
+}
+
+func TestDASMissingMessageFiles(t *testing.T) {
+	testDASMissingMessage(t, "files")
+}
+
+func TestDASMissingMessageDB(t *testing.T) {
+	testDASMissingMessage(t, "db")
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {

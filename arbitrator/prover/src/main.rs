@@ -49,6 +49,8 @@ struct Opts {
     profile_output: Option<PathBuf>,
     #[structopt(short = "i", long, default_value = "1")]
     proving_interval: u64,
+    #[structopt(short = "s", long, default_value = "0")]
+    proving_start: u64,
     #[structopt(long, default_value = "0")]
     delayed_inbox_position: u64,
     #[structopt(long, default_value = "0")]
@@ -183,7 +185,7 @@ fn main() -> Result<()> {
         bytes32_vals: [last_block_hash, last_send_root],
     };
 
-    let mut mach = Machine::from_binary(
+    let mut mach = Machine::from_paths(
         &opts.libraries,
         &opts.binary,
         opts.always_merkleize,
@@ -227,9 +229,11 @@ fn main() -> Result<()> {
     unsafe {
         cycles_bigloop_start = core::arch::x86_64::_rdtsc();
     }
+    mach.step_n(opts.proving_start)?;
     while !mach.is_halted() {
         let next_inst = mach.get_next_instruction().unwrap();
         let next_opcode = next_inst.opcode;
+
         if opts.proving_backoff {
             let count_entry = opcode_counts.entry(next_opcode).or_insert(0);
             *count_entry += 1;
@@ -242,6 +246,7 @@ fn main() -> Result<()> {
                 continue;
             }
         }
+
         if opts.profile_run {
             let start: u64;
             let end: u64;

@@ -10,6 +10,8 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/offchainlabs/nitro/util/headerreader"
+
 	"github.com/andybalholm/brotli"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -30,7 +32,7 @@ import (
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader       *L1Reader
+	l1Reader       *headerreader.HeaderReader
 	inbox          *InboxTracker
 	streamer       *TransactionStreamer
 	config         *BatchPosterConfig
@@ -91,7 +93,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	HighGasDelay:         0,
 }
 
-func NewBatchPoster(l1Reader *L1Reader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -390,11 +392,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	}
 
 	if b.das != nil {
-		cert, err := b.das.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()))
+		cert, err := b.das.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()), []byte{}) // b.das will append signature if enabled
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
 		} else {
-			sequencerMsg = das.Serialize(*cert)
+			sequencerMsg = das.Serialize(cert)
 		}
 	}
 

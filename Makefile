@@ -21,8 +21,6 @@ output_root=target
 repo_dirs = arbos arbnode arbstate cmd precompiles solgen system_tests util validator wavmio
 go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 
-das_rpc_files = das/dasrpc/wireFormat.pb.go das/dasrpc/wireFormat_grpc.pb.go
-
 color_pink = "\e[38;5;161;1m"
 color_reset = "\e[0;0m"
 
@@ -61,10 +59,10 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/seq-coordinator-invalidate
+build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/datool $(output_root)/bin/dasrest $(output_root)/bin/seq-coordinator-invalidate
 	@printf $(done)
 
-build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
+build-node-deps: $(go_source) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
 
 test-go-deps: \
 	build-replay-env \
@@ -86,9 +84,6 @@ build-wasm-libs: $(arbitrator_wasm_libs)
 build-wasm-bin: $(replay_wasm)
 
 build-solidity: .make/solidity
-
-$(das_rpc_files): das/wireFormat.proto
-	cd das && protoc -I=. --go_out=.. --go-grpc_out=.. ./wireFormat.proto
 
 contracts: .make/solgen
 	@printf $(done)
@@ -131,7 +126,6 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
-	rm -f $(das_rpc_files)
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
 
@@ -153,6 +147,12 @@ $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ "$(CURDIR)/cmd/daserver"
+
+$(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ "$(CURDIR)/cmd/datool"
+
+$(output_root)/bin/dasrest: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ "$(CURDIR)/cmd/dasrest"
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"

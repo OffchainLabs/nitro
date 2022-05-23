@@ -28,3 +28,9 @@ func TestValidatorConfig(t *testing.T) {
 	_, _, _, _, _, err := ParseNode(context.Background(), args)
 	testhelpers.RequireImpl(t, err)
 }
+
+func TestAggregatorConfig(t *testing.T) {
+	args := strings.Split("--persistent.chain /tmp/data --dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.mode aggrez --node.data-availability.aggregator.backends {[\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\",\"signerMask\":0x1]}", " ")
+	_, _, _, _, _, err := ParseNode(context.Background(), args)
+	testhelpers.RequireImpl(t, err)
+}

@@ -53,6 +53,8 @@ interface IRollupUserAbs is IRollupCore {
     function requireUnresolved(uint256 nodeNum) external view;
 
     function withdrawStakerFunds(address payable destination) external returns (uint256);
+
+    function owner() external view returns (address);
 }
 
 interface IRollupUser is IRollupUserAbs {
@@ -165,21 +167,6 @@ interface IRollupAdmin {
      * @param newStakeToken address of token used for staking
      */
     function setStakeToken(address newStakeToken) external;
-
-    /**
-     * @notice Set max time variation from actual time for sequencer inbox
-     * @param maxTimeVariation the maximum time variation parameters
-     */
-    function setSequencerInboxMaxTimeVariation(
-        ISequencerInbox.MaxTimeVariation memory maxTimeVariation
-    ) external;
-
-    /**
-     * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
-     * @param addr the address
-     * @param isBatchPoster if the specified address should be authorized as a batch poster
-     */
-    function setIsBatchPoster(address addr, bool isBatchPoster) external;
 
     /**
      * @notice Upgrades the implementation of a beacon controlled by the rollup

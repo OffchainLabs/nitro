@@ -21,30 +21,40 @@ import (
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	numBackendDAS := 10
-	var backends []serviceDetails
+	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
+		config := LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+			L1NodeURL:         "none",
+		}
+		das, err := NewLocalDiskDAS(ctx, config)
 		Require(t, err)
-		details, err := newServiceDetails(das, *das.pubKey, signerMask)
+		pubKey, _, err := ReadKeysFromFile(dbPath)
+		Require(t, err)
+		signerMask := uint64(1 << i)
+		details, err := NewServiceDetails(das, *pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(AggregatorConfig{1}, backends)
+	aggregator, err := NewAggregator(ctx, AggregatorConfig{AssumedHonest: 1, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0)
+	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
+	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash[:])
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -108,23 +118,23 @@ type WrapStore struct {
 	DataAvailabilityService
 }
 
-type WrapRetrieve struct {
+type WrapGetByHash struct {
 	t        *testing.T
 	injector failureInjector
 	DataAvailabilityService
 }
 
-func (w *WrapRetrieve) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
+func (w *WrapGetByHash) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DataAvailabilityService.Retrieve(ctx, cert)
+		return w.DataAvailabilityService.GetByHash(ctx, hash)
 	case immediateError:
 		return nil, errors.New("Expected Retrieve failure")
 	case tooSlow:
 		<-ctx.Done()
 		return nil, errors.New("Canceled")
 	case dataCorruption:
-		data, err := w.DataAvailabilityService.Retrieve(ctx, cert)
+		data, err := w.DataAvailabilityService.GetByHash(ctx, hash)
 		if err != nil {
 			return nil, err
 		}
@@ -135,17 +145,17 @@ func (w *WrapRetrieve) Retrieve(ctx context.Context, cert []byte) ([]byte, error
 	return nil, nil
 }
 
-func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
+func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DataAvailabilityService.Store(ctx, message, timeout)
+		return w.DataAvailabilityService.Store(ctx, message, timeout, sig)
 	case immediateError:
 		return nil, errors.New("Expected Store failure")
 	case tooSlow:
 		<-ctx.Done()
 		return nil, errors.New("Canceled")
 	case dataCorruption:
-		cert, err := w.DataAvailabilityService.Store(ctx, message, timeout)
+		cert, err := w.DataAvailabilityService.Store(ctx, message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
@@ -177,6 +187,9 @@ func enableLogging() {
 }
 
 func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	numBackendDAS := (rand.Int() % 20) + 1
 	assumedHonest := (rand.Int() % numBackendDAS) + 1
 	var nFailures int
@@ -189,28 +202,34 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	log.Trace(fmt.Sprintf("Testing aggregator with K:%d with K=N+1-H, N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
 
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
-	var backends []serviceDetails
+	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
+		config := LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+			L1NodeURL:         "none",
+		}
+		das, err := NewLocalDiskDAS(ctx, config)
 		Require(t, err)
-
-		details, err := newServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask)
+		pubKey, _, err := ReadKeysFromFile(dbPath)
+		Require(t, err)
+		signerMask := uint64(1 << i)
+		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
 	}
 
-	unwrappedAggregator, err := NewAggregator(AggregatorConfig{assumedHonest}, backends)
+	unwrappedAggregator, err := NewAggregator(ctx, AggregatorConfig{AssumedHonest: assumedHonest, L1NodeURL: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
-	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0)
+	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	if !shouldFailAggregation {
 		Require(t, err, "Error storing message")
 	} else {
@@ -220,7 +239,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		return
 	}
 
-	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
+	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash[:])
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -273,6 +292,9 @@ func TestDAS_AtLeastHStorageFailures(t *testing.T) {
 }
 
 func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	numBackendDAS := (rand.Int() % 20) + 1
 	var nSuccesses, nFailures int
 	if shouldFail {
@@ -283,18 +305,26 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 		nFailures = numBackendDAS - nSuccesses
 	}
 	log.Trace(fmt.Sprintf("Testing aggregator retrieve with %d successes and %d failures", nSuccesses, nFailures))
-	var backends []serviceDetails
+	var backends []ServiceDetails
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		signerMask := uint64(1 << i)
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
-		Require(t, err)
+		config := LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+			L1NodeURL:         "none",
+		}
 
-		details := serviceDetails{&WrapRetrieve{t, injectedFailures, das}, *das.pubKey, signerMask}
+		das, err := NewLocalDiskDAS(ctx, config)
+		Require(t, err)
+		pubKey, _, err := ReadKeysFromFile(dbPath)
+		Require(t, err)
+		signerMask := uint64(1 << i)
+		details := ServiceDetails{&WrapGetByHash{t, injectedFailures, das}, *pubKey, signerMask}
 
 		backends = append(backends, details)
 	}
@@ -302,16 +332,15 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	unwrappedAggregator, err := NewAggregator(AggregatorConfig{numBackendDAS}, backends)
+	unwrappedAggregator, err := NewAggregator(ctx, AggregatorConfig{AssumedHonest: numBackendDAS, L1NodeURL: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
-	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0)
+	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
+	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash[:])
 	if !shouldFail {
 		Require(t, err, "Error retrieving message")
 	} else {

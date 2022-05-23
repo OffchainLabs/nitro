@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -83,15 +82,11 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
-type PreimageDAS struct {
+type PreimageDASReader struct {
 }
 
-func (das *PreimageDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
-	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(certBytes))
-	if err != nil {
-		return nil, err
-	}
-	return wavmio.ResolvePreImage(common.BytesToHash(cert.DataHash[:])), nil
+func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	return wavmio.ResolvePreImage(common.BytesToHash(hash)), nil
 }
 
 func main() {
@@ -123,11 +118,11 @@ func main() {
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var das arbstate.DataAvailabilityServiceReader
+		var dasReader arbstate.SimpleDASReader
 		if dasEnabled {
-			das = &PreimageDAS{}
+			dasReader = &PreimageDASReader{}
 		}
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead, das)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead, dasReader)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {

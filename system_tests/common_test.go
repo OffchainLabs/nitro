@@ -4,10 +4,19 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/das"
+
+	"github.com/offchainlabs/nitro/blsSignatures"
+
+	"github.com/offchainlabs/nitro/arbstate"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -151,7 +160,7 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, common.Hash{}, chainId, arbnode.TestL1ReaderConfig, validator.DefaultNitroMachineConfig)
+	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, common.Hash{}, chainId, headerreader.TestConfig, validator.DefaultNitroMachineConfig)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
@@ -204,7 +213,7 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 	if !isSequencer {
 		nodeConfig.BatchPoster.Enable = false
 	}
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr)
+	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 
 	Require(t, err)
 	Require(t, node.Start(ctx))
@@ -221,7 +230,7 @@ func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbn
 
 func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info, params.ArbitrumDevTestChainConfig())
-	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
+	node, err := arbnode.CreateNode(ctx, stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil)
 	Require(t, err)
 
 	// Give the node an init message
@@ -279,7 +288,7 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, 0, first.ArbInterface.BlockChain().Config())
 	Require(t, err)
 
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil)
+	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil)
 	Require(t, err)
 
 	err = node.Start(ctx)
@@ -293,4 +302,50 @@ func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, acc
 	balance, err := client.BalanceAt(ctx, account, nil)
 	Require(t, err, "could not get balance")
 	return balance
+}
+
+func authorizeDASKeyset(t *testing.T, ctx context.Context, dasSignerKey *blsSignatures.PublicKey, l1info info, l1client arbutil.L1Interface) {
+	if dasSignerKey == nil {
+		return
+	}
+	keyset := &arbstate.DataAvailabilityKeyset{
+		AssumedHonest: 1,
+		PubKeys:       []blsSignatures.PublicKey{*dasSignerKey},
+	}
+	wr := bytes.NewBuffer([]byte{})
+	err := keyset.Serialize(wr)
+	Require(t, err)
+	keysetBytes := wr.Bytes()
+	sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
+	Require(t, err)
+	trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
+}
+
+func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig, *arbnode.Config, string, *blsSignatures.PublicKey) {
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability.ModeImpl = dasModeString
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	var dbPath string
+	var err error
+
+	var dasSignerKey *blsSignatures.PublicKey
+	if dasModeString == das.LocalDiskDataAvailabilityString {
+		dbPath = t.TempDir()
+		dasSignerKey, _, err = das.GenerateAndStoreKeys(dbPath)
+		Require(t, err)
+		dasConfig := das.LocalDiskDASConfig{
+			KeyDir:            dbPath,
+			DataDir:           dbPath,
+			AllowGenerateKeys: true,
+		}
+		l1NodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
+	}
+	_, err = l1NodeConfigA.DataAvailability.Mode()
+	Require(t, err)
+	return chainConfig, l1NodeConfigA, dbPath, dasSignerKey
 }

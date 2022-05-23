@@ -9,51 +9,45 @@ package arbtest
 
 import (
 	"context"
-	"io/ioutil"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/das"
 )
 
 func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigA.DataAvailability.ModeImpl = dasModeString
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	var dbPath string
-	var err error
-	if dasModeString == "local" {
-		dbPath, err = ioutil.TempDir("/tmp", "das_test")
-		Require(t, err)
-		defer os.RemoveAll(dbPath)
-		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
-		chainConfig = params.ArbitrumDevTestDASChainConfig()
-	}
-	_, err = l1NodeConfigA.DataAvailability.Mode()
-	Require(t, err)
+
+	chainConfig, l1NodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeString)
+
 	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
+
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = true
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeString
-	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	dasConfig := das.LocalDiskDASConfig{
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+	}
+	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
 
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 
-	err = l2client.SendTransaction(ctx, tx)
+	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
@@ -104,6 +98,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	if l2balance.Cmp(big.NewInt(2e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
+
 	lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 	Require(t, err)
 	testDeadLine, _ := t.Deadline()
@@ -115,9 +110,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 }
 
 func TestBlockValidatorSimple(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", false)
+	testBlockValidatorSimple(t, das.OnchainDataAvailabilityString, false)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, "local", false)
+	testBlockValidatorSimple(t, das.LocalDiskDataAvailabilityString, false)
 }

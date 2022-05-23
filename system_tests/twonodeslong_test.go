@@ -9,17 +9,15 @@ package arbtest
 
 import (
 	"context"
-	"io/ioutil"
 	"math/big"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/das"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 )
 
@@ -41,26 +39,23 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	var dbPath string
-	var err error
-	if dasModeStr == "local" {
-		dbPath, err = ioutil.TempDir("/tmp", "das_test")
-		Require(t, err)
-		defer os.RemoveAll(dbPath)
-		chainConfig = params.ArbitrumDevTestDASChainConfig()
-		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
-	}
+	chainConfig, l1NodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
+
 	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
+
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
-	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	dasConfig := das.LocalDiskDASConfig{
+		KeyDir:            dbPath,
+		DataDir:           dbPath,
+		AllowGenerateKeys: true,
+	}
+	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
@@ -200,9 +195,9 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 }
 
 func TestTwoNodesLong(t *testing.T) {
-	testTwoNodesLong(t, "onchain")
+	testTwoNodesLong(t, das.OnchainDataAvailabilityString)
 }
 
 func TestTwoNodesLongLocalDAS(t *testing.T) {
-	testTwoNodesLong(t, "local")
+	testTwoNodesLong(t, das.LocalDiskDataAvailabilityString)
 }
