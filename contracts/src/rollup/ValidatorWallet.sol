@@ -126,7 +126,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         IGasRefunder gasRefunder,
         IChallengeManager manager,
         uint64[] calldata challenges
-    ) public onlyOwner {
+    ) public onlyOwner refundsGasWithCalldata(gasRefunder, payable(msg.sender)) {
         if (gasRefunder != IGasRefunder(address(0))) {
             uint256 calldataSize;
             assembly {
