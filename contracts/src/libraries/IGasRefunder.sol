@@ -13,6 +13,8 @@ interface IGasRefunder {
 }
 
 abstract contract GasRefundEnabled {
+    /// @dev this method assumes that the spender was charged calldata as part of the tx input
+    /// if triggered in a contract call, the spender may be overrefunded by appending dummy data to the call
     modifier refundsGasWithCalldata(IGasRefunder gasRefunder, address payable spender) {
         uint256 startGasLeft = gasleft();
         _;
