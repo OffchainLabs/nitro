@@ -6,6 +6,7 @@ package das
 import (
 	"bytes"
 	"context"
+	"encoding/base32"
 	"errors"
 	"io"
 	"testing"
@@ -39,7 +40,11 @@ type mockS3Downloader struct {
 }
 
 func (m *mockS3Downloader) Download(ctx context.Context, w io.WriterAt, input *s3.GetObjectInput, options ...func(*manager.Downloader)) (n int64, err error) {
-	res, err := m.mockStorageService.GetByHash(ctx, []byte(*input.Key))
+	key, err := base32.StdEncoding.DecodeString(*input.Key)
+	if err != nil {
+		return 0, err
+	}
+	res, err := m.mockStorageService.GetByHash(ctx, key)
 	if err != nil {
 		return 0, err
 	}
@@ -66,10 +71,10 @@ func TestS3StorageService(t *testing.T) {
 	Require(t, err)
 
 	val1 := []byte("The first value")
-	key1 := crypto.Keccak256(val1)
-	key2 := crypto.Keccak256(append(val1, 0))
+	val1CorrectKey := crypto.Keccak256(val1)
+	val2IncorrectKey := crypto.Keccak256(append(val1, 0))
 
-	_, err = s3Service.GetByHash(ctx, key1)
+	_, err = s3Service.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
 	}
@@ -77,11 +82,11 @@ func TestS3StorageService(t *testing.T) {
 	err = s3Service.Put(ctx, val1, timeout)
 	Require(t, err)
 
-	_, err = s3Service.GetByHash(ctx, key2)
+	_, err = s3Service.GetByHash(ctx, val2IncorrectKey)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
 	}
-	val, err := s3Service.GetByHash(ctx, key1)
+	val, err := s3Service.GetByHash(ctx, val1CorrectKey)
 	Require(t, err)
 	if !bytes.Equal(val, val1) {
 		t.Fatal(val, val1)
