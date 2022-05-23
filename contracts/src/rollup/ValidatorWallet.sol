@@ -10,7 +10,6 @@ import "../libraries/IGasRefunder.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-
 /// @dev a user can append extra useless data when calling functions
 /// this error is thrown if a user attempts to get
 error BadCalldataLength(uint256 max, uint256 actual);
@@ -41,19 +40,22 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         address[] calldata destination,
         uint256[] calldata amount
     ) public payable onlyOwner refundsGasWithCalldata(gasRefunder, payable(msg.sender)) {
-        if(gasRefunder != IGasRefunder(address(0))) {
+        if (gasRefunder != IGasRefunder(address(0))) {
             uint256 calldataSize;
             assembly {
                 calldataSize := calldatasize()
             }
-            uint256 expectedCalldataSize =
-                FUNC_SELECTOR_CALLDATA_OVERHEAD +
+            uint256 expectedCalldataSize = FUNC_SELECTOR_CALLDATA_OVERHEAD +
                 ADDRESS_CALLDATA_LENGTH +
-                DYNAMIC_ARRAY_CALLDATA_OVERHEAD + data.length +
-                DYNAMIC_ARRAY_CALLDATA_OVERHEAD + (destination.length * ADDRESS_CALLDATA_LENGTH) +
-                DYNAMIC_ARRAY_CALLDATA_OVERHEAD + (amount.length * UINT256_CALLDATA_LENGTH);
-            
-            if(calldataSize > expectedCalldataSize) revert BadCalldataLength(expectedCalldataSize, calldataSize);
+                DYNAMIC_ARRAY_CALLDATA_OVERHEAD +
+                data.length +
+                DYNAMIC_ARRAY_CALLDATA_OVERHEAD +
+                (destination.length * ADDRESS_CALLDATA_LENGTH) +
+                DYNAMIC_ARRAY_CALLDATA_OVERHEAD +
+                (amount.length * UINT256_CALLDATA_LENGTH);
+
+            if (calldataSize > expectedCalldataSize)
+                revert BadCalldataLength(expectedCalldataSize, calldataSize);
         }
 
         uint256 numTxes = data.length;
@@ -87,19 +89,19 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         address destination,
         uint256 amount
     ) public payable onlyOwner refundsGasWithCalldata(gasRefunder, payable(msg.sender)) {
-        if(gasRefunder != IGasRefunder(address(0))) {
+        if (gasRefunder != IGasRefunder(address(0))) {
             uint256 calldataSize;
             assembly {
                 calldataSize := calldatasize()
             }
-            uint256 expectedCalldataSize =
-                FUNC_SELECTOR_CALLDATA_OVERHEAD +
+            uint256 expectedCalldataSize = FUNC_SELECTOR_CALLDATA_OVERHEAD +
                 ADDRESS_CALLDATA_LENGTH +
                 data.length +
                 ADDRESS_CALLDATA_LENGTH +
                 UINT256_CALLDATA_LENGTH;
-            
-            if(calldataSize > expectedCalldataSize) revert BadCalldataLength(expectedCalldataSize, calldataSize);
+
+            if (calldataSize > expectedCalldataSize)
+                revert BadCalldataLength(expectedCalldataSize, calldataSize);
         }
 
         if (data.length > 0) require(destination.isContract(), "NO_CODE_AT_ADDR");
@@ -116,9 +118,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         }
     }
 
-    function timeoutChallenges(IChallengeManager manager, uint64[] calldata challenges)
-        external
-    {
+    function timeoutChallenges(IChallengeManager manager, uint64[] calldata challenges) external {
         timeoutChallengesWithGasRefunder(IGasRefunder(address(0)), manager, challenges);
     }
 
@@ -126,22 +126,20 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         IGasRefunder gasRefunder,
         IChallengeManager manager,
         uint64[] calldata challenges
-    )
-        public
-        onlyOwner
-    {
-        if(gasRefunder != IGasRefunder(address(0))) {
+    ) public onlyOwner {
+        if (gasRefunder != IGasRefunder(address(0))) {
             uint256 calldataSize;
             assembly {
                 calldataSize := calldatasize()
             }
-            uint256 expectedCalldataSize =
-                FUNC_SELECTOR_CALLDATA_OVERHEAD +
+            uint256 expectedCalldataSize = FUNC_SELECTOR_CALLDATA_OVERHEAD +
                 ADDRESS_CALLDATA_LENGTH +
                 ADDRESS_CALLDATA_LENGTH +
-                DYNAMIC_ARRAY_CALLDATA_OVERHEAD + (challenges.length * UINT256_CALLDATA_LENGTH);
-            
-            if(calldataSize > expectedCalldataSize) revert BadCalldataLength(expectedCalldataSize, calldataSize);
+                DYNAMIC_ARRAY_CALLDATA_OVERHEAD +
+                (challenges.length * UINT256_CALLDATA_LENGTH);
+
+            if (calldataSize > expectedCalldataSize)
+                revert BadCalldataLength(expectedCalldataSize, calldataSize);
         }
         uint256 challengesCount = challenges.length;
         for (uint256 i = 0; i < challengesCount; i++) {
