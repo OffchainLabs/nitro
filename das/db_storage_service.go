@@ -5,7 +5,8 @@ package das
 
 import (
 	"context"
-	"github.com/dgraph-io/badger"
+	badger "github.com/dgraph-io/badger/v3"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"time"
 )
@@ -34,7 +35,9 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 	err = ret.stopWaiter.LaunchThread(func(myCtx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		defer func() { _ = ret.db.Close() }()
+		defer func() {
+			_ = ret.db.Close()
+		}()
 		for {
 			select {
 			case <-ticker.C:
@@ -72,9 +75,9 @@ func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 	return ret, err
 }
 
-func (dbs *DBStorageService) PutByHash(ctx context.Context, key []byte, value []byte, timeout uint64) error {
+func (dbs *DBStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
 	return dbs.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry(key, value)
+		e := badger.NewEntry(crypto.Keccak256(data), data)
 		if dbs.discardAfterTimeout {
 			e = e.WithTTL(time.Until(time.Unix(int64(timeout), 0)))
 		}

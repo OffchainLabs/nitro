@@ -31,8 +31,7 @@ func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key []byte) 
 		return nil, ErrClosed
 	}
 	var h32 [32]byte
-	h := crypto.Keccak256(key)
-	copy(h32[:], h)
+	copy(h32[:], key)
 	res, found := m.contents[h32]
 	if !found {
 		return nil, ErrNotFound
@@ -40,16 +39,16 @@ func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key []byte) 
 	return res, nil
 }
 
-func (m *MemoryBackedStorageService) PutByHash(ctx context.Context, key []byte, value []byte, expirationTime uint64) error {
+func (m *MemoryBackedStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
 	m.rwmutex.Lock()
 	defer m.rwmutex.Unlock()
 	if m.closed {
 		return ErrClosed
 	}
 	var h32 [32]byte
-	h := crypto.Keccak256(key)
+	h := crypto.Keccak256(data)
 	copy(h32[:], h)
-	m.contents[h32] = append([]byte{}, value...)
+	m.contents[h32] = append([]byte{}, data...)
 	return nil
 }
 

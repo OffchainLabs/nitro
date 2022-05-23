@@ -16,11 +16,17 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
+type SimpleDASReader interface {
+	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
+}
+
 type DataAvailabilityServiceReader interface {
-	Retrieve(ctx context.Context, cert *DataAvailabilityCertificate) ([]byte, error)
+	SimpleDASReader
 	KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error)
 	CurrentKeysetBytes(ctx context.Context) ([]byte, error)
 }
+
+var ErrHashMismatch = errors.New("Result does not match expected hash")
 
 // Indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.

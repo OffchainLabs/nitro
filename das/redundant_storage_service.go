@@ -53,14 +53,14 @@ func (r *RedundantStorageService) GetByHash(ctx context.Context, key []byte) ([]
 	return nil, anyError
 }
 
-func (r *RedundantStorageService) PutByHash(ctx context.Context, key []byte, value []byte, expirationTime uint64) error {
+func (r *RedundantStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
 	var wg sync.WaitGroup
 	var errorMutex sync.Mutex
 	var anyError error
 	wg.Add(len(r.innerServices))
 	for _, serv := range r.innerServices {
 		go func(s StorageService) {
-			err := s.PutByHash(ctx, key, value, expirationTime)
+			err := s.Put(ctx, data, expirationTime)
 			if err != nil {
 				errorMutex.Lock()
 				anyError = err
