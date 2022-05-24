@@ -745,7 +745,7 @@ func setUpDataAvailabilityService(
 	var dataAvailabilityService das.DataAvailabilityService
 	switch dataAvailabilityMode {
 	case das.DASDataAvailability:
-		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.DASConfig)
+		storageService, err := das.NewStorageServiceFromStorageConfig(ctx, config.DataAvailability.DASConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -798,7 +798,7 @@ func setUpDataAvailabilityReader(
 	var daReader arbstate.SimpleDASReader
 	switch dataAvailabilityMode {
 	case das.DASDataAvailability:
-		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.DASConfig)
+		storageService, err := das.NewStorageServiceFromStorageConfig(ctx, config.DataAvailability.DASConfig)
 		if err != nil {
 			return nil, err
 		}

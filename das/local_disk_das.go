@@ -72,7 +72,7 @@ type DAS struct {
 }
 
 func NewDAS(ctx context.Context, config StorageConfig) (*DAS, error) {
-	storageService, err := NewStorageServiceFromLocalConfig(ctx, config)
+	storageService, err := NewStorageServiceFromStorageConfig(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func NewDASWithSeqInboxCaller(
 	}, nil
 }
 
-func NewStorageServiceFromLocalConfig(ctx context.Context, config StorageConfig) (StorageService, error) {
+func NewStorageServiceFromStorageConfig(ctx context.Context, config StorageConfig) (StorageService, error) {
 	var storageService StorageService
 	var err error
 	switch config.StorageType {
