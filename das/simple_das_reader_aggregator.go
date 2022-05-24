@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -93,10 +94,9 @@ func (s *readerStats) successRatioWeightedMeanLatency() time.Duration {
 			totalLatency += stat.latency
 		}
 		totalAttempts++
-
 	}
 	if successes == 0 {
-		return time.Duration(^(uint64(1) << 63)) // max int64
+		return time.Duration(math.MaxInt64)
 	}
 	avgLatency := float64(totalLatency) / successes
 	successRatio := successes / totalAttempts
