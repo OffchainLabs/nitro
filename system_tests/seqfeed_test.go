@@ -135,12 +135,12 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability.ModeImpl = dasModeStr
-	dasConfig := das.LocalDiskDASConfig{
+	dasConfig := das.StorageConfig{
 		KeyDir:            dbPath,
 		LocalConfig:       das.LocalConfig{DataDir: dbPath},
 		AllowGenerateKeys: true,
 	}
-	nodeConfigC.DataAvailability.LocalDiskDASConfig = dasConfig
+	nodeConfigC.DataAvailability.DASConfig = dasConfig
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest(0)
 	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
 
@@ -152,12 +152,12 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.BatchPoster.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability.ModeImpl = dasModeStr
-	dasConfigB := das.LocalDiskDASConfig{
+	dasConfigB := das.StorageConfig{
 		KeyDir:            dbPath,
 		LocalConfig:       das.LocalConfig{DataDir: dbPath},
 		AllowGenerateKeys: true,
 	}
-	nodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfigB
+	nodeConfigB.DataAvailability.DASConfig = dasConfigB
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
@@ -232,5 +232,5 @@ func TestLyingSequencer(t *testing.T) {
 }
 
 func TestLyingSequencerLocalDAS(t *testing.T) {
-	testLyingSequencer(t, das.LocalDiskDataAvailabilityString)
+	testLyingSequencer(t, das.DASDataAvailabilityString)
 }

@@ -29,12 +29,12 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
-	dasConfig := das.LocalDiskDASConfig{
+	dasConfig := das.StorageConfig{
 		KeyDir:            dbPath,
 		LocalConfig:       das.LocalConfig{DataDir: dbPath},
 		AllowGenerateKeys: true,
 	}
-	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
+	l1NodeConfigB.DataAvailability.DASConfig = dasConfig
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
@@ -76,5 +76,5 @@ func TestTwoNodesSimple(t *testing.T) {
 }
 
 func TestTwoNodesSimpleLocalDAS(t *testing.T) {
-	testTwoNodesSimple(t, das.LocalDiskDataAvailabilityString)
+	testTwoNodesSimple(t, das.DASDataAvailabilityString)
 }

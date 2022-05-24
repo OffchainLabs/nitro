@@ -38,13 +38,13 @@ func startLocalDASServer(
 	keyDir := t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
-	dasConfig := das.LocalDiskDASConfig{
+	dasConfig := das.StorageConfig{
 		KeyDir:      keyDir,
 		LocalConfig: das.LocalConfig{DataDir: dataDir},
 	}
 	storageService, err := das.NewStorageServiceFromLocalConfig(ctx, dasConfig)
 	Require(t, err)
-	localDas, err := das.NewLocalDiskDASWithL1Info(ctx, dasConfig, l1client, seqInboxAddress, storageService)
+	localDas, err := das.NewDASWithL1Info(ctx, dasConfig, l1client, seqInboxAddress, storageService)
 	Require(t, err)
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, localDas)
 	Require(t, err)

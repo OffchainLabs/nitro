@@ -32,22 +32,22 @@ type DataAvailabilityMode uint64
 
 const (
 	OnchainDataAvailability DataAvailabilityMode = iota
-	LocalDiskDataAvailability
+	DASDataAvailability
 	AggregatorDataAvailability
 	// TODO RemoteDataAvailability
 )
 
 const (
 	OnchainDataAvailabilityString    = "onchain"
-	LocalDiskDataAvailabilityString  = "local-disk"
+	DASDataAvailabilityString        = "das"
 	AggregatorDataAvailabilityString = "aggregator"
 	// TODO RemoteDataAvailability
 )
 
 type DataAvailabilityConfig struct {
-	ModeImpl           string             `koanf:"mode"`
-	LocalDiskDASConfig LocalDiskDASConfig `koanf:"local-disk"`
-	AggregatorConfig   AggregatorConfig   `koanf:"aggregator"`
+	ModeImpl         string           `koanf:"mode"`
+	DASConfig        StorageConfig    `koanf:"das"`
+	AggregatorConfig AggregatorConfig `koanf:"aggregator"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
@@ -63,12 +63,12 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 		return OnchainDataAvailability, nil
 	}
 
-	if c.ModeImpl == LocalDiskDataAvailabilityString {
-		if c.LocalDiskDASConfig.LocalConfig.DataDir == "" || (c.LocalDiskDASConfig.KeyDir == "" && c.LocalDiskDASConfig.PrivKey == "") {
+	if c.ModeImpl == DASDataAvailabilityString {
+		if c.DASConfig.LocalConfig.DataDir == "" || (c.DASConfig.KeyDir == "" && c.DASConfig.PrivKey == "") {
 			flag.Usage()
-			return 0, errors.New("--data-availability.local-disk.local.data-dir and --data-availability.local-disk.key-dir must be specified if mode is set to local")
+			return 0, errors.New("--data-availability.das.local.data-dir and --data-availability.das.key-dir must be specified if mode is set to local")
 		}
-		return LocalDiskDataAvailability, nil
+		return DASDataAvailability, nil
 	}
 
 	if c.ModeImpl == AggregatorDataAvailabilityString {
@@ -98,8 +98,8 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 }
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local-disk', or 'aggregator')")
-	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
+	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'das', or 'aggregator')")
+	StorageConfigAddOptions(prefix+".das", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
 }
 

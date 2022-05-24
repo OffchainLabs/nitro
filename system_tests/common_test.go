@@ -333,16 +333,16 @@ func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig
 	var err error
 
 	var dasSignerKey *blsSignatures.PublicKey
-	if dasModeString == das.LocalDiskDataAvailabilityString {
+	if dasModeString == das.DASDataAvailabilityString {
 		dbPath = t.TempDir()
 		dasSignerKey, _, err = das.GenerateAndStoreKeys(dbPath)
 		Require(t, err)
-		dasConfig := das.LocalDiskDASConfig{
+		dasConfig := das.StorageConfig{
 			KeyDir:            dbPath,
 			LocalConfig:       das.LocalConfig{DataDir: dbPath},
 			AllowGenerateKeys: true,
 		}
-		l1NodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig
+		l1NodeConfigA.DataAvailability.DASConfig = dasConfig
 		chainConfig = params.ArbitrumDevTestDASChainConfig()
 	}
 	_, err = l1NodeConfigA.DataAvailability.Mode()

@@ -31,13 +31,13 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		config := LocalDiskDASConfig{
+		config := StorageConfig{
 			KeyDir:            dbPath,
 			LocalConfig:       LocalConfig{dbPath},
 			AllowGenerateKeys: true,
 			L1NodeURL:         "none",
 		}
-		das, err := NewLocalDiskDAS(ctx, config)
+		das, err := NewDAS(ctx, config)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -208,13 +208,13 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		config := LocalDiskDASConfig{
+		config := StorageConfig{
 			KeyDir:            dbPath,
 			LocalConfig:       LocalConfig{dbPath},
 			AllowGenerateKeys: true,
 			L1NodeURL:         "none",
 		}
-		das, err := NewLocalDiskDAS(ctx, config)
+		das, err := NewDAS(ctx, config)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -312,14 +312,14 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		config := LocalDiskDASConfig{
+		config := StorageConfig{
 			KeyDir:            dbPath,
 			LocalConfig:       LocalConfig{dbPath},
 			AllowGenerateKeys: true,
 			L1NodeURL:         "none",
 		}
 
-		das, err := NewLocalDiskDAS(ctx, config)
+		das, err := NewDAS(ctx, config)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)

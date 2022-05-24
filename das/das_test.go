@@ -22,14 +22,14 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	defer os.RemoveAll(dbPath)
 	Require(t, err)
 
-	config := LocalDiskDASConfig{
+	config := StorageConfig{
 		KeyDir:            dbPath,
 		LocalConfig:       LocalConfig{dbPath},
 		AllowGenerateKeys: true,
 		L1NodeURL:         "none",
 		StorageType:       storageType,
 	}
-	das, err := NewLocalDiskDAS(firstCtx, config)
+	das, err := NewDAS(firstCtx, config)
 	Require(t, err, "no das")
 
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
@@ -53,7 +53,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	secondCtx, secondCancel := context.WithCancel(context.Background())
 	defer secondCancel()
 
-	das2, err := NewLocalDiskDAS(secondCtx, config)
+	das2, err := NewDAS(secondCtx, config)
 	Require(t, err, "no das")
 
 	messageRetrieved2, err := das2.GetByHash(secondCtx, cert.DataHash[:])
@@ -85,14 +85,14 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	defer os.RemoveAll(dbPath)
 	Require(t, err)
 
-	config := LocalDiskDASConfig{
+	config := StorageConfig{
 		KeyDir:            dbPath,
 		LocalConfig:       LocalConfig{dbPath},
 		AllowGenerateKeys: true,
 		L1NodeURL:         "none",
 		StorageType:       storageType,
 	}
-	das, err := NewLocalDiskDAS(ctx, config)
+	das, err := NewDAS(ctx, config)
 	Require(t, err, "no das")
 
 	messageSaved := []byte("hello world")
