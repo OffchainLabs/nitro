@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"fmt"
-	"regexp"
 	"time"
 
 	"golang.org/x/crypto/sha3"
@@ -45,18 +44,15 @@ type RedisStorageService struct {
 	client             redis.UniversalClient
 }
 
-var keyIsHexRegex = regexp.MustCompile("^(0x)?[a-fA-F0-9]{64}$")
-
 func NewRedisStorageService(redisConfig RedisConfig, baseStorageService StorageService) (StorageService, error) {
 	redisOptions, err := redis.ParseURL(redisConfig.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
-	keyIsHex := keyIsHexRegex.Match([]byte(redisConfig.KeyConfig))
-	if !keyIsHex {
+	signingKey := common.HexToHash(redisConfig.KeyConfig)
+	if signingKey == (common.Hash{}) {
 		return nil, errors.New("signing key file contents are not 32 bytes of hex")
 	}
-	signingKey := common.HexToHash(redisConfig.KeyConfig)
 	return &RedisStorageService{
 		baseStorageService: baseStorageService,
 		redisConfig:        redisConfig,

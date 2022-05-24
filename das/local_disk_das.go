@@ -34,35 +34,43 @@ const (
 	// Add more type of expiration policy.
 )
 
-type LocalDiskDASConfig struct {
-	KeyDir                string               `koanf:"key-dir"`
-	PrivKey               string               `koanf:"priv-key"`
-	DataDir               string               `koanf:"data-dir"`
-	DiscardAfterTimeout   bool                 `koanf:"discard-after-timeout"`
-	S3Config              genericconf.S3Config `koanf:"s3"`
-	RedisConfig           RedisConfig          `koanf:"redis"`
-	BigCacheConfig        BigCacheConfig       `koanf:"big-cache"`
-	AllowGenerateKeys     bool                 `koanf:"allow-generate-keys"`
-	L1NodeURL             string               `koanf:"l1-node-url"`
-	SequencerInboxAddress string               `koanf:"sequencer-inbox-address"`
-	StorageType           string               `koanf:"storage-type"`
+type StorageConfig struct {
+	KeyDir              string               `koanf:"key-dir"`
+	PrivKey             string               `koanf:"priv-key"`
+	LocalConfig         LocalConfig          `koanf:"local"`
+	DiscardAfterTimeout bool                 `koanf:"discard-after-timeout"`
+	S3Config            genericconf.S3Config `koanf:"s3"`
+	RedisConfig         RedisConfig          `koanf:"redis"`
+	BigCacheConfig      BigCacheConfig       `koanf:"big-cache"`
+	AllowGenerateKeys   bool                 `koanf:"allow-generate-keys"`
+	StorageType         string               `koanf:"storage-type"`
 }
 
-func LocalDiskDASConfigAddOptions(prefix string, f *flag.FlagSet) {
+type LocalConfig struct {
+	DataDir string `koanf:"data-dir"`
+}
+
+var DefaultLocalConfig = LocalConfig{
+	DataDir: "",
+}
+
+func LocalConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".data-dir", DefaultLocalConfig.DataDir, "Local data directory")
+}
+
+func StorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".key-dir", "", fmt.Sprintf("The directory to read the bls keypair ('%s' and '%s') from", DefaultPubKeyFilename, DefaultPrivKeyFilename))
 	f.String(prefix+".priv-key", "", "The base64 BLS private key to use for signing DAS certificates")
-	f.String(prefix+".data-dir", "", "The directory to use as the DAS file-based database")
 	f.Bool(prefix+".discard-after-timeout", false, "Discard data after timeout in DAS")
+	LocalConfigAddOptions(prefix+".local", f)
 	genericconf.S3ConfigAddOptions(prefix+".s3", f)
 	RedisConfigAddOptions(prefix+".redis", f)
 	BigCacheConfigAddOptions(prefix+".big-cache", f)
 	f.Bool(prefix+".allow-generate-keys", false, "Allow the local disk DAS to generate its own keys in key-dir if they don't already exist")
-	f.String(prefix+".l1-node-url", "", "URL of L1 Ethereum node")
-	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
 }
 
-type LocalDiskDAS struct {
-	config         LocalDiskDASConfig
+type DAS struct {
+	config         StorageConfig
 	privKey        *blsSignatures.PrivateKey
 	keysetHash     [32]byte
 	keysetBytes    []byte
@@ -70,13 +78,13 @@ type LocalDiskDAS struct {
 	bpVerifier     *BatchPosterVerifier
 }
 
-func NewLocalDiskDAS(ctx context.Context, config LocalDiskDASConfig) (*LocalDiskDAS, error) {
-	storageService, err := NewStorageServiceFromLocalConfig(ctx, config)
+func NewDAS(ctx context.Context, config DataAvailabilityConfig) (*DAS, error) {
+	storageService, err := NewStorageServiceFromStorageConfig(ctx, config.DASConfig)
 	if err != nil {
 		return nil, err
 	}
 	if config.L1NodeURL == "none" {
-		return NewLocalDiskDASWithSeqInboxCaller(ctx, config, nil, storageService)
+		return NewDASWithSeqInboxCaller(ctx, config.DASConfig, nil, storageService)
 	}
 	l1client, err := ethclient.Dial(config.L1NodeURL)
 	if err != nil {
@@ -87,31 +95,31 @@ func NewLocalDiskDAS(ctx context.Context, config LocalDiskDASConfig) (*LocalDisk
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewLocalDiskDASWithSeqInboxCaller(ctx, config, nil, storageService)
+		return NewDASWithSeqInboxCaller(ctx, config.DASConfig, nil, storageService)
 	}
-	return NewLocalDiskDASWithL1Info(ctx, config, l1client, *seqInboxAddress, storageService)
+	return NewDASWithL1Info(ctx, config.DASConfig, l1client, *seqInboxAddress, storageService)
 }
 
-func NewLocalDiskDASWithL1Info(
+func NewDASWithL1Info(
 	ctx context.Context,
-	config LocalDiskDASConfig,
+	config StorageConfig,
 	l1client arbutil.L1Interface,
 	seqInboxAddress common.Address,
 	storageService StorageService,
-) (*LocalDiskDAS, error) {
+) (*DAS, error) {
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	if err != nil {
 		return nil, err
 	}
-	return NewLocalDiskDASWithSeqInboxCaller(ctx, config, seqInboxCaller, storageService)
+	return NewDASWithSeqInboxCaller(ctx, config, seqInboxCaller, storageService)
 }
 
-func NewLocalDiskDASWithSeqInboxCaller(
+func NewDASWithSeqInboxCaller(
 	ctx context.Context,
-	config LocalDiskDASConfig,
+	config StorageConfig,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 	storageService StorageService,
-) (*LocalDiskDAS, error) {
+) (*DAS, error) {
 	var privKey *blsSignatures.PrivateKey
 	var err error
 	if len(config.PrivKey) != 0 {
@@ -162,7 +170,7 @@ func NewLocalDiskDASWithSeqInboxCaller(
 		bpVerifier = NewBatchPosterVerifier(seqInboxCaller)
 	}
 
-	return &LocalDiskDAS{
+	return &DAS{
 		config:         config,
 		privKey:        privKey,
 		keysetHash:     ksHash,
@@ -172,14 +180,14 @@ func NewLocalDiskDASWithSeqInboxCaller(
 	}, nil
 }
 
-func NewStorageServiceFromLocalConfig(ctx context.Context, config LocalDiskDASConfig) (StorageService, error) {
+func NewStorageServiceFromStorageConfig(ctx context.Context, config StorageConfig) (StorageService, error) {
 	var storageService StorageService
 	var err error
 	switch config.StorageType {
 	case "", "files":
-		storageService = NewLocalDiskStorageService(config.DataDir)
+		storageService = NewLocalDiskStorageService(config.LocalConfig.DataDir)
 	case "db":
-		storageService, err = NewDBStorageService(ctx, config.DataDir, config.DiscardAfterTimeout)
+		storageService, err = NewDBStorageService(ctx, config.LocalConfig.DataDir, config.DiscardAfterTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -220,13 +228,13 @@ func NewStorageServiceFromLocalConfig(ctx context.Context, config LocalDiskDASCo
 	return storageService, nil
 }
 
-func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
-	if das.bpVerifier != nil {
+func (d *DAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+	if d.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
-		isBatchPoster, err := das.bpVerifier.IsBatchPoster(ctx, actualSigner)
+		isBatchPoster, err := d.bpVerifier.IsBatchPoster(ctx, actualSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -242,44 +250,44 @@ func (das *LocalDiskDAS) Store(ctx context.Context, message []byte, timeout uint
 	c.SignersMask = 1 // The aggregator will override this if we're part of a committee.
 
 	fields := c.SerializeSignableFields()
-	c.Sig, err = blsSignatures.SignMessage(*das.privKey, fields)
+	c.Sig, err = blsSignatures.SignMessage(*d.privKey, fields)
 	if err != nil {
 		return nil, err
 	}
 
-	err = das.storageService.Put(ctx, message, timeout)
+	err = d.storageService.Put(ctx, message, timeout)
 	if err != nil {
 		return nil, err
 	}
-	err = das.storageService.Sync(ctx)
+	err = d.storageService.Sync(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	c.KeysetHash = das.keysetHash
+	c.KeysetHash = d.keysetHash
 
 	return c, nil
 }
 
-func (das *LocalDiskDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	return das.storageService.GetByHash(ctx, hash)
+func (d *DAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	return d.storageService.GetByHash(ctx, hash)
 }
 
-func (das *LocalDiskDAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	if bytes.Equal(ksHash, das.keysetHash[:]) {
-		return das.keysetBytes, nil
+func (d *DAS) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
+	if bytes.Equal(ksHash, d.keysetHash[:]) {
+		return d.keysetBytes, nil
 	}
-	contents, err := das.GetByHash(ctx, ksHash)
+	contents, err := d.GetByHash(ctx, ksHash)
 	if err == nil {
 		return contents, nil
 	}
 	return nil, ErrDasKeysetNotFound
 }
 
-func (das *LocalDiskDAS) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
-	return das.keysetBytes, nil
+func (d *DAS) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
+	return d.keysetBytes, nil
 }
 
-func (d *LocalDiskDAS) String() string {
-	return fmt.Sprintf("LocalDiskDAS{config:%v}", d.config)
+func (d *DAS) String() string {
+	return fmt.Sprintf("DAS{config:%v}", d.config)
 }
