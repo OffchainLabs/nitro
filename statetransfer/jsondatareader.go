@@ -14,7 +14,7 @@ import (
 )
 
 type ArbosInitFileContents struct {
-	BlocksPath               string
+	PreinitBlocks            uint64
 	AddressTableContentsPath string
 	RetryableDataPath        string
 	AccountsPath             string
@@ -23,6 +23,10 @@ type ArbosInitFileContents struct {
 type JsonInitDataReader struct {
 	basePath string
 	data     ArbosInitFileContents
+}
+
+func (r *JsonInitDataReader) GetPreinitBlockCount() (uint64, error) {
+	return 0, nil
 }
 
 type JsonListReader struct {
@@ -106,31 +110,6 @@ func NewJsonInitDataReader(filepath string) (InitDataReader, error) {
 
 func (m *JsonInitDataReader) Close() error {
 	return nil
-}
-
-type JsonStoredBlockReader struct {
-	JsonListReader
-}
-
-func (r *JsonStoredBlockReader) GetNext() (*StoredBlock, error) {
-	if !r.More() {
-		return nil, errNoMore
-	}
-	var elem StoredBlock
-	if err := r.input.Decode(&elem); err != nil {
-		return nil, err
-	}
-	return &elem, nil
-}
-
-func (m *JsonInitDataReader) GetStoredBlockReader() (StoredBlockReader, error) {
-	listreader, err := m.getListReader(m.data.BlocksPath)
-	if err != nil {
-		return nil, err
-	}
-	return &JsonStoredBlockReader{
-		JsonListReader: listreader,
-	}, nil
 }
 
 type JsonRetriableDataReader struct {

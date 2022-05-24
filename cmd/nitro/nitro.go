@@ -229,6 +229,7 @@ func main() {
 		var initData statetransfer.ArbosInitializationInfo
 		if nodeConfig.DevInit {
 			initData = statetransfer.ArbosInitializationInfo{
+				PreinitBlocks: nodeConfig.DevInitBlockNum,
 				Accounts: []statetransfer.AccountInitializationInfo{
 					{
 						Addr:       devAddr,
@@ -260,15 +261,18 @@ func main() {
 			panic(err)
 		}
 	} else {
-		blockReader, err := initDataReader.GetStoredBlockReader()
+		anchients, err := chainDb.Ancients()
 		if err != nil {
 			panic(err)
 		}
-		blockNum, err := arbnode.ImportBlocksToChainDb(chainDb, blockReader)
+		preinitBlocks, err := initDataReader.GetPreinitBlockCount()
 		if err != nil {
 			panic(err)
 		}
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, blockNum, chainConfig)
+		if anchients < preinitBlocks {
+			panic(fmt.Sprint(preinitBlocks, " pre-init blocks required, but only ", anchients, " found"))
+		}
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, chainConfig)
 		if err != nil {
 			panic(err)
 		}
@@ -311,7 +315,8 @@ func main() {
 		// we should create our own fake init message.
 		count, err := currentNode.TxStreamer.GetMessageCount()
 		if err != nil {
-			panic(err)
+			log.Warn("Getmessagecount failed. Assuming new atabase", "err", err)
+			count = 0
 		}
 		if count == 0 {
 			err = currentNode.TxStreamer.AddFakeInitMessage()
@@ -343,37 +348,39 @@ func main() {
 }
 
 type NodeConfig struct {
-	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	Node          arbnode.Config                  `koanf:"node"`
-	L1            conf.L1Config                   `koanf:"l1"`
-	L2            conf.L2Config                   `koanf:"l2"`
-	LogLevel      int                             `koanf:"log-level"`
-	LogType       string                          `koanf:"log-type"`
-	Persistent    conf.PersistentConfig           `koanf:"persistent"`
-	HTTP          genericconf.HTTPConfig          `koanf:"http"`
-	WS            genericconf.WSConfig            `koanf:"ws"`
-	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
-	DevInit       bool                            `koanf:"dev-init"`
-	NoInit        bool                            `koanf:"no-init"`
-	ImportFile    string                          `koanf:"import-file"`
-	Metrics       bool                            `koanf:"metrics"`
-	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	Conf            genericconf.ConfConfig          `koanf:"conf"`
+	Node            arbnode.Config                  `koanf:"node"`
+	L1              conf.L1Config                   `koanf:"l1"`
+	L2              conf.L2Config                   `koanf:"l2"`
+	LogLevel        int                             `koanf:"log-level"`
+	LogType         string                          `koanf:"log-type"`
+	Persistent      conf.PersistentConfig           `koanf:"persistent"`
+	HTTP            genericconf.HTTPConfig          `koanf:"http"`
+	WS              genericconf.WSConfig            `koanf:"ws"`
+	GraphQL         genericconf.GraphQLConfig       `koanf:"graphql"`
+	DevInit         bool                            `koanf:"dev-init"`
+	DevInitBlockNum uint64                          `koanf:"dev-init-blocknum"`
+	NoInit          bool                            `koanf:"no-init"`
+	ImportFile      string                          `koanf:"import-file"`
+	Metrics         bool                            `koanf:"metrics"`
+	MetricsServer   genericconf.MetricsServerConfig `koanf:"metrics-server"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:          genericconf.ConfConfigDefault,
-	Node:          arbnode.ConfigDefault,
-	L1:            conf.L1ConfigDefault,
-	L2:            conf.L2ConfigDefault,
-	LogLevel:      int(log.LvlInfo),
-	LogType:       "plaintext",
-	Persistent:    conf.PersistentConfigDefault,
-	HTTP:          genericconf.HTTPConfigDefault,
-	WS:            genericconf.WSConfigDefault,
-	DevInit:       false,
-	ImportFile:    "",
-	Metrics:       false,
-	MetricsServer: genericconf.MetricsServerConfigDefault,
+	Conf:            genericconf.ConfConfigDefault,
+	Node:            arbnode.ConfigDefault,
+	L1:              conf.L1ConfigDefault,
+	L2:              conf.L2ConfigDefault,
+	LogLevel:        int(log.LvlInfo),
+	LogType:         "plaintext",
+	Persistent:      conf.PersistentConfigDefault,
+	HTTP:            genericconf.HTTPConfigDefault,
+	WS:              genericconf.WSConfigDefault,
+	DevInit:         false,
+	DevInitBlockNum: 0,
+	ImportFile:      "",
+	Metrics:         false,
+	MetricsServer:   genericconf.MetricsServerConfigDefault,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -389,6 +396,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.Bool("no-init", NodeConfigDefault.DevInit, "Do not init chain. Data must be valid in database.")
+	f.Uint64("dev-init-blocknum", NodeConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in anchient database.")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
