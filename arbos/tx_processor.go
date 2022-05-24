@@ -134,8 +134,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		util.MintBalance(&from, tx.DepositValue, evm, scenario)
 
 		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
-		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
-		if excessDeposit.Sign() < 0 {
+		excessSubmissionFee := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
+		if excessSubmissionFee.Sign() < 0 {
 			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
 		}
 
@@ -143,7 +143,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if err := util.TransferBalance(&from, &networkFeeAccount, submissionFee, evm, scenario); err != nil {
 			return true, 0, err, nil
 		}
-		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, excessDeposit, evm, scenario); err != nil {
+		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, excessSubmissionFee, evm, scenario); err != nil {
 			return true, 0, err, nil
 		}
 		if err := util.TransferBalance(&tx.From, &escrow, tx.Value, evm, scenario); err != nil {
@@ -170,10 +170,29 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			glog.Error("failed to emit TicketCreated event", "err", err)
 		}
 
-		balance := statedb.GetBalance(tx.From)
 		basefee := evm.Context.BaseFee
 		usergas := p.msg.Gas()
 		gascost := arbmath.BigMulByUint(basefee, usergas)
+
+		excessDeposit := arbmath.BigSub(
+			// deposit in excess of call value and max submission fee
+			arbmath.BigSub(tx.DepositValue, tx.Value),
+			tx.MaxSubmissionFee,
+		)
+
+		if arbmath.BigLessThan(gascost, excessDeposit) {
+			// refund if gas cost is less than excess deposit
+			excessGas := arbmath.BigSub(
+				excessDeposit,
+				gascost,
+			)
+			if err := util.TransferBalance(&from, &tx.FeeRefundAddr, excessGas, evm, scenario); err != nil {
+				// should be impossible because balance >= excessDeposit >= excessGas
+				panic(err)
+			}
+		}
+
+		balance := statedb.GetBalance(tx.From)
 
 		if arbmath.BigLessThan(balance, gascost) || usergas < params.TxGas {
 			// user didn't have or provide enough gas to do an initial redeem
