@@ -349,11 +349,9 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fail(t, "The Fee Refund Address didn't receive the right funds")
 	}
 
-	// the faucet must pay for both the gas used and the call value supplied
-	expectedGasChange := arbmath.BigMul(l2BaseFee, retryableGas)
-	expectedGasChange = arbmath.BigSub(expectedGasChange, usertxopts.Value) // the user is credited this
-	expectedGasChange = arbmath.BigAdd(expectedGasChange, maxSubmissionFee)
-	expectedGasChange = arbmath.BigAdd(expectedGasChange, retryableL2CallValue)
+	// the retryable should be funded entirely from L1
+	// any excess deposit less gas should be sent to fee refund address
+	expectedGasChange := big.NewInt(0)
 
 	if !arbmath.BigEquals(fundsBeforeSubmit, arbmath.BigAdd(fundsAfterSubmit, expectedGasChange)) {
 		diff := arbmath.BigSub(fundsBeforeSubmit, fundsAfterSubmit)
