@@ -33,7 +33,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 
 		config := LocalDiskDASConfig{
 			KeyDir:            dbPath,
-			DataDir:           dbPath,
+			LocalConfig:       LocalConfig{dbPath},
 			AllowGenerateKeys: true,
 			L1NodeURL:         "none",
 		}
@@ -210,7 +210,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 		config := LocalDiskDASConfig{
 			KeyDir:            dbPath,
-			DataDir:           dbPath,
+			LocalConfig:       LocalConfig{dbPath},
 			AllowGenerateKeys: true,
 			L1NodeURL:         "none",
 		}
@@ -314,7 +314,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 
 		config := LocalDiskDASConfig{
 			KeyDir:            dbPath,
-			DataDir:           dbPath,
+			LocalConfig:       LocalConfig{dbPath},
 			AllowGenerateKeys: true,
 			L1NodeURL:         "none",
 		}

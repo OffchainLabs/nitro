@@ -31,7 +31,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
 	dasConfig := das.LocalDiskDASConfig{
 		KeyDir:            dbPath,
-		DataDir:           dbPath,
+		LocalConfig:       das.LocalConfig{DataDir: dbPath},
 		AllowGenerateKeys: true,
 	}
 	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig

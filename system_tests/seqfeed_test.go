@@ -137,7 +137,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.DataAvailability.ModeImpl = dasModeStr
 	dasConfig := das.LocalDiskDASConfig{
 		KeyDir:            dbPath,
-		DataDir:           dbPath,
+		LocalConfig:       das.LocalConfig{DataDir: dbPath},
 		AllowGenerateKeys: true,
 	}
 	nodeConfigC.DataAvailability.LocalDiskDASConfig = dasConfig
@@ -154,7 +154,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.DataAvailability.ModeImpl = dasModeStr
 	dasConfigB := das.LocalDiskDASConfig{
 		KeyDir:            dbPath,
-		DataDir:           dbPath,
+		LocalConfig:       das.LocalConfig{DataDir: dbPath},
 		AllowGenerateKeys: true,
 	}
 	nodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfigB

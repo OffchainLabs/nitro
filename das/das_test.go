@@ -24,7 +24,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 
 	config := LocalDiskDASConfig{
 		KeyDir:            dbPath,
-		DataDir:           dbPath,
+		LocalConfig:       LocalConfig{dbPath},
 		AllowGenerateKeys: true,
 		L1NodeURL:         "none",
 		StorageType:       storageType,
@@ -87,7 +87,7 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 
 	config := LocalDiskDASConfig{
 		KeyDir:            dbPath,
-		DataDir:           dbPath,
+		LocalConfig:       LocalConfig{dbPath},
 		AllowGenerateKeys: true,
 		L1NodeURL:         "none",
 		StorageType:       storageType,

@@ -39,8 +39,8 @@ func startLocalDASServer(
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 	dasConfig := das.LocalDiskDASConfig{
-		KeyDir:  keyDir,
-		DataDir: dataDir,
+		KeyDir:      keyDir,
+		LocalConfig: das.LocalConfig{DataDir: dataDir},
 	}
 	storageService, err := das.NewStorageServiceFromLocalConfig(ctx, dasConfig)
 	Require(t, err)

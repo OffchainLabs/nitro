@@ -11,7 +11,7 @@ Commonly used options:
       --port uint                                                     Port to listen on (default 9876)
       --log-level int                                                 log level (default 3)
       
-      --data-availability.local-disk.data-dir string                  The directory to use as the DAS file-based database
+      --data-availability.local-disk.local.data-dir string                  The directory to use as the DAS file-based database
       --data-availability.local-disk.key-dir string                   The directory to read the bls keypair ('das_bls.pub' and 'das_bls') from
       --data-availability.local-disk.l1-node-url string               URL of L1 Ethereum node
       --data-availability.local-disk.sequencer-inbox-address string   L1 address of SequencerInbox contract
@@ -129,7 +129,7 @@ spec:
         - -c
         - |
           mkdir -p /home/user/data/db
-          /usr/local/bin/daserver --data-availability.local-disk.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT> --addr '0.0.0.0' --data-availability.mode local-disk --data-availability.local-disk.key-dir /home/user/data/keys --data-availability.local-disk.data-dir /home/user/data/db --data-availability.local-disk.sequencer-inbox-address '0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf'
+          /usr/local/bin/daserver --data-availability.local-disk.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT> --addr '0.0.0.0' --data-availability.mode local-disk --data-availability.local-disk.key-dir /home/user/data/keys --data-availability.local-disk.local.data-dir /home/user/data/db --data-availability.local-disk.sequencer-inbox-address '0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf'
         image: offchainlabs/nitro-node:v2.0.0-alpha.4
         imagePullPolicy: Always
         resources:

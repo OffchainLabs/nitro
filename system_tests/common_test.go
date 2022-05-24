@@ -339,7 +339,7 @@ func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig
 		Require(t, err)
 		dasConfig := das.LocalDiskDASConfig{
 			KeyDir:            dbPath,
-			DataDir:           dbPath,
+			LocalConfig:       das.LocalConfig{DataDir: dbPath},
 			AllowGenerateKeys: true,
 		}
 		l1NodeConfigA.DataAvailability.LocalDiskDASConfig = dasConfig

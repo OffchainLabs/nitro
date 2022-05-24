@@ -29,8 +29,8 @@ func TestRPC(t *testing.T) {
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	testhelpers.RequireImpl(t, err)
 	dasConfig := das.LocalDiskDASConfig{
-		KeyDir:  keyDir,
-		DataDir: dataDir,
+		KeyDir:      keyDir,
+		LocalConfig: das.LocalConfig{DataDir: dataDir},
 	}
 	storageService, err := das.NewStorageServiceFromLocalConfig(ctx, dasConfig)
 	testhelpers.RequireImpl(t, err)

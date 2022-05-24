@@ -37,7 +37,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeString
 	dasConfig := das.LocalDiskDASConfig{
 		KeyDir:            dbPath,
-		DataDir:           dbPath,
+		LocalConfig:       das.LocalConfig{DataDir: dbPath},
 		AllowGenerateKeys: true,
 	}
 	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
