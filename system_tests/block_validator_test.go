@@ -35,12 +35,12 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = true
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeString
-	dasConfig := das.LocalDiskDASConfig{
+	dasConfig := das.StorageConfig{
 		KeyDir:            dbPath,
-		DataDir:           dbPath,
+		LocalConfig:       das.LocalConfig{DataDir: dbPath},
 		AllowGenerateKeys: true,
 	}
-	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
+	l1NodeConfigB.DataAvailability.DASConfig = dasConfig
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
@@ -114,5 +114,5 @@ func TestBlockValidatorSimple(t *testing.T) {
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, das.LocalDiskDataAvailabilityString, false)
+	testBlockValidatorSimple(t, das.DASDataAvailabilityString, false)
 }
