@@ -269,12 +269,18 @@ func TestSubmissionGasCosts(t *testing.T) {
 	Require(t, err)
 
 	usefulGas := params.TxGas
-	excessGas := uint64(808)
 
 	maxSubmissionFee := big.NewInt(1e13)
-	retryableGas := arbmath.UintToBig(usefulGas + excessGas) // will only burn the intrinsic cost
+	retryableGas := arbmath.UintToBig(usefulGas + uint64(808)) // will only burn the intrinsic cost
 	retryableL2CallValue := big.NewInt(1e4)
 	retryableCallData := []byte{}
+	excessDeposit := arbmath.BigSub(
+		arbmath.BigSub(
+			usertxopts.Value,
+			retryableL2CallValue,
+		),
+		maxSubmissionFee,
+	)
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		receiveAddress,
@@ -296,7 +302,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 	l2BaseFee := GetBaseFee(t, l2client, ctx)
-	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGas)
+	usedWei := arbmath.BigMulByUint(l2BaseFee, usefulGas)
 
 	l1HeaderAfterSubmit, err := l1client.HeaderByHash(ctx, l1receipt.BlockHash)
 	Require(t, err)
@@ -335,10 +341,11 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 	// the fee refund address should recieve the excess gas
 	colors.PrintBlue("Base Fee      ", l2BaseFee)
-	colors.PrintBlue("Excess Gas    ", excessGas)
-	colors.PrintBlue("Excess Wei    ", excessWei)
+	colors.PrintBlue("Useful Gas    ", usefulGas)
+	colors.PrintBlue("Used Wei      ", usedWei)
+	colors.PrintBlue("Excess Deposit", excessDeposit)
 	colors.PrintMint("Fee Refund    ", refundFunds)
-	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(excessWei, submissionFeeRefund)) {
+	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(arbmath.sub(excessDeposit, usedWei), submissionFeeRefund)) {
 		Fail(t, "The Fee Refund Address didn't receive the right funds")
 	}
 
