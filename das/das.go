@@ -45,13 +45,17 @@ const (
 )
 
 type DataAvailabilityConfig struct {
-	ModeImpl         string           `koanf:"mode"`
-	DASConfig        StorageConfig    `koanf:"das"`
-	AggregatorConfig AggregatorConfig `koanf:"aggregator"`
+	ModeImpl              string           `koanf:"mode"`
+	DASConfig             StorageConfig    `koanf:"das"`
+	AggregatorConfig      AggregatorConfig `koanf:"aggregator"`
+	L1NodeURL             string           `koanf:"l1-node-url"`
+	SequencerInboxAddress string           `koanf:"sequencer-inbox-address"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl: OnchainDataAvailabilityString,
+	ModeImpl:              OnchainDataAvailabilityString,
+	L1NodeURL:             "",
+	SequencerInboxAddress: "",
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
@@ -101,6 +105,8 @@ func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'das', or 'aggregator')")
 	StorageConfigAddOptions(prefix+".das", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
+	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node")
+	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 }
 
 func serializeSignableFields(c *arbstate.DataAvailabilityCertificate) []byte {

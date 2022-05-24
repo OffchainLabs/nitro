@@ -110,12 +110,12 @@ func startup() error {
 	var dasImpl das.DataAvailabilityService
 	switch mode {
 	case das.DASDataAvailability:
-		dasImpl, err = das.NewDAS(ctx, serverConfig.DAConf.DASConfig)
+		dasImpl, err = das.NewDAS(ctx, serverConfig.DAConf)
 		if err != nil {
 			return err
 		}
 	case das.AggregatorDataAvailability:
-		dasImpl, err = dasrpc.NewRPCAggregator(ctx, serverConfig.DAConf.AggregatorConfig)
+		dasImpl, err = dasrpc.NewRPCAggregator(ctx, serverConfig.DAConf)
 		if err != nil {
 			return err
 		}

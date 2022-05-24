@@ -26,16 +26,14 @@ import (
 var ErrDasKeysetNotFound = errors.New("no such keyset")
 
 type StorageConfig struct {
-	KeyDir                string               `koanf:"key-dir"`
-	PrivKey               string               `koanf:"priv-key"`
-	LocalConfig           LocalConfig          `koanf:"local"`
-	S3Config              genericconf.S3Config `koanf:"s3"`
-	RedisConfig           RedisConfig          `koanf:"redis"`
-	BigCacheConfig        BigCacheConfig       `koanf:"big-cache"`
-	AllowGenerateKeys     bool                 `koanf:"allow-generate-keys"`
-	L1NodeURL             string               `koanf:"l1-node-url"`
-	SequencerInboxAddress string               `koanf:"sequencer-inbox-address"`
-	StorageType           string               `koanf:"storage-type"`
+	KeyDir            string               `koanf:"key-dir"`
+	PrivKey           string               `koanf:"priv-key"`
+	LocalConfig       LocalConfig          `koanf:"local"`
+	S3Config          genericconf.S3Config `koanf:"s3"`
+	RedisConfig       RedisConfig          `koanf:"redis"`
+	BigCacheConfig    BigCacheConfig       `koanf:"big-cache"`
+	AllowGenerateKeys bool                 `koanf:"allow-generate-keys"`
+	StorageType       string               `koanf:"storage-type"`
 }
 
 type LocalConfig struct {
@@ -58,8 +56,6 @@ func StorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	RedisConfigAddOptions(prefix+".redis", f)
 	BigCacheConfigAddOptions(prefix+".big-cache", f)
 	f.Bool(prefix+".allow-generate-keys", false, "Allow the local disk DAS to generate its own keys in key-dir if they don't already exist")
-	f.String(prefix+".l1-node-url", "", "URL of L1 Ethereum node")
-	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
 }
 
 type DAS struct {
@@ -71,13 +67,13 @@ type DAS struct {
 	bpVerifier     *BatchPosterVerifier
 }
 
-func NewDAS(ctx context.Context, config StorageConfig) (*DAS, error) {
-	storageService, err := NewStorageServiceFromStorageConfig(ctx, config)
+func NewDAS(ctx context.Context, config DataAvailabilityConfig) (*DAS, error) {
+	storageService, err := NewStorageServiceFromStorageConfig(ctx, config.DASConfig)
 	if err != nil {
 		return nil, err
 	}
 	if config.L1NodeURL == "none" {
-		return NewDASWithSeqInboxCaller(ctx, config, nil, storageService)
+		return NewDASWithSeqInboxCaller(ctx, config.DASConfig, nil, storageService)
 	}
 	l1client, err := ethclient.Dial(config.L1NodeURL)
 	if err != nil {
@@ -88,9 +84,9 @@ func NewDAS(ctx context.Context, config StorageConfig) (*DAS, error) {
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewDASWithSeqInboxCaller(ctx, config, nil, storageService)
+		return NewDASWithSeqInboxCaller(ctx, config.DASConfig, nil, storageService)
 	}
-	return NewDASWithL1Info(ctx, config, l1client, *seqInboxAddress, storageService)
+	return NewDASWithL1Info(ctx, config.DASConfig, l1client, *seqInboxAddress, storageService)
 }
 
 func NewDASWithL1Info(

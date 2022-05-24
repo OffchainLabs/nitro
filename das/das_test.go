@@ -22,12 +22,14 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	defer os.RemoveAll(dbPath)
 	Require(t, err)
 
-	config := StorageConfig{
-		KeyDir:            dbPath,
-		LocalConfig:       LocalConfig{dbPath},
-		AllowGenerateKeys: true,
-		L1NodeURL:         "none",
-		StorageType:       storageType,
+	config := DataAvailabilityConfig{
+		DASConfig: StorageConfig{
+			KeyDir:            dbPath,
+			LocalConfig:       LocalConfig{dbPath},
+			AllowGenerateKeys: true,
+			StorageType:       storageType,
+		},
+		L1NodeURL: "none",
 	}
 	das, err := NewDAS(firstCtx, config)
 	Require(t, err, "no das")
@@ -85,12 +87,14 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	defer os.RemoveAll(dbPath)
 	Require(t, err)
 
-	config := StorageConfig{
-		KeyDir:            dbPath,
-		LocalConfig:       LocalConfig{dbPath},
-		AllowGenerateKeys: true,
-		L1NodeURL:         "none",
-		StorageType:       storageType,
+	config := DataAvailabilityConfig{
+		DASConfig: StorageConfig{
+			KeyDir:            dbPath,
+			LocalConfig:       LocalConfig{dbPath},
+			AllowGenerateKeys: true,
+			StorageType:       storageType,
+		},
+		L1NodeURL: "none",
 	}
 	das, err := NewDAS(ctx, config)
 	Require(t, err, "no das")
