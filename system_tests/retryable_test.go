@@ -345,7 +345,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	colors.PrintBlue("Used Wei      ", usedWei)
 	colors.PrintBlue("Excess Deposit", excessDeposit)
 	colors.PrintMint("Fee Refund    ", refundFunds)
-	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(arbmath.sub(excessDeposit, usedWei), submissionFeeRefund)) {
+	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(arbmath.BigSub(excessDeposit, usedWei), submissionFeeRefund)) {
 		Fail(t, "The Fee Refund Address didn't receive the right funds")
 	}
 
