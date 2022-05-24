@@ -182,8 +182,8 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
         if (roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
 
-        uint256 spentIndex = index / 256;
-        uint256 bitOffset = index - spentIndex * 256;
+        uint256 spentIndex = index / 255; // Note: Reserves the MSB.
+        uint256 bitOffset = index - spentIndex * 255;
 
         bytes32 replay = spent[spentIndex];
         if (((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0)) revert AlreadySpent(index);
