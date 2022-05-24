@@ -66,7 +66,7 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	if c.ModeImpl == DASDataAvailabilityString {
 		if c.DASConfig.LocalConfig.DataDir == "" || (c.DASConfig.KeyDir == "" && c.DASConfig.PrivKey == "") {
 			flag.Usage()
-			return 0, errors.New("--data-availability.das.local.data-dir and --data-availability.das.key-dir must be specified if mode is set to local")
+			return 0, errors.New("--data-availability.das.local.data-dir and --data-availability.das.key-dir must be specified if mode is set to das")
 		}
 		return DASDataAvailability, nil
 	}
