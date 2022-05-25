@@ -22,7 +22,7 @@ func SyncStorageServiceFromChain(
 	expirationTime uint64,
 	stopWhenCaughtUp bool,
 ) error {
-	// make sure that any Keysets missing from dataSource are fetched from the L1 chain
+	// make sure that as we sync, any Keysets missing from dataSource will fetched from the L1 chain
 	dataSource, err := NewChainFetchSimpleDASReader(dataSource, l1client, seqInboxAddr)
 	if err != nil {
 		return err
@@ -34,6 +34,7 @@ func SyncStorageServiceFromChain(
 	}
 	seqInboxFilterer := seqInbox.SequencerInboxFilterer
 	eventChan := make(chan *bridgegen.SequencerInboxSequencerBatchData)
+	defer close(eventChan)
 	subscription, err := seqInboxFilterer.WatchSequencerBatchData(&bind.WatchOpts{Context: ctx, Start: lowerBoundL1BlockNum}, eventChan, nil)
 	if err != nil {
 		return err
