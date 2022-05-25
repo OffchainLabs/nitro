@@ -5,12 +5,40 @@ import (
 	"errors"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"time"
 )
+
+type SynchingFallbackStorageService struct {
+	*FallbackStorageService
+}
+
+func NewSynchingFallbackStorageService(
+	ctx context.Context,
+	primary StorageService,
+	backup arbstate.SimpleDASReader,
+	backupRetentionSeconds uint64, // how long to retain data that we copy in from the backup (MaxUint64 means forever)
+	ignoreRetentionWriteErrors bool, // if true, don't return error if write of retention data to primary fails
+	preventRecursiveGets bool, // if true, return NotFound on simultaneous calls to Gets that miss in primary (prevents infinite recursion)
+	l1client arbutil.L1Interface,
+	seqInboxAddr common.Address,
+	lowerBoundL1BlockNum *uint64,
+	expirationTime uint64,
+	stopWhenCaughtUp bool,
+) (*SynchingFallbackStorageService, error) {
+	go func() {
+		err := SyncStorageServiceFromChain(ctx, primary, backup, l1client, seqInboxAddr, lowerBoundL1BlockNum, expirationTime, stopWhenCaughtUp)
+		if err != nil {
+			log.Warn("Error in SyncStorageServiceFromChain", "err", err)
+		}
+	}()
+	fss := NewFallbackStorageService(primary, backup, backupRetentionSeconds, ignoreRetentionWriteErrors, preventRecursiveGets)
+	return &SynchingFallbackStorageService{fss}, nil
+}
 
 func SyncStorageServiceFromChain(
 	ctx context.Context,
