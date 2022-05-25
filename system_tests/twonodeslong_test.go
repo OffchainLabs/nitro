@@ -50,12 +50,12 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
-	dasConfig := das.LocalDiskDASConfig{
+	dasConfig := das.StorageConfig{
 		KeyDir:            dbPath,
-		DataDir:           dbPath,
+		LocalConfig:       das.LocalConfig{DataDir: dbPath},
 		AllowGenerateKeys: true,
 	}
-	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
+	l1NodeConfigB.DataAvailability.DASConfig = dasConfig
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
@@ -199,5 +199,5 @@ func TestTwoNodesLong(t *testing.T) {
 }
 
 func TestTwoNodesLongLocalDAS(t *testing.T) {
-	testTwoNodesLong(t, das.LocalDiskDataAvailabilityString)
+	testTwoNodesLong(t, das.DASDataAvailabilityString)
 }
