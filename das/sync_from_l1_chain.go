@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-type SynchingFallbackStorageService struct {
-	*FallbackStorageService
-}
-
 func NewSyncingFallbackStorageService(
 	ctx context.Context,
 	primary StorageService,
