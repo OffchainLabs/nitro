@@ -8,11 +8,12 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/zeroheavy"
-	"io"
-	"math/big"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -60,7 +61,7 @@ const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
 func parseSequencerMessage(ctx context.Context, data []byte, dasReader SimpleDASReader) (*sequencerMessage, error) {
 	if len(data) < 40 {
-		panic("sequencer message missing L1 header")
+		return nil, errors.New("sequencer message missing L1 header")
 	}
 	parsedMsg := &sequencerMessage{
 		minTimestamp:         binary.BigEndian.Uint64(data[:8]),
@@ -70,61 +71,59 @@ func parseSequencerMessage(ctx context.Context, data []byte, dasReader SimpleDAS
 		afterDelayedMessages: binary.BigEndian.Uint64(data[32:40]),
 		segments:             [][]byte{},
 	}
+	payload := data[40:]
 
-	var payload []byte
-	if len(data) >= 41 {
-		if IsDASMessageHeaderByte(data[40]) {
-			if dasReader == nil {
-				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
-			} else {
-				var err error
-				payload, err = RecoverPayloadFromDasBatch(ctx, data, dasReader, nil)
-				if err != nil {
-					return nil, err
-				}
-				if payload == nil {
-					return parsedMsg, nil
-				}
-			}
-		} else if data[40] == 0 {
-			payload = data[40:]
-		}
-
-		if len(payload) > 0 {
-			if IsZeroheavyEncodedHeaderByte(data[40]) {
-				pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload)), int64(maxZeroheavyDecompressedLen)))
-				if err != nil {
-					log.Warn("error reading from zeroheavy decoder", err.Error())
-					pl = []byte{}
-				}
-				payload = pl
-			}
-			decompressed, err := arbcompress.Decompress(payload[1:], maxDecompressedLen)
-			if err == nil {
-				reader := bytes.NewReader(decompressed)
-				stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
-				for {
-					var segment []byte
-					err := stream.Decode(&segment)
-					if err != nil {
-						if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-							log.Warn("error parsing sequencer message segment", "err", err.Error())
-						}
-						break
-					}
-					if len(parsedMsg.segments) >= MaxSegmentsPerSequencerMessage {
-						log.Warn("too many segments in sequence batch")
-						break
-					}
-					parsedMsg.segments = append(parsedMsg.segments, segment)
-				}
-			} else {
-				log.Warn("sequencer msg decompression failed", "err", err)
-			}
+	if len(payload) > 0 && IsDASMessageHeaderByte(payload[0]) {
+		if dasReader == nil {
+			log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 		} else {
-			log.Warn("unknown sequencer message format")
+			var err error
+			payload, err = RecoverPayloadFromDasBatch(ctx, data, dasReader, nil)
+			if err != nil {
+				return nil, err
+			}
+			if payload == nil {
+				return parsedMsg, nil
+			}
 		}
 	}
+
+	if len(payload) > 0 && IsZeroheavyEncodedHeaderByte(payload[0]) {
+		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen)))
+		if err != nil {
+			log.Warn("error reading from zeroheavy decoder", err.Error())
+			return parsedMsg, nil
+		}
+		payload = pl
+	}
+
+	if len(payload) > 0 && IsBrotliMessageHeaderByte(payload[0]) {
+		decompressed, err := arbcompress.Decompress(payload[1:], maxDecompressedLen)
+		if err == nil {
+			reader := bytes.NewReader(decompressed)
+			stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
+			for {
+				var segment []byte
+				err := stream.Decode(&segment)
+				if err != nil {
+					if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+						log.Warn("error parsing sequencer message segment", "err", err.Error())
+					}
+					break
+				}
+				if len(parsedMsg.segments) >= MaxSegmentsPerSequencerMessage {
+					log.Warn("too many segments in sequence batch")
+					break
+				}
+				parsedMsg.segments = append(parsedMsg.segments, segment)
+			}
+		} else {
+			log.Warn("sequencer msg decompression failed", "err", err)
+		}
+	} else {
+		log.Warn("unknown sequencer message format")
+	}
+
 	return parsedMsg, nil
 }
 
