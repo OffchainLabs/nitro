@@ -32,26 +32,30 @@ type DataAvailabilityMode uint64
 
 const (
 	OnchainDataAvailability DataAvailabilityMode = iota
-	LocalDiskDataAvailability
+	DASDataAvailability
 	AggregatorDataAvailability
 	// TODO RemoteDataAvailability
 )
 
 const (
 	OnchainDataAvailabilityString    = "onchain"
-	LocalDiskDataAvailabilityString  = "local-disk"
+	DASDataAvailabilityString        = "das"
 	AggregatorDataAvailabilityString = "aggregator"
 	// TODO RemoteDataAvailability
 )
 
 type DataAvailabilityConfig struct {
-	ModeImpl           string             `koanf:"mode"`
-	LocalDiskDASConfig LocalDiskDASConfig `koanf:"local-disk"`
-	AggregatorConfig   AggregatorConfig   `koanf:"aggregator"`
+	ModeImpl              string           `koanf:"mode"`
+	DASConfig             StorageConfig    `koanf:"das"`
+	AggregatorConfig      AggregatorConfig `koanf:"aggregator"`
+	L1NodeURL             string           `koanf:"l1-node-url"`
+	SequencerInboxAddress string           `koanf:"sequencer-inbox-address"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl: OnchainDataAvailabilityString,
+	ModeImpl:              OnchainDataAvailabilityString,
+	L1NodeURL:             "",
+	SequencerInboxAddress: "",
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
@@ -63,12 +67,12 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 		return OnchainDataAvailability, nil
 	}
 
-	if c.ModeImpl == LocalDiskDataAvailabilityString {
-		if c.LocalDiskDASConfig.DataDir == "" || (c.LocalDiskDASConfig.KeyDir == "" && c.LocalDiskDASConfig.PrivKey == "") {
+	if c.ModeImpl == DASDataAvailabilityString {
+		if c.DASConfig.LocalConfig.DataDir == "" || (c.DASConfig.KeyDir == "" && c.DASConfig.PrivKey == "") {
 			flag.Usage()
-			return 0, errors.New("--data-availability.local-disk.data-dir and .key-dir must be specified if mode is set to local")
+			return 0, errors.New("--data-availability.das.local.data-dir and --data-availability.das.key-dir must be specified if mode is set to das")
 		}
-		return LocalDiskDataAvailability, nil
+		return DASDataAvailability, nil
 	}
 
 	if c.ModeImpl == AggregatorDataAvailabilityString {
@@ -98,9 +102,11 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 }
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local-disk', or 'aggregator')")
-	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
+	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'das', or 'aggregator')")
+	StorageConfigAddOptions(prefix+".das", f)
 	AggregatorConfigAddOptions(prefix+".aggregator", f)
+	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node")
+	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 }
 
 func serializeSignableFields(c *arbstate.DataAvailabilityCertificate) []byte {

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -24,6 +25,16 @@ func NewRestfulDasClient(protocol string, host string, port int) *RestfulDasClie
 	return &RestfulDasClient{
 		url: fmt.Sprintf("%s://%s:%d/get-by-hash/", protocol, host, port),
 	}
+}
+
+func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
+	if !(strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")) {
+		return nil, fmt.Errorf("Protocol prefix 'http://' or 'https://' must be specified for RestfulDasClient; got '%s'", url)
+
+	}
+	return &RestfulDasClient{
+		url: url + "/get-by-hash/",
+	}, nil
 }
 
 func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
