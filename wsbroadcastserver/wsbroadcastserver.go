@@ -28,6 +28,7 @@ type BroadcasterConfig struct {
 	ClientTimeout time.Duration `koanf:"client-timeout"`
 	Queue         int           `koanf:"queue"`
 	Workers       int           `koanf:"workers"`
+	MaxSendQueue  int           `koanf:"max-send-queue"`
 }
 
 func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -39,6 +40,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".client-timeout", DefaultBroadcasterConfig.ClientTimeout, "duration to wait before timing out connections to client")
 	f.Int(prefix+".queue", DefaultBroadcasterConfig.Queue, "queue size")
 	f.Int(prefix+".workers", DefaultBroadcasterConfig.Workers, "number of threads to reserve for HTTP to WS upgrade")
+	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -50,6 +52,19 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	ClientTimeout: 15 * time.Second,
 	Queue:         100,
 	Workers:       100,
+	MaxSendQueue:  4096,
+}
+
+var DefaultTestBroadcasterConfig = BroadcasterConfig{
+	Enable:        false,
+	Addr:          "0.0.0.0",
+	IOTimeout:     2 * time.Second,
+	Port:          "0",
+	Ping:          5 * time.Second,
+	ClientTimeout: 15 * time.Second,
+	Queue:         1,
+	Workers:       100,
+	MaxSendQueue:  4096,
 }
 
 type WSBroadcastServer struct {
