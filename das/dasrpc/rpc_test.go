@@ -28,13 +28,22 @@ func TestRPC(t *testing.T) {
 	dataDir := t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	testhelpers.RequireImpl(t, err)
-	dasConfig := das.StorageConfig{
-		KeyDir:      keyDir,
-		LocalConfig: das.LocalConfig{DataDir: dataDir},
+
+	config := das.DataAvailabilityConfig{
+		Enable: true,
+		KeyConfig: das.KeyConfig{
+			KeyDir: keyDir,
+		},
+		LocalFileStorageConfig: das.LocalFileStorageConfig{
+			Enable:  true,
+			DataDir: dataDir,
+		},
+		L1NodeURL: "none",
 	}
-	storageService, err := das.NewStorageServiceFromStorageConfig(ctx, dasConfig)
+
+	storageService, err := das.CreatePersistentStorageService(ctx, &config)
 	testhelpers.RequireImpl(t, err)
-	localDas, err := das.NewDASWithSeqInboxCaller(ctx, dasConfig, nil, storageService)
+	localDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService)
 	testhelpers.RequireImpl(t, err)
 	dasServer, err := StartDASRPCServerOnListener(ctx, lis, localDas)
 	defer func() {
@@ -43,13 +52,13 @@ func TestRPC(t *testing.T) {
 		}
 	}()
 	testhelpers.RequireImpl(t, err)
-	config := BackendConfig{
+	beConfig := BackendConfig{
 		URL:                 "http://" + lis.Addr().String(),
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
 		SignerMask:          1,
 	}
 
-	backendsJsonByte, err := json.Marshal([]BackendConfig{config})
+	backendsJsonByte, err := json.Marshal([]BackendConfig{beConfig})
 	testhelpers.RequireImpl(t, err)
 	aggConf := das.AggregatorConfig{
 		AssumedHonest: 1,

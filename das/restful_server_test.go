@@ -23,9 +23,7 @@ func TestRestfulClientServer(t *testing.T) { //nolint
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dbPath := t.TempDir()
-
-	storage := NewLocalDiskStorageService(dbPath)
+	storage := NewMemoryBackedStorageService(ctx)
 	data := []byte("Testing a restful server now.")
 	dataHash := crypto.Keccak256(data)
 

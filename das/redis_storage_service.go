@@ -20,6 +20,7 @@ import (
 )
 
 type RedisConfig struct {
+	Enable     bool          `koanf:"enable"`
 	RedisUrl   string        `koanf:"redis-url"`
 	Expiration time.Duration `koanf:"redis-expiration"`
 	KeyConfig  string        `koanf:"redis-key-config"`
@@ -32,6 +33,7 @@ var DefaultRedisConfig = RedisConfig{
 }
 
 func RedisConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultRedisConfig.Enable, "enable Redis caching of sequencer batch data")
 	f.String(prefix+".redis-url", DefaultRedisConfig.RedisUrl, "Redis url")
 	f.Duration(prefix+".redis-expiration", DefaultRedisConfig.Expiration, "Redis expiration")
 	f.String(prefix+".redis-key-config", DefaultRedisConfig.KeyConfig, "Redis key config")

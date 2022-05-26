@@ -16,7 +16,7 @@ import (
 
 type FallbackStorageService struct {
 	StorageService
-	backup                     arbstate.SimpleDASReader
+	backup                     arbstate.DataAvailabilityReader
 	backupRetentionSeconds     uint64
 	ignoreRetentionWriteErrors bool
 	preventRecursiveGets       bool
@@ -29,7 +29,7 @@ type FallbackStorageService struct {
 //     a successful GetByHash result from the backup is Put into the primary.
 func NewFallbackStorageService(
 	primary StorageService,
-	backup arbstate.SimpleDASReader,
+	backup arbstate.DataAvailabilityReader,
 	backupRetentionSeconds uint64, // how long to retain data that we copy in from the backup (MaxUint64 means forever)
 	ignoreRetentionWriteErrors bool, // if true, don't return error if write of retention data to primary fails
 	preventRecursiveGets bool, // if true, return NotFound on simultaneous calls to Gets that miss in primary (prevents infinite recursion)

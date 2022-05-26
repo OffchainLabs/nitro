@@ -144,11 +144,11 @@ type ArchivingSimpleDASReader struct {
 
 func NewArchivingSimpleDASReader(
 	ctx context.Context,
-	inner arbstate.SimpleDASReader,
+	inner arbstate.DataAvailabilityReader,
 	archiveTo StorageService,
 	archiveExpirationSeconds uint64,
 ) (*ArchivingSimpleDASReader, error) {
-	arch, err := NewArchivingStorageService(ctx, &limitedStorageService{inner}, archiveTo, archiveExpirationSeconds)
+	arch, err := NewArchivingStorageService(ctx, &readLimitedStorageService{inner}, archiveTo, archiveExpirationSeconds)
 	if err != nil {
 		return nil, err
 	}
@@ -169,24 +169,4 @@ func (serv *ArchivingSimpleDASReader) GetArchiverErrorSignalChan() <-chan interf
 
 func (serv *ArchivingSimpleDASReader) GetArchiverError() error {
 	return serv.wrapped.GetArchiverError()
-}
-
-type limitedStorageService struct {
-	arbstate.SimpleDASReader
-}
-
-func (lss *limitedStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
-	return errors.New("invalid operation")
-}
-
-func (lss *limitedStorageService) Sync(ctx context.Context) error {
-	return errors.New("invalid operation")
-}
-
-func (lss *limitedStorageService) Close(ctx context.Context) error {
-	return errors.New("invalid operation")
-}
-
-func (lss *limitedStorageService) String() string {
-	return ""
 }

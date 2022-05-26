@@ -8,8 +8,21 @@ import (
 	badger "github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	flag "github.com/spf13/pflag"
 	"time"
 )
+
+type LocalDBStorageConfig struct {
+	Enable  bool   `koanf:"enable"`
+	DataDir string `koanf:"data-dir"`
+}
+
+var DefaultLocalDBStorageConfig = LocalDBStorageConfig{}
+
+func LocalDBStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultLocalDBStorageConfig.Enable, "Enable storage/retrieval of sequencer batch data from a database on the local filesystem")
+	f.String(prefix+".data-dir", DefaultLocalDBStorageConfig.DataDir, "Directory in which to store the database")
+}
 
 type DBStorageService struct {
 	db                  *badger.DB

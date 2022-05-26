@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// Implements SimpleDASReader
+// Implements DataAvailabilityReader
 type RestfulDasClient struct {
 	url string
 }

@@ -78,19 +78,3 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 func (serv *DASRPCServer) GetByHash(ctx context.Context, certBytes hexutil.Bytes) (hexutil.Bytes, error) {
 	return serv.localDAS.GetByHash(ctx, certBytes)
 }
-
-func (serv *DASRPCServer) KeysetFromHash(ctx context.Context, ksHash hexutil.Bytes) (hexutil.Bytes, error) {
-	resp, err := serv.localDAS.KeysetFromHash(ctx, ksHash)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
-
-func (serv *DASRPCServer) CurrentKeysetBytes(ctx context.Context) (hexutil.Bytes, error) {
-	resp, err := serv.localDAS.CurrentKeysetBytes(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
-}

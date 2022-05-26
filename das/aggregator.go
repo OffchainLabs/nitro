@@ -26,7 +26,7 @@ import (
 )
 
 type AggregatorConfig struct {
-	// sequencer public key
+	Enable        bool   `koanf:"enable"`
 	AssumedHonest int    `koanf:"assumed-honest"`
 	Backends      string `koanf:"backends"`
 	DumpKeyset    bool   `koanf:"dump-keyset"`
@@ -39,6 +39,7 @@ var DefaultAggregatorConfig = AggregatorConfig{
 }
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage/retrieval of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
 	f.Bool(prefix+".dump-keyset", DefaultAggregatorConfig.DumpKeyset, "Dump the keyset encoded in hexadecimal for the backends string")

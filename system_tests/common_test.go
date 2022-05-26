@@ -327,25 +327,44 @@ func authorizeDASKeyset(t *testing.T, ctx context.Context, dasSignerKey *blsSign
 
 func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig, *arbnode.Config, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigA.DataAvailability.ModeImpl = dasModeString
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
 
-	var dasSignerKey *blsSignatures.PublicKey
-	if dasModeString == das.DASDataAvailabilityString {
-		dbPath = t.TempDir()
-		dasSignerKey, _, err = das.GenerateAndStoreKeys(dbPath)
-		Require(t, err)
-		dasConfig := das.StorageConfig{
-			KeyDir:            dbPath,
-			LocalConfig:       das.LocalConfig{DataDir: dbPath},
-			AllowGenerateKeys: true,
-		}
-		l1NodeConfigA.DataAvailability.DASConfig = dasConfig
+	enableFileStorage, enableDbStorage, enableDas := false, false, true
+	switch dasModeString {
+	case "db":
+		enableDbStorage = true
 		chainConfig = params.ArbitrumDevTestDASChainConfig()
+	case "files":
+		enableFileStorage = true
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
+	case "onchain":
+		enableDas = false
+	default:
+		Fail(t, "unknown storage type")
 	}
-	_, err = l1NodeConfigA.DataAvailability.Mode()
+	dbPath = t.TempDir()
+	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
+
+	dasConfig := das.DataAvailabilityConfig{
+		Enable:                enableDas,
+		AllowStoreOrigination: enableDas,
+		KeyConfig: das.KeyConfig{
+			KeyDir: dbPath,
+		},
+		LocalFileStorageConfig: das.LocalFileStorageConfig{
+			Enable:  enableFileStorage,
+			DataDir: dbPath,
+		},
+		LocalDBStorageConfig: das.LocalDBStorageConfig{
+			Enable:  enableDbStorage,
+			DataDir: dbPath,
+		},
+		L1NodeURL: "none",
+	}
+
+	l1NodeConfigA.DataAvailability = dasConfig
 	return chainConfig, l1NodeConfigA, dbPath, dasSignerKey
 }

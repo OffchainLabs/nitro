@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -18,20 +16,39 @@ import (
 func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	firstCtx, firstCancel := context.WithCancel(context.Background())
 
-	dbPath, err := ioutil.TempDir("/tmp", "das_test")
-	defer os.RemoveAll(dbPath)
+	dbPath := t.TempDir()
+	_, _, err := GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
+	enableFileStorage, enableDbStorage := false, false
+	switch storageType {
+	case "db":
+		enableDbStorage = true
+	case "files":
+		enableFileStorage = true
+	default:
+		Fail(t, "unknown storage type")
+	}
+
 	config := DataAvailabilityConfig{
-		DASConfig: StorageConfig{
-			KeyDir:            dbPath,
-			LocalConfig:       LocalConfig{dbPath},
-			AllowGenerateKeys: true,
-			StorageType:       storageType,
+		Enable: true,
+		KeyConfig: KeyConfig{
+			KeyDir: dbPath,
+		},
+		LocalFileStorageConfig: LocalFileStorageConfig{
+			Enable:  enableFileStorage,
+			DataDir: dbPath,
+		},
+		LocalDBStorageConfig: LocalDBStorageConfig{
+			Enable:  enableDbStorage,
+			DataDir: dbPath,
 		},
 		L1NodeURL: "none",
 	}
-	das, err := NewDAS(firstCtx, config)
+
+	storageService, err := CreatePersistentStorageService(firstCtx, &config)
+	Require(t, err)
+	das, err := NewSignAfterStoreDAS(firstCtx, config, storageService)
 	Require(t, err, "no das")
 
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
@@ -55,7 +72,9 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	secondCtx, secondCancel := context.WithCancel(context.Background())
 	defer secondCancel()
 
-	das2, err := NewDAS(secondCtx, config)
+	storageService2, err := CreatePersistentStorageService(secondCtx, &config)
+	Require(t, err)
+	das2, err := NewSignAfterStoreDAS(secondCtx, config, storageService2)
 	Require(t, err, "no das")
 
 	messageRetrieved2, err := das2.GetByHash(secondCtx, cert.DataHash[:])
@@ -83,20 +102,39 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dbPath, err := ioutil.TempDir("/tmp", "das_test")
-	defer os.RemoveAll(dbPath)
+	dbPath := t.TempDir()
+	_, _, err := GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
+	enableFileStorage, enableDbStorage := false, false
+	switch storageType {
+	case "db":
+		enableDbStorage = true
+	case "files":
+		enableFileStorage = true
+	default:
+		Fail(t, "unknown storage type")
+	}
+
 	config := DataAvailabilityConfig{
-		DASConfig: StorageConfig{
-			KeyDir:            dbPath,
-			LocalConfig:       LocalConfig{dbPath},
-			AllowGenerateKeys: true,
-			StorageType:       storageType,
+		Enable: true,
+		KeyConfig: KeyConfig{
+			KeyDir: dbPath,
+		},
+		LocalFileStorageConfig: LocalFileStorageConfig{
+			Enable:  enableFileStorage,
+			DataDir: dbPath,
+		},
+		LocalDBStorageConfig: LocalDBStorageConfig{
+			Enable:  enableDbStorage,
+			DataDir: dbPath,
 		},
 		L1NodeURL: "none",
 	}
-	das, err := NewDAS(ctx, config)
+
+	storageService, err := CreatePersistentStorageService(ctx, &config)
+	Require(t, err)
+	das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 	Require(t, err, "no das")
 
 	messageSaved := []byte("hello world")

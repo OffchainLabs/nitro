@@ -16,7 +16,8 @@ import (
 
 type BigCacheConfig struct {
 	// TODO add other config information like HardMaxCacheSize
-	Expiration time.Duration `koanf:"big-cache-expiration"`
+	Enable     bool          `koanf:"enable"`
+	Expiration time.Duration `koanf:"expiration"`
 }
 
 var DefaultBigCacheConfig = BigCacheConfig{
@@ -24,7 +25,8 @@ var DefaultBigCacheConfig = BigCacheConfig{
 }
 
 func BigCacheConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Duration(prefix+".big-cache-expiration", DefaultBigCacheConfig.Expiration, "Big cache expiration")
+	f.Bool(prefix+".enable", DefaultBigCacheConfig.Enable, "Enable local in-memory caching of sequencer batch data")
+	f.Duration(prefix+".expiration", DefaultBigCacheConfig.Expiration, "Expiration time for in-memory cached sequencer batches")
 }
 
 type BigCacheStorageService struct {

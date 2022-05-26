@@ -74,7 +74,11 @@ func startup() error {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	storage := das.NewLocalDiskStorageService(serverConfig.StorageDir)
+	storage, err := das.NewLocalFileStorageService(serverConfig.StorageDir)
+	if err != nil {
+		return err
+	}
+	// TODO support more storage types here
 	restServer := das.NewRestfulDasServerHTTP(serverConfig.Addr, serverConfig.Port, storage)
 
 	<-sigint

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -38,22 +39,34 @@ func startLocalDASServer(
 	keyDir := t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
-	dasConfig := das.StorageConfig{
-		KeyDir:      keyDir,
-		LocalConfig: das.LocalConfig{DataDir: dataDir},
+
+	config := das.DataAvailabilityConfig{
+		Enable: true,
+		KeyConfig: das.KeyConfig{
+			KeyDir: keyDir,
+		},
+		LocalFileStorageConfig: das.LocalFileStorageConfig{
+			Enable:  true,
+			DataDir: keyDir,
+		},
+		L1NodeURL: "none",
 	}
-	storageService, err := das.NewStorageServiceFromStorageConfig(ctx, dasConfig)
+
+	storageService, err := das.CreatePersistentStorageService(ctx, &config)
+
 	Require(t, err)
-	das, err := das.NewDASWithL1Info(ctx, dasConfig, l1client, seqInboxAddress, storageService)
+	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
+	Require(t, err)
+	das, err := das.NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, seqInboxCaller, storageService)
 	Require(t, err)
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, das)
 	Require(t, err)
-	config := dasrpc.BackendConfig{
+	beConfig := dasrpc.BackendConfig{
 		URL:                 "http://" + lis.Addr().String(),
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
 		SignerMask:          1,
 	}
-	return dasServer, pubkey, config
+	return dasServer, pubkey, beConfig
 }
 
 func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
@@ -67,6 +80,7 @@ func aggConfigForBackend(t *testing.T, backendConfig dasrpc.BackendConfig) das.A
 	backendsJsonByte, err := json.Marshal([]dasrpc.BackendConfig{backendConfig})
 	Require(t, err)
 	return das.AggregatorConfig{
+		Enable:        true,
 		AssumedHonest: 1,
 		Backends:      string(backendsJsonByte),
 	}
@@ -93,7 +107,8 @@ func TestDASRekey(t *testing.T) {
 
 	// Setup DAS config
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigA.DataAvailability.ModeImpl = "aggregator"
+	l1NodeConfigA.DataAvailability.Enable = true
+	l1NodeConfigA.DataAvailability.AllowStoreOrigination = true
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
@@ -106,7 +121,7 @@ func TestDASRekey(t *testing.T) {
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigB.DataAvailability.ModeImpl = "aggregator"
+	l1NodeConfigA.DataAvailability.Enable = true
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 	checkBatchPosting(t, ctx, l1client, l2clientA, l2clientB, l1info, l2info, big.NewInt(1e12))

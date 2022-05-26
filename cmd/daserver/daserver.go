@@ -16,6 +16,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
@@ -103,24 +104,9 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mode, err := serverConfig.DAConf.Mode()
+	dasImpl, err := arbnode.SetUpDataAvailability(ctx, &serverConfig.DAConf, nil, nil, nil)
 	if err != nil {
 		return err
-	}
-	var dasImpl das.DataAvailabilityService
-	switch mode {
-	case das.DASDataAvailability:
-		dasImpl, err = das.NewDAS(ctx, serverConfig.DAConf)
-		if err != nil {
-			return err
-		}
-	case das.AggregatorDataAvailability:
-		dasImpl, err = dasrpc.NewRPCAggregator(ctx, serverConfig.DAConf)
-		if err != nil {
-			return err
-		}
-	default:
-		panic("Only local DAS implementation supported for daserver currently.")
 	}
 
 	server, err := dasrpc.StartDASRPCServer(ctx, serverConfig.Addr, serverConfig.Port, dasImpl)

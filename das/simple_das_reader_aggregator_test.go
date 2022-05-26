@@ -20,7 +20,7 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	storage1, storage2, storage3 := NewLocalDiskStorageService(t.TempDir()), NewLocalDiskStorageService(t.TempDir()), NewLocalDiskStorageService(t.TempDir())
+	storage1, storage2, storage3 := NewMemoryBackedStorageService(ctx), NewMemoryBackedStorageService(ctx), NewMemoryBackedStorageService(ctx)
 
 	data1 := []byte("Testing a restful server now.")
 	dataHash1 := crypto.Keccak256(data1)
