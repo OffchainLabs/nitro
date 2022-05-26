@@ -17,7 +17,7 @@ type SynchingFallbackStorageService struct {
 	*FallbackStorageService
 }
 
-func NewSynchingFallbackStorageService(
+func NewSyncingFallbackStorageService(
 	ctx context.Context,
 	primary StorageService,
 	backup arbstate.SimpleDASReader,
@@ -29,15 +29,14 @@ func NewSynchingFallbackStorageService(
 	lowerBoundL1BlockNum *uint64,
 	expirationTime uint64,
 	stopWhenCaughtUp bool,
-) (*SynchingFallbackStorageService, error) {
+) (*FallbackStorageService, error) {
 	go func() {
 		err := SyncStorageServiceFromChain(ctx, primary, backup, l1client, seqInboxAddr, lowerBoundL1BlockNum, expirationTime, stopWhenCaughtUp)
 		if err != nil {
 			log.Warn("Error in SyncStorageServiceFromChain", "err", err)
 		}
 	}()
-	fss := NewFallbackStorageService(primary, backup, backupRetentionSeconds, ignoreRetentionWriteErrors, preventRecursiveGets)
-	return &SynchingFallbackStorageService{fss}, nil
+	return NewFallbackStorageService(primary, backup, backupRetentionSeconds, ignoreRetentionWriteErrors, preventRecursiveGets), nil
 }
 
 func SyncStorageServiceFromChain(
