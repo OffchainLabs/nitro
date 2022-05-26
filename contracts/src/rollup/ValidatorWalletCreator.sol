@@ -13,7 +13,8 @@ import "./ValidatorWallet.sol";
 contract ValidatorWalletCreator is Ownable {
     event WalletCreated(
         address indexed walletAddress,
-        address indexed userAddress,
+        address indexed executorAddress,
+        address indexed ownerAddress,
         address adminProxy
     );
     event TemplateUpdated();
@@ -29,15 +30,14 @@ contract ValidatorWalletCreator is Ownable {
         emit TemplateUpdated();
     }
 
-    function createWallet() external returns (address) {
+    function createWallet(address _executor, address _owner) external returns (address) {
         ProxyAdmin admin = new ProxyAdmin();
         address proxy = address(
             new TransparentUpgradeableProxy(address(template), address(admin), "")
         );
-        admin.transferOwnership(msg.sender);
-        ValidatorWallet(proxy).initialize();
-        ValidatorWallet(proxy).transferOwnership(msg.sender);
-        emit WalletCreated(proxy, msg.sender, address(admin));
+        admin.transferOwnership(_owner);
+        ValidatorWallet(proxy).initialize(_executor, _owner);
+        emit WalletCreated(proxy, _executor, _owner, address(admin));
         return proxy;
     }
 }
