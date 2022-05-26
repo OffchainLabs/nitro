@@ -137,7 +137,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external refundsGasWithCalldata(gasRefunder, payable(msg.sender)) {
+    ) external refundsGas(gasRefunder) {
         // we can refund with calldata this function since the spender is charged as tx input
         // they can append extra dummy bytes that aren't processed by this function, but that
         // would just grief the refunder funds, not actually lead to a profit
@@ -169,7 +169,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external override refundsGasNoCalldata(gasRefunder, payable(msg.sender)) {
+    ) external override refundsGas(gasRefunder) {
         // we don't refund calldata since the spender can cheaply create large calldata using memory then get over-refunded
         if (!isBatchPoster[msg.sender] && msg.sender != rollup) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
