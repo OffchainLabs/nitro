@@ -156,4 +156,8 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
             }
         }
     }
+
+    receive() payable external {
+
+    }
 }

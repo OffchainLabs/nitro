@@ -43,10 +43,10 @@ describe("Validator Wallet", () => {
     const RollupMock = await ethers.getContractFactory("RollupMock");
     rollupMock = (await RollupMock.deploy()) as RollupMock;
 
-    // await accounts[0].sendTransaction({
-    //   to: wallet.address,
-    //   value: ethers.utils.parseEther("5"),
-    // });
+    await accounts[0].sendTransaction({
+      to: wallet.address,
+      value: ethers.utils.parseEther("5"),
+    });
   });
 
   it("should validate function signatures", async function () {
@@ -74,7 +74,7 @@ describe("Validator Wallet", () => {
       await executor.getAddress(),
     ]);
 
-    const expectedSig = "0x81fbc98a"
+    const expectedSig = "0x81fbc98a";
     expect(data.substring(0, 10)).to.equal(expectedSig);
     expect(await wallet.onlyOwnerFuncSigs(expectedSig)).to.be.true;
 
@@ -92,16 +92,53 @@ describe("Validator Wallet", () => {
   it("should allow regular functions to be executed", async function () {
     const data = rollupMock.interface.encodeFunctionData("removeOldZombies", [0]);
 
-    const expectedSig = "0xedfd03ed"
+    const expectedSig = "0xedfd03ed";
     expect(data.substring(0, 10)).to.equal(expectedSig);
     expect(await wallet.onlyOwnerFuncSigs(expectedSig)).to.be.false;
 
-    await expect(
-      wallet.connect(executor).executeTransaction(data, rollupMock.address, 0)
-    ).to.emit(rollupMock, "ZombieTriggered")
+    await expect(wallet.connect(executor).executeTransaction(data, rollupMock.address, 0)).to.emit(
+      rollupMock,
+      "ZombieTriggered"
+    );
     await expect(wallet.connect(owner).executeTransaction(data, rollupMock.address, 0)).to.emit(
       rollupMock,
       "ZombieTriggered"
+    );
+  });
+
+  it("should handle fallback function", async function () {
+    const dest = await accounts[3].getAddress();
+    const amount = ethers.utils.parseEther("0.2");
+
+    await wallet.setOnlyOwnerFunctionSigs(["0x00000000"], [true]);
+
+    await expect(
+      wallet.connect(executor).executeTransaction("0x", dest, amount)
+    ).to.be.revertedWith(
+      `OnlyOwnerFunctionSig("${await owner.getAddress()}", "${await executor.getAddress()}")`
+    );
+
+    await wallet.setOnlyOwnerFunctionSigs(["0x00000000"], [false]);
+
+    const prevBal = await waffle.provider.getBalance(dest);
+    await wallet.connect(executor).executeTransaction("0x", dest, amount);
+    const postBal = await waffle.provider.getBalance(dest);
+
+    expect(prevBal.add(amount)).to.equal(postBal);
+  });
+
+  it("should reject batch if single tx is not allowed by executor", async function () {
+    const data = [
+      rollupMock.interface.encodeFunctionData("removeOldZombies", [0]),
+      rollupMock.interface.encodeFunctionData("withdrawStakerFunds", [await executor.getAddress()]),
+    ];
+
+    await expect(
+      wallet
+        .connect(executor)
+        .executeTransactions(data, [rollupMock.address, rollupMock.address], [0, 0])
+    ).to.be.revertedWith(
+      `OnlyOwnerFunctionSig("${await owner.getAddress()}", "${await executor.getAddress()}")`
     );
   });
 });

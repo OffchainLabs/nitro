@@ -36,7 +36,7 @@ contract ValidatorWalletCreator is Ownable {
             new TransparentUpgradeableProxy(address(template), address(admin), "")
         );
         admin.transferOwnership(_owner);
-        ValidatorWallet(proxy).initialize(_executor, _owner);
+        ValidatorWallet(payable(proxy)).initialize(_executor, _owner);
         emit WalletCreated(proxy, _executor, _owner, address(admin));
         return proxy;
     }
