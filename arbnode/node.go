@@ -744,14 +744,14 @@ func setUpDataAvailabilityService(
 	}
 	var dataAvailabilityService das.DataAvailabilityService
 	switch dataAvailabilityMode {
-	case das.LocalDiskDataAvailability:
-		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.LocalDiskDASConfig)
+	case das.DASDataAvailability:
+		storageService, err := das.NewStorageServiceFromStorageConfig(ctx, config.DataAvailability.DASConfig)
 		if err != nil {
 			return nil, err
 		}
-		dataAvailabilityService, err = das.NewLocalDiskDASWithL1Info(
+		dataAvailabilityService, err = das.NewDASWithL1Info(
 			ctx,
-			config.DataAvailability.LocalDiskDASConfig,
+			config.DataAvailability.DASConfig,
 			l1client,
 			deployInfo.SequencerInbox,
 			storageService,
@@ -797,14 +797,14 @@ func setUpDataAvailabilityReader(
 	}
 	var daReader arbstate.SimpleDASReader
 	switch dataAvailabilityMode {
-	case das.LocalDiskDataAvailability:
-		storageService, err := das.NewStorageServiceFromLocalConfig(ctx, config.DataAvailability.LocalDiskDASConfig)
+	case das.DASDataAvailability:
+		storageService, err := das.NewStorageServiceFromStorageConfig(ctx, config.DataAvailability.DASConfig)
 		if err != nil {
 			return nil, err
 		}
-		daReader, err = das.NewLocalDiskDASWithL1Info(
+		daReader, err = das.NewDASWithL1Info(
 			ctx,
-			config.DataAvailability.LocalDiskDASConfig,
+			config.DataAvailability.DASConfig,
 			l1client,
 			deployInfo.SequencerInbox,
 			storageService,
