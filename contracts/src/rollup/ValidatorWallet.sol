@@ -11,7 +11,6 @@ import {IRollupUserAbs} from "./IRollupLogic.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-
 error BadArrayLength(uint256 expected, uint256 actual);
 error NotCallerOrOwner(address actual);
 error OnlyOwnerFunctionSig(address expected, address actual);
@@ -25,8 +24,8 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
     /// @dev function signatures that can only be called by the owner
     mapping(bytes4 => bool) public onlyOwnerFuncSigs;
 
-    modifier onlyExecutorOrOwner {
-        if(executor != _msgSender() && owner() != _msgSender())
+    modifier onlyExecutorOrOwner() {
+        if (executor != _msgSender() && owner() != _msgSender())
             revert NotCallerOrOwner(_msgSender());
         _;
     }
@@ -44,7 +43,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         executor = _executor;
         emit ExecutorTransferred(address(0), _executor);
         transferOwnership(_owner);
-        
+
         onlyOwnerFuncSigs[IRollupUserAbs.withdrawStakerFunds.selector] = true;
         emit OnlyOwnerFuncSigUpdated(IRollupUserAbs.withdrawStakerFunds.selector, true);
 
@@ -55,10 +54,13 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
     event OnlyOwnerFuncSigUpdated(bytes4 indexed sig, bool val);
 
     /// @notice updates the function signatures which only the owner is allowed to call
-    function setOnlyOwnerFunctionSigs(bytes4[] calldata funcSigs, bool[] calldata isSet) external onlyOwner {
-        if(funcSigs.length != isSet.length) revert BadArrayLength(funcSigs.length, isSet.length);
+    function setOnlyOwnerFunctionSigs(bytes4[] calldata funcSigs, bool[] calldata isSet)
+        external
+        onlyOwner
+    {
+        if (funcSigs.length != isSet.length) revert BadArrayLength(funcSigs.length, isSet.length);
         unchecked {
-            for(uint256 i = 0; i< funcSigs.length; ++i) {
+            for (uint256 i = 0; i < funcSigs.length; ++i) {
                 onlyOwnerFuncSigs[funcSigs[i]] = isSet[i];
                 emit OnlyOwnerFuncSigUpdated(funcSigs[i], isSet[i]);
             }
@@ -67,11 +69,9 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
 
     /// @dev reverts if the current function can't be called
     function validateExecuteTransaction(bytes calldata data) public view {
-        bytes4 funcSig = data.length < 4
-            ? bytes4(data[:data.length])
-            : bytes4(data[:4]);
+        bytes4 funcSig = data.length < 4 ? bytes4(data[:data.length]) : bytes4(data[:4]);
 
-        if(onlyOwnerFuncSigs[funcSig] && owner() != _msgSender())
+        if (onlyOwnerFuncSigs[funcSig] && owner() != _msgSender())
             revert OnlyOwnerFunctionSig(owner(), _msgSender());
     }
 
@@ -157,7 +157,5 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         }
     }
 
-    receive() payable external {
-
-    }
+    receive() external payable {}
 }

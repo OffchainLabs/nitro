@@ -8,13 +8,16 @@ contract RollupMock {
     event WithdrawTriggered();
     event ZombieTriggered();
 
-    function withdrawStakerFunds(address payable /* destination */) external returns (uint256) {
+    function withdrawStakerFunds(
+        address payable /* destination */
+    ) external returns (uint256) {
         emit WithdrawTriggered();
         return 0;
     }
 
-    function removeOldZombies(uint256 /* startIndex */) external {
+    function removeOldZombies(
+        uint256 /* startIndex */
+    ) external {
         emit ZombieTriggered();
     }
 }
-
