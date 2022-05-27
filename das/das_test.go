@@ -46,8 +46,9 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 		L1NodeURL: "none",
 	}
 
-	storageService, err := CreatePersistentStorageService(firstCtx, &config)
+	storageService, lifecycleManager, err := CreatePersistentStorageService(firstCtx, &config)
 	Require(t, err)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	das, err := NewSignAfterStoreDAS(firstCtx, config, storageService)
 	Require(t, err, "no das")
 
@@ -72,8 +73,9 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	secondCtx, secondCancel := context.WithCancel(context.Background())
 	defer secondCancel()
 
-	storageService2, err := CreatePersistentStorageService(secondCtx, &config)
+	storageService2, lifecycleManager, err := CreatePersistentStorageService(secondCtx, &config)
 	Require(t, err)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	das2, err := NewSignAfterStoreDAS(secondCtx, config, storageService2)
 	Require(t, err, "no das")
 
@@ -132,8 +134,9 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 		L1NodeURL: "none",
 	}
 
-	storageService, err := CreatePersistentStorageService(ctx, &config)
+	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	Require(t, err)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 	Require(t, err, "no das")
 

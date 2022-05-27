@@ -52,7 +52,8 @@ func startLocalDASServer(
 		L1NodeURL: "none",
 	}
 
-	storageService, err := das.CreatePersistentStorageService(ctx, &config)
+	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)

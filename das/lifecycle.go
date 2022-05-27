@@ -25,12 +25,14 @@ func (m *LifecycleManager) Register(c Closer) {
 }
 
 func (m *LifecycleManager) StopAndWaitUntil(t time.Duration) {
-	ctx, cancel := context.WithTimeout(context.Background(), t)
-	defer cancel()
-	for _, c := range m.toClose {
-		err := c.Close(ctx)
-		if err != nil {
-			log.Warn("Failed to Close DAS component", "err", err)
+	if m != nil && m.toClose != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), t)
+		defer cancel()
+		for _, c := range m.toClose {
+			err := c.Close(ctx)
+			if err != nil {
+				log.Warn("Failed to Close DAS component", "err", err)
+			}
 		}
 	}
 }

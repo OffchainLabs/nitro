@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das"
@@ -41,8 +42,9 @@ func TestRPC(t *testing.T) {
 		L1NodeURL: "none",
 	}
 
-	storageService, err := das.CreatePersistentStorageService(ctx, &config)
+	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
 	testhelpers.RequireImpl(t, err)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	localDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService)
 	testhelpers.RequireImpl(t, err)
 	dasServer, err := StartDASRPCServerOnListener(ctx, lis, localDas)

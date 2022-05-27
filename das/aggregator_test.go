@@ -42,8 +42,9 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 			L1NodeURL: "none",
 		}
 
-		storageService, err := CreatePersistentStorageService(ctx, &config)
+		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 		Require(t, err)
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
 		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
@@ -227,8 +228,9 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 			L1NodeURL: "none",
 		}
 
-		storageService, err := CreatePersistentStorageService(ctx, &config)
+		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 		Require(t, err)
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
 		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
@@ -339,8 +341,9 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 			L1NodeURL: "none",
 		}
 
-		storageService, err := CreatePersistentStorageService(ctx, &config)
+		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 		Require(t, err)
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
 		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
