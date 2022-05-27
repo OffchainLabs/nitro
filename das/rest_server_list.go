@@ -71,28 +71,45 @@ const maxListFetchTime = time.Minute
 
 func StartRestfulServerListFetchDaemon(ctx context.Context, listUrl string, updatePeriod time.Duration) <-chan []string {
 	updateChan := make(chan []string)
+
+	downloadAndSend := func() bool { // download and send once, return true iff success
+		subCtx, subCtxCancel := context.WithTimeout(ctx, maxListFetchTime)
+		defer subCtxCancel()
+
+		urls, err := RestfulServerURLsFromList(subCtx, listUrl)
+		if err != nil {
+			return false
+		}
+		select {
+		case updateChan <- urls:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
 	go func() {
+		defer close(updateChan)
+
+		// send the first result immediately
+		if !downloadAndSend() {
+			return
+		}
+
+		// now send periodically
 		ticker := time.NewTicker(updatePeriod)
 		defer ticker.Stop()
-		defer close(updateChan)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				subCtx, subCtxCancel := context.WithTimeout(ctx, maxListFetchTime)
-				urls, err := RestfulServerURLsFromList(subCtx, listUrl)
-				subCtxCancel()
-				if err != nil {
-					return
-				}
-				select {
-				case updateChan <- urls:
-				case <-ctx.Done():
+				if !downloadAndSend() {
 					return
 				}
 			}
 		}
 	}()
+
 	return updateChan
 }

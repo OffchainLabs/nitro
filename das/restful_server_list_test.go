@@ -24,12 +24,52 @@ func TestRestfulServerList(t *testing.T) {
 	listUrl := "http://localhost:" + strconv.FormatInt(LocalServerPortForTest, 10) //nolint
 	urls, err := RestfulServerURLsFromList(ctx, listUrl)
 	Require(t, err)
-	if len(urls) != 2 || (urls[0] != urlsIn[0] && urls[0] != urlsIn[1]) || (urls[1] != urlsIn[0] && urls[1] != urlsIn[1]) {
+	if !stringListIsPermutation(urlsIn, urls) {
 		t.Fatal()
 	}
 
 	err = server.Shutdown(ctx)
 	Require(t, err)
+}
+
+func TestRestfulServerListDaemon(t *testing.T) {
+	initTest(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	urlsIn := []string{"https://supersecret.nowhere.com:9871", "http://www.google.com"}
+	listContents := urlsIn[0] + " \t" + urlsIn[1]
+	server := newListHttpServerForTest(LocalServerPortForTest, listContents)
+
+	listUrl := "http://localhost:" + strconv.FormatInt(LocalServerPortForTest, 10) //nolint
+
+	listChan := StartRestfulServerListFetchDaemon(ctx, listUrl, 200*time.Millisecond)
+	for i := 0; i < 4; i++ {
+		list := <-listChan
+		if !stringListIsPermutation(list, urlsIn) {
+			t.Fatal(i)
+		}
+	}
+
+	err := server.Shutdown(ctx)
+	Require(t, err)
+}
+
+func stringListIsPermutation(lis1, lis2 []string) bool {
+	if len(lis1) != len(lis2) {
+		return false
+	}
+	lookup := make(map[string]bool)
+	for _, s := range lis1 {
+		lookup[s] = true
+	}
+	for _, s := range lis2 {
+		if !lookup[s] {
+			return false
+		}
+	}
+	return true
 }
 
 func newListHttpServerForTest(port int64, contents string) *http.Server {
