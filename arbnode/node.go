@@ -543,21 +543,22 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type Node struct {
-	Backend          *arbitrum.Backend
-	ArbInterface     *ArbInterface
-	L1Reader         *headerreader.HeaderReader
-	TxStreamer       *TransactionStreamer
-	TxPublisher      TransactionPublisher
-	DeployInfo       *RollupAddresses
-	InboxReader      *InboxReader
-	InboxTracker     *InboxTracker
-	DelayedSequencer *DelayedSequencer
-	BatchPoster      *BatchPoster
-	BlockValidator   *validator.BlockValidator
-	Staker           *validator.Staker
-	BroadcastServer  *broadcaster.Broadcaster
-	BroadcastClients []*broadcastclient.BroadcastClient
-	SeqCoordinator   *SeqCoordinator
+	Backend             *arbitrum.Backend
+	ArbInterface        *ArbInterface
+	L1Reader            *headerreader.HeaderReader
+	TxStreamer          *TransactionStreamer
+	TxPublisher         TransactionPublisher
+	DeployInfo          *RollupAddresses
+	InboxReader         *InboxReader
+	InboxTracker        *InboxTracker
+	DelayedSequencer    *DelayedSequencer
+	BatchPoster         *BatchPoster
+	BlockValidator      *validator.BlockValidator
+	Staker              *validator.Staker
+	BroadcastServer     *broadcaster.Broadcaster
+	BroadcastClients    []*broadcastclient.BroadcastClient
+	SeqCoordinator      *SeqCoordinator
+	DASLifecycleManager *das.LifecycleManager
 }
 
 func createNodeImpl(
@@ -639,7 +640,7 @@ func createNodeImpl(
 		}
 	}
 	if !config.L1Reader.Enable {
-		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
+		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, nil}, nil
 	}
 
 	if deployInfo == nil {
@@ -653,7 +654,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	dataAvailabilityService, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1client, deployInfo, daSigner)
+	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1client, deployInfo, daSigner)
 	if err != nil {
 		return nil, err
 	}
@@ -721,7 +722,7 @@ func createNodeImpl(
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dasLifecycleManager}, nil
 }
 
 func SetUpDataAvailability(
@@ -730,9 +731,9 @@ func SetUpDataAvailability(
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	daSigner das.DasSigner,
-) (das.DataAvailabilityService, error) {
+) (das.DataAvailabilityService, *das.LifecycleManager, error) {
 	if !config.Enable {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
@@ -753,9 +754,9 @@ func SetUpDataAvailability(
 		          | : Exclusive OR
 
 	*/
-	topLevelStorageService, err := das.CreatePersistentStorageService(ctx, config)
+	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
@@ -763,21 +764,23 @@ func SetUpDataAvailability(
 	if config.RestfulClientAggregatorConfig.Enable {
 		restAgg, err := das.NewRestfulClientAggregator(&config.RestfulClientAggregatorConfig)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		restAgg.Start(ctx)
-		// TODO how are these stopped?
+		dasLifecycleManager.Register(restAgg)
 
 		// Wrap the primary storage service with the fallback to the restful aggregator
 		if topLevelStorageService != nil {
 			topLevelStorageService = das.NewFallbackStorageService(topLevelStorageService, restAgg,
 				/* TODO add config for following options */
 				math.MaxUint64, true, true)
+			dasLifecycleManager.Register(topLevelStorageService)
 		} else {
 			if config.AllowStoreOrigination {
-				return nil, errors.New("allow-store-origination is set but there are no data availability storage types that can be stored to")
+				return nil, nil, errors.New("allow-store-origination is set but there are no data availability storage types that can be stored to")
 			}
 			topLevelStorageService = das.NewReadLimitedStorageService(restAgg)
+			dasLifecycleManager.Register(topLevelStorageService)
 		}
 	}
 
@@ -786,18 +789,18 @@ func SetUpDataAvailability(
 	// Its use for read-only purposes will be deprecated when the REST DAS servers have been rolled out.
 	if config.AggregatorConfig.Enable {
 		if topLevelStorageService != nil {
-			return nil, errors.New("If rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
+			return nil, nil, errors.New("If rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
 		}
 		rpcAggregator, err := dasrpc.NewRPCAggregatorWithL1Info(config.AggregatorConfig, l1client, deployInfo.SequencerInbox)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		topLevelDas = rpcAggregator
 	} else if config.AllowStoreOrigination {
 		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(deployInfo.SequencerInbox, l1client)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
 			ctx,
@@ -806,22 +809,24 @@ func SetUpDataAvailability(
 			topLevelStorageService,
 		)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	// Enable caches, Redis and (local) BigCache. Local is the outermost so it will be tried first.
 	if config.RedisCacheConfig.Enable {
 		cache, err := das.NewRedisStorageService(config.RedisCacheConfig, das.NewEmptyStorageService())
+		dasLifecycleManager.Register(cache)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
 	if config.LocalCacheConfig.Enable {
 		cache, err := das.NewBigCacheStorageService(config.LocalCacheConfig, das.NewEmptyStorageService())
+		dasLifecycleManager.Register(cache)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
@@ -831,25 +836,25 @@ func SetUpDataAvailability(
 			if daSigner != nil {
 				topLevelDas, err = das.NewStoreSigningDAS(topLevelDas, daSigner)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 		}
 
 		topLevelDas, err = das.NewChainFetchDAS(topLevelDas, l1client, deployInfo.SequencerInbox)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if topLevelDas == nil {
-		return nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled.")
+		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled.")
 	}
 
 	if config.AllowStoreOrigination {
-		return topLevelDas, nil
+		return topLevelDas, dasLifecycleManager, nil
 	} else {
-		return das.NewReadLimitedDataAvailabilityService(topLevelDas), nil
+		return das.NewReadLimitedDataAvailabilityService(topLevelDas), dasLifecycleManager, nil
 	}
 }
 
@@ -1007,6 +1012,7 @@ func (n *Node) StopAndWait() {
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
+	n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 }
 
 func CreateDefaultStack() (*node.Node, error) {

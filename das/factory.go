@@ -12,41 +12,46 @@ import (
 func CreatePersistentStorageService(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
-) (StorageService, error) {
+) (StorageService, *LifecycleManager, error) {
 	storageServices := make([]StorageService, 0, 10)
+	var lifecycleManager LifecycleManager
 	if config.LocalDBStorageConfig.Enable {
 		s, err := NewDBStorageService(ctx, config.LocalDBStorageConfig.DataDir, false /* TODO plumb this from config  */)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		go func() {
-			<-ctx.Done()
-			_ = s.Close(context.Background())
-		}()
+		lifecycleManager.Register(s)
 		storageServices = append(storageServices, s)
 	}
 
 	if config.LocalFileStorageConfig.Enable {
 		s, err := NewLocalFileStorageService(config.LocalFileStorageConfig.DataDir)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		lifecycleManager.Register(s)
 		storageServices = append(storageServices, s)
 	}
 
 	if config.S3StorageServiceConfig.Enable {
 		s, err := NewS3StorageService(config.S3StorageServiceConfig)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		lifecycleManager.Register(s)
 		storageServices = append(storageServices, s)
 	}
 
 	if len(storageServices) > 1 {
-		return NewRedundantStorageService(ctx, storageServices)
+		s, err := NewRedundantStorageService(ctx, storageServices)
+		if err != nil {
+			return nil, nil, err
+		}
+		lifecycleManager.Register(s)
+		return s, &lifecycleManager, nil
 	}
 	if len(storageServices) == 1 {
-		return storageServices[0], nil
+		return storageServices[0], &lifecycleManager, nil
 	}
-	return nil, nil
+	return nil, &lifecycleManager, nil
 }

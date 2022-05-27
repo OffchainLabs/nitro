@@ -6,6 +6,7 @@ package das
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/offchainlabs/nitro/arbstate"
 )
@@ -16,6 +17,6 @@ type StorageService interface {
 	arbstate.DataAvailabilityReader
 	Put(ctx context.Context, data []byte, expirationTime uint64) error
 	Sync(ctx context.Context) error
-	Close(ctx context.Context) error
-	String() string
+	Closer
+	fmt.Stringer
 }

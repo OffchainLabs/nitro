@@ -251,5 +251,20 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 			}
 		}
 	})
+}
 
+func (a *SimpleDASReaderAggregator) Close(ctx context.Context) error {
+	a.StopWaiter.StopOnly()
+	for !a.StopWaiter.Stopped() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return nil
+}
+
+func (a *SimpleDASReaderAggregator) String() string {
+	return fmt.Sprintf("das.SimpleDASReaderAggregator{%v}", a.config.Urls)
 }

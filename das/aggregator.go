@@ -315,17 +315,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	return &aggCert, nil
 }
 
-func (a *Aggregator) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	if !bytes.Equal(ksHash, a.keysetHash[:]) {
-		return nil, ErrDasKeysetNotFound
-	}
-	return a.keysetBytes, nil
-}
-
-func (a *Aggregator) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
-	return a.keysetBytes, nil
-}
-
 func (a *Aggregator) String() string {
 	var b bytes.Buffer
 	b.WriteString("das.Aggregator{")

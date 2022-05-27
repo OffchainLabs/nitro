@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
@@ -104,7 +105,7 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dasImpl, err := arbnode.SetUpDataAvailability(ctx, &serverConfig.DAConf, nil, nil, nil)
+	dasImpl, dasLifecycleManager, err := arbnode.SetUpDataAvailability(ctx, &serverConfig.DAConf, nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -114,6 +115,7 @@ func startup() error {
 		return err
 	}
 	<-sigint
+	dasLifecycleManager.StopAndWaitUntil(2 * time.Second)
 
 	return server.Shutdown(ctx)
 }
