@@ -88,7 +88,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         bytes[] calldata data,
         address[] calldata destination,
         uint256[] calldata amount
-    ) public payable onlyOwner refundsGas(gasRefunder) {
+    ) public payable onlyExecutorOrOwner refundsGas(gasRefunder) {
         uint256 numTxes = data.length;
         for (uint256 i = 0; i < numTxes; i++) {
             if (data[i].length > 0) require(destination[i].isContract(), "NO_CODE_AT_ADDR");
@@ -120,7 +120,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         bytes calldata data,
         address destination,
         uint256 amount
-    ) public payable onlyOwner refundsGas(gasRefunder) {
+    ) public payable onlyExecutorOrOwner refundsGas(gasRefunder) {
         if (data.length > 0) require(destination.isContract(), "NO_CODE_AT_ADDR");
         validateExecuteTransaction(data);
         // We use a low level call here to allow for contract and non-contract calls
@@ -144,7 +144,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         IGasRefunder gasRefunder,
         IChallengeManager manager,
         uint64[] calldata challenges
-    ) public onlyOwner refundsGas(gasRefunder) {
+    ) public onlyExecutorOrOwner refundsGas(gasRefunder) {
         uint256 challengesCount = challenges.length;
         for (uint256 i = 0; i < challengesCount; i++) {
             try manager.timeout(challenges[i]) {} catch (bytes memory error) {

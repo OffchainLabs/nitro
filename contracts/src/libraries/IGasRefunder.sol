@@ -13,19 +13,19 @@ interface IGasRefunder {
 }
 
 abstract contract GasRefundEnabled {
-    function getCalldataSize() private view returns (uint256 calldataSize) {
-        assembly {
-            calldataSize := calldatasize()
-        }
-    }
-
-    /// @dev this method assumes that the spender was charged calldata as part of the tx input
-    /// if triggered in a contract call, the spender may be overrefunded by appending dummy data to the call
+    /// @dev this refunds the sender for execution costs and for calldata as part of the tx input if `msg.sender == tx.origin`
     modifier refundsGas(IGasRefunder gasRefunder) {
         uint256 startGasLeft = gasleft();
         _;
         if (address(gasRefunder) != address(0)) {
-            uint256 calldataSize = msg.sender == tx.origin ? getCalldataSize() : 0; 
+            uint256 calldataSize = 0;
+            // if triggered in a contract call, the spender may be overrefunded by appending dummy data to the call
+            // so we check if it is a top level call, which would mean the sender paid calldata as part of tx.input
+            if(msg.sender == tx.origin) {
+                assembly {
+                    calldataSize := calldatasize()
+                }
+            }
             gasRefunder.onGasSpent(payable(msg.sender), startGasLeft - gasleft(), calldataSize);
         }
     }

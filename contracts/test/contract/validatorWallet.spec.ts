@@ -1,10 +1,10 @@
 import { expect } from "chai";
-import { assert } from "console";
-import { ethers } from "hardhat";
+import { ethers, waffle } from "hardhat";
 import {
   ValidatorWalletCreator,
   ValidatorWalletCreator__factory,
   ValidatorWallet,
+  RollupMock,
 } from "../../build/types";
 import { initializeAccounts } from "./utils";
 
@@ -16,6 +16,7 @@ describe("Validator Wallet", () => {
   let executor: ArrayElement<typeof accounts>;
   let walletCreator: ValidatorWalletCreator;
   let wallet: ValidatorWallet;
+  let rollupMock: RollupMock;
 
   before(async () => {
     accounts = await initializeAccounts();
@@ -38,25 +39,69 @@ describe("Validator Wallet", () => {
     const walletAddr = events[0].args.walletAddress;
     const Wallet = await ethers.getContractFactory("ValidatorWallet");
     wallet = (await Wallet.attach(walletAddr)) as ValidatorWallet;
+
+    const RollupMock = await ethers.getContractFactory("RollupMock");
+    rollupMock = (await RollupMock.deploy()) as RollupMock;
+
+    // await accounts[0].sendTransaction({
+    //   to: wallet.address,
+    //   value: ethers.utils.parseEther("5"),
+    // });
   });
 
   it("should validate function signatures", async function () {
-    const funcSigs = ["0x12345678", "0x00000000", "0x01230000"];
+    const funcSigs = ["0x12345678", "0x00000001", "0x01230000"];
     await wallet.setOnlyOwnerFunctionSigs(funcSigs, [true, true, true]);
 
     expect(await wallet.onlyOwnerFuncSigs("0x01230000")).to.be.true;
-    expect(await wallet.onlyOwnerFuncSigs("0x00000000")).to.be.true;
+    expect(await wallet.onlyOwnerFuncSigs("0x00000001")).to.be.true;
     expect(await wallet.onlyOwnerFuncSigs("0x12345678")).to.be.true;
 
     // should succeed if random signature
-    await wallet.connect(owner).validateExecuteTransaction("0x987698769876");
+    await wallet.connect(executor).validateExecuteTransaction("0x987698769876");
 
     for (const sig of funcSigs) {
-      await expect(wallet.connect(owner).validateExecuteTransaction(sig)).to.be.reverted;
+      // owner should succeed
+      await expect(wallet.connect(owner).validateExecuteTransaction(sig));
+      // executor should revert
+      await expect(wallet.connect(executor).validateExecuteTransaction(sig)).to.be.reverted;
       // TODO: update waffle once released with fix for custom errors https://github.com/TrueFiEng/Waffle/pull/719
     }
   });
 
-  // TODO: example calling random func with params and failing
-  // fallback function example
+  it("should not allow executor to execute certain txs", async function () {
+    const data = rollupMock.interface.encodeFunctionData("withdrawStakerFunds", [
+      await executor.getAddress(),
+    ]);
+
+    const expectedSig = "0x81fbc98a"
+    expect(data.substring(0, 10)).to.equal(expectedSig);
+    expect(await wallet.onlyOwnerFuncSigs(expectedSig)).to.be.true;
+
+    await expect(
+      wallet.connect(executor).executeTransaction(data, rollupMock.address, 0)
+    ).to.be.revertedWith(
+      `OnlyOwnerFunctionSig("${await owner.getAddress()}", "${await executor.getAddress()}")`
+    );
+    await expect(wallet.connect(owner).executeTransaction(data, rollupMock.address, 0)).to.emit(
+      rollupMock,
+      "WithdrawTriggered"
+    );
+  });
+
+  it("should allow regular functions to be executed", async function () {
+    const data = rollupMock.interface.encodeFunctionData("removeOldZombies", [0]);
+
+    const expectedSig = "0xedfd03ed"
+    expect(data.substring(0, 10)).to.equal(expectedSig);
+    expect(await wallet.onlyOwnerFuncSigs(expectedSig)).to.be.false;
+
+    await expect(
+      wallet.connect(executor).executeTransaction(data, rollupMock.address, 0)
+    ).to.emit(rollupMock, "ZombieTriggered")
+    await expect(wallet.connect(owner).executeTransaction(data, rollupMock.address, 0)).to.emit(
+      rollupMock,
+      "ZombieTriggered"
+    );
+  });
 });
