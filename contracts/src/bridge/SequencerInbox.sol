@@ -138,9 +138,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
     ) external refundsGas(gasRefunder) {
-        // we can refund with calldata this function since the spender is charged as tx input
-        // they can append extra dummy bytes that aren't processed by this function, but that
-        // would just grief the refunder funds, not actually lead to a profit
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
@@ -170,7 +167,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
     ) external override refundsGas(gasRefunder) {
-        // we don't refund calldata since the spender can cheaply create large calldata using memory then get over-refunded
         if (!isBatchPoster[msg.sender] && msg.sender != rollup) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
 
