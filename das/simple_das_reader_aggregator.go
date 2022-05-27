@@ -255,14 +255,16 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 
 func (a *SimpleDASReaderAggregator) Close(ctx context.Context) error {
 	a.StopWaiter.StopOnly()
-	for !a.StopWaiter.Stopped() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
-		}
+	waitChan, err := a.StopWaiter.GetWaitChannel()
+	if err != nil {
+		return err
 	}
-	return nil
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-waitChan:
+		return nil
+	}
 }
 
 func (a *SimpleDASReaderAggregator) String() string {

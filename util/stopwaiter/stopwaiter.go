@@ -16,6 +16,7 @@ type StopWaiterSafe struct {
 	stopped  bool
 	ctx      context.Context
 	stopFunc func()
+	waitChan <-chan interface{}
 
 	wg sync.WaitGroup
 }
@@ -69,6 +70,25 @@ func (s *StopWaiterSafe) StopOnly() {
 func (s *StopWaiterSafe) StopAndWait() {
 	s.StopOnly()
 	s.wg.Wait()
+}
+
+func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.waitChan == nil {
+		ctx, err := s.GetContext()
+		if err != nil {
+			return nil, err
+		}
+		waitChan := make(chan interface{})
+		go func() {
+			<-ctx.Done()
+			s.wg.Wait()
+			close(waitChan)
+		}()
+		s.waitChan = waitChan
+	}
+	return s.waitChan, nil
 }
 
 // If stop was already called, thread might silently not be launched
