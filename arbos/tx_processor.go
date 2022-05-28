@@ -41,6 +41,7 @@ type TxProcessor struct {
 	TopTxType        *byte // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
+	batchFetcher     BatchFetcher
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
@@ -55,6 +56,7 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		TopTxType:        nil,
 		evm:              evm,
 		CurrentRetryable: nil,
+		// TODO: initialize batchFetcher
 	}
 }
 
@@ -119,7 +121,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		ApplyInternalTxUpdate(tx, p.state, evm)
+		ApplyInternalTxUpdate(tx, p.state, evm, p.batchFetcher)
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		defer (startTracer())()

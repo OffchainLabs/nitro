@@ -504,6 +504,10 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 }
 
 func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int) (*types.Transaction, error) {
+	batchTimestamp, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
 	batchPosterAddr, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
@@ -517,7 +521,7 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int) (*types.Tran
 	if err != nil {
 		return nil, err
 	}
-	data, err := util.PackInternalTxDataBatchPostingReport(batchPosterAddr, batchNum, l1BaseFee)
+	data, err := util.PackInternalTxDataBatchPostingReport(batchTimestamp, batchPosterAddr, batchNum, l1BaseFee)
 	if err != nil {
 		return nil, err
 	}

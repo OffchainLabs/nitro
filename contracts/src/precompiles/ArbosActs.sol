@@ -38,6 +38,7 @@ interface ArbosActs {
     ) external;
 
     function batchPostingReport(
+        uint256 batchTimestamp,
         address batchPosterAddress,
         uint256 batchNumber,
         uint256 l1BaseFeeWei
