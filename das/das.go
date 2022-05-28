@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/ethereum/go-ethereum/common"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -18,7 +19,7 @@ import (
 
 type DataAvailabilityServiceWriter interface {
 	// Requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error)
+	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error)
 }
 
 type DataAvailabilityService interface {
@@ -31,19 +32,30 @@ type DataAvailabilityMode uint64
 
 const (
 	OnchainDataAvailability DataAvailabilityMode = iota
-	LocalDataAvailability
+	DASDataAvailability
 	AggregatorDataAvailability
 	// TODO RemoteDataAvailability
 )
 
+const (
+	OnchainDataAvailabilityString    = "onchain"
+	DASDataAvailabilityString        = "das"
+	AggregatorDataAvailabilityString = "aggregator"
+	// TODO RemoteDataAvailability
+)
+
 type DataAvailabilityConfig struct {
-	ModeImpl           string             `koanf:"mode"`
-	LocalDiskDASConfig LocalDiskDASConfig `koanf:"local-disk"`
-	AggregatorConfig   AggregatorConfig   `koanf:"aggregator"`
+	ModeImpl              string           `koanf:"mode"`
+	DASConfig             StorageConfig    `koanf:"das"`
+	AggregatorConfig      AggregatorConfig `koanf:"aggregator"`
+	L1NodeURL             string           `koanf:"l1-node-url"`
+	SequencerInboxAddress string           `koanf:"sequencer-inbox-address"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl: "onchain",
+	ModeImpl:              OnchainDataAvailabilityString,
+	L1NodeURL:             "",
+	SequencerInboxAddress: "",
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
@@ -51,19 +63,19 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 		return 0, errors.New("--data-availability.mode missing")
 	}
 
-	if c.ModeImpl == "onchain" {
+	if c.ModeImpl == OnchainDataAvailabilityString {
 		return OnchainDataAvailability, nil
 	}
 
-	if c.ModeImpl == "local" {
-		if c.LocalDiskDASConfig.DataDir == "" || (c.LocalDiskDASConfig.KeyDir == "" && c.LocalDiskDASConfig.PrivKey == "") {
+	if c.ModeImpl == DASDataAvailabilityString {
+		if c.DASConfig.LocalConfig.DataDir == "" || (c.DASConfig.KeyDir == "" && c.DASConfig.PrivKey == "") {
 			flag.Usage()
-			return 0, errors.New("--data-availability.local-disk.data-dir and .key-dir must be specified if mode is set to local")
+			return 0, errors.New("--data-availability.das.local.data-dir and --data-availability.das.key-dir must be specified if mode is set to das")
 		}
-		return LocalDataAvailability, nil
+		return DASDataAvailability, nil
 	}
 
-	if c.ModeImpl == "aggregator" {
+	if c.ModeImpl == AggregatorDataAvailabilityString {
 		if reflect.DeepEqual(c.AggregatorConfig, DefaultAggregatorConfig) {
 			flag.Usage()
 			return 0, errors.New("--data-availability.aggregator.X config options must be specified if mode is set to aggregator")
@@ -75,13 +87,29 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
 
-func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'local', or 'aggregator')")
-	LocalDiskDASConfigAddOptions(prefix+".local-disk", f)
-	AggregatorConfigAddOptions(prefix+".aggregator", f)
+func OptionalAddressFromString(s string) (*common.Address, error) {
+	if s == "none" {
+		return nil, nil
+	}
+	if s == "" {
+		return nil, errors.New("must provide address for signer or specify 'none'")
+	}
+	if !common.IsHexAddress(s) {
+		return nil, fmt.Errorf("invalid address for signer: %v", s)
+	}
+	addr := common.HexToAddress(s)
+	return &addr, nil
 }
 
-func serializeSignableFields(c arbstate.DataAvailabilityCertificate) []byte {
+func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'das', or 'aggregator')")
+	StorageConfigAddOptions(prefix+".das", f)
+	AggregatorConfigAddOptions(prefix+".aggregator", f)
+	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node")
+	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
+}
+
+func serializeSignableFields(c *arbstate.DataAvailabilityCertificate) []byte {
 	buf := make([]byte, 0, 32+8)
 	buf = append(buf, c.DataHash[:]...)
 
@@ -92,10 +120,12 @@ func serializeSignableFields(c arbstate.DataAvailabilityCertificate) []byte {
 	return buf
 }
 
-func Serialize(c arbstate.DataAvailabilityCertificate) []byte {
+func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {
 	buf := make([]byte, 0)
 
 	buf = append(buf, arbstate.DASMessageHeaderFlag)
+
+	buf = append(buf, c.KeysetHash[:]...)
 
 	buf = append(buf, serializeSignableFields(c)...)
 

@@ -32,13 +32,27 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     address[] public allowedInboxList;
     address[] public allowedOutboxList;
 
-    address public override activeOutbox;
+    address private _activeOutbox;
 
     /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override inboxAccs;
 
+    address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
+
     function initialize() external initializer onlyDelegated {
+        _activeOutbox = EMPTY_ACTIVEOUTBOX;
         __Ownable_init();
+    }
+
+    /// @dev returns the address of current active Outbox, or zero if no outbox is active
+    function activeOutbox() public view returns (address) {
+        address outbox = _activeOutbox;
+        // address zero is returned if no outbox is set, but the value used in storage
+        // is non-zero to save users some gas (as storage refunds are usually maxed out)
+        // EIP-1153 would help here.
+        // we don't return `EMPTY_ACTIVEOUTBOX` to avoid a breaking change on the current api
+        if (outbox == EMPTY_ACTIVEOUTBOX) return address(0);
+        return outbox;
     }
 
     function allowedInboxes(address inbox) external view override returns (bool) {
@@ -114,15 +128,15 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     ) external override returns (bool success, bytes memory returnData) {
         if (!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
         if (data.length > 0 && !to.isContract()) revert NotContract(to);
-        address prevOutbox = activeOutbox;
-        activeOutbox = msg.sender;
+        address prevOutbox = _activeOutbox;
+        _activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call
 
         // We use a low level call here since we want to bubble up whether it succeeded or failed to the caller
         // rather than reverting on failure as well as allow contract and non-contract calls
         // solhint-disable-next-line avoid-low-level-calls
         (success, returnData) = to.call{value: value}(data);
-        activeOutbox = prevOutbox;
+        _activeOutbox = prevOutbox;
         emit BridgeCallTriggered(msg.sender, to, value, data);
     }
 
@@ -145,6 +159,8 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     }
 
     function setOutbox(address outbox, bool enabled) external override onlyOwner {
+        if (outbox == EMPTY_ACTIVEOUTBOX) revert InvalidOutboxSet(outbox);
+
         InOutInfo storage info = allowedOutboxesMap[outbox];
         bool alreadyEnabled = info.allowed;
         emit OutboxToggle(outbox, enabled);

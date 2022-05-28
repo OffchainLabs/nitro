@@ -198,9 +198,9 @@ impl Memory {
         if let Some(mut merkle) = self.merkle.take() {
             let start_leaf = idx / Self::LEAF_SIZE;
             merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
-            let end_leaf = end_idx / Self::LEAF_SIZE;
+            let end_leaf = (end_idx - 1) / Self::LEAF_SIZE;
             if end_leaf != start_leaf {
-                merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
+                merkle.set(end_leaf, hash_leaf(self.get_leaf_data(end_leaf)));
             }
             self.merkle = Some(merkle);
         }

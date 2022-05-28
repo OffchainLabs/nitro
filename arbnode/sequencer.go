@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -42,7 +43,7 @@ type Sequencer struct {
 
 	txStreamer *TransactionStreamer
 	txQueue    chan txQueueItem
-	l1Reader   *L1Reader
+	l1Reader   *headerreader.HeaderReader
 	config     SequencerConfig
 
 	L1BlockAndTimeMutex sync.Mutex
@@ -53,7 +54,7 @@ type Sequencer struct {
 	forwarder      *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Reader *L1Reader, config SequencerConfig) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfig) (*Sequencer, error) {
 	return &Sequencer{
 		txStreamer:    txStreamer,
 		txQueue:       make(chan txQueueItem, 128),

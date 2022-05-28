@@ -4,9 +4,9 @@
 package validator
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -19,8 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/pkg/errors"
 )
 
@@ -31,7 +29,7 @@ type StatelessBlockValidator struct {
 	streamer        TransactionStreamerInterface
 	blockchain      *core.BlockChain
 	db              ethdb.Database
-	das             das.DataAvailabilityService
+	daService       arbstate.SimpleDASReader
 	genesisBlockNum uint64
 }
 
@@ -195,7 +193,7 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	blockchain *core.BlockChain,
 	db ethdb.Database,
-	das das.DataAvailabilityService,
+	das arbstate.SimpleDASReader,
 ) (*StatelessBlockValidator, error) {
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
 	if err != nil {
@@ -208,7 +206,7 @@ func NewStatelessBlockValidator(
 		streamer:        streamer,
 		blockchain:      blockchain,
 		db:              db,
-		das:             das,
+		daService:       das,
 		genesisBlockNum: genesisBlockNum,
 	}
 	return validator, nil
@@ -289,7 +287,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	return
 }
 
-func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, preimages map[common.Hash][]byte, seqMsg []byte, bc *core.BlockChain, das das.DataAvailabilityService) error {
+func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, preimages map[common.Hash][]byte, seqMsg []byte, bc *core.BlockChain, das arbstate.SimpleDASReader) error {
 	recordNewPreimages := true
 	if preimages == nil {
 		preimages = make(map[common.Hash][]byte)
@@ -303,15 +301,9 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, pr
 				return errors.New("processing data availability chain without DAS configured")
 			}
 		} else {
-			cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(seqMsg[40:]))
+			_, err := arbstate.RecoverPayloadFromDasBatch(ctx, seqMsg, das, preimages)
 			if err != nil {
-				log.Error("Failed to deserialize DAS message", "err", err)
-			} else {
-				dasPreimage, err := das.Retrieve(ctx, seqMsg[40:])
-				if err != nil {
-					return fmt.Errorf("couldn't retrieve message from DAS %w", err)
-				}
-				preimages[common.BytesToHash(cert.DataHash[:])] = dasPreimage
+				return err
 			}
 		}
 	}
@@ -353,7 +345,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 	mach := basemachine.Clone()
-	err = SetMachinePreimageResolver(ctx, mach, entry.Preimages, seqMsg, v.blockchain, v.das)
+	err = SetMachinePreimageResolver(ctx, mach, entry.Preimages, seqMsg, v.blockchain, v.daService)
 	if err != nil {
 		return GoGlobalState{}, nil, err
 	}

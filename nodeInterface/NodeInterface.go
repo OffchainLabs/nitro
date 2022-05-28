@@ -42,7 +42,8 @@ type NodeInterface struct {
 }
 
 var merkleTopic common.Hash
-var withdrawTopic common.Hash
+var l2ToL1TxTopic common.Hash
+var l2ToL1TransactionTopic common.Hash
 
 var blockInGenesis = errors.New("")
 var blockAfterLatestBatch = errors.New("")
@@ -245,7 +246,10 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 						continue
 					}
 
-					if log.Topics[0] != merkleTopic && log.Topics[0] != withdrawTopic {
+					// L2ToL1TransactionEventID is deprecated in upgrade 4, but it should to safe to make this code handle
+					// both events ignoring the version.
+					// TODO: Remove L2ToL1Transaction handling on next chain reset
+					if log.Topics[0] != merkleTopic && log.Topics[0] != l2ToL1TxTopic && log.Topics[0] != l2ToL1TransactionTopic {
 						// log is unrelated
 						continue
 					}

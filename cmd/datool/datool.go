@@ -4,14 +4,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbstate"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dasrpc"
@@ -46,6 +49,8 @@ func startClient(args []string) error {
 		return startClientStore(args[1:])
 	case "retrieve":
 		return startClientRetrieve(args[1:])
+	case "getbyhash":
+		return startClientGetByHash(args[1:])
 	}
 	return fmt.Errorf("datool client '%s' not supported, valid arguments are 'store' and 'retrieve'", args[0])
 }
@@ -57,7 +62,7 @@ type ClientStoreConfig struct {
 	Message            string        `koanf:"message"`
 	DASRetentionPeriod time.Duration `koanf:"das-retention-period"`
 	// TODO ECDSA private key to sign message with
-	ConfConfig conf.ConfConfig `koanf:"conf"`
+	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -65,7 +70,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("url", "", "URL of DAS server to connect to.")
 	f.String("message", "", "Message to send.")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
-	conf.ConfConfigAddOptions("conf", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
@@ -91,16 +96,19 @@ func startClientStore(args []string) error {
 	}
 
 	ctx := context.Background()
-	cert, err := client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
+	cert, err := client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	if err != nil {
 		return err
 	}
 
-	serializedCert := das.Serialize(*cert)
+	serializedCert := das.Serialize(cert)
 	encodedCert := make([]byte, base64.StdEncoding.EncodedLen(len(serializedCert)))
 	base64.StdEncoding.Encode(encodedCert, serializedCert)
-
 	fmt.Printf("Base64 Encoded Cert: %s\n", string(encodedCert))
+
+	encodedDataHash := make([]byte, base64.StdEncoding.EncodedLen(len(cert.DataHash)))
+	base64.StdEncoding.Encode(encodedDataHash, cert.DataHash[:])
+	fmt.Printf("Base64 Encoded Data Hash: %s\n", string(encodedDataHash))
 
 	return nil
 }
@@ -108,16 +116,16 @@ func startClientStore(args []string) error {
 // datool client retrieve
 
 type ClientRetrieveConfig struct {
-	URL        string          `koanf:"url"`
-	Cert       string          `koanf:"cert"`
-	ConfConfig conf.ConfConfig `koanf:"conf"`
+	URL        string                 `koanf:"url"`
+	Cert       string                 `koanf:"cert"`
+	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientRetrieveConfig(args []string) (*ClientRetrieveConfig, error) {
 	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
 	f.String("url", "", "URL of DAS server to connect to.")
 	f.String("cert", "", "Base64 encodeded DAS certificate of message to retrieve.")
-	conf.ConfConfigAddOptions("conf", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
@@ -147,8 +155,64 @@ func startClientRetrieve(args []string) error {
 	if err != nil {
 		return err
 	}
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(decodedCert))
+	if err != nil {
+		return err
+	}
 	ctx := context.Background()
-	message, err := client.Retrieve(ctx, decodedCert)
+	message, err := client.GetByHash(ctx, cert.DataHash[:])
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Message: %s\n", message)
+	return nil
+}
+
+// datool client getbyhash
+
+type ClientGetByHashConfig struct {
+	Host       string                 `koanf:"host"`
+	Port       int                    `koanf:"port"`
+	Protocol   string                 `koanf:"protocol"`
+	DataHash   string                 `koanf:"data-hash"`
+	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+}
+
+func parseClientGetByHashConfig(args []string) (*ClientGetByHashConfig, error) {
+	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
+	f.String("host", "localhost", "Host (fqdn) of DAS server to connect to.")
+	f.Int("port", 9877, "Port of DAS server to connect to.")
+	f.String("protocol", "http", "Protocol to use to connect to DAS server.")
+	f.String("data-hash", "", "Base64 encodeded hash of the message to retrieve.")
+	genericconf.ConfConfigAddOptions("conf", f)
+
+	k, err := util.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var config ClientGetByHashConfig
+	if err := util.EndCommonParse(k, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+func startClientGetByHash(args []string) error {
+	config, err := parseClientGetByHashConfig(args)
+	if err != nil {
+		return err
+	}
+
+	client := das.NewRestfulDasClient(config.Protocol, config.Host, config.Port)
+
+	decodedHash := make([]byte, base64.StdEncoding.DecodedLen(len(config.DataHash)))
+	_, err = base64.StdEncoding.Decode(decodedHash, []byte(config.DataHash))
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	message, err := client.GetByHash(ctx, decodedHash)
 	if err != nil {
 		return err
 	}
@@ -160,13 +224,13 @@ func startClientRetrieve(args []string) error {
 
 type KeyGenConfig struct {
 	Dir        string
-	ConfConfig conf.ConfConfig `koanf:"conf"`
+	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f := flag.NewFlagSet("datool keygen", flag.ContinueOnError)
 	f.String("dir", "", "The directory to generate the keys in")
-	conf.ConfConfigAddOptions("conf", f)
+	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
