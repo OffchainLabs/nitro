@@ -529,5 +529,6 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int) (*types.Tran
 		ChainId: chainId,
 		SubType: arbInternalTxBatchPostReport,
 		Data:    data,
+		// don't need to fill in the other fields, since they exist only to ensure uniqueness, and batchNum is already unique
 	}), nil
 }
