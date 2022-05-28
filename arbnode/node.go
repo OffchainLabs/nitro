@@ -17,6 +17,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"golang.org/x/term"
 
@@ -654,10 +655,21 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1client, deployInfo, daSigner)
+	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1client, deployInfo)
 	if err != nil {
 		return nil, err
 	}
+	if config.BatchPoster.Enable {
+		if daSigner != nil {
+			dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
+	}
+
 	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
 	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityReader)
 	if err != nil {
@@ -725,31 +737,69 @@ func createNodeImpl(
 	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dasLifecycleManager}, nil
 }
 
+// Set up a das.DataAvailabilityService stack without relying on any
+// objects already created for setting up the Node.
+func SetUpDataAvailabilityWithoutNode(
+	ctx context.Context,
+	config *das.DataAvailabilityConfig,
+) (das.DataAvailabilityService, *das.LifecycleManager, error) {
+	return SetUpDataAvailability(ctx, config, nil, nil)
+}
+
+// Set up a das.DataAvailabilityService stack allowing some dependencies
+// that were created for the Node to be injected.
 func SetUpDataAvailability(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
-	l1client arbutil.L1Interface,
-	deployInfo *RollupAddresses,
-	daSigner das.DasSigner,
+	_l1Client arbutil.L1Interface,
+	_deployInfo *RollupAddresses,
 ) (das.DataAvailabilityService, *das.LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil
 	}
 
+	var seqInbox *bridgegen.SequencerInbox
+	var err error
+
+	if _l1Client != nil && _deployInfo != nil {
+		seqInbox, err = bridgegen.NewSequencerInbox(_deployInfo.SequencerInbox, _l1Client)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
+		// leave sequencerInboxCaller nil
+	} else if len(config.L1NodeURL) > 0 && len(config.SequencerInboxAddress) > 0 {
+		l1Client, err := ethclient.DialContext(ctx, config.L1NodeURL)
+		if err != nil {
+			return nil, nil, err
+		}
+		sequencerInbox, err := das.OptionalAddressFromString(config.SequencerInboxAddress)
+		if err != nil {
+			return nil, nil, err
+		}
+		if sequencerInbox == nil {
+			return nil, nil, errors.New("Must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+		}
+		seqInbox, err = bridgegen.NewSequencerInbox(*sequencerInbox, l1Client)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		return nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address or 'none' if running daserver executable")
+	}
+
 	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
 	/*
-			      ChainFetchDAS → #StoreSigningDAS → Bigcache → Redis →
+			      ChainFetchDAS → Bigcache → Redis →
 				       RPC Aggregator
-				       | #SignAfterStoreDAS →
+				       | SignAfterStoreDAS →
 				              FallbackDAS (if the REST client aggregator was specified)
 				              (primary) → RedundantStorage (if multiple persistent backing stores were specified)
-				                        → S3
-				                        → DiskStorage
-				                        → Database
-				              (fallback only)→ RESTful client aggregator
+				                            → S3
+				                            → DiskStorage
+				                            → Database
+				         (fallback only)→ RESTful client aggregator
 
-
-		          # : Only enabled if AllowStoreOrigination is enabled.
 		          → : X--delegates to-->Y
 		          | : Exclusive OR
 
@@ -776,9 +826,6 @@ func SetUpDataAvailability(
 				math.MaxUint64, true, true)
 			dasLifecycleManager.Register(topLevelStorageService)
 		} else {
-			if config.AllowStoreOrigination {
-				return nil, nil, errors.New("allow-store-origination is set but there are no data availability storage types that can be stored to")
-			}
 			topLevelStorageService = das.NewReadLimitedStorageService(restAgg)
 			dasLifecycleManager.Register(topLevelStorageService)
 		}
@@ -791,21 +838,18 @@ func SetUpDataAvailability(
 		if topLevelStorageService != nil {
 			return nil, nil, errors.New("If rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
 		}
-		rpcAggregator, err := dasrpc.NewRPCAggregatorWithL1Info(config.AggregatorConfig, l1client, deployInfo.SequencerInbox)
+		rpcAggregator, err := dasrpc.NewRPCAggregatorWithSeqInboxCaller(config.AggregatorConfig, &seqInbox.SequencerInboxCaller)
 		if err != nil {
 			return nil, nil, err
 		}
 
 		topLevelDas = rpcAggregator
-	} else if config.AllowStoreOrigination {
-		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(deployInfo.SequencerInbox, l1client)
-		if err != nil {
-			return nil, nil, err
-		}
+	} else {
+		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
 			ctx,
 			config.KeyConfig,
-			seqInboxCaller,
+			&seqInbox.SequencerInboxCaller,
 			topLevelStorageService,
 		)
 		if err != nil {
@@ -831,17 +875,8 @@ func SetUpDataAvailability(
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
 
-	if topLevelDas != nil {
-		if config.AllowStoreOrigination {
-			if daSigner != nil {
-				topLevelDas, err = das.NewStoreSigningDAS(topLevelDas, daSigner)
-				if err != nil {
-					return nil, nil, err
-				}
-			}
-		}
-
-		topLevelDas, err = das.NewChainFetchDAS(topLevelDas, l1client, deployInfo.SequencerInbox)
+	if topLevelDas != nil && seqInbox != nil {
+		topLevelDas, err = das.NewChainFetchDASWithSeqInbox(topLevelDas, seqInbox)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -851,11 +886,7 @@ func SetUpDataAvailability(
 		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled.")
 	}
 
-	if config.AllowStoreOrigination {
-		return topLevelDas, dasLifecycleManager, nil
-	} else {
-		return das.NewReadLimitedDataAvailabilityService(topLevelDas), dasLifecycleManager, nil
-	}
+	return topLevelDas, dasLifecycleManager, nil
 }
 
 type arbNodeLifecycle struct {

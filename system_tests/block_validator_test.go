@@ -34,7 +34,6 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = true
 	l1NodeConfigB.DataAvailability = l1NodeConfigA.DataAvailability
-	l1NodeConfigB.DataAvailability.AllowStoreOrigination = true
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")

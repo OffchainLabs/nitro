@@ -34,6 +34,17 @@ func KeyConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".priv-key", DefaultKeyConfig.PrivKey, "the base64 BLS private key to use for signing DAS certificates; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified")
 }
 
+// Provides DAS signature functionality over a StorageService by adapting
+// DataAvailabilityService.Store(...) to StorageService.Put(...).
+// There are two different signature functionalities it provides:
+//
+// 1) SignAfterStoreDAS.Store(...) assembles the returned hash into a
+// DataAvailabilityCertificate and signs it with its BLS private key.
+//
+// 2) If Sequencer Inbox contract details are provided when a SignAfterStoreDAS is
+// constructed, calls to Store(...) will try to verify the passed-in data's signature
+// is from the batch poster. If the contract details are not provided, then the
+// signature is not checked, which is useful for testing.
 type SignAfterStoreDAS struct {
 	config         KeyConfig
 	privKey        *blsSignatures.PrivateKey

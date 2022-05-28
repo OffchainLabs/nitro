@@ -206,7 +206,7 @@ type storeResponse struct {
 	err     error
 }
 
-// store calls Store on each backend DAS in parallel and collects responses.
+// Store calls Store on each backend DAS in parallel and collects responses.
 // If there were at least K responses then it aggregates the signatures and
 // signersMasks from each DAS together into the DataAvailabilityCertificate
 // then Store returns immediately. If there were any backend Store subroutines
@@ -219,6 +219,11 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
+//
+// If Sequencer Inbox contract details are provided when a das.Aggregator is
+// constructed, calls to Store(...) will try to verify the passed-in data's signature
+// is from the batch poster. If the contract details are not provided, then the
+// signature is not checked, which is useful for testing.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	if a.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)

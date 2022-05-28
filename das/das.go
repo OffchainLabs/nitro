@@ -27,8 +27,7 @@ type DataAvailabilityService interface {
 }
 
 type DataAvailabilityConfig struct {
-	Enable                bool `koanf:"enable"`
-	AllowStoreOrigination bool `koanf:"allow-store-origination"`
+	Enable bool `koanf:"enable"`
 
 	LocalCacheConfig BigCacheConfig `koanf:"local-cache"`
 	RedisCacheConfig RedisConfig    `koanf:"redis-cache"`
@@ -95,7 +94,6 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
-	f.Bool(prefix+".allow-store-origination", DefaultDataAvailabilityConfig.AllowStoreOrigination, "allow this server to store new batches; should only be enabled for the batch poster/sequencer")
 
 	// Cache options
 	BigCacheConfigAddOptions(prefix+".local-cache", f)
@@ -113,7 +111,7 @@ func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AggregatorConfigAddOptions(prefix+".rpc-aggregator", f)
 	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
 
-	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node")
+	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
 	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 }
 

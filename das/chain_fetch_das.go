@@ -35,7 +35,10 @@ func NewChainFetchDAS(inner DataAvailabilityService, l1client arbutil.L1Interfac
 	if err != nil {
 		return nil, err
 	}
+	return NewChainFetchDASWithSeqInbox(inner, seqInbox)
+}
 
+func NewChainFetchDASWithSeqInbox(inner DataAvailabilityService, seqInbox *bridgegen.SequencerInbox) (*ChainFetchDAS, error) {
 	return &ChainFetchDAS{
 		inner,
 		&seqInbox.SequencerInboxCaller,
@@ -50,6 +53,10 @@ func NewChainFetchReader(inner arbstate.DataAvailabilityReader, l1client arbutil
 		return nil, err
 	}
 
+	return NewChainFetchReaderWithSeqInbox(inner, seqInbox)
+}
+
+func NewChainFetchReaderWithSeqInbox(inner arbstate.DataAvailabilityReader, seqInbox *bridgegen.SequencerInbox) (*ChainFetchReader, error) {
 	return &ChainFetchReader{
 		inner,
 		&seqInbox.SequencerInboxCaller,
