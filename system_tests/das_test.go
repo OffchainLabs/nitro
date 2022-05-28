@@ -293,8 +293,7 @@ func TestDASMaximalConfig_RPCAggregator_WithStores(t *testing.T) {
 
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
 
-	var daSigner das.DasSigner
-	daSigner = func(data []byte) ([]byte, error) {
+	var daSigner das.DasSigner = func(data []byte) ([]byte, error) {
 		return crypto.Sign(data, l1info.Accounts["Sequencer"].PrivateKey)
 	}
 
