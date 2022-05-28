@@ -517,11 +517,13 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int) (*types.Tran
 	if err != nil {
 		return nil, err
 	}
-	tx := &types.ArbitrumBatchPostingReportTx{
-		ChainId:         chainId,
-		BatchPosterAddr: batchPosterAddr,
-		BatchNum:        batchNum.Big(),
-		L1BaseFee:       l1BaseFee.Big(),
+	data, err := util.PackInternalTxDataBatchPostingReport(batchPosterAddr, batchNum, l1BaseFee)
+	if err != nil {
+		return nil, err
 	}
-	return types.NewTx(tx), nil
+	return types.NewTx(&types.ArbitrumInternalTx{
+		ChainId: chainId,
+		SubType: arbInternalTxBatchPostReport,
+		Data:    data,
+	}), nil
 }

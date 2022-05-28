@@ -17,7 +17,8 @@ import (
 // Types of ArbitrumInternalTx, distinguished by the first data byte
 const (
 	// Contains 8 bytes indicating the big endian L1 block number to set
-	arbInternalTxStartBlock uint8 = 0
+	arbInternalTxStartBlock      uint8 = 0
+	arbInternalTxBatchPostReport uint8 = 1
 )
 
 func InternalTxStartBlock(

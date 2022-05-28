@@ -37,5 +37,11 @@ interface ArbosActs {
         uint64 timePassed
     ) external;
 
+    function batchPostingReport(
+        address batchPosterAddress,
+        uint256 batchNumber,
+        uint256 l1BaseFeeWei
+    ) external;
+
     error CallerNotArbOS();
 }
