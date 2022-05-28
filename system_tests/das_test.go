@@ -7,10 +7,14 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 
@@ -187,6 +191,7 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA, l
 }
 
 func TestDASMaximalConfig_RPCAggregator_WithStores(t *testing.T) {
+	initTest(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -288,13 +293,20 @@ func TestDASMaximalConfig_RPCAggregator_WithStores(t *testing.T) {
 
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
 
+	var daSigner das.DasSigner
+	daSigner = func(data []byte) ([]byte, error) {
+		return crypto.Sign(data, l1info.Accounts["Sequencer"].PrivateKey)
+	}
+
+	Require(t, err)
+
 	// Setup L2 chain
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
 	l2info.GenerateAccount("User2")
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	nodeA, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
+	nodeA, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, daSigner)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForArbBackend(t, nodeA.Backend)
@@ -334,4 +346,20 @@ func TestDASMaximalConfig_RPCAggregator_WithStores(t *testing.T) {
 
 func TestDASMaximalConfig_RPCAggregator_NoStores(t *testing.T) {
 
+}
+
+func enableLogging(logLvl int) {
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.Lvl(logLvl))
+	log.Root().SetHandler(glogger)
+}
+
+func initTest(t *testing.T) {
+	loggingStr := os.Getenv("LOGGING")
+	if len(loggingStr) > 0 {
+		var err error
+		logLvl, err := strconv.Atoi(loggingStr)
+		Require(t, err, "Failed to parse string")
+		enableLogging(logLvl)
+	}
 }

@@ -7,11 +7,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -65,12 +68,14 @@ func NewChainFetchReaderWithSeqInbox(inner arbstate.DataAvailabilityReader, seqI
 	}, nil
 }
 
-func (daReader *ChainFetchDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	return chainFetchGetByHash(ctx, daReader, daReader.keysetCache, daReader.seqInboxCaller, daReader.seqInboxFilterer, hash)
+func (this *ChainFetchDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.ChainFetchDAS.GetByHash", "hash", pretty.FirstFewBytes(hash))
+	return chainFetchGetByHash(ctx, this.DataAvailabilityService, this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
 }
 
-func (daReader *ChainFetchReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	return chainFetchGetByHash(ctx, daReader, daReader.keysetCache, daReader.seqInboxCaller, daReader.seqInboxFilterer, hash)
+func (this *ChainFetchReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.ChainFetchReader.GetByHash", "hash", pretty.FirstFewBytes(hash))
+	return chainFetchGetByHash(ctx, this.DataAvailabilityReader, this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
 }
 
 func chainFetchGetByHash(

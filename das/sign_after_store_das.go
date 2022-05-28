@@ -9,13 +9,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/pretty"
 
 	flag "github.com/spf13/pflag"
 )
@@ -137,6 +140,7 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 }
 
 func (d *SignAfterStoreDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+	log.Trace("das.SignAfterStoreDAS.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", d)
 	if d.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {

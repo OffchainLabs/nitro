@@ -87,5 +87,5 @@ func (bcs *BigCacheStorageService) Close(ctx context.Context) error {
 }
 
 func (bcs *BigCacheStorageService) String() string {
-	return fmt.Sprintf("BigCacheStorageService(:%v)", bcs.bigCacheConfig)
+	return fmt.Sprintf("BigCacheStorageService(%+v)", bcs.bigCacheConfig)
 }

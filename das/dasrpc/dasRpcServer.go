@@ -8,13 +8,16 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type DASRPCServer struct {
@@ -62,6 +65,8 @@ type StoreResult struct {
 }
 
 func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", serv)
+
 	cert, err := serv.localDAS.Store(ctx, message, uint64(timeout), sig)
 	if err != nil {
 		return nil, err

@@ -137,5 +137,5 @@ func (rs *RedisStorageService) Close(ctx context.Context) error {
 }
 
 func (rs *RedisStorageService) String() string {
-	return fmt.Sprintf("RedisStorageService(:%v)", rs.redisConfig)
+	return fmt.Sprintf("RedisStorageService(%+v)", rs.redisConfig)
 }
