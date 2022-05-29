@@ -48,7 +48,7 @@ func InternalTxStartBlock(
 	}
 }
 
-type BatchFetcher func(uint64) ([]byte, error)
+type BatchFetcher func(batchNum uint64) (batchData []byte, err error)
 
 func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM, fetcher BatchFetcher) {
 	switch tx.SubType {
