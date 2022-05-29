@@ -42,6 +42,7 @@ interface ArbosActs {
         uint256 batchTimestamp,
         address batchPosterAddress,
         uint256 batchNumber,
+        bytes32 batchDataHash,
         uint256 l1BaseFeeWei
     ) external;
 

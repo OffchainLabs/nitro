@@ -48,7 +48,7 @@ func InternalTxStartBlock(
 	}
 }
 
-type BatchFetcher func(batchNum uint64) (batchData []byte, err error)
+type BatchFetcher func(batchNum uint64, batchDataHash common.Hash) (batchData []byte, err error)
 
 func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM, fetcher BatchFetcher) {
 	switch tx.SubType {
@@ -105,9 +105,10 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		// ignore input[1], batchPosterAddress, which exists because we might need it in the future
 		batchNumberBig, _ := inputs[2].(*big.Int)
 		batchNumber := batchNumberBig.Uint64()
-		l1BaseFeeWei, _ := inputs[3].(*big.Int)
+		batchDataHash, _ := inputs[3].(common.Hash)
+		l1BaseFeeWei, _ := inputs[4].(*big.Int)
 
-		batchData, err := fetcher(batchNumber)
+		batchData, err := fetcher(batchNumber, batchDataHash)
 		if err != nil {
 			panic(err)
 		}
