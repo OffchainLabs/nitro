@@ -34,6 +34,7 @@ interface ArbosActs {
         uint256 l1BaseFee,
         uint256 l2BaseFeeLastBlock,
         uint64 l1BlockNumber,
+        uint64 l2BlockNumber,
         uint64 timePassed
     ) external;
 

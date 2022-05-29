@@ -37,15 +37,14 @@ func InternalTxStartBlock(
 	if l1BaseFee == nil {
 		l1BaseFee = big.NewInt(0)
 	}
-	data, err := util.PackInternalTxDataStartBlock(l1BaseFee, lastHeader.BaseFee, l1BlockNum, timePassed)
+	data, err := util.PackInternalTxDataStartBlock(l1BaseFee, lastHeader.BaseFee, l1BlockNum, l2BlockNum, timePassed)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to pack internal tx %v", err))
 	}
 	return &types.ArbitrumInternalTx{
-		ChainId:       chainId,
-		SubType:       arbInternalTxStartBlock,
-		Data:          data,
-		L2BlockNumber: l2BlockNum,
+		ChainId: chainId,
+		SubType: arbInternalTxStartBlock,
+		Data:    data,
 	}
 }
 

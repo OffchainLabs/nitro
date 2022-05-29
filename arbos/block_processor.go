@@ -190,9 +190,8 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			switch tx := tx.GetInner().(type) {
+			switch tx.GetInner().(type) {
 			case *types.ArbitrumInternalTx:
-				tx.TxIndex = uint64(len(receipts))
 			default:
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
