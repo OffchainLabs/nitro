@@ -4,8 +4,10 @@
 package validator
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -213,7 +215,7 @@ func NewStatelessBlockValidator(
 }
 
 // If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
-func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg *arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
+func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg *arbstate.MessageWithMetadata, batchFetcher arbos.BatchFetcherFunc) (common.Hash, map[common.Hash][]byte, error) {
 	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
 	if err != nil {
 		return common.Hash{}, nil, err
@@ -237,6 +239,19 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 		}
 	}
 
+	oldBlockPreimages := make(map[[32]byte][]byte)
+	arbos.BatchFetcher = func(batchSeqNum uint64, batchHash common.Hash) ([]byte, error) {
+		batchData, err := batchFetcher(batchSeqNum, batchHash)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(crypto.Keccak256(batchData), batchHash[:]) {
+			return nil, errors.New("batch data mismatch")
+		}
+		oldBlockPreimages[batchHash] = batchData
+		return batchData, nil
+	}
+
 	var blockHash common.Hash
 	if msg != nil {
 		block, _ := arbos.ProduceBlock(
@@ -251,11 +266,14 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 	}
 
 	preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
+	for h, d := range oldBlockPreimages {
+		preimages[h] = d
+	}
 
 	return blockHash, preimages, err
 }
 
-func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, producePreimages bool) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
+func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, producePreimages bool, batchFetcher arbos.BatchFetcherFunc) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
 	var prevHash common.Hash
 	if prevHeader != nil {
 		prevHash = prevHeader.Hash()
@@ -267,7 +285,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 
 	if prevHeader != nil && producePreimages {
 		var blockhash common.Hash
-		blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, &msg)
+		blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, &msg, batchFetcher)
 		if err != nil {
 			return
 		}
@@ -392,7 +410,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 	return mach.GetGlobalState(), delayedMsg, nil
 }
 
-func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header, moduleRoot common.Hash) (bool, error) {
+func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header, moduleRoot common.Hash, batchFetcher arbos.BatchFetcherFunc) (bool, error) {
 	if header == nil {
 		return false, errors.New("header not found")
 	}
@@ -406,7 +424,7 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 	if err != nil {
 		return false, err
 	}
-	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg, false)
+	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg, false, batchFetcher)
 	if err != nil {
 		return false, fmt.Errorf("failed to get block data to validate: %w", err)
 	}

@@ -416,9 +416,12 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if err != nil {
 		return err
 	}
+	batchFetcher := func(batchSeqNum uint64, _ common.Hash) ([]byte, error) {
+		return m.inboxReader.GetSequencerMessageBytes(context.Background(), batchSeqNum)
+	}
 	if tooFar {
 		// Just record the part of block creation before the message is read
-		_, preimages, err := RecordBlockCreation(m.blockchain, blockHeader, nil)
+		_, preimages, err := RecordBlockCreation(m.blockchain, blockHeader, nil, batchFetcher)
 		if err != nil {
 			return err
 		}
@@ -440,7 +443,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		if nextHeader == nil {
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
-		preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message, false)
+		preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message, false, batchFetcher)
 		if err != nil {
 			return err
 		}

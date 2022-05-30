@@ -48,9 +48,9 @@ func InternalTxStartBlock(
 	}
 }
 
-type BatchFetcher func(batchNum uint64, batchDataHash common.Hash) (batchData []byte, err error)
+type BatchFetcherFunc func(batchNum uint64, batchDataHash common.Hash) (batchData []byte, err error)
 
-func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM, fetcher BatchFetcher) {
+func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM, fetcher BatchFetcherFunc) {
 	switch tx.SubType {
 	case arbInternalTxStartBlock:
 		inputs, err := util.UnpackInternalTxDataStartBlock(tx.Data)

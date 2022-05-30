@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbos"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -204,8 +205,8 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 	return nil
 }
 
-func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
-	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg, v.config.StorePreimages)
+func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus, batchFetcher arbos.BatchFetcherFunc) {
+	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg, v.config.StorePreimages, batchFetcher)
 	if err != nil {
 		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
 		return
@@ -255,7 +256,10 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	if v.nextValidationEntryBlock <= blockNum {
 		v.nextValidationEntryBlock = blockNum + 1
 	}
-	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg, status) })
+	batchFetcher := func(batchSeqNum uint64, batchHash common.Hash) ([]byte, error) {
+		return v.inboxReader.GetSequencerMessageBytes(context.Background(), batchSeqNum)
+	}
+	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg, status, batchFetcher) })
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")

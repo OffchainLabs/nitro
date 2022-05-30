@@ -40,7 +40,10 @@ func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.Bl
 		}
 		moduleRoot = moduleRoots[0]
 	}
-	return a.val.ValidateBlock(ctx, header, moduleRoot)
+	batchFetcher := func(batchSeqNum uint64, _ common.Hash) ([]byte, error) {
+		panic("not yet implemented") // BUGBUG
+	}
+	return a.val.ValidateBlock(ctx, header, moduleRoot, batchFetcher)
 }
 
 func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (uint64, error) {

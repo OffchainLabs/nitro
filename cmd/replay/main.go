@@ -152,6 +152,10 @@ func main() {
 
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
+		arbos.BatchFetcher = func(batchSeqNum uint64, batchHash common.Hash) ([]byte, error) {
+			return wavmio.ResolvePreImage(batchHash), nil
+		}
+
 		chainContext := WavmChainContext{}
 		newBlock, _ = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig)
 

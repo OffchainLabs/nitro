@@ -671,6 +671,18 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	arbos.BatchFetcher = func(batchNum uint64, batchDataHash common.Hash) (batchData []byte, err error) {
+		bnum := new(big.Int).SetUint64(batchNum)
+		batches, err := sequencerInbox.LookupBatchesInRange(context.Background(), bnum, bnum)
+		if err != nil {
+			return nil, err
+		}
+		if len(batches) <= 1 {
+			return nil, errors.New("expected sequencer batch not found")
+		}
+		return batches[0].GetData(ctx, l1client)
+	}
+
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
 	if config.Wasm.RootPath != "" {
 		nitroMachineConfig.RootPath = config.Wasm.RootPath
