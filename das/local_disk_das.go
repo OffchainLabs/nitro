@@ -28,9 +28,9 @@ var ErrDasKeysetNotFound = errors.New("no such keyset")
 type ExpirationPolicy int64
 
 const (
-	KeepAfterTimeout ExpirationPolicy = iota
-	KeptInArchive
-	DiscardAfterTimeout
+	KeepForever                ExpirationPolicy = iota // Data is kept forever
+	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node)
+	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
 	// Add more type of expiration policy.
 )
 

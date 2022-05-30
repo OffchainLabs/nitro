@@ -56,7 +56,7 @@ func (s *LocalDiskStorageService) Close(ctx context.Context) error {
 }
 
 func (s *LocalDiskStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return KeepAfterTimeout
+	return KeepForever
 }
 
 func (s *LocalDiskStorageService) String() string {

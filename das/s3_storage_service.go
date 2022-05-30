@@ -81,9 +81,9 @@ func (s3s *S3StorageService) Close(ctx context.Context) error {
 
 func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
 	if s3s.discardAfterTimeout {
-		return DiscardAfterTimeout
+		return DiscardAfterDataTimeout
 	} else {
-		return KeepAfterTimeout
+		return KeepForever
 	}
 }
 

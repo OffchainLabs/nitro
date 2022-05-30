@@ -96,9 +96,9 @@ func (dbs *DBStorageService) Close(ctx context.Context) error {
 
 func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
 	if dbs.discardAfterTimeout {
-		return DiscardAfterTimeout
+		return DiscardAfterDataTimeout
 	} else {
-		return KeepAfterTimeout
+		return KeepForever
 	}
 }
 

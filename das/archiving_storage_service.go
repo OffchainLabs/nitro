@@ -127,7 +127,7 @@ func (serv *ArchivingStorageService) Close(ctx context.Context) error {
 }
 
 func (serv *ArchivingStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return KeptInArchive
+	return DiscardAfterArchiveTimeout
 }
 
 func (serv *ArchivingStorageService) GetArchiverErrorSignalChan() <-chan interface{} {

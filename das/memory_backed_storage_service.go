@@ -69,7 +69,7 @@ func (m *MemoryBackedStorageService) Close(ctx context.Context) error {
 }
 
 func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return KeepAfterTimeout
+	return KeepForever
 }
 
 func (m *MemoryBackedStorageService) String() string {
