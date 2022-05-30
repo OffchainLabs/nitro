@@ -23,7 +23,7 @@ type RestfulDasClient struct {
 
 func NewRestfulDasClient(protocol string, host string, port int) *RestfulDasClient {
 	return &RestfulDasClient{
-		url: fmt.Sprintf("%s://%s:%d/get-by-hash/", protocol, host, port),
+		url: fmt.Sprintf("%s://%s:%d", protocol, host, port),
 	}
 }
 
