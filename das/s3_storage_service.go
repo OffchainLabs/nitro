@@ -31,6 +31,7 @@ type S3Downloader interface {
 
 type S3StorageService struct {
 	s3Config            genericconf.S3Config
+	client              *s3.Client
 	uploader            S3Uploader
 	downloader          S3Downloader
 	discardAfterTimeout bool
@@ -43,6 +44,7 @@ func NewS3StorageService(s3Config genericconf.S3Config, discardAfterTimeout bool
 	})
 	return &S3StorageService{
 		s3Config:            s3Config,
+		client:              client,
 		uploader:            manager.NewUploader(client),
 		downloader:          manager.NewDownloader(client),
 		discardAfterTimeout: discardAfterTimeout}, nil
@@ -54,7 +56,6 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 		Bucket: aws.String(s3s.s3Config.Bucket),
 		Key:    aws.String(base32.StdEncoding.EncodeToString(key)),
 	})
-
 	return buf.Bytes(), err
 }
 
@@ -89,4 +90,9 @@ func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) ExpirationPol
 
 func (s3s *S3StorageService) String() string {
 	return fmt.Sprintf("S3StorageService(:%v)", s3s.s3Config)
+}
+
+func (s3s *S3StorageService) HealthCheck(ctx context.Context) error {
+	_, err := s3s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s3s.s3Config.Bucket)})
+	return err
 }

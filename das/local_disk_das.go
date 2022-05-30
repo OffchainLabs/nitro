@@ -291,3 +291,7 @@ func (d *DAS) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
 func (d *DAS) String() string {
 	return fmt.Sprintf("DAS{config:%v}", d.config)
 }
+
+func (d *DAS) HealthCheck(ctx context.Context) error {
+	return d.storageService.HealthCheck(ctx)
+}

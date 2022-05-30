@@ -82,3 +82,7 @@ func (c *DASRPCClient) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
 func (c *DASRPCClient) String() string {
 	return fmt.Sprintf("DASRPCClient{c:%v}", c.clnt)
 }
+
+func (c *DASRPCClient) HealthCheck(ctx context.Context) error {
+	return c.clnt.CallContext(ctx, nil, "das_healthCheck")
+}

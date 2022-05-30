@@ -22,6 +22,7 @@ type StorageService interface {
 	Close(ctx context.Context) error
 	ExpirationPolicy(ctx context.Context) ExpirationPolicy
 	String() string
+	HealthCheck(ctx context.Context) error
 }
 
 type LocalDiskStorageService struct {
@@ -61,4 +62,8 @@ func (s *LocalDiskStorageService) ExpirationPolicy(ctx context.Context) Expirati
 
 func (s *LocalDiskStorageService) String() string {
 	return "LocalDiskStorageService(" + s.dataDir + ")"
+}
+
+func (s *LocalDiskStorageService) HealthCheck(ctx context.Context) error {
+	return nil
 }

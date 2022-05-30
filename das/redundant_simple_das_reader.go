@@ -49,3 +49,13 @@ func (r RedundantSimpleDASReader) GetByHash(ctx context.Context, hash []byte) ([
 	}
 	return nil, anyError
 }
+
+func (r RedundantSimpleDASReader) HealthCheck(ctx context.Context) error {
+	for _, simpleDASReader := range r.inners {
+		err := simpleDASReader.HealthCheck(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

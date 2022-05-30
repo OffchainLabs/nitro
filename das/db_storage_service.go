@@ -105,3 +105,7 @@ func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) ExpirationPol
 func (dbs *DBStorageService) String() string {
 	return "BadgerDB(" + dbs.dirPath + ")"
 }
+
+func (dbs *DBStorageService) HealthCheck(ctx context.Context) error {
+	return nil
+}

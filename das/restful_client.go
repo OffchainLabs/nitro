@@ -33,12 +33,12 @@ func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
 
 	}
 	return &RestfulDasClient{
-		url: url + "/get-by-hash/",
+		url: url,
 	}, nil
 }
 
 func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	res, err := http.Get(c.url + hexutil.Encode(hash))
+	res, err := http.Get(c.url + "/get-by-hash/" + hexutil.Encode(hash))
 	if err != nil {
 		return nil, err
 	}
@@ -64,4 +64,15 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	}
 
 	return decodedBytes, nil
+}
+
+func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
+	res, err := http.Get(c.url + "/health/")
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
+	}
+	return nil
 }

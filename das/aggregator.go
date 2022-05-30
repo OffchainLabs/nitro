@@ -339,3 +339,7 @@ func (a *Aggregator) String() string {
 	b.WriteString("}")
 	return b.String()
 }
+
+func (a *Aggregator) HealthCheck(ctx context.Context) error {
+	return nil
+}

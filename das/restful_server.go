@@ -54,6 +54,17 @@ const cacheControlValue = "public, max-age=2419200, immutable" // cache for up t
 
 func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestPath := r.URL.Path
+	// Health requests for remote health-checks
+	if strings.HasPrefix(requestPath, "/health") {
+		err := rds.storage.HealthCheck(r.Context())
+		if err != nil {
+			log.Warn("Unhealthy service", "path", requestPath, "err", err)
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+		return
+	}
 	log.Debug("Got request", "requestPath", requestPath)
 
 	hashBytes, err := hexutil.Decode(strings.TrimPrefix(requestPath, "/get-by-hash/"))

@@ -91,3 +91,11 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]b
 func (f *FallbackStorageService) String() string {
 	return "FallbackStorageService(" + f.StorageService.String() + ")"
 }
+
+func (f *FallbackStorageService) HealthCheck(ctx context.Context) error {
+	err := f.StorageService.HealthCheck(ctx)
+	if err != nil {
+		return err
+	}
+	return f.backup.HealthCheck(ctx)
+}

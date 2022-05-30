@@ -94,3 +94,7 @@ func (serv *DASRPCServer) CurrentKeysetBytes(ctx context.Context) (hexutil.Bytes
 	}
 	return resp, nil
 }
+
+func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
+	return serv.localDAS.HealthCheck(ctx)
+}

@@ -18,6 +18,7 @@ import (
 
 type SimpleDASReader interface {
 	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
+	HealthCheck(ctx context.Context) error
 }
 
 type DataAvailabilityServiceReader interface {

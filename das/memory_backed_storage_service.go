@@ -75,3 +75,7 @@ func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) Expir
 func (m *MemoryBackedStorageService) String() string {
 	return "MemoryBackedStorageService"
 }
+
+func (m *MemoryBackedStorageService) HealthCheck(ctx context.Context) error {
+	return nil
+}
