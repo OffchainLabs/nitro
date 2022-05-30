@@ -11,11 +11,11 @@ Commonly used options:
       --port uint                                                     Port to listen on (default 9876)
       --log-level int                                                 log level (default 3)
       
-      --data-availability.local-disk.data-dir string                  The directory to use as the DAS file-based database
-      --data-availability.local-disk.key-dir string                   The directory to read the bls keypair ('das_bls.pub' and 'das_bls') from
-      --data-availability.local-disk.l1-node-url string               URL of L1 Ethereum node
-      --data-availability.local-disk.sequencer-inbox-address string   L1 address of SequencerInbox contract
-      --data-availability.mode string                                 mode ('onchain', 'local-disk', or 'aggregator') (default "onchain")
+      --data-availability.das.local.data-dir string                  The directory to use as the DAS file-based database
+      --data-availability.das.key-dir string                   The directory to read the bls keypair ('das_bls.pub' and 'das_bls') from
+      --data-availability.l1-node-url string               URL of L1 Ethereum node
+      --data-availability.sequencer-inbox-address string   L1 address of SequencerInbox contract
+      --data-availability.mode string                                 mode ('onchain', 'das', or 'aggregator') (default "onchain")
       
 Other options can be found by running `daserver --help`      
 
@@ -129,7 +129,7 @@ spec:
         - -c
         - |
           mkdir -p /home/user/data/db
-          /usr/local/bin/daserver --data-availability.local-disk.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT> --addr '0.0.0.0' --data-availability.mode local-disk --data-availability.local-disk.key-dir /home/user/data/keys --data-availability.local-disk.data-dir /home/user/data/db --data-availability.local-disk.sequencer-inbox-address '0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf'
+          /usr/local/bin/daserver --data-availability.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT> --addr '0.0.0.0' --data-availability.mode das --data-availability.das.key-dir /home/user/data/keys --data-availability.das.local.data-dir /home/user/data/db --data-availability.sequencer-inbox-address '0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf'
         image: offchainlabs/nitro-node:v2.0.0-alpha.4
         imagePullPolicy: Always
         resources:
@@ -154,9 +154,9 @@ spec:
 
 #### Optional: Validating deployment
 In the docker image there is the `datool` utility that can be used to Store and Retrieve messages from a DAS. 
-In order for the DAS to accept the Store requests, you must set the flags `--data-availability.local-disk.sequencer-inbox-address none --data-availability.local-disk.l1-node-url none` when running `daserver` since you will not be able to sign the test messages with the batch poster's private.
+In order for the DAS to accept the Store requests, you must set the flags `--data-availability.sequencer-inbox-address none --data-availability.l1-node-url none` when running `daserver` since you will not be able to sign the test messages with the batch poster's private.
 
-After testing the `--data-availability.local-disk.sequencer-inbox-address` and `--data-availability.local-disk.l1-node-url` flags should be restored.
+After testing the `--data-availability.sequencer-inbox-address` and `--data-availability.l1-node-url` flags should be restored.
 
 ```
 $ /usr/local/bin/datool client store --url http://localhost:9876 --message "Hello world"
