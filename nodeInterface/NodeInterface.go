@@ -10,7 +10,9 @@ import (
 	"math/big"
 	"sort"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -34,6 +36,7 @@ type NodeInterface struct {
 	Address       addr
 	backend       core.NodeInterfaceBackendAPI
 	context       context.Context
+	header        *types.Header
 	sourceMessage types.Message
 	returnMessage struct {
 		message *types.Message
@@ -411,6 +414,74 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 		hashes32[i] = bytes32(hash)
 	}
 	return send, root, hashes32, nil
+}
+
+func (n NodeInterface) GasEstimateComponents(
+	c ctx,
+	evm mech,
+	from, to addr,
+	gas uint64,
+	maxFeePerGas, maxPriorityFeePerGas, value huge,
+	data []byte,
+) (uint64, uint64, uint64, uint64, error) {
+
+	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+
+	context := n.context
+	chainid := evm.ChainConfig().ChainID
+	backend := node.Backend.APIBackend()
+	gasCap := backend.RPCGasCap()
+	block := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(n.header.Number.Int64()))
+	nonce := uint64(0)
+
+	args := arbitrum.TransactionArgs{
+		ChainID:              (*hexutil.Big)(chainid),
+		From:                 &from,
+		To:                   &to,
+		Gas:                  (*hexutil.Uint64)(&gas),
+		MaxFeePerGas:         (*hexutil.Big)(maxFeePerGas),
+		MaxPriorityFeePerGas: (*hexutil.Big)(maxPriorityFeePerGas),
+		Value:                (*hexutil.Big)(value),
+		Nonce:                (*hexutil.Uint64)(&nonce),
+		Data:                 (*hexutil.Bytes)(&data),
+	}
+
+	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, gasCap)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	total := uint64(totalRaw)
+
+	tx := args.ToTransaction()
+	pricing := c.State.L1PricingState()
+	poster, err := pricing.ReimbursableAggregatorForSender(from)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	if poster == nil {
+		poster = &addr{}
+	}
+	pricing.AddPosterInfo(tx, from, *poster)
+
+	baseFee, err := c.State.L2PricingState().BaseFeeWei()
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	l1BaseFeeEstimate, err := pricing.L1BaseFeeEstimateWei()
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+
+	// Compute the fee paid for L1 in L2 terms
+	//   See in GasChargingHook that this does not induce truncation errors
+	//
+	feeForL1 := tx.PosterCost
+	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
+
+	return total, gasForL1, baseFee.Uint64(), l1BaseFeeEstimate.Uint64(), nil
 }
 
 func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) (uint64, error) {

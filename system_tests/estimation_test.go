@@ -10,9 +10,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestDeploy(t *testing.T) {
@@ -117,4 +122,78 @@ func TestEstimate(t *testing.T) {
 	if counter != 1 {
 		Fail(t, "Unexpected counter value", counter)
 	}
+}
+
+func TestComponentEstimate(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	l2info, node, client := CreateTestL2(t, ctx)
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, client)
+	Require(t, err)
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
+	Require(t, err)
+
+	l1BaseFee := big.NewInt(2e8)
+	l2BaseFee := GetBaseFee(t, client, ctx)
+
+	colors.PrintGrey("l1 basefee ", l1BaseFee)
+	colors.PrintGrey("l2 basefee ", l2BaseFee)
+
+	// set the l1 base fee
+	tx, err := arbOwner.SetL1BaseFeeEstimate(&auth, l1BaseFee)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	userBalance := big.NewInt(1e16)
+	maxPriorityFeePerGas := big.NewInt(0)
+	maxFeePerGas := arbmath.BigMulByUfrac(l2BaseFee, 3, 2)
+
+	l2info.GenerateAccount("User")
+	TransferBalance(t, "Owner", "User", userBalance, l2info, client, ctx)
+
+	from := l2info.GetAddress("User")
+	to := testhelpers.RandomAddress()
+	gas := uint64(1000000)
+	data := []byte{0x00, 0x12}
+	value := big.NewInt(4096)
+
+	tx = l2info.SignTxAs("User", &types.DynamicFeeTx{
+		ChainID:   node.ArbInterface.BlockChain().Config().ChainID,
+		Nonce:     0,
+		GasTipCap: maxPriorityFeePerGas,
+		GasFeeCap: maxFeePerGas,
+		Gas:       gas,
+		To:        (*common.Address)(&to),
+		Value:     value,
+		Data:      data,
+	})
+
+	estimates, err := nodeInterface.GasEstimateComponents(
+		&bind.CallOpts{}, from, to, gas, maxFeePerGas, maxPriorityFeePerGas, value, data,
+	)
+	Require(t, err)
+
+	l2Estimate := estimates.GasEstimate - estimates.GasEstimateForL1
+
+	colors.PrintBlue("Total ", estimates.GasEstimate)
+	colors.PrintBlue("L1    ", estimates.GasEstimateForL1)
+	colors.PrintBlue("L2    ", l2Estimate)
+
+	if estimates.L1BaseFeeEstimate != l1BaseFee.Uint64() {
+		Fail(t, estimates.L1BaseFeeEstimate, l1BaseFee.Uint64())
+	}
+	if estimates.BaseFee != l2BaseFee.Uint64() {
+		Fail(t, estimates.BaseFee, l2BaseFee.Uint64())
+	}
+
+	Require(t, client.SendTransaction(ctx, tx))
+	receipt, err := EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	l2Used := receipt.GasUsed - receipt.GasUsedForL1
+	colors.PrintBlue("Used  ", l2Used)
 }

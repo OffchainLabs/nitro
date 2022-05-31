@@ -64,4 +64,29 @@ interface NodeInterface {
      * @return confirmations The number of L1 confirmations the sequencer batch has. Returns 0 if block not yet included in an L1 batch.
      */
     function getL1Confirmations(bytes32 blockHash) external view returns (uint64 confirmations);
+
+    /**
+     * @notice test
+     * @return gasEstimate an estimate of the total amount of gas needed for this tx
+     * @return gasEstimateForL1 an estimate of the amount of gas needed for the l1 component of this tx
+     * @return baseFee the l2 base fee
+     * @return l1BaseFeeEstimate ArbOS's l1 estimate of the l1 base fee
+     */
+    function gasEstimateComponents(
+        address from,
+        address to,
+        uint64 gas,
+        uint256 maxFeePerGas,
+        uint256 maxPriorityFeePerGas,
+        uint256 value,
+        bytes calldata data
+    )
+        external
+        view
+        returns (
+            uint64 gasEstimate,
+            uint64 gasEstimateForL1,
+            uint64 baseFee,
+            uint64 l1BaseFeeEstimate
+        );
 }
