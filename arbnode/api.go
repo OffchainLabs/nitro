@@ -94,7 +94,8 @@ func (api *ArbDebugAPI) PricingModelPreExp(ctx context.Context, start, end rpc.B
 		L1BaseFeeUpdateTime: make([]uint64, blocks+1),
 	}
 
-	if start > core.NitroGenesisBlock {
+	genesisBlock := api.blockchain.Config().ArbitrumChainParams.GenesisBlockNum
+	if start > rpc.BlockNumber(genesisBlock) {
 		state, _, err := stateAndHeader(api.blockchain, uint64(start)-1)
 		if err != nil {
 			return history, err
@@ -192,7 +193,8 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		L1BaseFeeUpdateTime: make([]uint64, blocks+1),
 	}
 
-	if start > core.NitroGenesisBlock {
+	genesisBlock := api.blockchain.Config().ArbitrumChainParams.GenesisBlockNum
+	if start > rpc.BlockNumber(genesisBlock) {
 		state, _, err := stateAndHeader(api.blockchain, uint64(start)-1)
 		if err != nil {
 			return history, err

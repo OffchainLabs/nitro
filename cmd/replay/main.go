@@ -152,7 +152,11 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId)
+		genesisBlockNum, err := initialArbosState.GenesisBlockNum()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
+		}
+		chainConfig, err := arbos.GetChainConfig(chainId, genesisBlockNum)
 		if err != nil {
 			panic(err)
 		}
@@ -167,11 +171,11 @@ func main() {
 
 		message := readMessage(false)
 
-		chainId, err := message.Message.ParseInitMessage()
+		chainId, genesisBlockNum, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId)
+		chainConfig, err := arbos.GetChainConfig(chainId, genesisBlockNum)
 		if err != nil {
 			panic(err)
 		}

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"strings"
 	"sync"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -102,13 +102,17 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			initChainId, err := message.ParseInitMessage()
+			initChainId, genesisBlockNum, err := message.ParseInitMessage()
 			if err != nil {
 				return err
 			}
 			configChainId := r.tracker.txStreamer.bc.Config().ChainID
 			if initChainId.Cmp(configChainId) != 0 {
 				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
+			}
+			configGenesisBlockNum := r.tracker.txStreamer.bc.Config().ArbitrumChainParams.GenesisBlockNum
+			if configGenesisBlockNum != genesisBlockNum {
+				return fmt.Errorf("expected genesis blocknumber %v but read %v from init message in L1 inbox", configGenesisBlockNum, genesisBlockNum)
 			}
 			break
 		}

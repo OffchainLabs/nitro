@@ -13,5 +13,5 @@ interface IRollupEventBridge {
 
     function rollup() external view returns (address);
 
-    function rollupInitialized(uint256 chainId) external;
+    function rollupInitialized(uint256 chainId, uint64 genesisBlockNum) external;
 }

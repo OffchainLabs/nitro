@@ -230,14 +230,19 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 }
 
 // Returns the chain id on success
-func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, error) {
+func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, uint64, error) {
 	if msg.Header.Kind != L1MessageType_Initialize {
-		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
+		return nil, 0, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
 	}
-	if len(msg.L2msg) != 32 {
-		return nil, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
+	if len(msg.L2msg) != 64 {
+		return nil, 0, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
 	}
-	return new(big.Int).SetBytes(msg.L2msg), nil
+	chainId := new(big.Int).SetBytes(msg.L2msg[:32])
+	genesisBlockNumBig := new(big.Int).SetBytes(msg.L2msg[32:])
+	if !genesisBlockNumBig.IsUint64() {
+		return nil, 0, fmt.Errorf("invalid genesis blocknum in init message %v", genesisBlockNumBig)
+	}
+	return chainId, genesisBlockNumBig.Uint64(), nil
 }
 
 const (

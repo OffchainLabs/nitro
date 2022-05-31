@@ -235,19 +235,13 @@ func main() {
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
 
-	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID))
-	if err != nil {
-		panic(err)
-	}
+	var chainConfig *params.ChainConfig
 
 	var l2BlockChain *core.BlockChain
 	if nodeConfig.NoInit {
-		blocksInDb, err := chainDb.Ancients()
-		if err != nil {
-			panic(err)
-		}
-		if blocksInDb == 0 {
-			panic("No initialization mode supplied, no blocks in Db")
+		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
+		if chainConfig == nil {
+			panic("No initialization mode supplied, chain data not in Db")
 		}
 		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), chainConfig)
 		if err != nil {
@@ -259,6 +253,10 @@ func main() {
 			panic(err)
 		}
 		blockNum, err := arbnode.ImportBlocksToChainDb(chainDb, blockReader)
+		if err != nil {
+			panic(err)
+		}
+		chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), blockNum)
 		if err != nil {
 			panic(err)
 		}

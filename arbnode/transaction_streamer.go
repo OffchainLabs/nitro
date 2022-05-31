@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -273,7 +274,8 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 			Header: &arbos.L1IncomingMessageHeader{
 				Kind: arbos.L1MessageType_Initialize,
 			},
-			L2msg: math.U256Bytes(s.bc.Config().ChainID),
+			L2msg: append(math.U256Bytes(s.bc.Config().ChainID),
+				math.U256Bytes(new(big.Int).SetUint64(s.bc.Config().ArbitrumChainParams.GenesisBlockNum))...),
 		},
 		DelayedMessagesRead: 0,
 	}})
@@ -601,7 +603,7 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 
 func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
 	// TODO: when block 0 is no longer necessarily the genesis, track this and update core.NitroGenesisBlock
-	return 0, nil
+	return s.bc.Config().ArbitrumChainParams.GenesisBlockNum, nil
 }
 
 func (s *TransactionStreamer) BlockNumberToMessageCount(blockNum uint64) (arbutil.MessageIndex, error) {

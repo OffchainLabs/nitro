@@ -28,7 +28,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         rollupEventBridge = connectedContracts.rollupEventBridge;
         delayedBridge.setInbox(address(connectedContracts.rollupEventBridge), true);
 
-        rollupEventBridge.rollupInitialized(config.chainId);
+        rollupEventBridge.rollupInitialized(config.chainId, config.genesisBlockNum);
         sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
 
         challengeManager = connectedContracts.challengeManager;
@@ -53,7 +53,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
 
         stakeToken = config.stakeToken;
 
-        emit RollupInitialized(config.wasmModuleRoot, config.chainId);
+        emit RollupInitialized(config.wasmModuleRoot, config.chainId, config.genesisBlockNum);
     }
 
     function createInitialNode() private view returns (Node memory) {
