@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"syscall"
 	"time"
@@ -731,35 +730,6 @@ func createNodeImpl(
 		dataAvailabilityService = nil
 	}
 	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dataAvailabilityService, dataAvailabilityReader}, nil
-}
-
-func (node *Node) CallRPC(rpc string, args ...interface{}) ([]reflect.Value, error) {
-
-	split := strings.Split(rpc, "_")
-	if len(split) != 2 || len(split[1]) < 1 {
-		return nil, fmt.Errorf("malformed rpc: %v", rpc)
-	}
-	namespace := split[0]
-	rpc = strings.ToUpper(split[1])[:1] + split[1][1:]
-
-	reflectArgs := []reflect.Value{}
-	for _, arg := range args {
-		reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
-	}
-
-	backend := node.Backend.APIBackend()
-	for _, api := range backend.GetAPIs() {
-		if api.Namespace != namespace {
-			continue
-		}
-		impl := api.Service
-		if _, ok := reflect.TypeOf(impl).MethodByName(rpc); ok {
-			method := reflect.ValueOf(&impl).MethodByName(rpc)
-			output := method.Call(reflectArgs)
-			return output, nil
-		}
-	}
-	return nil, fmt.Errorf("No %v API exists serving %v", namespace, rpc)
 }
 
 func setUpDataAvailabilityService(
