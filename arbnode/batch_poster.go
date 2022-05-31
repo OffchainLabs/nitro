@@ -32,17 +32,17 @@ import (
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader       *headerreader.HeaderReader
-	inbox          *InboxTracker
-	streamer       *TransactionStreamer
-	config         *BatchPosterConfig
-	inboxContract  *bridgegen.SequencerInbox
-	gasRefunder    common.Address
-	transactOpts   *bind.TransactOpts
-	building       *buildingBatch
-	nextMessageAt  time.Time
-	lastBatchCount uint64
-	das            das.DataAvailabilityService
+	l1Reader            *headerreader.HeaderReader
+	inbox               *InboxTracker
+	streamer            *TransactionStreamer
+	config              *BatchPosterConfig
+	inboxContract       *bridgegen.SequencerInbox
+	gasRefunder         common.Address
+	transactOpts        *bind.TransactOpts
+	building            *buildingBatch
+	pendingMsgTimestamp time.Time
+	lastBatchCount      uint64
+	das                 das.DataAvailabilityService
 }
 
 type BatchPosterConfig struct {
@@ -325,7 +325,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	if err != nil {
 		return nil, err
 	}
-	timeSinceNextMessage := time.Since(b.nextMessageAt)
+	timeSinceNextMessage := time.Since(b.pendingMsgTimestamp)
 	if !arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum)) {
 		// If it's been under a minute since the last batch was posted, and the inbox tracker is exactly one batch behind,
 		// then there isn't an error. We're just waiting for the inbox tracker to read the most recently posted batch.
@@ -373,7 +373,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	}
 	if b.building.segments.IsEmpty() {
 		// we don't need to post a batch for the time being
-		b.nextMessageAt = time.Now()
+		b.pendingMsgTimestamp = time.Now()
 		return nil, nil
 	}
 	if !forcePostBatch {
@@ -458,18 +458,18 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 		if err != nil {
 			return tx, err
 		}
-		b.nextMessageAt = time.Unix(int64(msg.Message.Header.Timestamp), 0)
+		b.pendingMsgTimestamp = time.Unix(int64(msg.Message.Header.Timestamp), 0)
 	} else {
-		b.nextMessageAt = time.Now()
+		b.pendingMsgTimestamp = time.Now()
 	}
 	return tx, nil
 }
 
 // Returns the timestamp of the next message to post, or time.Now() if there's no new messages
-func (b *BatchPoster) recomputeNextMessageTime(ctx context.Context, batchCount uint64) error {
+func (b *BatchPoster) recomputePendingMsgTimestamp(ctx context.Context, batchCount uint64) error {
 	if batchCount == 0 {
 		// No batches, therefore batch posting was not required
-		b.nextMessageAt = time.Now()
+		b.pendingMsgTimestamp = time.Now()
 		return nil
 	}
 	batchMsgCount, err := b.inbox.GetBatchMessageCount(batchCount - 1)
@@ -482,14 +482,14 @@ func (b *BatchPoster) recomputeNextMessageTime(ctx context.Context, batchCount u
 	}
 	if msgCount <= batchMsgCount {
 		// There's nothing after the newest batch, therefore batch posting was not required
-		b.nextMessageAt = time.Now()
+		b.pendingMsgTimestamp = time.Now()
 		return nil
 	}
 	msg, err := b.streamer.GetMessage(batchMsgCount - 1)
 	if err != nil {
 		return err
 	}
-	b.nextMessageAt = time.Unix(int64(msg.Message.Header.Timestamp), 0)
+	b.pendingMsgTimestamp = time.Unix(int64(msg.Message.Header.Timestamp), 0)
 	return nil
 }
 
@@ -502,7 +502,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			return b.config.PostingErrorDelay
 		}
 		if batchSeqNum != b.lastBatchCount {
-			err := b.recomputeNextMessageTime(ctx, batchSeqNum)
+			err := b.recomputePendingMsgTimestamp(ctx, batchSeqNum)
 			if err != nil {
 				log.Error("error getting next message time", "err", err)
 				return b.config.PostingErrorDelay
