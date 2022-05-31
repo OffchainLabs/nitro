@@ -32,10 +32,14 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
 
     event ExecutorUpdated(address indexed executor, bool isExecutor);
 
-    function setExecutor(address[] calldata newExecutors, bool[] calldata isExecutor) external onlyOwner {
-        if(newExecutors.length != isExecutor.length) revert BadArrayLength(newExecutors.length, isExecutor.length);
+    function setExecutor(address[] calldata newExecutors, bool[] calldata isExecutor)
+        external
+        onlyOwner
+    {
+        if (newExecutors.length != isExecutor.length)
+            revert BadArrayLength(newExecutors.length, isExecutor.length);
         unchecked {
-            for(uint64 i = 0; i < newExecutors.length; ++i) {
+            for (uint64 i = 0; i < newExecutors.length; ++i) {
                 executors[newExecutors[i]] = isExecutor[i];
                 emit ExecutorUpdated(newExecutors[i], isExecutor[i]);
             }
