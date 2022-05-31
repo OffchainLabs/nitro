@@ -12,37 +12,42 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 error BadArrayLength(uint256 expected, uint256 actual);
-error NotCallerOrOwner(address actual);
-error OnlyOwnerFunctionSig(address expected, address actual);
+error NotExecutorOrOwner(address actual);
+error OnlyOwnerFunctionSig(address expected, address actual, bytes4 funcSig);
 
 contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnabled {
     using Address for address;
 
-    /// @dev the executor is allowed to call non-admin functions and get refunded
-    address public executor;
+    /// @dev a executor is allowed to call non-admin functions and get refunded
+    mapping(address => bool) public executors;
 
     /// @dev function signatures that can only be called by the owner
     mapping(bytes4 => bool) public onlyOwnerFuncSigs;
 
     modifier onlyExecutorOrOwner() {
-        if (executor != _msgSender() && owner() != _msgSender())
-            revert NotCallerOrOwner(_msgSender());
+        if (!executors[_msgSender()] && owner() != _msgSender())
+            revert NotExecutorOrOwner(_msgSender());
         _;
     }
 
-    event ExecutorTransferred(address indexed previousExecutor, address indexed newExecutor);
+    event ExecutorUpdated(address indexed executor, bool isExecutor);
 
-    function setExecutor(address newExecutor) external onlyExecutorOrOwner {
-        address prevExecutor = executor;
-        executor = newExecutor;
-        emit ExecutorTransferred(prevExecutor, newExecutor);
+    function setExecutor(address[] calldata newExecutors, bool[] calldata isExecutor) external onlyOwner {
+        if(newExecutors.length != isExecutor.length) revert BadArrayLength(newExecutors.length, isExecutor.length);
+        unchecked {
+            for(uint64 i = 0; i < newExecutors.length; ++i) {
+                executors[newExecutors[i]] = isExecutor[i];
+                emit ExecutorUpdated(newExecutors[i], isExecutor[i]);
+            }
+        }
     }
 
     function initialize(address _executor, address _owner) external initializer onlyDelegated {
         __Ownable_init();
-        executor = _executor;
-        emit ExecutorTransferred(address(0), _executor);
         transferOwnership(_owner);
+
+        executors[_executor] = true;
+        emit ExecutorUpdated(_executor, true);
 
         onlyOwnerFuncSigs[IRollupUserAbs.withdrawStakerFunds.selector] = true;
         emit OnlyOwnerFuncSigUpdated(IRollupUserAbs.withdrawStakerFunds.selector, true);
@@ -69,10 +74,10 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
 
     /// @dev reverts if the current function can't be called
     function validateExecuteTransaction(bytes calldata data) public view {
-        bytes4 funcSig = data.length < 4 ? bytes4(data[:data.length]) : bytes4(data[:4]);
+        bytes4 funcSig = data.length < 4 ? bytes4(data) : bytes4(data[:4]);
 
         if (onlyOwnerFuncSigs[funcSig] && owner() != _msgSender())
-            revert OnlyOwnerFunctionSig(owner(), _msgSender());
+            revert OnlyOwnerFunctionSig(owner(), _msgSender(), funcSig);
     }
 
     function executeTransactions(

@@ -28,9 +28,7 @@ describe("Validator Wallet", () => {
 
     owner = await accounts[0];
     executor = await accounts[1];
-    const walletCreationTx = await (
-      await walletCreator.createWallet(await executor.getAddress(), await owner.getAddress())
-    ).wait();
+    const walletCreationTx = await (await walletCreator.createWallet()).wait();
 
     const events = walletCreationTx.logs
       .filter((curr) => curr.topics[0] === walletCreator.interface.getEventTopic("WalletCreated"))
@@ -39,6 +37,9 @@ describe("Validator Wallet", () => {
     const walletAddr = events[0].args.walletAddress;
     const Wallet = await ethers.getContractFactory("ValidatorWallet");
     wallet = (await Wallet.attach(walletAddr)) as ValidatorWallet;
+
+    await wallet.setExecutor([await executor.getAddress()], [true])
+    await wallet.transferOwnership(await owner.getAddress())
 
     const RollupMock = await ethers.getContractFactory("RollupMock");
     rollupMock = (await RollupMock.deploy()) as RollupMock;
@@ -81,7 +82,7 @@ describe("Validator Wallet", () => {
     await expect(
       wallet.connect(executor).executeTransaction(data, rollupMock.address, 0)
     ).to.be.revertedWith(
-      `OnlyOwnerFunctionSig("${await owner.getAddress()}", "${await executor.getAddress()}")`
+      `OnlyOwnerFunctionSig("${await owner.getAddress()}", "${await executor.getAddress()}", "${expectedSig}")`
     );
     await expect(wallet.connect(owner).executeTransaction(data, rollupMock.address, 0)).to.emit(
       rollupMock,
@@ -110,15 +111,16 @@ describe("Validator Wallet", () => {
     const dest = await accounts[3].getAddress();
     const amount = ethers.utils.parseEther("0.2");
 
-    await wallet.setOnlyOwnerFunctionSigs(["0x00000000"], [true]);
+    const expectedSig = "0x00000000"
+    await wallet.setOnlyOwnerFunctionSigs([expectedSig], [true]);
 
     await expect(
       wallet.connect(executor).executeTransaction("0x", dest, amount)
     ).to.be.revertedWith(
-      `OnlyOwnerFunctionSig("${await owner.getAddress()}", "${await executor.getAddress()}")`
+      `OnlyOwnerFunctionSig("${await owner.getAddress()}", "${await executor.getAddress()}", "${expectedSig}")`
     );
 
-    await wallet.setOnlyOwnerFunctionSigs(["0x00000000"], [false]);
+    await wallet.setOnlyOwnerFunctionSigs([expectedSig], [false]);
 
     const prevBal = await waffle.provider.getBalance(dest);
     await wallet.connect(executor).executeTransaction("0x", dest, amount);
@@ -133,12 +135,14 @@ describe("Validator Wallet", () => {
       rollupMock.interface.encodeFunctionData("withdrawStakerFunds", [await executor.getAddress()]),
     ];
 
+    const expectedSig = data[1].substring(0, 10)
+
     await expect(
       wallet
         .connect(executor)
         .executeTransactions(data, [rollupMock.address, rollupMock.address], [0, 0])
     ).to.be.revertedWith(
-      `OnlyOwnerFunctionSig("${await owner.getAddress()}", "${await executor.getAddress()}")`
+      `OnlyOwnerFunctionSig("${await owner.getAddress()}", "${await executor.getAddress()}", "${expectedSig}")`
     );
   });
 });

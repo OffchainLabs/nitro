@@ -209,7 +209,7 @@ func CreateValidatorWallet(
 		return parsed.WalletAddress, err
 	}
 
-	tx, err := walletCreator.CreateWallet(transactAuth, transactAuth.From, transactAuth.From)
+	tx, err := walletCreator.CreateWallet(transactAuth)
 	if err != nil {
 		return common.Address{}, err
 	}
