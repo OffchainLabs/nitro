@@ -27,22 +27,20 @@ import (
 
 type AggregatorConfig struct {
 	// sequencer public key
-	AssumedHonest         int    `koanf:"assumed-honest"`
-	Backends              string `koanf:"backends"`
-	L1NodeURL             string `koanf:"l1-node-url"`
-	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
-	DumpKeyset            bool   `koanf:"dump-keyset"`
+	AssumedHonest int    `koanf:"assumed-honest"`
+	Backends      string `koanf:"backends"`
+	DumpKeyset    bool   `koanf:"dump-keyset"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
-	L1NodeURL: "",
+	AssumedHonest: 0,
+	Backends:      "",
+	DumpKeyset:    false,
 }
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
-	f.String(prefix+".l1-node-url", DefaultAggregatorConfig.L1NodeURL, "URL for L1 node")
-	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
 	f.Bool(prefix+".dump-keyset", DefaultAggregatorConfig.DumpKeyset, "Dump the keyset encoded in hexadecimal for the backends string")
 }
 
@@ -75,9 +73,9 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 	}, nil
 }
 
-func NewAggregator(ctx context.Context, config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
+func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services []ServiceDetails) (*Aggregator, error) {
 	if config.L1NodeURL == "none" {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config.AggregatorConfig, services, nil)
 	}
 	l1client, err := ethclient.DialContext(ctx, config.L1NodeURL)
 	if err != nil {
@@ -88,9 +86,9 @@ func NewAggregator(ctx context.Context, config AggregatorConfig, services []Serv
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config.AggregatorConfig, services, nil)
 	}
-	return NewAggregatorWithL1Info(config, services, l1client, *seqInboxAddress)
+	return NewAggregatorWithL1Info(config.AggregatorConfig, services, l1client, *seqInboxAddress)
 }
 
 func NewAggregatorWithL1Info(

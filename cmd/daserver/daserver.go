@@ -61,7 +61,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	}
 	if serverConfig.ConfConfig.Dump {
 		err = util.DumpConfig(k, map[string]interface{}{
-			"data-availability.local-disk.priv-key": "",
+			"data-availability.das.priv-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -109,13 +109,13 @@ func startup() error {
 	}
 	var dasImpl das.DataAvailabilityService
 	switch mode {
-	case das.LocalDiskDataAvailability:
-		dasImpl, err = das.NewLocalDiskDAS(ctx, serverConfig.DAConf.LocalDiskDASConfig)
+	case das.DASDataAvailability:
+		dasImpl, err = das.NewDAS(ctx, serverConfig.DAConf)
 		if err != nil {
 			return err
 		}
 	case das.AggregatorDataAvailability:
-		dasImpl, err = dasrpc.NewRPCAggregator(ctx, serverConfig.DAConf.AggregatorConfig)
+		dasImpl, err = dasrpc.NewRPCAggregator(ctx, serverConfig.DAConf)
 		if err != nil {
 			return err
 		}
