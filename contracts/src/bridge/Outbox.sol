@@ -9,6 +9,9 @@ import "./IOutbox.sol";
 import "../libraries/MerkleLib.sol";
 import "../libraries/DelegateCallAware.sol";
 
+/// @dev this error is thrown since certain functions are only expected to be used in simulations, not in actual txs
+error SimulationOnlyEntrypoint();
+
 contract Outbox is DelegateCallAware, IOutbox {
     address public rollup; // the rollup contract
     IBridge public bridge; // the bridge contract
@@ -135,22 +138,51 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) external virtual {
-        bytes32 outputId;
-        {
-            bytes32 userTx = calculateItemHash(
-                l2Sender,
-                to,
-                l2Block,
-                l1Block,
-                l2Timestamp,
-                value,
-                data
-            );
+    ) external {
+        bytes32 userTx = calculateItemHash(
+            l2Sender,
+            to,
+            l2Block,
+            l1Block,
+            l2Timestamp,
+            value,
+            data
+        );
 
-            outputId = recordOutputAsSpent(proof, index, userTx);
-            emit OutBoxTransactionExecuted(to, l2Sender, 0, index);
-        }
+        recordOutputAsSpent(proof, index, userTx);
+
+        executeTransactionImpl(index, l2Sender, to, l2Block, l1Block, l2Timestamp, value, data);
+    }
+
+    /// @dev function used to simulate the result of a particular function call from the outbox
+    /// it is useful for things such as gas estimates.
+    /// It is only possible to trigger it when the msg sender is address zero, which should be impossible
+    /// unless under simulation in an eth_call or eth_estimateGas
+    function executeTransactionSimulation(
+        uint256 index,
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) external {
+        if (msg.sender != address(0)) revert SimulationOnlyEntrypoint();
+        executeTransactionImpl(index, l2Sender, to, l2Block, l1Block, l2Timestamp, value, data);
+    }
+
+    function executeTransactionImpl(
+        uint256 outputId,
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) internal {
+        emit OutBoxTransactionExecuted(to, l2Sender, 0, outputId);
 
         // we temporarily store the previous values so the outbox can naturally
         // unwind itself when there are nested calls to `executeTransaction`
@@ -161,7 +193,7 @@ contract Outbox is DelegateCallAware, IOutbox {
             l2Block: uint128(l2Block),
             l1Block: uint128(l1Block),
             timestamp: uint128(l2Timestamp),
-            outputId: outputId
+            outputId: bytes32(outputId)
         });
 
         // set and reset vars around execution so they remain valid during call
@@ -174,7 +206,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32[] memory proof,
         uint256 index,
         bytes32 item
-    ) internal returns (bytes32) {
+    ) internal {
         if (proof.length >= 256) revert ProofTooLong(proof.length);
         if (index >= 2**proof.length) revert PathNotMinimal(index, 2**proof.length);
 
@@ -184,8 +216,6 @@ contract Outbox is DelegateCallAware, IOutbox {
 
         if (spent[index]) revert AlreadySpent(index);
         spent[index] = true;
-
-        return bytes32(index);
     }
 
     function executeBridgeCall(
