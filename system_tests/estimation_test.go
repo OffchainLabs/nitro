@@ -162,7 +162,7 @@ func TestComponentEstimate(t *testing.T) {
 	value := big.NewInt(4096)
 
 	estimates, err := nodeInterface.GasEstimateComponents(
-		&bind.CallOpts{}, from, to, gas, maxFeePerGas, maxPriorityFeePerGas, value, data,
+		&bind.CallOpts{}, from, to, false, gas, maxFeePerGas, maxPriorityFeePerGas, value, data,
 	)
 	Require(t, err)
 

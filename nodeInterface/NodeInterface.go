@@ -421,6 +421,7 @@ func (n NodeInterface) GasEstimateComponents(
 	c ctx,
 	evm mech,
 	from, to addr,
+	ignoreTo bool,
 	gas uint64,
 	maxFeePerGas, maxPriorityFeePerGas, value huge,
 	data []byte,
@@ -441,13 +442,15 @@ func (n NodeInterface) GasEstimateComponents(
 	args := arbitrum.TransactionArgs{
 		ChainID:              (*hexutil.Big)(chainid),
 		From:                 &from,
-		To:                   &to,
 		Gas:                  (*hexutil.Uint64)(&gas),
 		MaxFeePerGas:         (*hexutil.Big)(maxFeePerGas),
 		MaxPriorityFeePerGas: (*hexutil.Big)(maxPriorityFeePerGas),
 		Value:                (*hexutil.Big)(value),
 		Nonce:                (*hexutil.Uint64)(&nonce),
 		Data:                 (*hexutil.Bytes)(&data),
+	}
+	if !ignoreTo {
+		args.To = &to
 	}
 
 	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, gasCap)

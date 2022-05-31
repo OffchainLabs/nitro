@@ -66,7 +66,8 @@ interface NodeInterface {
     function getL1Confirmations(bytes32 blockHash) external view returns (uint64 confirmations);
 
     /**
-     * @notice test
+     * @notice Same as native gas estimation, but with additional info on the l1 costs
+     * @param ignoreTo whether to drop the "to" field
      * @return gasEstimate an estimate of the total amount of gas needed for this tx
      * @return gasEstimateForL1 an estimate of the amount of gas needed for the l1 component of this tx
      * @return baseFee the l2 base fee
@@ -75,6 +76,7 @@ interface NodeInterface {
     function gasEstimateComponents(
         address from,
         address to,
+        bool ignoreTo,
         uint64 gas,
         uint256 maxFeePerGas,
         uint256 maxPriorityFeePerGas,
