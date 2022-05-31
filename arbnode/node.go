@@ -7,16 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"golang.org/x/term"
 	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"golang.org/x/term"
 
 	"github.com/offchainlabs/nitro/util/headerreader"
 
@@ -670,18 +671,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-
-	arbos.BatchFetcher = func(batchNum uint64, batchDataHash common.Hash) (batchData []byte, err error) {
-		bnum := new(big.Int).SetUint64(batchNum)
-		batches, err := sequencerInbox.LookupBatchesInRange(context.Background(), bnum, bnum)
-		if err != nil {
-			return nil, err
-		}
-		if len(batches) <= 1 {
-			return nil, errors.New("expected sequencer batch not found")
-		}
-		return batches[0].GetData(ctx, l1client)
-	}
+	txStreamer.SetInboxReader(inboxReader)
 
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
 	if config.Wasm.RootPath != "" {
