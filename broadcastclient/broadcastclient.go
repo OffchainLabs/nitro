@@ -221,6 +221,10 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					if res.ConfirmedSequenceNumberMessage != nil && bc.ConfirmedSequenceNumberListener != nil {
 						bc.ConfirmedSequenceNumberListener <- res.ConfirmedSequenceNumberMessage.SequenceNumber
 					}
+				} else if res.Version == 2 {
+					log.Crit("connected to newer nitro feed with older nitro client", "version, res.Version")
+				} else {
+					log.Crit("unrecognized feed version", "version, res.Version")
 				}
 			}
 		}
