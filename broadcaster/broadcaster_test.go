@@ -55,15 +55,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	broadcasterSettings := wsbroadcastserver.BroadcasterConfig{
-		Addr:          "0.0.0.0",
-		IOTimeout:     2 * time.Second,
-		Port:          "0",
-		Ping:          5 * time.Second,
-		ClientTimeout: 30 * time.Second,
-		Queue:         1,
-		Workers:       128,
-	}
+	broadcasterSettings := wsbroadcastserver.DefaultTestBroadcasterConfig
 
 	b := NewBroadcaster(broadcasterSettings)
 	Require(t, b.Start(ctx))
