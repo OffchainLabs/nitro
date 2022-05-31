@@ -7,16 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"golang.org/x/term"
 	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"golang.org/x/term"
 
 	"github.com/offchainlabs/nitro/util/headerreader"
 
@@ -274,7 +275,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, genesisBlockNum uint64, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -317,6 +318,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 			LoserStakeEscrow:               common.Address{},
 			ChainId:                        chainId,
 			SequencerInboxMaxTimeVariation: seqInboxParams,
+			GenesisBlockNum:                genesisBlockNum,
 		},
 		expectedRollupAddr,
 	)
@@ -1059,6 +1061,16 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 	}
 
 	return nil
+}
+
+func TryReadStoredChainConfig(chainDb ethdb.Database) *params.ChainConfig {
+	EmptyHash := common.Hash{}
+
+	block0Hash := rawdb.ReadCanonicalHash(chainDb, 0)
+	if block0Hash == EmptyHash {
+		return nil
+	}
+	return rawdb.ReadChainConfig(chainDb, block0Hash)
 }
 
 func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) error {

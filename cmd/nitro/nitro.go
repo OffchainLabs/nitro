@@ -242,30 +242,31 @@ func main() {
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
 
-	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID))
-	if err != nil {
-		panic(err)
-	}
+	var chainConfig *params.ChainConfig
 
 	var l2BlockChain *core.BlockChain
 	if nodeConfig.NoInit {
-		blocksInDb, err := chainDb.Ancients()
-		if err != nil {
-			panic(err)
-		}
-		if blocksInDb == 0 {
-			panic("No initialization mode supplied, no blocks in Db")
+		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
+		if chainConfig == nil {
+			panic("No initialization mode supplied, chain data not in Db")
 		}
 		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), chainConfig)
 		if err != nil {
 			panic(err)
 		}
 	} else {
-		anchients, err := chainDb.Ancients()
+		if initDataReader == nil {
+			panic("no-init not defined, and no init method given")
+		}
+		preinitBlocks, err := initDataReader.GetPreinitBlockCount()
 		if err != nil {
 			panic(err)
 		}
-		preinitBlocks, err := initDataReader.GetPreinitBlockCount()
+		chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), preinitBlocks)
+		if err != nil {
+			panic(err)
+		}
+		anchients, err := chainDb.Ancients()
 		if err != nil {
 			panic(err)
 		}
