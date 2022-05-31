@@ -7,11 +7,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type FallbackStorageService struct {
@@ -46,6 +49,7 @@ func NewFallbackStorageService(
 }
 
 func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.FallbackStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", f)
 	var key32 [32]byte
 	if f.preventRecursiveGets {
 		f.currentlyFetchingMutex.RLock()

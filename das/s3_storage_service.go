@@ -15,8 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	flag "github.com/spf13/pflag"
 )
@@ -65,6 +67,8 @@ func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) 
 }
 
 func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.S3StorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", s3s)
+
 	buf := manager.NewWriteAtBuffer([]byte{})
 	_, err := s3s.downloader.Download(ctx, buf, &s3.GetObjectInput{
 		Bucket: aws.String(s3s.bucket),
@@ -75,6 +79,8 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 }
 
 func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
+	log.Trace("das.S3StorageService.Store", "message", pretty.FirstFewBytes(value), "timeout", "this", s3s)
+
 	expires := time.Unix(time.Now().Unix()+int64(timeout), 0)
 	_, err := s3s.uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket:  aws.String(s3s.bucket),

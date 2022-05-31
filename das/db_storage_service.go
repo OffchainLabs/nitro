@@ -5,11 +5,14 @@ package das
 
 import (
 	"context"
+	"time"
+
 	badger "github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
-	"time"
 )
 
 type LocalDBStorageConfig struct {
@@ -74,6 +77,8 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 }
 
 func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.DBStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", dbs)
+
 	var ret []byte
 	err := dbs.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
@@ -89,6 +94,8 @@ func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 }
 
 func (dbs *DBStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
+	log.Trace("das.DBStorageService.Put", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", dbs)
+
 	return dbs.db.Update(func(txn *badger.Txn) error {
 		e := badger.NewEntry(crypto.Keccak256(data), data)
 		if dbs.discardAfterTimeout {

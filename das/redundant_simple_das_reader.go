@@ -5,7 +5,10 @@ package das
 
 import (
 	"context"
+
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type RedundantSimpleDASReader struct {
@@ -22,6 +25,8 @@ type rsdrResponse struct {
 }
 
 func (r RedundantSimpleDASReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.RedundantSimpleDASReader.GetByHash", "key", pretty.FirstFewBytes(hash), "this", r)
+
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

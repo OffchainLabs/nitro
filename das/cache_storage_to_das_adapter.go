@@ -29,6 +29,7 @@ func NewCacheStorageToDASAdapter(
 }
 
 func (a *CacheStorageToDASAdapter) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.CacheStorageToDASAdapter.GetByHash", "key", pretty.FirstFewBytes(hash), "this", a)
 	ret, err := a.cache.GetByHash(ctx, hash)
 	if err != nil {
 		ret, err = a.DataAvailabilityService.GetByHash(ctx, hash)
