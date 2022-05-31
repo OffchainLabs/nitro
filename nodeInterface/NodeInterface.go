@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -455,8 +456,12 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 	total := uint64(totalRaw)
 
-	tx := args.ToTransaction()
 	pricing := c.State.L1PricingState()
+
+	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
 	poster, err := pricing.ReimbursableAggregatorForSender(from)
 	if err != nil {
 		return 0, 0, 0, 0, err
@@ -464,7 +469,7 @@ func (n NodeInterface) GasEstimateComponents(
 	if poster == nil {
 		poster = &addr{}
 	}
-	pricing.AddPosterInfo(tx, from, *poster)
+	feeForL1, _ := pricing.PosterDataCost(msg, from, *poster)
 
 	baseFee, err := c.State.L2PricingState().BaseFeeWei()
 	if err != nil {
@@ -476,9 +481,9 @@ func (n NodeInterface) GasEstimateComponents(
 	}
 
 	// Compute the fee paid for L1 in L2 terms
-	//   See in GasChargingHook that this does not induce truncation errors
+	//   See in GasChargingHook that this does not induce truncation error
 	//
-	feeForL1 := tx.PosterCost
+	feeForL1 = arbmath.BigMulByUfrac(feeForL1, 110, 100)
 	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
 
 	return total, gasForL1, baseFee.Uint64(), l1BaseFeeEstimate.Uint64(), nil

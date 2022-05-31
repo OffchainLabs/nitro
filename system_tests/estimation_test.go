@@ -161,27 +161,25 @@ func TestComponentEstimate(t *testing.T) {
 	data := []byte{0x00, 0x12}
 	value := big.NewInt(4096)
 
-	tx = l2info.SignTxAs("User", &types.DynamicFeeTx{
-		ChainID:   node.ArbInterface.BlockChain().Config().ChainID,
-		Nonce:     0,
-		GasTipCap: maxPriorityFeePerGas,
-		GasFeeCap: maxFeePerGas,
-		Gas:       gas,
-		To:        (*common.Address)(&to),
-		Value:     value,
-		Data:      data,
-	})
-
 	estimates, err := nodeInterface.GasEstimateComponents(
 		&bind.CallOpts{}, from, to, gas, maxFeePerGas, maxPriorityFeePerGas, value, data,
 	)
 	Require(t, err)
 
+	tx = l2info.SignTxAs("User", &types.DynamicFeeTx{
+		ChainID:   node.ArbInterface.BlockChain().Config().ChainID,
+		Nonce:     0,
+		GasTipCap: maxPriorityFeePerGas,
+		GasFeeCap: maxFeePerGas,
+		Gas:       estimates.GasEstimate,
+		To:        (*common.Address)(&to),
+		Value:     value,
+		Data:      data,
+	})
+
 	l2Estimate := estimates.GasEstimate - estimates.GasEstimateForL1
 
-	colors.PrintBlue("Total ", estimates.GasEstimate)
-	colors.PrintBlue("L1    ", estimates.GasEstimateForL1)
-	colors.PrintBlue("L2    ", l2Estimate)
+	colors.PrintBlue("Est. ", estimates.GasEstimate, " - ", estimates.GasEstimateForL1, " = ", l2Estimate)
 
 	if estimates.L1BaseFeeEstimate != l1BaseFee.Uint64() {
 		Fail(t, estimates.L1BaseFeeEstimate, l1BaseFee.Uint64())
@@ -195,5 +193,9 @@ func TestComponentEstimate(t *testing.T) {
 	Require(t, err)
 
 	l2Used := receipt.GasUsed - receipt.GasUsedForL1
-	colors.PrintBlue("Used  ", l2Used)
+	colors.PrintMint("True ", receipt.GasUsed, " - ", receipt.GasUsedForL1, " = ", l2Used)
+
+	if l2Estimate != l2Used {
+		Fail(t, l2Estimate, l2Used)
+	}
 }
