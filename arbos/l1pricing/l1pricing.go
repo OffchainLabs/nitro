@@ -235,8 +235,8 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, updateT
 	if updateTime > currentTime || updateTime < lastUpdateTime || currentTime == lastUpdateTime {
 		return ErrInvalidTime
 	}
-	allocFractionNum := am.UintToBig(updateTime - lastUpdateTime)
-	allocFractionDenom := am.UintToBig(currentTime - lastUpdateTime)
+	updateTimeDelta := updateTime - lastUpdateTime
+	timeDelta := currentTime - lastUpdateTime
 
 	// allocate units to this update
 	unitsSinceUpdate, err := ps.UnitsSinceUpdate()
@@ -251,7 +251,7 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, updateT
 
 	// allocate funds to this update
 	collectedSinceUpdate := statedb.GetBalance(L1PricerFundsPoolAddress)
-	fundsToMove := am.BigDiv(am.BigMul(collectedSinceUpdate, allocFractionNum), allocFractionDenom)
+	fundsToMove := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate, updateTimeDelta), timeDelta)
 	statedb.SubBalance(L1PricerFundsPoolAddress, fundsToMove)
 	availableFunds = am.BigAdd(availableFunds, fundsToMove)
 
@@ -264,8 +264,8 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, updateT
 	if err := ps.SetFundsDueToSequencer(fundsDueToSequencer); err != nil {
 		return err
 	}
-	newRewards := am.BigDiv(am.BigMulByUint(allocFractionNum, perUnitReward), allocFractionDenom)
-	fundsDueForRewards = am.BigAdd(fundsDueForRewards, newRewards)
+	newRewards := am.SaturatingUMul(updateTimeDelta, perUnitReward) / timeDelta
+	fundsDueForRewards = am.BigAddByUint(fundsDueForRewards, newRewards)
 	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
 		return err
 	}

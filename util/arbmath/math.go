@@ -118,6 +118,11 @@ func BigDiv(dividend *big.Int, divisor *big.Int) *big.Int {
 	return new(big.Int).Div(dividend, divisor)
 }
 
+// add a uint to a huge
+func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
+	return new(big.Int).Add(augend, UintToBig(addend))
+}
+
 // multiply a huge by a rational
 func BigMulByFrac(value *big.Int, numerator, denominator int64) *big.Int {
 	value = new(big.Int).Set(value)
