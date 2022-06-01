@@ -28,7 +28,7 @@ func MinInt(value, ceiling int64) int64 {
 	return value
 }
 
-// the minimum of two ints
+// the minimum of two uints
 func MinUint(value, ceiling uint64) uint64 {
 	if value > ceiling {
 		return ceiling
