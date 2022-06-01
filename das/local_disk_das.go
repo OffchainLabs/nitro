@@ -25,15 +25,25 @@ import (
 
 var ErrDasKeysetNotFound = errors.New("no such keyset")
 
+type ExpirationPolicy int64
+
+const (
+	KeepForever                ExpirationPolicy = iota // Data is kept forever
+	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node, assumed to be as long as minimum data timeout)
+	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
+	// Add more type of expiration policy.
+)
+
 type StorageConfig struct {
-	KeyDir            string               `koanf:"key-dir"`
-	PrivKey           string               `koanf:"priv-key"`
-	LocalConfig       LocalConfig          `koanf:"local"`
-	S3Config          genericconf.S3Config `koanf:"s3"`
-	RedisConfig       RedisConfig          `koanf:"redis"`
-	BigCacheConfig    BigCacheConfig       `koanf:"big-cache"`
-	AllowGenerateKeys bool                 `koanf:"allow-generate-keys"`
-	StorageType       string               `koanf:"storage-type"`
+	KeyDir              string               `koanf:"key-dir"`
+	PrivKey             string               `koanf:"priv-key"`
+	LocalConfig         LocalConfig          `koanf:"local"`
+	DiscardAfterTimeout bool                 `koanf:"discard-after-timeout"`
+	S3Config            genericconf.S3Config `koanf:"s3"`
+	RedisConfig         RedisConfig          `koanf:"redis"`
+	BigCacheConfig      BigCacheConfig       `koanf:"big-cache"`
+	AllowGenerateKeys   bool                 `koanf:"allow-generate-keys"`
+	StorageType         string               `koanf:"storage-type"`
 }
 
 type LocalConfig struct {
@@ -51,6 +61,7 @@ func LocalConfigAddOptions(prefix string, f *flag.FlagSet) {
 func StorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".key-dir", "", fmt.Sprintf("The directory to read the bls keypair ('%s' and '%s') from", DefaultPubKeyFilename, DefaultPrivKeyFilename))
 	f.String(prefix+".priv-key", "", "The base64 BLS private key to use for signing DAS certificates")
+	f.Bool(prefix+".discard-after-timeout", false, "Discard data after timeout in DAS")
 	LocalConfigAddOptions(prefix+".local", f)
 	genericconf.S3ConfigAddOptions(prefix+".s3", f)
 	RedisConfigAddOptions(prefix+".redis", f)
@@ -176,7 +187,7 @@ func NewStorageServiceFromStorageConfig(ctx context.Context, config StorageConfi
 	case "", "files":
 		storageService = NewLocalDiskStorageService(config.LocalConfig.DataDir)
 	case "db":
-		storageService, err = NewDBStorageService(ctx, config.LocalConfig.DataDir, false)
+		storageService, err = NewDBStorageService(ctx, config.LocalConfig.DataDir, config.DiscardAfterTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -185,12 +196,12 @@ func NewStorageServiceFromStorageConfig(ctx context.Context, config StorageConfi
 			_ = storageService.Close(context.Background())
 		}()
 	case "s3":
-		storageService, err = NewS3StorageService(config.S3Config)
+		storageService, err = NewS3StorageService(config.S3Config, config.DiscardAfterTimeout)
 		if err != nil {
 			return nil, err
 		}
 	case "redis":
-		s3StorageService, err := NewS3StorageService(config.S3Config)
+		s3StorageService, err := NewS3StorageService(config.S3Config, config.DiscardAfterTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +210,7 @@ func NewStorageServiceFromStorageConfig(ctx context.Context, config StorageConfi
 			return nil, err
 		}
 	case "bigCache":
-		s3StorageService, err := NewS3StorageService(config.S3Config)
+		s3StorageService, err := NewS3StorageService(config.S3Config, config.DiscardAfterTimeout)
 		if err != nil {
 			return nil, err
 		}
