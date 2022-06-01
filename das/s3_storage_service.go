@@ -6,7 +6,6 @@ package das
 import (
 	"bytes"
 	"context"
-	"encoding/base32"
 	"fmt"
 	"io"
 	"time"
@@ -54,7 +53,7 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 	buf := manager.NewWriteAtBuffer([]byte{})
 	_, err := s3s.downloader.Download(ctx, buf, &s3.GetObjectInput{
 		Bucket: aws.String(s3s.s3Config.Bucket),
-		Key:    aws.String(base32.StdEncoding.EncodeToString(key)),
+		Key:    aws.String(EncodeStorageServiceKey(key)),
 	})
 	return buf.Bytes(), err
 }
@@ -62,7 +61,7 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
 	putObjectInput := s3.PutObjectInput{
 		Bucket: aws.String(s3s.s3Config.Bucket),
-		Key:    aws.String(base32.StdEncoding.EncodeToString(crypto.Keccak256(value))),
+		Key:    aws.String(EncodeStorageServiceKey(crypto.Keccak256(value))),
 		Body:   bytes.NewReader(value)}
 	if !s3s.discardAfterTimeout {
 		expires := time.Unix(int64(timeout), 0)

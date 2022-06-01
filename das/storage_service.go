@@ -5,11 +5,11 @@ package das
 
 import (
 	"context"
-	"encoding/base32"
 	"errors"
 	"os"
 	"sync"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -25,6 +25,14 @@ type StorageService interface {
 	HealthCheck(ctx context.Context) error
 }
 
+func EncodeStorageServiceKey(b []byte) string {
+	return hexutil.Encode(b)
+}
+
+func DecodeStorageServiceKey(input string) ([]byte, error) {
+	return hexutil.Decode(input)
+}
+
 type LocalDiskStorageService struct {
 	dataDir string
 	mutex   sync.RWMutex
@@ -37,14 +45,14 @@ func NewLocalDiskStorageService(dataDir string) StorageService {
 func (s *LocalDiskStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
+	pathname := s.dataDir + "/" + EncodeStorageServiceKey(key)
 	return os.ReadFile(pathname)
 }
 
 func (s *LocalDiskStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(crypto.Keccak256(data))
+	pathname := s.dataDir + "/" + EncodeStorageServiceKey(crypto.Keccak256(data))
 	return os.WriteFile(pathname, data, 0600)
 }
 
