@@ -8,7 +8,6 @@ import (
 	"encoding/base32"
 	"fmt"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -34,7 +33,6 @@ func LocalFileStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type LocalFileStorageService struct {
 	dataDir string
-	mutex   sync.RWMutex
 }
 
 func NewLocalFileStorageService(dataDir string) (StorageService, error) {
@@ -46,18 +44,20 @@ func NewLocalFileStorageService(dataDir string) (StorageService, error) {
 
 func (s *LocalFileStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", s)
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
 	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
 	return os.ReadFile(pathname)
 }
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
 	log.Trace("das.LocalFileStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", s)
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
 	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(crypto.Keccak256(data))
-	return os.WriteFile(pathname, data, 0600)
+
+	err := os.WriteFile(pathname+"_temp", data, 0600)
+	if err != nil {
+		return err
+	}
+	return os.Rename(pathname+"_temp", pathname)
+
 }
 
 func (s *LocalFileStorageService) Sync(ctx context.Context) error {
