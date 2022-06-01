@@ -28,8 +28,6 @@ import (
 
 var arbosAddress = types.ArbosAddress
 
-var BatchFetcher BatchFetcherFunc
-
 // A TxProcessor is created and freed for every L2 transaction.
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
@@ -57,7 +55,6 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		TopTxType:        nil,
 		evm:              evm,
 		CurrentRetryable: nil,
-		// TODO: initialize batchFetcher
 	}
 }
 
@@ -122,7 +119,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		ApplyInternalTxUpdate(tx, p.state, evm, BatchFetcher)
+		ApplyInternalTxUpdate(tx, p.state, evm)
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		defer (startTracer())()

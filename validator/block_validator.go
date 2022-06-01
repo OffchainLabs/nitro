@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/offchainlabs/nitro/arbos"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -205,13 +204,13 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 	return nil
 }
 
-func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus, batchFetcher arbos.BatchFetcherFunc) {
-	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg, v.config.StorePreimages, batchFetcher)
+func (v *BlockValidator) prepareBlock(ctx context.Context, header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
+	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, v.config.StorePreimages)
 	if err != nil {
 		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
 		return
 	}
-	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages)
+	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages, readBatchInfo)
 	if err != nil {
 		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
 		return
@@ -256,10 +255,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	if v.nextValidationEntryBlock <= blockNum {
 		v.nextValidationEntryBlock = blockNum + 1
 	}
-	batchFetcher := func(batchSeqNum uint64, batchHash common.Hash) ([]byte, error) {
-		return v.inboxReader.GetSequencerMessageBytes(context.Background(), batchSeqNum)
-	}
-	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg, status, batchFetcher) })
+	v.LaunchUntrackedThread(func() { v.prepareBlock(context.Background(), block.Header(), prevHeader, msg, status) })
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
@@ -402,10 +398,14 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		default:
 		}
 	}()
+	entry.BatchInfo = append(entry.BatchInfo, BatchInfo{
+		Number: entry.StartPosition.BatchNumber,
+		Data:   seqMsg,
+	})
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 		before := time.Now()
-		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, seqMsg, moduleRoot)
+		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, moduleRoot)
 		duration := time.Since(before)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

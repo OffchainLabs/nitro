@@ -53,7 +53,7 @@ func retryableSetup(t *testing.T) (
 		if len(messages) != 1 {
 			Fail(t, "expected 1 message from retryable submission, found", len(messages))
 		}
-		txs, err := messages[0].Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID)
+		txs, err := messages[0].Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID, nil)
 		Require(t, err)
 		if len(txs) != 1 {
 			Fail(t, "expected 1 tx from retryable submission, found", len(txs))

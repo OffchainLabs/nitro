@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 )
@@ -170,7 +171,9 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 	}, nil
 }
 
-func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Transactions, error) {
+type InfallibleBatchFetcher func(batchNum uint64) []byte
+
+func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
 	if len(msg.L2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
@@ -222,7 +225,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 		log.Debug("ignoring rollup event message")
 		return types.Transactions{}, nil
 	case L1MessageType_BatchPostingReport:
-		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId)
+		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, batchFetcher)
 		if err != nil {
 			return nil, err
 		}
@@ -503,7 +506,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	return types.NewTx(tx), err
 }
 
-func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int) (*types.Transaction, error) {
+func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher InfallibleBatchFetcher) (*types.Transaction, error) {
 	batchTimestamp, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
@@ -512,16 +515,26 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int) (*types.Tran
 	if err != nil {
 		return nil, err
 	}
-	batchNum, err := util.HashFromReader(rd)
+	batchNumHash, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
+	batchNum := batchNumHash.Big().Uint64()
 
 	l1BaseFee, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	data, err := util.PackInternalTxDataBatchPostingReport(batchTimestamp, batchPosterAddr, batchNum, l1BaseFee)
+	batchData := batchFetcher(batchNum)
+	var batchDataGas uint64
+	for _, b := range batchData {
+		if b == 0 {
+			batchDataGas += params.TxDataZeroGas
+		} else {
+			batchDataGas += params.TxDataNonZeroGasEIP2028
+		}
+	}
+	data, err := util.PackInternalTxDataBatchPostingReport(batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee.Big())
 	if err != nil {
 		return nil, err
 	}

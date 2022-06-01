@@ -5,9 +5,9 @@ package arbos
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -48,9 +48,7 @@ func InternalTxStartBlock(
 	}
 }
 
-type BatchFetcherFunc func(batchNum uint64, batchDataHash common.Hash) (batchData []byte, err error)
-
-func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM, fetcher BatchFetcherFunc) {
+func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) {
 	switch tx.SubType {
 	case arbInternalTxStartBlock:
 		inputs, err := util.UnpackInternalTxDataStartBlock(tx.Data)
@@ -102,23 +100,11 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			panic(err)
 		}
 		batchTimestamp, _ := inputs[0].(*big.Int)
-		// ignore input[1], batchPosterAddress, which exists because we might need it in the future
-		batchNumberBig, _ := inputs[2].(*big.Int)
-		batchNumber := batchNumberBig.Uint64()
-		batchDataHash, _ := inputs[3].(common.Hash)
+		// ignore input[1], batchPosterAddress, and input[2], batchNumber, which exist because we might need them in the future
+		batchDataGas, _ := inputs[3].(uint64)
 		l1BaseFeeWei, _ := inputs[4].(*big.Int)
 
-		batchData, err := fetcher(batchNumber, batchDataHash)
-		if err != nil {
-			panic(err)
-		}
-		dataGas := params.TxDataNonZeroGasEIP2028 * uint64(len(batchData))
-		for _, b := range batchData {
-			if b == 0 {
-				dataGas -= params.TxDataNonZeroGasEIP2028 - params.TxDataZeroGas
-			}
-		}
-		weiSpent := new(big.Int).Mul(l1BaseFeeWei, new(big.Int).SetUint64(dataGas))
+		weiSpent := new(big.Int).Mul(l1BaseFeeWei, new(big.Int).SetUint64(batchDataGas))
 		err = state.L1PricingState().UpdateForSequencerSpending(evm.StateDB, batchTimestamp.Uint64(), evm.Context.Time.Uint64(), weiSpent)
 		if err != nil {
 			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
