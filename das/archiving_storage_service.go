@@ -126,6 +126,10 @@ func (serv *ArchivingStorageService) Close(ctx context.Context) error {
 	}
 }
 
+func (serv *ArchivingStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return DiscardAfterArchiveTimeout
+}
+
 func (serv *ArchivingStorageService) GetArchiverErrorSignalChan() <-chan interface{} {
 	return serv.archiverErrorSignal
 }
@@ -185,6 +189,10 @@ func (lss *limitedStorageService) Sync(ctx context.Context) error {
 
 func (lss *limitedStorageService) Close(ctx context.Context) error {
 	return errors.New("invalid operation")
+}
+
+func (lss *limitedStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return -1
 }
 
 func (lss *limitedStorageService) String() string {

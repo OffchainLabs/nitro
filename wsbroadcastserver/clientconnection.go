@@ -13,16 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
-
-// MaxSendQueue is the maximum number of items in a clients out channel before client gets disconnected.
-// If set too low, a burst of items will cause all clients to be disconnected
-const MaxSendQueue = 1000
 
 // ClientConnection represents client connection.
 type ClientConnection struct {
@@ -46,7 +41,7 @@ func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *Clien
 		Name:          conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
 		clientManager: clientManager,
 		lastHeardUnix: time.Now().Unix(),
-		out:           make(chan []byte, MaxSendQueue),
+		out:           make(chan []byte, clientManager.settings.MaxSendQueue),
 	}
 }
 
@@ -61,7 +56,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			case data := <-cc.out:
 				err := cc.writeRaw(data)
 				if err != nil {
-					log.Error("error writing data to client", "client", cc.Name, "err", err)
+					logError(err, "error writing data to client")
 					cc.clientManager.Remove(cc)
 					for {
 						// Consume and ignore channel data until client properly stopped to prevent deadlock
