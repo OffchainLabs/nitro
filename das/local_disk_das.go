@@ -34,6 +34,18 @@ const (
 	// Add more type of expiration policy.
 )
 
+func (ep ExpirationPolicy) String() (string, error) {
+	switch ep {
+	case KeepForever:
+		return "KeepForever", nil
+	case DiscardAfterArchiveTimeout:
+		return "DiscardAfterArchiveTimeout", nil
+	case DiscardAfterDataTimeout:
+		return "DiscardAfterDataTimeout", nil
+	}
+	return "", errors.New("unknown Expiration Policy")
+}
+
 type StorageConfig struct {
 	KeyDir              string               `koanf:"key-dir"`
 	PrivKey             string               `koanf:"priv-key"`

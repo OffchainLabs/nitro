@@ -45,26 +45,62 @@ func NewRestfulDasServerHTTP(address string, port uint64, storageService Storage
 }
 
 type RestfulDasServerResponse struct {
-	Data string `json:"data"`
+	Data             string `json:"data"`
+	ExpirationPolicy string `json:"expirationPolicy"`
 }
 
 var cacheControlKey = http.CanonicalHeaderKey("cache-control")
 
 const cacheControlValue = "public, max-age=2419200, immutable" // cache for up to 28 days
+const healthRequestPath = "/health/"
+const expirationPolicyRequestPath = "/expiration-policy/"
+const getByHashRequestPath = "/get-by-hash/"
 
 func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestPath := r.URL.Path
-	// Health requests for remote health-checks
-	if strings.HasPrefix(requestPath, "/health") {
-		err := rds.storage.HealthCheck(r.Context())
-		if err != nil {
-			log.Warn("Unhealthy service", "path", requestPath, "err", err)
-			w.WriteHeader(http.StatusServiceUnavailable)
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
+	log.Debug("Got request", "requestPath", requestPath)
+	switch {
+	case strings.HasPrefix(requestPath, healthRequestPath):
+		rds.HealthHandler(w, r, requestPath)
+	case strings.HasPrefix(requestPath, expirationPolicyRequestPath):
+		rds.ExpirationPolicyHandler(w, r, requestPath)
+	case strings.HasPrefix(requestPath, getByHashRequestPath):
+		rds.GetByHashHandler(w, r, requestPath)
+	default:
+		log.Warn("Unknown requestPath", "requestPath", requestPath)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+}
+
+// Health requests for remote health-checks
+func (rds *RestfulDasServer) HealthHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
+	err := rds.storage.HealthCheck(r.Context())
+	if err != nil {
+		log.Warn("Unhealthy service", "path", requestPath, "err", err)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
+	expirationPolicy, err := rds.storage.ExpirationPolicy(r.Context()).String()
+	if err != nil {
+		log.Warn("Got invalid expiration policy", "path", requestPath, "expirationPolicy", expirationPolicy)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	err = json.NewEncoder(w).Encode(RestfulDasServerResponse{ExpirationPolicy: expirationPolicy})
+	if err != nil {
+		log.Warn("Failed encoding and writing response", "path", requestPath, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
 	log.Debug("Got request", "requestPath", requestPath)
 
 	hashBytes, err := hexutil.Decode(strings.TrimPrefix(requestPath, "/get-by-hash/"))
@@ -97,6 +133,7 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	w.WriteHeader(http.StatusOK)
 	w.Header()[cacheControlKey] = []string{cacheControlValue}
 }
 
