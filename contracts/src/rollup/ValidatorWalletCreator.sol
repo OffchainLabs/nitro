@@ -30,7 +30,10 @@ contract ValidatorWalletCreator is Ownable {
         emit TemplateUpdated();
     }
 
-    function createWallet(address[] calldata initialExecutorAllowedDests) external returns (address) {
+    function createWallet(address[] calldata initialExecutorAllowedDests)
+        external
+        returns (address)
+    {
         address _executor = msg.sender;
         address _owner = msg.sender;
         ProxyAdmin admin = new ProxyAdmin();
