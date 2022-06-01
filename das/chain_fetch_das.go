@@ -97,7 +97,6 @@ func chainFetchGetByHash(
 	// try to fetch from the inner DAS
 	innerRes, err := daReader.GetByHash(ctx, hash)
 	if err == nil && bytes.Equal(hash, crypto.Keccak256(innerRes)) {
-		cache[hash32] = innerRes
 		return innerRes, nil
 	}
 
