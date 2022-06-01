@@ -619,9 +619,8 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
 
     /**
      * @notice Withdraw uncommitted funds owned by sender from the rollup chain
-     * @param destination Address to transfer the withdrawn funds to
      */
-    function withdrawStakerFunds(address payable destination)
+    function withdrawStakerFunds()
         external
         override
         onlyValidator
@@ -630,7 +629,7 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
     {
         uint256 amount = withdrawFunds(msg.sender);
         // This is safe because it occurs after all checks and effects
-        destination.transfer(amount);
+        payable(msg.sender).transfer(amount);
         return amount;
     }
 }
@@ -696,9 +695,8 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
 
     /**
      * @notice Withdraw uncommitted funds owned by sender from the rollup chain
-     * @param destination Address to transfer the withdrawn funds to
      */
-    function withdrawStakerFunds(address payable destination)
+    function withdrawStakerFunds()
         external
         override
         onlyValidator
@@ -707,7 +705,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
     {
         uint256 amount = withdrawFunds(msg.sender);
         // This is safe because it occurs after all checks and effects
-        require(IERC20Upgradeable(stakeToken).transfer(destination, amount), "TRANSFER_FAILED");
+        require(IERC20Upgradeable(stakeToken).transfer(msg.sender, amount), "TRANSFER_FAILED");
         return amount;
     }
 

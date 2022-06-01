@@ -7,22 +7,29 @@ pragma solidity ^0.8.0;
 import "../challenge/IChallengeManager.sol";
 import "../libraries/DelegateCallAware.sol";
 import "../libraries/IGasRefunder.sol";
-import {IRollupUserAbs} from "./IRollupLogic.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+/// @dev thrown when arrays provided don't have the expected length
 error BadArrayLength(uint256 expected, uint256 actual);
+
+/// @dev thrown when a function is called by an address that isn't the owner nor a executor
 error NotExecutorOrOwner(address actual);
-error OnlyOwnerFunctionSig(address expected, address actual, bytes4 funcSig);
+
+/// @dev thrown when the particular address can't be called by an executor
+error OnlyOwnerDestination(address expected, address actual, address destination);
+
+/// @dev thrown when eth withdrawal tx fails
+error WithdrawEthFail(address destination);
 
 contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnabled {
     using Address for address;
 
-    /// @dev a executor is allowed to call non-admin functions and get refunded
+    /// @dev a executor is allowed to call only certain contracts
     mapping(address => bool) public executors;
 
-    /// @dev function signatures that can only be called by the owner
-    mapping(bytes4 => bool) public onlyOwnerFuncSigs;
+    /// @dev allowed addresses which can be called by an executor
+    mapping(address => bool) public allowedExecutorDestinations;
 
     modifier onlyExecutorOrOwner() {
         if (!executors[_msgSender()] && owner() != _msgSender())
@@ -32,6 +39,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
 
     event ExecutorUpdated(address indexed executor, bool isExecutor);
 
+    /// @dev updates the executor addresses
     function setExecutor(address[] calldata newExecutors, bool[] calldata isExecutor)
         external
         onlyOwner
@@ -52,33 +60,29 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
 
         executors[_executor] = true;
         emit ExecutorUpdated(_executor, true);
-
-        onlyOwnerFuncSigs[IRollupUserAbs.withdrawStakerFunds.selector] = true;
-        emit OnlyOwnerFuncSigUpdated(IRollupUserAbs.withdrawStakerFunds.selector, true);
     }
 
-    event OnlyOwnerFuncSigUpdated(bytes4 indexed sig, bool val);
+    event AllowedExecutorDestinationsUpdated(address indexed destination, bool isSet);
 
-    /// @notice updates the function signatures which only the owner is allowed to call
-    function setOnlyOwnerFunctionSigs(bytes4[] calldata funcSigs, bool[] calldata isSet)
+    /// @notice updates the destination addresses which executors are allowed to call
+    function setAllowedExecutorDestinations(address[] calldata destinations, bool[] calldata isSet)
         external
         onlyOwner
     {
-        if (funcSigs.length != isSet.length) revert BadArrayLength(funcSigs.length, isSet.length);
+        if (destinations.length != isSet.length)
+            revert BadArrayLength(destinations.length, isSet.length);
         unchecked {
-            for (uint256 i = 0; i < funcSigs.length; ++i) {
-                onlyOwnerFuncSigs[funcSigs[i]] = isSet[i];
-                emit OnlyOwnerFuncSigUpdated(funcSigs[i], isSet[i]);
+            for (uint256 i = 0; i < destinations.length; ++i) {
+                allowedExecutorDestinations[destinations[i]] = isSet[i];
+                emit AllowedExecutorDestinationsUpdated(destinations[i], isSet[i]);
             }
         }
     }
 
     /// @dev reverts if the current function can't be called
-    function validateExecuteTransaction(bytes calldata data) public view {
-        bytes4 funcSig = data.length < 4 ? bytes4(data) : bytes4(data[:4]);
-
-        if (onlyOwnerFuncSigs[funcSig] && owner() != _msgSender())
-            revert OnlyOwnerFunctionSig(owner(), _msgSender(), funcSig);
+    function validateExecuteTransaction(address destination) public view {
+        if (!allowedExecutorDestinations[destination] && owner() != _msgSender())
+            revert OnlyOwnerDestination(owner(), _msgSender(), destination);
     }
 
     function executeTransactions(
@@ -98,7 +102,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         uint256 numTxes = data.length;
         for (uint256 i = 0; i < numTxes; i++) {
             if (data[i].length > 0) require(destination[i].isContract(), "NO_CODE_AT_ADDR");
-            validateExecuteTransaction(data[i]);
+            validateExecuteTransaction(destination[i]);
             // We use a low level call here to allow for contract and non-contract calls
             // solhint-disable-next-line avoid-low-level-calls
             (bool success, ) = address(destination[i]).call{value: amount[i]}(data[i]);
@@ -128,7 +132,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         uint256 amount
     ) public payable onlyExecutorOrOwner refundsGas(gasRefunder) {
         if (data.length > 0) require(destination.isContract(), "NO_CODE_AT_ADDR");
-        validateExecuteTransaction(data);
+        validateExecuteTransaction(destination);
         // We use a low level call here to allow for contract and non-contract calls
         // solhint-disable-next-line avoid-low-level-calls
         (bool success, ) = destination.call{value: amount}(data);
@@ -164,4 +168,10 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
     }
 
     receive() external payable {}
+
+    /// @dev allows the owner to withdraw eth held by this contract
+    function withdrawEth(uint256 amount, address destination) external onlyOwner {
+        (bool success, ) = destination.call{value: amount}("");
+        if (!success) revert WithdrawEthFail(destination);
+    }
 }

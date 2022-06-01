@@ -8,9 +8,7 @@ contract RollupMock {
     event WithdrawTriggered();
     event ZombieTriggered();
 
-    function withdrawStakerFunds(
-        address payable /* destination */
-    ) external returns (uint256) {
+    function withdrawStakerFunds() external returns (uint256) {
         emit WithdrawTriggered();
         return 0;
     }
