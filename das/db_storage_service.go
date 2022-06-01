@@ -16,15 +16,17 @@ import (
 )
 
 type LocalDBStorageConfig struct {
-	Enable  bool   `koanf:"enable"`
-	DataDir string `koanf:"data-dir"`
+	Enable              bool   `koanf:"enable"`
+	DataDir             string `koanf:"data-dir"`
+	DiscardAfterTimeout bool   `koanf:"discard-after-timeout"`
 }
 
 var DefaultLocalDBStorageConfig = LocalDBStorageConfig{}
 
 func LocalDBStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultLocalDBStorageConfig.Enable, "Enable storage/retrieval of sequencer batch data from a database on the local filesystem")
-	f.String(prefix+".data-dir", DefaultLocalDBStorageConfig.DataDir, "Directory in which to store the database")
+	f.Bool(prefix+".enable", DefaultLocalDBStorageConfig.Enable, "enable storage/retrieval of sequencer batch data from a database on the local filesystem")
+	f.String(prefix+".data-dir", DefaultLocalDBStorageConfig.DataDir, "directory in which to store the database")
+	f.Bool(prefix+".discard-after-timeout", DefaultLocalDBStorageConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
 }
 
 type DBStorageService struct {
@@ -112,6 +114,14 @@ func (dbs *DBStorageService) Sync(ctx context.Context) error {
 func (dbs *DBStorageService) Close(ctx context.Context) error {
 	dbs.stopWaiter.StopAndWait()
 	return nil
+}
+
+func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	if dbs.discardAfterTimeout {
+		return DiscardAfterDataTimeout
+	} else {
+		return KeepForever
+	}
 }
 
 func (dbs *DBStorageService) String() string {

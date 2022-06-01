@@ -140,6 +140,10 @@ func (rs *RedisStorageService) Close(ctx context.Context) error {
 	return rs.baseStorageService.Close(ctx)
 }
 
+func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return rs.baseStorageService.ExpirationPolicy(ctx)
+}
+
 func (rs *RedisStorageService) String() string {
 	return fmt.Sprintf("RedisStorageService(%+v)", rs.redisConfig)
 }

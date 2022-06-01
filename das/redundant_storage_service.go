@@ -119,6 +119,27 @@ func (r *RedundantStorageService) Close(ctx context.Context) error {
 	return anyError
 }
 
+func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	// If at least one inner service has KeepForever,
+	// then whole redundant service can serve after timeout.
+	for _, serv := range r.innerServices {
+		if serv.ExpirationPolicy(ctx) == KeepForever {
+			return KeepForever
+		}
+	}
+	// If no inner service has KeepForever,
+	// but at least one inner service has DiscardAfterArchiveTimeout,
+	// then whole redundant service can serve till archive timeout.
+	for _, serv := range r.innerServices {
+		if serv.ExpirationPolicy(ctx) == DiscardAfterArchiveTimeout {
+			return DiscardAfterArchiveTimeout
+		}
+	}
+	// If no inner service has KeepForever and DiscardAfterArchiveTimeout,
+	// then whole redundant service will serve only till timeout.
+	return DiscardAfterDataTimeout
+}
+
 func (r *RedundantStorageService) String() string {
 	str := "RedundantStorageService("
 	for _, serv := range r.innerServices {

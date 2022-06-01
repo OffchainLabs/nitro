@@ -16,7 +16,7 @@ func CreatePersistentStorageService(
 	storageServices := make([]StorageService, 0, 10)
 	var lifecycleManager LifecycleManager
 	if config.LocalDBStorageConfig.Enable {
-		s, err := NewDBStorageService(ctx, config.LocalDBStorageConfig.DataDir, false /* TODO plumb this from config  */)
+		s, err := NewDBStorageService(ctx, config.LocalDBStorageConfig.DataDir, config.LocalDBStorageConfig.DiscardAfterTimeout)
 		if err != nil {
 			return nil, nil, err
 		}

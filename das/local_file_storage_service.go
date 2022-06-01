@@ -68,6 +68,10 @@ func (s *LocalFileStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
+func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return KeepForever
+}
+
 func (s *LocalFileStorageService) String() string {
 	return "LocalFileStorageService(" + s.dataDir + ")"
 }

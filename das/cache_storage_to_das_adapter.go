@@ -88,6 +88,10 @@ func (s *emptyStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
+func (s *emptyStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return DiscardAfterDataTimeout
+}
+
 func (s *emptyStorageService) String() string {
 	return "emptyStorageService"
 }

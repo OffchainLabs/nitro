@@ -92,6 +92,10 @@ func (bcs *BigCacheStorageService) Close(ctx context.Context) error {
 	return bcs.baseStorageService.Close(ctx)
 }
 
+func (bcs *BigCacheStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return bcs.baseStorageService.ExpirationPolicy(ctx)
+}
+
 func (bcs *BigCacheStorageService) String() string {
 	return fmt.Sprintf("BigCacheStorageService(%+v)", bcs.bigCacheConfig)
 }
