@@ -55,9 +55,6 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
 
         onlyOwnerFuncSigs[IRollupUserAbs.withdrawStakerFunds.selector] = true;
         emit OnlyOwnerFuncSigUpdated(IRollupUserAbs.withdrawStakerFunds.selector, true);
-
-        onlyOwnerFuncSigs[IRollupUserAbs.createChallenge.selector] = true;
-        emit OnlyOwnerFuncSigUpdated(IRollupUserAbs.createChallenge.selector, true);
     }
 
     event OnlyOwnerFuncSigUpdated(bytes4 indexed sig, bool val);
