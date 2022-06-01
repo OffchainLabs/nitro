@@ -54,12 +54,19 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         }
     }
 
-    function initialize(address _executor, address _owner) external initializer onlyDelegated {
+    function initialize(address _executor, address _owner, address[] calldata initialExecutorAllowedDests) external initializer onlyDelegated {
         __Ownable_init();
         transferOwnership(_owner);
 
         executors[_executor] = true;
         emit ExecutorUpdated(_executor, true);
+
+        unchecked {
+            for (uint64 i = 0; i < initialExecutorAllowedDests.length; ++i) {
+                allowedExecutorDestinations[initialExecutorAllowedDests[i]] = true;
+                emit AllowedExecutorDestinationsUpdated(initialExecutorAllowedDests[i], true);
+            }
+        }
     }
 
     event AllowedExecutorDestinationsUpdated(address indexed destination, bool isSet);

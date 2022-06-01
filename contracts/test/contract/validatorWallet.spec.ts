@@ -29,7 +29,7 @@ describe("Validator Wallet", () => {
 
     owner = await accounts[0];
     executor = await accounts[1];
-    const walletCreationTx = await (await walletCreator.createWallet()).wait();
+    const walletCreationTx = await (await walletCreator.createWallet([])).wait();
 
     const events = walletCreationTx.logs
       .filter((curr) => curr.topics[0] === walletCreator.interface.getEventTopic("WalletCreated"))

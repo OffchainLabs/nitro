@@ -30,7 +30,7 @@ contract ValidatorWalletCreator is Ownable {
         emit TemplateUpdated();
     }
 
-    function createWallet() external returns (address) {
+    function createWallet(address[] calldata initialExecutorAllowedDests) external returns (address) {
         address _executor = msg.sender;
         address _owner = msg.sender;
         ProxyAdmin admin = new ProxyAdmin();
@@ -38,7 +38,7 @@ contract ValidatorWalletCreator is Ownable {
             new TransparentUpgradeableProxy(address(template), address(admin), "")
         );
         admin.transferOwnership(_owner);
-        ValidatorWallet(payable(proxy)).initialize(_executor, _owner);
+        ValidatorWallet(payable(proxy)).initialize(_executor, _owner, initialExecutorAllowedDests);
         emit WalletCreated(proxy, _executor, _owner, address(admin));
         return proxy;
     }
