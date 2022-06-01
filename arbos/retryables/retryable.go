@@ -328,7 +328,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 	return windowsLeftStorage.Set(windowsLeft - 1)
 }
 
-func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
+func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int) (*types.ArbitrumRetryTx, error) {
 	from, err := retryable.From()
 	if err != nil {
 		return nil, err
@@ -356,6 +356,7 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 		Data:      calldata,
 		TicketId:  ticketId,
 		RefundTo:  refundTo,
+		MaxRefund: maxRefund,
 	}, nil
 }
 

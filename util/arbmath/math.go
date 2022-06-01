@@ -90,6 +90,24 @@ func BigGreaterThan(first, second *big.Int) bool {
 	return first.Cmp(second) > 0
 }
 
+// returns a clone of the minimum of two big integers
+func BigMin(first, second *big.Int) *big.Int {
+	if BigLessThan(first, second) {
+		return new(big.Int).Set(first)
+	} else {
+		return new(big.Int).Set(second)
+	}
+}
+
+// returns a clone of the maximum of two big integers
+func BigMax(first, second *big.Int) *big.Int {
+	if BigGreaterThan(first, second) {
+		return new(big.Int).Set(first)
+	} else {
+		return new(big.Int).Set(second)
+	}
+}
+
 // add a huge to another
 func BigAdd(augend *big.Int, addend *big.Int) *big.Int {
 	return new(big.Int).Add(augend, addend)

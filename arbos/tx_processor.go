@@ -132,18 +132,22 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// mint funds with the deposit, then charge fees later
 		util.MintBalance(&from, tx.DepositValue, evm, scenario)
+		availableRefund := arbmath.BigSub(tx.DepositValue, tx.Value)
+		availableRefund = arbmath.BigMax(availableRefund, common.Big0)
 
 		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
-		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
-		if excessDeposit.Sign() < 0 {
+		submissionFeeRefund := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
+		if submissionFeeRefund.Sign() < 0 {
 			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
 		}
+		submissionFeeRefund = arbmath.BigMin(submissionFeeRefund, availableRefund)
+		availableRefund.Sub(availableRefund, submissionFeeRefund)
 
 		// move balance to the relevant parties
 		if err := util.TransferBalance(&from, &networkFeeAccount, submissionFee, evm, scenario); err != nil {
 			return true, 0, err, nil
 		}
-		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, excessDeposit, evm, scenario); err != nil {
+		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, submissionFeeRefund, evm, scenario); err != nil {
 			return true, 0, err, nil
 		}
 		if err := util.TransferBalance(&tx.From, &escrow, tx.Value, evm, scenario); err != nil {
@@ -192,6 +196,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			panic(err)
 		}
 
+		gasPriceRefund := arbmath.BigMulByUint(arbmath.BigSub(tx.GasFeeCap, basefee), tx.Gas)
+		gasPriceRefund = arbmath.BigMin(gasPriceRefund, availableRefund)
+		availableRefund.Sub(availableRefund, gasPriceRefund)
+		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, gasPriceRefund, evm, scenario); err != nil {
+			return true, 0, err, nil
+		}
+
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
 			underlyingTx.ChainId(),
@@ -200,6 +211,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			usergas,
 			ticketId,
 			tx.FeeRefundAddr,
+			availableRefund,
 		)
 		p.state.Restrict(err)
 
@@ -213,6 +225,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			ticketId,
 			types.NewTx(retryTxInner).Hash(),
 			tx.FeeRefundAddr,
+			availableRefund,
 		)
 		if err != nil {
 			glog.Error("failed to emit RedeemScheduled event", "err", err)
@@ -333,6 +346,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		refund := arbmath.BigMulByUint(gasPrice, gasLeft)
+		refund = arbmath.BigMin(refund, inner.MaxRefund)
 
 		// undo Geth's refund to the From address
 		err := util.TransferBalance(&inner.From, nil, refund, p.evm, util.TracingAfterEVM)
@@ -429,6 +443,7 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 			event.DonatedGas,
 			event.TicketId,
 			event.GasDonor,
+			event.MaxRefund,
 		)
 		scheduled = append(scheduled, types.NewTx(redeem))
 	}

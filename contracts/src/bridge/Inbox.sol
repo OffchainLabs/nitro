@@ -298,8 +298,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bytes calldata data
     ) external payable virtual override whenNotPaused returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
-        if (msg.value < maxSubmissionCost + l2CallValue)
-            revert InsufficientValue(maxSubmissionCost + l2CallValue, msg.value);
+        uint256 ethNeeded = maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas;
+        if (msg.value < ethNeeded) revert InsufficientValue(ethNeeded, msg.value);
 
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2

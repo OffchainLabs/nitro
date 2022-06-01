@@ -269,12 +269,13 @@ func TestSubmissionGasCosts(t *testing.T) {
 	Require(t, err)
 
 	usefulGas := params.TxGas
-	excessGas := uint64(808)
+	excessGasLimit := uint64(808)
 
 	maxSubmissionFee := big.NewInt(1e13)
-	retryableGas := arbmath.UintToBig(usefulGas + excessGas) // will only burn the intrinsic cost
+	retryableGas := arbmath.UintToBig(usefulGas + excessGasLimit) // will only burn the intrinsic cost
 	retryableL2CallValue := big.NewInt(1e4)
 	retryableCallData := []byte{}
+	gasFeeCap := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		receiveAddress,
@@ -283,7 +284,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		feeRefundAddress,
 		beneficiaryAddress,
 		retryableGas,
-		big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		gasFeeCap,
 		retryableCallData,
 	)
 	Require(t, err)
@@ -296,7 +297,9 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 	l2BaseFee := GetBaseFee(t, l2client, ctx)
-	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGas)
+	excessGasPrice := arbmath.BigSub(gasFeeCap, l2BaseFee)
+	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGasLimit)
+	excessWei.Add(excessWei, arbmath.BigMul(excessGasPrice, retryableGas))
 
 	l1HeaderAfterSubmit, err := l1client.HeaderByHash(ctx, l1receipt.BlockHash)
 	Require(t, err)
@@ -334,16 +337,17 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 
 	// the fee refund address should recieve the excess gas
-	colors.PrintBlue("Base Fee      ", l2BaseFee)
-	colors.PrintBlue("Excess Gas    ", excessGas)
-	colors.PrintBlue("Excess Wei    ", excessWei)
-	colors.PrintMint("Fee Refund    ", refundFunds)
+	colors.PrintBlue("Base Fee         ", l2BaseFee)
+	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
+	colors.PrintBlue("Excess Gas       ", excessGasLimit)
+	colors.PrintBlue("Excess Wei       ", excessWei)
+	colors.PrintMint("Fee Refund       ", refundFunds)
 	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(excessWei, submissionFeeRefund)) {
 		Fail(t, "The Fee Refund Address didn't receive the right funds")
 	}
 
 	// the faucet must pay for both the gas used and the call value supplied
-	expectedGasChange := arbmath.BigMul(l2BaseFee, retryableGas)
+	expectedGasChange := arbmath.BigMul(gasFeeCap, retryableGas)
 	expectedGasChange = arbmath.BigSub(expectedGasChange, usertxopts.Value) // the user is credited this
 	expectedGasChange = arbmath.BigAdd(expectedGasChange, maxSubmissionFee)
 	expectedGasChange = arbmath.BigAdd(expectedGasChange, retryableL2CallValue)
