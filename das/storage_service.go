@@ -5,6 +5,7 @@ package das
 
 import (
 	"context"
+	"encoding/base32"
 	"errors"
 	"os"
 	"sync"
@@ -46,7 +47,13 @@ func (s *LocalDiskStorageService) GetByHash(ctx context.Context, key []byte) ([]
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 	pathname := s.dataDir + "/" + EncodeStorageServiceKey(key)
-	return os.ReadFile(pathname)
+	res, err := os.ReadFile(pathname)
+	if err != nil {
+		// Just for backward compatability.
+		pathname = s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
+		return os.ReadFile(pathname)
+	}
+	return res, nil
 }
 
 func (s *LocalDiskStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
