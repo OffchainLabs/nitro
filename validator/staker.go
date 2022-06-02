@@ -140,7 +140,7 @@ func NewStaker(
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
 	l2Blockchain *core.BlockChain,
-	das arbstate.SimpleDASReader,
+	das arbstate.DataAvailabilityReader,
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,

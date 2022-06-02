@@ -28,6 +28,7 @@ type BroadcasterConfig struct {
 	ClientTimeout time.Duration `koanf:"client-timeout"`
 	Queue         int           `koanf:"queue"`
 	Workers       int           `koanf:"workers"`
+	MaxSendQueue  int           `koanf:"max-send-queue"`
 }
 
 func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -39,6 +40,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".client-timeout", DefaultBroadcasterConfig.ClientTimeout, "duration to wait before timing out connections to client")
 	f.Int(prefix+".queue", DefaultBroadcasterConfig.Queue, "queue size")
 	f.Int(prefix+".workers", DefaultBroadcasterConfig.Workers, "number of threads to reserve for HTTP to WS upgrade")
+	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -50,6 +52,19 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	ClientTimeout: 15 * time.Second,
 	Queue:         100,
 	Workers:       100,
+	MaxSendQueue:  4096,
+}
+
+var DefaultTestBroadcasterConfig = BroadcasterConfig{
+	Enable:        false,
+	Addr:          "0.0.0.0",
+	IOTimeout:     2 * time.Second,
+	Port:          "0",
+	Ping:          5 * time.Second,
+	ClientTimeout: 15 * time.Second,
+	Queue:         1,
+	Workers:       100,
+	MaxSendQueue:  4096,
 }
 
 type WSBroadcastServer struct {
@@ -76,7 +91,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	s.startMutex.Lock()
 	defer s.startMutex.Unlock()
 	if s.started {
-		return nil
+		return errors.New("broadcast server already started")
 	}
 
 	var err error
@@ -165,7 +180,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	log.Info("arbitrum websocket broadcast server is listening", "address", ln.Addr().String())
 
 	// Create netpoll descriptor for the listener.
-	// We use OneShot here to manually resume events stream when we want to.
+	// We use OneShot here to synchronously manage the rate that new connections are accepted
 	acceptDesc, err := netpoll.HandleListener(ln, netpoll.EventRead|netpoll.EventOneShot)
 	if err != nil {
 		log.Error("error calling HandleListener", "err", err)
@@ -173,12 +188,16 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	}
 	s.acceptDesc = acceptDesc
 
-	// accept is a channel to signal about next incoming connection Accept()
-	// results.
-	accept := make(chan error, 1)
+	// acceptErrChan blocks until connection accepted or error occurred
+	acceptErrChan := make(chan error, 1)
 
 	// Subscribe to events about listener.
 	err = s.poller.Start(acceptDesc, func(e netpoll.Event) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		// We do not want to accept incoming connection when goroutine pool is
 		// busy. So if there are no free goroutines during 1ms we want to
 		// cooldown the server and do not receive connection for some short
@@ -186,27 +205,24 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		err := clientManager.pool.ScheduleTimeout(time.Millisecond, func() {
 			conn, err := ln.Accept()
 			if err != nil {
-				accept <- err
+				acceptErrChan <- err
 				return
 			}
 
-			accept <- nil
+			acceptErrChan <- nil
 			handle(conn)
 		})
 		if err == nil {
-			err = <-accept
+			err = <-acceptErrChan
 		}
 		if err != nil {
 			if errors.Is(err, gopool.ErrScheduleTimeout) {
 				var netError net.Error
-				success := errors.As(err, &netError)
-				if !success || !netError.Timeout() {
-					log.Error("error in poller.Start", "err", err)
-					return
-				}
+				isNetError := errors.As(err, &netError)
 				if strings.Contains(err.Error(), "file descriptor was not registered") {
-					log.Info("poller exiting", "err", err)
-					return
+					log.Error("broadcast poller unable to register file descriptor", "err", err)
+				} else if !isNetError || !netError.Timeout() {
+					log.Error("broadcast poller error", "err", err)
 				}
 			}
 
@@ -219,10 +235,12 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		err = s.poller.Resume(acceptDesc)
 		if err != nil {
 			log.Warn("error in poller.Resume", "err", err)
+			panic("error resuming broadcaster poller")
 		}
 	})
 	if err != nil {
-		log.Warn("error in poller.Start", "err", err)
+		log.Warn("error in starting broadcaster poller", "err", err)
+		return err
 	}
 
 	s.started = true

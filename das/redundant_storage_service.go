@@ -6,6 +6,10 @@ package das
 import (
 	"context"
 	"sync"
+	"time"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 // This is a redundant storage service, which replicates data across a set of StorageServices.
@@ -27,6 +31,7 @@ type readResponse struct {
 }
 
 func (r *RedundantStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.RedundantStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", r)
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var anyError error
@@ -54,6 +59,7 @@ func (r *RedundantStorageService) GetByHash(ctx context.Context, key []byte) ([]
 }
 
 func (r *RedundantStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
+	log.Trace("das.RedundantStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(expirationTime), 0), "this", r)
 	var wg sync.WaitGroup
 	var errorMutex sync.Mutex
 	var anyError error
@@ -111,6 +117,27 @@ func (r *RedundantStorageService) Close(ctx context.Context) error {
 	}
 	wg.Wait()
 	return anyError
+}
+
+func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	// If at least one inner service has KeepForever,
+	// then whole redundant service can serve after timeout.
+	for _, serv := range r.innerServices {
+		if serv.ExpirationPolicy(ctx) == KeepForever {
+			return KeepForever
+		}
+	}
+	// If no inner service has KeepForever,
+	// but at least one inner service has DiscardAfterArchiveTimeout,
+	// then whole redundant service can serve till archive timeout.
+	for _, serv := range r.innerServices {
+		if serv.ExpirationPolicy(ctx) == DiscardAfterArchiveTimeout {
+			return DiscardAfterArchiveTimeout
+		}
+	}
+	// If no inner service has KeepForever and DiscardAfterArchiveTimeout,
+	// then whole redundant service will serve only till timeout.
+	return DiscardAfterDataTimeout
 }
 
 func (r *RedundantStorageService) String() string {
