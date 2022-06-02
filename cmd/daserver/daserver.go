@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -25,11 +26,30 @@ import (
 )
 
 type DAServerConfig struct {
-	Addr       string                     `koanf:"addr"`
-	Port       uint64                     `koanf:"port"`
-	LogLevel   int                        `koanf:"log-level"`
-	DAConf     das.DataAvailabilityConfig `koanf:"data-availability"`
-	ConfConfig genericconf.ConfConfig     `koanf:"conf"`
+	EnableRPC bool   `koanf:"enable-rpc"`
+	RPCAddr   string `koanf:"rpc-addr"`
+	RPCPort   uint64 `koanf:"rpc-port"`
+
+	EnableREST bool   `koanf:"enable-rest"`
+	RESTAddr   string `koanf:"rest-addr"`
+	RESTPort   uint64 `koanf:"rest-port"`
+
+	DAConf das.DataAvailabilityConfig `koanf:"data-availability"`
+
+	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+	LogLevel   int                    `koanf:"log-level"`
+}
+
+var DefaultDAServerConfig = DAServerConfig{
+	EnableRPC:  false,
+	RPCAddr:    "localhost",
+	RPCPort:    9876,
+	EnableREST: false,
+	RESTAddr:   "localhost",
+	RESTPort:   9877,
+	DAConf:     das.DefaultDataAvailabilityConfig,
+	ConfConfig: genericconf.ConfConfigDefault,
+	LogLevel:   3,
 }
 
 func main() {
@@ -46,9 +66,15 @@ func printSampleUsage() {
 
 func parseDAServer(args []string) (*DAServerConfig, error) {
 	f := flag.NewFlagSet("daserver", flag.ContinueOnError)
+	f.Bool("enable-rpc", DefaultDAServerConfig.EnableRPC, "enable the HTTP-RPC server listening on rpc-addr and rpc-port")
+	f.String("rpc-addr", DefaultDAServerConfig.RPCAddr, "HTTP-RPC server listening interface")
+	f.Uint64("rpc-port", DefaultDAServerConfig.RPCPort, "HTTP-RPC server listening port")
+
+	f.Bool("enable-rest", DefaultDAServerConfig.EnableREST, "enable the REST server listening on rest-addr and rest-port")
+	f.String("rest-addr", DefaultDAServerConfig.RESTAddr, "REST server listening interface")
+	f.Uint64("rest-port", DefaultDAServerConfig.RESTPort, "REST server listening port")
+
 	f.Int("log-level", int(log.LvlInfo), "log level")
-	f.String("addr", "localhost", "HTTP-RPC server listening interface")
-	f.Uint64("port", 9876, "Port to listen on")
 	das.DataAvailabilityConfigAddOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -63,7 +89,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	}
 	if serverConfig.ConfConfig.Dump {
 		err = util.DumpConfig(k, map[string]interface{}{
-			"data-availability.das.priv-key": "",
+			"data-availability.key.priv-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -82,6 +108,11 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 }
 
 func startup() error {
+	// Some different defaults to DAS config in a node.
+	das.DefaultDataAvailabilityConfig.Enable = true
+	das.DefaultDataAvailabilityConfig.L1NodeURL = "none"
+	das.DefaultDataAvailabilityConfig.SequencerInboxAddress = "none"
+
 	vcsRevision, vcsTime := genericconf.GetVersion()
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
@@ -92,12 +123,16 @@ func startup() error {
 		}
 		return nil
 	}
+	if !(serverConfig.EnableRPC || serverConfig.EnableREST) {
+		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
+		fmt.Printf("Please specify at least one of --enable-rest or --enable-rpc\n")
+		printSampleUsage()
+		return nil
+	}
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
 	log.Root().SetHandler(glogger)
-
-	log.Info("Starting daserver", "port", serverConfig.Port)
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
@@ -110,12 +145,40 @@ func startup() error {
 		return err
 	}
 
-	server, err := dasrpc.StartDASRPCServer(ctx, serverConfig.Addr, serverConfig.Port, dasImpl)
-	if err != nil {
-		return err
+	var rpcServer *http.Server
+	if serverConfig.EnableRPC {
+		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort)
+
+		rpcServer, err = dasrpc.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, dasImpl)
+		if err != nil {
+			return err
+		}
 	}
+
+	var restServer *das.RestfulDasServer
+	if serverConfig.EnableREST {
+		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort)
+
+		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, dasImpl)
+		if err != nil {
+			return err
+		}
+	}
+
 	<-sigint
 	dasLifecycleManager.StopAndWaitUntil(2 * time.Second)
 
-	return server.Shutdown(ctx)
+	var err1, err2 error
+	if rpcServer != nil {
+		err1 = rpcServer.Shutdown(ctx)
+	}
+
+	if restServer != nil {
+		err2 = restServer.Shutdown()
+	}
+
+	if err1 != nil {
+		return err1
+	}
+	return err2
 }

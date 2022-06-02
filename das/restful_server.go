@@ -24,7 +24,7 @@ type RestfulDasServer struct {
 	httpServerError      error
 }
 
-func NewRestfulDasServer(address string, port uint64, storageService StorageService) (*RestfulDasServer, error) {
+func NewRestfulDasServer(address string, port uint64, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", address, port))
 	if err != nil {
 		return nil, err
