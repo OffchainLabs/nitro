@@ -33,7 +33,7 @@ func (s *readLimitedStorageService) Sync(ctx context.Context) error {
 }
 
 func (s *readLimitedStorageService) Close(ctx context.Context) error {
-	panic("Logic error: readLimitedStorageService.Store shouldn't be called.")
+	return nil
 }
 
 func (lss *readLimitedStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {

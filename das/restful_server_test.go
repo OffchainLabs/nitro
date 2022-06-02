@@ -27,9 +27,10 @@ func TestRestfulClientServer(t *testing.T) { //nolint
 	data := []byte("Testing a restful server now.")
 	dataHash := crypto.Keccak256(data)
 
-	server := NewRestfulDasServerHTTP(LocalServerAddressForTest, LocalServerPortForTest, storage)
+	server, err := NewRestfulDasServer(LocalServerAddressForTest, LocalServerPortForTest, storage)
+	Require(t, err)
 
-	err := storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
+	err = storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
 
 	time.Sleep(100 * time.Millisecond)

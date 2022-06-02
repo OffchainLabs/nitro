@@ -50,13 +50,28 @@ func (s *LocalFileStorageService) GetByHash(ctx context.Context, key []byte) ([]
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
 	log.Trace("das.LocalFileStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", s)
-	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(crypto.Keccak256(data))
+	fileName := base32.StdEncoding.EncodeToString(crypto.Keccak256(data))
+	finalPath := s.dataDir + "/" + fileName
 
-	err := os.WriteFile(pathname+"_temp", data, 0600)
+	// Use a temp file and rename to achieve atomic writes.
+	f, err := os.CreateTemp(s.dataDir, fileName)
 	if err != nil {
 		return err
 	}
-	return os.Rename(pathname+"_temp", pathname)
+	err = f.Chmod(0600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if err != nil {
+		return err
+	}
+	err = f.Close()
+	if err != nil {
+		return err
+	}
+
+	return os.Rename(f.Name(), finalPath)
 
 }
 
