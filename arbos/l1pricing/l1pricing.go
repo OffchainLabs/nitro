@@ -32,18 +32,17 @@ type L1PricingState struct {
 	perUnitReward      storage.StorageBackedUint64
 	// variables
 	currentTime         storage.StorageBackedUint64
-	lastUpdateTime      storage.StorageBackedUint64
-	availableFunds      storage.StorageBackedBigInt
+	lastUpdateTime      storage.StorageBackedUint64 // timestamp of the last update from L1 that we processed
 	fundsDueToSequencer storage.StorageBackedBigInt
 	fundsDueForRewards  storage.StorageBackedBigInt
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
-	unitsSinceUpdate storage.StorageBackedUint64
-	pricePerUnit     storage.StorageBackedBigInt
+	unitsSinceUpdate storage.StorageBackedUint64 // calldata units collected for since last update
+	pricePerUnit     storage.StorageBackedBigInt // current price per calldata unit
 }
 
 var (
 	SequencerAddress         = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
-	L1PricerFundsPoolAddress = common.HexToAddress("0xA4B0000000000000000000000000000000000f6")
+	L1PricerFundsPoolAddress = common.HexToAddress("0xA4B00000000000000000000000000000000000f6")
 
 	ErrInvalidTime = errors.New("invalid timestamp")
 )
@@ -57,7 +56,6 @@ const (
 	perUnitRewardOffset
 	currentTimeOffset
 	lastUpdateTimeOffset
-	availableFundsOffset
 	fundsDueToSequencerOffset
 	fundsDueForRewards
 	unitsSinceOffset
@@ -65,10 +63,10 @@ const (
 )
 
 const (
-	InitialEquilibrationTime = 10000000
+	InitialEquilibrationTime = 60 * 60 // one hour
 	InitialInertia           = 10
 	InitialPerUnitReward     = 10
-	InitialPricePerUnitGwei  = 50
+	InitialPricePerUnitWei   = 50 * params.GWei
 )
 
 func InitializeL1PricingState(sto *storage.Storage) error {
@@ -91,7 +89,7 @@ func InitializeL1PricingState(sto *storage.Storage) error {
 		return err
 	}
 	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
-	return pricePerUnit.SetByUint(InitialPricePerUnitGwei * 1000000000)
+	return pricePerUnit.SetByUint(InitialPricePerUnitWei)
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
@@ -105,7 +103,6 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedUint64(perUnitRewardOffset),
 		sto.OpenStorageBackedUint64(currentTimeOffset),
 		sto.OpenStorageBackedUint64(lastUpdateTimeOffset),
-		sto.OpenStorageBackedBigInt(availableFundsOffset),
 		sto.OpenStorageBackedBigInt(fundsDueToSequencerOffset),
 		sto.OpenStorageBackedBigInt(fundsDueForRewards),
 		sto.OpenStorageBackedUint64(unitsSinceOffset),
@@ -165,14 +162,6 @@ func (ps *L1PricingState) SetLastUpdateTime(t uint64) error {
 	return ps.lastUpdateTime.Set(t)
 }
 
-func (ps *L1PricingState) AvailableFunds() (*big.Int, error) {
-	return ps.availableFunds.Get()
-}
-
-func (ps *L1PricingState) SetAvailableFunds(amt *big.Int) error {
-	return ps.availableFunds.Set(amt)
-}
-
 func (ps *L1PricingState) FundsDueToSequencer() (*big.Int, error) {
 	return ps.fundsDueToSequencer.Get()
 }
@@ -211,7 +200,7 @@ func (ps *L1PricingState) UpdateTime(currentTime uint64) {
 }
 
 // Update the pricing model based on a payment by the sequencer
-func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, updateTime uint64, currentTime uint64, weiSpent *big.Int) error {
+func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, evm *vm.EVM, updateTime uint64, currentTime uint64, weiSpent *big.Int) error {
 	// compute previous shortfall
 	fundsDueToSequencer, err := ps.FundsDueToSequencer()
 	if err != nil {
@@ -221,16 +210,15 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, updateT
 	if err != nil {
 		return err
 	}
-	availableFunds, err := ps.AvailableFunds()
-	if err != nil {
-		return err
-	}
-	oldShortfall := am.BigSub(am.BigAdd(fundsDueToSequencer, fundsDueForRewards), availableFunds)
+	oldShortfall := am.BigSub(am.BigAdd(fundsDueToSequencer, fundsDueForRewards), statedb.GetBalance(L1PricerFundsPoolAddress))
 
-	// compute allocation fraction
+	// compute allocation fraction -- will allocate updateTimeDelta/timeDelta fraction of units and funds to this update
 	lastUpdateTime, err := ps.LastUpdateTime()
 	if err != nil {
 		return err
+	}
+	if lastUpdateTime == 0 && currentTime > 0 { // it's the first update, so there isn't a last update time
+		lastUpdateTime = currentTime - 1
 	}
 	if updateTime > currentTime || updateTime < lastUpdateTime || currentTime == lastUpdateTime {
 		return ErrInvalidTime
@@ -243,7 +231,7 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, updateT
 	if err != nil {
 		return err
 	}
-	unitsAllocated := unitsSinceUpdate * (updateTime - lastUpdateTime) / (currentTime - lastUpdateTime)
+	unitsAllocated := unitsSinceUpdate * updateTimeDelta / timeDelta
 	unitsSinceUpdate -= unitsAllocated
 	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
 		return err
@@ -253,7 +241,6 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, updateT
 	collectedSinceUpdate := statedb.GetBalance(L1PricerFundsPoolAddress)
 	fundsToMove := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate, updateTimeDelta), timeDelta)
 	statedb.SubBalance(L1PricerFundsPoolAddress, fundsToMove)
-	availableFunds = am.BigAdd(availableFunds, fundsToMove)
 
 	// update amounts due
 	perUnitReward, err := ps.PerUnitReward()
@@ -275,39 +262,37 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, updateT
 	if err != nil {
 		return err
 	}
-	paymentForRewards := availableFunds
+	paymentForRewards := statedb.GetBalance(L1PricerFundsPoolAddress)
 	if am.BigLessThan(fundsDueForRewards, paymentForRewards) {
 		paymentForRewards = fundsDueForRewards
 	}
 	if paymentForRewards.Sign() > 0 {
-		availableFunds = am.BigSub(availableFunds, paymentForRewards)
-		if err := ps.SetAvailableFunds(availableFunds); err != nil {
-			return err
-		}
 		fundsDueForRewards = am.BigSub(fundsDueForRewards, paymentForRewards)
 		if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
 			return err
 		}
-		core.Transfer(statedb, L1PricerFundsPoolAddress, payRewardsTo, paymentForRewards)
+		err := util.TransferBalance(&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, util.TracingBeforeEVM)
+		if err != nil {
+			return err
+		}
 	}
-	sequencerPaymentAddr, err := ps.Sequencer()
+	sequencerPaymentAddr, err := ps.PaySequencerFeesTo()
 	if err != nil {
 		return err
 	}
-	paymentForSequencer := availableFunds
+	paymentForSequencer := statedb.GetBalance(L1PricerFundsPoolAddress)
 	if am.BigLessThan(fundsDueToSequencer, paymentForSequencer) {
 		paymentForSequencer = fundsDueToSequencer
 	}
 	if paymentForSequencer.Sign() > 0 {
-		availableFunds = new(big.Int).Sub(availableFunds, paymentForSequencer)
-		if err := ps.SetAvailableFunds(availableFunds); err != nil {
-			return err
-		}
 		fundsDueToSequencer = new(big.Int).Sub(fundsDueToSequencer, paymentForSequencer)
 		if err := ps.SetFundsDueToSequencer(fundsDueToSequencer); err != nil {
 			return err
 		}
-		core.Transfer(statedb, L1PricerFundsPoolAddress, sequencerPaymentAddr, paymentForSequencer)
+		err := util.TransferBalance(&L1PricerFundsPoolAddress, &sequencerPaymentAddr, paymentForSequencer, evm, util.TracingBeforeEVM)
+		if err != nil {
+			return err
+		}
 	}
 
 	// update time
@@ -317,7 +302,7 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, updateT
 
 	// adjust the price
 	if unitsAllocated > 0 {
-		shortfall := am.BigSub(am.BigAdd(fundsDueToSequencer, fundsDueForRewards), availableFunds)
+		shortfall := am.BigSub(am.BigAdd(fundsDueToSequencer, fundsDueForRewards), statedb.GetBalance(L1PricerFundsPoolAddress))
 		inertia, err := ps.Inertia()
 		if err != nil {
 			return err

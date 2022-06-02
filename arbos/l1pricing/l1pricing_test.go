@@ -61,7 +61,7 @@ func TestL1PriceUpdate(t *testing.T) {
 		Fail(t)
 	}
 
-	initialPriceEstimate := big.NewInt(InitialPricePerUnitGwei * 1000000000)
+	initialPriceEstimate := big.NewInt(InitialPricePerUnitWei)
 	priceEstimate, err := ps.PricePerUnit()
 	Require(t, err)
 	if priceEstimate.Cmp(initialPriceEstimate) != 0 {
