@@ -105,7 +105,7 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dasImpl, dasLifecycleManager, err := arbnode.SetUpDataAvailability(ctx, &serverConfig.DAConf, nil, nil, nil)
+	dasImpl, dasLifecycleManager, err := arbnode.SetUpDataAvailabilityWithoutNode(ctx, &serverConfig.DAConf)
 	if err != nil {
 		return err
 	}

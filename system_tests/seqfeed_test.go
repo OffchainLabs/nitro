@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"strconv"
 	"testing"
 	"time"
 
@@ -18,17 +17,11 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func newBroadcasterConfigTest(port int) *wsbroadcastserver.BroadcasterConfig {
-	return &wsbroadcastserver.BroadcasterConfig{
-		Enable:        true,
-		Addr:          "127.0.0.1",
-		IOTimeout:     5 * time.Second,
-		Port:          strconv.Itoa(port),
-		Ping:          5 * time.Second,
-		ClientTimeout: 15 * time.Second,
-		Queue:         100,
-		Workers:       100,
-	}
+func newBroadcasterConfigTest(port string) *wsbroadcastserver.BroadcasterConfig {
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Enable = true
+	config.Port = port
+	return &config
 }
 
 func newBroadcastClientConfigTest(port int) *broadcastclient.BroadcastClientConfig {
@@ -43,7 +36,7 @@ func TestSequencerFeed(t *testing.T) {
 	defer cancel()
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
-	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest(0)
+	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
 	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
@@ -78,10 +71,10 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	defer cancel()
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
-	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest(0)
+	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
 	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 
-	relayServerConf := *newBroadcasterConfigTest(0)
+	relayServerConf := *newBroadcasterConfigTest("0")
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	relayClientConf := *newBroadcastClientConfigTest(port)
 
@@ -125,7 +118,6 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	chainConfig, nodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	nodeConfigA.DataAvailability.AllowStoreOrigination = true
 	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
 	defer l1stack.Close()
 
@@ -135,7 +127,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigC.Feed.Output = *newBroadcasterConfigTest(0)
+	nodeConfigC.Feed.Output = *newBroadcasterConfigTest("0")
 	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port

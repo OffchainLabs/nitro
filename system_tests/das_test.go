@@ -7,10 +7,14 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 
@@ -109,7 +113,6 @@ func TestDASRekey(t *testing.T) {
 	// Setup DAS config
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigA.DataAvailability.Enable = true
-	l1NodeConfigA.DataAvailability.AllowStoreOrigination = true
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
@@ -184,5 +187,178 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA, l
 
 	if l2balance.Cmp(expectedBalance) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
+	}
+}
+
+func TestDASMaximalConfig_RPCAggregator_WithStores(t *testing.T) {
+	initTest(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Setup L1 chain and contracts
+	chainConfig := params.ArbitrumDevTestDASChainConfig()
+	l1info, l1client, _, l1stack := CreateTestL1BlockChain(t, nil)
+	defer l1stack.Close()
+	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
+
+	lis, err := net.Listen("tcp", "localhost:0")
+	Require(t, err)
+	keyDir, fileDataDir, dbDataDir := t.TempDir(), t.TempDir(), t.TempDir()
+	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
+	Require(t, err)
+
+	serverConfig := das.DataAvailabilityConfig{
+		Enable: true,
+
+		LocalCacheConfig: das.BigCacheConfig{
+			Enable:     true,
+			Expiration: time.Hour,
+		},
+		RedisCacheConfig: das.RedisConfig{
+			Enable:     false,
+			RedisUrl:   "",
+			Expiration: time.Hour,
+			KeyConfig:  "",
+		},
+
+		LocalFileStorageConfig: das.LocalFileStorageConfig{
+			Enable:  true,
+			DataDir: fileDataDir,
+		},
+		LocalDBStorageConfig: das.LocalDBStorageConfig{
+			Enable:  true,
+			DataDir: dbDataDir,
+		},
+		S3StorageServiceConfig: das.S3StorageServiceConfig{
+			Enable:    false,
+			AccessKey: "",
+			Bucket:    "",
+			Region:    "",
+			SecretKey: "",
+		},
+
+		RestfulClientAggregatorConfig: das.RestfulClientAggregatorConfig{
+			Enable:                 false,
+			Urls:                   []string{},
+			Strategy:               "",
+			StrategyUpdateInterval: time.Second,
+			WaitBeforeTryNext:      time.Second,
+			MaxPerEndpointStats:    20,
+			SimpleExploreExploitStrategyConfig: das.SimpleExploreExploitStrategyConfig{
+				ExploreIterations: 1,
+				ExploitIterations: 1,
+			},
+		},
+
+		KeyConfig: das.KeyConfig{
+			KeyDir: keyDir,
+		},
+
+		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
+	}
+
+	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, &serverConfig, l1client, addresses)
+	Require(t, err)
+	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, dasServerStack)
+	Require(t, err)
+
+	_ = dasServer
+	pubkeyA := pubkey
+	authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
+
+	//
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability = das.DataAvailabilityConfig{
+		Enable: true,
+
+		LocalCacheConfig: das.BigCacheConfig{
+			Enable:     true,
+			Expiration: time.Hour,
+		},
+		RedisCacheConfig: das.RedisConfig{
+			Enable:     false,
+			RedisUrl:   "",
+			Expiration: time.Hour,
+			KeyConfig:  "",
+		},
+
+		// AggregatorConfig set up below
+	}
+
+	beConfigA := dasrpc.BackendConfig{
+		URL:                 "http://" + lis.Addr().String(),
+		PubKeyBase64Encoded: blsPubToBase64(pubkey),
+		SignerMask:          1,
+	}
+
+	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+
+	var daSigner das.DasSigner = func(data []byte) ([]byte, error) {
+		return crypto.Sign(data, l1info.Accounts["Sequencer"].PrivateKey)
+	}
+
+	Require(t, err)
+
+	// Setup L2 chain
+	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
+	l2info.GenerateAccount("User2")
+
+	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+	sequencerTxOptsPtr := &sequencerTxOpts
+	nodeA, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, daSigner)
+	Require(t, err)
+	Require(t, nodeA.Start(ctx))
+	l2clientA := ClientForArbBackend(t, nodeA.Backend)
+
+	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigB.DataAvailability = das.DataAvailabilityConfig{
+		Enable: true,
+
+		LocalCacheConfig: das.BigCacheConfig{
+			Enable:     true,
+			Expiration: time.Hour,
+		},
+		RedisCacheConfig: das.RedisConfig{
+			Enable:     false,
+			RedisUrl:   "",
+			Expiration: time.Hour,
+			KeyConfig:  "",
+		},
+
+		// AggregatorConfig set up below
+
+		L1NodeURL: "none",
+	}
+
+	l1NodeConfigB.BatchPoster.Enable = false
+	l1NodeConfigB.BlockValidator.Enable = false
+	l1NodeConfigA.DataAvailability.Enable = true
+	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	checkBatchPosting(t, ctx, l1client, l2clientA, l2clientB, l1info, l2info, big.NewInt(1e12))
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
+
+	_ = lifecycleManager
+
+}
+
+func TestDASMaximalConfig_RPCAggregator_NoStores(t *testing.T) {
+
+}
+
+func enableLogging(logLvl int) {
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.Lvl(logLvl))
+	log.Root().SetHandler(glogger)
+}
+
+func initTest(t *testing.T) {
+	loggingStr := os.Getenv("LOGGING")
+	if len(loggingStr) > 0 {
+		var err error
+		logLvl, err := strconv.Atoi(loggingStr)
+		Require(t, err, "Failed to parse string")
+		enableLogging(logLvl)
 	}
 }

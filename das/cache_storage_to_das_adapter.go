@@ -5,9 +5,12 @@ package das
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type CacheStorageToDASAdapter struct {
@@ -26,6 +29,7 @@ func NewCacheStorageToDASAdapter(
 }
 
 func (a *CacheStorageToDASAdapter) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.CacheStorageToDASAdapter.GetByHash", "key", pretty.FirstFewBytes(hash), "this", a)
 	ret, err := a.cache.GetByHash(ctx, hash)
 	if err != nil {
 		ret, err = a.DataAvailabilityService.GetByHash(ctx, hash)
@@ -43,6 +47,7 @@ func (a *CacheStorageToDASAdapter) GetByHash(ctx context.Context, hash []byte) (
 }
 
 func (a *CacheStorageToDASAdapter) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	log.Trace("das.CacheStorageToDASAdapter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", a)
 	cert, err := a.DataAvailabilityService.Store(ctx, message, timeout, sig)
 	if err != nil {
 		return nil, err
@@ -54,6 +59,10 @@ func (a *CacheStorageToDASAdapter) Store(ctx context.Context, message []byte, ti
 	}
 
 	return cert, nil
+}
+
+func (a *CacheStorageToDASAdapter) String() string {
+	return fmt.Sprintf("CacheStorageToDASAdapter{inner: %v, cache: %v}", a.DataAvailabilityService, a.cache)
 }
 
 type emptyStorageService struct {
@@ -77,6 +86,10 @@ func (s *emptyStorageService) Sync(ctx context.Context) error {
 
 func (s *emptyStorageService) Close(ctx context.Context) error {
 	return nil
+}
+
+func (s *emptyStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return DiscardAfterDataTimeout
 }
 
 func (s *emptyStorageService) String() string {

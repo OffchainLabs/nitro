@@ -36,6 +36,10 @@ func (s *readLimitedStorageService) Close(ctx context.Context) error {
 	panic("Logic error: readLimitedStorageService.Store shouldn't be called.")
 }
 
+func (lss *readLimitedStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return -1
+}
+
 func (s *readLimitedStorageService) String() string {
 	return fmt.Sprintf("readLimitedStorageService(%v)", s.DataAvailabilityReader)
 

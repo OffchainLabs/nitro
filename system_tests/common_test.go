@@ -349,8 +349,7 @@ func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig
 	Require(t, err)
 
 	dasConfig := das.DataAvailabilityConfig{
-		Enable:                enableDas,
-		AllowStoreOrigination: enableDas,
+		Enable: enableDas,
 		KeyConfig: das.KeyConfig{
 			KeyDir: dbPath,
 		},

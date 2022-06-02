@@ -7,16 +7,21 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
 	clnt *rpc.Client
+	url  string
 }
 
 func NewDASRPCClient(target string) (*DASRPCClient, error) {
@@ -24,7 +29,10 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DASRPCClient{clnt: clnt}, nil
+	return &DASRPCClient{
+		clnt: clnt,
+		url:  target,
+	}, nil
 }
 
 func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
@@ -39,6 +47,7 @@ func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, erro
 }
 
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(reqSig), "this", *c)
 	var ret StoreResult
 	if err := c.clnt.CallContext(ctx, &ret, "das_store", hexutil.Bytes(message), hexutil.Uint64(timeout), hexutil.Bytes(reqSig)); err != nil {
 		return nil, err
@@ -61,5 +70,5 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 }
 
 func (c *DASRPCClient) String() string {
-	return fmt.Sprintf("DASRPCClient{c:%v}", c.clnt)
+	return fmt.Sprintf("DASRPCClient{url:%s}", c.url)
 }

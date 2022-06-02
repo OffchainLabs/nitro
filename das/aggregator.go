@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"math/bits"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -61,6 +63,10 @@ type ServiceDetails struct {
 	service     DataAvailabilityService
 	pubKey      blsSignatures.PublicKey
 	signersMask uint64
+}
+
+func (this *ServiceDetails) String() string {
+	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", this.service, this.signersMask)
 }
 
 func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.PublicKey, signersMask uint64) (*ServiceDetails, error) {
@@ -206,7 +212,7 @@ type storeResponse struct {
 	err     error
 }
 
-// store calls Store on each backend DAS in parallel and collects responses.
+// Store calls Store on each backend DAS in parallel and collects responses.
 // If there were at least K responses then it aggregates the signatures and
 // signersMasks from each DAS together into the DataAvailabilityCertificate
 // then Store returns immediately. If there were any backend Store subroutines
@@ -219,7 +225,13 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
+//
+// If Sequencer Inbox contract details are provided when a das.Aggregator is
+// constructed, calls to Store(...) will try to verify the passed-in data's signature
+// is from the batch poster. If the contract details are not provided, then the
+// signature is not checked, which is useful for testing.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
 	if a.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {

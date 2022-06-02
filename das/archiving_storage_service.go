@@ -6,10 +6,13 @@ package das
 import (
 	"context"
 	"errors"
-	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 var ErrArchiveTimeout = errors.New("Archiver timed out")
@@ -78,6 +81,8 @@ func NewArchivingStorageService(
 }
 
 func (serv *ArchivingStorageService) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.ArchivingStorageService.GetByHash", "key", pretty.FirstFewBytes(hash), "this", serv)
+
 	data, err := serv.inner.GetByHash(ctx, hash)
 	if err != nil {
 		return nil, err
@@ -91,6 +96,8 @@ func (serv *ArchivingStorageService) GetByHash(ctx context.Context, hash []byte)
 }
 
 func (serv *ArchivingStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
+	log.Trace("das.ArchivingStorageService.Put", "message", pretty.FirstFewBytes(data), "this", serv)
+
 	if err := serv.inner.Put(ctx, data, expiration); err != nil {
 		return err
 	}
@@ -124,6 +131,10 @@ func (serv *ArchivingStorageService) Close(ctx context.Context) error {
 		// archiver finished on its own, so report its error (which is hopefully nil)
 		return serv.archiverError
 	}
+}
+
+func (serv *ArchivingStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return DiscardAfterArchiveTimeout
 }
 
 func (serv *ArchivingStorageService) GetArchiverErrorSignalChan() <-chan interface{} {

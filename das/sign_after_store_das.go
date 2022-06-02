@@ -9,13 +9,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/pretty"
 
 	flag "github.com/spf13/pflag"
 )
@@ -34,6 +37,17 @@ func KeyConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".priv-key", DefaultKeyConfig.PrivKey, "the base64 BLS private key to use for signing DAS certificates; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified")
 }
 
+// Provides DAS signature functionality over a StorageService by adapting
+// DataAvailabilityService.Store(...) to StorageService.Put(...).
+// There are two different signature functionalities it provides:
+//
+// 1) SignAfterStoreDAS.Store(...) assembles the returned hash into a
+// DataAvailabilityCertificate and signs it with its BLS private key.
+//
+// 2) If Sequencer Inbox contract details are provided when a SignAfterStoreDAS is
+// constructed, calls to Store(...) will try to verify the passed-in data's signature
+// is from the batch poster. If the contract details are not provided, then the
+// signature is not checked, which is useful for testing.
 type SignAfterStoreDAS struct {
 	config         KeyConfig
 	privKey        *blsSignatures.PrivateKey
@@ -126,6 +140,7 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 }
 
 func (d *SignAfterStoreDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+	log.Trace("das.SignAfterStoreDAS.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", d)
 	if d.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {

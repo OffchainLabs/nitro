@@ -12,11 +12,13 @@ import (
 	"golang.org/x/crypto/sha3"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type RedisConfig struct {
@@ -98,6 +100,7 @@ func (rs *RedisStorageService) signMessage(message []byte) []byte {
 }
 
 func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.RedisStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", rs)
 	ret, err := rs.getVerifiedData(ctx, key)
 	if err != nil {
 		ret, err = rs.baseStorageService.GetByHash(ctx, key)
@@ -116,6 +119,7 @@ func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byt
 }
 
 func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
+	log.Trace("das.RedisStorageService.Store", "message", pretty.FirstFewBytes(value), "timeout", "this", rs)
 	err := rs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
@@ -136,6 +140,10 @@ func (rs *RedisStorageService) Close(ctx context.Context) error {
 	return rs.baseStorageService.Close(ctx)
 }
 
+func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+	return rs.baseStorageService.ExpirationPolicy(ctx)
+}
+
 func (rs *RedisStorageService) String() string {
-	return fmt.Sprintf("RedisStorageService(:%v)", rs.redisConfig)
+	return fmt.Sprintf("RedisStorageService(%+v)", rs.redisConfig)
 }

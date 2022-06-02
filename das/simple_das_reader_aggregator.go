@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
@@ -144,6 +145,8 @@ type SimpleDASReaderAggregator struct {
 }
 
 func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.SimpleDASReaderAggregator.GetByHash", "key", pretty.FirstFewBytes(hash), "this", a)
+
 	type dataErrorPair struct {
 		data []byte
 		err  error
