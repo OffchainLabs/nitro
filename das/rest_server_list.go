@@ -20,7 +20,7 @@ const initialMaxRecurseDepth uint16 = 8
 //    which is recursively fetched. The depth of recursion is limited to initialMaxRecurseDepth.
 func RestfulServerURLsFromList(ctx context.Context, listUrl string) ([]string, error) {
 	client := &http.Client{}
-	urls, err := restfulServerURLsFromList(ctx, client, listUrl, initialMaxRecurseDepth)
+	urls, err := restfulServerURLsFromList(ctx, client, listUrl, initialMaxRecurseDepth, make(map[string]bool))
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,17 @@ func RestfulServerURLsFromList(ctx context.Context, listUrl string) ([]string, e
 	return dedupedUrls, nil
 }
 
-func restfulServerURLsFromList(ctx context.Context, client *http.Client, listUrl string, maxRecurseDepth uint16) ([]string, error) {
+func restfulServerURLsFromList(
+	ctx context.Context,
+	client *http.Client,
+	listUrl string,
+	maxRecurseDepth uint16,
+	visitedSoFar map[string]bool,
+) ([]string, error) {
+	if visitedSoFar[listUrl] {
+		return []string{}, nil
+	}
+	visitedSoFar[listUrl] = true
 	urls := []string{}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, listUrl, nil)
 	if err != nil {
@@ -55,7 +65,7 @@ func restfulServerURLsFromList(ctx context.Context, client *http.Client, listUrl
 		if strings.ToLower(word) == "list" {
 			if maxRecurseDepth > 0 && scanner.Scan() {
 				word = scanner.Text()
-				subUrls, err := restfulServerURLsFromList(ctx, client, word, maxRecurseDepth-1)
+				subUrls, err := restfulServerURLsFromList(ctx, client, word, maxRecurseDepth-1, visitedSoFar)
 				if err != nil {
 					urls = append(urls, subUrls...)
 				}
