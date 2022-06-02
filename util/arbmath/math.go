@@ -28,7 +28,7 @@ func MinInt(value, ceiling int64) int64 {
 	return value
 }
 
-// the minimum of two ints
+// the minimum of two uints
 func MinUint(value, ceiling uint64) uint64 {
 	if value > ceiling {
 		return ceiling
@@ -116,6 +116,11 @@ func BigMul(multiplicand *big.Int, multiplier *big.Int) *big.Int {
 // divide a huge by another
 func BigDiv(dividend *big.Int, divisor *big.Int) *big.Int {
 	return new(big.Int).Div(dividend, divisor)
+}
+
+// add a uint to a huge
+func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
+	return new(big.Int).Add(augend, UintToBig(addend))
 }
 
 // multiply a huge by a rational
