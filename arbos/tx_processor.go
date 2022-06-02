@@ -135,20 +135,22 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		availableRefund := arbmath.BigSub(tx.DepositValue, tx.Value)
 		availableRefund = arbmath.BigMax(availableRefund, common.Big0)
 
+		// collect the submission fee
 		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
+		if err := util.TransferBalance(&from, &networkFeeAccount, submissionFee, evm, scenario); err != nil {
+			return true, 0, err, nil
+		}
+
+		// refund excess submission fee
 		submissionFeeRefund := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
 		if submissionFeeRefund.Sign() < 0 {
 			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
 		}
 		submissionFeeRefund = arbmath.BigMin(submissionFeeRefund, availableRefund)
+		submissionFeeRefund = arbmath.BigMin(submissionFeeRefund, statedb.GetBalance(from))
 		availableRefund.Sub(availableRefund, submissionFeeRefund)
-
-		// move balance to the relevant parties
-		if err := util.TransferBalance(&from, &networkFeeAccount, submissionFee, evm, scenario); err != nil {
-			return true, 0, err, nil
-		}
 		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, submissionFeeRefund, evm, scenario); err != nil {
-			return true, 0, err, nil
+			glog.Error("failed to transfer submissionFeeRefund", "err", err)
 		}
 		if err := util.TransferBalance(&tx.From, &escrow, tx.Value, evm, scenario); err != nil {
 			return true, 0, err, nil
@@ -198,9 +200,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		gasPriceRefund := arbmath.BigMulByUint(arbmath.BigSub(tx.GasFeeCap, basefee), tx.Gas)
 		gasPriceRefund = arbmath.BigMin(gasPriceRefund, availableRefund)
+		gasPriceRefund = arbmath.BigMin(gasPriceRefund, statedb.GetBalance(from))
 		availableRefund.Sub(availableRefund, gasPriceRefund)
 		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, gasPriceRefund, evm, scenario); err != nil {
-			return true, 0, err, nil
+			glog.Error("failed to transfer gasPriceRefund", "err", err)
 		}
 
 		// emit RedeemScheduled event
