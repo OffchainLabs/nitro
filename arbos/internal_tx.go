@@ -91,10 +91,6 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 		state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
 	case arbInternalTxBatchPostReport:
-		if state.FormatVersion() <= 3 {
-			// this is a no-op in old versions
-			return
-		}
 		inputs, err := util.UnpackInternalTxDataBatchPostingReport(tx.Data)
 		if err != nil {
 			panic(err)
