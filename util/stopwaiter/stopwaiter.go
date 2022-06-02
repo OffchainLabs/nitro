@@ -36,10 +36,16 @@ func (s *StopWaiterSafe) Stopped() bool {
 func (s *StopWaiterSafe) GetContext() (context.Context, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	return s.getContext()
+}
+
+// Only call this internally with the mutex held.
+func (s *StopWaiterSafe) getContext() (context.Context, error) {
 	if s.started {
 		return s.ctx, nil
 	}
 	return nil, errors.New("not started")
+
 }
 
 // start-after-start will error, start-after-stop will immediately cancel
@@ -76,7 +82,7 @@ func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if s.waitChan == nil {
-		ctx, err := s.GetContext()
+		ctx, err := s.getContext()
 		if err != nil {
 			return nil, err
 		}

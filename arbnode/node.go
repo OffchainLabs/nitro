@@ -808,6 +808,7 @@ func SetUpDataAvailability(
 	if err != nil {
 		return nil, nil, err
 	}
+	hasPersistentStorage := topLevelStorageService != nil
 
 	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
 	// the REST aggregator is used as the fallback to them.
@@ -844,7 +845,7 @@ func SetUpDataAvailability(
 		}
 
 		topLevelDas = rpcAggregator
-	} else {
+	} else if hasPersistentStorage {
 		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
 			ctx,
@@ -855,6 +856,8 @@ func SetUpDataAvailability(
 		if err != nil {
 			return nil, nil, err
 		}
+	} else {
+		topLevelDas = das.NewReadLimitedDataAvailabilityService(topLevelStorageService)
 	}
 
 	// Enable caches, Redis and (local) BigCache. Local is the outermost so it will be tried first.

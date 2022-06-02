@@ -128,7 +128,7 @@ func TestDASRekey(t *testing.T) {
 	l1NodeConfigA.DataAvailability.Enable = true
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
-	checkBatchPosting(t, ctx, l1client, l2clientA, l2clientB, l1info, l2info, big.NewInt(1e12))
+	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 	nodeA.StopAndWait()
 	nodeB.StopAndWait()
 
@@ -155,13 +155,13 @@ func TestDASRekey(t *testing.T) {
 
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
 	l2clientB, nodeB = Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
-	checkBatchPosting(t, ctx, l1client, l2clientA, l2clientB, l1info, l2info, big.NewInt(2e12))
+	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(2e12), l2clientB)
 
 	nodeA.StopAndWait()
 	nodeB.StopAndWait()
 }
 
-func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA, l2clientB *ethclient.Client, l1info, l2info info, expectedBalance *big.Int) {
+func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
@@ -179,18 +179,21 @@ func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA, l
 		})
 	}
 
-	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
-	Require(t, err)
+	for _, client := range l2ClientsToCheck {
+		_, err = WaitForTx(ctx, client, tx.Hash(), time.Second*5)
+		Require(t, err)
 
-	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	Require(t, err)
+		l2balance, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+		Require(t, err)
 
-	if l2balance.Cmp(expectedBalance) != 0 {
-		Fail(t, "Unexpected balance:", l2balance)
+		if l2balance.Cmp(expectedBalance) != 0 {
+			Fail(t, "Unexpected balance:", l2balance)
+		}
+
 	}
 }
 
-func TestDASMaximalConfig_RPCAggregator_WithStores(t *testing.T) {
+func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	initTest(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -335,15 +338,64 @@ func TestDASMaximalConfig_RPCAggregator_WithStores(t *testing.T) {
 	l1NodeConfigA.DataAvailability.Enable = true
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
-	checkBatchPosting(t, ctx, l1client, l2clientA, l2clientB, l1info, l2info, big.NewInt(1e12))
+
+	// Now create a separate REST DAS server using the same local disk storage
+	// and connect a node to it, and make sure it syncs.
+	restServerConfig := das.DataAvailabilityConfig{
+		Enable: true,
+
+		LocalFileStorageConfig: das.LocalFileStorageConfig{
+			Enable:  true,
+			DataDir: fileDataDir,
+		},
+	}
+
+	restServerDAS, rpcServerLifecycleManager, err := das.CreatePersistentStorageService(ctx, &restServerConfig)
+	Require(t, err)
+	restLis, err := net.Listen("tcp", "localhost:0")
+	Require(t, err)
+	restServer, err := das.NewRestfulDasServerOnListener(restLis, restServerDAS)
+	Require(t, err)
+
+	l1NodeConfigC := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigC.BatchPoster.Enable = false
+	l1NodeConfigC.BlockValidator.Enable = false
+	l1NodeConfigC.DataAvailability = das.DataAvailabilityConfig{
+		Enable: true,
+
+		LocalCacheConfig: das.BigCacheConfig{
+			Enable:     true,
+			Expiration: time.Hour,
+		},
+
+		RestfulClientAggregatorConfig: das.RestfulClientAggregatorConfig{
+			Enable:                 true,
+			Urls:                   []string{"http://" + restLis.Addr().String()},
+			Strategy:               "simple-explore-exploit",
+			StrategyUpdateInterval: time.Second,
+			WaitBeforeTryNext:      time.Second,
+			MaxPerEndpointStats:    20,
+			SimpleExploreExploitStrategyConfig: das.SimpleExploreExploitStrategyConfig{
+				ExploreIterations: 1,
+				ExploitIterations: 5,
+			},
+		},
+
+		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
+	}
+	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigC)
+
+	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB, l2clientC)
+
 	nodeA.StopAndWait()
 	nodeB.StopAndWait()
+	nodeC.StopAndWait()
 
-	_ = lifecycleManager
+	err = restServer.Shutdown()
+	Require(t, err)
 
-}
-
-func TestDASMaximalConfig_RPCAggregator_NoStores(t *testing.T) {
+	lifecycleManager.StopAndWaitUntil(time.Second)
+	rpcServerLifecycleManager.StopAndWaitUntil(time.Second)
 
 }
 

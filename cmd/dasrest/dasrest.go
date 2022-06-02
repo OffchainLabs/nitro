@@ -79,7 +79,10 @@ func startup() error {
 		return err
 	}
 	// TODO support more storage types here
-	restServer := das.NewRestfulDasServerHTTP(serverConfig.Addr, serverConfig.Port, storage)
+	restServer, err := das.NewRestfulDasServer(serverConfig.Addr, serverConfig.Port, storage)
+	if err != nil {
+		return err
+	}
 
 	<-sigint
 	return restServer.Shutdown()
