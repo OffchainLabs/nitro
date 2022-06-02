@@ -8,8 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"reflect"
-
 	"github.com/ethereum/go-ethereum/common"
 	flag "github.com/spf13/pflag"
 
@@ -23,41 +21,33 @@ type DataAvailabilityServiceWriter interface {
 }
 
 type DataAvailabilityService interface {
-	arbstate.DataAvailabilityServiceReader
+	arbstate.DataAvailabilityReader
 	DataAvailabilityServiceWriter
 	fmt.Stringer
 }
 
-type DataAvailabilityMode uint64
-
-const (
-	OnchainDataAvailability DataAvailabilityMode = iota
-	DASDataAvailability
-	AggregatorDataAvailability
-	// TODO RemoteDataAvailability
-)
-
-const (
-	OnchainDataAvailabilityString    = "onchain"
-	DASDataAvailabilityString        = "das"
-	AggregatorDataAvailabilityString = "aggregator"
-	// TODO RemoteDataAvailability
-)
-
 type DataAvailabilityConfig struct {
-	ModeImpl              string           `koanf:"mode"`
-	DASConfig             StorageConfig    `koanf:"das"`
-	AggregatorConfig      AggregatorConfig `koanf:"aggregator"`
-	L1NodeURL             string           `koanf:"l1-node-url"`
-	SequencerInboxAddress string           `koanf:"sequencer-inbox-address"`
+	Enable bool `koanf:"enable"`
+
+	LocalCacheConfig BigCacheConfig `koanf:"local-cache"`
+	RedisCacheConfig RedisConfig    `koanf:"redis-cache"`
+
+	LocalDBStorageConfig   LocalDBStorageConfig   `koanf:"local-db-storage"`
+	LocalFileStorageConfig LocalFileStorageConfig `koanf:"local-file-storage"`
+	S3StorageServiceConfig S3StorageServiceConfig `koanf:"s3-storage"`
+
+	KeyConfig KeyConfig `koanf:"key"`
+
+	AggregatorConfig              AggregatorConfig              `koanf:"rpc-aggregator"`
+	RestfulClientAggregatorConfig RestfulClientAggregatorConfig `koanf:"rest-aggregator"`
+
+	L1NodeURL             string `koanf:"l1-node-url"`
+	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
 }
 
-var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	ModeImpl:              OnchainDataAvailabilityString,
-	L1NodeURL:             "",
-	SequencerInboxAddress: "",
-}
+var DefaultDataAvailabilityConfig = DataAvailabilityConfig{}
 
+/* TODO put these checks somewhere
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	if c.ModeImpl == "" {
 		return 0, errors.New("--data-availability.mode missing")
@@ -86,6 +76,7 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 	flag.Usage()
 	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
+*/
 
 func OptionalAddressFromString(s string) (*common.Address, error) {
 	if s == "none" {
@@ -102,10 +93,25 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 }
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode ('onchain', 'das', or 'aggregator')")
-	StorageConfigAddOptions(prefix+".das", f)
-	AggregatorConfigAddOptions(prefix+".aggregator", f)
-	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node")
+	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
+
+	// Cache options
+	BigCacheConfigAddOptions(prefix+".local-cache", f)
+	RedisConfigAddOptions(prefix+".redis-cache", f)
+
+	// Storage options
+	LocalDBStorageConfigAddOptions(prefix+".local-db-storage", f)
+	LocalFileStorageConfigAddOptions(prefix+".local-file-storage", f)
+	S3ConfigAddOptions(prefix+".s3-storage", f)
+
+	// Key config for storage
+	KeyConfigAddOptions(prefix+".key", f)
+
+	// Aggregator options
+	AggregatorConfigAddOptions(prefix+".rpc-aggregator", f)
+	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
+
+	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
 	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 }
 
@@ -135,3 +141,12 @@ func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {
 
 	return append(buf, blsSignatures.SignatureToBytes(c.Sig)...)
 }
+
+type ExpirationPolicy int64
+
+const (
+	KeepForever                ExpirationPolicy = iota // Data is kept forever
+	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node, assumed to be as long as minimum data timeout)
+	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
+	// Add more type of expiration policy.
+)
