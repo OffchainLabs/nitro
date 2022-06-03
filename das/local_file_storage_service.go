@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/sys/unix"
@@ -83,8 +84,8 @@ func (s *LocalFileStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return KeepForever
+func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+	return arbstate.KeepForever
 }
 
 func (s *LocalFileStorageService) String() string {

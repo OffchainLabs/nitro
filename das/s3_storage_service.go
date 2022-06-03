@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -108,11 +109,11 @@ func (s3s *S3StorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
 	if s3s.discardAfterTimeout {
-		return DiscardAfterDataTimeout
+		return arbstate.DiscardAfterDataTimeout
 	} else {
-		return KeepForever
+		return arbstate.KeepForever
 	}
 }
 

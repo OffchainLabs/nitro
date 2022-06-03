@@ -141,24 +141,3 @@ func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {
 
 	return append(buf, blsSignatures.SignatureToBytes(c.Sig)...)
 }
-
-type ExpirationPolicy int64
-
-const (
-	KeepForever                ExpirationPolicy = iota // Data is kept forever
-	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node, assumed to be as long as minimum data timeout)
-	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
-	// Add more type of expiration policy.
-)
-
-func (ep ExpirationPolicy) String() (string, error) {
-	switch ep {
-	case KeepForever:
-		return "KeepForever", nil
-	case DiscardAfterArchiveTimeout:
-		return "DiscardAfterArchiveTimeout", nil
-	case DiscardAfterDataTimeout:
-		return "DiscardAfterDataTimeout", nil
-	}
-	return "", errors.New("unknown Expiration Policy")
-}

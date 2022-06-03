@@ -83,24 +83,24 @@ func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (string, error) {
+func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
 	res, err := http.Get(c.url + expirationPolicyRequestPath)
 	if err != nil {
-		return "", err
+		return -1
 	}
 	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
+		return -1
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return "", err
+		return -1
 	}
 
 	var response RestfulDasServerResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return "", err
+		return -1
 	}
 
-	return response.ExpirationPolicy, nil
+	return arbstate.StringToExpirationPolicy(response.ExpirationPolicy)
 }

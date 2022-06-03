@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -119,25 +120,25 @@ func (r *RedundantStorageService) Close(ctx context.Context) error {
 	return anyError
 }
 
-func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
 	// If at least one inner service has KeepForever,
 	// then whole redundant service can serve after timeout.
 	for _, serv := range r.innerServices {
-		if serv.ExpirationPolicy(ctx) == KeepForever {
-			return KeepForever
+		if serv.ExpirationPolicy(ctx) == arbstate.KeepForever {
+			return arbstate.KeepForever
 		}
 	}
 	// If no inner service has KeepForever,
 	// but at least one inner service has DiscardAfterArchiveTimeout,
 	// then whole redundant service can serve till archive timeout.
 	for _, serv := range r.innerServices {
-		if serv.ExpirationPolicy(ctx) == DiscardAfterArchiveTimeout {
-			return DiscardAfterArchiveTimeout
+		if serv.ExpirationPolicy(ctx) == arbstate.DiscardAfterArchiveTimeout {
+			return arbstate.DiscardAfterArchiveTimeout
 		}
 	}
 	// If no inner service has KeepForever and DiscardAfterArchiveTimeout,
 	// then whole redundant service will serve only till timeout.
-	return DiscardAfterDataTimeout
+	return arbstate.DiscardAfterDataTimeout
 }
 
 func (r *RedundantStorageService) String() string {

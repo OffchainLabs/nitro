@@ -64,3 +64,24 @@ func (r RedundantSimpleDASReader) HealthCheck(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (r *RedundantSimpleDASReader) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+	// If at least one inner service has KeepForever,
+	// then whole redundant service can serve after timeout.
+	for _, serv := range r.inners {
+		if serv.ExpirationPolicy(ctx) == arbstate.KeepForever {
+			return arbstate.KeepForever
+		}
+	}
+	// If no inner service has KeepForever,
+	// but at least one inner service has DiscardAfterArchiveTimeout,
+	// then whole redundant service can serve till archive timeout.
+	for _, serv := range r.inners {
+		if serv.ExpirationPolicy(ctx) == arbstate.DiscardAfterArchiveTimeout {
+			return arbstate.DiscardAfterArchiveTimeout
+		}
+	}
+	// If no inner service has KeepForever and DiscardAfterArchiveTimeout,
+	// then whole redundant service will serve only till timeout.
+	return arbstate.DiscardAfterDataTimeout
+}

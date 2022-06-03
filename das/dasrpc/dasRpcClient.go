@@ -76,3 +76,12 @@ func (c *DASRPCClient) String() string {
 func (c *DASRPCClient) HealthCheck(ctx context.Context) error {
 	return c.clnt.CallContext(ctx, nil, "das_healthCheck")
 }
+
+func (c *DASRPCClient) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+	var res string
+	err := c.clnt.CallContext(ctx, &res, "das_expirationPolicy")
+	if err != nil {
+		return -1
+	}
+	return arbstate.StringToExpirationPolicy(res)
+}

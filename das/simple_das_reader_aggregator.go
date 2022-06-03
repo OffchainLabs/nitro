@@ -277,3 +277,7 @@ func (a *SimpleDASReaderAggregator) String() string {
 func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
 	return nil
 }
+
+func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+	return -1
+}

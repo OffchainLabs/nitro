@@ -15,13 +15,12 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
-	"github.com/offchainlabs/nitro/das"
 )
 
 type DataAvailabilityReader interface {
 	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
 	HealthCheck(ctx context.Context) error
-	ExpirationPolicy(ctx context.Context) das.ExpirationPolicy
+	ExpirationPolicy(ctx context.Context) ExpirationPolicy
 }
 
 var ErrHashMismatch = errors.New("Result does not match expected hash")
@@ -225,4 +224,39 @@ func (keyset *DataAvailabilityKeyset) VerifySignature(signersMask uint64, data [
 		return errors.New("bad signature")
 	}
 	return nil
+}
+
+type ExpirationPolicy int64
+
+const (
+	KeepForever                ExpirationPolicy = iota // Data is kept forever
+	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node, assumed to be as long as minimum data timeout)
+	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
+	// Add more type of expiration policy.
+)
+
+func (ep ExpirationPolicy) String() (string, error) {
+	switch ep {
+	case KeepForever:
+		return "KeepForever", nil
+	case DiscardAfterArchiveTimeout:
+		return "DiscardAfterArchiveTimeout", nil
+	case DiscardAfterDataTimeout:
+		return "DiscardAfterDataTimeout", nil
+	default:
+		return "", errors.New("unknown Expiration Policy")
+	}
+}
+
+func StringToExpirationPolicy(s string) ExpirationPolicy {
+	switch s {
+	case "KeepForever":
+		return KeepForever
+	case "DiscardAfterArchiveTimeout":
+		return DiscardAfterArchiveTimeout
+	case "DiscardAfterDataTimeout":
+		return DiscardAfterDataTimeout
+	default:
+		return -1
+	}
 }

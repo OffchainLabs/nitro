@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/sha3"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -140,7 +141,7 @@ func (rs *RedisStorageService) Close(ctx context.Context) error {
 	return rs.baseStorageService.Close(ctx)
 }
 
-func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
 	return rs.baseStorageService.ExpirationPolicy(ctx)
 }
 

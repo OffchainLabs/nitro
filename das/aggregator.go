@@ -345,3 +345,7 @@ func (a *Aggregator) String() string {
 func (a *Aggregator) HealthCheck(ctx context.Context) error {
 	return nil
 }
+
+func (a *Aggregator) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+	return -1
+}
