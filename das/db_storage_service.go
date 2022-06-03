@@ -4,7 +4,9 @@
 package das
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"time"
 
 	badger "github.com/dgraph-io/badger/v3"
@@ -129,5 +131,17 @@ func (dbs *DBStorageService) String() string {
 }
 
 func (dbs *DBStorageService) HealthCheck(ctx context.Context) error {
+	testData := []byte("Test-Data")
+	err := dbs.Put(ctx, testData, uint64(time.Now().Add(time.Minute).Unix()))
+	if err != nil {
+		return err
+	}
+	res, err := dbs.GetByHash(ctx, crypto.Keccak256(testData))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(res, testData) {
+		return errors.New("invalid GetByHash result")
+	}
 	return nil
 }
