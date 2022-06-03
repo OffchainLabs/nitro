@@ -74,7 +74,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.String("rest-addr", DefaultDAServerConfig.RESTAddr, "REST server listening interface")
 	f.Uint64("rest-port", DefaultDAServerConfig.RESTPort, "REST server listening port")
 
-	f.Int("log-level", int(log.LvlInfo), "log level")
+	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
 	das.DataAvailabilityConfigAddOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
