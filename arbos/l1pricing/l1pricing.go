@@ -353,8 +353,11 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, poster common.Add
 
 	// Approximate the l1 fee charged for posting this tx's calldata
 	pricePerUnit, _ := ps.PricePerUnit()
-	tx.PosterCost = am.BigMulByUint(pricePerUnit, l1Bytes*params.TxDataNonZeroGasEIP2028)
+	numUnits := l1Bytes * params.TxDataNonZeroGasEIP2028
+	tx.PosterCost = am.BigMulByUint(pricePerUnit, numUnits)
 	tx.PosterIsReimbursable = true
+	unitsSinceUpdate, _ := ps.UnitsSinceUpdate()
+	_ = ps.SetUnitsSinceUpdate(unitsSinceUpdate + numUnits)
 }
 
 const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
