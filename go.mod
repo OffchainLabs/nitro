@@ -14,6 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.12.0
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.11.10
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.26.9
+	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/dgraph-io/badger/v3 v3.2103.2
 	github.com/ethereum/go-ethereum v1.10.13-0.20211112145008-abc74a5ffeb7
 	github.com/knadh/koanf v1.4.0
@@ -106,7 +107,7 @@ require (
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
+	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
