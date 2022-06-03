@@ -111,6 +111,9 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         uint256[] calldata amount
     ) public payable onlyExecutorOrOwner refundsGas(gasRefunder) {
         uint256 numTxes = data.length;
+        if (numTxes != destination.length) revert BadArrayLength(numTxes, destination.length);
+        if (numTxes != amount.length) revert BadArrayLength(numTxes, amount.length);
+
         for (uint256 i = 0; i < numTxes; i++) {
             if (data[i].length > 0) require(destination[i].isContract(), "NO_CODE_AT_ADDR");
             validateExecuteTransaction(destination[i]);
