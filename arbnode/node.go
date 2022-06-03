@@ -669,7 +669,7 @@ func createNodeImpl(
 	} else {
 		dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
 	}
-	dataAvailabilityService = das.NewTimeoutWrapper(dataAvailabilityService, config.DataAvailability.RequestTimout)
+	dataAvailabilityService = das.NewTimeoutWrapper(dataAvailabilityService, config.DataAvailability.RequestTimeout)
 
 	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
 	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityReader)
