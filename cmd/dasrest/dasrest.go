@@ -32,7 +32,7 @@ func main() {
 
 func parseRESTServer(args []string) (*RESTServerConfig, error) {
 	f := flag.NewFlagSet("dasrest", flag.ContinueOnError)
-	f.String("addr", "localhost:9877", "address to listen on ")
+	f.String("addr", "localhost", "address to listen on ")
 	f.Uint64("port", 9877, "port number to listen on")
 	f.Int("log-level", int(log.LvlInfo), "log level")
 	f.String("storage-dir", "", "directory path for DAS storage files")
@@ -67,11 +67,22 @@ func startup() error {
 		return err
 	}
 
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
+	log.Root().SetHandler(glogger)
+
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	storage := das.NewLocalDiskStorageService(serverConfig.StorageDir)
-	restServer := das.NewRestfulDasServerHTTP(serverConfig.Addr, serverConfig.Port, storage)
+	storage, err := das.NewLocalFileStorageService(serverConfig.StorageDir)
+	if err != nil {
+		return err
+	}
+	// TODO support more storage types here
+	restServer, err := das.NewRestfulDasServer(serverConfig.Addr, serverConfig.Port, storage)
+	if err != nil {
+		return err
+	}
 
 	<-sigint
 	return restServer.Shutdown()

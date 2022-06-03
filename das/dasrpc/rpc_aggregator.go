@@ -21,8 +21,8 @@ type BackendConfig struct {
 	SignerMask          uint64 `json:"signermask"`
 }
 
-func NewRPCAggregator(ctx context.Context, config das.AggregatorConfig) (*das.Aggregator, error) {
-	services, err := setUpServices(config)
+func NewRPCAggregator(ctx context.Context, config das.DataAvailabilityConfig) (*das.Aggregator, error) {
+	services, err := setUpServices(config.AggregatorConfig)
 	if err != nil {
 		return nil, err
 	}

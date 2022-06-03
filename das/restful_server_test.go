@@ -7,44 +7,44 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
-	"io"
-	"net/http"
-	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 const LocalServerAddressForTest = "localhost"
-const LocalServerPortForTest = uint64(9877)
+const LocalServerPortForTest = 9877
 
-func disabled_TestRestfulServer(t *testing.T) { //nolint
+func TestRestfulClientServer(t *testing.T) { //nolint
+	initTest(t)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	dbPath := t.TempDir()
-	defer func() { _ = os.RemoveAll(dbPath) }()
-
-	storage := NewLocalDiskStorageService(dbPath)
+	storage := NewMemoryBackedStorageService(ctx)
 	data := []byte("Testing a restful server now.")
 	dataHash := crypto.Keccak256(data)
 
-	server := NewRestfulDasServerHTTP(LocalServerAddressForTest, LocalServerPortForTest, storage)
-
-	err := storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
+	server, err := NewRestfulDasServer(LocalServerAddressForTest, LocalServerPortForTest, storage)
 	Require(t, err)
 
-	urlString := fmt.Sprint("http://", LocalServerAddressForTest, ":", LocalServerPortForTest, "/get-by-hash/", hexutil.Encode(dataHash)[2:])
-	resp, err := http.Get(urlString) //nolint:gosec
+	err = storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatal(resp.Status)
+
+	time.Sleep(100 * time.Millisecond)
+
+	client := NewRestfulDasClient("http", LocalServerAddressForTest, LocalServerPortForTest)
+	returnedData, err := client.GetByHash(ctx, dataHash)
+	Require(t, err)
+	if !bytes.Equal(data, returnedData) {
+		Fail(t, fmt.Sprintf("Returned data '%s' does not match expected '%s'", returnedData, data))
 	}
-	bodyContents, err := io.ReadAll(resp.Body)
-	Require(t, err)
-	if !bytes.Equal(bodyContents, data) {
-		t.Fatal()
+
+	_, err = client.GetByHash(ctx, crypto.Keccak256([]byte("absent data")))
+	if err == nil || !strings.Contains(err.Error(), "404") {
+		Fail(t, "Expected a 404 error")
 	}
 
 	err = server.Shutdown()

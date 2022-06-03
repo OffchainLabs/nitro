@@ -6,6 +6,7 @@ package validator
 import (
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
 	"strings"
 	"time"
@@ -18,7 +19,6 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -140,7 +140,7 @@ func NewStaker(
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
 	l2Blockchain *core.BlockChain,
-	das das.DataAvailabilityService,
+	das arbstate.DataAvailabilityReader,
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,

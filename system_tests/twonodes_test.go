@@ -11,14 +11,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/das"
 )
 
 func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
+	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 
 	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
@@ -28,13 +27,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
-	dasConfig := das.LocalDiskDASConfig{
-		KeyDir:            dbPath,
-		DataDir:           dbPath,
-		AllowGenerateKeys: true,
-	}
-	l1NodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfig
+	l1NodeConfigB.DataAvailability = l1NodeConfigA.DataAvailability
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
@@ -72,9 +65,9 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 }
 
 func TestTwoNodesSimple(t *testing.T) {
-	testTwoNodesSimple(t, das.OnchainDataAvailabilityString)
+	testTwoNodesSimple(t, "onchain")
 }
 
 func TestTwoNodesSimpleLocalDAS(t *testing.T) {
-	testTwoNodesSimple(t, das.LocalDiskDataAvailabilityString)
+	testTwoNodesSimple(t, "files")
 }

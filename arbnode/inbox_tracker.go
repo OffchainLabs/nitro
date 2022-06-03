@@ -26,10 +26,10 @@ type InboxTracker struct {
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
 	validator  *validator.BlockValidator
-	das        arbstate.DataAvailabilityServiceReader
+	das        arbstate.DataAvailabilityReader
 }
 
-func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityServiceReader) (*InboxTracker, error) {
+func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
 	db := &InboxTracker{
 		db:         rawdb.NewTable(raw, arbitrumPrefix),
 		txStreamer: txStreamer,
