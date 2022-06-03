@@ -9,13 +9,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbstate"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// Implements SimpleDASReader
+// Implements DataAvailabilityReader
 type RestfulDasClient struct {
 	url string
 }
@@ -24,6 +27,16 @@ func NewRestfulDasClient(protocol string, host string, port int) *RestfulDasClie
 	return &RestfulDasClient{
 		url: fmt.Sprintf("%s://%s:%d/get-by-hash/", protocol, host, port),
 	}
+}
+
+func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
+	if !(strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")) {
+		return nil, fmt.Errorf("Protocol prefix 'http://' or 'https://' must be specified for RestfulDasClient; got '%s'", url)
+
+	}
+	return &RestfulDasClient{
+		url: url + "/get-by-hash/",
+	}, nil
 }
 
 func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
@@ -50,6 +63,10 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	decodedBytes, err := ioutil.ReadAll(decoder)
 	if err != nil {
 		return nil, err
+	}
+
+	if !bytes.Equal(hash, crypto.Keccak256(decodedBytes)) {
+		return nil, arbstate.ErrHashMismatch
 	}
 
 	return decodedBytes, nil

@@ -21,15 +21,7 @@ func TestReceiveMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.BroadcasterConfig{
-		Addr:          "0.0.0.0",
-		IOTimeout:     2 * time.Second,
-		Port:          "0",
-		Ping:          5 * time.Second,
-		ClientTimeout: 20 * time.Second,
-		Queue:         1,
-		Workers:       128,
-	}
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
 
 	messageCount := 1000
 	clientCount := 2
@@ -120,15 +112,8 @@ func TestServerClientDisconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.BroadcasterConfig{
-		Addr:          "0.0.0.0",
-		IOTimeout:     2 * time.Second,
-		Port:          "0",
-		Ping:          1 * time.Second,
-		ClientTimeout: 2 * time.Second,
-		Queue:         1,
-		Workers:       128,
-	}
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	settings.Ping = 1 * time.Second
 
 	b := broadcaster.NewBroadcaster(settings)
 
@@ -176,15 +161,9 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.BroadcasterConfig{
-		Addr:          "0.0.0.0",
-		IOTimeout:     2 * time.Second,
-		Port:          "0",
-		Ping:          50 * time.Second,
-		ClientTimeout: 150 * time.Second,
-		Queue:         1,
-		Workers:       128,
-	}
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	settings.Ping = 50 * time.Second
+	settings.ClientTimeout = 150 * time.Second
 
 	b1 := broadcaster.NewBroadcaster(settings)
 
@@ -215,15 +194,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	*/
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	settings := wsbroadcastserver.BroadcasterConfig{
-		Addr:          "0.0.0.0",
-		IOTimeout:     2 * time.Second,
-		Port:          "0",
-		Ping:          5 * time.Second,
-		ClientTimeout: 15 * time.Second,
-		Queue:         1,
-		Workers:       128,
-	}
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
 
 	b := broadcaster.NewBroadcaster(settings)
 

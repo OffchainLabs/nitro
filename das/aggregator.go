@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"math/bits"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -26,23 +28,22 @@ import (
 )
 
 type AggregatorConfig struct {
-	// sequencer public key
-	AssumedHonest         int    `koanf:"assumed-honest"`
-	Backends              string `koanf:"backends"`
-	L1NodeURL             string `koanf:"l1-node-url"`
-	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
-	DumpKeyset            bool   `koanf:"dump-keyset"`
+	Enable        bool   `koanf:"enable"`
+	AssumedHonest int    `koanf:"assumed-honest"`
+	Backends      string `koanf:"backends"`
+	DumpKeyset    bool   `koanf:"dump-keyset"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
-	L1NodeURL: "",
+	AssumedHonest: 0,
+	Backends:      "",
+	DumpKeyset:    false,
 }
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage/retrieval of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
-	f.String(prefix+".l1-node-url", DefaultAggregatorConfig.L1NodeURL, "URL for L1 node")
-	f.String(prefix+".sequencer-inbox-address", "", "L1 address of SequencerInbox contract")
 	f.Bool(prefix+".dump-keyset", DefaultAggregatorConfig.DumpKeyset, "Dump the keyset encoded in hexadecimal for the backends string")
 }
 
@@ -64,6 +65,10 @@ type ServiceDetails struct {
 	signersMask uint64
 }
 
+func (this *ServiceDetails) String() string {
+	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", this.service, this.signersMask)
+}
+
 func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.PublicKey, signersMask uint64) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
 		return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
@@ -75,9 +80,9 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 	}, nil
 }
 
-func NewAggregator(ctx context.Context, config AggregatorConfig, services []ServiceDetails) (*Aggregator, error) {
+func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services []ServiceDetails) (*Aggregator, error) {
 	if config.L1NodeURL == "none" {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config.AggregatorConfig, services, nil)
 	}
 	l1client, err := ethclient.DialContext(ctx, config.L1NodeURL)
 	if err != nil {
@@ -88,9 +93,9 @@ func NewAggregator(ctx context.Context, config AggregatorConfig, services []Serv
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewAggregatorWithSeqInboxCaller(config, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config.AggregatorConfig, services, nil)
 	}
-	return NewAggregatorWithL1Info(config, services, l1client, *seqInboxAddress)
+	return NewAggregatorWithL1Info(config.AggregatorConfig, services, l1client, *seqInboxAddress)
 }
 
 func NewAggregatorWithL1Info(
@@ -207,7 +212,7 @@ type storeResponse struct {
 	err     error
 }
 
-// store calls Store on each backend DAS in parallel and collects responses.
+// Store calls Store on each backend DAS in parallel and collects responses.
 // If there were at least K responses then it aggregates the signatures and
 // signersMasks from each DAS together into the DataAvailabilityCertificate
 // then Store returns immediately. If there were any backend Store subroutines
@@ -220,7 +225,13 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
+//
+// If Sequencer Inbox contract details are provided when a das.Aggregator is
+// constructed, calls to Store(...) will try to verify the passed-in data's signature
+// is from the batch poster. If the contract details are not provided, then the
+// signature is not checked, which is useful for testing.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
 	if a.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
@@ -314,17 +325,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 		return nil, errors.New("Failed aggregate signature check")
 	}
 	return &aggCert, nil
-}
-
-func (a *Aggregator) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	if !bytes.Equal(ksHash, a.keysetHash[:]) {
-		return nil, ErrDasKeysetNotFound
-	}
-	return a.keysetBytes, nil
-}
-
-func (a *Aggregator) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
-	return a.keysetBytes, nil
 }
 
 func (a *Aggregator) String() string {

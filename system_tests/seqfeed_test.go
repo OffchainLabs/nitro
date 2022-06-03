@@ -8,28 +8,20 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func newBroadcasterConfigTest(port int) *wsbroadcastserver.BroadcasterConfig {
-	return &wsbroadcastserver.BroadcasterConfig{
-		Enable:        true,
-		Addr:          "127.0.0.1",
-		IOTimeout:     5 * time.Second,
-		Port:          strconv.Itoa(port),
-		Ping:          5 * time.Second,
-		ClientTimeout: 15 * time.Second,
-		Queue:         100,
-		Workers:       100,
-	}
+func newBroadcasterConfigTest(port string) *wsbroadcastserver.BroadcasterConfig {
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Enable = true
+	config.Port = port
+	return &config
 }
 
 func newBroadcastClientConfigTest(port int) *broadcastclient.BroadcastClientConfig {
@@ -44,7 +36,7 @@ func TestSequencerFeed(t *testing.T) {
 	defer cancel()
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
-	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest(0)
+	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
 	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
@@ -79,10 +71,10 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	defer cancel()
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
-	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest(0)
+	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
 	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 
-	relayServerConf := *newBroadcasterConfigTest(0)
+	relayServerConf := *newBroadcasterConfigTest("0")
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	relayClientConf := *newBroadcastClientConfigTest(port)
 
@@ -123,7 +115,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	// The truthful sequencer
-	chainConfig, nodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
+	chainConfig, nodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
 	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
@@ -134,14 +126,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
-	nodeConfigC.DataAvailability.ModeImpl = dasModeStr
-	dasConfig := das.LocalDiskDASConfig{
-		KeyDir:            dbPath,
-		DataDir:           dbPath,
-		AllowGenerateKeys: true,
-	}
-	nodeConfigC.DataAvailability.LocalDiskDASConfig = dasConfig
-	nodeConfigC.Feed.Output = *newBroadcasterConfigTest(0)
+	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
+	nodeConfigC.Feed.Output = *newBroadcasterConfigTest("0")
 	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -151,13 +137,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.BatchPoster.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
-	nodeConfigB.DataAvailability.ModeImpl = dasModeStr
-	dasConfigB := das.LocalDiskDASConfig{
-		KeyDir:            dbPath,
-		DataDir:           dbPath,
-		AllowGenerateKeys: true,
-	}
-	nodeConfigB.DataAvailability.LocalDiskDASConfig = dasConfigB
+	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
@@ -228,9 +208,9 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 }
 
 func TestLyingSequencer(t *testing.T) {
-	testLyingSequencer(t, das.OnchainDataAvailabilityString)
+	testLyingSequencer(t, "onchain")
 }
 
 func TestLyingSequencerLocalDAS(t *testing.T) {
-	testLyingSequencer(t, das.LocalDiskDataAvailabilityString)
+	testLyingSequencer(t, "files")
 }
