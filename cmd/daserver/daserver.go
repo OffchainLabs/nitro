@@ -110,8 +110,6 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 func startup() error {
 	// Some different defaults to DAS config in a node.
 	das.DefaultDataAvailabilityConfig.Enable = true
-	das.DefaultDataAvailabilityConfig.L1NodeURL = "none"
-	das.DefaultDataAvailabilityConfig.SequencerInboxAddress = "none"
 
 	vcsRevision, vcsTime := genericconf.GetVersion()
 	serverConfig, err := parseDAServer(os.Args[1:])
