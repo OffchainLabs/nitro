@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
@@ -24,6 +25,7 @@ import (
 // RestfulDasClients, so the configuration and factory function are given more
 // specific names.
 type RestfulClientAggregatorConfig struct {
+	Enable                             bool                               `koanf:"enable"`
 	Urls                               []string                           `koanf:"urls"`
 	Strategy                           string                             `koanf:"strategy"`
 	StrategyUpdateInterval             time.Duration                      `koanf:"strategy-update-interval"`
@@ -32,29 +34,44 @@ type RestfulClientAggregatorConfig struct {
 	SimpleExploreExploitStrategyConfig SimpleExploreExploitStrategyConfig `koanf:"simple-explore-exploit-strategy"`
 }
 
+var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
+	Urls:                               []string{},
+	Strategy:                           "simple-explore-exploit",
+	StrategyUpdateInterval:             10 * time.Second,
+	WaitBeforeTryNext:                  2 * time.Second,
+	MaxPerEndpointStats:                20,
+	SimpleExploreExploitStrategyConfig: DefaultSimpleExploreExploitStrategyConfig,
+}
+
 type SimpleExploreExploitStrategyConfig struct {
-	exploreIterations int `koanf:"explore-iterations"`
-	exploitIterations int `koanf:"exploit-iterations"`
+	ExploreIterations int `koanf:"explore-iterations"`
+	ExploitIterations int `koanf:"exploit-iterations"`
+}
+
+var DefaultSimpleExploreExploitStrategyConfig = SimpleExploreExploitStrategyConfig{
+	ExploreIterations: 20,
+	ExploitIterations: 1000,
 }
 
 func RestfulClientAggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.StringSlice("urls", []string{}, "List of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints.")
-	f.String("strategy", "simple-explore-exploit", "Strategy to use to determine order and parallelism of calling REST endpoint URLs. Valid options are 'simple-explore-exploit'")
-	f.Duration("strategy-update-interval", 10*time.Second, "How frequently to update the strategy with endpoint latency and error rate data.")
-	f.Duration("wait-before-try-next", 2*time.Second, "Time to wait until trying the next set of REST endpoints while waiting for a response. The next set of REST endpoints is determined by the strategy selected.")
-	f.Int("max-per-endpoint-stats", 20, "Number of stats entries (latency and success rate) to keep for each REST endpoint.")
-	SimpleExploreExploitStrategyConfigAddOptions(prefix+"simple-explore-exploit-strategy", f)
+	f.Bool(prefix+".enable", DefaultRestfulClientAggregatorConfig.Enable, "enable retrieval of sequencer batch data from a list of remote REST endpoints; if other DAS storage types are enabled, this mode is used as a fallback")
+	f.StringSlice(prefix+".urls", DefaultRestfulClientAggregatorConfig.Urls, "list of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints")
+	f.String(prefix+".strategy", DefaultRestfulClientAggregatorConfig.Strategy, "strategy to use to determine order and parallelism of calling REST endpoint URLs; valid options are 'simple-explore-exploit'")
+	f.Duration(prefix+".strategy-update-interval", DefaultRestfulClientAggregatorConfig.StrategyUpdateInterval, "how frequently to update the strategy with endpoint latency and error rate data")
+	f.Duration(prefix+".wait-before-try-next", DefaultRestfulClientAggregatorConfig.WaitBeforeTryNext, "time to wait until trying the next set of REST endpoints while waiting for a response; the next set of REST endpoints is determined by the strategy selected")
+	f.Int(prefix+".max-per-endpoint-stats", DefaultRestfulClientAggregatorConfig.MaxPerEndpointStats, "number of stats entries (latency and success rate) to keep for each REST endpoint; controls whether strategy is faster or slower to respond to changing conditions")
+	SimpleExploreExploitStrategyConfigAddOptions(prefix+".simple-explore-exploit-strategy", f)
 }
 
 func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int("explore-iterations", 20, "Number of consecutive GetByHash calls to the aggregator where each call will cause it to randomly select from REST endpoints until one returns successfully, before switching to exploit mode.")
-	f.Int("exploit-iterations", 1000, "Number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode.")
+	f.Int(prefix+".explore-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploreIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to randomly select from REST endpoints until one returns successfully, before switching to exploit mode")
+	f.Int(prefix+".exploit-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploitIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode")
 }
 
 func NewRestfulClientAggregator(config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
 	a := SimpleDASReaderAggregator{
 		config: config,
-		stats:  make(map[arbstate.SimpleDASReader]readerStats),
+		stats:  make(map[arbstate.DataAvailabilityReader]readerStats),
 	}
 
 	for _, url := range config.Urls {
@@ -70,8 +87,8 @@ func NewRestfulClientAggregator(config *RestfulClientAggregatorConfig) (*SimpleD
 	switch strings.ToLower(config.Strategy) {
 	case "simple-explore-exploit":
 		a.strategy = &simpleExploreExploitStrategy{
-			exploreIterations: uint32(config.SimpleExploreExploitStrategyConfig.exploreIterations),
-			exploitIterations: uint32(config.SimpleExploreExploitStrategyConfig.exploitIterations),
+			exploreIterations: uint32(config.SimpleExploreExploitStrategyConfig.ExploreIterations),
+			exploitIterations: uint32(config.SimpleExploreExploitStrategyConfig.ExploitIterations),
 		}
 	case "testing-sequential":
 		a.strategy = &testingSequentialStrategy{}
@@ -110,7 +127,7 @@ type readerStat struct {
 
 type readerStatMessage struct {
 	readerStat
-	reader arbstate.SimpleDASReader
+	reader arbstate.DataAvailabilityReader
 }
 
 type SimpleDASReaderAggregator struct {
@@ -119,8 +136,8 @@ type SimpleDASReaderAggregator struct {
 	config *RestfulClientAggregatorConfig
 
 	// readers and stats are only to be updated by the stats goroutine
-	readers []arbstate.SimpleDASReader
-	stats   map[arbstate.SimpleDASReader]readerStats
+	readers []arbstate.DataAvailabilityReader
+	stats   map[arbstate.DataAvailabilityReader]readerStats
 
 	strategy aggregatorStrategy
 
@@ -128,6 +145,8 @@ type SimpleDASReaderAggregator struct {
 }
 
 func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.SimpleDASReaderAggregator.GetByHash", "key", pretty.FirstFewBytes(hash), "this", a)
+
 	type dataErrorPair struct {
 		data []byte
 		err  error
@@ -144,7 +163,7 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) 
 			waitChan := make(chan interface{})
 			for _, reader := range readers {
 				wg.Add(1)
-				go func(reader arbstate.SimpleDASReader) {
+				go func(reader arbstate.DataAvailabilityReader) {
 					defer wg.Done()
 					data, err := a.tryGetByHash(subCtx, hash, reader)
 					if err != nil && errors.Is(ctx.Err(), context.Canceled) {
@@ -187,7 +206,7 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) 
 	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS Reader: %v", errorCollection)
 }
 
-func (a *SimpleDASReaderAggregator) tryGetByHash(ctx context.Context, hash []byte, reader arbstate.SimpleDASReader) ([]byte, error) {
+func (a *SimpleDASReaderAggregator) tryGetByHash(ctx context.Context, hash []byte, reader arbstate.DataAvailabilityReader) ([]byte, error) {
 	stat := readerStatMessage{reader: reader}
 	stat.success = false
 
@@ -235,7 +254,30 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 			}
 		}
 	})
-
 }
 
-// func (a *SimpleDASReaderAggregator) StopAndWait
+func (a *SimpleDASReaderAggregator) Close(ctx context.Context) error {
+	a.StopWaiter.StopOnly()
+	waitChan, err := a.StopWaiter.GetWaitChannel()
+	if err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-waitChan:
+		return nil
+	}
+}
+
+func (a *SimpleDASReaderAggregator) String() string {
+	return fmt.Sprintf("das.SimpleDASReaderAggregator{%v}", a.config.Urls)
+}
+
+func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
+	return nil
+}
+
+func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+	return -1
+}

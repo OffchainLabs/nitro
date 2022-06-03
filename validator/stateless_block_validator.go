@@ -29,7 +29,7 @@ type StatelessBlockValidator struct {
 	streamer        TransactionStreamerInterface
 	blockchain      *core.BlockChain
 	db              ethdb.Database
-	daService       arbstate.SimpleDASReader
+	daService       arbstate.DataAvailabilityReader
 	genesisBlockNum uint64
 }
 
@@ -193,7 +193,7 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	blockchain *core.BlockChain,
 	db ethdb.Database,
-	das arbstate.SimpleDASReader,
+	das arbstate.DataAvailabilityReader,
 ) (*StatelessBlockValidator, error) {
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
 	if err != nil {
@@ -287,7 +287,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	return
 }
 
-func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, preimages map[common.Hash][]byte, seqMsg []byte, bc *core.BlockChain, das arbstate.SimpleDASReader) error {
+func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, preimages map[common.Hash][]byte, seqMsg []byte, bc *core.BlockChain, das arbstate.DataAvailabilityReader) error {
 	recordNewPreimages := true
 	if preimages == nil {
 		preimages = make(map[common.Hash][]byte)

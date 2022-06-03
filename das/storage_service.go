@@ -5,24 +5,22 @@ package das
 
 import (
 	"context"
-	"encoding/base32"
 	"errors"
-	"os"
-	"sync"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
 var ErrNotFound = errors.New("Not found")
 
 type StorageService interface {
-	GetByHash(ctx context.Context, key []byte) ([]byte, error)
+	arbstate.DataAvailabilityReader
 	Put(ctx context.Context, data []byte, expirationTime uint64) error
 	Sync(ctx context.Context) error
-	Close(ctx context.Context) error
-	ExpirationPolicy(ctx context.Context) ExpirationPolicy
-	String() string
+	Closer
+	fmt.Stringer
+	ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy
 	HealthCheck(ctx context.Context) error
 }
 
@@ -32,53 +30,4 @@ func EncodeStorageServiceKey(b []byte) string {
 
 func DecodeStorageServiceKey(input string) ([]byte, error) {
 	return hexutil.Decode(input)
-}
-
-type LocalDiskStorageService struct {
-	dataDir string
-	mutex   sync.RWMutex
-}
-
-func NewLocalDiskStorageService(dataDir string) StorageService {
-	return &LocalDiskStorageService{dataDir: dataDir}
-}
-
-func (s *LocalDiskStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	pathname := s.dataDir + "/" + EncodeStorageServiceKey(key)
-	res, err := os.ReadFile(pathname)
-	if err != nil {
-		// Just for backward compatability.
-		pathname = s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
-		return os.ReadFile(pathname)
-	}
-	return res, nil
-}
-
-func (s *LocalDiskStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	pathname := s.dataDir + "/" + EncodeStorageServiceKey(crypto.Keccak256(data))
-	return os.WriteFile(pathname, data, 0600)
-}
-
-func (s *LocalDiskStorageService) Sync(ctx context.Context) error {
-	return nil
-}
-
-func (s *LocalDiskStorageService) Close(ctx context.Context) error {
-	return nil
-}
-
-func (s *LocalDiskStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return KeepForever
-}
-
-func (s *LocalDiskStorageService) String() string {
-	return "LocalDiskStorageService(" + s.dataDir + ")"
-}
-
-func (s *LocalDiskStorageService) HealthCheck(ctx context.Context) error {
-	return nil
 }

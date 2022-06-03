@@ -58,7 +58,7 @@ func (m *mockS3Downloader) Download(ctx context.Context, w io.WriterAt, input *s
 func NewTestS3StorageService(ctx context.Context, s3Config genericconf.S3Config) (StorageService, error) {
 	mockStorageService := NewMemoryBackedStorageService(ctx)
 	return &S3StorageService{
-		s3Config:   s3Config,
+		bucket:     s3Config.Bucket,
 		uploader:   &mockS3Uploader{mockStorageService},
 		downloader: &mockS3Downloader{mockStorageService}}, nil
 }

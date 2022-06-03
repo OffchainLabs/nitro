@@ -5,11 +5,30 @@ package das
 
 import (
 	"context"
+	"time"
+
 	badger "github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"time"
+	flag "github.com/spf13/pflag"
 )
+
+type LocalDBStorageConfig struct {
+	Enable              bool   `koanf:"enable"`
+	DataDir             string `koanf:"data-dir"`
+	DiscardAfterTimeout bool   `koanf:"discard-after-timeout"`
+}
+
+var DefaultLocalDBStorageConfig = LocalDBStorageConfig{}
+
+func LocalDBStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultLocalDBStorageConfig.Enable, "enable storage/retrieval of sequencer batch data from a database on the local filesystem")
+	f.String(prefix+".data-dir", DefaultLocalDBStorageConfig.DataDir, "directory in which to store the database")
+	f.Bool(prefix+".discard-after-timeout", DefaultLocalDBStorageConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
+}
 
 type DBStorageService struct {
 	db                  *badger.DB
@@ -61,6 +80,8 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 }
 
 func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.DBStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", dbs)
+
 	var ret []byte
 	err := dbs.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
@@ -76,6 +97,8 @@ func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 }
 
 func (dbs *DBStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
+	log.Trace("das.DBStorageService.Put", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", dbs)
+
 	return dbs.db.Update(func(txn *badger.Txn) error {
 		e := badger.NewEntry(crypto.Keccak256(data), data)
 		if dbs.discardAfterTimeout {
@@ -94,11 +117,11 @@ func (dbs *DBStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
 	if dbs.discardAfterTimeout {
-		return DiscardAfterDataTimeout
+		return arbstate.DiscardAfterDataTimeout
 	} else {
-		return KeepForever
+		return arbstate.KeepForever
 	}
 }
 

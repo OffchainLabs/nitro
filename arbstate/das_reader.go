@@ -9,22 +9,18 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbos/util"
 	"io"
 
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
-type SimpleDASReader interface {
+type DataAvailabilityReader interface {
 	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
 	HealthCheck(ctx context.Context) error
-}
-
-type DataAvailabilityServiceReader interface {
-	SimpleDASReader
-	KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error)
-	CurrentKeysetBytes(ctx context.Context) ([]byte, error)
+	ExpirationPolicy(ctx context.Context) ExpirationPolicy
 }
 
 var ErrHashMismatch = errors.New("Result does not match expected hash")
@@ -117,9 +113,9 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 
 func (cert *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
-	das DataAvailabilityServiceReader,
+	da DataAvailabilityReader,
 ) (*DataAvailabilityKeyset, error) {
-	keysetBytes, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash[:])
 	if err != nil {
 		return nil, err
 	}
@@ -131,9 +127,9 @@ func (cert *DataAvailabilityCertificate) RecoverKeyset(
 
 func (cert *DataAvailabilityCertificate) VerifyNonPayloadParts(
 	ctx context.Context,
-	das DataAvailabilityServiceReader,
+	da DataAvailabilityReader,
 ) error {
-	keyset, err := cert.RecoverKeyset(ctx, das)
+	keyset, err := cert.RecoverKeyset(ctx, da)
 	if err != nil {
 		return err
 	}
@@ -228,4 +224,39 @@ func (keyset *DataAvailabilityKeyset) VerifySignature(signersMask uint64, data [
 		return errors.New("bad signature")
 	}
 	return nil
+}
+
+type ExpirationPolicy int64
+
+const (
+	KeepForever                ExpirationPolicy = iota // Data is kept forever
+	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node, assumed to be as long as minimum data timeout)
+	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
+	// Add more type of expiration policy.
+)
+
+func (ep ExpirationPolicy) String() (string, error) {
+	switch ep {
+	case KeepForever:
+		return "KeepForever", nil
+	case DiscardAfterArchiveTimeout:
+		return "DiscardAfterArchiveTimeout", nil
+	case DiscardAfterDataTimeout:
+		return "DiscardAfterDataTimeout", nil
+	default:
+		return "", errors.New("unknown Expiration Policy")
+	}
+}
+
+func StringToExpirationPolicy(s string) ExpirationPolicy {
+	switch s {
+	case "KeepForever":
+		return KeepForever
+	case "DiscardAfterArchiveTimeout":
+		return DiscardAfterArchiveTimeout
+	case "DiscardAfterDataTimeout":
+		return DiscardAfterDataTimeout
+	default:
+		return -1
+	}
 }
