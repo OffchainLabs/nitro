@@ -9,13 +9,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbstate"
 	"io/ioutil"
 	"net/http"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
 // Implements DataAvailabilityReader
@@ -40,6 +40,10 @@ func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
 }
 
 func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	if len(hash) < 32 {
+		return nil, fmt.Errorf("Hash was too short, should be 32, was %d", len(hash))
+	}
+	hash = hash[:32]
 	res, err := http.Get(c.url + hexutil.Encode(hash))
 	if err != nil {
 		return nil, err
@@ -64,7 +68,6 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-
 	if !bytes.Equal(hash, crypto.Keccak256(decodedBytes)) {
 		return nil, arbstate.ErrHashMismatch
 	}

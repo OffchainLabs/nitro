@@ -8,7 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/offchainlabs/nitro/arbstate"
+	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -45,17 +45,30 @@ func main() {
 
 func startClient(args []string) error {
 	switch strings.ToLower(args[0]) {
-	case "store":
-		return startClientStore(args[1:])
-	case "retrieve":
-		return startClientRetrieve(args[1:])
-	case "getbyhash":
-		return startClientGetByHash(args[1:])
+	case "rpc":
+		switch strings.ToLower(args[1]) {
+		case "store":
+			return startClientStore(args[2:])
+		case "getbyhash":
+			return startRPCClientGetByHash(args[2:])
+		default:
+			return fmt.Errorf("datool client rpc '%s' not supported, valid arguments are 'store' and 'getByHash'", args[1])
+
+		}
+	case "rest":
+		switch strings.ToLower(args[1]) {
+		case "getbyhash":
+			return startRESTClientGetByHash(args[2:])
+		default:
+			return fmt.Errorf("datool client rest '%s' not supported, valid argument is 'getByHash'", args[1])
+		}
+
 	}
-	return fmt.Errorf("datool client '%s' not supported, valid arguments are 'store' and 'retrieve'", args[0])
+	return fmt.Errorf("datool client '%s' not supported, valid arguments are 'rpc' and 'rest'", args[0])
+
 }
 
-// datool client store
+// datool client rpc store
 
 type ClientStoreConfig struct {
 	URL                string        `koanf:"url"`
@@ -113,18 +126,18 @@ func startClientStore(args []string) error {
 	return nil
 }
 
-// datool client retrieve
-
-type ClientRetrieveConfig struct {
+// datool client rpc getbyhash
+type RPCClientGetByHashConfig struct {
 	URL        string                 `koanf:"url"`
-	Cert       string                 `koanf:"cert"`
+	DataHash   string                 `koanf:"data-hash"`
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
-func parseClientRetrieveConfig(args []string) (*ClientRetrieveConfig, error) {
+func parseRPCClientGetByHashConfig(args []string) (*RPCClientGetByHashConfig, error) {
 	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
 	f.String("url", "", "URL of DAS server to connect to.")
-	f.String("cert", "", "Base64 encodeded DAS certificate of message to retrieve.")
+	f.String("data-hash", "", "Base64 encodeded hash of the message to retrieve.")
+
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
@@ -132,15 +145,15 @@ func parseClientRetrieveConfig(args []string) (*ClientRetrieveConfig, error) {
 		return nil, err
 	}
 
-	var config ClientRetrieveConfig
+	var config RPCClientGetByHashConfig
 	if err := util.EndCommonParse(k, &config); err != nil {
 		return nil, err
 	}
 	return &config, nil
 }
 
-func startClientRetrieve(args []string) error {
-	config, err := parseClientRetrieveConfig(args)
+func startRPCClientGetByHash(args []string) error {
+	config, err := parseRPCClientGetByHashConfig(args)
 	if err != nil {
 		return err
 	}
@@ -150,17 +163,13 @@ func startClientRetrieve(args []string) error {
 		return err
 	}
 
-	decodedCert := make([]byte, base64.StdEncoding.DecodedLen(len(config.Cert)))
-	_, err = base64.StdEncoding.Decode(decodedCert, []byte(config.Cert))
-	if err != nil {
-		return err
-	}
-	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(decodedCert))
+	hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
+	decodedHash, err := ioutil.ReadAll(hashDecoder)
 	if err != nil {
 		return err
 	}
 	ctx := context.Background()
-	message, err := client.GetByHash(ctx, cert.DataHash[:])
+	message, err := client.GetByHash(ctx, decodedHash)
 	if err != nil {
 		return err
 	}
@@ -168,9 +177,9 @@ func startClientRetrieve(args []string) error {
 	return nil
 }
 
-// datool client getbyhash
+// datool client rest getbyhash
 
-type ClientGetByHashConfig struct {
+type RESTClientGetByHashConfig struct {
 	Host       string                 `koanf:"host"`
 	Port       int                    `koanf:"port"`
 	Protocol   string                 `koanf:"protocol"`
@@ -178,7 +187,7 @@ type ClientGetByHashConfig struct {
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
-func parseClientGetByHashConfig(args []string) (*ClientGetByHashConfig, error) {
+func parseRESTClientGetByHashConfig(args []string) (*RESTClientGetByHashConfig, error) {
 	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
 	f.String("host", "localhost", "Host (fqdn) of DAS server to connect to.")
 	f.Int("port", 9877, "Port of DAS server to connect to.")
@@ -191,23 +200,23 @@ func parseClientGetByHashConfig(args []string) (*ClientGetByHashConfig, error) {
 		return nil, err
 	}
 
-	var config ClientGetByHashConfig
+	var config RESTClientGetByHashConfig
 	if err := util.EndCommonParse(k, &config); err != nil {
 		return nil, err
 	}
 	return &config, nil
 }
 
-func startClientGetByHash(args []string) error {
-	config, err := parseClientGetByHashConfig(args)
+func startRESTClientGetByHash(args []string) error {
+	config, err := parseRESTClientGetByHashConfig(args)
 	if err != nil {
 		return err
 	}
 
 	client := das.NewRestfulDasClient(config.Protocol, config.Host, config.Port)
 
-	decodedHash := make([]byte, base64.StdEncoding.DecodedLen(len(config.DataHash)))
-	_, err = base64.StdEncoding.Decode(decodedHash, []byte(config.DataHash))
+	hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
+	decodedHash, err := ioutil.ReadAll(hashDecoder)
 	if err != nil {
 		return err
 	}
