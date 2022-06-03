@@ -5,14 +5,17 @@ package das
 
 import (
 	"context"
+
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type RedundantSimpleDASReader struct {
-	inners []arbstate.SimpleDASReader
+	inners []arbstate.DataAvailabilityReader
 }
 
-func NewRedundantSimpleDASReader(inners []arbstate.SimpleDASReader) arbstate.SimpleDASReader {
+func NewRedundantSimpleDASReader(inners []arbstate.DataAvailabilityReader) arbstate.DataAvailabilityReader {
 	return &RedundantSimpleDASReader{inners}
 }
 
@@ -22,13 +25,15 @@ type rsdrResponse struct {
 }
 
 func (r RedundantSimpleDASReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.RedundantSimpleDASReader.GetByHash", "key", pretty.FirstFewBytes(hash), "this", r)
+
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	numPending := len(r.inners)
 	results := make(chan rsdrResponse, numPending)
 	for _, inner := range r.inners {
-		go func(inn arbstate.SimpleDASReader) {
+		go func(inn arbstate.DataAvailabilityReader) {
 			res, err := inn.GetByHash(subCtx, hash)
 			results <- rsdrResponse{res, err}
 		}(inner)

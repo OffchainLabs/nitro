@@ -6,10 +6,13 @@ package das
 import (
 	"context"
 	"errors"
-	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 var ErrArchiveTimeout = errors.New("Archiver timed out")
@@ -78,6 +81,8 @@ func NewArchivingStorageService(
 }
 
 func (serv *ArchivingStorageService) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.ArchivingStorageService.GetByHash", "key", pretty.FirstFewBytes(hash), "this", serv)
+
 	data, err := serv.inner.GetByHash(ctx, hash)
 	if err != nil {
 		return nil, err
@@ -91,6 +96,8 @@ func (serv *ArchivingStorageService) GetByHash(ctx context.Context, hash []byte)
 }
 
 func (serv *ArchivingStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
+	log.Trace("das.ArchivingStorageService.Put", "message", pretty.FirstFewBytes(data), "this", serv)
+
 	if err := serv.inner.Put(ctx, data, expiration); err != nil {
 		return err
 	}
@@ -156,11 +163,11 @@ type ArchivingSimpleDASReader struct {
 
 func NewArchivingSimpleDASReader(
 	ctx context.Context,
-	inner arbstate.SimpleDASReader,
+	inner arbstate.DataAvailabilityReader,
 	archiveTo StorageService,
 	archiveExpirationSeconds uint64,
 ) (*ArchivingSimpleDASReader, error) {
-	arch, err := NewArchivingStorageService(ctx, &limitedStorageService{inner}, archiveTo, archiveExpirationSeconds)
+	arch, err := NewArchivingStorageService(ctx, &readLimitedStorageService{inner}, archiveTo, archiveExpirationSeconds)
 	if err != nil {
 		return nil, err
 	}
@@ -185,28 +192,4 @@ func (asdr *ArchivingSimpleDASReader) GetArchiverError() error {
 
 func (asdr *ArchivingSimpleDASReader) HealthCheck(ctx context.Context) error {
 	return asdr.wrapped.HealthCheck(ctx)
-}
-
-type limitedStorageService struct {
-	arbstate.SimpleDASReader
-}
-
-func (lss *limitedStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
-	return errors.New("invalid operation")
-}
-
-func (lss *limitedStorageService) Sync(ctx context.Context) error {
-	return errors.New("invalid operation")
-}
-
-func (lss *limitedStorageService) Close(ctx context.Context) error {
-	return errors.New("invalid operation")
-}
-
-func (lss *limitedStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return -1
-}
-
-func (lss *limitedStorageService) String() string {
-	return ""
 }

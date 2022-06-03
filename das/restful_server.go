@@ -8,40 +8,50 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
 type RestfulDasServer struct {
 	server               *http.Server
-	storage              StorageService
+	storage              arbstate.DataAvailabilityReader
 	httpServerExitedChan chan interface{}
 	httpServerError      error
 }
 
-func NewRestfulDasServerHTTP(address string, port uint64, storageService StorageService) *RestfulDasServer {
+func NewRestfulDasServer(address string, port uint64, storageService StorageService) (*RestfulDasServer, error) {
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", address, port))
+	if err != nil {
+		return nil, err
+	}
+	return NewRestfulDasServerOnListener(listener, storageService)
+}
+
+func NewRestfulDasServerOnListener(listener net.Listener, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
+
 	ret := &RestfulDasServer{
 		storage:              storageService,
 		httpServerExitedChan: make(chan interface{}),
 	}
 
 	ret.server = &http.Server{
-		Addr:    fmt.Sprint(address, ":", port),
 		Handler: ret,
 	}
 
 	go func() {
-		err := ret.server.ListenAndServe()
+		err := ret.server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			ret.httpServerError = err
 		}
 		close(ret.httpServerExitedChan)
 	}()
 
-	return ret
+	return ret, nil
 }
 
 type RestfulDasServerResponse struct {
