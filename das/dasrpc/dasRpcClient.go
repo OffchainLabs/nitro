@@ -36,10 +36,9 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 }
 
 func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	if len(hash) < 32 {
-		return nil, fmt.Errorf("Hash was too short, should be 32, was %d", len(hash))
+	if len(hash) != 32 {
+		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
 	}
-	hash = hash[:32]
 	var ret hexutil.Bytes
 	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash)); err != nil {
 		return nil, err

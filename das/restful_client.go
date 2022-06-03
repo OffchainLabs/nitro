@@ -40,10 +40,9 @@ func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
 }
 
 func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	if len(hash) < 32 {
-		return nil, fmt.Errorf("Hash was too short, should be 32, was %d", len(hash))
+	if len(hash) != 32 {
+		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
 	}
-	hash = hash[:32]
 	res, err := http.Get(c.url + hexutil.Encode(hash))
 	if err != nil {
 		return nil, err
