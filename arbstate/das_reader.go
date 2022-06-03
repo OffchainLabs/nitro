@@ -9,22 +9,19 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbos/util"
 	"io"
 
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/das"
 )
 
-type SimpleDASReader interface {
+type DataAvailabilityReader interface {
 	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
 	HealthCheck(ctx context.Context) error
-}
-
-type DataAvailabilityServiceReader interface {
-	SimpleDASReader
-	KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error)
-	CurrentKeysetBytes(ctx context.Context) ([]byte, error)
+	ExpirationPolicy(ctx context.Context) das.ExpirationPolicy
 }
 
 var ErrHashMismatch = errors.New("Result does not match expected hash")
@@ -117,9 +114,9 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 
 func (cert *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
-	das DataAvailabilityServiceReader,
+	da DataAvailabilityReader,
 ) (*DataAvailabilityKeyset, error) {
-	keysetBytes, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash[:])
 	if err != nil {
 		return nil, err
 	}
@@ -131,9 +128,9 @@ func (cert *DataAvailabilityCertificate) RecoverKeyset(
 
 func (cert *DataAvailabilityCertificate) VerifyNonPayloadParts(
 	ctx context.Context,
-	das DataAvailabilityServiceReader,
+	da DataAvailabilityReader,
 ) error {
-	keyset, err := cert.RecoverKeyset(ctx, das)
+	keyset, err := cert.RecoverKeyset(ctx, da)
 	if err != nil {
 		return err
 	}

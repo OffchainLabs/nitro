@@ -9,6 +9,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbstate"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -16,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// Implements SimpleDASReader
+// Implements DataAvailabilityReader
 type RestfulDasClient struct {
 	url string
 }
@@ -61,6 +63,10 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	decodedBytes, err := ioutil.ReadAll(decoder)
 	if err != nil {
 		return nil, err
+	}
+
+	if !bytes.Equal(hash, crypto.Keccak256(decodedBytes)) {
+		return nil, arbstate.ErrHashMismatch
 	}
 
 	return decodedBytes, nil
