@@ -116,8 +116,16 @@ func (ps *L1PricingState) PayRewardsTo() (common.Address, error) {
 	return ps.payRewardsTo.Get()
 }
 
+func (ps *L1PricingState) SetPayRewardsTo(addr common.Address) error {
+	return ps.payRewardsTo.Set(addr)
+}
+
 func (ps *L1PricingState) EquilibrationTime() (uint64, error) {
 	return ps.equilibrationTime.Get()
+}
+
+func (ps *L1PricingState) SetEquilibrationTime(equilTime uint64) error {
+	return ps.equilibrationTime.Set(equilTime)
 }
 
 func (ps *L1PricingState) Inertia() (uint64, error) {
@@ -130,6 +138,10 @@ func (ps *L1PricingState) SetInertia(inertia uint64) error {
 
 func (ps *L1PricingState) PerUnitReward() (uint64, error) {
 	return ps.perUnitReward.Get()
+}
+
+func (ps *L1PricingState) SetPerUnitReward(weiPerSecond uint64) error {
+	return ps.perUnitReward.Set(weiPerSecond)
 }
 
 func (ps *L1PricingState) CurrentTime() (uint64, error) {

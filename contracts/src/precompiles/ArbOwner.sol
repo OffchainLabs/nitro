@@ -66,6 +66,18 @@ interface ArbOwner {
     /// @notice Upgrades ArbOS to the requested version at the requested timestamp
     function scheduleArbOSUpgrade(uint64 newVersion, uint64 timestamp) external;
 
+    /// @notice Sets equilibration time parameter for L1 price adjustment algorithm
+    function setL1PricingEquilibrationTime(uint64 equilibrationTime) external;
+
+    /// @notice Sets inertia parameter for L1 price adjustment algorithm
+    function setL1PricingInertia(uint64 inertia) external;
+
+    /// @notice Sets reward recipient address for L1 price adjustment algorithm
+    function setL1PricingRewardRecipient(address recipient) external;
+
+    /// @notice Sets reward amount for L1 price adjustment algorithm, in wei per second
+    function setL1PricingRewardRate(uint64 weiPerSecond) external;
+
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
 }

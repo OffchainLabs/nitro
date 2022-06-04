@@ -117,3 +117,19 @@ func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount a
 func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, timestamp uint64) error {
 	return c.State.ScheduleArbOSUpgrade(newVersion, timestamp)
 }
+
+func (con ArbOwner) SetL1PricingEquilibrationTime(c ctx, evm mech, equilibrationTime uint64) error {
+	return c.State.L1PricingState().SetEquilibrationTime(equilibrationTime)
+}
+
+func (con ArbOwner) SetL1PricingInertia(c ctx, evm mech, inertia uint64) error {
+	return c.State.L1PricingState().SetInertia(inertia)
+}
+
+func (con ArbOwner) SetL1PricingRewardRecipient(c ctx, evm mech, recipient addr) error {
+	return c.State.L1PricingState().SetPayRewardsTo(recipient)
+}
+
+func (con ArbOwner) SetL1PricingRewardRate(c ctx, evm mech, weiPerSecond uint64) error {
+	return c.State.L1PricingState().SetPerUnitReward(weiPerSecond)
+}
