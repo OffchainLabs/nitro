@@ -7,8 +7,6 @@ import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"math/big"
-
-	"github.com/offchainlabs/nitro/arbos/arbosState"
 )
 
 // Provides aggregators and their users methods for configuring how they participate in L1 aggregation.
@@ -18,60 +16,111 @@ type ArbAggregator struct {
 	Address addr // 0x6d
 }
 
-// Gets an account's preferred aggregator
+var ErrNotOwner = errors.New("must be called by chain owner")
+
+// [Deprecated]
 func (con ArbAggregator) GetPreferredAggregator(c ctx, evm mech, address addr) (prefAgg addr, isDefault bool, err error) {
-	sequencer, err := c.State.L1PricingState().Sequencer()
-	return sequencer, true, err
-}
-
-// Gets the chain's default aggregator
-func (con ArbAggregator) GetDefaultAggregator(c ctx, evm mech) (addr, error) {
-	return c.State.L1PricingState().Sequencer()
-}
-
-// Sets the chain's default aggregator (caller must be the current default aggregator, its fee collector, or an owner)
-func (con ArbAggregator) SetDefaultAggregator(c ctx, evm mech, newDefault addr) error {
-	l1State := c.State.L1PricingState()
-	allowed, err := accountIsSequencerOrCollectorOrOwner(c.caller, c.State)
+	posters, err := c.State.L1PricingState().BatchPosterTable().AllPosters()
 	if err != nil {
-		return err
+		return common.Address{}, false, err
 	}
-	if !allowed {
-		return errors.New("Only the current default (or its fee collector / chain owner) may change the default")
+	if len(posters) == 0 {
+		return common.Address{}, false, errors.New("no batch posters exist")
 	}
-	return l1State.SetSequencer(newDefault)
+	return posters[0], true, err
 }
 
-// Gets an aggregator's fee collector
-func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, aggregator addr) (addr, error) {
-	l1p := c.State.L1PricingState()
-	sequencer, err := l1p.Sequencer()
+// [Deprecated]
+func (con ArbAggregator) GetDefaultAggregator(c ctx, evm mech) (addr, error) {
+	posters, err := c.State.L1PricingState().BatchPosterTable().AllPosters()
 	if err != nil {
 		return common.Address{}, err
 	}
-	if aggregator != sequencer {
-		return common.Address{}, nil
+	if len(posters) == 0 {
+		return common.Address{}, errors.New("no batch posters exist")
 	}
-	return c.State.L1PricingState().PaySequencerFeesTo()
+	return posters[0], err
 }
 
-// Sets an aggregator's fee collector (caller must be the aggregator, its fee collector, or an owner)
-func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, aggregator addr, newFeeCollector addr) error {
-	sequencer, err := c.State.L1PricingState().Sequencer()
+// Get the addresses of all current batch posters
+func (con ArbAggregator) GetBatchPosters(c ctx, evm mech) ([]addr, error) {
+	return c.State.L1PricingState().BatchPosterTable().AllPosters()
+}
+
+// [Deprecated]
+func (con ArbAggregator) SetDefaultAggregator(c ctx, evm mech, newDefault addr) error {
+	isOwner, err := c.State.ChainOwners().IsMember(c.caller)
 	if err != nil {
 		return err
 	}
-	if sequencer != aggregator {
-		return errors.New("Cannot set fee collector for non-sequencer address")
+	if !isOwner {
+		return ErrNotOwner
 	}
-	allowed, err := accountIsSequencerOrCollectorOrOwner(c.caller, c.State)
+	batchPosterTable := c.State.L1PricingState().BatchPosterTable()
+	isBatchPoster, err := batchPosterTable.ContainsPoster(newDefault)
 	if err != nil {
 		return err
 	}
-	if !allowed {
-		return errors.New("Only an aggregator (or its fee collector / chain owner) may change its fee collector")
+	if !isBatchPoster {
+		_, err = batchPosterTable.AddPoster(newDefault, newDefault)
+		if err != nil {
+			return err
+		}
 	}
-	return c.State.L1PricingState().SetPaySequencerFeesTo(newFeeCollector)
+	return nil
+}
+
+func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) error {
+	isOwner, err := c.State.ChainOwners().IsMember(c.caller)
+	if err != nil {
+		return err
+	}
+	if !isOwner {
+		return ErrNotOwner
+	}
+	batchPosterTable := c.State.L1PricingState().BatchPosterTable()
+	isBatchPoster, err := batchPosterTable.ContainsPoster(newBatchPoster)
+	if err != nil {
+		return err
+	}
+	if !isBatchPoster {
+		_, err = batchPosterTable.AddPoster(newBatchPoster, newBatchPoster)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Gets a batch poster's fee collector
+func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, batchPoster addr) (addr, error) {
+	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster)
+	if err != nil {
+		return addr{}, err
+	}
+	return posterInfo.PayTo()
+}
+
+// Sets a batch poster's fee collector (caller must be the batch poster, its fee collector, or an owner)
+func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, batchPoster addr, newFeeCollector addr) error {
+	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster)
+	if err != nil {
+		return err
+	}
+	oldFeeCollector, err := posterInfo.PayTo()
+	if err != nil {
+		return err
+	}
+	if c.caller != batchPoster && c.caller != oldFeeCollector {
+		isOwner, err := c.State.ChainOwners().IsMember(c.caller)
+		if err != nil {
+			return err
+		}
+		if !isOwner {
+			return errors.New("Only a batch poster (or its fee collector / chain owner) may change its fee collector")
+		}
+	}
+	return posterInfo.SetPayTo(newFeeCollector)
 }
 
 // Gets an aggregator's current fixed fee to submit a tx
@@ -84,17 +133,4 @@ func (con ArbAggregator) GetTxBaseFee(c ctx, evm mech, aggregator addr) (huge, e
 func (con ArbAggregator) SetTxBaseFee(c ctx, evm mech, aggregator addr, feeInL1Gas huge) error {
 	// This is deprecated and is now a no-op.
 	return nil
-}
-
-func accountIsSequencerOrCollectorOrOwner(account addr, state *arbosState.ArbosState) (bool, error) {
-	l1State := state.L1PricingState()
-	sequencer, err := l1State.Sequencer()
-	if account == sequencer || err != nil {
-		return true, err
-	}
-	collector, err := l1State.PaySequencerFeesTo()
-	if account == collector || err != nil {
-		return true, err
-	}
-	return state.ChainOwners().IsMember(account)
 }

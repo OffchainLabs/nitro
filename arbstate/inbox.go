@@ -368,7 +368,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 			Message: &arbos.L1IncomingMessage{
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:        arbos.L1MessageType_L2Message,
-					Poster:      l1pricing.SequencerAddress,
+					Poster:      l1pricing.BatchPosterAddress,
 					BlockNumber: blockNumber,
 					Timestamp:   timestamp,
 					RequestId:   nil,

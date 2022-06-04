@@ -36,13 +36,13 @@ func TestSequencerFeePaid(t *testing.T) {
 	l1Estimate, err := arbGasInfo.GetL1GasPriceEstimate(callOpts)
 	Require(t, err)
 	networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
-	seqBefore := GetBalance(t, ctx, l2client, l1pricing.SequencerAddress)
+	seqBefore := GetBalance(t, ctx, l2client, l1pricing.BatchPosterAddress)
 
 	l2info.GasPrice = GetBaseFee(t, l2client, ctx)
 	tx, receipt := TransferBalance(t, "Faucet", "Faucet", big.NewInt(0), l2info, l2client, ctx)
 
 	networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
-	seqAfter := GetBalance(t, ctx, l2client, l1pricing.SequencerAddress)
+	seqAfter := GetBalance(t, ctx, l2client, l1pricing.BatchPosterAddress)
 
 	networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
 	seqRevenue := arbmath.BigSub(seqAfter, seqBefore)

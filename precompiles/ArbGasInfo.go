@@ -50,11 +50,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 
 // Get prices in wei when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
-	maybeAggregator, err := c.State.L1PricingState().Sequencer()
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-	return con.GetPricesInWeiWithAggregator(c, evm, maybeAggregator)
+	return con.GetPricesInWeiWithAggregator(c, evm, addr{})
 }
 
 // Get prices in ArbGas when using the provided aggregator
@@ -75,11 +71,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 // Get prices in ArbGas when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, error) {
-	maybeAggregator, err := c.State.L1PricingState().Sequencer()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return con.GetPricesInArbGasWithAggregator(c, evm, maybeAggregator)
+	return con.GetPricesInArbGasWithAggregator(c, evm, addr{})
 }
 
 // Get the rollup's speed limit, pool size, and tx gas limit

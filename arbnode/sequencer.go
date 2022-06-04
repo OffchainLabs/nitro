@@ -210,7 +210,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 
 	header := &arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_L2Message,
-		Poster:      l1pricing.SequencerAddress,
+		Poster:      l1pricing.BatchPosterAddress,
 		BlockNumber: l1Block,
 		Timestamp:   uint64(timestamp),
 		RequestId:   nil,

@@ -96,12 +96,13 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			panic(err)
 		}
 		batchTimestamp, _ := inputs[0].(*big.Int)
-		// ignore input[1], batchPosterAddress, and input[2], batchNumber, which exist because we might need them in the future
+		batchPosterAddress, _ := inputs[1].(common.Address)
+		// ignore input[2], batchNumber, which exist because we might need them in the future
 		batchDataGas, _ := inputs[3].(uint64)
 		l1BaseFeeWei, _ := inputs[4].(*big.Int)
 
 		weiSpent := new(big.Int).Mul(l1BaseFeeWei, new(big.Int).SetUint64(batchDataGas))
-		err = state.L1PricingState().UpdateForSequencerSpending(evm.StateDB, evm, batchTimestamp.Uint64(), evm.Context.Time.Uint64(), weiSpent)
+		err = state.L1PricingState().UpdateForBatchPosterSpending(evm.StateDB, evm, batchTimestamp.Uint64(), evm.Context.Time.Uint64(), batchPosterAddress, weiSpent)
 		if err != nil {
 			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
 		}

@@ -48,8 +48,8 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	coinbase := common.Address{}
 	if l1info != nil {
 		timestamp = l1info.l1Timestamp
-		sequencer, _ := state.L1PricingState().Sequencer()
-		if l1info.poster == sequencer {
+		isBatchPoster, _ := state.L1PricingState().BatchPosterTable().ContainsPoster(l1info.poster)
+		if isBatchPoster {
 			coinbase = l1pricing.L1PricerFundsPoolAddress
 		}
 	}

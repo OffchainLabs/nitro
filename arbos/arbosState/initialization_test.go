@@ -142,6 +142,7 @@ func checkRetryables(arbState *ArbosState, expected []statetransfer.Initializati
 
 func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfer.AccountInitializationInfo, t *testing.T) {
 	l1p := arbState.L1PricingState()
+	posterTable := l1p.BatchPosterTable()
 	for _, acct := range accts {
 		addr := acct.Addr
 		if db.GetNonce(addr) != acct.Nonce {
@@ -168,10 +169,12 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 				t.Fatal(err)
 			}
 		}
-		sequencer, err := l1p.Sequencer()
+		isPoster, err := posterTable.ContainsPoster(addr)
 		Require(t, err)
-		if acct.AggregatorInfo != nil && acct.Addr == sequencer {
-			fc, err := l1p.PaySequencerFeesTo()
+		if acct.AggregatorInfo != nil && isPoster {
+			posterInfo, err := posterTable.OpenPoster(addr)
+			Require(t, err)
+			fc, err := posterInfo.PayTo()
 			Require(t, err)
 			if fc != acct.AggregatorInfo.FeeCollector {
 				t.Fatal()

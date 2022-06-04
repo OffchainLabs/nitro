@@ -12,61 +12,30 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 )
 
-func TestDefaultAggregator(t *testing.T) {
+func TestArbAggregatorBatchPosters(t *testing.T) {
 	evm := newMockEVMForTesting()
 	context := testContext(common.Address{}, evm)
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
-	// initial default aggregator should be zero address
-	def, err := ArbAggregator{}.GetDefaultAggregator(context, evm)
+	// initially should have one batch poster
+	bps, err := ArbAggregator{}.GetBatchPosters(context, evm)
 	Require(t, err)
-	if def != (l1pricing.SequencerAddress) {
+	if len(bps) != 1 {
 		Fail(t)
 	}
 
-	// set default aggregator to addr
+	// add addr as a batch poster
 	Require(t, ArbDebug{}.BecomeChainOwner(context, evm))
-	Require(t, ArbAggregator{}.SetDefaultAggregator(context, evm, addr))
+	Require(t, ArbAggregator{}.AddBatchPoster(context, evm, addr))
 
-	// default aggregator should now be addr
-	res, err := ArbAggregator{}.GetDefaultAggregator(context, evm)
+	// there should now be two batch posters, and addr should be one of them
+	bps, err = ArbAggregator{}.GetBatchPosters(context, evm)
 	Require(t, err)
-	if res != addr {
+	if len(bps) != 2 {
 		Fail(t)
 	}
-}
-
-func TestPreferredAggregator(t *testing.T) {
-	evm := newMockEVMForTesting()
-	agg := ArbAggregator{}
-
-	userAddr := common.BytesToAddress(crypto.Keccak256([]byte{0})[:20])
-	defaultAggAddr := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
-
-	callerCtx := testContext(common.Address{}, evm)
-
-	// initial preferred aggregator should be the default of zero address
-	res, isDefault, err := ArbAggregator{}.GetPreferredAggregator(callerCtx, evm, userAddr)
-	Require(t, err)
-	if !isDefault {
-		Fail(t)
-	}
-	if res != (l1pricing.SequencerAddress) {
-		Fail(t)
-	}
-
-	// set default aggregator
-	Require(t, ArbDebug{}.BecomeChainOwner(callerCtx, evm))
-	Require(t, agg.SetDefaultAggregator(callerCtx, evm, defaultAggAddr))
-
-	// preferred aggregator should be the new default address
-	res, isDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
-	Require(t, err)
-	if !isDefault {
-		Fail(t)
-	}
-	if res != defaultAggAddr {
+	if bps[0] != addr && bps[1] != addr {
 		Fail(t)
 	}
 }
@@ -75,7 +44,7 @@ func TestFeeCollector(t *testing.T) {
 	evm := newMockEVMForTesting()
 	agg := ArbAggregator{}
 
-	aggAddr := l1pricing.SequencerAddress
+	aggAddr := l1pricing.BatchPosterAddress
 	collectorAddr := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
 	impostorAddr := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
 

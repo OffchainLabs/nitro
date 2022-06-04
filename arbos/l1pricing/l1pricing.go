@@ -23,40 +23,38 @@ import (
 
 type L1PricingState struct {
 	storage *storage.Storage
+
 	// parameters
-	sequencer          storage.StorageBackedAddress
-	paySequencerFeesTo storage.StorageBackedAddress
-	payRewardsTo       storage.StorageBackedAddress
-	equilibrationTime  storage.StorageBackedUint64
-	inertia            storage.StorageBackedUint64
-	perUnitReward      storage.StorageBackedUint64
+	batchPosterTable  *BatchPostersTable
+	payRewardsTo      storage.StorageBackedAddress
+	equilibrationTime storage.StorageBackedUint64
+	inertia           storage.StorageBackedUint64
+	perUnitReward     storage.StorageBackedUint64
 	// variables
-	currentTime         storage.StorageBackedUint64
-	lastUpdateTime      storage.StorageBackedUint64 // timestamp of the last update from L1 that we processed
-	fundsDueToSequencer storage.StorageBackedBigInt
-	fundsDueForRewards  storage.StorageBackedBigInt
+	currentTime        storage.StorageBackedUint64
+	lastUpdateTime     storage.StorageBackedUint64 // timestamp of the last update from L1 that we processed
+	fundsDueForRewards storage.StorageBackedBigInt
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
 	unitsSinceUpdate storage.StorageBackedUint64 // calldata units collected for since last update
 	pricePerUnit     storage.StorageBackedBigInt // current price per calldata unit
 }
 
 var (
-	SequencerAddress         = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
+	BatchPosterTableKey      = []byte{0}
+	BatchPosterAddress       = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
+	BatchPosterPayToAddress  = BatchPosterAddress
 	L1PricerFundsPoolAddress = common.HexToAddress("0xA4B00000000000000000000000000000000000f6")
 
 	ErrInvalidTime = errors.New("invalid timestamp")
 )
 
 const (
-	sequencerOffset uint64 = iota
-	paySequencerFeesToOffset
-	payRewardsToOffset
+	payRewardsToOffset uint64 = iota
 	equilibrationTimeOffset
 	inertiaOffset
 	perUnitRewardOffset
 	currentTimeOffset
 	lastUpdateTimeOffset
-	fundsDueToSequencerOffset
 	fundsDueForRewards
 	unitsSinceOffset
 	pricePerUnitOffset
@@ -70,13 +68,15 @@ const (
 )
 
 func InitializeL1PricingState(sto *storage.Storage) error {
-	if err := sto.SetByUint64(sequencerOffset, util.AddressToHash(SequencerAddress)); err != nil {
+	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
+	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
 	}
-	if err := sto.SetByUint64(paySequencerFeesToOffset, util.AddressToHash(SequencerAddress)); err != nil {
+	bpTable := OpenBatchPostersTable(bptStorage)
+	if _, err := bpTable.AddPoster(BatchPosterAddress, BatchPosterPayToAddress); err != nil {
 		return err
 	}
-	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(SequencerAddress)); err != nil {
+	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(BatchPosterAddress)); err != nil {
 		return err
 	}
 	if err := sto.SetUint64ByUint64(equilibrationTimeOffset, InitialEquilibrationTime); err != nil {
@@ -95,35 +95,21 @@ func InitializeL1PricingState(sto *storage.Storage) error {
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	return &L1PricingState{
 		sto,
-		sto.OpenStorageBackedAddress(sequencerOffset),
-		sto.OpenStorageBackedAddress(paySequencerFeesToOffset),
+		OpenBatchPostersTable(sto.OpenSubStorage(BatchPosterTableKey)),
 		sto.OpenStorageBackedAddress(payRewardsToOffset),
 		sto.OpenStorageBackedUint64(equilibrationTimeOffset),
 		sto.OpenStorageBackedUint64(inertiaOffset),
 		sto.OpenStorageBackedUint64(perUnitRewardOffset),
 		sto.OpenStorageBackedUint64(currentTimeOffset),
 		sto.OpenStorageBackedUint64(lastUpdateTimeOffset),
-		sto.OpenStorageBackedBigInt(fundsDueToSequencerOffset),
 		sto.OpenStorageBackedBigInt(fundsDueForRewards),
 		sto.OpenStorageBackedUint64(unitsSinceOffset),
 		sto.OpenStorageBackedBigInt(pricePerUnitOffset),
 	}
 }
 
-func (ps *L1PricingState) Sequencer() (common.Address, error) {
-	return ps.sequencer.Get()
-}
-
-func (ps *L1PricingState) SetSequencer(seq common.Address) error {
-	return ps.sequencer.Set(seq)
-}
-
-func (ps *L1PricingState) PaySequencerFeesTo() (common.Address, error) {
-	return ps.paySequencerFeesTo.Get()
-}
-
-func (ps *L1PricingState) SetPaySequencerFeesTo(addr common.Address) error {
-	return ps.paySequencerFeesTo.Set(addr)
+func (ps *L1PricingState) BatchPosterTable() *BatchPostersTable {
+	return ps.batchPosterTable
 }
 
 func (ps *L1PricingState) PayRewardsTo() (common.Address, error) {
@@ -162,14 +148,6 @@ func (ps *L1PricingState) SetLastUpdateTime(t uint64) error {
 	return ps.lastUpdateTime.Set(t)
 }
 
-func (ps *L1PricingState) FundsDueToSequencer() (*big.Int, error) {
-	return ps.fundsDueToSequencer.Get()
-}
-
-func (ps *L1PricingState) SetFundsDueToSequencer(amt *big.Int) error {
-	return ps.fundsDueToSequencer.Set(amt)
-}
-
 func (ps *L1PricingState) FundsDueForRewards() (*big.Int, error) {
 	return ps.fundsDueForRewards.Get()
 }
@@ -199,10 +177,16 @@ func (ps *L1PricingState) UpdateTime(currentTime uint64) {
 	_ = ps.SetCurrentTime(currentTime)
 }
 
-// Update the pricing model based on a payment by the sequencer
-func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, evm *vm.EVM, updateTime uint64, currentTime uint64, weiSpent *big.Int) error {
+// Update the pricing model based on a payment by a batch poster
+func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *vm.EVM, updateTime uint64, currentTime uint64, batchPoster common.Address, weiSpent *big.Int) error {
+	batchPosterTable := ps.BatchPosterTable()
+	posterState, err := batchPosterTable.OpenPoster(batchPoster)
+	if err != nil {
+		return err
+	}
+
 	// compute previous shortfall
-	fundsDueToSequencer, err := ps.FundsDueToSequencer()
+	totalFundsDue, err := batchPosterTable.TotalFundsDue()
 	if err != nil {
 		return err
 	}
@@ -210,7 +194,7 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, evm *vm
 	if err != nil {
 		return err
 	}
-	oldShortfall := am.BigSub(am.BigAdd(fundsDueToSequencer, fundsDueForRewards), statedb.GetBalance(L1PricerFundsPoolAddress))
+	oldShortfall := am.BigSub(am.BigAdd(totalFundsDue, fundsDueForRewards), statedb.GetBalance(L1PricerFundsPoolAddress))
 
 	// compute allocation fraction -- will allocate updateTimeDelta/timeDelta fraction of units and funds to this update
 	lastUpdateTime, err := ps.LastUpdateTime()
@@ -247,8 +231,12 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, evm *vm
 	if err != nil {
 		return err
 	}
-	fundsDueToSequencer = am.BigAdd(fundsDueToSequencer, weiSpent)
-	if err := ps.SetFundsDueToSequencer(fundsDueToSequencer); err != nil {
+	fundsDueToPoster, err := posterState.FundsDue()
+	if err != nil {
+		return err
+	}
+	fundsDueToPoster = am.BigAdd(fundsDueToPoster, weiSpent)
+	if err := posterState.SetFundsDue(fundsDueToPoster); err != nil {
 		return err
 	}
 	newRewards := am.SaturatingUMul(updateTimeDelta, perUnitReward) / timeDelta
@@ -257,7 +245,7 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, evm *vm
 		return err
 	}
 
-	// settle up, by paying out available funds
+	// settle up our rewards owed, as much as possible
 	payRewardsTo, err := ps.PayRewardsTo()
 	if err != nil {
 		return err
@@ -276,22 +264,45 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, evm *vm
 			return err
 		}
 	}
-	sequencerPaymentAddr, err := ps.PaySequencerFeesTo()
+
+	// settle up our batch poster payments owed, as much as possible
+	allPosterAddrs, err := batchPosterTable.AllPosters()
 	if err != nil {
 		return err
 	}
-	paymentForSequencer := statedb.GetBalance(L1PricerFundsPoolAddress)
-	if am.BigLessThan(fundsDueToSequencer, paymentForSequencer) {
-		paymentForSequencer = fundsDueToSequencer
-	}
-	if paymentForSequencer.Sign() > 0 {
-		fundsDueToSequencer = new(big.Int).Sub(fundsDueToSequencer, paymentForSequencer)
-		if err := ps.SetFundsDueToSequencer(fundsDueToSequencer); err != nil {
-			return err
-		}
-		err := util.TransferBalance(&L1PricerFundsPoolAddress, &sequencerPaymentAddr, paymentForSequencer, evm, util.TracingBeforeEVM)
+	remainingFundsDueToPosters := big.NewInt(0)
+	availableFunds := statedb.GetBalance(L1PricerFundsPoolAddress)
+	for _, posterAddr := range allPosterAddrs {
+		poster, err := batchPosterTable.OpenPoster(posterAddr)
 		if err != nil {
 			return err
+		}
+		balanceDueToPoster, err := poster.FundsDue()
+		if err != nil {
+			return err
+		}
+		balanceToTransfer := balanceDueToPoster
+		if am.BigLessThan(availableFunds, balanceToTransfer) {
+			balanceToTransfer = availableFunds
+		}
+		if balanceToTransfer.Sign() > 0 {
+			addrToPay, err := poster.PayTo()
+			if err != nil {
+				return err
+			}
+			err = util.TransferBalance(&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, util.TracingBeforeEVM)
+			if err != nil {
+				return err
+			}
+			availableFunds = am.BigSub(availableFunds, balanceToTransfer)
+			balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
+			err = poster.SetFundsDue(balanceDueToPoster)
+			if err != nil {
+				return err
+			}
+		}
+		if balanceDueToPoster.Sign() > 0 {
+			remainingFundsDueToPosters = am.BigAdd(remainingFundsDueToPosters, balanceDueToPoster)
 		}
 	}
 
@@ -302,7 +313,7 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, evm *vm
 
 	// adjust the price
 	if unitsAllocated > 0 {
-		shortfall := am.BigSub(am.BigAdd(fundsDueToSequencer, fundsDueForRewards), statedb.GetBalance(L1PricerFundsPoolAddress))
+		shortfall := am.BigSub(am.BigAdd(remainingFundsDueToPosters, fundsDueForRewards), statedb.GetBalance(L1PricerFundsPoolAddress))
 		inertia, err := ps.Inertia()
 		if err != nil {
 			return err
@@ -334,14 +345,17 @@ func (ps *L1PricingState) UpdateForSequencerSpending(statedb vm.StateDB, evm *vm
 	return nil
 }
 
-func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, poster common.Address) {
+func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, posterAddr common.Address) {
 	tx.PosterCost = big.NewInt(0)
 	tx.PosterIsReimbursable = false
 
-	sequencer, perr := ps.Sequencer()
+	contains, err := ps.batchPosterTable.ContainsPoster(posterAddr)
+	if err != nil || !contains {
+		return
+	}
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
-	if !util.TxTypeHasPosterCosts(txType) || perr != nil || merr != nil || poster != sequencer {
+	if !util.TxTypeHasPosterCosts(txType) || merr != nil {
 		return
 	}
 
