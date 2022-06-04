@@ -6,100 +6,83 @@ package l1pricing
 import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"math/big"
 )
 
 var (
+	PosterAddrsKey = []byte{0}
+	PosterInfoKey  = []byte{1}
+
 	ErrNotExist      = errors.New("batch poster does not exist in table")
 	ErrAlreadyExists = errors.New("tried to add a batch poster that already exists")
 )
 
 // layout of storage in the table
 type BatchPostersTable struct {
-	storage    *storage.Storage
-	numPosters storage.StorageBackedUint64
+	posterAddrs *addressSet.AddressSet
+	posterInfo  *storage.Storage
 }
 
 type BatchPosterState struct {
-	existsIfNonzero storage.StorageBackedUint64
-	fundsDue        storage.StorageBackedBigInt
-	payTo           storage.StorageBackedAddress
+	fundsDue storage.StorageBackedBigInt
+	payTo    storage.StorageBackedAddress
 }
 
 func InitializeBatchPostersTable(storage *storage.Storage) error {
-	// no initialization needed at present
-	return nil
+	// no initialization needed for posterInfo
+	return addressSet.Initialize(storage.OpenSubStorage(PosterAddrsKey))
 }
 
 func OpenBatchPostersTable(storage *storage.Storage) *BatchPostersTable {
 	return &BatchPostersTable{
-		storage:    storage,
-		numPosters: storage.OpenStorageBackedUint64(0),
+		posterAddrs: addressSet.OpenAddressSet(storage.OpenSubStorage(PosterAddrsKey)),
+		posterInfo:  storage.OpenSubStorage(PosterInfoKey),
 	}
 }
 
 func (bpt *BatchPostersTable) OpenPoster(poster common.Address) (*BatchPosterState, error) {
-	bpState := bpt.internalOpen(poster)
-	existsIfNonzero, err := bpState.existsIfNonzero.Get()
+	isBatchPoster, err := bpt.posterAddrs.IsMember(poster)
 	if err != nil {
 		return nil, err
 	}
-	if existsIfNonzero == 0 {
+	if !isBatchPoster {
 		return nil, ErrNotExist
 	}
-	return bpState, nil
+	return bpt.internalOpen(poster), nil
 }
 
 func (bpt *BatchPostersTable) internalOpen(poster common.Address) *BatchPosterState {
-	bpStorage := bpt.storage.OpenSubStorage(poster.Bytes())
+	bpStorage := bpt.posterInfo.OpenSubStorage(poster.Bytes())
 	return &BatchPosterState{
-		existsIfNonzero: bpStorage.OpenStorageBackedUint64(0),
-		fundsDue:        bpStorage.OpenStorageBackedBigInt(1),
-		payTo:           bpStorage.OpenStorageBackedAddress(2),
+		fundsDue: bpStorage.OpenStorageBackedBigInt(0),
+		payTo:    bpStorage.OpenStorageBackedAddress(1),
 	}
 }
 
 func (bpt *BatchPostersTable) ContainsPoster(poster common.Address) (bool, error) {
-	_, err := bpt.OpenPoster(poster)
-	if errors.Is(err, ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return true, nil
+	return bpt.posterAddrs.IsMember(poster)
 }
 
 func (bpt *BatchPostersTable) AddPoster(posterAddress common.Address, payTo common.Address) (*BatchPosterState, error) {
-	bpState := bpt.internalOpen(posterAddress)
-	alreadyExists, err := bpState.existsIfNonzero.Get()
+	isBatchPoster, err := bpt.posterAddrs.IsMember(posterAddress)
 	if err != nil {
 		return nil, err
 	}
-	if alreadyExists != 0 {
+	if isBatchPoster {
 		return nil, ErrAlreadyExists
 	}
+	bpState := bpt.internalOpen(posterAddress)
 	if err := bpState.fundsDue.Set(big.NewInt(0)); err != nil {
 		return nil, err
 	}
 	if err := bpState.payTo.Set(payTo); err != nil {
 		return nil, err
 	}
-	if err := bpState.existsIfNonzero.Set(1); err != nil {
-		return nil, err
-	}
 
-	numPosters, err := bpt.numPosters.Get()
-	if err != nil {
-		return nil, err
-	}
-	if err := bpt.storage.SetByUint64(numPosters+1, util.AddressToHash(posterAddress)); err != nil {
-		return nil, err
-	}
-	if err := bpt.numPosters.Set(numPosters + 1); err != nil {
+	if err := bpt.posterAddrs.Add(posterAddress); err != nil {
 		return nil, err
 	}
 
@@ -107,19 +90,7 @@ func (bpt *BatchPostersTable) AddPoster(posterAddress common.Address, payTo comm
 }
 
 func (bpt *BatchPostersTable) AllPosters() ([]common.Address, error) {
-	numPosters, err := bpt.numPosters.Get()
-	if err != nil {
-		return nil, err
-	}
-	ret := []common.Address{}
-	for i := uint64(0); i < numPosters; i++ {
-		posterAddrAsHash, err := bpt.storage.GetByUint64(i + 1)
-		if err != nil {
-			return nil, err
-		}
-		ret = append(ret, common.BytesToAddress(posterAddrAsHash.Bytes()))
-	}
-	return ret, nil
+	return bpt.posterAddrs.AllMembers()
 }
 
 func (bpt *BatchPostersTable) TotalFundsDue() (*big.Int, error) {
