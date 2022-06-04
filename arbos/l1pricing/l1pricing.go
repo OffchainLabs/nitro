@@ -140,8 +140,8 @@ func (ps *L1PricingState) PerUnitReward() (uint64, error) {
 	return ps.perUnitReward.Get()
 }
 
-func (ps *L1PricingState) SetPerUnitReward(weiPerSecond uint64) error {
-	return ps.perUnitReward.Set(weiPerSecond)
+func (ps *L1PricingState) SetPerUnitReward(weiPerUnit uint64) error {
+	return ps.perUnitReward.Set(weiPerUnit)
 }
 
 func (ps *L1PricingState) CurrentTime() (uint64, error) {
@@ -196,6 +196,14 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if err != nil {
 		return err
 	}
+	dueToPoster, err := posterState.FundsDue()
+	if err != nil {
+		return err
+	}
+	err = posterState.SetFundsDue(am.BigAdd(dueToPoster, weiSpent))
+	if err != nil {
+		return err
+	}
 
 	// compute previous shortfall
 	totalFundsDue, err := batchPosterTable.TotalFundsDue()
@@ -214,7 +222,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		return err
 	}
 	if lastUpdateTime == 0 && currentTime > 0 { // it's the first update, so there isn't a last update time
-		lastUpdateTime = currentTime - 1
+		lastUpdateTime = updateTime - 1
 	}
 	if updateTime > currentTime || updateTime < lastUpdateTime || currentTime == lastUpdateTime {
 		return ErrInvalidTime
@@ -235,47 +243,30 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 
 	// allocate funds to this update
 	collectedSinceUpdate := statedb.GetBalance(L1PricerFundsPoolAddress)
-	fundsToMove := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate, updateTimeDelta), timeDelta)
-	statedb.SubBalance(L1PricerFundsPoolAddress, fundsToMove)
+	availableFunds := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate, updateTimeDelta), timeDelta)
 
-	// update amounts due
+	// pay rewards, as much as possible
 	perUnitReward, err := ps.PerUnitReward()
 	if err != nil {
 		return err
 	}
-	fundsDueToPoster, err := posterState.FundsDue()
-	if err != nil {
+	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
+	if am.BigLessThan(availableFunds, paymentForRewards) {
+		unitsAllocated = am.SaturatingCastToUint(am.BigDivByUint(availableFunds, perUnitReward))
+		paymentForRewards = am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
+	}
+	if err := ps.SetFundsDueForRewards(am.BigSub(fundsDueForRewards, paymentForRewards)); err != nil {
 		return err
 	}
-	fundsDueToPoster = am.BigAdd(fundsDueToPoster, weiSpent)
-	if err := posterState.SetFundsDue(fundsDueToPoster); err != nil {
-		return err
-	}
-	newRewards := am.SaturatingUMul(updateTimeDelta, perUnitReward) / timeDelta
-	fundsDueForRewards = am.BigAddByUint(fundsDueForRewards, newRewards)
-	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
-		return err
-	}
-
-	// settle up our rewards owed, as much as possible
 	payRewardsTo, err := ps.PayRewardsTo()
 	if err != nil {
 		return err
 	}
-	paymentForRewards := statedb.GetBalance(L1PricerFundsPoolAddress)
-	if am.BigLessThan(fundsDueForRewards, paymentForRewards) {
-		paymentForRewards = fundsDueForRewards
+	err = util.TransferBalance(&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, util.TracingBeforeEVM)
+	if err != nil {
+		return err
 	}
-	if paymentForRewards.Sign() > 0 {
-		fundsDueForRewards = am.BigSub(fundsDueForRewards, paymentForRewards)
-		if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
-			return err
-		}
-		err := util.TransferBalance(&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, util.TracingBeforeEVM)
-		if err != nil {
-			return err
-		}
-	}
+	availableFunds = am.BigSub(availableFunds, paymentForRewards)
 
 	// settle up our batch poster payments owed, as much as possible
 	allPosterAddrs, err := batchPosterTable.AllPosters()
@@ -283,7 +274,6 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		return err
 	}
 	remainingFundsDueToPosters := big.NewInt(0)
-	availableFunds := statedb.GetBalance(L1PricerFundsPoolAddress)
 	for _, posterAddr := range allPosterAddrs {
 		poster, err := batchPosterTable.OpenPoster(posterAddr)
 		if err != nil {

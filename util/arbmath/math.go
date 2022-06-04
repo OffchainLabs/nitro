@@ -246,6 +246,16 @@ func SaturatingUCast(value int64) uint64 {
 	return uint64(value)
 }
 
+func SaturatingCastToUint(value *big.Int) uint64 {
+	if value.Sign() < 0 {
+		return 0
+	}
+	if !value.IsUint64() {
+		return math.MaxUint64
+	}
+	return value.Uint64()
+}
+
 // the number of eth-words needed to store n bytes
 func WordsForBytes(nbytes uint64) uint64 {
 	return (nbytes + 31) / 32

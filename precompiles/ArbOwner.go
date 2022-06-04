@@ -130,6 +130,6 @@ func (con ArbOwner) SetL1PricingRewardRecipient(c ctx, evm mech, recipient addr)
 	return c.State.L1PricingState().SetPayRewardsTo(recipient)
 }
 
-func (con ArbOwner) SetL1PricingRewardRate(c ctx, evm mech, weiPerSecond uint64) error {
-	return c.State.L1PricingState().SetPerUnitReward(weiPerSecond)
+func (con ArbOwner) SetL1PricingRewardRate(c ctx, evm mech, weiPerUnit uint64) error {
+	return c.State.L1PricingState().SetPerUnitReward(weiPerUnit)
 }

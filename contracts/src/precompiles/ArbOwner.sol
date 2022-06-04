@@ -75,8 +75,8 @@ interface ArbOwner {
     /// @notice Sets reward recipient address for L1 price adjustment algorithm
     function setL1PricingRewardRecipient(address recipient) external;
 
-    /// @notice Sets reward amount for L1 price adjustment algorithm, in wei per second
-    function setL1PricingRewardRate(uint64 weiPerSecond) external;
+    /// @notice Sets reward amount for L1 price adjustment algorithm, in wei per unit
+    function setL1PricingRewardRate(uint64 weiPerUnit) external;
 
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
