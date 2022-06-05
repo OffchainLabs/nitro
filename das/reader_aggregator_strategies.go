@@ -17,23 +17,23 @@ var ErrNoReadersResponded = errors.New("No DAS readers responded successfully.")
 
 type aggregatorStrategy interface {
 	newInstance() aggregatorStrategyInstance
-	update([]arbstate.SimpleDASReader, map[arbstate.SimpleDASReader]readerStats)
+	update([]arbstate.DataAvailabilityReader, map[arbstate.DataAvailabilityReader]readerStats)
 }
 
 type abstractAggregatorStrategy struct {
 	sync.RWMutex
-	readers []arbstate.SimpleDASReader
-	stats   map[arbstate.SimpleDASReader]readerStats
+	readers []arbstate.DataAvailabilityReader
+	stats   map[arbstate.DataAvailabilityReader]readerStats
 }
 
-func (s *abstractAggregatorStrategy) update(readers []arbstate.SimpleDASReader, stats map[arbstate.SimpleDASReader]readerStats) {
+func (s *abstractAggregatorStrategy) update(readers []arbstate.DataAvailabilityReader, stats map[arbstate.DataAvailabilityReader]readerStats) {
 	s.Lock()
 	defer s.Unlock()
 
-	s.readers = make([]arbstate.SimpleDASReader, len(readers))
+	s.readers = make([]arbstate.DataAvailabilityReader, len(readers))
 	copy(s.readers, readers)
 
-	s.stats = make(map[arbstate.SimpleDASReader]readerStats)
+	s.stats = make(map[arbstate.DataAvailabilityReader]readerStats)
 	for k, v := range stats {
 		s.stats[k] = v
 	}
@@ -51,11 +51,11 @@ type simpleExploreExploitStrategy struct {
 func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance {
 	iterations := atomic.AddUint32(&s.iterations, 1)
 
-	readerSets := make([][]arbstate.SimpleDASReader, 0)
+	readerSets := make([][]arbstate.DataAvailabilityReader, 0)
 	s.RLock()
 	defer s.RUnlock()
 
-	readers := make([]arbstate.SimpleDASReader, len(s.readers))
+	readers := make([]arbstate.DataAvailabilityReader, len(s.readers))
 	copy(readers, s.readers)
 
 	if iterations%(s.exploreIterations+s.exploitIterations) < s.exploreIterations {
@@ -70,7 +70,7 @@ func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance 
 	}
 
 	for i, maxTake := 0, 1; i < len(readers); maxTake = maxTake * 2 {
-		readerSet := make([]arbstate.SimpleDASReader, 0, maxTake)
+		readerSet := make([]arbstate.DataAvailabilityReader, 0, maxTake)
 		for taken := 0; taken < maxTake && i < len(readers); i, taken = i+1, taken+1 {
 			readerSet = append(readerSet, readers[i])
 		}
@@ -91,7 +91,7 @@ func (s *testingSequentialStrategy) newInstance() aggregatorStrategyInstance {
 
 	si := basicStrategyInstance{}
 	for _, reader := range s.readers {
-		si.readerSets = append(si.readerSets, []arbstate.SimpleDASReader{reader})
+		si.readerSets = append(si.readerSets, []arbstate.DataAvailabilityReader{reader})
 	}
 
 	return &si
@@ -99,14 +99,14 @@ func (s *testingSequentialStrategy) newInstance() aggregatorStrategyInstance {
 
 // Instance of a strategy that returns readers in an order according to the strategy
 type aggregatorStrategyInstance interface {
-	nextReaders() []arbstate.SimpleDASReader
+	nextReaders() []arbstate.DataAvailabilityReader
 }
 
 type basicStrategyInstance struct {
-	readerSets [][]arbstate.SimpleDASReader
+	readerSets [][]arbstate.DataAvailabilityReader
 }
 
-func (si *basicStrategyInstance) nextReaders() []arbstate.SimpleDASReader {
+func (si *basicStrategyInstance) nextReaders() []arbstate.DataAvailabilityReader {
 	if len(si.readerSets) == 0 {
 		return nil
 	}
