@@ -659,15 +659,17 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	if config.BatchPoster.Enable {
-		if daSigner != nil {
-			dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
-			if err != nil {
-				return nil, err
+	if dataAvailabilityService != nil {
+		if config.BatchPoster.Enable {
+			if daSigner != nil {
+				dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+				if err != nil {
+					return nil, err
+				}
 			}
+		} else {
+			dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
 		}
-	} else {
-		dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
 	}
 
 	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
@@ -1050,7 +1052,9 @@ func (n *Node) StopAndWait() {
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
-	n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
+	if n.DASLifecycleManager != nil {
+		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
+	}
 }
 
 func CreateDefaultStack() (*node.Node, error) {
