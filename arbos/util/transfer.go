@@ -67,3 +67,8 @@ func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario Trac
 		panic(fmt.Sprintf("impossible error: %v", err))
 	}
 }
+
+// Burns funds from a user's account
+func BurnBalance(from *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario) error {
+	return TransferBalance(from, nil, amount, evm, scenario)
+}
