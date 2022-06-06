@@ -8,6 +8,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/ethereum/go-ethereum/common"
 	flag "github.com/spf13/pflag"
 
@@ -29,7 +31,7 @@ type DataAvailabilityService interface {
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 
-	RequestTimeoutSeconds uint64 `koanf:"request-timeout-seconds"`
+	RequestTimeout time.Duration `koanf:"request-timeout"`
 
 	LocalCacheConfig BigCacheConfig `koanf:"local-cache"`
 	RedisCacheConfig RedisConfig    `koanf:"redis-cache"`
@@ -97,7 +99,7 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
 
-	f.Uint64(prefix+".request-timeout-seconds", DefaultDataAvailabilityConfig.RequestTimeoutSeconds, "Seconds for Data Availability Service request timeout")
+	f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service request timeout duration")
 
 	// Cache options
 	BigCacheConfigAddOptions(prefix+".local-cache", f)
