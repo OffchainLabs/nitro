@@ -5,7 +5,7 @@ The following is a summary of changes in the upcoming Arbitrum One chain's Nitro
 
 It reflects the current state of Nitro and should be considered a living document; things might change before launch.
 
-_Last Updated 4/13/2022_
+_Last Updated 6 June 2022_
 
 ## Cool New Stuff 
 
@@ -31,6 +31,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 - **Retryable Tickets**: 
     - The submission cost is now enforced in the L1 inbox and checked against the L1 transaction's `msg.value`; contracts shouldn't rely on funds pooled in the L2 destination to cover this cost.
     - For the redemption of retryable tickets, the calculation of the L2 transaction ID changed and differs between different redeem attempts (i.e. after failed attempts). See [arbitrum-sdk](https://github.com/offchainlabs/arbitrum-sdk/tree/c-nitro) for a reference implementation on the new client-side flow. 
+    - Retryable ticket now aren't redeemed in the same block as when the `redeem` function is called. The user's transaction causes the retryable to be scheduled to be redeemed in a subsequent block.
 
 #### Protocol Contracts 
 
