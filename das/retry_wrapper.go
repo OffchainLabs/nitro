@@ -30,6 +30,9 @@ func NewRetryWrapper(dataAvailabilityService DataAvailabilityService) DataAvaila
 func (w *RetryWrapper) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	var res []byte
 	err := backoff.Retry(func() error {
+		if ctx.Err() != nil {
+			return backoff.Permanent(ctx.Err())
+		}
 		data, err := w.DataAvailabilityService.GetByHash(ctx, hash)
 		if err != nil {
 			return err
@@ -46,6 +49,9 @@ func (w *RetryWrapper) GetByHash(ctx context.Context, hash []byte) ([]byte, erro
 func (w *RetryWrapper) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	var res *arbstate.DataAvailabilityCertificate
 	err := backoff.Retry(func() error {
+		if ctx.Err() != nil {
+			return backoff.Permanent(ctx.Err())
+		}
 		data, err := w.DataAvailabilityService.Store(ctx, message, timeout, sig)
 		if err != nil {
 			return err

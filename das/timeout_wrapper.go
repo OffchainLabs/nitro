@@ -16,9 +16,9 @@ type TimeoutWrapper struct {
 	DataAvailabilityService
 }
 
-func NewTimeoutWrapper(dataAvailabilityService DataAvailabilityService, t time.Duration) DataAvailabilityService {
+func NewTimeoutWrapper(dataAvailabilityService DataAvailabilityService, timeoutInSeconds uint64) DataAvailabilityService {
 	return &TimeoutWrapper{
-		t:                       t,
+		t:                       time.Duration(timeoutInSeconds) * time.Second,
 		DataAvailabilityService: dataAvailabilityService,
 	}
 }
