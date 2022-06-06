@@ -141,7 +141,7 @@ func (rs *RedisStorageService) Close(ctx context.Context) error {
 	return rs.baseStorageService.Close(ctx)
 }
 
-func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	return rs.baseStorageService.ExpirationPolicy(ctx)
 }
 

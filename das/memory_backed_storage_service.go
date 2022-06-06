@@ -75,8 +75,8 @@ func (m *MemoryBackedStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
-	return arbstate.KeepForever
+func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.KeepForever, nil
 }
 
 func (m *MemoryBackedStorageService) String() string {

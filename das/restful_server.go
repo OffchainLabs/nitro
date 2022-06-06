@@ -95,13 +95,19 @@ func (rds *RestfulDasServer) HealthHandler(w http.ResponseWriter, r *http.Reques
 }
 
 func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
-	expirationPolicy, err := rds.storage.ExpirationPolicy(r.Context()).String()
+	expirationPolicy, err := rds.storage.ExpirationPolicy(r.Context())
+	if err != nil {
+		log.Warn("Error retrieving expiration policy", "path", requestPath, "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	expirationPolicyString, err := expirationPolicy.String()
 	if err != nil {
 		log.Warn("Got invalid expiration policy", "path", requestPath, "expirationPolicy", expirationPolicy)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	err = json.NewEncoder(w).Encode(RestfulDasServerResponse{ExpirationPolicy: expirationPolicy})
+	err = json.NewEncoder(w).Encode(RestfulDasServerResponse{ExpirationPolicy: expirationPolicyString})
 	if err != nil {
 		log.Warn("Failed encoding and writing response", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusInternalServerError)

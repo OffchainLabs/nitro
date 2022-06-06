@@ -278,13 +278,24 @@ func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	if len(a.readers) == 0 {
+		return -1, errors.New("no DataAvailabilityService present")
+	}
+	expectedExpirationPolicy, err := a.readers[0].ExpirationPolicy(ctx)
+	if err != nil {
+		return -1, err
+	}
 	// Even if a single service is different from the rest,
 	// then whole aggregator will be considered for mixed expiration timeout policy.
 	for _, serv := range a.readers {
-		if serv.ExpirationPolicy(ctx) != a.readers[0].ExpirationPolicy(ctx) {
-			return arbstate.MixedTimeout
+		ep, err := serv.ExpirationPolicy(ctx)
+		if err != nil {
+			return -1, err
+		}
+		if ep != expectedExpirationPolicy {
+			return arbstate.MixedTimeout, nil
 		}
 	}
-	return a.readers[0].ExpirationPolicy(ctx)
+	return expectedExpirationPolicy, nil
 }

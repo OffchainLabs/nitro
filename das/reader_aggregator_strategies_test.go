@@ -25,8 +25,8 @@ func (*dummyReader) HealthCheck(context.Context) error {
 	return errors.New("not implemented")
 }
 
-func (*dummyReader) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
-	return -1
+func (*dummyReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return -1, errors.New("not implemented")
 }
 
 func TestDAS_SimpleExploreExploit(t *testing.T) {

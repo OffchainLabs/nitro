@@ -346,13 +346,24 @@ func (a *Aggregator) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (a *Aggregator) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+func (a *Aggregator) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	if len(a.services) == 0 {
+		return -1, errors.New("no DataAvailabilityService present")
+	}
+	expectedExpirationPolicy, err := a.services[0].service.ExpirationPolicy(ctx)
+	if err != nil {
+		return -1, err
+	}
 	// Even if a single service is different from the rest,
 	// then whole aggregator will be considered for mixed expiration timeout policy.
 	for _, serv := range a.services {
-		if serv.service.ExpirationPolicy(ctx) != a.services[0].service.ExpirationPolicy(ctx) {
-			return arbstate.MixedTimeout
+		ep, err := serv.service.ExpirationPolicy(ctx)
+		if err != nil {
+			return -1, err
+		}
+		if ep != expectedExpirationPolicy {
+			return arbstate.MixedTimeout, nil
 		}
 	}
-	return a.services[0].service.ExpirationPolicy(ctx)
+	return expectedExpirationPolicy, nil
 }

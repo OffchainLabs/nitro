@@ -19,6 +19,5 @@ type StorageService interface {
 	Sync(ctx context.Context) error
 	Closer
 	fmt.Stringer
-	ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy
 	HealthCheck(ctx context.Context) error
 }

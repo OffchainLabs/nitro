@@ -109,11 +109,11 @@ func (s3s *S3StorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	if s3s.discardAfterTimeout {
-		return arbstate.DiscardAfterDataTimeout
+		return arbstate.DiscardAfterDataTimeout, nil
 	} else {
-		return arbstate.KeepForever
+		return arbstate.KeepForever, nil
 	}
 }
 

@@ -93,8 +93,8 @@ func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
-	return -1
+func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.DiscardImmediately, nil
 }
 func main() {
 	wavmio.StubInit()

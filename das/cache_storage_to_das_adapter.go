@@ -88,8 +88,8 @@ func (s *emptyStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s *emptyStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
-	return arbstate.DiscardImmediately
+func (s *emptyStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.DiscardImmediately, nil
 }
 
 func (s *emptyStorageService) String() string {

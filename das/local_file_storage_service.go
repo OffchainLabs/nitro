@@ -86,8 +86,8 @@ func (s *LocalFileStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
-	return arbstate.KeepForever
+func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.KeepForever, nil
 }
 
 func (s *LocalFileStorageService) String() string {

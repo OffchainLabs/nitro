@@ -89,5 +89,9 @@ func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
 }
 
 func (serv *DASRPCServer) ExpirationPolicy(ctx context.Context) (string, error) {
-	return serv.localDAS.ExpirationPolicy(ctx).String()
+	expirationPolicy, err := serv.localDAS.ExpirationPolicy(ctx)
+	if err != nil {
+		return "", err
+	}
+	return expirationPolicy.String()
 }

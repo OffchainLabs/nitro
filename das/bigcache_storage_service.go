@@ -93,7 +93,7 @@ func (bcs *BigCacheStorageService) Close(ctx context.Context) error {
 	return bcs.baseStorageService.Close(ctx)
 }
 
-func (bcs *BigCacheStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+func (bcs *BigCacheStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	return bcs.baseStorageService.ExpirationPolicy(ctx)
 }
 

@@ -119,11 +119,11 @@ func (dbs *DBStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
+func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	if dbs.discardAfterTimeout {
-		return arbstate.DiscardAfterDataTimeout
+		return arbstate.DiscardAfterDataTimeout, nil
 	} else {
-		return arbstate.KeepForever
+		return arbstate.KeepForever, nil
 	}
 }
 

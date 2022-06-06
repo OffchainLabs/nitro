@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -20,7 +21,7 @@ import (
 type DataAvailabilityReader interface {
 	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
 	HealthCheck(ctx context.Context) error
-	ExpirationPolicy(ctx context.Context) ExpirationPolicy
+	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
 }
 
 var ErrHashMismatch = errors.New("Result does not match expected hash")
@@ -233,7 +234,7 @@ const (
 	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node, assumed to be as long as minimum data timeout)
 	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
 	MixedTimeout                                       // Used for cases with mixed type of timeout policy(Mainly used for aggregators which have data availability services with multiply type of timeout policy)
-	DiscardImmediately                                 // Data is never stored (Mainly used for emptyStorageService)
+	DiscardImmediately                                 // Data is never stored (Mainly used for empty/wrapper/placeholder classes)
 	// Add more type of expiration policy.
 )
 
@@ -254,19 +255,19 @@ func (ep ExpirationPolicy) String() (string, error) {
 	}
 }
 
-func StringToExpirationPolicy(s string) ExpirationPolicy {
+func StringToExpirationPolicy(s string) (ExpirationPolicy, error) {
 	switch s {
 	case "KeepForever":
-		return KeepForever
+		return KeepForever, nil
 	case "DiscardAfterArchiveTimeout":
-		return DiscardAfterArchiveTimeout
+		return DiscardAfterArchiveTimeout, nil
 	case "DiscardAfterDataTimeout":
-		return DiscardAfterDataTimeout
+		return DiscardAfterDataTimeout, nil
 	case "MixedTimeout":
-		return MixedTimeout
+		return MixedTimeout, nil
 	case "DiscardImmediately":
-		return DiscardImmediately
+		return DiscardImmediately, nil
 	default:
-		return -1
+		return -1, fmt.Errorf("invalid Expiration Policy: %s", s)
 	}
 }
