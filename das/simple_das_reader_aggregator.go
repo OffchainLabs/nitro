@@ -32,6 +32,7 @@ type RestfulClientAggregatorConfig struct {
 	WaitBeforeTryNext                  time.Duration                      `koanf:"wait-before-try-next"`
 	MaxPerEndpointStats                int                                `koanf:"max-per-endpoint-stats"`
 	SimpleExploreExploitStrategyConfig SimpleExploreExploitStrategyConfig `koanf:"simple-explore-exploit-strategy"`
+	SyncToStorageConfig                SyncToStorageConfig                `koanf:"sync-to-storage"`
 }
 
 var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
@@ -41,6 +42,7 @@ var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
 	WaitBeforeTryNext:                  2 * time.Second,
 	MaxPerEndpointStats:                20,
 	SimpleExploreExploitStrategyConfig: DefaultSimpleExploreExploitStrategyConfig,
+	SyncToStorageConfig:                DefaultSyncToStorageConfig,
 }
 
 type SimpleExploreExploitStrategyConfig struct {
@@ -61,6 +63,7 @@ func RestfulClientAggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".wait-before-try-next", DefaultRestfulClientAggregatorConfig.WaitBeforeTryNext, "time to wait until trying the next set of REST endpoints while waiting for a response; the next set of REST endpoints is determined by the strategy selected")
 	f.Int(prefix+".max-per-endpoint-stats", DefaultRestfulClientAggregatorConfig.MaxPerEndpointStats, "number of stats entries (latency and success rate) to keep for each REST endpoint; controls whether strategy is faster or slower to respond to changing conditions")
 	SimpleExploreExploitStrategyConfigAddOptions(prefix+".simple-explore-exploit-strategy", f)
+	SyncToStorageConfigAddOptions(prefix+".sync-to-storage", f)
 }
 
 func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet) {
