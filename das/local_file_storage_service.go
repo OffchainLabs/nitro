@@ -47,13 +47,19 @@ func NewLocalFileStorageService(dataDir string) (StorageService, error) {
 
 func (s *LocalFileStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", s)
-	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
-	return os.ReadFile(pathname)
+	pathname := s.dataDir + "/" + EncodeStorageServiceKey(key)
+	res, err := os.ReadFile(pathname)
+	if err != nil {
+		// Just for backward compatability.
+		pathname = s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
+		return os.ReadFile(pathname)
+	}
+	return res, nil
 }
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
 	log.Trace("das.LocalFileStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", s)
-	fileName := base32.StdEncoding.EncodeToString(crypto.Keccak256(data))
+	fileName := EncodeStorageServiceKey(crypto.Keccak256(data))
 	finalPath := s.dataDir + "/" + fileName
 
 	// Use a temp file and rename to achieve atomic writes.
