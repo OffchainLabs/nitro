@@ -49,7 +49,9 @@ type DataAvailabilityConfig struct {
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
 }
 
-var DefaultDataAvailabilityConfig = DataAvailabilityConfig{}
+var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
+	RequestTimeout: 5 * time.Second,
+}
 
 /* TODO put these checks somewhere
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
