@@ -176,6 +176,14 @@ func (ps *L1PricingState) SetUnitsSinceUpdate(units uint64) error {
 	return ps.unitsSinceUpdate.Set(units)
 }
 
+func (ps *L1PricingState) AddToUnitsSinceUpdate(units uint64) error {
+	oldUnits, err := ps.unitsSinceUpdate.Get()
+	if err != nil {
+		return err
+	}
+	return ps.unitsSinceUpdate.Set(oldUnits + units)
+}
+
 func (ps *L1PricingState) PricePerUnit() (*big.Int, error) {
 	return ps.pricePerUnit.Get()
 }
@@ -371,32 +379,32 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, posterAddr common
 	pricePerUnit, _ := ps.PricePerUnit()
 	numUnits := l1Bytes * params.TxDataNonZeroGasEIP2028
 	tx.PosterCost = am.BigMulByUint(pricePerUnit, numUnits)
+	tx.CalldataUnits = numUnits
 	tx.PosterIsReimbursable = true
-	unitsSinceUpdate, _ := ps.UnitsSinceUpdate()
-	_ = ps.SetUnitsSinceUpdate(unitsSinceUpdate + numUnits)
 }
 
 const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
-func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, bool) {
+func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64, bool) {
 	if tx := message.UnderlyingTransaction(); tx != nil {
 		if tx.PosterCost == nil {
 			ps.AddPosterInfo(tx, poster)
 		}
-		return tx.PosterCost, tx.PosterIsReimbursable
+		return tx.PosterCost, tx.CalldataUnits, tx.PosterIsReimbursable
 	}
 
 	byteCount, err := byteCountAfterBrotli0(message.Data())
 	if err != nil {
 		log.Error("failed to compress tx", "err", err)
-		return big.NewInt(0), false
+		return big.NewInt(0), 0, false
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
 	l1Bytes := byteCount + TxFixedCost
 	pricePerUnit, _ := ps.PricePerUnit()
 
-	return am.BigMulByUint(pricePerUnit, l1Bytes*params.TxDataNonZeroGasEIP2028), true
+	units := l1Bytes * params.TxDataNonZeroGasEIP2028
+	return am.BigMulByUint(pricePerUnit, units), units, true
 }
 
 func byteCountAfterBrotli0(input []byte) (uint64, error) {

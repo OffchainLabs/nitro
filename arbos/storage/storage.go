@@ -295,7 +295,8 @@ func (ss *StorageSlot) Get() (common.Hash, error) {
 func (ss *StorageSlot) Set(value common.Hash) error {
 	if ss.burner.ReadOnly() {
 		log.Error("Read-only burner attempted to mutate state", "value", value)
-		return vm.ErrWriteProtection
+		panic("Read-only burner attempted to mutate state")
+		// return vm.ErrWriteProtection
 	}
 	err := ss.burner.Burn(writeCost(value))
 	if err != nil {

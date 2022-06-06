@@ -155,7 +155,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             dataHash,
             afterDelayedMessagesRead
         );
-        _reportBatchSpending(dataHash, sequenceNumber);
+        if (data.length > 0) {
+            _reportBatchSpending(dataHash, sequenceNumber);
+        }
         emit SequencerBatchDelivered(
             inboxAccs.length - 1,
             beforeAcc,
@@ -184,7 +186,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             dataHash,
             afterDelayedMessagesRead
         );
-        _reportBatchSpending(dataHash, sequenceNumber);
+        if (data.length > 0) {
+            _reportBatchSpending(dataHash, sequenceNumber);
+        }
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,

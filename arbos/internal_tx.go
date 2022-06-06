@@ -5,6 +5,7 @@ package arbos
 
 import (
 	"fmt"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -42,9 +43,10 @@ func InternalTxStartBlock(
 		panic(fmt.Sprintf("Failed to pack internal tx %v", err))
 	}
 	return &types.ArbitrumInternalTx{
-		ChainId: chainId,
-		SubType: arbInternalTxStartBlock,
-		Data:    data,
+		ChainId:       chainId,
+		L2BlockNumber: arbmath.BigAddByUint(lastHeader.Number, 1),
+		SubType:       arbInternalTxStartBlock,
+		Data:          data,
 	}
 }
 
