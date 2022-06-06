@@ -20,14 +20,13 @@ type StorageService interface {
 	Sync(ctx context.Context) error
 	Closer
 	fmt.Stringer
-	ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy
 	HealthCheck(ctx context.Context) error
 }
 
 func EncodeStorageServiceKey(b []byte) string {
-	return hexutil.Encode(b)
+	return hexutil.Encode(b)[2:]
 }
 
 func DecodeStorageServiceKey(input string) ([]byte, error) {
-	return hexutil.Decode(input)
+	return hexutil.Decode("0x" + input)
 }
