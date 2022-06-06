@@ -6,7 +6,6 @@ package das
 import (
 	"bytes"
 	"context"
-	"errors"
 	"sync"
 	"time"
 
@@ -63,7 +62,7 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]b
 	}
 
 	data, err := f.StorageService.GetByHash(ctx, key)
-	if errors.Is(err, ErrNotFound) {
+	if err != nil {
 		doDelete := false
 		if f.preventRecursiveGets {
 			f.currentlyFetchingMutex.Lock()
@@ -73,6 +72,7 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]b
 			}
 			f.currentlyFetchingMutex.Unlock()
 		}
+		log.Trace("das.FallbackStorageService.GetByHash trying fallback")
 		data, err = f.backup.GetByHash(ctx, key)
 		if doDelete {
 			f.currentlyFetchingMutex.Lock()
@@ -93,7 +93,7 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]b
 }
 
 func (f *FallbackStorageService) String() string {
-	return "FallbackStorageService(" + f.StorageService.String() + ")"
+	return "FallbackStorageService(stoargeService:" + f.StorageService.String() + ")"
 }
 
 func (f *FallbackStorageService) HealthCheck(ctx context.Context) error {

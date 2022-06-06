@@ -94,6 +94,9 @@ func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 			return nil
 		})
 	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return ret, ErrNotFound
+	}
 	return ret, err
 }
 

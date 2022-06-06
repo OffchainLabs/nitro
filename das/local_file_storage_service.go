@@ -47,7 +47,13 @@ func NewLocalFileStorageService(dataDir string) (StorageService, error) {
 func (s *LocalFileStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", s)
 	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
-	return os.ReadFile(pathname)
+	data, err := os.ReadFile(pathname)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrNotFound
+		}
+	}
+	return data, nil
 }
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {

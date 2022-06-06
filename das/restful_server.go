@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type RestfulDasServer struct {
@@ -24,7 +25,7 @@ type RestfulDasServer struct {
 	httpServerError      error
 }
 
-func NewRestfulDasServer(address string, port uint64, storageService StorageService) (*RestfulDasServer, error) {
+func NewRestfulDasServer(address string, port uint64, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", address, port))
 	if err != nil {
 		return nil, err
@@ -95,6 +96,7 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	log.Trace("RestfulDasServer.ServeHTTP returning", "message", pretty.FirstFewBytes(responseData), "message length", len(responseData))
 
 	encodedResponseData := make([]byte, base64.StdEncoding.EncodedLen(len(responseData)))
 	base64.StdEncoding.Encode(encodedResponseData, responseData)
