@@ -36,10 +36,6 @@ func (s *readLimitedStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (lss *readLimitedStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
-	return -1
-}
-
 func (s *readLimitedStorageService) String() string {
 	return fmt.Sprintf("readLimitedStorageService(%v)", s.DataAvailabilityReader)
 

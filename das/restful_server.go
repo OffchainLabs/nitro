@@ -55,8 +55,8 @@ func NewRestfulDasServerOnListener(listener net.Listener, storageService arbstat
 }
 
 type RestfulDasServerResponse struct {
-	Data             string `json:"data"`
-	ExpirationPolicy string `json:"expirationPolicy"`
+	Data             string `json:"data,omitempty"`
+	ExpirationPolicy string `json:"expirationPolicy,omitempty"`
 }
 
 var cacheControlKey = http.CanonicalHeaderKey("cache-control")

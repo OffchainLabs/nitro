@@ -232,6 +232,8 @@ const (
 	KeepForever                ExpirationPolicy = iota // Data is kept forever
 	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node, assumed to be as long as minimum data timeout)
 	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
+	MixedTimeout                                       // Used for cases with mixed type of timeout policy(Mainly used for aggregators which have data availability services with multiply type of timeout policy)
+	DiscardImmediately                                 // Data is never stored (Mainly used for emptyStorageService)
 	// Add more type of expiration policy.
 )
 
@@ -243,6 +245,10 @@ func (ep ExpirationPolicy) String() (string, error) {
 		return "DiscardAfterArchiveTimeout", nil
 	case DiscardAfterDataTimeout:
 		return "DiscardAfterDataTimeout", nil
+	case MixedTimeout:
+		return "MixedTimeout", nil
+	case DiscardImmediately:
+		return "DiscardImmediately", nil
 	default:
 		return "", errors.New("unknown Expiration Policy")
 	}
@@ -256,6 +262,10 @@ func StringToExpirationPolicy(s string) ExpirationPolicy {
 		return DiscardAfterArchiveTimeout
 	case "DiscardAfterDataTimeout":
 		return DiscardAfterDataTimeout
+	case "MixedTimeout":
+		return MixedTimeout
+	case "DiscardImmediately":
+		return DiscardImmediately
 	default:
 		return -1
 	}

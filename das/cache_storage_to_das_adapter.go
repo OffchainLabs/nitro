@@ -89,7 +89,7 @@ func (s *emptyStorageService) Close(ctx context.Context) error {
 }
 
 func (s *emptyStorageService) ExpirationPolicy(ctx context.Context) arbstate.ExpirationPolicy {
-	return arbstate.DiscardAfterDataTimeout
+	return arbstate.DiscardImmediately
 }
 
 func (s *emptyStorageService) String() string {
