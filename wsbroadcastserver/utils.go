@@ -27,6 +27,12 @@ func logError(err error, msg string) {
 	}
 }
 
+func logWarn(err error, msg string) {
+	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+		log.Warn(msg, "err", err)
+	}
+}
+
 func (cr *chainedReader) Read(b []byte) (n int, err error) {
 	for len(cr.readers) > 0 {
 		n, err = cr.readers[0].Read(b)
@@ -71,7 +77,9 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 	// Remove timeout when leaving this function
 	defer func(conn net.Conn) {
 		err := conn.SetReadDeadline(time.Time{})
-		logError(err, "error removing read deadline")
+		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+			logError(err, "error removing read deadline")
+		}
 	}(conn)
 
 	for {
