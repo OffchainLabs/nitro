@@ -87,3 +87,11 @@ func (serv *DASRPCServer) GetByHash(ctx context.Context, certBytes hexutil.Bytes
 func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
 	return serv.localDAS.HealthCheck(ctx)
 }
+
+func (serv *DASRPCServer) ExpirationPolicy(ctx context.Context) (string, error) {
+	expirationPolicy, err := serv.localDAS.ExpirationPolicy(ctx)
+	if err != nil {
+		return "", err
+	}
+	return expirationPolicy.String()
+}

@@ -25,6 +25,10 @@ func (*dummyReader) HealthCheck(context.Context) error {
 	return errors.New("not implemented")
 }
 
+func (*dummyReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return -1, errors.New("not implemented")
+}
+
 func TestDAS_SimpleExploreExploit(t *testing.T) {
 	readers := []arbstate.DataAvailabilityReader{&dummyReader{0}, &dummyReader{1}, &dummyReader{2}, &dummyReader{3}, &dummyReader{4}, &dummyReader{5}}
 	stats := make(map[arbstate.DataAvailabilityReader]readerStats)

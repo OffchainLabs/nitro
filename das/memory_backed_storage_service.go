@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -74,8 +75,8 @@ func (m *MemoryBackedStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return KeepForever
+func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.KeepForever, nil
 }
 
 func (m *MemoryBackedStorageService) String() string {

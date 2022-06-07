@@ -192,3 +192,7 @@ func (d *SignAfterStoreDAS) String() string {
 func (d *SignAfterStoreDAS) HealthCheck(ctx context.Context) error {
 	return d.storageService.HealthCheck(ctx)
 }
+
+func (d *SignAfterStoreDAS) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return d.storageService.ExpirationPolicy(ctx)
+}
