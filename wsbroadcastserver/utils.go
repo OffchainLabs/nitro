@@ -77,9 +77,7 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 	// Remove timeout when leaving this function
 	defer func(conn net.Conn) {
 		err := conn.SetReadDeadline(time.Time{})
-		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
-			logError(err, "error removing read deadline")
-		}
+		logError(err, "error removing read deadline")
 	}(conn)
 
 	for {
