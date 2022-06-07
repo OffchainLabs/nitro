@@ -95,3 +95,7 @@ func (s *emptyStorageService) ExpirationPolicy(ctx context.Context) ExpirationPo
 func (s *emptyStorageService) String() string {
 	return "emptyStorageService"
 }
+
+func (s *emptyStorageService) HealthCheck(ctx context.Context) error {
+	return nil
+}

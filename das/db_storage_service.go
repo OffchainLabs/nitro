@@ -4,6 +4,7 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"time"
@@ -130,4 +131,20 @@ func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) ExpirationPol
 
 func (dbs *DBStorageService) String() string {
 	return "BadgerDB(" + dbs.dirPath + ")"
+}
+
+func (dbs *DBStorageService) HealthCheck(ctx context.Context) error {
+	testData := []byte("Test-Data")
+	err := dbs.Put(ctx, testData, uint64(time.Now().Add(time.Minute).Unix()))
+	if err != nil {
+		return err
+	}
+	res, err := dbs.GetByHash(ctx, crypto.Keccak256(testData))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(res, testData) {
+		return errors.New("invalid GetByHash result")
+	}
+	return nil
 }

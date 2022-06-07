@@ -341,3 +341,13 @@ func (a *Aggregator) String() string {
 	b.WriteString("}")
 	return b.String()
 }
+
+func (a *Aggregator) HealthCheck(ctx context.Context) error {
+	for _, serv := range a.services {
+		err := serv.service.HealthCheck(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

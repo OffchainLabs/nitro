@@ -89,6 +89,10 @@ func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash []byte) 
 	return wavmio.ResolvePreImage(common.BytesToHash(hash)), nil
 }
 
+func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
+	return nil
+}
+
 func main() {
 	wavmio.StubInit()
 

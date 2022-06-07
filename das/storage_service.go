@@ -20,4 +20,5 @@ type StorageService interface {
 	Closer
 	fmt.Stringer
 	ExpirationPolicy(ctx context.Context) ExpirationPolicy
+	HealthCheck(ctx context.Context) error
 }

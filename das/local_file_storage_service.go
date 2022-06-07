@@ -4,6 +4,7 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"encoding/base32"
 	"errors"
@@ -96,4 +97,20 @@ func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) Expirati
 
 func (s *LocalFileStorageService) String() string {
 	return "LocalFileStorageService(" + s.dataDir + ")"
+}
+
+func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
+	testData := []byte("Test-Data")
+	err := s.Put(ctx, testData, uint64(time.Now().Add(time.Minute).Unix()))
+	if err != nil {
+		return err
+	}
+	res, err := s.GetByHash(ctx, crypto.Keccak256(testData))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(res, testData) {
+		return errors.New("invalid GetByHash result")
+	}
+	return nil
 }
