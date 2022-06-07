@@ -50,7 +50,9 @@ type DataAvailabilityConfig struct {
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
-	RequestTimeout: 5 * time.Second,
+	RequestTimeout:                5 * time.Second,
+	Enable:                        false,
+	RestfulClientAggregatorConfig: DefaultRestfulClientAggregatorConfig,
 }
 
 /* TODO put these checks somewhere
