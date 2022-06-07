@@ -5,10 +5,12 @@ package das
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -119,25 +121,38 @@ func (r *RedundantStorageService) Close(ctx context.Context) error {
 	return anyError
 }
 
-func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	// If at least one inner service has KeepForever,
 	// then whole redundant service can serve after timeout.
-	for _, serv := range r.innerServices {
-		if serv.ExpirationPolicy(ctx) == KeepForever {
-			return KeepForever
-		}
-	}
+
 	// If no inner service has KeepForever,
 	// but at least one inner service has DiscardAfterArchiveTimeout,
 	// then whole redundant service can serve till archive timeout.
+
+	// If no inner service has KeepForever, DiscardAfterArchiveTimeout,
+	// but at least one inner service has DiscardAfterDataTimeout,
+	// then whole redundant service can serve till data timeout.
+	var res arbstate.ExpirationPolicy = -1
 	for _, serv := range r.innerServices {
-		if serv.ExpirationPolicy(ctx) == DiscardAfterArchiveTimeout {
-			return DiscardAfterArchiveTimeout
+		expirationPolicy, err := serv.ExpirationPolicy(ctx)
+		if err != nil {
+			return -1, err
+		}
+		switch expirationPolicy {
+		case arbstate.KeepForever:
+			return arbstate.KeepForever, nil
+		case arbstate.DiscardAfterArchiveTimeout:
+			res = arbstate.DiscardAfterArchiveTimeout
+		case arbstate.DiscardAfterDataTimeout:
+			if res != arbstate.DiscardAfterArchiveTimeout {
+				res = arbstate.DiscardAfterDataTimeout
+			}
 		}
 	}
-	// If no inner service has KeepForever and DiscardAfterArchiveTimeout,
-	// then whole redundant service will serve only till timeout.
-	return DiscardAfterDataTimeout
+	if res == -1 {
+		return -1, errors.New("unknown expiration policy")
+	}
+	return res, nil
 }
 
 func (r *RedundantStorageService) String() string {

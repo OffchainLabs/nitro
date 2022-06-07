@@ -133,8 +133,8 @@ func (serv *ArchivingStorageService) Close(ctx context.Context) error {
 	}
 }
 
-func (serv *ArchivingStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return DiscardAfterArchiveTimeout
+func (serv *ArchivingStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.DiscardAfterArchiveTimeout, nil
 }
 
 func (serv *ArchivingStorageService) GetArchiverErrorSignalChan() <-chan interface{} {
@@ -192,4 +192,8 @@ func (asdr *ArchivingSimpleDASReader) GetArchiverError() error {
 
 func (asdr *ArchivingSimpleDASReader) HealthCheck(ctx context.Context) error {
 	return asdr.wrapped.HealthCheck(ctx)
+}
+
+func (asdr *ArchivingSimpleDASReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return asdr.wrapped.ExpirationPolicy(ctx)
 }

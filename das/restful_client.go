@@ -43,7 +43,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	if len(hash) != 32 {
 		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
 	}
-	res, err := http.Get(c.url + "/get-by-hash/" + hexutil.Encode(hash))
+	res, err := http.Get(c.url + getByHashRequestPath + hexutil.Encode(hash))
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 }
 
 func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
-	res, err := http.Get(c.url + "/health/")
+	res, err := http.Get(c.url + healthRequestPath)
 	if err != nil {
 		return err
 	}
@@ -83,4 +83,26 @@ func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
 		return fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
 	}
 	return nil
+}
+
+func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	res, err := http.Get(c.url + expirationPolicyRequestPath)
+	if err != nil {
+		return -1, err
+	}
+	if res.StatusCode != http.StatusOK {
+		return -1, err
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return -1, fmt.Errorf("HTTP error with status %d returned by server: %s", res.StatusCode, http.StatusText(res.StatusCode))
+	}
+
+	var response RestfulDasServerResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return -1, err
+	}
+
+	return arbstate.StringToExpirationPolicy(response.ExpirationPolicy)
 }

@@ -5,6 +5,7 @@ package das
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -63,4 +64,38 @@ func (r RedundantSimpleDASReader) HealthCheck(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (r *RedundantSimpleDASReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	// If at least one inner service has KeepForever,
+	// then whole redundant service can serve after timeout.
+
+	// If no inner service has KeepForever,
+	// but at least one inner service has DiscardAfterArchiveTimeout,
+	// then whole redundant service can serve till archive timeout.
+
+	// If no inner service has KeepForever, DiscardAfterArchiveTimeout,
+	// but at least one inner service has DiscardAfterDataTimeout,
+	// then whole redundant service can serve till data timeout.
+	var res arbstate.ExpirationPolicy = -1
+	for _, serv := range r.inners {
+		expirationPolicy, err := serv.ExpirationPolicy(ctx)
+		if err != nil {
+			return -1, err
+		}
+		switch expirationPolicy {
+		case arbstate.KeepForever:
+			return arbstate.KeepForever, nil
+		case arbstate.DiscardAfterArchiveTimeout:
+			res = arbstate.DiscardAfterArchiveTimeout
+		case arbstate.DiscardAfterDataTimeout:
+			if res != arbstate.DiscardAfterArchiveTimeout {
+				res = arbstate.DiscardAfterDataTimeout
+			}
+		}
+	}
+	if res == -1 {
+		return -1, errors.New("unknown expiration policy")
+	}
+	return res, nil
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/sys/unix"
@@ -46,19 +47,26 @@ func NewLocalFileStorageService(dataDir string) (StorageService, error) {
 
 func (s *LocalFileStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", s)
-	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
+	pathname := s.dataDir + "/" + EncodeStorageServiceKey(key)
 	data, err := os.ReadFile(pathname)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, ErrNotFound
+		// Just for backward compatability.
+		pathname = s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
+		data, err = os.ReadFile(pathname)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, ErrNotFound
+			}
+			return nil, err
 		}
+		return data, nil
 	}
 	return data, nil
 }
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
 	log.Trace("das.LocalFileStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", s)
-	fileName := base32.StdEncoding.EncodeToString(crypto.Keccak256(data))
+	fileName := EncodeStorageServiceKey(crypto.Keccak256(data))
 	finalPath := s.dataDir + "/" + fileName
 
 	// Use a temp file and rename to achieve atomic writes.
@@ -91,8 +99,8 @@ func (s *LocalFileStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return KeepForever
+func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.KeepForever, nil
 }
 
 func (s *LocalFileStorageService) String() string {
