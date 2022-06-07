@@ -49,7 +49,7 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 		MaxPerEndpointStats:    10,
 	}
 
-	agg, err := NewRestfulClientAggregator(&config)
+	agg, err := NewRestfulClientAggregator(ctx, &config)
 	Require(t, err)
 
 	returnedData, err := agg.GetByHash(ctx, dataHash1)

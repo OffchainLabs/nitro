@@ -27,6 +27,7 @@ import (
 type RestfulClientAggregatorConfig struct {
 	Enable                             bool                               `koanf:"enable"`
 	Urls                               []string                           `koanf:"urls"`
+	OnlineUrlList                      string                             `koanf:"online-url-list"`
 	Strategy                           string                             `koanf:"strategy"`
 	StrategyUpdateInterval             time.Duration                      `koanf:"strategy-update-interval"`
 	WaitBeforeTryNext                  time.Duration                      `koanf:"wait-before-try-next"`
@@ -37,6 +38,7 @@ type RestfulClientAggregatorConfig struct {
 
 var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
 	Urls:                               []string{},
+	OnlineUrlList:                      "",
 	Strategy:                           "simple-explore-exploit",
 	StrategyUpdateInterval:             10 * time.Second,
 	WaitBeforeTryNext:                  2 * time.Second,
@@ -57,7 +59,8 @@ var DefaultSimpleExploreExploitStrategyConfig = SimpleExploreExploitStrategyConf
 
 func RestfulClientAggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultRestfulClientAggregatorConfig.Enable, "enable retrieval of sequencer batch data from a list of remote REST endpoints; if other DAS storage types are enabled, this mode is used as a fallback")
-	f.StringSlice(prefix+".urls", DefaultRestfulClientAggregatorConfig.Urls, "list of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints")
+	f.StringSlice(prefix+".urls", DefaultRestfulClientAggregatorConfig.Urls, "list of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints; additive with the online-url-list option")
+	f.String(prefix+".online-url-list", DefaultRestfulClientAggregatorConfig.OnlineUrlList, "a URL to a list of URLs of REST das endpoints that is checked at startup; additive with the url option")
 	f.String(prefix+".strategy", DefaultRestfulClientAggregatorConfig.Strategy, "strategy to use to determine order and parallelism of calling REST endpoint URLs; valid options are 'simple-explore-exploit'")
 	f.Duration(prefix+".strategy-update-interval", DefaultRestfulClientAggregatorConfig.StrategyUpdateInterval, "how frequently to update the strategy with endpoint latency and error rate data")
 	f.Duration(prefix+".wait-before-try-next", DefaultRestfulClientAggregatorConfig.WaitBeforeTryNext, "time to wait until trying the next set of REST endpoints while waiting for a response; the next set of REST endpoints is determined by the strategy selected")
@@ -71,13 +74,37 @@ func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet
 	f.Int(prefix+".exploit-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploitIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode")
 }
 
-func NewRestfulClientAggregator(config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
+func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
 	a := SimpleDASReaderAggregator{
 		config: config,
 		stats:  make(map[arbstate.DataAvailabilityReader]readerStats),
 	}
 
+	combinedUrls := make(map[string]bool)
 	for _, url := range config.Urls {
+		combinedUrls[url] = true
+	}
+	if config.OnlineUrlList != DefaultRestfulClientAggregatorConfig.OnlineUrlList {
+		onlineUrls, err := RestfulServerURLsFromList(ctx, config.OnlineUrlList)
+		if err != nil {
+			return nil, err
+		}
+		for _, url := range onlineUrls {
+			combinedUrls[url] = true
+		}
+	}
+	if len(combinedUrls) == 0 {
+		return nil, errors.New("No URLs were specified with either of rest-aggregator.urls or rest-aggregator.online-url-list")
+	}
+
+	urls := make([]string, 0, len(combinedUrls))
+	for url, _ := range combinedUrls {
+		urls = append(urls, url)
+	}
+
+	log.Info("REST Aggregator URLs", "urls", urls)
+
+	for _, url := range urls {
 		reader, err := NewRestfulDasClientFromURL(url)
 		if err != nil {
 			return nil, err
