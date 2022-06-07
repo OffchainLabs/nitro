@@ -124,40 +124,35 @@ func (r *RedundantStorageService) Close(ctx context.Context) error {
 func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	// If at least one inner service has KeepForever,
 	// then whole redundant service can serve after timeout.
-	for _, serv := range r.innerServices {
-		expirationPolicy, err := serv.ExpirationPolicy(ctx)
-		if err != nil {
-			return -1, err
-		}
-		if expirationPolicy == arbstate.KeepForever {
-			return arbstate.KeepForever, nil
-		}
-	}
+
 	// If no inner service has KeepForever,
 	// but at least one inner service has DiscardAfterArchiveTimeout,
 	// then whole redundant service can serve till archive timeout.
-	for _, serv := range r.innerServices {
-		expirationPolicy, err := serv.ExpirationPolicy(ctx)
-		if err != nil {
-			return -1, err
-		}
-		if expirationPolicy == arbstate.DiscardAfterArchiveTimeout {
-			return arbstate.DiscardAfterArchiveTimeout, nil
-		}
-	}
+
 	// If no inner service has KeepForever, DiscardAfterArchiveTimeout,
 	// but at least one inner service has DiscardAfterDataTimeout,
 	// then whole redundant service can serve till data timeout.
+	var res arbstate.ExpirationPolicy = -1
 	for _, serv := range r.innerServices {
 		expirationPolicy, err := serv.ExpirationPolicy(ctx)
 		if err != nil {
 			return -1, err
 		}
-		if expirationPolicy == arbstate.DiscardAfterDataTimeout {
-			return arbstate.DiscardAfterDataTimeout, nil
+		switch expirationPolicy {
+		case arbstate.KeepForever:
+			return arbstate.KeepForever, nil
+		case arbstate.DiscardAfterArchiveTimeout:
+			res = arbstate.DiscardAfterArchiveTimeout
+		case arbstate.DiscardAfterDataTimeout:
+			if res != arbstate.DiscardAfterArchiveTimeout {
+				res = arbstate.DiscardAfterDataTimeout
+			}
 		}
 	}
-	return -1, errors.New("unknown expiration policy")
+	if res == -1 {
+		return -1, errors.New("unknown expiration policy")
+	}
+	return res, nil
 }
 
 func (r *RedundantStorageService) String() string {
