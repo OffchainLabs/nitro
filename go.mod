@@ -14,6 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.12.0
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.11.10
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.26.9
+	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/dgraph-io/badger/v3 v3.2103.2
 	github.com/ethereum/go-ethereum v1.10.13-0.20211112145008-abc74a5ffeb7
 	github.com/knadh/koanf v1.4.0
