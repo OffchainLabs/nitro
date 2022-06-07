@@ -147,3 +147,11 @@ func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) ExpirationP
 func (rs *RedisStorageService) String() string {
 	return fmt.Sprintf("RedisStorageService(%+v)", rs.redisConfig)
 }
+
+func (rs *RedisStorageService) HealthCheck(ctx context.Context) error {
+	err := rs.client.Ping(ctx).Err()
+	if err != nil {
+		return err
+	}
+	return rs.baseStorageService.HealthCheck(ctx)
+}

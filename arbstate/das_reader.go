@@ -18,6 +18,7 @@ import (
 
 type DataAvailabilityReader interface {
 	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
+	HealthCheck(ctx context.Context) error
 }
 
 var ErrHashMismatch = errors.New("Result does not match expected hash")

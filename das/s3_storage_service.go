@@ -53,6 +53,7 @@ func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type S3StorageService struct {
+	client              *s3.Client
 	bucket              string
 	uploader            S3Uploader
 	downloader          S3Downloader
@@ -65,6 +66,7 @@ func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) 
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(config.AccessKey, config.SecretKey, "")),
 	})
 	return &S3StorageService{
+		client:              client,
 		bucket:              config.Bucket,
 		uploader:            manager.NewUploader(client),
 		downloader:          manager.NewDownloader(client),
@@ -80,7 +82,6 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 		Bucket: aws.String(s3s.bucket),
 		Key:    aws.String(base32.StdEncoding.EncodeToString(key)),
 	})
-
 	return buf.Bytes(), err
 }
 
@@ -117,4 +118,9 @@ func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) ExpirationPol
 
 func (s3s *S3StorageService) String() string {
 	return fmt.Sprintf("S3StorageService(:%s)", s3s.bucket)
+}
+
+func (s3s *S3StorageService) HealthCheck(ctx context.Context) error {
+	_, err := s3s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s3s.bucket)})
+	return err
 }

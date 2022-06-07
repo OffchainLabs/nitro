@@ -75,3 +75,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 func (c *DASRPCClient) String() string {
 	return fmt.Sprintf("DASRPCClient{url:%s}", c.url)
 }
+
+func (c *DASRPCClient) HealthCheck(ctx context.Context) error {
+	return c.clnt.CallContext(ctx, nil, "das_healthCheck")
+}

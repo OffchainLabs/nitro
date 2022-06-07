@@ -147,3 +147,13 @@ func (r *RedundantStorageService) String() string {
 	}
 	return str + ")"
 }
+
+func (r *RedundantStorageService) HealthCheck(ctx context.Context) error {
+	for _, storageService := range r.innerServices {
+		err := storageService.HealthCheck(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

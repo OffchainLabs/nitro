@@ -303,3 +303,7 @@ func (a *SimpleDASReaderAggregator) Close(ctx context.Context) error {
 func (a *SimpleDASReaderAggregator) String() string {
 	return fmt.Sprintf("das.SimpleDASReaderAggregator{%v}", a.config.Urls)
 }
+
+func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
+	return nil
+}

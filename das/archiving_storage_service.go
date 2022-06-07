@@ -149,6 +149,14 @@ func (serv *ArchivingStorageService) String() string {
 	return "ArchivingStorageService(" + serv.inner.String() + ")"
 }
 
+func (serv *ArchivingStorageService) HealthCheck(ctx context.Context) error {
+	err := serv.inner.HealthCheck(ctx)
+	if err != nil {
+		return err
+	}
+	return serv.archiveTo.HealthCheck(ctx)
+}
+
 type ArchivingSimpleDASReader struct {
 	wrapped *ArchivingStorageService
 }
@@ -174,10 +182,14 @@ func (asdr *ArchivingSimpleDASReader) Close(ctx context.Context) error {
 	return asdr.wrapped.Close(ctx)
 }
 
-func (serv *ArchivingSimpleDASReader) GetArchiverErrorSignalChan() <-chan interface{} {
-	return serv.wrapped.GetArchiverErrorSignalChan()
+func (asdr *ArchivingSimpleDASReader) GetArchiverErrorSignalChan() <-chan interface{} {
+	return asdr.wrapped.GetArchiverErrorSignalChan()
 }
 
-func (serv *ArchivingSimpleDASReader) GetArchiverError() error {
-	return serv.wrapped.GetArchiverError()
+func (asdr *ArchivingSimpleDASReader) GetArchiverError() error {
+	return asdr.wrapped.GetArchiverError()
+}
+
+func (asdr *ArchivingSimpleDASReader) HealthCheck(ctx context.Context) error {
+	return asdr.wrapped.HealthCheck(ctx)
 }

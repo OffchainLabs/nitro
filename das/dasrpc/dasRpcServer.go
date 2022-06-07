@@ -83,3 +83,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 func (serv *DASRPCServer) GetByHash(ctx context.Context, certBytes hexutil.Bytes) (hexutil.Bytes, error) {
 	return serv.localDAS.GetByHash(ctx, certBytes)
 }
+
+func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
+	return serv.localDAS.HealthCheck(ctx)
+}
