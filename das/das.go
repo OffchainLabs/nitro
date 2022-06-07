@@ -45,7 +45,10 @@ type DataAvailabilityConfig struct {
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
 }
 
-var DefaultDataAvailabilityConfig = DataAvailabilityConfig{}
+var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
+	Enable:                        false,
+	RestfulClientAggregatorConfig: DefaultRestfulClientAggregatorConfig,
+}
 
 /* TODO put these checks somewhere
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
