@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
@@ -19,5 +20,13 @@ type StorageService interface {
 	Sync(ctx context.Context) error
 	Closer
 	fmt.Stringer
-	ExpirationPolicy(ctx context.Context) ExpirationPolicy
+	HealthCheck(ctx context.Context) error
+}
+
+func EncodeStorageServiceKey(b []byte) string {
+	return hexutil.Encode(b)[2:]
+}
+
+func DecodeStorageServiceKey(input string) ([]byte, error) {
+	return hexutil.Decode("0x" + input)
 }

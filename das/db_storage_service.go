@@ -4,6 +4,7 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"time"
@@ -11,6 +12,7 @@ import (
 	badger "github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
@@ -120,14 +122,30 @@ func (dbs *DBStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	if dbs.discardAfterTimeout {
-		return DiscardAfterDataTimeout
+		return arbstate.DiscardAfterDataTimeout, nil
 	} else {
-		return KeepForever
+		return arbstate.KeepForever, nil
 	}
 }
 
 func (dbs *DBStorageService) String() string {
 	return "BadgerDB(" + dbs.dirPath + ")"
+}
+
+func (dbs *DBStorageService) HealthCheck(ctx context.Context) error {
+	testData := []byte("Test-Data")
+	err := dbs.Put(ctx, testData, uint64(time.Now().Add(time.Minute).Unix()))
+	if err != nil {
+		return err
+	}
+	res, err := dbs.GetByHash(ctx, crypto.Keccak256(testData))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(res, testData) {
+		return errors.New("invalid GetByHash result")
+	}
+	return nil
 }

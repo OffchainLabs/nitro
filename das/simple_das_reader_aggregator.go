@@ -303,3 +303,29 @@ func (a *SimpleDASReaderAggregator) Close(ctx context.Context) error {
 func (a *SimpleDASReaderAggregator) String() string {
 	return fmt.Sprintf("das.SimpleDASReaderAggregator{%v}", a.config.Urls)
 }
+
+func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
+	return nil
+}
+
+func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	if len(a.readers) == 0 {
+		return -1, errors.New("no DataAvailabilityService present")
+	}
+	expectedExpirationPolicy, err := a.readers[0].ExpirationPolicy(ctx)
+	if err != nil {
+		return -1, err
+	}
+	// Even if a single service is different from the rest,
+	// then whole aggregator will be considered for mixed expiration timeout policy.
+	for _, serv := range a.readers {
+		ep, err := serv.ExpirationPolicy(ctx)
+		if err != nil {
+			return -1, err
+		}
+		if ep != expectedExpirationPolicy {
+			return arbstate.MixedTimeout, nil
+		}
+	}
+	return expectedExpirationPolicy, nil
+}
