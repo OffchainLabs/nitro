@@ -819,7 +819,7 @@ func SetUpDataAvailability(
 	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
 	// the REST aggregator is used as the fallback to them.
 	if config.RestfulClientAggregatorConfig.Enable {
-		restAgg, err := das.NewRestfulClientAggregator(&config.RestfulClientAggregatorConfig)
+		restAgg, err := das.NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
 		if err != nil {
 			return nil, nil, err
 		}
