@@ -343,5 +343,11 @@ func (a *Aggregator) String() string {
 }
 
 func (a *Aggregator) HealthCheck(ctx context.Context) error {
+	for _, serv := range a.services {
+		err := serv.service.HealthCheck(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }

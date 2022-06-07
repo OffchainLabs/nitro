@@ -275,5 +275,11 @@ func (a *SimpleDASReaderAggregator) String() string {
 }
 
 func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
+	for _, serv := range a.readers {
+		err := serv.HealthCheck(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
