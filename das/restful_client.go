@@ -14,9 +14,11 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
-// Implements SimpleDASReader
+// Implements DataAvailabilityReader
 type RestfulDasClient struct {
 	url string
 }
@@ -38,6 +40,9 @@ func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
 }
 
 func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	if len(hash) != 32 {
+		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
+	}
 	res, err := http.Get(c.url + hexutil.Encode(hash))
 	if err != nil {
 		return nil, err
@@ -61,6 +66,9 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	decodedBytes, err := ioutil.ReadAll(decoder)
 	if err != nil {
 		return nil, err
+	}
+	if !bytes.Equal(hash, crypto.Keccak256(decodedBytes)) {
+		return nil, arbstate.ErrHashMismatch
 	}
 
 	return decodedBytes, nil
