@@ -98,7 +98,7 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 	}
 
 	urls := make([]string, 0, len(combinedUrls))
-	for url, _ := range combinedUrls {
+	for url := range combinedUrls {
 		urls = append(urls, url)
 	}
 
