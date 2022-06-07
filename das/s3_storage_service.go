@@ -6,7 +6,6 @@ package das
 import (
 	"bytes"
 	"context"
-	"encoding/base32"
 	"fmt"
 	"io"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -53,6 +53,7 @@ func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type S3StorageService struct {
+	client              *s3.Client
 	bucket              string
 	uploader            S3Uploader
 	downloader          S3Downloader
@@ -65,6 +66,7 @@ func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) 
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(config.AccessKey, config.SecretKey, "")),
 	})
 	return &S3StorageService{
+		client:              client,
 		bucket:              config.Bucket,
 		uploader:            manager.NewUploader(client),
 		downloader:          manager.NewDownloader(client),
@@ -78,9 +80,8 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 	buf := manager.NewWriteAtBuffer([]byte{})
 	_, err := s3s.downloader.Download(ctx, buf, &s3.GetObjectInput{
 		Bucket: aws.String(s3s.bucket),
-		Key:    aws.String(base32.StdEncoding.EncodeToString(key)),
+		Key:    aws.String(EncodeStorageServiceKey(key)),
 	})
-
 	return buf.Bytes(), err
 }
 
@@ -89,7 +90,7 @@ func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint
 
 	putObjectInput := s3.PutObjectInput{
 		Bucket: aws.String(s3s.bucket),
-		Key:    aws.String(base32.StdEncoding.EncodeToString(crypto.Keccak256(value))),
+		Key:    aws.String(EncodeStorageServiceKey(crypto.Keccak256(value))),
 		Body:   bytes.NewReader(value)}
 	if !s3s.discardAfterTimeout {
 		expires := time.Unix(int64(timeout), 0)
@@ -107,14 +108,19 @@ func (s3s *S3StorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	if s3s.discardAfterTimeout {
-		return DiscardAfterDataTimeout
+		return arbstate.DiscardAfterDataTimeout, nil
 	} else {
-		return KeepForever
+		return arbstate.KeepForever, nil
 	}
 }
 
 func (s3s *S3StorageService) String() string {
 	return fmt.Sprintf("S3StorageService(:%s)", s3s.bucket)
+}
+
+func (s3s *S3StorageService) HealthCheck(ctx context.Context) error {
+	_, err := s3s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s3s.bucket)})
+	return err
 }

@@ -67,8 +67,10 @@ func restfulServerURLsFromList(
 				word = scanner.Text()
 				subUrls, err := restfulServerURLsFromList(ctx, client, word, maxRecurseDepth-1, visitedSoFar)
 				if err != nil {
-					urls = append(urls, subUrls...)
+					return nil, err
 				}
+				urls = append(urls, subUrls...)
+
 			}
 		} else {
 			urls = append(urls, word)
