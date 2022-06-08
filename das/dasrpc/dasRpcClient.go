@@ -7,16 +7,21 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
 	clnt *rpc.Client
+	url  string
 }
 
 func NewDASRPCClient(target string) (*DASRPCClient, error) {
@@ -24,10 +29,16 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DASRPCClient{clnt: clnt}, nil
+	return &DASRPCClient{
+		clnt: clnt,
+		url:  target,
+	}, nil
 }
 
 func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	if len(hash) != 32 {
+		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
+	}
 	var ret hexutil.Bytes
 	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash)); err != nil {
 		return nil, err
@@ -39,6 +50,7 @@ func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, erro
 }
 
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(reqSig), "this", *c)
 	var ret StoreResult
 	if err := c.clnt.CallContext(ctx, &ret, "das_store", hexutil.Bytes(message), hexutil.Uint64(timeout), hexutil.Bytes(reqSig)); err != nil {
 		return nil, err
@@ -60,25 +72,19 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	}, nil
 }
 
-func (c *DASRPCClient) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	var ret hexutil.Bytes
-	if err := c.clnt.CallContext(ctx, &ret, "das_keysetFromHash", hexutil.Bytes(ksHash)); err != nil {
-		return nil, err
-	}
-	if !bytes.Equal(ksHash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
-		return nil, arbstate.ErrHashMismatch
-	}
-	return ret, nil
-}
-
-func (c *DASRPCClient) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
-	var ret hexutil.Bytes
-	if err := c.clnt.CallContext(ctx, &ret, "das_currentKeysetBytes"); err != nil {
-		return nil, err
-	}
-	return ret, nil
-}
-
 func (c *DASRPCClient) String() string {
-	return fmt.Sprintf("DASRPCClient{c:%v}", c.clnt)
+	return fmt.Sprintf("DASRPCClient{url:%s}", c.url)
+}
+
+func (c *DASRPCClient) HealthCheck(ctx context.Context) error {
+	return c.clnt.CallContext(ctx, nil, "das_healthCheck")
+}
+
+func (c *DASRPCClient) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	var res string
+	err := c.clnt.CallContext(ctx, &res, "das_expirationPolicy")
+	if err != nil {
+		return -1, err
+	}
+	return arbstate.StringToExpirationPolicy(res)
 }
