@@ -4,14 +4,17 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/sys/unix"
@@ -44,13 +47,26 @@ func NewLocalFileStorageService(dataDir string) (StorageService, error) {
 
 func (s *LocalFileStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
 	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", s)
-	pathname := s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
-	return os.ReadFile(pathname)
+	pathname := s.dataDir + "/" + EncodeStorageServiceKey(key)
+	data, err := os.ReadFile(pathname)
+	if err != nil {
+		// Just for backward compatability.
+		pathname = s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
+		data, err = os.ReadFile(pathname)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		return data, nil
+	}
+	return data, nil
 }
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
 	log.Trace("das.LocalFileStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", s)
-	fileName := base32.StdEncoding.EncodeToString(crypto.Keccak256(data))
+	fileName := EncodeStorageServiceKey(crypto.Keccak256(data))
 	finalPath := s.dataDir + "/" + fileName
 
 	// Use a temp file and rename to achieve atomic writes.
@@ -83,10 +99,26 @@ func (s *LocalFileStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return KeepForever
+func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.KeepForever, nil
 }
 
 func (s *LocalFileStorageService) String() string {
 	return "LocalFileStorageService(" + s.dataDir + ")"
+}
+
+func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
+	testData := []byte("Test-Data")
+	err := s.Put(ctx, testData, uint64(time.Now().Add(time.Minute).Unix()))
+	if err != nil {
+		return err
+	}
+	res, err := s.GetByHash(ctx, crypto.Keccak256(testData))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(res, testData) {
+		return errors.New("invalid GetByHash result")
+	}
+	return nil
 }
