@@ -881,7 +881,7 @@ func SetUpDataAvailability(
 		}
 
 		topLevelDas = rpcAggregator
-	} else if hasPersistentStorage {
+	} else if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
 
 		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
