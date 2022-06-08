@@ -5,7 +5,6 @@ package statetransfer
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
@@ -32,29 +31,6 @@ func (r *JsonInitDataReader) GetPreinitBlockCount() (uint64, error) {
 type JsonListReader struct {
 	input *json.Decoder
 	file  *os.File
-}
-
-func (i *JsonListReader) eatInputDelim(expected json.Delim) error {
-	token, err := i.input.Token()
-	if err != nil {
-		return err
-	}
-	foundString := "<Not Delim>"
-	delim, match := token.(json.Delim)
-	if match {
-		foundString = delim.String()
-	}
-	if foundString != expected.String() {
-		return fmt.Errorf("expected %s, found: %s", expected, foundString)
-	}
-	return nil
-}
-
-func (l *JsonListReader) open() error {
-	if l.input == nil {
-		return nil
-	}
-	return l.eatInputDelim('[')
 }
 
 func (l *JsonListReader) More() bool {
@@ -87,9 +63,6 @@ func (m *JsonInitDataReader) getListReader(fileName string) (JsonListReader, err
 	res := JsonListReader{
 		file:  inboundFile,
 		input: json.NewDecoder(inboundFile),
-	}
-	if err := res.open(); err != nil {
-		return JsonListReader{}, err
 	}
 	return res, nil
 }
