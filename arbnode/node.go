@@ -764,8 +764,10 @@ func SetUpDataAvailability(
 	var seqInbox *bridgegen.SequencerInbox
 	var err error
 	var seqInboxCaller *bridgegen.SequencerInboxCaller
+	var seqInboxAddress *common.Address
 
 	if l1Client != nil && deployInfo != nil {
+		seqInboxAddress = &deployInfo.SequencerInbox
 		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Client)
 		if err != nil {
 			return nil, nil, err
@@ -773,20 +775,20 @@ func SetUpDataAvailability(
 		seqInboxCaller = &seqInbox.SequencerInboxCaller
 	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
 		l1Client = nil
-		deployInfo = nil
+		seqInboxAddress = nil
 	} else if len(config.L1NodeURL) > 0 && len(config.SequencerInboxAddress) > 0 {
 		l1Client, err = ethclient.DialContext(ctx, config.L1NodeURL)
 		if err != nil {
 			return nil, nil, err
 		}
-		sequencerInbox, err := das.OptionalAddressFromString(config.SequencerInboxAddress)
+		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
 		if err != nil {
 			return nil, nil, err
 		}
-		if sequencerInbox == nil {
+		if seqInboxAddress == nil {
 			return nil, nil, errors.New("Must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
-		seqInbox, err = bridgegen.NewSequencerInbox(*sequencerInbox, l1Client)
+		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Client)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -837,7 +839,7 @@ func SetUpDataAvailability(
 				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
 			}
 			if syncConf.Eager {
-				if l1Client == nil || deployInfo == nil {
+				if l1Client == nil || seqInboxAddress == nil {
 					return nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
 				}
 				topLevelStorageService, err = das.NewSyncingFallbackStorageService(
@@ -848,7 +850,7 @@ func SetUpDataAvailability(
 					syncConf.IgnoreWriteErrors,
 					true,
 					l1Client,
-					deployInfo.SequencerInbox,
+					*seqInboxAddress,
 					&syncConf.EagerLowerBoundBlock,
 					retentionPeriodSeconds,
 					syncConf.EagerStopsWhenCaughtUp,
