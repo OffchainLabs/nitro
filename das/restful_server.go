@@ -63,7 +63,7 @@ type RestfulDasServerResponse struct {
 var cacheControlKey = http.CanonicalHeaderKey("cache-control")
 
 const cacheControlValue = "public, max-age=2419200, immutable" // cache for up to 28 days
-const healthRequestPath = "/health/"
+const healthRequestPath = "/health"
 const expirationPolicyRequestPath = "/expiration-policy/"
 const getByHashRequestPath = "/get-by-hash/"
 
