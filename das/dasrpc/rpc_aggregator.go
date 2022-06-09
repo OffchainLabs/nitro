@@ -60,12 +60,14 @@ func setUpServices(config das.AggregatorConfig) ([]das.ServiceDetails, error) {
 			return nil, err
 		}
 
+		serviceWithRetryWrapper := das.NewRetryWrapper(service)
+
 		pubKey, err := das.DecodeBase64BLSPublicKey([]byte(b.PubKeyBase64Encoded))
 		if err != nil {
 			return nil, err
 		}
 
-		d, err := das.NewServiceDetails(service, *pubKey, uint64(b.SignerMask))
+		d, err := das.NewServiceDetails(serviceWithRetryWrapper, *pubKey, uint64(b.SignerMask))
 		if err != nil {
 			return nil, err
 		}

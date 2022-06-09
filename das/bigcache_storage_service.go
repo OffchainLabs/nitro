@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/allegro/bigcache"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 
@@ -92,10 +93,14 @@ func (bcs *BigCacheStorageService) Close(ctx context.Context) error {
 	return bcs.baseStorageService.Close(ctx)
 }
 
-func (bcs *BigCacheStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+func (bcs *BigCacheStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	return bcs.baseStorageService.ExpirationPolicy(ctx)
 }
 
 func (bcs *BigCacheStorageService) String() string {
 	return fmt.Sprintf("BigCacheStorageService(%+v)", bcs.bigCacheConfig)
+}
+
+func (bcs *BigCacheStorageService) HealthCheck(ctx context.Context) error {
+	return bcs.baseStorageService.HealthCheck(ctx)
 }
