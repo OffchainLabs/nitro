@@ -1,24 +1,24 @@
 # Data Availability Server Instructions
 
 ## Description
-The Data Availability Server, `daserver`, allows storage and retrieval of transaction data batches for Arbitrum AnyTrust chains. It can be run in two modes: either committee member or mirror. Commitee members accept time-limited requests to store data batches from an Arbitrum AnyTrust sequencer, and if they store the data then they return a signed certificate promising to store that data. Commitee members and mirrors both respond to requests to retrieve the data batches. The data batches are addressed by a keccak256 hash of their contents.
+The Data Availability Server, `daserver`, allows storage and retrieval of transaction data batches for Arbitrum AnyTrust chains. It can be run in two modes: either committee member or mirror. Commitee members accept time-limited requests to store data batches from an Arbitrum AnyTrust sequencer, and if they store the data then they return a signed certificate promising to store that data. Commitee members and mirrors both respond to requests to retrieve the data batches. Mirrors exist to replicate and serve the data so that committee members to provide resiliency to the network in the case committee members going down, and to make it so committee members don't need to serve requests for the data directly. The data batches are addressed by a keccak256 hash of their contents. This document gives sample configurations for `daserver` in committee member and mirror mode.
 
 ### Interfaces
-Mirrors should listen on the REST inferface only and respond to queries on `/get-by-hash/0x<hex encoded data hash>`. The response is always the same for a given hash so it is cacheable. The REST interface has a health check on `/health` which will return 200 if the underling storage is working, otherwise 503.
+There are two interfaces, a REST interface supporting only GET operations and intended for public use, and an RPC interface intended for use only by the AnyTrust sequencer. Mirrors listen on the REST inferface only and respond to queries on `/get-by-hash/0x<hex encoded data hash>`. The response is always the same for a given hash so it is cacheable; it contains a `cache-control` header specifying the object is immutable and to cache for up to 28 days. The REST interface has a health check on `/health` which will return 200 if the underling storage is working, otherwise 503.
 
-Committee should members listen on the REST interface and additionally listen on the RPC interface for `das_store` RPC messages from the sequencer. The sequencer signs its requests and the committee member checks the signature. The RPC interface also has a health check that checks the underlying storage that responds requests with RPC method `das_healthCheck`.
+Committee members listen on the REST interface and additionally listen on the RPC interface for `das_store` RPC messages from the sequencer. The sequencer signs its requests and the committee member checks the signature. The RPC interface also has a health check that checks the underlying storage that responds requests with RPC method `das_healthCheck`.
 
 ### Storage
 `daserver` can be configured to use one or more of three storage backends; S3, files on local disk, and database on disk (please give us feedback if there are other storage backends you would like supported). If more than one is selected, store requests must succeed to all of them for it to be considered successful, and retrieve requests only require one to succeed.
 
 ### Caching
-An in-memory cache enabled to avoid needing to access underlying storage for retrieve requests can be enabled.
+An in-memory cache can be enabled to avoid needing to access underlying storage for retrieve requests .
 
 ### Synchronizing state
-`daserver` also has an optional REST aggregator which, in the case that a data batch is not found in cache or storage, queries for that batch from a list other of REST servers, and then stores that batch locally. This is how committee members that miss storing a batch (not all committee members are required by the AnyTrust protocol to report success in order to post the batch's certificate to L1) can automatically repair gaps in data they store, and how mirrors can sync (a sync mode that eagerly syncs all batches is planned for a future release). A public list of REST endpoints is published online and addititional endpoints can be specified in configuration.
+`daserver` also has an optional REST aggregator which, in the case that a data batch is not found in cache or storage, queries for that batch from a list other of REST servers, and then stores that batch locally. This is how committee members that miss storing a batch (not all committee members are required by the AnyTrust protocol to report success in order to post the batch's certificate to L1) can automatically repair gaps in data they store, and how mirrors can sync (a sync mode that eagerly syncs all batches is planned for a future release). A public list of REST endpoints is published online, which  `daserver` can be configured to download and use, and addititional endpoints can be specified in configuration.
 
 ## Image:
-`offchainlabs/nitro-node:v2.0.0-alpha.4`
+`offchainlabs/nitro-node:TODO image version`
 
 ## Usage of daserver
 
@@ -161,7 +161,7 @@ spec:
 
 This deployment sets up a DAS server using the Anytrust Goerli Devnet. It uses the devnet L1 inbox contract at 0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf. For the Anytrust Goerli Devnet you must specify a Goerli L1 RPC endpoint.
 
-This configuration sets up all three storage types. If updating an existing deployment from `offchainlabs/nitro-node:v2.0.0-alpha.4` that is using the local files on disk storage type, you should use at least `local-file-storage`.
+This configuration sets up all three storage types. To disable any of them, remove the --data-availability.(local-file-storage|local-disk-storage|s3-storage).enable option, and the other options for that storage type can also be removed. If updating an existing deployment from `offchainlabs/nitro-node:v2.0.0-alpha.4` that is using the local files on disk storage type, you should use at least `local-file-storage`.
 
 ```
 apiVersion: apps/v1
@@ -262,7 +262,7 @@ spec:
 
 This deployment sets up a DAS server using the Anytrust Goerli Devnet. It uses the devnet L1 inbox contract at 0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf. For the Anytrust Goerli Devnet you must specify a Goerli L1 RPC endpoint.
 
-This configuration sets up all three storage types.
+This configuration sets up all three storage types. To disable any of them, remove the --data-availability.(local-file-storage|local-disk-storage|s3-storage).enable option, and the other options for that storage type can also be removed.
 
 ```
 apiVersion: apps/v1
