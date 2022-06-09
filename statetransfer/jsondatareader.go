@@ -5,7 +5,9 @@ package statetransfer
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"path"
 
@@ -13,10 +15,10 @@ import (
 )
 
 type ArbosInitFileContents struct {
-	PreinitBlocks            uint64
-	AddressTableContentsPath string
-	RetryableDataPath        string
-	AccountsPath             string
+	PreinitBlocks            uint64 `json:"PreinitBlocks"`
+	AddressTableContentsPath string `json:"AddressTableContentsPath"`
+	RetryableDataPath        string `json:"RetryableDataPath"`
+	AccountsPath             string `json:"AccountsPath"`
 }
 
 type JsonInitDataReader struct {
@@ -25,7 +27,7 @@ type JsonInitDataReader struct {
 }
 
 func (r *JsonInitDataReader) GetPreinitBlockCount() (uint64, error) {
-	return 0, nil
+	return r.data.PreinitBlocks, nil
 }
 
 type JsonListReader struct {
@@ -89,15 +91,45 @@ type JsonRetriableDataReader struct {
 	JsonListReader
 }
 
+type InitializationDataForRetryableJson struct {
+	Id          common.Hash
+	Timeout     uint64
+	From        common.Address
+	To          common.Address
+	Callvalue   string
+	Beneficiary common.Address
+	Calldata    []byte
+}
+
+func stringToBig(input string) (*big.Int, error) {
+	output, success := new(big.Int).SetString(input, 0)
+	if !success {
+		return nil, fmt.Errorf("%s cannot be parsed as big.Int", input)
+	}
+	return output, nil
+}
+
 func (r *JsonRetriableDataReader) GetNext() (*InitializationDataForRetryable, error) {
 	if !r.More() {
 		return nil, errNoMore
 	}
-	var elem InitializationDataForRetryable
+	var elem InitializationDataForRetryableJson
 	if err := r.input.Decode(&elem); err != nil {
+		panic(fmt.Errorf("decoding retryable: %w", err))
+	}
+	callValueBig, err := stringToBig(elem.Callvalue)
+	if err != nil {
 		return nil, err
 	}
-	return &elem, nil
+	return &InitializationDataForRetryable{
+		Id:          elem.Id,
+		Timeout:     elem.Timeout,
+		From:        elem.From,
+		To:          elem.To,
+		Callvalue:   callValueBig,
+		Beneficiary: elem.Beneficiary,
+		Calldata:    elem.Calldata,
+	}, nil
 }
 
 func (m *JsonInitDataReader) GetRetriableDataReader() (RetriableDataReader, error) {
@@ -139,15 +171,35 @@ type JsonAccountDataReaderr struct {
 	JsonListReader
 }
 
+type AccountInitializationInfoJson struct {
+	Addr         common.Address
+	Nonce        uint64
+	Balance      string
+	ContractInfo *AccountInitContractInfo
+	ClassicHash  common.Hash
+}
+
 func (r *JsonAccountDataReaderr) GetNext() (*AccountInitializationInfo, error) {
 	if !r.More() {
 		return nil, errNoMore
 	}
-	var elem AccountInitializationInfo
+	var elem AccountInitializationInfoJson
 	if err := r.input.Decode(&elem); err != nil {
 		return nil, err
 	}
-	return &elem, nil
+	balanceBig, err := stringToBig(elem.Balance)
+	if err != nil {
+		return nil, err
+	}
+	return &AccountInitializationInfo{
+		Addr:            elem.Addr,
+		Nonce:           elem.Nonce,
+		EthBalance:      balanceBig,
+		ContractInfo:    elem.ContractInfo,
+		AggregatorInfo:  nil,
+		AggregatorToPay: nil,
+		ClassicHash:     elem.ClassicHash,
+	}, nil
 }
 
 func (m *JsonInitDataReader) GetAccountDataReader() (AccountDataReader, error) {
