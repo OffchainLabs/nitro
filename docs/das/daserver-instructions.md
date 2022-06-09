@@ -23,6 +23,7 @@ An in-memory cache enabled to avoid needing to access underlying storage for ret
 ## Usage of daserver
 
 Options for both committee members and mirrors:
+```
  # Server options
       --enable-rest                                                                                enable the REST server listening on rest-addr and rest-port
       --log-level int                                                                              log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE (default 3)
@@ -57,7 +58,8 @@ Options for both committee members and mirrors:
       --data-availability.rest-aggregator.enable                                                   enable retrieval of sequencer batch data from a list of remote REST endpoints; if other DAS storage types are enabled, this mode is used as a fallback
       --data-availability.rest-aggregator.online-url-list string                                   a URL to a list of URLs of REST das endpoints that is checked at startup; additive with the url option
       --data-availability.rest-aggregator.urls strings                                             list of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints; additive with the online-url-list option
-
+```
+```
 Options only for committee members:
       --enable-rpc                                                                                 enable the HTTP-RPC server listening on rpc-addr and rpc-port
       --rpc-addr string                                                                            HTTP-RPC server listening interface (default "localhost")
@@ -65,12 +67,13 @@ Options only for committee members:
 
       --data-availability.key.key-dir string                                                       the directory to read the bls keypair ('das_bls.pub' and 'das_bls') from; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified
       --data-availability.key.priv-key string                                                      the base64 BLS private key to use for signing DAS certificates; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified
-
+````
 
 Options generating/using JSON config:
+```
       --conf.dump                                                                                  print out currently active configuration file
       --conf.file strings                                                                          name of configuration file
-
+```
 
 Some options are not shown because they are only used by nodes, or they are experimental/advanced. A complete list of options can be found by running `daserver --help`
 
