@@ -256,10 +256,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	coinbase := p.evm.Context.Coinbase
 	posterCost, calldataUnits, reimburse := p.state.L1PricingState().PosterDataCost(p.msg, coinbase)
 
-	_ = calldataUnits
-	// if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
-	//	return nil, err
-	//}
+	if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
+		return nil, err
+	}
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
