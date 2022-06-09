@@ -96,7 +96,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		batchDataGas, _ := inputs[3].(uint64)
 		l1BaseFeeWei, _ := inputs[4].(*big.Int)
 
-		weiSpent := new(big.Int).Mul(l1BaseFeeWei, new(big.Int).SetUint64(batchDataGas))
+		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, batchDataGas)
 		err = state.L1PricingState().UpdateForBatchPosterSpending(evm.StateDB, evm, batchTimestamp.Uint64(), evm.Context.Time.Uint64(), batchPosterAddress, weiSpent)
 		if err != nil {
 			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
