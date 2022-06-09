@@ -58,12 +58,14 @@ const (
 )
 
 type Precompile struct {
-	methods      map[[4]byte]PrecompileMethod
-	events       map[string]PrecompileEvent
-	errors       map[string]PrecompileError
-	implementer  reflect.Value
-	address      common.Address
-	arbosVersion uint64
+	methods       map[[4]byte]PrecompileMethod
+	methodsByName map[string]PrecompileMethod
+	events        map[string]PrecompileEvent
+	errors        map[string]PrecompileError
+	name          string
+	implementer   reflect.Value
+	address       common.Address
+	arbosVersion  uint64
 }
 
 type PrecompileMethod struct {
@@ -154,6 +156,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 	}
 
 	methods := make(map[[4]byte]PrecompileMethod)
+	methodsByName := make(map[string]PrecompileMethod)
 	events := make(map[string]PrecompileEvent)
 	errors := make(map[string]PrecompileError)
 
@@ -218,13 +221,15 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 			)
 		}
 
-		methods[id] = PrecompileMethod{
+		method := PrecompileMethod{
 			name,
 			method,
 			purity,
 			handler,
 			0,
 		}
+		methods[id] = method
+		methodsByName[name] = method
 	}
 
 	// provide the implementer mechanisms to emit logs for the solidity events
@@ -487,8 +492,10 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 
 	return address, Precompile{
 		methods,
+		methodsByName,
 		events,
 		errors,
+		contract,
 		reflect.ValueOf(implementer),
 		address,
 		0,
@@ -518,7 +525,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
-	insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 
 	eventCtx := func(gasLimit uint64, err error) *Context {
 		if err != nil {
@@ -559,12 +565,24 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
+	ArbosActs := insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
+	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
+	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
+
 	return contracts
 }
 
 func (p Precompile) SwapImpl(impl interface{}) Precompile {
 	p.implementer = reflect.ValueOf(impl)
 	return p
+}
+
+func (p Precompile) GetMethodID(name string) bytes4 {
+	method, ok := p.methodsByName[name]
+	if !ok {
+		panic(fmt.Sprintf("Precompile %v does not have a method with the name %v", p.name, name))
+	}
+	return *(*bytes4)(method.template.ID)
 }
 
 // call a precompile in typed form, deserializing its inputs and serializing its outputs

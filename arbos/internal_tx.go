@@ -5,8 +5,9 @@ package arbos
 
 import (
 	"fmt"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"math/big"
+
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -15,13 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/util"
-)
-
-// Types of ArbitrumInternalTx, distinguished by the first data byte
-const (
-	// Contains 8 bytes indicating the big endian L1 block number to set
-	arbInternalTxStartBlock      uint8 = 0
-	arbInternalTxBatchPostReport uint8 = 1
 )
 
 func InternalTxStartBlock(
@@ -45,14 +39,13 @@ func InternalTxStartBlock(
 	return &types.ArbitrumInternalTx{
 		ChainId:       chainId,
 		L2BlockNumber: arbmath.BigAddByUint(lastHeader.Number, 1),
-		SubType:       arbInternalTxStartBlock,
 		Data:          data,
 	}
 }
 
 func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) {
-	switch tx.SubType {
-	case arbInternalTxStartBlock:
+	switch *(*[4]byte)(tx.Data[:4]) {
+	case InternalTxStartBlockMethodID:
 		inputs, err := util.UnpackInternalTxDataStartBlock(tx.Data)
 		if err != nil {
 			panic(err)
@@ -92,7 +85,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		state.L1PricingState().UpdateTime(currentTime)
 
 		state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
-	case arbInternalTxBatchPostReport:
+	case InternalTxBatchPostingReportMethodID:
 		inputs, err := util.UnpackInternalTxDataBatchPostingReport(tx.Data)
 		if err != nil {
 			panic(err)

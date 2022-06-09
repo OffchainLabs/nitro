@@ -31,6 +31,8 @@ import (
 // set by the precompile module, to avoid a package dependence cycle
 var ArbRetryableTxAddress common.Address
 var ArbSysAddress common.Address
+var InternalTxStartBlockMethodID [4]byte
+var InternalTxBatchPostingReportMethodID [4]byte
 var RedeemScheduledEventID common.Hash
 var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
