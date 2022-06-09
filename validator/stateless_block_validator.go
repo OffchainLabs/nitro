@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -222,10 +223,26 @@ type BatchInfo struct {
 }
 
 // If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
-func RecordBlockCreation(ctx context.Context, blockchain *core.BlockChain, inboxReader InboxReaderInterface, prevHeader *types.Header, msg *arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, []BatchInfo, error) {
-	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
-	if err != nil {
-		return common.Hash{}, nil, nil, err
+func RecordBlockCreation(ctx context.Context, blockchain *core.BlockChain, inboxReader InboxReaderInterface, prevHeader *types.Header, msg *arbstate.MessageWithMetadata, producePreimages bool) (common.Hash, map[common.Hash][]byte, []BatchInfo, error) {
+	var recordingdb *state.StateDB
+	var chaincontext core.ChainContext
+	var recordingKV *arbitrum.RecordingKV
+	var err error
+	if producePreimages {
+		recordingdb, chaincontext, recordingKV, err = arbitrum.PrepareRecording(blockchain, prevHeader)
+		if err != nil {
+			return common.Hash{}, nil, nil, err
+		}
+	} else {
+		var prevRoot common.Hash
+		if prevHeader != nil {
+			prevRoot = prevHeader.Root
+		}
+		recordingdb, err = blockchain.StateAt(prevRoot)
+		if err != nil {
+			return common.Hash{}, nil, nil, err
+		}
+		chaincontext = blockchain
 	}
 
 	chainConfig := blockchain.Config()
@@ -275,7 +292,13 @@ func RecordBlockCreation(ctx context.Context, blockchain *core.BlockChain, inbox
 		blockHash = block.Hash()
 	}
 
-	preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
+	var preimages map[common.Hash][]byte
+	if recordingKV != nil {
+		preimages, err = arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
+		if err != nil {
+			return common.Hash{}, nil, nil, err
+		}
+	}
 	return blockHash, preimages, readBatchInfo, err
 }
 
@@ -289,9 +312,9 @@ func BlockDataForValidation(ctx context.Context, blockchain *core.BlockChain, in
 		return
 	}
 
-	if prevHeader != nil && producePreimages {
+	if prevHeader != nil {
 		var blockhash common.Hash
-		blockhash, preimages, readBatchInfo, err = RecordBlockCreation(ctx, blockchain, inboxReader, prevHeader, &msg)
+		blockhash, preimages, readBatchInfo, err = RecordBlockCreation(ctx, blockchain, inboxReader, prevHeader, &msg, producePreimages)
 		if err != nil {
 			return
 		}
@@ -319,7 +342,7 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, pr
 	}
 
 	for _, batch := range batchInfo {
-		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
+		if len(batch.Data) >= 41 && arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
 			if das == nil {
 				log.Error("No DAS configured, but sequencer message found with DAS header")
 				if bc.Config().ArbitrumChainParams.DataAvailabilityCommittee {

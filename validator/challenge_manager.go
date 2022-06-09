@@ -420,7 +420,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	var batchInfo []BatchInfo
 	if tooFar {
 		// Just record the part of block creation before the message is read
-		_, preimages, readBatchInfo, err := RecordBlockCreation(ctx, m.blockchain, m.inboxReader, blockHeader, nil)
+		_, preimages, readBatchInfo, err := RecordBlockCreation(ctx, m.blockchain, m.inboxReader, blockHeader, nil, true)
 		if err != nil {
 			return err
 		}
