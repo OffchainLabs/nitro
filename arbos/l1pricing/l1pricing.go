@@ -235,7 +235,6 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster common.Address) {
 
 	tx.PosterCost = big.NewInt(0)
-	tx.PosterIsReimbursable = false
 
 	aggregator, perr := ps.ReimbursableAggregatorForSender(sender)
 	txBytes, merr := tx.MarshalBinary()
@@ -259,19 +258,18 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
 	adjustedL1Fee := arbmath.BigMulByBips(l1Fee, ratio)
 
-	tx.PosterIsReimbursable = true
 	tx.PosterCost = adjustedL1Fee
 }
 
 const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
-func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address) (*big.Int, bool) {
+func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address) *big.Int {
 
 	if tx := message.UnderlyingTransaction(); tx != nil {
 		if tx.PosterCost == nil {
 			ps.AddPosterInfo(tx, sender, poster)
 		}
-		return tx.PosterCost, tx.PosterIsReimbursable
+		return tx.PosterCost
 	}
 
 	if message.RunMode() == types.MessageGasEstimationMode {
@@ -281,14 +279,14 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 			poster = *aggregator
 		} else {
 			// assume the user will use the delayed inbox since there's no reimbursable party
-			return big.NewInt(0), false
+			return big.NewInt(0)
 		}
 	}
 
 	byteCount, err := byteCountAfterBrotli0(message.Data())
 	if err != nil {
 		log.Error("failed to compress tx", "err", err)
-		return big.NewInt(0), false
+		return big.NewInt(0)
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
@@ -299,7 +297,7 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 
 	// Adjust the price paid by the aggregator's reported improvements due to batching
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
-	return arbmath.BigMulByBips(l1Fee, ratio), true
+	return arbmath.BigMulByBips(l1Fee, ratio)
 }
 
 func byteCountAfterBrotli0(input []byte) (uint64, error) {
