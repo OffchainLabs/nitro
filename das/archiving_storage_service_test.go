@@ -58,10 +58,10 @@ func TestArchivingStorageService(t *testing.T) {
 	}
 	Require(t, err2)
 
-	// verify that an ArchivingSimpleDASReader is a SimpleDASReader
-	var firstSDR arbstate.SimpleDASReader = firstStorage
+	// verify that an ArchivingSimpleDASReader is a DataAvailabilityReader
+	var firstSDR arbstate.DataAvailabilityReader = firstStorage
 	asdr, err := NewArchivingSimpleDASReader(ctx, firstSDR, archiveTo, 60*60)
 	Require(t, err)
-	var secondSDR arbstate.SimpleDASReader = asdr
+	var secondSDR arbstate.DataAvailabilityReader = asdr
 	_ = secondSDR
 }

@@ -22,8 +22,8 @@ func (*dummyReader) GetByHash(context.Context, []byte) ([]byte, error) {
 }
 
 func TestDAS_SimpleExploreExploit(t *testing.T) {
-	readers := []arbstate.SimpleDASReader{&dummyReader{0}, &dummyReader{1}, &dummyReader{2}, &dummyReader{3}, &dummyReader{4}, &dummyReader{5}}
-	stats := make(map[arbstate.SimpleDASReader]readerStats)
+	readers := []arbstate.DataAvailabilityReader{&dummyReader{0}, &dummyReader{1}, &dummyReader{2}, &dummyReader{3}, &dummyReader{4}, &dummyReader{5}}
+	stats := make(map[arbstate.DataAvailabilityReader]readerStats)
 	stats[readers[0]] = []readerStat{ // weighted avg 10s
 		{10 * time.Second, true},
 	}
@@ -48,7 +48,7 @@ func TestDAS_SimpleExploreExploit(t *testing.T) {
 		{8 * time.Second, true},
 	}
 
-	expectedOrdering := []arbstate.SimpleDASReader{readers[1], readers[2], readers[5], readers[4], readers[0], readers[3]}
+	expectedOrdering := []arbstate.DataAvailabilityReader{readers[1], readers[2], readers[5], readers[4], readers[0], readers[3]}
 
 	expectedExploreIterations, expectedExploitIterations := uint32(5), uint32(5)
 	strategy := simpleExploreExploitStrategy{
@@ -57,7 +57,7 @@ func TestDAS_SimpleExploreExploit(t *testing.T) {
 	}
 	strategy.update(readers, stats)
 
-	checkMatch := func(expected, was []arbstate.SimpleDASReader, doMatch bool) {
+	checkMatch := func(expected, was []arbstate.DataAvailabilityReader, doMatch bool) {
 		if len(expected) != len(was) {
 			Fail(t, fmt.Sprintf("Incorrect number of nextReaders %d, expected %d", len(was), len(expected)))
 		}
