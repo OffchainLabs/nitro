@@ -219,19 +219,16 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-	} else {
-		var initData statetransfer.ArbosInitializationInfo
-		if nodeConfig.DevInit {
-			initData = statetransfer.ArbosInitializationInfo{
-				PreinitBlocks: nodeConfig.DevInitBlockNum,
-				Accounts: []statetransfer.AccountInitializationInfo{
-					{
-						Addr:       devAddr,
-						EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-						Nonce:      0,
-					},
+	} else if nodeConfig.DevInit {
+		initData := statetransfer.ArbosInitializationInfo{
+			PreinitBlocks: nodeConfig.DevInitBlockNum,
+			Accounts: []statetransfer.AccountInitializationInfo{
+				{
+					Addr:       devAddr,
+					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+					Nonce:      0,
 				},
-			}
+			},
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
@@ -239,7 +236,7 @@ func main() {
 	var chainConfig *params.ChainConfig
 
 	var l2BlockChain *core.BlockChain
-	if nodeConfig.NoInit {
+	if initDataReader == nil {
 		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
 			panic("No initialization mode supplied, chain data not in Db")
@@ -249,9 +246,6 @@ func main() {
 			panic(err)
 		}
 	} else {
-		if initDataReader == nil {
-			panic("no-init not defined, and no init method given")
-		}
 		preinitBlocks, err := initDataReader.GetPreinitBlockCount()
 		if err != nil {
 			panic(err)
@@ -267,6 +261,7 @@ func main() {
 		if anchients < preinitBlocks {
 			panic(fmt.Sprint(preinitBlocks, " pre-init blocks required, but only ", anchients, " found"))
 		}
+		log.Info("Initializing", "anchients", anchients, "preinitBlocks", preinitBlocks)
 		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, chainConfig)
 		if err != nil {
 			panic(err)
@@ -355,7 +350,6 @@ type NodeConfig struct {
 	GraphQL         genericconf.GraphQLConfig       `koanf:"graphql"`
 	DevInit         bool                            `koanf:"dev-init"`
 	DevInitBlockNum uint64                          `koanf:"dev-init-blocknum"`
-	NoInit          bool                            `koanf:"no-init"`
 	ImportFile      string                          `koanf:"import-file"`
 	Metrics         bool                            `koanf:"metrics"`
 	MetricsServer   genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -390,7 +384,6 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
-	f.Bool("no-init", NodeConfigDefault.DevInit, "Do not init chain. Data must be valid in database.")
 	f.Uint64("dev-init-blocknum", NodeConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in anchient database.")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
