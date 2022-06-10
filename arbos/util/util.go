@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var AddressAliasOffset *big.Int
@@ -34,7 +35,7 @@ func init() {
 		panic("Error initializing AddressAliasOffset")
 	}
 	AddressAliasOffset = offset
-	InverseAddressAliasOffset = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
+	InverseAddressAliasOffset = arbmath.BigSub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
 
 	// Create a mechanism for parsing event logs
 	logParser := func(source string, name string) func(interface{}, *types.Log) error {

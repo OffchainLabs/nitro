@@ -540,7 +540,6 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher
 	}
 	return types.NewTx(&types.ArbitrumInternalTx{
 		ChainId: chainId,
-		SubType: arbInternalTxBatchPostReport,
 		Data:    data,
 		// don't need to fill in the other fields, since they exist only to ensure uniqueness, and batchNum is already unique
 	}), nil
