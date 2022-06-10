@@ -56,7 +56,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     modifier onlyAllowed() {
-        require(isAllowed[msg.sender] || !allowListEnabled, "NOT_ALLOWED");
+        require(isAllowed[tx.origin] || !allowListEnabled, "NOT_ALLOWED");
         _;
     }
 
