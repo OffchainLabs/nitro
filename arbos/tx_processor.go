@@ -287,7 +287,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	if p.msg.RunMode() != types.MessageEthcallMode {
 		// If this is a real tx, limit the amount of computed based on the gas pool.
 		// We do this by charging extra gas, and then refunding it later.
-		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit(p.state.FormatVersion())
+		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
 		if *gasRemaining > gasAvailable {
 			p.computeHoldGas = *gasRemaining - gasAvailable
 			*gasRemaining = gasAvailable
@@ -352,7 +352,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			}
 		}
 		// we've already credited the network fee account, but we didn't charge the gas pool yet
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast(gasUsed), p.state.FormatVersion()))
+		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast(gasUsed)))
 		return
 	}
 
@@ -385,7 +385,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed
 		}
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast(computeGas), p.state.FormatVersion()))
+		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast(computeGas)))
 	}
 }
 
@@ -437,19 +437,6 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return common.Hash{}, err
-	}
-	if state.FormatVersion() < 2 {
-		// Support the old broken behavior
-		var lower, upper uint64
-		upper = p.evm.Context.BlockNumber.Uint64()
-		if upper < 257 {
-			lower = 0
-		} else {
-			lower = upper - 256
-		}
-		if l1BlockNumber < lower || l1BlockNumber >= upper {
-			return common.Hash{}, nil
-		}
 	}
 	return state.Blockhashes().BlockHash(l1BlockNumber)
 }

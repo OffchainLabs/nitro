@@ -39,18 +39,6 @@ interface ArbOwner {
     /// @notice Set the computational speed limit for the chain
     function setSpeedLimit(uint64 limit) external;
 
-    /// @notice Set the number of seconds worth of the speed limit the gas pool contains
-    function setGasPoolSeconds(uint64 factor) external;
-
-    /// @notice Set the target fullness in bips the pricing model will try to keep the pool at
-    function setGasPoolTarget(uint64 target) external;
-
-    /// @notice Set the extent in bips to which the pricing model favors filling the pool over increasing speeds
-    function setGasPoolWeight(uint64 weight) external;
-
-    /// @notice Set how slowly ArbOS updates its estimate the amount of gas being burnt per second
-    function setRateEstimateInertia(uint64 inertia) external;
-
     /// @notice Set the maximum size a tx (and block) can be
     function setMaxTxGasLimit(uint64 limit) external;
 

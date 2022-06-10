@@ -7,8 +7,6 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -41,36 +39,19 @@ func (con *ArbSys) emitL2ToL1Tx(
 	callvalue huge,
 	data []byte,
 ) error {
-	if c.State.FormatVersion() >= l2pricing.FirstExponentialPricingVersion {
-		return con.L2ToL1Tx(
-			c,
-			evm,
-			c.caller,
-			destination,
-			hash,
-			position,
-			evm.Context.BlockNumber,
-			ethBlockNum,
-			evm.Context.Time,
-			callvalue,
-			data,
-		)
-	} else {
-		return con.L2ToL1Transaction(
-			c,
-			evm,
-			c.caller,
-			destination,
-			hash,
-			position,
-			big.NewInt(0),
-			evm.Context.BlockNumber,
-			ethBlockNum,
-			evm.Context.Time,
-			callvalue,
-			data,
-		)
-	}
+	return con.L2ToL1Tx(
+		c,
+		evm,
+		c.caller,
+		destination,
+		hash,
+		position,
+		evm.Context.BlockNumber,
+		ethBlockNum,
+		evm.Context.Time,
+		callvalue,
+		data,
+	)
 }
 
 // Gets the current L2 block number
