@@ -18,7 +18,7 @@ An in-memory cache can be enabled to avoid needing to access underlying storage 
 `daserver` also has an optional REST aggregator which, in the case that a data batch is not found in cache or storage, queries for that batch from a list other of REST servers, and then stores that batch locally. This is how committee members that miss storing a batch (not all committee members are required by the AnyTrust protocol to report success in order to post the batch's certificate to L1) can automatically repair gaps in data they store, and how mirrors can sync (a sync mode that eagerly syncs all batches is planned for a future release). A public list of REST endpoints is published online, which  `daserver` can be configured to download and use, and addititional endpoints can be specified in configuration.
 
 ## Image:
-`offchainlabs/nitro-node:TODO image version`
+`offchainlabs/nitro-node:v2.0.0-alpha.5`
 
 ## Usage of daserver
 
@@ -136,7 +136,7 @@ spec:
           mkdir -p /home/user/data/keys
           /usr/local/bin/datool keygen --dir /home/user/data/keys
           sleep infinity
-        image: offchainlabs/nitro-node:TODO RELEASE VERSION
+        image: offchainlabs/nitro-node:v2.0.0-alpha.5
         imagePullPolicy: Always
         resources:
           limits:
@@ -192,7 +192,7 @@ spec:
 		  mkdir -p /home/user/data/badgerdb
           /usr/local/bin/daserver --data-availability.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT>
 --enable-rpc --rpc-addr '0.0.0.0' --enable-rest --rest-addr '0.0.0.0' --log-level 5 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.key.key-dir /home/user/data/keys --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.online-url-list "https://anytrust-das-mirror.s3.us-west-2.amazonaws.com/das-mirror-list" --data-availability.sequencer-inbox-address '0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf'
-        image: offchainlabs/nitro-node:TODO NEW VERSION
+        image: offchainlabs/nitro-node:v2.0.0-alpha.5
         imagePullPolicy: Always
         resources:
           limits:
@@ -293,7 +293,7 @@ spec:
 		  mkdir -p /home/user/data/badgerdb
           /usr/local/bin/daserver --data-availability.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT>
 --enable-rest --rest-addr '0.0.0.0' --log-level 5 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.urls "http://your-committee-member.svc.cluster.local:9877" --data-availability.rest-aggregator.online-url-list "https://anytrust-das-mirror.s3.us-west-2.amazonaws.com/das-mirror-list" --data-availability.sequencer-inbox-address '0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf'
-        image: offchainlabs/nitro-node:TODO NEW VERSION
+        image: offchainlabs/nitro-node:v2.0.0-alpha.5
         imagePullPolicy: Always
         resources:
           limits:
