@@ -341,7 +341,7 @@ Message: Test-Data
 
 Using curl to check the REST endpoint
 ```
-$ curl  https://anytrust-devnet.arbitrum.io/da-mirror-0/get-by-hash/0xdac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
+$ curl  https://anytrust-devnet.arbitrum.io/da-mirror-0/get-by-hash/dac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
 {"data":"VGVzdC1EYXRh"}
 ```
 
