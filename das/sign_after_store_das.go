@@ -188,3 +188,11 @@ func (d *SignAfterStoreDAS) GetByHash(ctx context.Context, hash []byte) ([]byte,
 func (d *SignAfterStoreDAS) String() string {
 	return fmt.Sprintf("SignAfterStoreDAS{config:%v}", d.config)
 }
+
+func (d *SignAfterStoreDAS) HealthCheck(ctx context.Context) error {
+	return d.storageService.HealthCheck(ctx)
+}
+
+func (d *SignAfterStoreDAS) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return d.storageService.ExpirationPolicy(ctx)
+}
