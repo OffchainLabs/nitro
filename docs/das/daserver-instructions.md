@@ -4,7 +4,7 @@
 The Data Availability Server, `daserver`, allows storage and retrieval of transaction data batches for Arbitrum AnyTrust chains. It can be run in two modes: either committee member or mirror. Commitee members accept time-limited requests to store data batches from an Arbitrum AnyTrust sequencer, and if they store the data then they return a signed certificate promising to store that data. Commitee members and mirrors both respond to requests to retrieve the data batches. Mirrors exist to replicate and serve the data so that committee members to provide resiliency to the network in the case committee members going down, and to make it so committee members don't need to serve requests for the data directly. The data batches are addressed by a keccak256 hash of their contents. This document gives sample configurations for `daserver` in committee member and mirror mode.
 
 ### Interfaces
-There are two interfaces, a REST interface supporting only GET operations and intended for public use, and an RPC interface intended for use only by the AnyTrust sequencer. Mirrors listen on the REST inferface only and respond to queries on `/get-by-hash/0x<hex encoded data hash>`. The response is always the same for a given hash so it is cacheable; it contains a `cache-control` header specifying the object is immutable and to cache for up to 28 days. The REST interface has a health check on `/health` which will return 200 if the underling storage is working, otherwise 503.
+There are two interfaces, a REST interface supporting only GET operations and intended for public use, and an RPC interface intended for use only by the AnyTrust sequencer. Mirrors listen on the REST inferface only and respond to queries on `/get-by-hash/<hex encoded data hash>`. The response is always the same for a given hash so it is cacheable; it contains a `cache-control` header specifying the object is immutable and to cache for up to 28 days. The REST interface has a health check on `/health` which will return 200 if the underling storage is working, otherwise 503.
 
 Committee members listen on the REST interface and additionally listen on the RPC interface for `das_store` RPC messages from the sequencer. The sequencer signs its requests and the committee member checks the signature. The RPC interface also has a health check that checks the underlying storage that responds requests with RPC method `das_healthCheck`.
 
@@ -341,7 +341,7 @@ Message: Test-Data
 
 Using curl to check the REST endpoint
 ```
-$ curl  https://anytrust-devnet.arbitrum.io/da-mirror-0/get-by-hash/0xdac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
+$ curl  https://anytrust-devnet.arbitrum.io/da-mirror-0/get-by-hash/dac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
 {"data":"VGVzdC1EYXRh"}
 ```
 
