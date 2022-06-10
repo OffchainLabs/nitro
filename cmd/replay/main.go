@@ -118,7 +118,7 @@ func main() {
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader arbstate.SimpleDASReader
+		var dasReader arbstate.DataAvailabilityReader
 		if dasEnabled {
 			dasReader = &PreimageDASReader{}
 		}

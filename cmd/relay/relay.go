@@ -72,6 +72,7 @@ func startup() error {
 		ClientTimeout: relayConfig.Node.Feed.Output.ClientTimeout,
 		Queue:         relayConfig.Node.Feed.Output.Queue,
 		Workers:       relayConfig.Node.Feed.Output.Workers,
+		MaxSendQueue:  relayConfig.Node.Feed.Output.MaxSendQueue,
 	}
 
 	clientConf := broadcastclient.BroadcastClientConfig{

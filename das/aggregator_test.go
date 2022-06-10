@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"strconv"
@@ -27,17 +26,26 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	numBackendDAS := 10
 	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
-		dbPath, err := ioutil.TempDir("/tmp", "das_test")
+		dbPath := t.TempDir()
+		_, _, err := GenerateAndStoreKeys(dbPath)
 		Require(t, err)
-		defer os.RemoveAll(dbPath)
 
-		config := LocalDiskDASConfig{
-			KeyDir:            dbPath,
-			DataDir:           dbPath,
-			AllowGenerateKeys: true,
-			L1NodeURL:         "none",
+		config := DataAvailabilityConfig{
+			Enable: true,
+			KeyConfig: KeyConfig{
+				KeyDir: dbPath,
+			},
+			LocalFileStorageConfig: LocalFileStorageConfig{
+				Enable:  true,
+				DataDir: dbPath,
+			},
+			L1NodeURL: "none",
 		}
-		das, err := NewLocalDiskDAS(ctx, config)
+
+		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
+		Require(t, err)
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
+		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -47,7 +55,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, *details)
 	}
 
-	aggregator, err := NewAggregator(ctx, AggregatorConfig{AssumedHonest: 1, L1NodeURL: "none"}, backends)
+	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: 1}, L1NodeURL: "none"}, backends)
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
@@ -204,17 +212,26 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
-		dbPath, err := ioutil.TempDir("/tmp", "das_test")
+		dbPath := t.TempDir()
+		_, _, err := GenerateAndStoreKeys(dbPath)
 		Require(t, err)
-		defer os.RemoveAll(dbPath)
 
-		config := LocalDiskDASConfig{
-			KeyDir:            dbPath,
-			DataDir:           dbPath,
-			AllowGenerateKeys: true,
-			L1NodeURL:         "none",
+		config := DataAvailabilityConfig{
+			Enable: true,
+			KeyConfig: KeyConfig{
+				KeyDir: dbPath,
+			},
+			LocalFileStorageConfig: LocalFileStorageConfig{
+				Enable:  true,
+				DataDir: dbPath,
+			},
+			L1NodeURL: "none",
 		}
-		das, err := NewLocalDiskDAS(ctx, config)
+
+		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
+		Require(t, err)
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
+		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -224,7 +241,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, *details)
 	}
 
-	unwrappedAggregator, err := NewAggregator(ctx, AggregatorConfig{AssumedHonest: assumedHonest, L1NodeURL: "none"}, backends)
+	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest}, L1NodeURL: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 
@@ -308,18 +325,26 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	var backends []ServiceDetails
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	for i := 0; i < numBackendDAS; i++ {
-		dbPath, err := ioutil.TempDir("/tmp", "das_test")
+		dbPath := t.TempDir()
+		_, _, err := GenerateAndStoreKeys(dbPath)
 		Require(t, err)
-		defer os.RemoveAll(dbPath)
 
-		config := LocalDiskDASConfig{
-			KeyDir:            dbPath,
-			DataDir:           dbPath,
-			AllowGenerateKeys: true,
-			L1NodeURL:         "none",
+		config := DataAvailabilityConfig{
+			Enable: true,
+			KeyConfig: KeyConfig{
+				KeyDir: dbPath,
+			},
+			LocalFileStorageConfig: LocalFileStorageConfig{
+				Enable:  true,
+				DataDir: dbPath,
+			},
+			L1NodeURL: "none",
 		}
 
-		das, err := NewLocalDiskDAS(ctx, config)
+		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
+		Require(t, err)
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
+		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -332,7 +357,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	unwrappedAggregator, err := NewAggregator(ctx, AggregatorConfig{AssumedHonest: numBackendDAS, L1NodeURL: "none"}, backends)
+	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: numBackendDAS}, L1NodeURL: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 

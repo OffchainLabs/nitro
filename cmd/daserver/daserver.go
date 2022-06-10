@@ -10,12 +10,14 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
@@ -61,7 +63,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	}
 	if serverConfig.ConfConfig.Dump {
 		err = util.DumpConfig(k, map[string]interface{}{
-			"data-availability.local-disk.priv-key": "",
+			"data-availability.das.priv-key": "",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error removing extra parameters before dump: %w", err)
@@ -103,24 +105,9 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mode, err := serverConfig.DAConf.Mode()
+	dasImpl, dasLifecycleManager, err := arbnode.SetUpDataAvailabilityWithoutNode(ctx, &serverConfig.DAConf)
 	if err != nil {
 		return err
-	}
-	var dasImpl das.DataAvailabilityService
-	switch mode {
-	case das.LocalDiskDataAvailability:
-		dasImpl, err = das.NewLocalDiskDAS(ctx, serverConfig.DAConf.LocalDiskDASConfig)
-		if err != nil {
-			return err
-		}
-	case das.AggregatorDataAvailability:
-		dasImpl, err = dasrpc.NewRPCAggregator(ctx, serverConfig.DAConf.AggregatorConfig)
-		if err != nil {
-			return err
-		}
-	default:
-		panic("Only local DAS implementation supported for daserver currently.")
 	}
 
 	server, err := dasrpc.StartDASRPCServer(ctx, serverConfig.Addr, serverConfig.Port, dasImpl)
@@ -128,6 +115,7 @@ func startup() error {
 		return err
 	}
 	<-sigint
+	dasLifecycleManager.StopAndWaitUntil(2 * time.Second)
 
 	return server.Shutdown(ctx)
 }
