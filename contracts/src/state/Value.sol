@@ -11,8 +11,7 @@ enum ValueType {
     F64,
     REF_NULL,
     FUNC_REF,
-    INTERNAL_REF,
-    STACK_BOUNDARY
+    INTERNAL_REF
 }
 
 struct Value {
@@ -26,7 +25,7 @@ library ValueLib {
     }
 
     function maxValueType() internal pure returns (ValueType) {
-        return ValueType.STACK_BOUNDARY;
+        return ValueType.INTERNAL_REF;
     }
 
     function assumeI32(Value memory val) internal pure returns (uint32) {

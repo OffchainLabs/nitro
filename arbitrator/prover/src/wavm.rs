@@ -78,10 +78,6 @@ impl IBinOpType {
 pub enum Opcode {
     Unreachable,
     Nop,
-    Block,
-    // Loop and If are wrapped into Block
-    Branch,
-    BranchIf,
 
     Return,
     Call,
@@ -137,24 +133,16 @@ pub enum Opcode {
     IBinOp(IntegerValType, IBinOpType),
 
     // Custom opcodes not in WASM. Documented more in "Custom opcodes.md".
-    /// Branch is partially split up into these.
-    EndBlock,
-    /// Custom opcode not in wasm.
-    /// Like "EndBlock" but conditional.
-    /// Keeps its condition on the stack.
-    EndBlockIf,
     /// Custom opcode not in wasm.
     InitFrame,
+    /// Unconditional jump to an arbitrary point in code.
+    ArbitraryJump,
     /// Conditional jump to an arbitrary point in code.
     ArbitraryJumpIf,
-    /// Push a Value::StackBoundary to the stack
-    PushStackBoundary,
     /// Pop a value from the value stack and push it to the internal stack
     MoveFromStackToInternal,
     /// Pop a value from the internal stack and push it to the value stack
     MoveFromInternalToStack,
-    /// Pop a value from the value stack, then push an I32 1 if it's a stack boundary, I32 0 otherwise.
-    IsStackBoundary,
     /// Duplicate the top value on the stack
     Dup,
     /// Call a function in a different module
@@ -175,8 +163,6 @@ pub enum Opcode {
     ReadInboxMessage,
     /// Stop exexcuting the machine and move to the finished status
     HaltAndSetFinished,
-    /// Unconditional jump to an arbitrary point in code.
-    ArbitraryJump,
 }
 
 impl Opcode {
@@ -184,9 +170,6 @@ impl Opcode {
         match self {
             Opcode::Unreachable => 0x00,
             Opcode::Nop => 0x01,
-            Opcode::Block => 0x02,
-            Opcode::Branch => 0x0C,
-            Opcode::BranchIf => 0x0D,
             Opcode::Return => 0x0F,
             Opcode::Call => 0x10,
             Opcode::CallIndirect => 0x11,
@@ -275,14 +258,11 @@ impl Opcode {
                 _ => panic!("Unsupported {:?}", self),
             },
             // Internal instructions:
-            Opcode::EndBlock => 0x8000,
-            Opcode::EndBlockIf => 0x8001,
             Opcode::InitFrame => 0x8002,
-            Opcode::ArbitraryJumpIf => 0x8003,
-            Opcode::PushStackBoundary => 0x8004,
+            Opcode::ArbitraryJump => 0x8003,
+            Opcode::ArbitraryJumpIf => 0x8004,
             Opcode::MoveFromStackToInternal => 0x8005,
             Opcode::MoveFromInternalToStack => 0x8006,
-            Opcode::IsStackBoundary => 0x8007,
             Opcode::Dup => 0x8008,
             Opcode::CrossModuleCall => 0x8009,
             Opcode::CallerModuleInternalCall => 0x800A,
@@ -293,7 +273,6 @@ impl Opcode {
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
             Opcode::HaltAndSetFinished => 0x8022,
-            Opcode::ArbitraryJump => 0x8023,
         }
     }
 

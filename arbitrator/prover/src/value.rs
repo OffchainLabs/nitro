@@ -20,7 +20,6 @@ pub enum ArbValueType {
     RefNull,
     FuncRef,
     InternalRef,
-    StackBoundary,
 }
 
 impl ArbValueType {
@@ -96,7 +95,6 @@ pub enum Value {
     RefNull,
     FuncRef(u32),
     InternalRef(ProgramCounter),
-    StackBoundary,
 }
 
 impl Value {
@@ -109,7 +107,6 @@ impl Value {
             Value::RefNull => ArbValueType::RefNull,
             Value::FuncRef(_) => ArbValueType::FuncRef,
             Value::InternalRef(_) => ArbValueType::InternalRef,
-            Value::StackBoundary => ArbValueType::StackBoundary,
         }
     }
 
@@ -122,7 +119,6 @@ impl Value {
             Value::RefNull => Bytes32::default(),
             Value::FuncRef(x) => x.into(),
             Value::InternalRef(pc) => pc.serialize(),
-            Value::StackBoundary => Bytes32::default(),
         }
     }
 
@@ -186,9 +182,6 @@ impl Value {
             ArbValueType::RefNull | ArbValueType::FuncRef | ArbValueType::InternalRef => {
                 Value::RefNull
             }
-            ArbValueType::StackBoundary => {
-                panic!("Attempted to make default of StackBoundary type")
-            }
         }
     }
 
@@ -232,10 +225,9 @@ impl Value {
             }
             Value::F32(value) => single!("f32", *value),
             Value::F64(value) => single!("f64", *value),
-            Value::RefNull => format!("null"),
+            Value::RefNull => "null".into(),
             Value::FuncRef(func) => format!("func {}", func),
             Value::InternalRef(pc) => format!("inst {} in {}-{}", pc.inst, pc.module, pc.func),
-            Value::StackBoundary => format!("stack boundary"),
         }
     }
 }
