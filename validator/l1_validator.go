@@ -49,7 +49,7 @@ type L1Validator struct {
 	genesisBlockNumber      uint64
 
 	l2Blockchain       *core.BlockChain
-	das                arbstate.SimpleDASReader
+	das                arbstate.DataAvailabilityReader
 	inboxTracker       InboxTrackerInterface
 	txStreamer         TransactionStreamerInterface
 	blockValidator     *BlockValidator
@@ -62,7 +62,7 @@ func NewL1Validator(
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
 	l2Blockchain *core.BlockChain,
-	das arbstate.SimpleDASReader,
+	das arbstate.DataAvailabilityReader,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,

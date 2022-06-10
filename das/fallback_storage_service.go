@@ -7,16 +7,19 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type FallbackStorageService struct {
 	StorageService
-	backup                     arbstate.SimpleDASReader
+	backup                     arbstate.DataAvailabilityReader
 	backupRetentionSeconds     uint64
 	ignoreRetentionWriteErrors bool
 	preventRecursiveGets       bool
@@ -29,7 +32,7 @@ type FallbackStorageService struct {
 //     a successful GetByHash result from the backup is Put into the primary.
 func NewFallbackStorageService(
 	primary StorageService,
-	backup arbstate.SimpleDASReader,
+	backup arbstate.DataAvailabilityReader,
 	backupRetentionSeconds uint64, // how long to retain data that we copy in from the backup (MaxUint64 means forever)
 	ignoreRetentionWriteErrors bool, // if true, don't return error if write of retention data to primary fails
 	preventRecursiveGets bool, // if true, return NotFound on simultaneous calls to Gets that miss in primary (prevents infinite recursion)
@@ -46,6 +49,7 @@ func NewFallbackStorageService(
 }
 
 func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.FallbackStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", f)
 	var key32 [32]byte
 	if f.preventRecursiveGets {
 		f.currentlyFetchingMutex.RLock()

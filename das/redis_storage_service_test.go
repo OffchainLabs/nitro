@@ -23,9 +23,10 @@ func TestRedisStorageService(t *testing.T) {
 	Require(t, err)
 	redisService, err := NewRedisStorageService(
 		RedisConfig{
-			"redis://" + server.Addr(),
-			time.Hour,
-			"b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
+			Enable:     true,
+			RedisUrl:   "redis://" + server.Addr(),
+			Expiration: time.Hour,
+			KeyConfig:  "b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
 		}, baseStorageService)
 
 	Require(t, err)
@@ -74,9 +75,10 @@ func TestRedisStorageService(t *testing.T) {
 	emptyBaseStorageService := NewMemoryBackedStorageService(ctx)
 	redisServiceWithEmptyBaseStorage, err := NewRedisStorageService(
 		RedisConfig{
-			"redis://" + server.Addr(),
-			time.Hour,
-			"b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
+			Enable:     true,
+			RedisUrl:   "redis://" + server.Addr(),
+			Expiration: time.Hour,
+			KeyConfig:  "b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
 		}, emptyBaseStorageService)
 	Require(t, err)
 	val, err = redisServiceWithEmptyBaseStorage.GetByHash(ctx, val1CorrectKey)

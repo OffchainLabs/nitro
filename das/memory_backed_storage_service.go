@@ -6,8 +6,12 @@ package das
 import (
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/crypto"
 	"sync"
+	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type MemoryBackedStorageService struct { // intended for testing and debugging
@@ -25,6 +29,7 @@ func NewMemoryBackedStorageService(ctx context.Context) StorageService {
 }
 
 func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.MemoryBackedStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", m)
 	m.rwmutex.RLock()
 	defer m.rwmutex.RUnlock()
 	if m.closed {
@@ -40,6 +45,7 @@ func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key []byte) 
 }
 
 func (m *MemoryBackedStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
+	log.Trace("das.MemoryBackedStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(expirationTime), 0), "this", m)
 	m.rwmutex.Lock()
 	defer m.rwmutex.Unlock()
 	if m.closed {

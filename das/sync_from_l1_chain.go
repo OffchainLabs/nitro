@@ -16,7 +16,7 @@ import (
 func NewSyncingFallbackStorageService(
 	ctx context.Context,
 	primary StorageService,
-	backup arbstate.SimpleDASReader,
+	backup arbstate.DataAvailabilityReader,
 	backupRetentionSeconds uint64, // how long to retain data that we copy in from the backup (MaxUint64 means forever)
 	ignoreRetentionWriteErrors bool, // if true, don't return error if write of retention data to primary fails
 	preventRecursiveGets bool, // if true, return NotFound on simultaneous calls to Gets that miss in primary (prevents infinite recursion)
@@ -38,7 +38,7 @@ func NewSyncingFallbackStorageService(
 func SyncStorageServiceFromChain(
 	ctx context.Context,
 	syncTo StorageService,
-	dataSource arbstate.SimpleDASReader,
+	dataSource arbstate.DataAvailabilityReader,
 	l1client arbutil.L1Interface,
 	seqInboxAddr common.Address,
 	lowerBoundL1BlockNum *uint64,
@@ -46,7 +46,7 @@ func SyncStorageServiceFromChain(
 	stopWhenCaughtUp bool,
 ) error {
 	// make sure that as we sync, any Keysets missing from dataSource will fetched from the L1 chain
-	dataSource, err := NewChainFetchSimpleDASReader(dataSource, l1client, seqInboxAddr)
+	dataSource, err := NewChainFetchReader(dataSource, l1client, seqInboxAddr)
 	if err != nil {
 		return err
 	}
