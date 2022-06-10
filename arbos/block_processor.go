@@ -208,12 +208,7 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			inner := tx.GetInner()
-			switch innerTx := inner.(type) {
-			case *types.ArbitrumInternalTx:
-				innerTx.L2BlockNumber = arbmath.BigAddByUint(lastBlockHeader.Number, 1)
-				innerTx.TxIndex = uint64(len(receipts))
-			default:
+			if tx.Type() == types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 			}

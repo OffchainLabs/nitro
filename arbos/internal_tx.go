@@ -37,9 +37,8 @@ func InternalTxStartBlock(
 		panic(fmt.Sprintf("Failed to pack internal tx %v", err))
 	}
 	return &types.ArbitrumInternalTx{
-		ChainId:       chainId,
-		L2BlockNumber: arbmath.BigAddByUint(lastHeader.Number, 1),
-		Data:          data,
+		ChainId: chainId,
+		Data:    data,
 	}
 }
 
