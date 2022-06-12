@@ -50,9 +50,9 @@ type ArbosState struct {
 	sendMerkle        *merkleAccumulator.MerkleAccumulator
 	blockhashes       *blockhash.Blockhashes
 	chainId           storage.StorageBackedBigInt
+	genesisBlockNum   storage.StorageBackedUint64
 	backingStorage    *storage.Storage
 	Burner            burn.Burner
-	genesisBlockNum   storage.StorageBackedUint64
 }
 
 var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
@@ -81,9 +81,9 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
+		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
 		backingStorage,
 		burner,
-		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
 	}, nil
 }
 
