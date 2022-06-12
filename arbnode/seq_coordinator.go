@@ -36,6 +36,7 @@ const LIVELINESS_KEY_PREFIX string = "coordinator.liveliness." // Per server. On
 const MESSAGE_KEY_PREFIX string = "coordinator.msg."           // Per Message. Only written by sequencer holding CHOSEN
 const LIVELINESS_VAL string = "OK"
 const INVALID_VAL string = "INVALID"
+const INVALID_URL string = "<?INVALID-URL?>"
 
 type SeqCoordinator struct {
 	stopwaiter.StopWaiter
@@ -107,7 +108,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:         time.Second,
 	AllowedMsgLag:         200,
 	MaxMsgPerPoll:         2000,
-	MyUrl:                 "",
+	MyUrl:                 INVALID_URL,
 	SigningKey:            "",
 	Dangerous:             DefaultSeqCoordinatorDangerousConfig,
 }
@@ -126,7 +127,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:   time.Millisecond * 3,
 	AllowedMsgLag:   5,
 	MaxMsgPerPoll:   20,
-	MyUrl:           "",
+	MyUrl:           INVALID_URL,
 	SigningKey:      "b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
 	Dangerous: SeqCoordinatorDangerousConfig{
 		DisableSignatureVerification: false,
@@ -174,6 +175,9 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, conf
 	fallbackVerificationKey, err := loadSigningKey(config.FallbackVerificationKey)
 	if err != nil {
 		return nil, err
+	}
+	if config.MyUrl == "" {
+		config.MyUrl = INVALID_URL
 	}
 	coordinator := &SeqCoordinator{
 		streamer:                streamer,
