@@ -250,7 +250,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), preinitBlocks)
+		chainConfig, err = arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), preinitBlocks)
 		if err != nil {
 			panic(err)
 		}
@@ -262,7 +262,7 @@ func main() {
 			panic(fmt.Sprint(preinitBlocks, " pre-init blocks required, but only ", anchients, " found"))
 		}
 		log.Info("Initializing", "anchients", anchients, "preinitBlocks", preinitBlocks)
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, chainConfig)
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, chainConfig, 100000)
 		if err != nil {
 			panic(err)
 		}

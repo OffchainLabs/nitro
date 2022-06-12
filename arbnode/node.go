@@ -1118,7 +1118,7 @@ func DefaultCacheConfigFor(stack *node.Node, archiveMode bool) *core.CacheConfig
 	}
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig) error {
+func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, accountsPerSync uint) error {
 	arbstate.RequireHookedGeth()
 
 	EmptyHash := common.Hash{}
@@ -1141,7 +1141,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig, accountsPerSync)
 	if err != nil {
 		return err
 	}
@@ -1207,8 +1207,8 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, config
 	return core.NewBlockChain(chainDb, cacheConfig, config, engine, vmConfig, shouldPreserveFalse, &defaultConf.TxLookupLimit)
 }
 
-func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, config *params.ChainConfig) (*core.BlockChain, error) {
-	err := WriteOrTestGenblock(chainDb, initData, config)
+func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, config *params.ChainConfig, accountsPerSync uint) (*core.BlockChain, error) {
+	err := WriteOrTestGenblock(chainDb, initData, config, accountsPerSync)
 	if err != nil {
 		return nil, err
 	}
