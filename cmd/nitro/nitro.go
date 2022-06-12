@@ -15,6 +15,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/graphql"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -287,6 +290,12 @@ func main() {
 		}
 	}
 
+	if nodeConfig.QuitAfterInit {
+		testUpdateTxIndex(chainDb, chainConfig)
+		return
+	}
+	go testUpdateTxIndex(chainDb, chainConfig)
+
 	if nodeConfig.Metrics {
 		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
 
@@ -350,6 +359,7 @@ type NodeConfig struct {
 	GraphQL         genericconf.GraphQLConfig       `koanf:"graphql"`
 	DevInit         bool                            `koanf:"dev-init"`
 	DevInitBlockNum uint64                          `koanf:"dev-init-blocknum"`
+	QuitAfterInit   bool                            `koanf:"quit-after-init"`
 	ImportFile      string                          `koanf:"import-file"`
 	Metrics         bool                            `koanf:"metrics"`
 	MetricsServer   genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -367,6 +377,7 @@ var NodeConfigDefault = NodeConfig{
 	WS:              genericconf.WSConfigDefault,
 	DevInit:         false,
 	DevInitBlockNum: 0,
+	QuitAfterInit:   false,
 	ImportFile:      "",
 	Metrics:         false,
 	MetricsServer:   genericconf.MetricsServerConfigDefault,
@@ -385,6 +396,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.Uint64("dev-init-blocknum", NodeConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in anchient database.")
+	f.Bool("quit-after-init", NodeConfigDefault.QuitAfterInit, "quit after init is done")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
@@ -537,4 +549,60 @@ func applyNitroDevNetRollupParameters(k *koanf.Koanf) error {
 		"l1.rollup.deployed-at":              6664425,
 		"l2.chain-id":                        421612,
 	}, "."), nil)
+}
+
+func testIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
+	var transactions types.Transactions
+	blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
+	reReadNumber := rawdb.ReadHeaderNumber(chainDb, blockHash)
+	if reReadNumber == nil {
+		return false
+	}
+	for ; ; lastBlock-- {
+		blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
+		block := rawdb.ReadBlock(chainDb, blockHash, lastBlock)
+		transactions = block.Transactions()
+		if len(transactions) == 0 {
+			if lastBlock == 0 {
+				return true
+			}
+			continue
+		}
+		entry := rawdb.ReadTxLookupEntry(chainDb, transactions[len(transactions)-1].Hash())
+		return (entry != nil)
+	}
+}
+
+func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig) {
+	lastBlock := chainConfig.ArbitrumChainParams.GenesisBlockNum
+	if lastBlock == 0 {
+		// no Tx, no need to update index
+		return
+	}
+
+	lastBlock -= 1
+	if testIndexUpdated(chainDb, lastBlock) {
+		return
+	}
+
+	log.Info("writing Tx lookup entries")
+	batch := chainDb.NewBatch()
+	for blockNum := uint64(0); blockNum <= lastBlock; blockNum++ {
+		blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
+		block := rawdb.ReadBlock(chainDb, blockHash, lastBlock)
+		rawdb.WriteTxLookupEntriesByBlock(batch, block)
+		rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
+		if (batch.ValueSize() >= ethdb.IdealBatchSize) || blockNum == lastBlock {
+			err := batch.Write()
+			if err != nil {
+				panic(err)
+			}
+			err = chainDb.Sync()
+			if err != nil {
+				panic(err)
+			}
+			batch.Reset()
+		}
+	}
+	log.Info("Tx lookup entries written")
 }
