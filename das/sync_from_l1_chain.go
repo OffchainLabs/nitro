@@ -3,6 +3,9 @@ package das
 import (
 	"context"
 	"errors"
+	"math"
+	"time"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -10,8 +13,32 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"time"
+	flag "github.com/spf13/pflag"
 )
+
+type SyncToStorageConfig struct {
+	Eager                  bool          `koanf:"eager"`
+	EagerStopsWhenCaughtUp bool          `koanf:"eager-stops-when-caught-up"`
+	EagerLowerBoundBlock   uint64        `koanf:"eager-lower-bound-block"`
+	RetentionPeriod        time.Duration `koanf:"retention-period"`
+	IgnoreWriteErrors      bool          `koanf:"ignore-write-errors"`
+}
+
+var DefaultSyncToStorageConfig = SyncToStorageConfig{
+	Eager:                  false,
+	EagerStopsWhenCaughtUp: false,
+	EagerLowerBoundBlock:   0,
+	RetentionPeriod:        time.Duration(math.MaxInt64),
+	IgnoreWriteErrors:      true,
+}
+
+func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".eager", DefaultSyncToStorageConfig.Eager, "eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily")
+	f.Bool(prefix+".eager-stops-when-caught-up", DefaultSyncToStorageConfig.EagerStopsWhenCaughtUp, "stop the sync process as soon as it is caught up, after which this DAS will only get newer batch data via lazy syncing on missed reads or if the batch poster directly requests it to store the data; otherwise leave it running")
+	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block")
+	f.Duration(prefix+".retention-period", DefaultSyncToStorageConfig.RetentionPeriod, "period to retain synced data (defaults to forever)")
+	f.Bool(prefix+".ignore-write-errors", DefaultSyncToStorageConfig.IgnoreWriteErrors, "log only on failures to write when syncing; otherwise treat it as an error")
+}
 
 func NewSyncingFallbackStorageService(
 	ctx context.Context,
