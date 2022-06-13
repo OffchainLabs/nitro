@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -28,5 +29,8 @@ func EncodeStorageServiceKey(b []byte) string {
 }
 
 func DecodeStorageServiceKey(input string) ([]byte, error) {
+	if strings.HasPrefix(input, "0x") {
+		return hexutil.Decode(input)
+	}
 	return hexutil.Decode("0x" + input)
 }

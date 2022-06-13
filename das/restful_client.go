@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbstate"
 )
@@ -43,7 +42,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	if len(hash) != 32 {
 		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
 	}
-	res, err := http.Get(c.url + getByHashRequestPath + hexutil.Encode(hash))
+	res, err := http.Get(c.url + getByHashRequestPath + EncodeStorageServiceKey(hash))
 	if err != nil {
 		return nil, err
 	}
