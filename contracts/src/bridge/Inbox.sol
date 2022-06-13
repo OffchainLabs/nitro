@@ -55,6 +55,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         emit AllowListEnabledUpdated(_allowListEnabled);
     }
 
+    /// @dev this modifier checks the tx.origin instead of msg.sender for convenience (ie it allows
+    /// allowed users to interact with the token bridge without needing the token bridge to be allowList aware).
+    /// this modifier is not intended to use to be used for security (since this opens the allowList to
+    /// a smart contract phishing risk).
     modifier onlyAllowed() {
         require(isAllowed[tx.origin] || !allowListEnabled, "NOT_ALLOWED");
         _;
