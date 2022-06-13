@@ -118,6 +118,11 @@ func BigDiv(dividend *big.Int, divisor *big.Int) *big.Int {
 	return new(big.Int).Div(dividend, divisor)
 }
 
+// absolute value of a huge
+func BigAbs(value *big.Int) *big.Int {
+	return new(big.Int).Abs(value)
+}
+
 // add a uint to a huge
 func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
 	return new(big.Int).Add(augend, UintToBig(addend))

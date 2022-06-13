@@ -534,7 +534,9 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher
 			batchDataGas += params.TxDataNonZeroGasEIP2028
 		}
 	}
-	data, err := util.PackInternalTxDataBatchPostingReport(batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee.Big())
+	data, err := util.PackInternalTxDataBatchPostingReport(
+		batchTimestamp.Big(), batchPosterAddr, batchNum, batchDataGas, l1BaseFee.Big(),
+	)
 	if err != nil {
 		return nil, err
 	}
