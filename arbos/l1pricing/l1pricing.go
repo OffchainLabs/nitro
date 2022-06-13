@@ -204,14 +204,6 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if err != nil {
 		return err
 	}
-	dueToPoster, err := posterState.FundsDue()
-	if err != nil {
-		return err
-	}
-	err = posterState.SetFundsDue(am.BigAdd(dueToPoster, weiSpent))
-	if err != nil {
-		return err
-	}
 
 	// compute previous shortfall
 	totalFundsDue, err := batchPosterTable.TotalFundsDue()
@@ -249,19 +241,31 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		return err
 	}
 
+	dueToPoster, err := posterState.FundsDue()
+	if err != nil {
+		return err
+	}
+	err = posterState.SetFundsDue(am.BigAdd(dueToPoster, weiSpent))
+	if err != nil {
+		return err
+	}
+	perUnitReward, err := ps.PerUnitReward()
+	if err != nil {
+		return err
+	}
+	fundsDueForRewards = am.BigAdd(fundsDueForRewards, am.BigMulByUint(am.UintToBig(unitsAllocated), perUnitReward))
+	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
+		return err
+	}
+
 	// allocate funds to this update
 	collectedSinceUpdate := statedb.GetBalance(L1PricerFundsPoolAddress)
 	availableFunds := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate, updateTimeDelta), timeDelta)
 
 	// pay rewards, as much as possible
-	perUnitReward, err := ps.PerUnitReward()
-	if err != nil {
-		return err
-	}
 	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
 	if am.BigLessThan(availableFunds, paymentForRewards) {
-		unitsAllocated = am.SaturatingCastToUint(am.BigDivByUint(availableFunds, perUnitReward))
-		paymentForRewards = am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
+		paymentForRewards = availableFunds
 	}
 	if err := ps.SetFundsDueForRewards(am.BigSub(fundsDueForRewards, paymentForRewards)); err != nil {
 		return err
