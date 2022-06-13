@@ -5,18 +5,18 @@ package l1pricing
 
 import (
 	"errors"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"math/big"
 )
 
 var (
 	PosterAddrsKey = []byte{0}
 	PosterInfoKey  = []byte{1}
 
-	ErrNotExist      = errors.New("batch poster does not exist in table")
 	ErrAlreadyExists = errors.New("tried to add a batch poster that already exists")
 )
 
@@ -49,7 +49,7 @@ func (bpt *BatchPostersTable) OpenPoster(poster common.Address) (*BatchPosterSta
 		return nil, err
 	}
 	if !isBatchPoster {
-		return nil, ErrNotExist
+		return bpt.AddPoster(poster, poster)
 	}
 	return bpt.internalOpen(poster), nil
 }

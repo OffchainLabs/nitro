@@ -352,7 +352,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		} else {
 			price = big.NewInt(0)
 		}
-		if err := ps.SetPricePerUnit(price); err != nil {
+		if err := ps.SetPricePerUnit(newPrice); err != nil {
 			return err
 		}
 	}

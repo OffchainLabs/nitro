@@ -93,7 +93,7 @@ func TestSequencerPriceAdjusts(t *testing.T) {
 	colors.PrintBlue("    L1 estimate ", lastEstimate)
 
 	for i := 0; i < 128; i++ {
-		tx, receipt := TransferBalance(t, "Owner", "Owner", common.Big0, l2info, l2client, ctx)
+		tx, receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2info, l2client, ctx)
 		header, err := l2client.HeaderByHash(ctx, receipt.BlockHash)
 		Require(t, err)
 
@@ -120,6 +120,9 @@ func TestSequencerPriceAdjusts(t *testing.T) {
 			}
 			if !arbmath.BigEquals(trueEstimate, currEstimate) {
 				Fail(t, "New L1 estimate does not match receipt")
+			}
+			if arbmath.BigEquals(trueEstimate, common.Big0) {
+				Fail(t, "Estimate is zero", i)
 			}
 			lastEstimate = trueEstimate
 			timesPriceAdjusted++
