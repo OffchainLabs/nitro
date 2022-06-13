@@ -7,9 +7,13 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/binary"
+	"time"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 var uniquifyingPrefix = []byte("Arbitrum Nitro DAS API Store:")
@@ -59,6 +63,7 @@ func NewStoreSigningDAS(inner DataAvailabilityService, signer DasSigner) (DataAv
 }
 
 func (s *StoreSigningDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	log.Trace("das.StoreSigningDAS.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
 	mySig, err := applyDasSigner(s.signer, message, timeout)
 	if err != nil {
 		return nil, err

@@ -5,7 +5,13 @@ package das
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"time"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 // This is a redundant storage service, which replicates data across a set of StorageServices.
@@ -27,6 +33,7 @@ type readResponse struct {
 }
 
 func (r *RedundantStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.RedundantStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", r)
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var anyError error
@@ -54,6 +61,7 @@ func (r *RedundantStorageService) GetByHash(ctx context.Context, key []byte) ([]
 }
 
 func (r *RedundantStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
+	log.Trace("das.RedundantStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(expirationTime), 0), "this", r)
 	var wg sync.WaitGroup
 	var errorMutex sync.Mutex
 	var anyError error
@@ -113,10 +121,54 @@ func (r *RedundantStorageService) Close(ctx context.Context) error {
 	return anyError
 }
 
+func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	// If at least one inner service has KeepForever,
+	// then whole redundant service can serve after timeout.
+
+	// If no inner service has KeepForever,
+	// but at least one inner service has DiscardAfterArchiveTimeout,
+	// then whole redundant service can serve till archive timeout.
+
+	// If no inner service has KeepForever, DiscardAfterArchiveTimeout,
+	// but at least one inner service has DiscardAfterDataTimeout,
+	// then whole redundant service can serve till data timeout.
+	var res arbstate.ExpirationPolicy = -1
+	for _, serv := range r.innerServices {
+		expirationPolicy, err := serv.ExpirationPolicy(ctx)
+		if err != nil {
+			return -1, err
+		}
+		switch expirationPolicy {
+		case arbstate.KeepForever:
+			return arbstate.KeepForever, nil
+		case arbstate.DiscardAfterArchiveTimeout:
+			res = arbstate.DiscardAfterArchiveTimeout
+		case arbstate.DiscardAfterDataTimeout:
+			if res != arbstate.DiscardAfterArchiveTimeout {
+				res = arbstate.DiscardAfterDataTimeout
+			}
+		}
+	}
+	if res == -1 {
+		return -1, errors.New("unknown expiration policy")
+	}
+	return res, nil
+}
+
 func (r *RedundantStorageService) String() string {
 	str := "RedundantStorageService("
 	for _, serv := range r.innerServices {
 		str = str + serv.String() + ","
 	}
 	return str + ")"
+}
+
+func (r *RedundantStorageService) HealthCheck(ctx context.Context) error {
+	for _, storageService := range r.innerServices {
+		err := storageService.HealthCheck(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

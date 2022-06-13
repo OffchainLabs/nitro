@@ -133,65 +133,59 @@ func (cm *ClientManager) Broadcast(bm interface{}) {
 	cm.broadcastChan <- bm
 }
 
-func (cm *ClientManager) doBroadcast(bm interface{}) error {
+func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error) {
 	if err := cm.catchupBuffer.OnDoBroadcast(bm); err != nil {
-		return err
+		return nil, err
 	}
 
 	var buf bytes.Buffer
 	writer := wsutil.NewWriter(&buf, ws.StateServerSide, ws.OpText)
 	encoder := json.NewEncoder(writer)
 	if err := encoder.Encode(bm); err != nil {
-		return errors.Wrap(err, "unable to encode message")
+		return nil, errors.Wrap(err, "unable to encode message")
 	}
 	if err := writer.Flush(); err != nil {
-		return errors.Wrap(err, "unable to flush message")
+		return nil, errors.Wrap(err, "unable to flush message")
 	}
 
 	clientDeleteList := make([]*ClientConnection, 0, len(cm.clientPtrMap))
 	for client := range cm.clientPtrMap {
-		if len(client.out) == MaxSendQueue {
-			// Queue for client too backed up, so delete after going through all other clients
+		if len(client.out) == cm.settings.MaxSendQueue {
+			// Queue for client too backed up, disconnect instead of blocking on channel send
+			log.Info("disconnecting because send queue too large", "client", client.Name, "size", len(client.out))
 			clientDeleteList = append(clientDeleteList, client)
 		} else {
 			client.out <- buf.Bytes()
 		}
 	}
 
-	for _, client := range clientDeleteList {
-		log.Warn("disconnecting client, queue too large", "client", client.Name)
-		cm.Remove(client)
-	}
-
-	return nil
+	return clientDeleteList, nil
 }
 
 // verifyClients should be called every cm.settings.ClientPingInterval
-func (cm *ClientManager) verifyClients() {
+func (cm *ClientManager) verifyClients() []*ClientConnection {
 	clientConnectionCount := len(cm.clientPtrMap)
 
 	// Create list of clients to clients to remove
-	deadClientList := make([]*ClientConnection, 0, clientConnectionCount)
+	clientDeleteList := make([]*ClientConnection, 0, clientConnectionCount)
+
+	// Send ping to all connected clients
+	log.Debug("pinging clients", "count", len(cm.clientPtrMap))
 	for client := range cm.clientPtrMap {
 		diff := time.Since(client.GetLastHeard())
 		if diff > cm.settings.ClientTimeout {
-			deadClientList = append(deadClientList, client)
+			log.Info("disconnecting because connection timed out", "client", client.Name)
+			clientDeleteList = append(clientDeleteList, client)
+		} else {
+			err := client.Ping()
+			if err != nil {
+				log.Warn("disconnecting because error pinging client", "client", client.Name)
+				clientDeleteList = append(clientDeleteList, client)
+			}
 		}
 	}
 
-	for _, deadClient := range deadClientList {
-		log.Debug("disconnecting because connection timed out", "client", deadClient.Name)
-		cm.Remove(deadClient)
-	}
-
-	// Send ping to all remaining clients
-	log.Debug("pinging clients", "count", len(cm.clientPtrMap))
-	for client := range cm.clientPtrMap {
-		err := client.Ping()
-		if err != nil {
-			log.Error("error pinging client", "name", client.Name, "err", err)
-		}
-	}
+	return clientDeleteList
 }
 
 func (cm *ClientManager) Start(parentCtx context.Context) {
@@ -202,6 +196,7 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 
 		pingInterval := time.NewTicker(cm.settings.Ping)
 		defer pingInterval.Stop()
+		var clientDeleteList []*ClientConnection
 		for {
 			select {
 			case <-ctx.Done():
@@ -217,12 +212,18 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 					cm.removeClient(clientAction.cc)
 				}
 			case bm := <-cm.broadcastChan:
-				err := cm.doBroadcast(bm)
-				if err != nil {
-					log.Error("failed to do broadcast", "err", err)
-				}
+				var err error
+				clientDeleteList, err = cm.doBroadcast(bm)
+				logError(err, "failed to do broadcast")
 			case <-pingInterval.C:
-				cm.verifyClients()
+				clientDeleteList = cm.verifyClients()
+			}
+
+			if len(clientDeleteList) > 0 {
+				for _, client := range clientDeleteList {
+					cm.removeClient(client)
+				}
+				clientDeleteList = nil
 			}
 		}
 	})

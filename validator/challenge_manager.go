@@ -68,7 +68,7 @@ type ChallengeManager struct {
 	inboxTracker      InboxTrackerInterface
 	txStreamer        TransactionStreamerInterface
 	blockchain        *core.BlockChain
-	das               arbstate.SimpleDASReader
+	das               arbstate.DataAvailabilityReader
 	machineLoader     *NitroMachineLoader
 	targetNumMachines int
 	wasmModuleRoot    common.Hash
@@ -89,7 +89,7 @@ func NewChallengeManager(
 	challengeManagerAddr common.Address,
 	challengeIndex uint64,
 	l2blockChain *core.BlockChain,
-	das arbstate.SimpleDASReader,
+	das arbstate.DataAvailabilityReader,
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,

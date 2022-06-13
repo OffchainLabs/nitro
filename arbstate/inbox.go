@@ -59,7 +59,7 @@ const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, data []byte, dasReader SimpleDASReader) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, data []byte, dasReader DataAvailabilityReader) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -130,7 +130,7 @@ func parseSequencerMessage(ctx context.Context, data []byte, dasReader SimpleDAS
 func RecoverPayloadFromDasBatch(
 	ctx context.Context,
 	sequencerMsg []byte,
-	dasReader SimpleDASReader,
+	dasReader DataAvailabilityReader,
 	preimages map[common.Hash][]byte,
 ) ([]byte, error) {
 	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
@@ -182,7 +182,7 @@ func RecoverPayloadFromDasBatch(
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
-	dasReader                 SimpleDASReader
+	dasReader                 DataAvailabilityReader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -191,7 +191,7 @@ type inboxMultiplexer struct {
 	cachedSubMessageNumber    uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader SimpleDASReader) InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader) InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:             backend,
 		delayedMessagesRead: delayedMessagesRead,

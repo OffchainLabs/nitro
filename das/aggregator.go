@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"math/bits"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -26,7 +28,7 @@ import (
 )
 
 type AggregatorConfig struct {
-	// sequencer public key
+	Enable        bool   `koanf:"enable"`
 	AssumedHonest int    `koanf:"assumed-honest"`
 	Backends      string `koanf:"backends"`
 	DumpKeyset    bool   `koanf:"dump-keyset"`
@@ -39,6 +41,7 @@ var DefaultAggregatorConfig = AggregatorConfig{
 }
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage/retrieval of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
 	f.Bool(prefix+".dump-keyset", DefaultAggregatorConfig.DumpKeyset, "Dump the keyset encoded in hexadecimal for the backends string")
@@ -60,6 +63,10 @@ type ServiceDetails struct {
 	service     DataAvailabilityService
 	pubKey      blsSignatures.PublicKey
 	signersMask uint64
+}
+
+func (this *ServiceDetails) String() string {
+	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", this.service, this.signersMask)
 }
 
 func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.PublicKey, signersMask uint64) (*ServiceDetails, error) {
@@ -205,7 +212,7 @@ type storeResponse struct {
 	err     error
 }
 
-// store calls Store on each backend DAS in parallel and collects responses.
+// Store calls Store on each backend DAS in parallel and collects responses.
 // If there were at least K responses then it aggregates the signatures and
 // signersMasks from each DAS together into the DataAvailabilityCertificate
 // then Store returns immediately. If there were any backend Store subroutines
@@ -218,7 +225,13 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
+//
+// If Sequencer Inbox contract details are provided when a das.Aggregator is
+// constructed, calls to Store(...) will try to verify the passed-in data's signature
+// is from the batch poster. If the contract details are not provided, then the
+// signature is not checked, which is useful for testing.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
 	if a.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
@@ -314,17 +327,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	return &aggCert, nil
 }
 
-func (a *Aggregator) KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error) {
-	if !bytes.Equal(ksHash, a.keysetHash[:]) {
-		return nil, ErrDasKeysetNotFound
-	}
-	return a.keysetBytes, nil
-}
-
-func (a *Aggregator) CurrentKeysetBytes(ctx context.Context) ([]byte, error) {
-	return a.keysetBytes, nil
-}
-
 func (a *Aggregator) String() string {
 	var b bytes.Buffer
 	b.WriteString("das.Aggregator{")
@@ -338,4 +340,36 @@ func (a *Aggregator) String() string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+func (a *Aggregator) HealthCheck(ctx context.Context) error {
+	for _, serv := range a.services {
+		err := serv.service.HealthCheck(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *Aggregator) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	if len(a.services) == 0 {
+		return -1, errors.New("no DataAvailabilityService present")
+	}
+	expectedExpirationPolicy, err := a.services[0].service.ExpirationPolicy(ctx)
+	if err != nil {
+		return -1, err
+	}
+	// Even if a single service is different from the rest,
+	// then whole aggregator will be considered for mixed expiration timeout policy.
+	for _, serv := range a.services {
+		ep, err := serv.service.ExpirationPolicy(ctx)
+		if err != nil {
+			return -1, err
+		}
+		if ep != expectedExpirationPolicy {
+			return arbstate.MixedTimeout, nil
+		}
+	}
+	return expectedExpirationPolicy, nil
 }

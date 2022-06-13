@@ -9,14 +9,18 @@ import (
 	"time"
 
 	"github.com/allegro/bigcache"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type BigCacheConfig struct {
 	// TODO add other config information like HardMaxCacheSize
-	Expiration time.Duration `koanf:"big-cache-expiration"`
+	Enable     bool          `koanf:"enable"`
+	Expiration time.Duration `koanf:"expiration"`
 }
 
 var DefaultBigCacheConfig = BigCacheConfig{
@@ -24,7 +28,8 @@ var DefaultBigCacheConfig = BigCacheConfig{
 }
 
 func BigCacheConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Duration(prefix+".big-cache-expiration", DefaultBigCacheConfig.Expiration, "Big cache expiration")
+	f.Bool(prefix+".enable", DefaultBigCacheConfig.Enable, "Enable local in-memory caching of sequencer batch data")
+	f.Duration(prefix+".expiration", DefaultBigCacheConfig.Expiration, "Expiration time for in-memory cached sequencer batches")
 }
 
 type BigCacheStorageService struct {
@@ -46,6 +51,8 @@ func NewBigCacheStorageService(bigCacheConfig BigCacheConfig, baseStorageService
 }
 
 func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
+	log.Trace("das.BigCacheStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", bcs)
+
 	ret, err := bcs.bigCache.Get(string(key))
 	if err != nil {
 		ret, err = bcs.baseStorageService.GetByHash(ctx, key)
@@ -64,6 +71,8 @@ func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key []byte) ([
 }
 
 func (bcs *BigCacheStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
+	log.Trace("das.BigCacheStorageService.Put", "message", pretty.FirstFewBytes(value), "timeout", time.Unix(int64(timeout), 0), "this", bcs)
+
 	err := bcs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
@@ -84,6 +93,14 @@ func (bcs *BigCacheStorageService) Close(ctx context.Context) error {
 	return bcs.baseStorageService.Close(ctx)
 }
 
+func (bcs *BigCacheStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return bcs.baseStorageService.ExpirationPolicy(ctx)
+}
+
 func (bcs *BigCacheStorageService) String() string {
-	return fmt.Sprintf("BigCacheStorageService(:%v)", bcs.bigCacheConfig)
+	return fmt.Sprintf("BigCacheStorageService(%+v)", bcs.bigCacheConfig)
+}
+
+func (bcs *BigCacheStorageService) HealthCheck(ctx context.Context) error {
+	return bcs.baseStorageService.HealthCheck(ctx)
 }
