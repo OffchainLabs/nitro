@@ -105,12 +105,6 @@ func main() {
 		}
 	}
 
-	// Perform sanity check on mode
-	_, err = nodeConfig.Node.DataAvailability.Mode()
-	if err != nil {
-		panic(err.Error())
-	}
-
 	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
 	var daSigner func([]byte) ([]byte, error)
