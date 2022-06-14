@@ -137,7 +137,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external refundsGasWithCalldata(gasRefunder, payable(msg.sender)) {
+    ) external refundsGas(gasRefunder) {
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
@@ -166,7 +166,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external override refundsGasNoCalldata(gasRefunder, payable(msg.sender)) {
+    ) external override refundsGas(gasRefunder) {
         if (!isBatchPoster[msg.sender] && msg.sender != rollup) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
 
