@@ -256,7 +256,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), blockNum)
+		chainConfig, err = arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), blockNum)
 		if err != nil {
 			panic(err)
 		}
