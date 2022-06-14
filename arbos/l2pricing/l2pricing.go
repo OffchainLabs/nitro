@@ -47,7 +47,7 @@ const (
 	backlogToleranceOffset
 )
 
-const GethBlockGasLimit = 1 << 63
+const GethBlockGasLimit = 1 << 50
 
 func InitializeL2PricingState(sto *storage.Storage, arbosVersion uint64) error {
 	_ = sto.SetUint64ByUint64(gasPoolOffset_preExp, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
