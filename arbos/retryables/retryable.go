@@ -145,7 +145,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 	escrowAddress := RetryableEscrowAddress(id)
 	beneficiaryAddress := common.BytesToAddress(beneficiary[:])
 	amount := evm.StateDB.GetBalance(escrowAddress)
-	err = util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario, vm.ArbTransferEscrow)
+	err = util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario, "escrow")
 	if err != nil {
 		return false, err
 	}

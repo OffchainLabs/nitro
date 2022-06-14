@@ -175,7 +175,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	}
 
 	// burn the callvalue, which was previously deposited to this precompile's account
-	if err := util.BurnBalance(&con.Address, value, evm, util.TracingDuringEVM, vm.ArbTransferL1Send); err != nil {
+	if err := util.BurnBalance(&con.Address, value, evm, util.TracingDuringEVM, "l1Send"); err != nil {
 		return nil, err
 	}
 

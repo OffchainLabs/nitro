@@ -112,7 +112,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbosAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
-		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM, vm.ArbTransferDeposit)
+		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM, "deposit")
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
@@ -131,7 +131,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		scenario := util.TracingDuringEVM
 
 		// mint funds with the deposit, then charge fees later
-		util.MintBalance(&from, tx.DepositValue, evm, scenario, vm.ArbTransferDeposit)
+		util.MintBalance(&from, tx.DepositValue, evm, scenario, "deposit")
 
 		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
 		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
@@ -140,7 +140,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		transfer := func(from, to *common.Address, amount *big.Int) error {
-			return util.TransferBalance(from, to, amount, evm, scenario, vm.ArbTransferDuringEvmExecution)
+			return util.TransferBalance(from, to, amount, evm, scenario, "during evm execution")
 		}
 
 		// move balance to the relevant parties
@@ -236,13 +236,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
 		scenario := util.TracingBeforeEVM
-		if util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, vm.ArbTransferEscrow) != nil {
+		if util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, "escrow") != nil {
 			return true, 0, err, nil
 		}
 
 		// The redeemer has pre-paid for this tx's gas
 		prepaid := arbmath.BigMulByUint(evm.Context.BaseFee, tx.Gas)
-		util.MintBalance(&tx.From, prepaid, evm, scenario, vm.ArbTransferPrepaid)
+		util.MintBalance(&tx.From, prepaid, evm, scenario, "prepaid")
 		ticketId := tx.TicketId
 		p.CurrentRetryable = &ticketId
 	}
@@ -339,14 +339,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		refund := arbmath.BigMulByUint(gasPrice, gasLeft)
 
 		// undo Geth's refund to the From address
-		err := util.TransferBalance(&inner.From, nil, refund, p.evm, scenario, vm.ArbTransferIgnore)
+		err := util.TransferBalance(&inner.From, nil, refund, p.evm, scenario, "ignore")
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, refund)
 		}
 
 		// refund the RefundTo by taking fees back from the network address
-		purpose := vm.ArbTransferRefund
-		err = util.TransferBalance(&networkFeeAccount, &inner.RefundTo, refund, p.evm, scenario, purpose)
+		err = util.TransferBalance(&networkFeeAccount, &inner.RefundTo, refund, p.evm, scenario, "refund")
 		if err != nil {
 			// Normally the network fee address should be holding the gas funds.
 			// However, in theory, they could've been transfered out during the redeem attempt.
@@ -361,8 +360,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		} else {
 			// return the Callvalue to escrow
 			escrow := retryables.RetryableEscrowAddress(inner.TicketId)
-			purpose := vm.ArbTransferEscrow
-			err := util.TransferBalance(&inner.From, &escrow, inner.Value, p.evm, scenario, purpose)
+			err := util.TransferBalance(&inner.From, &escrow, inner.Value, p.evm, scenario, "escrow")
 			if err != nil {
 				// should be impossible because geth credited the inner.Value to inner.From before the transaction
 				// and the transaction reverted
@@ -385,7 +383,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		computeCost = totalCost
 	}
 
-	purpose := vm.ArbTransferFeeCollection
+	purpose := "feeCollection"
 	util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
 	util.MintBalance(&p.evm.Context.Coinbase, p.PosterFee, p.evm, scenario, purpose)
 
