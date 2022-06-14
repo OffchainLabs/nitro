@@ -34,10 +34,19 @@ library MerkleLib {
         if (proofItems > 256) revert MerkleProofTooLong(proofItems, 256);
         bytes32 h = item;
         for (uint256 i = 0; i < proofItems; i++) {
+            bytes32 node = nodes[i];
             if (route % 2 == 0) {
-                h = keccak256(abi.encodePacked(h, nodes[i]));
+                assembly {
+                    mstore(0x00, h)
+                    mstore(0x20, node)
+                    h := keccak256(0x00, 0x40)
+                }
             } else {
-                h = keccak256(abi.encodePacked(nodes[i], h));
+                assembly {
+                    mstore(0x00, node)
+                    mstore(0x20, h)
+                    h := keccak256(0x00, 0x40)
+                }            
             }
             route /= 2;
         }
