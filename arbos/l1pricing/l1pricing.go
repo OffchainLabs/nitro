@@ -347,10 +347,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		)
 
 		newPrice := am.BigSub(price, priceChange)
-		if newPrice.Sign() >= 0 {
-			price = newPrice
-		} else {
-			price = big.NewInt(0)
+		if newPrice.Sign() < 0 {
+			newPrice = big.NewInt(0)
 		}
 		if err := ps.SetPricePerUnit(newPrice); err != nil {
 			return err
