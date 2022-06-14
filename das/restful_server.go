@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
@@ -63,7 +62,7 @@ type RestfulDasServerResponse struct {
 var cacheControlKey = http.CanonicalHeaderKey("cache-control")
 
 const cacheControlValue = "public, max-age=2419200, immutable" // cache for up to 28 days
-const healthRequestPath = "/health/"
+const healthRequestPath = "/health"
 const expirationPolicyRequestPath = "/expiration-policy/"
 const getByHashRequestPath = "/get-by-hash/"
 
@@ -120,7 +119,7 @@ func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *h
 func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
 	log.Debug("Got request", "requestPath", requestPath)
 
-	hashBytes, err := hexutil.Decode(strings.TrimPrefix(requestPath, "/get-by-hash/"))
+	hashBytes, err := DecodeStorageServiceKey(strings.TrimPrefix(requestPath, "/get-by-hash/"))
 	if err != nil {
 		log.Warn("Failed to decode hex-encoded hash", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -151,7 +150,6 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 	w.Header()[cacheControlKey] = []string{cacheControlValue}
 }
 
