@@ -504,7 +504,7 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 	}
 	localMsgCount, err := c.streamer.GetMessageCount()
 	if err != nil {
-		log.Crit("coordinator cannot read message count", "err", err)
+		log.Error("coordinator cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
 	err = c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
@@ -536,7 +536,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	// read messages from redis
 	localMsgCount, err := c.streamer.GetMessageCount()
 	if err != nil {
-		log.Crit("cannot read message count", "err", err)
+		log.Error("cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
 	remoteMsgCount, err := c.GetRemoteMsgCount(ctx)
@@ -600,10 +600,14 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		}
 	}
 
+	if c.config.MyUrl == INVALID_URL {
+		return c.noRedisError()
+	}
+
 	// can take over as main sequencer?
 	if localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl {
 		if c.sequencer == nil {
-			log.Crit("myurl main sequencer, but no sequencer exists")
+			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
