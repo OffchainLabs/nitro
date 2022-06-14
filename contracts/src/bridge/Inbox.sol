@@ -60,7 +60,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /// this modifier is not intended to use to be used for security (since this opens the allowList to
     /// a smart contract phishing risk).
     modifier onlyAllowed() {
-        require(isAllowed[tx.origin] || !allowListEnabled, "NOT_ALLOWED");
+        if (allowListEnabled && !isAllowed[tx.origin]) revert NotAllowedOrigin(tx.origin);
         _;
     }
 
