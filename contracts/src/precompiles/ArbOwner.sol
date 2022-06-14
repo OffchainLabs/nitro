@@ -66,8 +66,8 @@ interface ArbOwner {
     /// @notice Upgrades ArbOS to the requested version at the requested timestamp
     function scheduleArbOSUpgrade(uint64 newVersion, uint64 timestamp) external;
 
-    /// @notice Sets equilibration time parameter for L1 price adjustment algorithm
-    function setL1PricingEquilibrationTime(uint64 equilibrationTime) external;
+    /// @notice Sets equilibration units parameter for L1 price adjustment algorithm
+    function setL1PricingEquilibrationUnits(uint256 equilibrationUnits) external;
 
     /// @notice Sets inertia parameter for L1 price adjustment algorithm
     function setL1PricingInertia(uint64 inertia) external;

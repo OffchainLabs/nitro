@@ -75,7 +75,7 @@ func (bpt *BatchPostersTable) AddPoster(posterAddress common.Address, payTo comm
 		return nil, ErrAlreadyExists
 	}
 	bpState := bpt.internalOpen(posterAddress)
-	if err := bpState.fundsDue.Set(big.NewInt(0)); err != nil {
+	if err := bpState.fundsDue.Set(common.Big0); err != nil {
 		return nil, err
 	}
 	if err := bpState.payTo.Set(payTo); err != nil {
@@ -98,7 +98,7 @@ func (bpt *BatchPostersTable) TotalFundsDue() (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	ret := big.NewInt(0)
+	ret := common.Big0
 	for _, posterAddr := range allPosters {
 		poster, err := bpt.OpenPoster(posterAddr)
 		if err != nil {

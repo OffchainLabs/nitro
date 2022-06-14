@@ -4,6 +4,7 @@
 package l1pricing
 
 import (
+	am "github.com/offchainlabs/nitro/util/arbmath"
 	"math"
 	"math/big"
 	"testing"
@@ -61,7 +62,7 @@ func TestL1PriceUpdate(t *testing.T) {
 		Fail(t)
 	}
 
-	initialPriceEstimate := big.NewInt(InitialPricePerUnitWei)
+	initialPriceEstimate := am.UintToBig(InitialPricePerUnitWei)
 	priceEstimate, err := ps.PricePerUnit()
 	Require(t, err)
 	if priceEstimate.Cmp(initialPriceEstimate) != 0 {

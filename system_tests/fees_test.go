@@ -113,7 +113,7 @@ func TestSequencerPriceAdjusts(t *testing.T) {
 			colors.PrintGrey("    L1 estimate ", lastEstimate, " ➤ ", currEstimate, " = ", trueEstimate)
 
 			oldDiff := arbmath.BigAbs(arbmath.BigSub(lastEstimate, l1Header.BaseFee))
-			newDiff := arbmath.BigAbs(arbmath.BigSub(currEstimate, l1Header.BaseFee))
+			newDiff := arbmath.BigAbs(arbmath.BigSub(trueEstimate, l1Header.BaseFee))
 
 			if arbmath.BigGreaterThan(newDiff, oldDiff) {
 				Fail(t, "L1 gas price estimate should tend toward the basefee")

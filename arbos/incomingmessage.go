@@ -511,7 +511,11 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher
 	if err != nil {
 		return nil, err
 	}
-	batchPosterAddr, err := util.AddressFrom256FromReader(rd)
+	batchPosterAddr, err := util.AddressFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	_, err = util.HashFromReader(rd) // unused: data hash
 	if err != nil {
 		return nil, err
 	}
