@@ -33,7 +33,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     IChallengeResultReceiver public resultReceiver;
 
     ISequencerInbox public sequencerInbox;
-    IBridge public delayedBridge;
+    IBridge public bridge;
     IOneStepProofEntry public osp;
 
     function challengeInfo(uint64 challengeIndex)
@@ -99,14 +99,14 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     function initialize(
         IChallengeResultReceiver resultReceiver_,
         ISequencerInbox sequencerInbox_,
-        IBridge delayedBridge_,
+        IBridge bridge_,
         IOneStepProofEntry osp_
     ) external override onlyDelegated {
         require(address(resultReceiver) == address(0), "ALREADY_INIT");
         require(address(resultReceiver_) != address(0), "NO_RESULT_RECEIVER");
         resultReceiver = resultReceiver_;
         sequencerInbox = sequencerInbox_;
-        delayedBridge = delayedBridge_;
+        bridge = bridge_;
         osp = osp_;
     }
 
@@ -256,7 +256,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         bytes32 afterHash = osp.proveOneStep(
             ExecutionContext({
                 maxInboxMessagesRead: challenge.maxInboxMessages,
-                delayedBridge: delayedBridge
+                bridge: bridge
             }),
             challengeStart,
             selection.oldSegments[selection.challengePosition],

@@ -164,13 +164,13 @@ contract OneStepProverHostIo is IOneStepProver {
         bytes32 delayedAcc;
 
         if (msgIndex > 0) {
-            beforeAcc = execCtx.delayedBridge.sequencerInboxAccs(msgIndex - 1);
+            beforeAcc = execCtx.bridge.sequencerInboxAccs(msgIndex - 1);
         }
         if (afterDelayedMsg > 0) {
-            delayedAcc = execCtx.delayedBridge.delayedInboxAccs(afterDelayedMsg - 1);
+            delayedAcc = execCtx.bridge.delayedInboxAccs(afterDelayedMsg - 1);
         }
         bytes32 acc = keccak256(abi.encodePacked(beforeAcc, messageHash, delayedAcc));
-        require(acc == execCtx.delayedBridge.sequencerInboxAccs(msgIndex), "BAD_SEQINBOX_MESSAGE");
+        require(acc == execCtx.bridge.sequencerInboxAccs(msgIndex), "BAD_SEQINBOX_MESSAGE");
         return true;
     }
 
@@ -184,7 +184,7 @@ contract OneStepProverHostIo is IOneStepProver {
         bytes32 beforeAcc;
 
         if (msgIndex > 0) {
-            beforeAcc = execCtx.delayedBridge.delayedInboxAccs(msgIndex - 1);
+            beforeAcc = execCtx.bridge.delayedInboxAccs(msgIndex - 1);
         }
 
         bytes32 messageDataHash = keccak256(message[DELAYED_HEADER_LEN:]);
@@ -197,7 +197,7 @@ contract OneStepProverHostIo is IOneStepProver {
         );
         bytes32 acc = Messages.accumulateInboxMessage(beforeAcc, messageHash);
 
-        require(acc == execCtx.delayedBridge.delayedInboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
+        require(acc == execCtx.bridge.delayedInboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
         return true;
     }
 

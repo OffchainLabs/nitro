@@ -12,7 +12,7 @@ import "../bridge/IBridge.sol";
 
 struct ExecutionContext {
     uint256 maxInboxMessagesRead;
-    IBridge delayedBridge;
+    IBridge bridge;
 }
 
 abstract contract IOneStepProver {

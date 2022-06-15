@@ -6,7 +6,7 @@ pragma solidity ^0.8.0;
 
 import "../bridge/IBridge.sol";
 
-interface IRollupEventBridge {
+interface IRollupEventInbox {
     function bridge() external view returns (IBridge);
 
     function initialize(address _bridge, address _rollup) external;

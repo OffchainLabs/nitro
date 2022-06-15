@@ -204,5 +204,5 @@ interface IRollupAdmin {
      * @notice set a new sequencer inbox contract
      * @param _sequencerInbox new address of sequencer inbox
      */
-    function setDelayedInbox(address _sequencerInbox) external;
+    function setSequencerInbox(address _sequencerInbox) external;
 }

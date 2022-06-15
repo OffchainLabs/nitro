@@ -97,6 +97,12 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         sequencerInboxAccs.push(acc);
     }
 
+    /**
+     * @dev allows the sequencer inbox to submit a delayed message of the batchPostingReport type
+     * This is done through a separate function entrypoint instead of allowing the sequencer inbox
+     * to call `enqueueDelayedMessage` to avoid the gas overhead of an extra SLOAD in either
+     * every delayed inbox or every sequencer inbox call.
+     */
     function submitBatchSpendingReport(address sender, bytes32 messageDataHash)
         external
         override

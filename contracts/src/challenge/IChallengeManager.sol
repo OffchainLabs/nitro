@@ -43,7 +43,7 @@ interface IChallengeManager {
     function initialize(
         IChallengeResultReceiver resultReceiver_,
         ISequencerInbox sequencerInbox_,
-        IBridge delayedBridge_,
+        IBridge bridge_,
         IOneStepProofEntry osp_
     ) external;
 

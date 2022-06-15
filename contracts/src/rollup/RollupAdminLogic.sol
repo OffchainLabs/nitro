@@ -21,15 +21,19 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         onlyProxy
         initializer
     {
-        delayedBridge = connectedContracts.delayedBridge;
-        sequencerBridge = connectedContracts.sequencerInbox;
-        outbox = connectedContracts.outbox;
-        delayedBridge.setOutbox(address(connectedContracts.outbox), true);
-        rollupEventBridge = connectedContracts.rollupEventBridge;
-        delayedBridge.setDelayedInbox(address(connectedContracts.rollupEventBridge), true);
+        rollupDeploymentBlock = block.number;
+        bridge = connectedContracts.bridge;
+        sequencerInbox = connectedContracts.sequencerInbox;
+        connectedContracts.bridge.setDelayedInbox(address(connectedContracts.inbox), true);
+        connectedContracts.bridge.setSequencerInbox(address(connectedContracts.sequencerInbox));
 
-        rollupEventBridge.rollupInitialized(config.chainId);
-        sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
+        outbox = connectedContracts.outbox;
+        connectedContracts.bridge.setOutbox(address(connectedContracts.outbox), true);
+        rollupEventInbox = connectedContracts.rollupEventInbox;
+        connectedContracts.bridge.setDelayedInbox(address(connectedContracts.rollupEventInbox), true);
+
+        connectedContracts.rollupEventInbox.rollupInitialized(config.chainId);
+        connectedContracts.sequencerInbox.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
 
         challengeManager = connectedContracts.challengeManager;
 
@@ -84,7 +88,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      */
     function setOutbox(IOutbox _outbox) external override {
         outbox = _outbox;
-        delayedBridge.setOutbox(address(_outbox), true);
+        bridge.setOutbox(address(_outbox), true);
         emit OwnerFunctionCalled(0);
     }
 
@@ -94,7 +98,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      */
     function removeOldOutbox(address _outbox) external override {
         require(_outbox != address(outbox), "CUR_OUTBOX");
-        delayedBridge.setOutbox(_outbox, false);
+        bridge.setOutbox(_outbox, false);
         emit OwnerFunctionCalled(1);
     }
 
@@ -104,7 +108,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * @param _enabled New status of inbox
      */
     function setDelayedInbox(address _inbox, bool _enabled) external override {
-        delayedBridge.setDelayedInbox(address(_inbox), _enabled);
+        bridge.setDelayedInbox(address(_inbox), _enabled);
         emit OwnerFunctionCalled(2);
     }
 
@@ -301,8 +305,8 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * @notice set a new sequencer inbox contract
      * @param _sequencerInbox new address of sequencer inbox
      */
-    function setDelayedInbox(address _sequencerInbox) external override {
-        delayedBridge.setSequencerInbox(_sequencerInbox);
+    function setSequencerInbox(address _sequencerInbox) external override {
+        bridge.setSequencerInbox(_sequencerInbox);
         emit OwnerFunctionCalled(27);
     }
 }

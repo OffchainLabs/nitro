@@ -18,7 +18,7 @@ contract RollupCreator is Ownable {
         address inboxAddress,
         address adminProxy,
         address sequencerInbox,
-        address delayedBridge
+        address bridge
     );
     event TemplatesUpdated();
 
@@ -47,10 +47,10 @@ contract RollupCreator is Ownable {
 
     struct CreateRollupFrame {
         ProxyAdmin admin;
-        IBridge delayedBridge;
+        IBridge bridge;
         ISequencerInbox sequencerInbox;
         IInbox inbox;
-        IRollupEventBridge rollupEventBridge;
+        IRollupEventInbox rollupEventInbox;
         IOutbox outbox;
         ArbitrumProxy rollup;
     }
@@ -68,10 +68,10 @@ contract RollupCreator is Ownable {
         frame.admin = new ProxyAdmin();
 
         (
-            frame.delayedBridge,
+            frame.bridge,
             frame.sequencerInbox,
             frame.inbox,
-            frame.rollupEventBridge,
+            frame.rollupEventInbox,
             frame.outbox
         ) = bridgeCreator.createBridge(
             address(frame.admin),
@@ -93,17 +93,18 @@ contract RollupCreator is Ownable {
         challengeManager.initialize(
             IChallengeResultReceiver(expectedRollupAddr),
             frame.sequencerInbox,
-            frame.delayedBridge,
+            frame.bridge,
             osp
         );
 
         frame.rollup = new ArbitrumProxy(
             config,
             ContractDependencies({
-                delayedBridge: frame.delayedBridge,
+                bridge: frame.bridge,
                 sequencerInbox: frame.sequencerInbox,
+                inbox: frame.inbox,
                 outbox: frame.outbox,
-                rollupEventBridge: frame.rollupEventBridge,
+                rollupEventInbox: frame.rollupEventInbox,
                 challengeManager: challengeManager,
                 rollupAdminLogic: rollupAdminLogic,
                 rollupUserLogic: rollupUserLogic
@@ -116,7 +117,7 @@ contract RollupCreator is Ownable {
             address(frame.inbox),
             address(frame.admin),
             address(frame.sequencerInbox),
-            address(frame.delayedBridge)
+            address(frame.bridge)
         );
         return address(frame.rollup);
     }

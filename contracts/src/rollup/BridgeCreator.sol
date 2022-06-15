@@ -9,40 +9,40 @@ import "../bridge/SequencerInbox.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/Inbox.sol";
 import "../bridge/Outbox.sol";
-import "./RollupEventBridge.sol";
+import "./RollupEventInbox.sol";
 
 import "../bridge/IBridge.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 
 contract BridgeCreator is Ownable {
-    Bridge public delayedBridgeTemplate;
+    Bridge public bridgeTemplate;
     SequencerInbox public sequencerInboxTemplate;
     Inbox public inboxTemplate;
-    RollupEventBridge public rollupEventBridgeTemplate;
+    RollupEventInbox public rollupEventInboxTemplate;
     Outbox public outboxTemplate;
 
     event TemplatesUpdated();
 
     constructor() Ownable() {
-        delayedBridgeTemplate = new Bridge();
+        bridgeTemplate = new Bridge();
         sequencerInboxTemplate = new SequencerInbox();
         inboxTemplate = new Inbox();
-        rollupEventBridgeTemplate = new RollupEventBridge();
+        rollupEventInboxTemplate = new RollupEventInbox();
         outboxTemplate = new Outbox();
     }
 
     function updateTemplates(
-        address _delayedBridgeTemplate,
+        address _bridgeTemplate,
         address _sequencerInboxTemplate,
         address _inboxTemplate,
-        address _rollupEventBridgeTemplate,
+        address _rollupEventInboxTemplate,
         address _outboxTemplate
     ) external onlyOwner {
-        delayedBridgeTemplate = Bridge(_delayedBridgeTemplate);
+        bridgeTemplate = Bridge(_bridgeTemplate);
         sequencerInboxTemplate = SequencerInbox(_sequencerInboxTemplate);
         inboxTemplate = Inbox(_inboxTemplate);
-        rollupEventBridgeTemplate = RollupEventBridge(_rollupEventBridgeTemplate);
+        rollupEventInboxTemplate = RollupEventInbox(_rollupEventInboxTemplate);
         outboxTemplate = Outbox(_outboxTemplate);
 
         emit TemplatesUpdated();
@@ -50,10 +50,10 @@ contract BridgeCreator is Ownable {
 
     struct CreateBridgeFrame {
         ProxyAdmin admin;
-        Bridge delayedBridge;
+        Bridge bridge;
         SequencerInbox sequencerInbox;
         Inbox inbox;
-        RollupEventBridge rollupEventBridge;
+        RollupEventInbox rollupEventInbox;
         Outbox outbox;
     }
 
@@ -67,15 +67,15 @@ contract BridgeCreator is Ownable {
             Bridge,
             SequencerInbox,
             Inbox,
-            RollupEventBridge,
+            RollupEventInbox,
             Outbox
         )
     {
         CreateBridgeFrame memory frame;
         {
-            frame.delayedBridge = Bridge(
+            frame.bridge = Bridge(
                 address(
-                    new TransparentUpgradeableProxy(address(delayedBridgeTemplate), adminProxy, "")
+                    new TransparentUpgradeableProxy(address(bridgeTemplate), adminProxy, "")
                 )
             );
             frame.sequencerInbox = SequencerInbox(
@@ -86,10 +86,10 @@ contract BridgeCreator is Ownable {
             frame.inbox = Inbox(
                 address(new TransparentUpgradeableProxy(address(inboxTemplate), adminProxy, ""))
             );
-            frame.rollupEventBridge = RollupEventBridge(
+            frame.rollupEventInbox = RollupEventInbox(
                 address(
                     new TransparentUpgradeableProxy(
-                        address(rollupEventBridgeTemplate),
+                        address(rollupEventInboxTemplate),
                         adminProxy,
                         ""
                     )
@@ -100,21 +100,19 @@ contract BridgeCreator is Ownable {
             );
         }
 
-        frame.delayedBridge.initialize();
-        frame.sequencerInbox.initialize(IBridge(frame.delayedBridge), rollup, maxTimeVariation);
-        frame.inbox.initialize(IBridge(frame.delayedBridge), ISequencerInbox(frame.sequencerInbox));
-        frame.rollupEventBridge.initialize(address(frame.delayedBridge), rollup);
-        frame.outbox.initialize(rollup, IBridge(frame.delayedBridge));
+        frame.bridge.initialize();
+        frame.sequencerInbox.initialize(IBridge(frame.bridge), rollup, maxTimeVariation);
+        frame.inbox.initialize(IBridge(frame.bridge), ISequencerInbox(frame.sequencerInbox));
+        frame.rollupEventInbox.initialize(address(frame.bridge), rollup);
+        frame.outbox.initialize(rollup, IBridge(frame.bridge));
 
-        frame.delayedBridge.setDelayedInbox(address(frame.inbox), true);
-        frame.delayedBridge.setSequencerInbox(address(frame.sequencerInbox));
-        frame.delayedBridge.transferOwnership(rollup);
+        frame.bridge.transferOwnership(rollup);
 
         return (
-            frame.delayedBridge,
+            frame.bridge,
             frame.sequencerInbox,
             frame.inbox,
-            frame.rollupEventBridge,
+            frame.rollupEventInbox,
             frame.outbox
         );
     }

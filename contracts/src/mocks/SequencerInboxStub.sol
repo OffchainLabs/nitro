@@ -8,11 +8,11 @@ import "../bridge/SequencerInbox.sol";
 
 contract SequencerInboxStub is SequencerInbox {
     constructor(
-        IBridge delayedBridge_,
+        IBridge bridge_,
         address sequencer_,
         ISequencerInbox.MaxTimeVariation memory maxTimeVariation_
     ) {
-        delayedBridge = delayedBridge_;
+        bridge = bridge_;
         rollup = msg.sender;
         maxTimeVariation = maxTimeVariation_;
         isBatchPoster[sequencer_] = true;

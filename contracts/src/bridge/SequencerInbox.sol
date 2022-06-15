@@ -25,7 +25,7 @@ import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox {
     uint256 public totalDelayedMessagesRead;
 
-    IBridge public delayedBridge;
+    IBridge public bridge;
 
     /// @dev The size of the batch header
     uint256 public constant HEADER_LENGTH = 40;
@@ -46,13 +46,13 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     function initialize(
-        IBridge delayedBridge_,
+        IBridge bridge_,
         address rollup_,
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
-        if (delayedBridge != IBridge(address(0))) revert AlreadyInit();
-        if (delayedBridge_ == IBridge(address(0))) revert HadZeroInit();
-        delayedBridge = delayedBridge_;
+        if (bridge != IBridge(address(0))) revert AlreadyInit();
+        if (bridge_ == IBridge(address(0))) revert HadZeroInit();
+        bridge = bridge_;
         rollup = rollup_;
         maxTimeVariation = maxTimeVariation_;
     }
@@ -108,10 +108,10 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         // Verify that message hash represents the last message sequence of delayed message to be included
         bytes32 prevDelayedAcc = 0;
         if (_totalDelayedMessagesRead > 1) {
-            prevDelayedAcc = delayedBridge.delayedInboxAccs(_totalDelayedMessagesRead - 2);
+            prevDelayedAcc = bridge.delayedInboxAccs(_totalDelayedMessagesRead - 2);
         }
         if (
-            delayedBridge.delayedInboxAccs(_totalDelayedMessagesRead - 1) !=
+            bridge.delayedInboxAccs(_totalDelayedMessagesRead - 1) !=
             Messages.accumulateInboxMessage(prevDelayedAcc, messageHash)
         ) revert IncorrectMessagePreimage();
 
@@ -279,9 +279,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         )
     {
         if (afterDelayedMessagesRead < totalDelayedMessagesRead) revert DelayedBackwards();
-        if (afterDelayedMessagesRead > delayedBridge.delayedMessageCount()) revert DelayedTooFar();
+        if (afterDelayedMessagesRead > bridge.delayedMessageCount()) revert DelayedTooFar();
 
-        (seqMessageCount, beforeAcc, delayedAcc, acc) = delayedBridge.enqueueSequencerMessage(
+        (seqMessageCount, beforeAcc, delayedAcc, acc) = bridge.enqueueSequencerMessage(
             dataHash,
             afterDelayedMessagesRead
         );
@@ -299,7 +299,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
                 seqMessageCount,
                 block.basefee
             );
-            uint256 msgNum = delayedBridge.submitBatchSpendingReport(
+            uint256 msgNum = bridge.submitBatchSpendingReport(
                 batchPoster,
                 keccak256(spendingReportMsg)
             );
@@ -309,11 +309,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     function inboxAccs(uint256 index) external view returns (bytes32) {
-        return delayedBridge.sequencerInboxAccs(index);
+        return bridge.sequencerInboxAccs(index);
     }
 
     function batchCount() external view override returns (uint256) {
-        return delayedBridge.sequencerMessageCount();
+        return bridge.sequencerMessageCount();
     }
 
     /**
