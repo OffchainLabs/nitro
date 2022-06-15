@@ -14,19 +14,19 @@ contract BridgeStub is IBridge {
         bool allowed;
     }
 
-    mapping(address => InOutInfo) private allowedInboxesMap;
+    mapping(address => InOutInfo) private allowedDelayedInboxesMap;
     //mapping(address => InOutInfo) private allowedOutboxesMap;
 
-    address[] public allowedInboxList;
+    address[] public allowedDelayedInboxList;
     address[] public allowedOutboxList;
 
     address public override activeOutbox;
 
     // Accumulator for delayed inbox; tail represents hash of the current state; each element represents the inclusion of a new message.
-    bytes32[] public override inboxAccs;
+    bytes32[] public override delayedInboxAccs;
 
-    function allowedInboxes(address inbox) external view override returns (bool) {
-        return allowedInboxesMap[inbox].allowed;
+    function allowedDelayedInboxes(address inbox) external view override returns (bool) {
+        return allowedDelayedInboxesMap[inbox].allowed;
     }
 
     function allowedOutboxes(address) external pure override returns (bool) {
@@ -38,9 +38,9 @@ contract BridgeStub is IBridge {
         address sender,
         bytes32 messageDataHash
     ) external payable override returns (uint256) {
-        require(allowedInboxesMap[msg.sender].allowed, "NOT_FROM_INBOX");
+        require(allowedDelayedInboxesMap[msg.sender].allowed, "NOT_FROM_INBOX");
         return
-            addMessageToAccumulator(
+            addMessageToDelayedAccumulator(
                 kind,
                 sender,
                 block.number,
@@ -50,7 +50,7 @@ contract BridgeStub is IBridge {
             );
     }
 
-    function addMessageToAccumulator(
+    function addMessageToDelayedAccumulator(
         uint8,
         address,
         uint256,
@@ -58,7 +58,7 @@ contract BridgeStub is IBridge {
         uint256,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        uint256 count = inboxAccs.length;
+        uint256 count = delayedInboxAccs.length;
         bytes32 messageHash = Messages.messageHash(
             0,
             address(uint160(0)),
@@ -70,9 +70,9 @@ contract BridgeStub is IBridge {
         );
         bytes32 prevAcc = 0;
         if (count > 0) {
-            prevAcc = inboxAccs[count - 1];
+            prevAcc = delayedInboxAccs[count - 1];
         }
-        inboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
+        delayedInboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
         return count;
     }
 
@@ -84,21 +84,23 @@ contract BridgeStub is IBridge {
         revert("NOT_IMPLEMENTED");
     }
 
-    function setInbox(address inbox, bool enabled) external override {
-        InOutInfo storage info = allowedInboxesMap[inbox];
+    function setDelayedInbox(address inbox, bool enabled) external override {
+        InOutInfo storage info = allowedDelayedInboxesMap[inbox];
         bool alreadyEnabled = info.allowed;
         emit InboxToggle(inbox, enabled);
         if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
             return;
         }
         if (enabled) {
-            allowedInboxesMap[inbox] = InOutInfo(allowedInboxList.length, true);
-            allowedInboxList.push(inbox);
+            allowedDelayedInboxesMap[inbox] = InOutInfo(allowedDelayedInboxList.length, true);
+            allowedDelayedInboxList.push(inbox);
         } else {
-            allowedInboxList[info.index] = allowedInboxList[allowedInboxList.length - 1];
-            allowedInboxesMap[allowedInboxList[info.index]].index = info.index;
-            allowedInboxList.pop();
-            delete allowedInboxesMap[inbox];
+            allowedDelayedInboxList[info.index] = allowedDelayedInboxList[
+                allowedDelayedInboxList.length - 1
+            ];
+            allowedDelayedInboxesMap[allowedDelayedInboxList[info.index]].index = info.index;
+            allowedDelayedInboxList.pop();
+            delete allowedDelayedInboxesMap[inbox];
         }
     }
 
@@ -109,7 +111,7 @@ contract BridgeStub is IBridge {
         revert("NOT_IMPLEMENTED");
     }
 
-    function messageCount() external view override returns (uint256) {
-        return inboxAccs.length;
+    function delayedMessageCount() external view override returns (uint256) {
+        return delayedInboxAccs.length;
     }
 }

@@ -112,10 +112,10 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         // Verify that message hash represents the last message sequence of delayed message to be included
         bytes32 prevDelayedAcc = 0;
         if (_totalDelayedMessagesRead > 1) {
-            prevDelayedAcc = delayedBridge.inboxAccs(_totalDelayedMessagesRead - 2);
+            prevDelayedAcc = delayedBridge.delayedInboxAccs(_totalDelayedMessagesRead - 2);
         }
         if (
-            delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) !=
+            delayedBridge.delayedInboxAccs(_totalDelayedMessagesRead - 1) !=
             Messages.accumulateInboxMessage(prevDelayedAcc, messageHash)
         ) revert IncorrectMessagePreimage();
 
@@ -280,13 +280,13 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         )
     {
         if (afterDelayedMessagesRead < totalDelayedMessagesRead) revert DelayedBackwards();
-        if (afterDelayedMessagesRead > delayedBridge.messageCount()) revert DelayedTooFar();
+        if (afterDelayedMessagesRead > delayedBridge.delayedMessageCount()) revert DelayedTooFar();
 
         if (inboxAccs.length > 0) {
             beforeAcc = inboxAccs[inboxAccs.length - 1];
         }
         if (afterDelayedMessagesRead > 0) {
-            delayedAcc = delayedBridge.inboxAccs(afterDelayedMessagesRead - 1);
+            delayedAcc = delayedBridge.delayedInboxAccs(afterDelayedMessagesRead - 1);
         }
 
         acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));

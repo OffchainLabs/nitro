@@ -8,7 +8,7 @@ import {NotContract} from "../libraries/Error.sol";
 
 /// @dev Thrown when an un-authorized address tries to access an only-inbox function
 /// @param sender The un-authorized sender
-error NotInbox(address sender);
+error NotDelayedInbox(address sender);
 
 /// @dev Thrown when an un-authorized address tries to access an only-outbox function
 /// @param sender The un-authorized sender
@@ -54,7 +54,7 @@ interface IBridge {
     ) external returns (bool success, bytes memory returnData);
 
     // These are only callable by the admin
-    function setInbox(address inbox, bool enabled) external;
+    function setDelayedInbox(address inbox, bool enabled) external;
 
     function setOutbox(address inbox, bool enabled) external;
 
@@ -62,11 +62,11 @@ interface IBridge {
 
     function activeOutbox() external view returns (address);
 
-    function allowedInboxes(address inbox) external view returns (bool);
+    function allowedDelayedInboxes(address inbox) external view returns (bool);
 
     function allowedOutboxes(address outbox) external view returns (bool);
 
-    function inboxAccs(uint256 index) external view returns (bytes32);
+    function delayedInboxAccs(uint256 index) external view returns (bytes32);
 
-    function messageCount() external view returns (uint256);
+    function delayedMessageCount() external view returns (uint256);
 }

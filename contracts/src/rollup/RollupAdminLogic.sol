@@ -26,7 +26,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         outbox = connectedContracts.outbox;
         delayedBridge.setOutbox(address(connectedContracts.outbox), true);
         rollupEventBridge = connectedContracts.rollupEventBridge;
-        delayedBridge.setInbox(address(connectedContracts.rollupEventBridge), true);
+        delayedBridge.setDelayedInbox(address(connectedContracts.rollupEventBridge), true);
 
         rollupEventBridge.rollupInitialized(config.chainId);
         sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
@@ -103,8 +103,8 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * @param _inbox Inbox contract to add or remove
      * @param _enabled New status of inbox
      */
-    function setInbox(address _inbox, bool _enabled) external override {
-        delayedBridge.setInbox(address(_inbox), _enabled);
+    function setDelayedInbox(address _inbox, bool _enabled) external override {
+        delayedBridge.setDelayedInbox(address(_inbox), _enabled);
         emit OwnerFunctionCalled(2);
     }
 

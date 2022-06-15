@@ -111,7 +111,7 @@ contract BridgeCreator is Ownable {
         frame.rollupEventBridge.initialize(address(frame.delayedBridge), rollup);
         frame.outbox.initialize(rollup, IBridge(frame.delayedBridge));
 
-        frame.delayedBridge.setInbox(address(frame.inbox), true);
+        frame.delayedBridge.setDelayedInbox(address(frame.inbox), true);
         frame.delayedBridge.transferOwnership(rollup);
 
         return (

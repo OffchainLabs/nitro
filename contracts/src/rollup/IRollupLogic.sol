@@ -109,7 +109,7 @@ interface IRollupAdmin {
      * @param _inbox Inbox contract to add or remove
      * @param _enabled New status of inbox
      */
-    function setInbox(address _inbox, bool _enabled) external;
+    function setDelayedInbox(address _inbox, bool _enabled) external;
 
     /**
      * @notice Pause interaction with the rollup contract
