@@ -15,8 +15,8 @@ import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
 
 /**
  * @title Staging ground for incoming and outgoing messages
- * @notice Holds the inbox accumulator for delayed messages, and is the ETH escrow
- * for value sent with these messages.
+ * @notice Holds the inbox accumulator for sequenced and delayed messages.
+ * It is also the ETH escrow for value sent with these messages.
  * Since the escrow is held here, this contract also contains a list of allowed
  * outboxes that can make calls from here and withdraw this escrow.
  */
