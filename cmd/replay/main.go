@@ -171,11 +171,11 @@ func main() {
 
 		message := readMessage(false)
 
-		chainId, genesisBlockNum, err := message.Message.ParseInitMessage()
+		chainId, err := message.Message.ParseInitMessage()
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId, genesisBlockNum)
+		chainConfig, err := arbos.GetChainConfig(chainId, 0)
 		if err != nil {
 			panic(err)
 		}

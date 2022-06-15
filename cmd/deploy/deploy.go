@@ -40,7 +40,6 @@ func main() {
 	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumDevTestChainConfig().ChainID.Uint64(), "L2 chain ID")
-	genesisBlockNum := flag.Uint64("genesisBlockNum", 0, "block number of nitro genesis block")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
@@ -68,7 +67,7 @@ func main() {
 	machineConfig := validator.DefaultNitroMachineConfig
 	machineConfig.RootPath = *wasmrootpath
 
-	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, *genesisBlockNum, headerreader.DefaultConfig, machineConfig)
+	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, headerreader.DefaultConfig, machineConfig)
 	if err != nil {
 		flag.Usage()
 		log.Error("error deploying on l1")

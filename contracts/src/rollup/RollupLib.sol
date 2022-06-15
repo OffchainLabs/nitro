@@ -23,7 +23,6 @@ struct Config {
     address owner;
     address loserStakeEscrow;
     uint256 chainId;
-    uint64 genesisBlockNum;
     ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
 }
 

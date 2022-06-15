@@ -33,9 +33,8 @@ contract RollupEventBridge is IRollupEventBridge, IMessageProvider, DelegateCall
         rollup = _rollup;
     }
 
-    function rollupInitialized(uint256 chainId, uint64 genesisBlockNum) external onlyRollup {
-        uint256 genesisBlockNum256 = uint256(genesisBlockNum);
-        bytes memory initMsg = abi.encodePacked(chainId, genesisBlockNum256);
+    function rollupInitialized(uint256 chainId) external onlyRollup {
+        bytes memory initMsg = abi.encodePacked(chainId);
         uint256 num = bridge.enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,
             address(0),

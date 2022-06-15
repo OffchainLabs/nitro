@@ -89,7 +89,6 @@ async function getDefaultConfig(
     stakeToken: stakeToken,
     wasmModuleRoot: wasmModuleRoot,
     loserStakeEscrow: ZERO_ADDR,
-    genesisBlockNum: 0,
   };
 }
 

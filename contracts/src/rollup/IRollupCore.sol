@@ -17,7 +17,7 @@ interface IRollupCore {
         bool isStaked;
     }
 
-    event RollupInitialized(bytes32 machineHash, uint256 chainId, uint64 genesisBlockNum);
+    event RollupInitialized(bytes32 machineHash, uint256 chainId);
 
     event NodeCreated(
         uint64 indexed nodeNum,

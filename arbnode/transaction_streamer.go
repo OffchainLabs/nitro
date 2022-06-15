@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -274,8 +273,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 			Header: &arbos.L1IncomingMessageHeader{
 				Kind: arbos.L1MessageType_Initialize,
 			},
-			L2msg: append(math.U256Bytes(s.bc.Config().ChainID),
-				math.U256Bytes(new(big.Int).SetUint64(s.bc.Config().ArbitrumChainParams.GenesisBlockNum))...),
+			L2msg: math.U256Bytes(s.bc.Config().ChainID),
 		},
 		DelayedMessagesRead: 0,
 	}})
