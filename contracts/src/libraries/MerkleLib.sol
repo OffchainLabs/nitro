@@ -46,7 +46,7 @@ library MerkleLib {
                     mstore(0x00, node)
                     mstore(0x20, h)
                     h := keccak256(0x00, 0x40)
-                }            
+                }
             }
             route /= 2;
         }
