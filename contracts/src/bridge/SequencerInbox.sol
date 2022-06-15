@@ -26,7 +26,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
-    IInbox public delayedInbox;
 
     /// @dev The size of the batch header
     uint256 public constant HEADER_LENGTH = 40;
@@ -48,14 +47,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     function initialize(
         IBridge delayedBridge_,
-        IInbox delayedInbox_,
         address rollup_,
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
         if (delayedBridge != IBridge(address(0))) revert AlreadyInit();
         if (delayedBridge_ == IBridge(address(0))) revert HadZeroInit();
         delayedBridge = delayedBridge_;
-        delayedInbox = delayedInbox_;
         rollup = rollup_;
         maxTimeVariation = maxTimeVariation_;
     }

@@ -34,6 +34,13 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
 
     address private _activeOutbox;
 
+    address public sequencerInbox;
+
+    function setSequencerInbox(address _sequencerInbox) external override onlyOwner {
+        sequencerInbox = _sequencerInbox;
+        emit SequencerInboxUpdated(_sequencerInbox);
+    }
+
     /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override delayedInboxAccs;
 

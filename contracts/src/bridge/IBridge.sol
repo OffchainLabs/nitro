@@ -45,6 +45,8 @@ interface IBridge {
 
     event OutboxToggle(address indexed outbox, bool enabled);
 
+    event SequencerInboxUpdated(address newSequencerInbox);
+
     function enqueueDelayedMessage(
         uint8 kind,
         address sender,
@@ -75,7 +77,11 @@ interface IBridge {
 
     function setOutbox(address inbox, bool enabled) external;
 
+    function setSequencerInbox(address _sequencerInbox) external;
+
     // View functions
+
+    function sequencerInbox() external view returns (address);
 
     function activeOutbox() external view returns (address);
 

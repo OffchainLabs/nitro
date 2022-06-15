@@ -27,6 +27,13 @@ contract BridgeStub is IBridge {
 
     bytes32[] public override sequencerInboxAccs;
 
+    address public sequencerInbox;
+
+    function setSequencerInbox(address _sequencerInbox) external override {
+        sequencerInbox = _sequencerInbox;
+        emit SequencerInboxUpdated(_sequencerInbox);
+    }
+
     function allowedDelayedInboxes(address inbox) external view override returns (bool) {
         return allowedDelayedInboxesMap[inbox].allowed;
     }

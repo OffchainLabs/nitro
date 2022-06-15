@@ -204,6 +204,11 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         emit BridgeCallTriggered(msg.sender, to, value, data);
     }
 
+    function setSequencerInbox(address _sequencerInbox) external override onlyOwner {
+        sequencerInbox = _sequencerInbox;
+        emit SequencerInboxUpdated(_sequencerInbox);
+    }
+
     function setDelayedInbox(address inbox, bool enabled) external override onlyOwner {
         InOutInfo storage info = allowedDelayedInboxesMap[inbox];
         bool alreadyEnabled = info.allowed;
