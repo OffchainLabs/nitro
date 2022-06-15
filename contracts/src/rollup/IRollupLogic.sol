@@ -199,4 +199,10 @@ interface IRollupAdmin {
      * @param newWasmModuleRoot new module root
      */
     function setWasmModuleRoot(bytes32 newWasmModuleRoot) external;
+
+    /**
+     * @notice set a new sequencer inbox contract
+     * @param _sequencerInbox new address of sequencer inbox
+     */
+    function setDelayedInbox(address _sequencerInbox) external;
 }

@@ -296,4 +296,13 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         wasmModuleRoot = newWasmModuleRoot;
         emit OwnerFunctionCalled(26);
     }
+
+    /**
+     * @notice set a new sequencer inbox contract
+     * @param _sequencerInbox new address of sequencer inbox
+     */
+    function setDelayedInbox(address _sequencerInbox) external override {
+        delayedBridge.setSequencerInbox(_sequencerInbox);
+        emit OwnerFunctionCalled(27);
+    }
 }
