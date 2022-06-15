@@ -12,7 +12,6 @@ import "../bridge/IBridge.sol";
 
 struct ExecutionContext {
     uint256 maxInboxMessagesRead;
-    ISequencerInbox sequencerInbox;
     IBridge delayedBridge;
 }
 

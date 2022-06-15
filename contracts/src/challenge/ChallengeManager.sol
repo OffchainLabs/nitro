@@ -256,7 +256,6 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         bytes32 afterHash = osp.proveOneStep(
             ExecutionContext({
                 maxInboxMessagesRead: challenge.maxInboxMessages,
-                sequencerInbox: sequencerInbox,
                 delayedBridge: delayedBridge
             }),
             challengeStart,
