@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
@@ -19,18 +20,36 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
+type syncedKeysetCache struct {
+	cache map[[32]byte][]byte
+	sync.RWMutex
+}
+
+func (c *syncedKeysetCache) get(key [32]byte) ([]byte, bool) {
+	c.RLock()
+	defer c.RUnlock()
+	res, ok := c.cache[key]
+	return res, ok
+}
+
+func (c *syncedKeysetCache) put(key [32]byte, value []byte) {
+	c.Lock()
+	defer c.Unlock()
+	c.cache[key] = value
+}
+
 type ChainFetchDAS struct {
 	DataAvailabilityService
 	seqInboxCaller   *bridgegen.SequencerInboxCaller
 	seqInboxFilterer *bridgegen.SequencerInboxFilterer
-	keysetCache      map[[32]byte][]byte
+	keysetCache      syncedKeysetCache
 }
 
 type ChainFetchReader struct {
 	arbstate.DataAvailabilityReader
 	seqInboxCaller   *bridgegen.SequencerInboxCaller
 	seqInboxFilterer *bridgegen.SequencerInboxFilterer
-	keysetCache      map[[32]byte][]byte
+	keysetCache      syncedKeysetCache
 }
 
 func NewChainFetchDAS(inner DataAvailabilityService, l1client arbutil.L1Interface, seqInboxAddr common.Address) (*ChainFetchDAS, error) {
@@ -43,10 +62,10 @@ func NewChainFetchDAS(inner DataAvailabilityService, l1client arbutil.L1Interfac
 
 func NewChainFetchDASWithSeqInbox(inner DataAvailabilityService, seqInbox *bridgegen.SequencerInbox) (*ChainFetchDAS, error) {
 	return &ChainFetchDAS{
-		inner,
-		&seqInbox.SequencerInboxCaller,
-		&seqInbox.SequencerInboxFilterer,
-		make(map[[32]byte][]byte),
+		DataAvailabilityService: inner,
+		seqInboxCaller:          &seqInbox.SequencerInboxCaller,
+		seqInboxFilterer:        &seqInbox.SequencerInboxFilterer,
+		keysetCache:             syncedKeysetCache{cache: make(map[[32]byte][]byte)},
 	}, nil
 }
 
@@ -61,27 +80,27 @@ func NewChainFetchReader(inner arbstate.DataAvailabilityReader, l1client arbutil
 
 func NewChainFetchReaderWithSeqInbox(inner arbstate.DataAvailabilityReader, seqInbox *bridgegen.SequencerInbox) (*ChainFetchReader, error) {
 	return &ChainFetchReader{
-		inner,
-		&seqInbox.SequencerInboxCaller,
-		&seqInbox.SequencerInboxFilterer,
-		make(map[[32]byte][]byte),
+		DataAvailabilityReader: inner,
+		seqInboxCaller:         &seqInbox.SequencerInboxCaller,
+		seqInboxFilterer:       &seqInbox.SequencerInboxFilterer,
+		keysetCache:            syncedKeysetCache{cache: make(map[[32]byte][]byte)},
 	}, nil
 }
 
 func (this *ChainFetchDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	log.Trace("das.ChainFetchDAS.GetByHash", "hash", pretty.FirstFewBytes(hash))
-	return chainFetchGetByHash(ctx, this.DataAvailabilityService, this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
+	return chainFetchGetByHash(ctx, this.DataAvailabilityService, &this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
 }
 
 func (this *ChainFetchReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	log.Trace("das.ChainFetchReader.GetByHash", "hash", pretty.FirstFewBytes(hash))
-	return chainFetchGetByHash(ctx, this.DataAvailabilityReader, this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
+	return chainFetchGetByHash(ctx, this.DataAvailabilityReader, &this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
 }
 
 func chainFetchGetByHash(
 	ctx context.Context,
 	daReader arbstate.DataAvailabilityReader,
-	cache map[[32]byte][]byte,
+	cache *syncedKeysetCache,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 	seqInboxFilterer *bridgegen.SequencerInboxFilterer,
 	hash []byte,
@@ -89,7 +108,7 @@ func chainFetchGetByHash(
 	// try to fetch from the cache
 	var hash32 [32]byte
 	copy(hash32[:], hash)
-	res, ok := cache[hash32]
+	res, ok := cache.get(hash32)
 	if ok {
 		return res, nil
 	}
@@ -122,7 +141,7 @@ func chainFetchGetByHash(
 	}
 	for iter.Next() {
 		if bytes.Equal(hash, crypto.Keccak256(iter.Event.KeysetBytes)) {
-			cache[hash32] = iter.Event.KeysetBytes
+			cache.put(hash32, iter.Event.KeysetBytes)
 			return iter.Event.KeysetBytes, nil
 		}
 	}
