@@ -25,7 +25,7 @@ contract SequencerInboxStub is SequencerInbox {
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, 0);
+        ) = addSequencerL2BatchImpl(dataHash, 0, 0);
         emit SequencerBatchDelivered(
             sequencerMessageCount,
             beforeAcc,

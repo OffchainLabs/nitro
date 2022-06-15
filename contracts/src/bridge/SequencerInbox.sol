@@ -126,7 +126,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, _totalDelayedMessagesRead);
+        ) = addSequencerL2BatchImpl(dataHash, _totalDelayedMessagesRead, 0);
         emit SequencerBatchDelivered(
             seqMessageCount,
             beforeAcc,
@@ -156,11 +156,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, data.length);
         if (seqMessageCount != sequenceNumber) revert BadSequencerNumber();
-        if (data.length > 0) {
-            _reportBatchSpending(dataHash, sequenceNumber);
-        }
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
@@ -189,11 +186,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, data.length);
         if (seqMessageCount != sequenceNumber) revert BadSequencerNumber();
-        if (data.length > 0) {
-            _reportBatchSpending(dataHash, sequenceNumber);
-        }
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
@@ -204,10 +198,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             BatchDataLocation.SeparateBatchEvent
         );
         emit SequencerBatchData(sequenceNumber, data);
-    }
-
-    function _reportBatchSpending(bytes32 dataHash, uint256 sequenceNumber) internal {
-        delayedInbox.submitBatchSpendingReportTransaction(msg.sender, dataHash, sequenceNumber);
     }
 
     function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32) {
@@ -276,7 +266,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return (keccak256(header), timeBounds);
     }
 
-    function addSequencerL2BatchImpl(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+    function addSequencerL2BatchImpl(
+        bytes32 dataHash,
+        uint256 afterDelayedMessagesRead,
+        uint256 dataLengthPosted
+    )
         internal
         returns (
             uint256 seqMessageCount,
@@ -289,7 +283,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (afterDelayedMessagesRead > delayedBridge.delayedMessageCount()) revert DelayedTooFar();
         (seqMessageCount, beforeAcc, delayedAcc, acc) = delayedBridge.enqueueSequencerMessage(
             dataHash,
-            afterDelayedMessagesRead
+            afterDelayedMessagesRead,
+            dataLengthPosted > 0 ? msg.sender : address(0)
         );
         totalDelayedMessagesRead = afterDelayedMessagesRead;
     }

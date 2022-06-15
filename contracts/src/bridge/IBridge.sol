@@ -51,7 +51,11 @@ interface IBridge {
         bytes32 messageDataHash
     ) external payable returns (uint256);
 
-    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+    function enqueueSequencerMessage(
+        bytes32 dataHash,
+        uint256 afterDelayedMessagesRead,
+        address batchPoster
+    )
         external
         returns (
             uint256 sequencerMessageCount,

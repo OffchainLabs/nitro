@@ -59,7 +59,11 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
         return allowedOutboxesMap[outbox].allowed;
     }
 
-    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+    function enqueueSequencerMessage(
+        bytes32 dataHash,
+        uint256 afterDelayedMessagesRead,
+        address batchPoster
+    )
         external
         returns (
             uint256 count,

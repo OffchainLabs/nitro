@@ -11,6 +11,8 @@ import "./IBridge.sol";
 import "./Messages.sol";
 import "../libraries/DelegateCallAware.sol";
 
+import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
+
 /**
  * @title Staging ground for incoming and outgoing messages
  * @notice Holds the inbox accumulator for delayed messages, and is the ETH escrow
@@ -68,7 +70,12 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         return allowedOutboxesMap[outbox].allowed;
     }
 
-    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+    /// @param batchPoster sequencer that included the batch, or zero if not a sequencer
+    function enqueueSequencerMessage(
+        bytes32 dataHash,
+        uint256 afterDelayedMessagesRead,
+        address batchPoster
+    )
         external
         override
         returns (
@@ -88,6 +95,36 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         }
         acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));
         sequencerInboxAccs.push(acc);
+
+        if (batchPoster != address(0)) {
+            // we ignore the return value as we don't need the updated delayed inbox count
+            // as this msg isn't included in the current sequencer batch
+            submitBatchSpendingReport(batchPoster, dataHash, seqMessageCount);
+        }
+    }
+
+    function submitBatchSpendingReport(
+        address batchPoster,
+        bytes32 dataHash,
+        uint256 seqMessageCount
+    ) internal returns (uint256) {
+        bytes memory messageData = abi.encodePacked(
+            block.timestamp,
+            batchPoster,
+            dataHash,
+            seqMessageCount,
+            block.basefee
+        );
+
+        return
+            addMessageToDelayedAccumulator(
+                L1MessageType_batchPostingReport,
+                batchPoster,
+                uint64(block.number),
+                uint64(block.timestamp), // solhint-disable-line not-rely-on-time,
+                block.basefee,
+                keccak256(messageData)
+            );
     }
 
     /**

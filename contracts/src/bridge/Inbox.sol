@@ -16,7 +16,6 @@ import {
     L1MessageType_L2FundedByL1,
     L1MessageType_submitRetryableTx,
     L1MessageType_ethDeposit,
-    L1MessageType_batchPostingReport,
     L2MessageType_unsignedEOATx,
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
@@ -194,26 +193,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     uint256(uint160(to)),
                     value,
                     data
-                )
-            );
-    }
-
-    function submitBatchSpendingReportTransaction(
-        address batchPosterAddr,
-        bytes32 dataHash,
-        uint256 batchNumber
-    ) external virtual override whenNotPaused returns (uint256) {
-        require(ISequencerInbox(msg.sender) == sequencerInbox, "unauthorized");
-        return
-            _deliverMessage(
-                L1MessageType_batchPostingReport,
-                batchPosterAddr,
-                abi.encodePacked(
-                    block.timestamp,
-                    batchPosterAddr,
-                    dataHash,
-                    batchNumber,
-                    block.basefee
                 )
             );
     }
