@@ -178,12 +178,14 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             data,
             afterDelayedMessagesRead
         );
+        // we set the calldata length posted to 0 here since the caller isn't the origin
+        // of the tx, so they might have not paid tx input cost for the calldata
         (
             uint256 seqMessageCount,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, data.length);
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, 0);
         if (seqMessageCount != sequenceNumber) revert BadSequencerNumber();
         emit SequencerBatchDelivered(
             sequenceNumber,
@@ -266,7 +268,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     function addSequencerL2BatchImpl(
         bytes32 dataHash,
         uint256 afterDelayedMessagesRead,
-        uint256 dataLengthPosted
+        uint256 calldataLengthPosted
     )
         internal
         returns (
@@ -286,7 +288,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
         totalDelayedMessagesRead = afterDelayedMessagesRead;
 
-        if (dataLengthPosted > 0) {
+        if (calldataLengthPosted > 0) {
             // this msg isn't included in the current sequencer batch, but instead added to
             // the delayed messages queue that is yet to be included
             address batchPoster = msg.sender;
