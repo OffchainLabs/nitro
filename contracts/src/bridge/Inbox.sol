@@ -89,7 +89,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
-        emit InboxMessageDeliveredFromOrigin(msgNum);
+        emit DelayedInboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
     }
 
@@ -406,7 +406,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (_messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
-        emit InboxMessageDelivered(msgNum, _messageData);
+        emit DelayedInboxMessageDelivered(msgNum, _messageData);
         return msgNum;
     }
 

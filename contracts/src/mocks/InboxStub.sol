@@ -36,7 +36,7 @@ contract InboxStub is IInbox {
         // solhint-disable-next-line avoid-tx-origin
         require(msg.sender == tx.origin, "origin only");
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
-        emit InboxMessageDeliveredFromOrigin(msgNum);
+        emit DelayedInboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
     }
 
@@ -47,7 +47,7 @@ contract InboxStub is IInbox {
      */
     function sendL2Message(bytes calldata messageData) external override returns (uint256) {
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
-        emit InboxMessageDelivered(msgNum, messageData);
+        emit DelayedInboxMessageDelivered(msgNum, messageData);
         return msgNum;
     }
 

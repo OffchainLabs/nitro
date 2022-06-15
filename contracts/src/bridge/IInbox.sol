@@ -5,7 +5,7 @@
 pragma solidity ^0.8.4;
 
 import "./IBridge.sol";
-import "./IMessageProvider.sol";
+import "./IDelayedMessageProvider.sol";
 import {AlreadyInit, NotOrigin, DataTooLarge} from "../libraries/Error.sol";
 
 /// @dev The contract is paused, so cannot be paused
@@ -38,7 +38,7 @@ error RetryableData(
     bytes data
 );
 
-interface IInbox is IMessageProvider {
+interface IInbox is IDelayedMessageProvider {
     function sendL2Message(bytes calldata messageData) external returns (uint256);
 
     function sendUnsignedTransaction(

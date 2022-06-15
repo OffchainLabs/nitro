@@ -70,14 +70,15 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         return allowedOutboxesMap[outbox].allowed;
     }
 
-    /// @param batchPoster sequencer that included the batch, or zero if not a sequencer
-    function enqueueSequencerMessage(
-        bytes32 dataHash,
-        uint256 afterDelayedMessagesRead,
-        address batchPoster
-    )
+    modifier onlySequencerInbox() {
+        if (msg.sender != sequencerInbox) revert NotSequencerInbox(msg.sender);
+        _;
+    }
+
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         external
         override
+        onlySequencerInbox
         returns (
             uint256 seqMessageCount,
             bytes32 beforeAcc,
@@ -85,7 +86,6 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
             bytes32 acc
         )
     {
-        if (msg.sender != sequencerInbox) revert NotSequencerInbox(msg.sender);
         seqMessageCount = sequencerInboxAccs.length;
         if (sequencerInboxAccs.length > 0) {
             beforeAcc = sequencerInboxAccs[sequencerInboxAccs.length - 1];
@@ -95,35 +95,22 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         }
         acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));
         sequencerInboxAccs.push(acc);
-
-        if (batchPoster != address(0)) {
-            // we ignore the return value as we don't need the updated delayed inbox count
-            // as this msg isn't included in the current sequencer batch
-            submitBatchSpendingReport(batchPoster, dataHash, seqMessageCount);
-        }
     }
 
-    function submitBatchSpendingReport(
-        address batchPoster,
-        bytes32 dataHash,
-        uint256 seqMessageCount
-    ) internal returns (uint256) {
-        bytes memory messageData = abi.encodePacked(
-            block.timestamp,
-            batchPoster,
-            dataHash,
-            seqMessageCount,
-            block.basefee
-        );
-
+    function submitBatchSpendingReport(address sender, bytes32 messageDataHash)
+        external
+        override
+        onlySequencerInbox
+        returns (uint256)
+    {
         return
             addMessageToDelayedAccumulator(
                 L1MessageType_batchPostingReport,
-                batchPoster,
+                sender,
                 uint64(block.number),
                 uint64(block.timestamp), // solhint-disable-line not-rely-on-time,
                 block.basefee,
-                keccak256(messageData)
+                messageDataHash
             );
     }
 

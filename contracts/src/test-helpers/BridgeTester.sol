@@ -66,11 +66,7 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
         return allowedOutboxesMap[outbox].allowed;
     }
 
-    function enqueueSequencerMessage(
-        bytes32 dataHash,
-        uint256 afterDelayedMessagesRead,
-        address batchPoster
-    )
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         external
         returns (
             uint256 count,
@@ -80,6 +76,13 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
         )
     {
         // TODO: implement stub logic
+    }
+
+    function submitBatchSpendingReport(address batchPoster, bytes32 dataHash)
+        external
+        returns (uint256)
+    {
+        // TODO: implement stub
     }
 
     /**

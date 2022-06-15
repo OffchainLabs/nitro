@@ -59,11 +59,7 @@ contract BridgeStub is IBridge {
             );
     }
 
-    function enqueueSequencerMessage(
-        bytes32 dataHash,
-        uint256 afterDelayedMessagesRead,
-        address batchPoster
-    )
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         external
         returns (
             uint256 count,
@@ -73,6 +69,13 @@ contract BridgeStub is IBridge {
         )
     {
         // TODO: implement stub logic
+    }
+
+    function submitBatchSpendingReport(address batchPoster, bytes32 dataHash)
+        external
+        returns (uint256)
+    {
+        // TODO: implement stub
     }
 
     function addMessageToDelayedAccumulator(

@@ -6,8 +6,9 @@ pragma solidity ^0.8.0;
 
 import "../libraries/IGasRefunder.sol";
 import {AlreadyInit, HadZeroInit, NotOrigin, DataTooLarge, NotRollup} from "../libraries/Error.sol";
+import "./IDelayedMessageProvider.sol";
 
-interface ISequencerInbox {
+interface ISequencerInbox is IDelayedMessageProvider {
     struct MaxTimeVariation {
         uint256 delayBlocks;
         uint256 futureBlocks;

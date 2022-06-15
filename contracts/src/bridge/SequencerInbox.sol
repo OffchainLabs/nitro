@@ -278,12 +278,31 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     {
         if (afterDelayedMessagesRead < totalDelayedMessagesRead) revert DelayedBackwards();
         if (afterDelayedMessagesRead > delayedBridge.delayedMessageCount()) revert DelayedTooFar();
+
         (seqMessageCount, beforeAcc, delayedAcc, acc) = delayedBridge.enqueueSequencerMessage(
             dataHash,
-            afterDelayedMessagesRead,
-            dataLengthPosted > 0 ? msg.sender : address(0)
+            afterDelayedMessagesRead
         );
+
         totalDelayedMessagesRead = afterDelayedMessagesRead;
+
+        if (dataLengthPosted > 0) {
+            // this msg isn't included in the current sequencer batch, but instead added to
+            // the delayed messages queue that is yet to be included
+            address batchPoster = msg.sender;
+            bytes memory spendingReportMsg = abi.encodePacked(
+                block.timestamp,
+                batchPoster,
+                dataHash,
+                seqMessageCount,
+                block.basefee
+            );
+            uint256 msgNum = delayedBridge.submitBatchSpendingReport(
+                batchPoster,
+                keccak256(spendingReportMsg)
+            );
+            emit DelayedInboxMessageDelivered(msgNum, spendingReportMsg);
+        }
     }
 
     function inboxAccs(uint256 index) external view returns (bytes32) {
