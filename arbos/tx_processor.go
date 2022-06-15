@@ -242,18 +242,17 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
 	gasPrice := p.evm.Context.BaseFee
-	coinbase := p.evm.Context.Coinbase
 
-	posterCost, calldataUnits, reimburse := p.state.L1PricingState().PosterDataCost(p.msg, p.msg.From(), coinbase)
+	posterCost, calldataUnits, _ := p.state.L1PricingState().PosterDataCost(p.msg, p.msg.From())
 	if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
-		return err
+		return nil, err
 	}
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
@@ -284,7 +283,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return core.ErrIntrinsicGas
+		return nil, core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
@@ -297,7 +296,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 			*gasRemaining = gasAvailable
 		}
 	}
-	return nil
+	return nil, nil // TODO: verify that first value (tip recipient) should always be nil
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {
@@ -460,4 +459,8 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
+}
+
+func (p *TxProcessor) DropTip() bool {
+	return true // TODO: verify that this is correct (always dropping tips)
 }

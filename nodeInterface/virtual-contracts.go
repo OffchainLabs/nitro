@@ -125,17 +125,12 @@ func init() {
 			log.Error("failed to open ArbOS state", "err", err)
 			return
 		}
-		var poster common.Address
-		allPosters, _ := state.L1PricingState().BatchPosterTable().AllPosters()
-		if len(allPosters) > 0 {
-			poster = allPosters[0]
-		}
 		if header.BaseFee.Sign() == 0 {
 			// if gas is free or there's no reimbursable poster, the user won't pay for L1 data costs
 			return
 		}
 
-		posterCost := state.L1PricingState().PosterDataCost(msg, msg.From(), *poster)
+		posterCost, _, _ := state.L1PricingState().PosterDataCost(msg, msg.From())
 		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
