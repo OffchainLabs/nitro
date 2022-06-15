@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/sha3"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -84,6 +85,7 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key []byte) ([]byte, error) {
 	data, err := rs.client.Get(ctx, string(key)).Bytes()
 	if err != nil {
+		log.Error("das.RedisStorageService.getVerifiedData", "err", err)
 		return nil, err
 	}
 	data, err = rs.verifyMessageSignature(data)
@@ -119,12 +121,15 @@ func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byt
 }
 
 func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	log.Trace("das.RedisStorageService.Store", "message", pretty.FirstFewBytes(value), "timeout", "this", rs)
+	log.Trace("das.RedisStorageService.Store", "message", pretty.FirstFewBytes(value), "timeout", timeout, "this", rs)
 	err := rs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
 	}
 	err = rs.client.Set(ctx, string(crypto.Keccak256(value)), rs.signMessage(value), rs.redisConfig.Expiration).Err()
+	if err != nil {
+		log.Error("das.RedisStorageService.Store", "err", err)
+	}
 	return err
 }
 
@@ -140,10 +145,18 @@ func (rs *RedisStorageService) Close(ctx context.Context) error {
 	return rs.baseStorageService.Close(ctx)
 }
 
-func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
+func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	return rs.baseStorageService.ExpirationPolicy(ctx)
 }
 
 func (rs *RedisStorageService) String() string {
 	return fmt.Sprintf("RedisStorageService(%+v)", rs.redisConfig)
+}
+
+func (rs *RedisStorageService) HealthCheck(ctx context.Context) error {
+	err := rs.client.Ping(ctx).Err()
+	if err != nil {
+		return err
+	}
+	return rs.baseStorageService.HealthCheck(ctx)
 }

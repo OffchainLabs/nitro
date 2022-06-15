@@ -66,10 +66,6 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
-func (p *TxProcessor) DropTip() bool {
-	return p.state.FormatVersion() >= 2
-}
-
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
@@ -246,7 +242,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, error) {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
@@ -254,10 +250,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	var gasNeededToStartEVM uint64
 	gasPrice := p.evm.Context.BaseFee
 	coinbase := p.evm.Context.Coinbase
-	posterCost, calldataUnits, reimburse := p.state.L1PricingState().PosterDataCost(p.msg, coinbase)
 
+	posterCost, calldataUnits, reimburse := p.state.L1PricingState().PosterDataCost(p.msg, p.msg.From(), coinbase)
 	if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
-		return nil, err
+		return err
 	}
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
@@ -286,16 +282,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 		gasNeededToStartEVM = p.posterGas
 	}
 
-	// Most users shouldn't set a tip, but if specified only give it to the poster if they're reimbursable
-	tipRecipient := &coinbase
-	if !reimburse {
-		networkFeeAccount, _ := p.state.NetworkFeeAccount()
-		tipRecipient = &networkFeeAccount
-	}
-
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return tipRecipient, core.ErrIntrinsicGas
+		return core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
@@ -308,8 +297,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 			*gasRemaining = gasAvailable
 		}
 	}
-
-	return tipRecipient, nil
+	return nil
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {

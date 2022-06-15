@@ -6,7 +6,6 @@ package das
 import (
 	"bytes"
 	"context"
-	"encoding/base32"
 	"errors"
 	"io"
 	"testing"
@@ -40,7 +39,7 @@ type mockS3Downloader struct {
 }
 
 func (m *mockS3Downloader) Download(ctx context.Context, w io.WriterAt, input *s3.GetObjectInput, options ...func(*manager.Downloader)) (n int64, err error) {
-	key, err := base32.StdEncoding.DecodeString(*input.Key)
+	key, err := DecodeStorageServiceKey(*input.Key)
 	if err != nil {
 		return 0, err
 	}

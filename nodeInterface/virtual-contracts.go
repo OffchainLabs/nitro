@@ -134,7 +134,8 @@ func init() {
 			// if gas is free or there's no reimbursable poster, the user won't pay for L1 data costs
 			return
 		}
-		posterCost, _, _ := state.L1PricingState().PosterDataCost(msg, poster)
+
+		posterCost := state.L1PricingState().PosterDataCost(msg, msg.From(), *poster)
 		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}

@@ -659,15 +659,18 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	if config.BatchPoster.Enable {
-		if daSigner != nil {
-			dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
-			if err != nil {
-				return nil, err
+	if dataAvailabilityService != nil {
+		if config.BatchPoster.Enable {
+			if daSigner != nil {
+				dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+				if err != nil {
+					return nil, err
+				}
 			}
+		} else {
+			dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
 		}
-	} else {
-		dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
+		dataAvailabilityService = das.NewTimeoutWrapper(dataAvailabilityService, config.DataAvailability.RequestTimeout)
 	}
 
 	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
@@ -752,8 +755,8 @@ func SetUpDataAvailabilityWithoutNode(
 func SetUpDataAvailability(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
-	_l1Client arbutil.L1Interface,
-	_deployInfo *RollupAddresses,
+	l1Client arbutil.L1Interface,
+	deployInfo *RollupAddresses,
 ) (das.DataAvailabilityService, *das.LifecycleManager, error) {
 	if !config.Enable {
 		return nil, nil, nil
@@ -762,28 +765,31 @@ func SetUpDataAvailability(
 	var seqInbox *bridgegen.SequencerInbox
 	var err error
 	var seqInboxCaller *bridgegen.SequencerInboxCaller
+	var seqInboxAddress *common.Address
 
-	if _l1Client != nil && _deployInfo != nil {
-		seqInbox, err = bridgegen.NewSequencerInbox(_deployInfo.SequencerInbox, _l1Client)
+	if l1Client != nil && deployInfo != nil {
+		seqInboxAddress = &deployInfo.SequencerInbox
+		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Client)
 		if err != nil {
 			return nil, nil, err
 		}
 		seqInboxCaller = &seqInbox.SequencerInboxCaller
 	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
-		// leave sequencerInboxCaller nil
+		l1Client = nil
+		seqInboxAddress = nil
 	} else if len(config.L1NodeURL) > 0 && len(config.SequencerInboxAddress) > 0 {
-		l1Client, err := ethclient.DialContext(ctx, config.L1NodeURL)
+		l1Client, err = ethclient.DialContext(ctx, config.L1NodeURL)
 		if err != nil {
 			return nil, nil, err
 		}
-		sequencerInbox, err := das.OptionalAddressFromString(config.SequencerInboxAddress)
+		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
 		if err != nil {
 			return nil, nil, err
 		}
-		if sequencerInbox == nil {
+		if seqInboxAddress == nil {
 			return nil, nil, errors.New("Must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
-		seqInbox, err = bridgegen.NewSequencerInbox(*sequencerInbox, l1Client)
+		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Client)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -817,7 +823,7 @@ func SetUpDataAvailability(
 	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
 	// the REST aggregator is used as the fallback to them.
 	if config.RestfulClientAggregatorConfig.Enable {
-		restAgg, err := das.NewRestfulClientAggregator(&config.RestfulClientAggregatorConfig)
+		restAgg, err := das.NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -825,15 +831,42 @@ func SetUpDataAvailability(
 		dasLifecycleManager.Register(restAgg)
 
 		// Wrap the primary storage service with the fallback to the restful aggregator
-		if topLevelStorageService != nil {
-			topLevelStorageService = das.NewFallbackStorageService(topLevelStorageService, restAgg,
-				/* TODO add config for following options */
-				math.MaxUint64, true, true)
-			dasLifecycleManager.Register(topLevelStorageService)
+		if hasPersistentStorage {
+			syncConf := &config.RestfulClientAggregatorConfig.SyncToStorageConfig
+			var retentionPeriodSeconds uint64
+			if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
+				retentionPeriodSeconds = math.MaxUint64
+			} else {
+				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
+			}
+			if syncConf.Eager {
+				if l1Client == nil || seqInboxAddress == nil {
+					return nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
+				}
+				topLevelStorageService, err = das.NewSyncingFallbackStorageService(
+					ctx,
+					topLevelStorageService,
+					restAgg,
+					retentionPeriodSeconds,
+					syncConf.IgnoreWriteErrors,
+					true,
+					l1Client,
+					*seqInboxAddress,
+					&syncConf.EagerLowerBoundBlock,
+					retentionPeriodSeconds,
+					syncConf.EagerStopsWhenCaughtUp,
+				)
+				if err != nil {
+					return nil, nil, err
+				}
+			} else {
+				topLevelStorageService = das.NewFallbackStorageService(topLevelStorageService, restAgg,
+					retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
+			}
 		} else {
 			topLevelStorageService = das.NewReadLimitedStorageService(restAgg)
-			dasLifecycleManager.Register(topLevelStorageService)
 		}
+		dasLifecycleManager.Register(topLevelStorageService)
 	}
 
 	var topLevelDas das.DataAvailabilityService
@@ -849,7 +882,7 @@ func SetUpDataAvailability(
 		}
 
 		topLevelDas = rpcAggregator
-	} else if hasPersistentStorage {
+	} else if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
 
 		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
@@ -1051,7 +1084,9 @@ func (n *Node) StopAndWait() {
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
-	n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
+	if n.DASLifecycleManager != nil {
+		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
+	}
 }
 
 func CreateDefaultStack() (*node.Node, error) {

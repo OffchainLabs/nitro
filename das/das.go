@@ -8,6 +8,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/ethereum/go-ethereum/common"
 	flag "github.com/spf13/pflag"
 
@@ -29,6 +31,8 @@ type DataAvailabilityService interface {
 type DataAvailabilityConfig struct {
 	Enable bool `koanf:"enable"`
 
+	RequestTimeout time.Duration `koanf:"request-timeout"`
+
 	LocalCacheConfig BigCacheConfig `koanf:"local-cache"`
 	RedisCacheConfig RedisConfig    `koanf:"redis-cache"`
 
@@ -45,7 +49,11 @@ type DataAvailabilityConfig struct {
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
 }
 
-var DefaultDataAvailabilityConfig = DataAvailabilityConfig{}
+var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
+	RequestTimeout:                5 * time.Second,
+	Enable:                        false,
+	RestfulClientAggregatorConfig: DefaultRestfulClientAggregatorConfig,
+}
 
 /* TODO put these checks somewhere
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
@@ -95,6 +103,8 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
 
+	f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service request timeout duration")
+
 	// Cache options
 	BigCacheConfigAddOptions(prefix+".local-cache", f)
 	RedisConfigAddOptions(prefix+".redis-cache", f)
@@ -141,12 +151,3 @@ func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {
 
 	return append(buf, blsSignatures.SignatureToBytes(c.Sig)...)
 }
-
-type ExpirationPolicy int64
-
-const (
-	KeepForever                ExpirationPolicy = iota // Data is kept forever
-	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node, assumed to be as long as minimum data timeout)
-	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
-	// Add more type of expiration policy.
-)
