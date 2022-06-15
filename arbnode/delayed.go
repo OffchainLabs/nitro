@@ -37,7 +37,7 @@ func init() {
 	}
 	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
 
-	parsedIMessageProviderABI, err := bridgegen.IMessageProviderMetaData.GetAbi()
+	parsedIMessageProviderABI, err := bridgegen.IDelayedMessageProviderMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
@@ -56,7 +56,7 @@ type DelayedBridge struct {
 	address          common.Address
 	fromBlock        uint64
 	client           arbutil.L1Interface
-	messageProviders map[common.Address]*bridgegen.IMessageProvider
+	messageProviders map[common.Address]*bridgegen.IDelayedMessageProvider
 }
 
 func NewDelayedBridge(client arbutil.L1Interface, addr common.Address, fromBlock uint64) (*DelayedBridge, error) {
@@ -70,7 +70,7 @@ func NewDelayedBridge(client arbutil.L1Interface, addr common.Address, fromBlock
 		address:          addr,
 		fromBlock:        fromBlock,
 		client:           client,
-		messageProviders: make(map[common.Address]*bridgegen.IMessageProvider),
+		messageProviders: make(map[common.Address]*bridgegen.IDelayedMessageProvider),
 	}, nil
 }
 
@@ -86,7 +86,7 @@ func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.In
 		Context:     ctx,
 		BlockNumber: blockNumber,
 	}
-	bigRes, err := b.con.MessageCount(opts)
+	bigRes, err := b.con.DelayedMessageCount(opts)
 	if err != nil {
 		return 0, errors.WithStack(err)
 	}
@@ -101,7 +101,7 @@ func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber uint6
 		Context:     ctx,
 		BlockNumber: blockNumber,
 	}
-	return b.con.InboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
+	return b.con.DelayedInboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
 }
 
 type DelayedInboxMessage struct {
@@ -255,7 +255,7 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 	con, ok := b.messageProviders[ethLog.Address]
 	if !ok {
 		var err error
-		con, err = bridgegen.NewIMessageProvider(ethLog.Address, b.client)
+		con, err = bridgegen.NewIDelayedMessageProvider(ethLog.Address, b.client)
 		if err != nil {
 			return nil, nil, errors.WithStack(err)
 		}
