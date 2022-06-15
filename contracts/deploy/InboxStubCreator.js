@@ -9,7 +9,7 @@ module.exports = async (hre) => {
   const inbox = await ethers.getContract("InboxStub");
 
   if (inboxDeployResult.newlyDeployed) {
-    await bridge.setInbox(inbox.address, true);
+    await bridge.setDelayedInbox(inbox.address, true);
     await inbox.initialize(bridge.address);
   }
 };
