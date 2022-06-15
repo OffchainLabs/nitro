@@ -98,33 +98,35 @@ func TestSequencerPriceAdjusts(t *testing.T) {
 		Require(t, err)
 
 		units := compressedTxSize(t, tx) * params.TxDataNonZeroGasEIP2028
-		currEstimate := arbmath.BigDivByUint(arbmath.BigMulByUint(header.BaseFee, receipt.GasUsedForL1), units)
+		estimatedL1FeePerUnit := arbmath.BigDivByUint(arbmath.BigMulByUint(header.BaseFee, receipt.GasUsedForL1), units)
 
-		if !arbmath.BigEquals(lastEstimate, currEstimate) {
+		if !arbmath.BigEquals(lastEstimate, estimatedL1FeePerUnit) {
 			l1Header, err = l1client.HeaderByNumber(ctx, nil)
 			Require(t, err)
 
 			callOpts := &bind.CallOpts{Context: ctx, BlockNumber: receipt.BlockNumber}
-			trueEstimate, err := arbGasInfo.GetL1BaseFeeEstimate(callOpts)
+			actualL1FeePerUnit, err := arbGasInfo.GetL1BaseFeeEstimate(callOpts)
 			Require(t, err)
 
 			colors.PrintGrey("ArbOS updated its L1 estimate")
 			colors.PrintGrey("    L1 base fee ", l1Header.BaseFee)
-			colors.PrintGrey("    L1 estimate ", lastEstimate, " ➤ ", currEstimate, " = ", trueEstimate)
+			colors.PrintGrey("    L1 estimate ", lastEstimate, " ➤ ", estimatedL1FeePerUnit, " = ", actualL1FeePerUnit)
 
 			oldDiff := arbmath.BigAbs(arbmath.BigSub(lastEstimate, l1Header.BaseFee))
-			newDiff := arbmath.BigAbs(arbmath.BigSub(trueEstimate, l1Header.BaseFee))
+			newDiff := arbmath.BigAbs(arbmath.BigSub(actualL1FeePerUnit, l1Header.BaseFee))
 
 			if arbmath.BigGreaterThan(newDiff, oldDiff) {
 				Fail(t, "L1 gas price estimate should tend toward the basefee")
 			}
-			if !arbmath.BigEquals(trueEstimate, currEstimate) {
-				Fail(t, "New L1 estimate does not match receipt")
+			diff := arbmath.BigAbs(arbmath.BigSub(actualL1FeePerUnit, estimatedL1FeePerUnit))
+			maxDiffToAllow := arbmath.BigDivByUint(actualL1FeePerUnit, 100)
+			if arbmath.BigLessThan(maxDiffToAllow, diff) { // verify that estimates is within 1% of actual
+				Fail(t, "New L1 estimate differs too much from receipt")
 			}
-			if arbmath.BigEquals(trueEstimate, common.Big0) {
+			if arbmath.BigEquals(actualL1FeePerUnit, common.Big0) {
 				Fail(t, "Estimate is zero", i)
 			}
-			lastEstimate = trueEstimate
+			lastEstimate = actualL1FeePerUnit
 			timesPriceAdjusted++
 		}
 
