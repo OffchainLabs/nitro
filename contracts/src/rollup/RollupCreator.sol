@@ -28,6 +28,9 @@ contract RollupCreator is Ownable {
     IRollupAdmin public rollupAdminLogic;
     IRollupUser public rollupUserLogic;
 
+    address public validatorUtils;
+    address public validatorWalletCreator;
+
     constructor() Ownable() {}
 
     function setTemplates(
@@ -35,13 +38,17 @@ contract RollupCreator is Ownable {
         IOneStepProofEntry _osp,
         IChallengeManager _challengeManagerLogic,
         IRollupAdmin _rollupAdminLogic,
-        IRollupUser _rollupUserLogic
+        IRollupUser _rollupUserLogic,
+        address _validatorUtils,
+        address _validatorWalletCreator
     ) external onlyOwner {
         bridgeCreator = _bridgeCreator;
         osp = _osp;
         challengeManagerTemplate = _challengeManagerLogic;
         rollupAdminLogic = _rollupAdminLogic;
         rollupUserLogic = _rollupUserLogic;
+        validatorUtils = _validatorUtils;
+        validatorWalletCreator = _validatorWalletCreator;
         emit TemplatesUpdated();
     }
 
@@ -107,7 +114,9 @@ contract RollupCreator is Ownable {
                 rollupEventInbox: frame.rollupEventInbox,
                 challengeManager: challengeManager,
                 rollupAdminLogic: rollupAdminLogic,
-                rollupUserLogic: rollupUserLogic
+                rollupUserLogic: rollupUserLogic,
+                validatorUtils: validatorUtils,
+                validatorWalletCreator: validatorWalletCreator
             })
         );
         require(address(frame.rollup) == expectedRollupAddr, "WRONG_ROLLUP_ADDR");

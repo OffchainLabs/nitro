@@ -36,6 +36,11 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     ISequencerInbox public sequencerInbox;
     IRollupEventInbox public rollupEventInbox;
     IChallengeManager public override challengeManager;
+
+    // misc useful contracts when interacting with the rollup
+    address public validatorUtils;
+    address public validatorWalletCreator;
+
     // when a staker loses a challenge, half of their funds get escrowed in this address
     address public loserStakeEscrow;
     address public stakeToken;

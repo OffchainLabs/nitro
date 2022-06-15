@@ -36,6 +36,9 @@ struct ContractDependencies {
     IChallengeManager challengeManager;
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;
+    // misc contracts that are useful when interacting with the rollup
+    address validatorUtils;
+    address validatorWalletCreator;
 }
 
 library RollupLib {
