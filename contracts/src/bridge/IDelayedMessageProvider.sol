@@ -5,7 +5,10 @@
 pragma solidity ^0.8.0;
 
 interface IDelayedMessageProvider {
-    event DelayedInboxMessageDelivered(uint256 indexed messageNum, bytes data);
+    /// @dev event emitted when a inbox message is added to the Bridge's delayed accumulator
+    event InboxMessageDelivered(uint256 indexed messageNum, bytes data);
 
-    event DelayedInboxMessageDeliveredFromOrigin(uint256 indexed messageNum);
+    /// @dev event emitted when a inbox message is added to the Bridge's delayed accumulator
+    /// same as InboxMessageDelivered but the batch data is available in tx.input
+    event InboxMessageDeliveredFromOrigin(uint256 indexed messageNum);
 }

@@ -40,6 +40,6 @@ contract RollupEventBridge is IRollupEventBridge, IDelayedMessageProvider, Deleg
             address(0),
             keccak256(initMsg)
         );
-        emit DelayedInboxMessageDelivered(num, initMsg);
+        emit InboxMessageDelivered(num, initMsg);
     }
 }

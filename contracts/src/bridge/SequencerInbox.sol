@@ -303,7 +303,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
                 batchPoster,
                 keccak256(spendingReportMsg)
             );
-            emit DelayedInboxMessageDelivered(msgNum, spendingReportMsg);
+            // this is the same event used by Inbox.sol after including a message to the delayed message accumulator
+            emit InboxMessageDelivered(msgNum, spendingReportMsg);
         }
     }
 
