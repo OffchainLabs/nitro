@@ -20,12 +20,14 @@ contract SequencerInboxStub is SequencerInbox {
 
     function addInitMessage() external {
         (bytes32 dataHash, TimeBounds memory timeBounds) = formEmptyDataHash(0);
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            dataHash,
-            0
-        );
+        (
+            uint256 sequencerMessageCount,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, 0);
         emit SequencerBatchDelivered(
-            inboxAccs.length - 1,
+            sequencerMessageCount,
             beforeAcc,
             afterAcc,
             delayedAcc,

@@ -23,7 +23,6 @@ import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
  * sequencer within a time limit they can be force included into the rollup inbox by anyone.
  */
 contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox {
-    bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
@@ -122,12 +121,14 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         (bytes32 dataHash, TimeBounds memory timeBounds) = formEmptyDataHash(
             _totalDelayedMessagesRead
         );
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            dataHash,
-            _totalDelayedMessagesRead
-        );
+        (
+            uint256 seqMessageCount,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, _totalDelayedMessagesRead);
         emit SequencerBatchDelivered(
-            inboxAccs.length - 1,
+            seqMessageCount,
             beforeAcc,
             afterAcc,
             delayedAcc,
@@ -146,20 +147,22 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
-        if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
             afterDelayedMessagesRead
         );
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            dataHash,
-            afterDelayedMessagesRead
-        );
+        (
+            uint256 seqMessageCount,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
+        if (seqMessageCount != sequenceNumber) revert BadSequencerNumber();
         if (data.length > 0) {
             _reportBatchSpending(dataHash, sequenceNumber);
         }
         emit SequencerBatchDelivered(
-            inboxAccs.length - 1,
+            sequenceNumber,
             beforeAcc,
             afterAcc,
             delayedAcc,
@@ -176,16 +179,18 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         IGasRefunder gasRefunder
     ) external override refundsGasNoCalldata(gasRefunder, payable(msg.sender)) {
         if (!isBatchPoster[msg.sender] && msg.sender != rollup) revert NotBatchPoster();
-        if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
 
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
             afterDelayedMessagesRead
         );
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            dataHash,
-            afterDelayedMessagesRead
-        );
+        (
+            uint256 seqMessageCount,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
+        if (seqMessageCount != sequenceNumber) revert BadSequencerNumber();
         if (data.length > 0) {
             _reportBatchSpending(dataHash, sequenceNumber);
         }
@@ -274,6 +279,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     function addSequencerL2BatchImpl(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         internal
         returns (
+            uint256 seqMessageCount,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 acc
@@ -281,21 +287,19 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     {
         if (afterDelayedMessagesRead < totalDelayedMessagesRead) revert DelayedBackwards();
         if (afterDelayedMessagesRead > delayedBridge.delayedMessageCount()) revert DelayedTooFar();
-
-        if (inboxAccs.length > 0) {
-            beforeAcc = inboxAccs[inboxAccs.length - 1];
-        }
-        if (afterDelayedMessagesRead > 0) {
-            delayedAcc = delayedBridge.delayedInboxAccs(afterDelayedMessagesRead - 1);
-        }
-
-        acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));
-        inboxAccs.push(acc);
+        (seqMessageCount, beforeAcc, delayedAcc, acc) = delayedBridge.enqueueSequencerMessage(
+            dataHash,
+            afterDelayedMessagesRead
+        );
         totalDelayedMessagesRead = afterDelayedMessagesRead;
     }
 
+    function inboxAccs(uint256 index) external view returns (bytes32) {
+        return delayedBridge.sequencerInboxAccs(index);
+    }
+
     function batchCount() external view override returns (uint256) {
-        return inboxAccs.length;
+        return delayedBridge.sequencerMessageCount();
     }
 
     /**

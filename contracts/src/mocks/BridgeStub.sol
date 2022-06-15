@@ -25,6 +25,8 @@ contract BridgeStub is IBridge {
     // Accumulator for delayed inbox; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override delayedInboxAccs;
 
+    bytes32[] public override sequencerInboxAccs;
+
     function allowedDelayedInboxes(address inbox) external view override returns (bool) {
         return allowedDelayedInboxesMap[inbox].allowed;
     }
@@ -48,6 +50,18 @@ contract BridgeStub is IBridge {
                 block.basefee,
                 messageDataHash
             );
+    }
+
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+        external
+        returns (
+            uint256 count,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 acc
+        )
+    {
+        // TODO: implement stub logic
     }
 
     function addMessageToDelayedAccumulator(
@@ -113,5 +127,9 @@ contract BridgeStub is IBridge {
 
     function delayedMessageCount() external view override returns (uint256) {
         return delayedInboxAccs.length;
+    }
+
+    function sequencerMessageCount() external view override returns (uint256) {
+        return sequencerInboxAccs.length;
     }
 }

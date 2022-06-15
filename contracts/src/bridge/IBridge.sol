@@ -10,6 +10,10 @@ import {NotContract} from "../libraries/Error.sol";
 /// @param sender The un-authorized sender
 error NotDelayedInbox(address sender);
 
+/// @dev Thrown when an un-authorized address tries to access an only-sequencer-inbox function
+/// @param sender The un-authorized sender
+error NotSequencerInbox(address sender);
+
 /// @dev Thrown when an un-authorized address tries to access an only-outbox function
 /// @param sender The un-authorized sender
 error NotOutbox(address sender);
@@ -47,6 +51,15 @@ interface IBridge {
         bytes32 messageDataHash
     ) external payable returns (uint256);
 
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+        external
+        returns (
+            uint256 sequencerMessageCount,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 acc
+        );
+
     function executeCall(
         address to,
         uint256 value,
@@ -68,5 +81,9 @@ interface IBridge {
 
     function delayedInboxAccs(uint256 index) external view returns (bytes32);
 
+    function sequencerInboxAccs(uint256 index) external view returns (bytes32);
+
     function delayedMessageCount() external view returns (uint256);
+
+    function sequencerMessageCount() external view returns (uint256);
 }

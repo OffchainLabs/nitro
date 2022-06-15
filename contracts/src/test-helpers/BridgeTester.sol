@@ -37,6 +37,8 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
     /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override delayedInboxAccs;
 
+    bytes32[] public override sequencerInboxAccs;
+
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
     function initialize() external initializer {
@@ -55,6 +57,18 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
 
     function allowedOutboxes(address outbox) external view override returns (bool) {
         return allowedOutboxesMap[outbox].allowed;
+    }
+
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+        external
+        returns (
+            uint256 count,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 acc
+        )
+    {
+        // TODO: implement stub logic
     }
 
     /**
@@ -174,6 +188,10 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
 
     function delayedMessageCount() external view override returns (uint256) {
         return delayedInboxAccs.length;
+    }
+
+    function sequencerMessageCount() external view override returns (uint256) {
+        return sequencerInboxAccs.length;
     }
 
     receive() external payable {}

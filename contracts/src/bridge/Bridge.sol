@@ -37,6 +37,11 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override delayedInboxAccs;
 
+    /// @dev Accumulator for sequencer inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
+    bytes32[] public override sequencerInboxAccs;
+
+    address public sequencerInbox;
+
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
     function initialize() external initializer onlyDelegated {
@@ -61,6 +66,28 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
 
     function allowedOutboxes(address outbox) external view override returns (bool) {
         return allowedOutboxesMap[outbox].allowed;
+    }
+
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+        external
+        override
+        returns (
+            uint256 seqMessageCount,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 acc
+        )
+    {
+        if (msg.sender != sequencerInbox) revert NotSequencerInbox(msg.sender);
+        seqMessageCount = sequencerInboxAccs.length;
+        if (sequencerInboxAccs.length > 0) {
+            beforeAcc = sequencerInboxAccs[sequencerInboxAccs.length - 1];
+        }
+        if (afterDelayedMessagesRead > 0) {
+            delayedAcc = delayedInboxAccs[afterDelayedMessagesRead - 1];
+        }
+        acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));
+        sequencerInboxAccs.push(acc);
     }
 
     /**
@@ -182,5 +209,9 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
 
     function delayedMessageCount() external view override returns (uint256) {
         return delayedInboxAccs.length;
+    }
+
+    function sequencerMessageCount() external view override returns (uint256) {
+        return sequencerInboxAccs.length;
     }
 }
