@@ -37,8 +37,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
-    mapping(bytes32 => bool) public isValidKeysetHash;
-    mapping(bytes32 => uint256) public keysetHashCreationBlock;
+    struct DasKeySetInfo {
+        bool isValidKeyset;
+        uint64 creationBlock;
+    }
+    mapping(bytes32 => DasKeySetInfo) public dasKeySetInfo;
 
     modifier onlyRollupOwner() {
         if (msg.sender != IRollupUserAbs(rollup).owner()) revert NotOwner(msg.sender, rollup);
@@ -208,7 +211,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             assembly {
                 dasKeysetHash := calldataload(add(data.offset, 33))
             }
-            if (!isValidKeysetHash[dasKeysetHash]) revert NoSuchKeyset(dasKeysetHash);
+            if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
             _;
         }
     }
@@ -344,9 +347,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function setValidKeyset(bytes calldata keysetBytes) external onlyRollupOwner {
         bytes32 ksHash = keccak256(keysetBytes);
-        if (isValidKeysetHash[ksHash]) revert AlreadyValidDASKeyset(ksHash);
-        isValidKeysetHash[ksHash] = true;
-        keysetHashCreationBlock[ksHash] = block.number;
+        if (dasKeySetInfo[ksHash].isValidKeyset) revert AlreadyValidDASKeyset(ksHash);
+        dasKeySetInfo[ksHash] = DasKeySetInfo({
+            isValidKeyset: true,
+            creationBlock: uint64(block.number)
+        });
         emit SetValidKeyset(ksHash, keysetBytes);
         emit OwnerFunctionCalled(2);
     }
@@ -356,15 +361,19 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @param ksHash hash of the keyset
      */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
-        if (!isValidKeysetHash[ksHash]) revert NoSuchKeyset(ksHash);
-        isValidKeysetHash[ksHash] = false;
+        if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
+        dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
     }
 
+    function isValidKeysetHash(bytes32 ksHash) external view returns (bool) {
+        return dasKeySetInfo[ksHash].isValidKeyset;
+    }
+
     function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
-        uint256 bnum = keysetHashCreationBlock[ksHash];
-        if (bnum == 0) revert NoSuchKeyset(ksHash);
-        return bnum;
+        DasKeySetInfo memory ksInfo = dasKeySetInfo[ksHash];
+        if (ksInfo.creationBlock == 0 || !ksInfo.isValidKeyset) revert NoSuchKeyset(ksHash);
+        return uint256(ksInfo.creationBlock);
     }
 }
