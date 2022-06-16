@@ -199,15 +199,16 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         emit SequencerBatchData(sequenceNumber, data);
     }
 
-    function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32) {
-        if (data.length < 33 || data[0] & 0x80 == 0) {
-            return bytes32(0);
-        }
-        bytes32 temp;
+    function isDasBatch(bytes calldata data) internal pure returns (bool) {
+        return data.length >= 33 && data[0] & 0x80 != 0;
+    }
+
+    /// @dev assumes data has already been validated to be a DAS batch
+    function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32 keysetHash) {
         assembly {
-            temp := mload(add(data, 33))
+            keysetHash := mload(add(data, 33))
         }
-        return temp;
+        return keysetHash;
     }
 
     function packHeader(uint256 afterDelayedMessagesRead)
@@ -233,8 +234,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         view
         returns (bytes32, TimeBounds memory)
     {
-        bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
-        if (dasKeysetHash != bytes32(0)) {
+        if (isDasBatch(data)) {
+            bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
             if (!isValidKeysetHash[dasKeysetHash]) revert NoSuchKeyset(dasKeysetHash);
         }
         uint256 fullDataLen = HEADER_LENGTH + data.length;
