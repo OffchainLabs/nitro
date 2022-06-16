@@ -5,18 +5,18 @@ package l1pricing
 
 import (
 	"errors"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"math/big"
 )
 
 var (
 	PosterAddrsKey = []byte{0}
 	PosterInfoKey  = []byte{1}
 
-	ErrNotExist      = errors.New("batch poster does not exist in table")
 	ErrAlreadyExists = errors.New("tried to add a batch poster that already exists")
 )
 
@@ -49,7 +49,7 @@ func (bpt *BatchPostersTable) OpenPoster(poster common.Address) (*BatchPosterSta
 		return nil, err
 	}
 	if !isBatchPoster {
-		return nil, ErrNotExist
+		return bpt.AddPoster(poster, poster)
 	}
 	return bpt.internalOpen(poster), nil
 }
@@ -75,7 +75,7 @@ func (bpt *BatchPostersTable) AddPoster(posterAddress common.Address, payTo comm
 		return nil, ErrAlreadyExists
 	}
 	bpState := bpt.internalOpen(posterAddress)
-	if err := bpState.fundsDue.Set(big.NewInt(0)); err != nil {
+	if err := bpState.fundsDue.Set(common.Big0); err != nil {
 		return nil, err
 	}
 	if err := bpState.payTo.Set(payTo); err != nil {
@@ -98,7 +98,7 @@ func (bpt *BatchPostersTable) TotalFundsDue() (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	ret := big.NewInt(0)
+	ret := common.Big0
 	for _, posterAddr := range allPosters {
 		poster, err := bpt.OpenPoster(posterAddr)
 		if err != nil {

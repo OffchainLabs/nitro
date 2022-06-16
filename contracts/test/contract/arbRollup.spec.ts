@@ -620,7 +620,7 @@ describe("ArbRollup", () => {
 
     const tx = await rollup.rollup
       .connect(validators[1])
-      .withdrawStakerFunds(await validators[1].getAddress());
+      .withdrawStakerFunds();
     const receipt = await tx.wait();
     const gasPaid = receipt.gasUsed.mul(receipt.effectiveGasPrice);
 

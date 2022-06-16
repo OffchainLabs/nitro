@@ -118,8 +118,8 @@ func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, tim
 	return c.State.ScheduleArbOSUpgrade(newVersion, timestamp)
 }
 
-func (con ArbOwner) SetL1PricingEquilibrationTime(c ctx, evm mech, equilibrationTime uint64) error {
-	return c.State.L1PricingState().SetEquilibrationTime(equilibrationTime)
+func (con ArbOwner) SetL1PricingEquilibrationUnits(c ctx, evm mech, equilibrationUnits huge) error {
+	return c.State.L1PricingState().SetEquilibrationUnits(equilibrationUnits)
 }
 
 func (con ArbOwner) SetL1PricingInertia(c ctx, evm mech, inertia uint64) error {

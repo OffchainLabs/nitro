@@ -66,10 +66,6 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
-func (p *TxProcessor) DropTip() bool {
-	return p.state.FormatVersion() >= 2
-}
-
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
@@ -253,9 +249,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 
 	var gasNeededToStartEVM uint64
 	gasPrice := p.evm.Context.BaseFee
-	coinbase := p.evm.Context.Coinbase
-	posterCost, calldataUnits, reimburse := p.state.L1PricingState().PosterDataCost(p.msg, coinbase)
 
+	posterCost, calldataUnits, _ := p.state.L1PricingState().PosterDataCost(p.msg, p.msg.From())
 	if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
 		return nil, err
 	}
@@ -286,16 +281,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 		gasNeededToStartEVM = p.posterGas
 	}
 
-	// Most users shouldn't set a tip, but if specified only give it to the poster if they're reimbursable
-	tipRecipient := &coinbase
-	if !reimburse {
-		networkFeeAccount, _ := p.state.NetworkFeeAccount()
-		tipRecipient = &networkFeeAccount
-	}
-
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return tipRecipient, core.ErrIntrinsicGas
+		return nil, core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
@@ -308,8 +296,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 			*gasRemaining = gasAvailable
 		}
 	}
-
-	return tipRecipient, nil
+	return nil, nil // TODO: verify that first value (tip recipient) should always be nil
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {
@@ -472,4 +459,8 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
+}
+
+func (p *TxProcessor) DropTip() bool {
+	return true // TODO: verify that this is correct (always dropping tips)
 }
