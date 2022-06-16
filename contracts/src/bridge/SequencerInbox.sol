@@ -363,7 +363,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
         if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
-        dasKeySetInfo[ksHash] = DasKeySetInfo({isValidKeyset: false, creationBlock: uint64(0)});
+        dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
     }
@@ -373,8 +373,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
-        uint64 bnum = dasKeySetInfo[ksHash].creationBlock;
-        if (bnum == 0) revert NoSuchKeyset(ksHash);
-        return uint256(bnum);
+        DasKeySetInfo memory ksInfo = dasKeySetInfo[ksHash];
+        if (ksInfo.creationBlock == 0 || !ksInfo.isValidKeyset) revert NoSuchKeyset(ksHash);
+        return uint256(ksInfo.creationBlock);
     }
 }
