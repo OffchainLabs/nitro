@@ -353,8 +353,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
         if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
-        // this is used to fetch the hash preimage in the SetValidKeyset event
-        // which is emitted when the key is initially created.
+        // we don't delete the block creation value since its used to fetch the SetValidKeyset
+        // event efficiently. The event provides the hash preimage of the key.
+        // this is still needed when syncing the chain after a keyset is invalidated.
         dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
