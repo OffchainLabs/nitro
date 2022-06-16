@@ -30,7 +30,10 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         outbox = connectedContracts.outbox;
         connectedContracts.bridge.setOutbox(address(connectedContracts.outbox), true);
         rollupEventInbox = connectedContracts.rollupEventInbox;
-        connectedContracts.bridge.setDelayedInbox(address(connectedContracts.rollupEventInbox), true);
+        connectedContracts.bridge.setDelayedInbox(
+            address(connectedContracts.rollupEventInbox),
+            true
+        );
 
         connectedContracts.rollupEventInbox.rollupInitialized(config.chainId);
         connectedContracts.sequencerInbox.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));

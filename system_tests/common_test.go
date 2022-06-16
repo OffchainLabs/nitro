@@ -212,6 +212,8 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 
 	if !isSequencer {
 		nodeConfig.BatchPoster.Enable = false
+		nodeConfig.Sequencer.Enable = false
+		nodeConfig.DelayedSequencer.Enable = false
 	}
 	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 

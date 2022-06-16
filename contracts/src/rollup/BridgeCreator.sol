@@ -74,9 +74,7 @@ contract BridgeCreator is Ownable {
         CreateBridgeFrame memory frame;
         {
             frame.bridge = Bridge(
-                address(
-                    new TransparentUpgradeableProxy(address(bridgeTemplate), adminProxy, "")
-                )
+                address(new TransparentUpgradeableProxy(address(bridgeTemplate), adminProxy, ""))
             );
             frame.sequencerInbox = SequencerInbox(
                 address(

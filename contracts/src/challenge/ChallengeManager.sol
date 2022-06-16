@@ -254,10 +254,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         }
 
         bytes32 afterHash = osp.proveOneStep(
-            ExecutionContext({
-                maxInboxMessagesRead: challenge.maxInboxMessages,
-                bridge: bridge
-            }),
+            ExecutionContext({maxInboxMessagesRead: challenge.maxInboxMessages, bridge: bridge}),
             challengeStart,
             selection.oldSegments[selection.challengePosition],
             proof
