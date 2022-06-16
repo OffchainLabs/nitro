@@ -214,7 +214,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             // not a DAS batch, so we don't need keyset validation
             _;
         } else {
-            // the data length should always be > 33 here due to the HEADER_LENGTH check above
+            if(data.length < 33) revert DataLengthOverflow();
             bytes32 dasKeysetHash = bytes32(data[1:33]);
             if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
             _;
