@@ -203,14 +203,19 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     modifier validateBatchData(bytes calldata data) {
-        if (data.length < 33 || data[0] & 0x80 == 0) {
+        uint256 fullDataLen = HEADER_LENGTH + data.length;
+        if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
+        if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
+        if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
+            revert DataNotAuthenticated();
+        }
+        // the first byte is used to identify the type of batch data
+        if (data[0] & 0x80 == 0) {
             // not a DAS batch, so we don't need keyset validation
             _;
         } else {
-            bytes32 dasKeysetHash;
-            assembly {
-                dasKeysetHash := calldataload(add(data.offset, 33))
-            }
+            // the data length should always be > 33 here due to the HEADER_LENGTH check above
+            bytes32 dasKeysetHash = bytes32(data[1:33]);
             if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
             _;
         }
@@ -241,17 +246,13 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         returns (bytes32, TimeBounds memory)
     {
         uint256 fullDataLen = HEADER_LENGTH + data.length;
-        if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
-        if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
         bytes memory fullData = new bytes(fullDataLen);
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
 
         for (uint256 i = 0; i < HEADER_LENGTH; i++) {
             fullData[i] = header[i];
         }
-        if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
-            revert DataNotAuthenticated();
-        }
+
         // copy data into fullData at offset of HEADER_LENGTH (the extra 32 offset is because solidity puts the array len first)
         assembly {
             calldatacopy(add(fullData, add(HEADER_LENGTH, 32)), data.offset, data.length)
