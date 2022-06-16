@@ -184,7 +184,7 @@ func main() {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}
 
-		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true))
+		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true), chainConfig)
 
 	}
 
