@@ -213,7 +213,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             // not a DAS batch, so we don't need keyset validation
             _;
         } else {
-            if(data.length < 33) revert DataLengthUnderflow();
+            if (data.length < 33) revert DataLengthUnderflow();
             bytes32 dasKeysetHash = bytes32(data[1:33]);
             if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
             _;
@@ -362,7 +362,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
         if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
-        dasKeySetInfo[ksHash].isValidKeyset = false;
+        dasKeySetInfo[ksHash] = DasKeySetInfo({isValidKeyset: false, creationBlock: uint64(0)});
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
     }
@@ -372,8 +372,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
-        DasKeySetInfo memory ksInfo = dasKeySetInfo[ksHash];
-        if (ksInfo.creationBlock == 0 || !ksInfo.isValidKeyset) revert NoSuchKeyset(ksHash);
-        return uint256(ksInfo.creationBlock);
+        uint64 bnum = dasKeySetInfo[ksHash].creationBlock;
+        if (bnum == 0) revert NoSuchKeyset(ksHash);
+        return uint256(bnum);
     }
 }
