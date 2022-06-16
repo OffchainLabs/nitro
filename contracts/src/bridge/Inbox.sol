@@ -88,11 +88,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (msg.sender != tx.origin) revert NotOrigin();
         if (messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(
-            L2_MSG,
-            AddressAliasHelper.applyL1ToL2Alias(msg.sender),
-            keccak256(messageData)
-        );
+        uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
     }
@@ -108,8 +104,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         whenNotPaused
         returns (uint256)
     {
-        return
-            _deliverMessage(L2_MSG, AddressAliasHelper.applyL1ToL2Alias(msg.sender), messageData);
+        return _deliverMessage(L2_MSG, msg.sender, messageData);
     }
 
     function sendL1FundedUnsignedTransaction(
@@ -122,7 +117,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
-                AddressAliasHelper.applyL1ToL2Alias(msg.sender),
+                msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
                     gasLimit,
@@ -144,7 +139,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
-                AddressAliasHelper.applyL1ToL2Alias(msg.sender),
+                msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedContractTx,
                     gasLimit,
@@ -167,7 +162,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return
             _deliverMessage(
                 L2_MSG,
-                AddressAliasHelper.applyL1ToL2Alias(msg.sender),
+                msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
                     gasLimit,
@@ -190,7 +185,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return
             _deliverMessage(
                 L2_MSG,
-                AddressAliasHelper.applyL1ToL2Alias(msg.sender),
+                msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedContractTx,
                     gasLimit,
@@ -223,7 +218,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /// @dev this function should not be called inside contract constructors
     function depositEth() public payable override whenNotPaused returns (uint256) {
         address dest = msg.sender;
-        address aliasedSender = AddressAliasHelper.applyL1ToL2Alias(msg.sender);
 
         // solhint-disable-next-line avoid-tx-origin
         if (AddressUpgradeable.isContract(msg.sender) || tx.origin != msg.sender) {
@@ -232,13 +226,13 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             // If the caller is an EOA, we adjust the address.
             // This is needed because unsigned messages to the L2 (such as retryables)
             // have the L1 sender address mapped.
-            dest = aliasedSender;
+            dest = AddressAliasHelper.applyL1ToL2Alias(msg.sender);
         }
 
         return
             _deliverMessage(
                 L1MessageType_ethDeposit,
-                aliasedSender,
+                msg.sender,
                 abi.encodePacked(dest, msg.value)
             );
     }
@@ -387,7 +381,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return
             _deliverMessage(
                 L1MessageType_submitRetryableTx,
-                AddressAliasHelper.applyL1ToL2Alias(msg.sender),
+                msg.sender,
                 abi.encodePacked(
                     uint256(uint160(to)),
                     l2CallValue,
@@ -410,7 +404,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     ) internal returns (uint256) {
         if (_messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
+        uint256 msgNum = deliverToBridge(
+            _kind,
+            AddressAliasHelper.applyL1ToL2Alias(_sender),
+            keccak256(_messageData)
+        );
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
     }
