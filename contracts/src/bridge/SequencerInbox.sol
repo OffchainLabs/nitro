@@ -39,7 +39,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     struct DasKeySetInfo {
         bool isValidKeyset;
-        uint64[] blocksValueUpdated;
+        uint64 creationBlock;
     }
     mapping(bytes32 => DasKeySetInfo) public dasKeySetInfo;
 
@@ -348,12 +348,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function setValidKeyset(bytes calldata keysetBytes) external onlyRollupOwner {
         bytes32 ksHash = keccak256(keysetBytes);
-        DasKeySetInfo storage dkInfo = dasKeySetInfo[ksHash];
-        if (dkInfo.isValidKeyset) revert AlreadyValidDASKeyset(ksHash);
-
-        dkInfo.isValidKeyset = true;
-        dkInfo.blocksValueUpdated.push(uint64(block.number));
-
+        if (dasKeySetInfo[ksHash].isValidKeyset) revert AlreadyValidDASKeyset(ksHash);
+        dasKeySetInfo[ksHash] = DasKeySetInfo({
+            isValidKeyset: true,
+            creationBlock: uint64(block.number)
+        });
         emit SetValidKeyset(ksHash, keysetBytes);
         emit OwnerFunctionCalled(2);
     }
@@ -363,12 +362,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @param ksHash hash of the keyset
      */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
-        DasKeySetInfo storage dkInfo = dasKeySetInfo[ksHash];
-        if (!dkInfo.isValidKeyset) revert NoSuchKeyset(ksHash);
-
-        dkInfo.isValidKeyset = false;
-        dkInfo.blocksValueUpdated.push(uint64(block.number));
-
+        if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
+        dasKeySetInfo[ksHash] = DasKeySetInfo({isValidKeyset: false, creationBlock: uint64(0)});
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
     }
@@ -378,23 +373,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
-        DasKeySetInfo storage dkInfo = dasKeySetInfo[ksHash];
-        uint256 length = dkInfo.blocksValueUpdated.length;
-        if (length == 0) revert NoSuchKeyset(ksHash);
-        uint64 bnum = dkInfo.blocksValueUpdated[0];
+        uint64 bnum = dasKeySetInfo[ksHash].creationBlock;
+        if (bnum == 0) revert NoSuchKeyset(ksHash);
         return uint256(bnum);
-    }
-
-    function getKeysetLatestBlock(bytes32 ksHash) external view returns (uint256) {
-        DasKeySetInfo storage dkInfo = dasKeySetInfo[ksHash];
-        uint256 length = dkInfo.blocksValueUpdated.length;
-        if (length == 0) revert NoSuchKeyset(ksHash);
-        uint64 bnum = dkInfo.blocksValueUpdated[length - 1];
-        return uint256(bnum);
-    }
-
-    function getKeysetBlocksLength(bytes32 ksHash) external view returns (uint256) {
-        DasKeySetInfo storage dkInfo = dasKeySetInfo[ksHash];
-        return dkInfo.blocksValueUpdated.length;
     }
 }
