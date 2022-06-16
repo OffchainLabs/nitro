@@ -16,6 +16,13 @@ type TimeoutWrapper struct {
 	DataAvailabilityService
 }
 
+func NewTimeoutWrapper(dataAvailabilityService DataAvailabilityService, t time.Duration) DataAvailabilityService {
+	return &TimeoutWrapper{
+		t:                       t,
+		DataAvailabilityService: dataAvailabilityService,
+	}
+}
+
 func (w *TimeoutWrapper) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
 	deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(w.t))
 	// For Retrieve we want fast cancellation of all goroutines started by

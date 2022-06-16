@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -135,8 +136,8 @@ type RPCClientGetByHashConfig struct {
 
 func parseRPCClientGetByHashConfig(args []string) (*RPCClientGetByHashConfig, error) {
 	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
-	f.String("url", "", "URL of DAS server to connect to.")
-	f.String("data-hash", "", "Base64 encodeded hash of the message to retrieve.")
+	f.String("url", "http://localhost:9876", "URL of DAS server to connect to.")
+	f.String("data-hash", "", "hash of the message to retrieve, if starts with '0x' it's treated as hex encoded, otherwise base64 encoded")
 
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -163,11 +164,20 @@ func startRPCClientGetByHash(args []string) error {
 		return err
 	}
 
-	hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
-	decodedHash, err := ioutil.ReadAll(hashDecoder)
-	if err != nil {
-		return err
+	var decodedHash []byte
+	if strings.HasPrefix(config.DataHash, "0x") {
+		decodedHash, err = hexutil.Decode(config.DataHash)
+		if err != nil {
+			return err
+		}
+	} else {
+		hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
+		decodedHash, err = ioutil.ReadAll(hashDecoder)
+		if err != nil {
+			return err
+		}
 	}
+
 	ctx := context.Background()
 	message, err := client.GetByHash(ctx, decodedHash)
 	if err != nil {
@@ -180,19 +190,16 @@ func startRPCClientGetByHash(args []string) error {
 // datool client rest getbyhash
 
 type RESTClientGetByHashConfig struct {
-	Host       string                 `koanf:"host"`
-	Port       int                    `koanf:"port"`
-	Protocol   string                 `koanf:"protocol"`
+	URL        string                 `koanf:"url"`
 	DataHash   string                 `koanf:"data-hash"`
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseRESTClientGetByHashConfig(args []string) (*RESTClientGetByHashConfig, error) {
 	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
-	f.String("host", "localhost", "Host (fqdn) of DAS server to connect to.")
-	f.Int("port", 9877, "Port of DAS server to connect to.")
-	f.String("protocol", "http", "Protocol to use to connect to DAS server.")
-	f.String("data-hash", "", "Base64 encodeded hash of the message to retrieve.")
+	f.String("url", "http://localhost:9877", "URL of DAS server to connect to.")
+	f.String("data-hash", "", "hash of the message to retrieve, if starts with '0x' it's treated as hex encoded, otherwise base64 encoded")
+
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
@@ -213,13 +220,25 @@ func startRESTClientGetByHash(args []string) error {
 		return err
 	}
 
-	client := das.NewRestfulDasClient(config.Protocol, config.Host, config.Port)
-
-	hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
-	decodedHash, err := ioutil.ReadAll(hashDecoder)
+	client, err := das.NewRestfulDasClientFromURL(config.URL)
 	if err != nil {
 		return err
 	}
+
+	var decodedHash []byte
+	if strings.HasPrefix(config.DataHash, "0x") {
+		decodedHash, err = hexutil.Decode(config.DataHash)
+		if err != nil {
+			return err
+		}
+	} else {
+		hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
+		decodedHash, err = ioutil.ReadAll(hashDecoder)
+		if err != nil {
+			return err
+		}
+	}
+
 	ctx := context.Background()
 	message, err := client.GetByHash(ctx, decodedHash)
 	if err != nil {

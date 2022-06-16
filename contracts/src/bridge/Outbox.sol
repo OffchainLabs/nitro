@@ -16,7 +16,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     address public rollup; // the rollup contract
     IBridge public bridge; // the bridge contract
 
-    mapping(uint256 => bool) public spent; // maps leaf number => if spent
+    mapping(uint256 => bytes32) public spent; // packed spent bitmap
     mapping(bytes32 => bytes32) public roots; // maps root hashes => L2 block hash
 
     struct L2ToL1Context {
@@ -155,7 +155,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     /// @dev function used to simulate the result of a particular function call from the outbox
-    /// it is useful for things such as gas estimates. This function includes all costs except for 
+    /// it is useful for things such as gas estimates. This function includes all costs except for
     /// proof validation (which can be considered offchain as a somewhat of a fixed cost - it's
     /// not really a fixed cost, but can be treated as so with a fixed overhead for gas estimation).
     /// We can't include the cost of proof validation since this is intended to be used to simulate txs
@@ -219,8 +219,12 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
         if (roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
 
-        if (spent[index]) revert AlreadySpent(index);
-        spent[index] = true;
+        uint256 spentIndex = index / 255; // Note: Reserves the MSB.
+        uint256 bitOffset = index % 255;
+
+        bytes32 replay = spent[spentIndex];
+        if (((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0)) revert AlreadySpent(index);
+        spent[spentIndex] = (replay | bytes32(1 << bitOffset));
     }
 
     function executeBridgeCall(

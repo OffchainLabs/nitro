@@ -24,7 +24,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
 
       - name: Install dependencies
@@ -40,7 +39,7 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.17.x
+          go-version: 1.18.x
 
       - name: Install wasm-ld
         run: |
