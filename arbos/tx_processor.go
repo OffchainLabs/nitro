@@ -5,6 +5,7 @@ package arbos
 
 import (
 	"errors"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math"
 	"math/big"
 	"time"
@@ -250,15 +251,20 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	var gasNeededToStartEVM uint64
 	gasPrice := p.evm.Context.BaseFee
 
-	posterCost, calldataUnits, _ := p.state.L1PricingState().PosterDataCost(p.msg, p.msg.From())
-	if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
-		return nil, err
-	}
+	var posterCost *big.Int
+	var calldataUnits uint64
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
+
+		posterCost, calldataUnits, _ = p.state.L1PricingState().PosterDataCost(p.msg, l1pricing.BatchPosterAddress)
+		if calldataUnits > 0 {
+			if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
+				return nil, err
+			}
+		}
 
 		minGasPrice, _ := p.state.L2PricingState().MinBaseFeeWei()
 
@@ -270,6 +276,13 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 
 		// Pad the L1 cost by 10% in case the L1 gas price rises
 		posterCost = arbmath.BigMulByFrac(posterCost, 110, 100)
+	} else {
+		posterCost, calldataUnits, _ = p.state.L1PricingState().PosterDataCost(p.msg, p.evm.Context.Coinbase)
+		if calldataUnits > 0 {
+			if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if gasPrice.Sign() > 0 {
 		posterCostInL2Gas := arbmath.BigDiv(posterCost, gasPrice) // the cost as if it were an amount of gas

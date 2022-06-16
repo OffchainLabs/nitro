@@ -361,8 +361,7 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, posterAddr common
 	tx.PosterCost = common.Big0
 	tx.PosterIsReimbursable = false
 
-	contains, err := ps.batchPosterTable.ContainsPoster(posterAddr)
-	if err != nil || !contains {
+	if posterAddr != BatchPosterAddress {
 		return
 	}
 	txBytes, merr := tx.MarshalBinary()
@@ -393,6 +392,10 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Add
 			ps.AddPosterInfo(tx, poster)
 		}
 		return tx.PosterCost, tx.CalldataUnits, tx.PosterIsReimbursable
+	}
+
+	if poster != BatchPosterAddress {
+		return common.Big0, 0, false
 	}
 
 	byteCount, err := byteCountAfterBrotli0(message.Data())
