@@ -56,9 +56,6 @@ interface ISequencerInbox is IDelayedMessageProvider {
     /// @dev Thrown when someone attempts to read more messages than exist
     error DelayedTooFar();
 
-    /// @dev Thrown if the length of the batch isn't long enough to be valid
-    error DataLengthUnderflow();
-
     /// @dev Force include can only read messages more blocks old than the delay period
     error ForceIncludeBlockTooSoon();
 
