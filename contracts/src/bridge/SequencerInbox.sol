@@ -186,9 +186,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             dataHash,
             afterDelayedMessagesRead
         );
-        if (data.length > 0) {
-            _reportBatchSpending(dataHash, sequenceNumber);
-        }
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
