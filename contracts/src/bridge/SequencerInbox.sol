@@ -37,8 +37,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
-    mapping(bytes32 => bool) public isValidKeysetHash;
-    mapping(bytes32 => uint256) public keysetHashCreationBlock;
+    struct DasKeySetInfo {
+        bool isValidKeyset;
+        uint64 creationBlock;
+    }
+    mapping(bytes32 => DasKeySetInfo) public dasKeySetInfo;
 
     modifier onlyRollupOwner() {
         if (msg.sender != IRollupUserAbs(rollup).owner()) revert NotOwner(msg.sender, rollup);
@@ -199,15 +202,23 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         emit SequencerBatchData(sequenceNumber, data);
     }
 
-    function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32) {
+    modifier validateBatchData(bytes calldata data) {
+        uint256 fullDataLen = HEADER_LENGTH + data.length;
+        if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
+        if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
+            revert DataNotAuthenticated();
+        }
+        // the first byte is used to identify the type of batch data
+        // das batches expect to have the type byte set, followed by the keyset (so they should have at least 33 bytes)
         if (data.length < 33 || data[0] & 0x80 == 0) {
-            return bytes32(0);
+            // not a DAS batch, so we don't need keyset validation
+            _;
+        } else {
+            // we skip the first byte, then read the next 32 bytes for the keyset
+            bytes32 dasKeysetHash = bytes32(data[1:33]);
+            if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
+            _;
         }
-        bytes32 temp;
-        assembly {
-            temp := mload(add(data, 33))
-        }
-        return temp;
     }
 
     function packHeader(uint256 afterDelayedMessagesRead)
@@ -231,29 +242,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     function formDataHash(bytes calldata data, uint256 afterDelayedMessagesRead)
         internal
         view
+        validateBatchData(data)
         returns (bytes32, TimeBounds memory)
     {
-        bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
-        if (dasKeysetHash != bytes32(0)) {
-            if (!isValidKeysetHash[dasKeysetHash]) revert NoSuchKeyset(dasKeysetHash);
-        }
-        uint256 fullDataLen = HEADER_LENGTH + data.length;
-        if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
-        if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
-        bytes memory fullData = new bytes(fullDataLen);
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
-
-        for (uint256 i = 0; i < HEADER_LENGTH; i++) {
-            fullData[i] = header[i];
-        }
-        if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
-            revert DataNotAuthenticated();
-        }
-        // copy data into fullData at offset of HEADER_LENGTH (the extra 32 offset is because solidity puts the array len first)
-        assembly {
-            calldatacopy(add(fullData, add(HEADER_LENGTH, 32)), data.offset, data.length)
-        }
-        return (keccak256(fullData), timeBounds);
+        bytes32 dataHash = keccak256(bytes.concat(header, data));
+        return (dataHash, timeBounds);
     }
 
     function formEmptyDataHash(uint256 afterDelayedMessagesRead)
@@ -344,9 +338,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function setValidKeyset(bytes calldata keysetBytes) external onlyRollupOwner {
         bytes32 ksHash = keccak256(keysetBytes);
-        if (isValidKeysetHash[ksHash]) revert AlreadyValidDASKeyset(ksHash);
-        isValidKeysetHash[ksHash] = true;
-        keysetHashCreationBlock[ksHash] = block.number;
+        if (dasKeySetInfo[ksHash].isValidKeyset) revert AlreadyValidDASKeyset(ksHash);
+        dasKeySetInfo[ksHash] = DasKeySetInfo({
+            isValidKeyset: true,
+            creationBlock: uint64(block.number)
+        });
         emit SetValidKeyset(ksHash, keysetBytes);
         emit OwnerFunctionCalled(2);
     }
@@ -356,15 +352,23 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @param ksHash hash of the keyset
      */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
-        if (!isValidKeysetHash[ksHash]) revert NoSuchKeyset(ksHash);
-        isValidKeysetHash[ksHash] = false;
+        if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
+        // we don't delete the block creation value since its used to fetch the SetValidKeyset
+        // event efficiently. The event provides the hash preimage of the key.
+        // this is still needed when syncing the chain after a keyset is invalidated.
+        dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
     }
 
+    function isValidKeysetHash(bytes32 ksHash) external view returns (bool) {
+        return dasKeySetInfo[ksHash].isValidKeyset;
+    }
+
+    /// @notice the creation block is intended to still be available after a keyset is deleted
     function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
-        uint256 bnum = keysetHashCreationBlock[ksHash];
-        if (bnum == 0) revert NoSuchKeyset(ksHash);
-        return bnum;
+        DasKeySetInfo memory ksInfo = dasKeySetInfo[ksHash];
+        if (ksInfo.creationBlock == 0) revert NoSuchKeyset(ksHash);
+        return uint256(ksInfo.creationBlock);
     }
 }
