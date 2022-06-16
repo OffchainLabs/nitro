@@ -363,6 +363,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
         if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
+        // this is used to fetch the hash preimage in the SetValidKeyset event  
+        // which is emitted when the key is initially created.
         dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
@@ -372,9 +374,10 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return dasKeySetInfo[ksHash].isValidKeyset;
     }
 
+    /// @notice the creation block is intended to still be available after a keyset is deleted
     function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
         DasKeySetInfo memory ksInfo = dasKeySetInfo[ksHash];
-        if (ksInfo.creationBlock == 0 || !ksInfo.isValidKeyset) revert NoSuchKeyset(ksHash);
+        if (ksInfo.creationBlock == 0) revert NoSuchKeyset(ksHash);
         return uint256(ksInfo.creationBlock);
     }
 }
