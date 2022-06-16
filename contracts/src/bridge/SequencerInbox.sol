@@ -199,16 +199,18 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         emit SequencerBatchData(sequenceNumber, data);
     }
 
-    function isDasBatch(bytes calldata data) internal pure returns (bool) {
-        return data.length >= 33 && data[0] & 0x80 != 0;
-    }
-
-    /// @dev assumes data has already been validated to be a DAS batch
-    function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32 keysetHash) {
-        assembly {
-            keysetHash := mload(add(data, 33))
+    modifier validateBatchData(bytes calldata data) {
+        if (data.length < 33 || data[0] & 0x80 == 0) {
+            // not a DAS batch, so we don't need keyset validation
+            _;
+        } else {
+            bytes32 dasKeysetHash;
+            assembly {
+                dasKeysetHash := calldataload(add(data.offset, 33))
+            }
+            if (!isValidKeysetHash[dasKeysetHash]) revert NoSuchKeyset(dasKeysetHash);
+            _;
         }
-        return keysetHash;
     }
 
     function packHeader(uint256 afterDelayedMessagesRead)
@@ -232,12 +234,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     function formDataHash(bytes calldata data, uint256 afterDelayedMessagesRead)
         internal
         view
+        validateBatchData(data)
         returns (bytes32, TimeBounds memory)
     {
-        if (isDasBatch(data)) {
-            bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
-            if (!isValidKeysetHash[dasKeysetHash]) revert NoSuchKeyset(dasKeysetHash);
-        }
         uint256 fullDataLen = HEADER_LENGTH + data.length;
         if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
         if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
