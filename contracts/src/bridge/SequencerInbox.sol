@@ -245,19 +245,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         validateBatchData(data)
         returns (bytes32, TimeBounds memory)
     {
-        uint256 fullDataLen = HEADER_LENGTH + data.length;
-        bytes memory fullData = new bytes(fullDataLen);
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
-
-        for (uint256 i = 0; i < HEADER_LENGTH; i++) {
-            fullData[i] = header[i];
-        }
-
-        // copy data into fullData at offset of HEADER_LENGTH (the extra 32 offset is because solidity puts the array len first)
-        assembly {
-            calldatacopy(add(fullData, add(HEADER_LENGTH, 32)), data.offset, data.length)
-        }
-        return (keccak256(fullData), timeBounds);
+        bytes32 dataHash = keccak256(bytes.concat(header, data));
+        return (dataHash, timeBounds);
     }
 
     function formEmptyDataHash(uint256 afterDelayedMessagesRead)
@@ -363,7 +353,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
         if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
-        // this is used to fetch the hash preimage in the SetValidKeyset event  
+        // this is used to fetch the hash preimage in the SetValidKeyset event
         // which is emitted when the key is initially created.
         dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
