@@ -14,7 +14,6 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/offchainlabs/nitro/arbos/addressSet"
-	"github.com/offchainlabs/nitro/arbos/blsTable"
 	"github.com/offchainlabs/nitro/arbos/burn"
 
 	"github.com/offchainlabs/nitro/arbos/addressTable"
@@ -45,7 +44,6 @@ type ArbosState struct {
 	l2PricingState    *l2pricing.L2PricingState
 	retryableState    *retryables.RetryableState
 	addressTable      *addressTable.AddressTable
-	blsTable          *blsTable.BLSTable
 	chainOwners       *addressSet.AddressSet
 	sendMerkle        *merkleAccumulator.MerkleAccumulator
 	blockhashes       *blockhash.Blockhashes
@@ -76,7 +74,6 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace)),
 		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
-		blsTable.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
@@ -146,10 +143,9 @@ var (
 	l2PricingSubspace    ArbosStateSubspaceID = []byte{1}
 	retryablesSubspace   ArbosStateSubspaceID = []byte{2}
 	addressTableSubspace ArbosStateSubspaceID = []byte{3}
-	blsTableSubspace     ArbosStateSubspaceID = []byte{4}
-	chainOwnerSubspace   ArbosStateSubspaceID = []byte{5}
-	sendMerkleSubspace   ArbosStateSubspaceID = []byte{6}
-	blockhashesSubspace  ArbosStateSubspaceID = []byte{7}
+	chainOwnerSubspace   ArbosStateSubspaceID = []byte{4}
+	sendMerkleSubspace   ArbosStateSubspaceID = []byte{5}
+	blockhashesSubspace  ArbosStateSubspaceID = []byte{6}
 )
 
 // Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
@@ -208,7 +204,6 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace), arbosVersion)
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
-	_ = blsTable.InitializeBLSTable(sto.OpenSubStorage(blsTableSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
 	blockhash.InitializeBlockhashes(sto.OpenSubStorage(blockhashesSubspace))
 
@@ -293,10 +288,6 @@ func (state *ArbosState) L2PricingState() *l2pricing.L2PricingState {
 
 func (state *ArbosState) AddressTable() *addressTable.AddressTable {
 	return state.addressTable
-}
-
-func (state *ArbosState) BLSTable() *blsTable.BLSTable {
-	return state.blsTable
 }
 
 func (state *ArbosState) ChainOwners() *addressSet.AddressSet {

@@ -23,10 +23,17 @@ func NewForwarder(target string) *TxForwarder {
 }
 
 func (f *TxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	if f.client == nil {
+		return errors.New("sequencer temporarily unavailable")
+	}
 	return f.client.SendTransaction(ctx, tx)
 }
 
 func (f *TxForwarder) Initialize(ctx context.Context) error {
+	if f.target == "" {
+		f.client = nil
+		return nil
+	}
 	client, err := ethclient.DialContext(ctx, f.target)
 	if err != nil {
 		return err

@@ -102,17 +102,13 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			if err != nil {
 				return err
 			}
-			initChainId, genesisBlockNum, err := message.ParseInitMessage()
+			initChainId, err := message.ParseInitMessage()
 			if err != nil {
 				return err
 			}
 			configChainId := r.tracker.txStreamer.bc.Config().ChainID
 			if initChainId.Cmp(configChainId) != 0 {
 				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
-			}
-			configGenesisBlockNum := r.tracker.txStreamer.bc.Config().ArbitrumChainParams.GenesisBlockNum
-			if configGenesisBlockNum != genesisBlockNum {
-				return fmt.Errorf("expected genesis blocknumber %v but read %v from init message in L1 inbox", configGenesisBlockNum, genesisBlockNum)
 			}
 			break
 		}

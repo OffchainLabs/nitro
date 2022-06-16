@@ -11,12 +11,7 @@ Though subject to change when batch-compression pricing is fully implemented, [t
 [drop_l1_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/l1pricing/l1pricing.go#L232
 
 ## Tips in L2
-While tips are not advised for those using the sequencer, which prioritizes transactions on a first-come first-served basis, 3rd-party aggregators may choose to order txes based on tips. A user specifies a tip by setting a gas price in excess of the basefee and will [pay that difference][pay_difference_link] on the amount of gas the tx uses.
-
-A poster receives the tip only when the user has set them as their [preferred aggregator](Precompiles.md#ArbAggregator). Otherwise the tip [goes to the network fee collector][goes_to_network_link]. This disincentives unpreferred aggregators from racing to post txes with large tips.
-
-[pay_difference_link]: https://github.com/OffchainLabs/go-ethereum/blob/edf6a19157606070b6a6660c8decc513e2408cb7/core/state_transition.go#L358
-[goes_to_network_link]: https://github.com/OffchainLabs/nitro/blob/c93c806a5cfe99f92a534d3c952a83c3c8b3088c/arbos/tx_processor.go#L262
+The sequencer prioritizes transactions on a first-come first-served basis. Because tips do not make sense in this model, they are ignored. Arbitrum users always just pay the basefee regardless of the tip they choose.
 
 ## Gas Estimating Retryables
 When a transaction schedules another, the subsequent tx's execution [will be included][estimation_inclusion_link] when estimating gas via the node's RPC. A tx's gas estimate, then, can only be found if all the txes succeed at a given gas limit. This is especially important when working with retryables and scheduling redeem attempts.
