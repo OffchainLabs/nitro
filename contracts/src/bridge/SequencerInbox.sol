@@ -213,7 +213,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             // not a DAS batch, so we don't need keyset validation
             _;
         } else {
-            if(data.length < 33) revert DataLengthOverflow();
+            if(data.length < 33) revert DataLengthUnderflow();
             bytes32 dasKeysetHash = bytes32(data[1:33]);
             if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
             _;
