@@ -30,7 +30,7 @@ import {
   SequencerInbox__factory,
   TransparentUpgradeableProxy__factory,
 } from '../../build/types'
-import { initializeAccounts } from './utils'
+import { applyAlias, initializeAccounts } from './utils'
 import { Event } from '@ethersproject/contracts'
 import { Interface } from '@ethersproject/abi'
 import {
@@ -93,7 +93,7 @@ describe('SequencerInboxForceInclude', async () => {
     const countAfter = (await bridge.functions.delayedMessageCount())[0].toNumber()
     expect(countAfter, 'Unexpected inbox count').to.eq(countBefore + 1)
 
-    const senderAddr = await sender.getAddress()
+    const senderAddr = applyAlias(await sender.getAddress())
 
     const messageDeliveredEvent = getMessageDeliveredEvents(
       sendUnsignedTxReceipt,
