@@ -204,7 +204,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     modifier validateBatchData(bytes calldata data) {
         uint256 fullDataLen = HEADER_LENGTH + data.length;
-        if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
         if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
         if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
             revert DataNotAuthenticated();
