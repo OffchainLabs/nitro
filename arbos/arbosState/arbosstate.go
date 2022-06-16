@@ -203,11 +203,8 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
 	blockhash.InitializeBlockhashes(sto.OpenSubStorage(blockhashesSubspace))
 
-	// by default, the remapped zero address is the initial chain owner
-	initialChainOwner := util.RemapL1Address(common.Address{})
-	if chainConfig.ArbitrumChainParams.InitialChainOwner != (common.Address{}) {
-		initialChainOwner = chainConfig.ArbitrumChainParams.InitialChainOwner
-	}
+	// may be the zero address
+	initialChainOwner := chainConfig.ArbitrumChainParams.InitialChainOwner
 	ownersStorage := sto.OpenSubStorage(chainOwnerSubspace)
 	_ = addressSet.Initialize(ownersStorage)
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)

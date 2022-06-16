@@ -203,7 +203,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher
 			ChainId:     chainId,
 			L1RequestId: depositRequestId,
 			// Matches the From of parseUnsignedTx
-			To:    util.RemapL1Address(msg.Header.Poster),
+			To:    msg.Header.Poster,
 			Value: tx.Value(),
 		})
 		return types.Transactions{deposit, tx}, nil
@@ -380,7 +380,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 	case L2MessageKind_UnsignedUserTx:
 		inner = &types.ArbitrumUnsignedTx{
 			ChainId:   chainId,
-			From:      util.RemapL1Address(poster),
+			From:      poster,
 			Nonce:     nonce,
 			GasFeeCap: maxFeePerGas.Big(),
 			Gas:       gasLimit.Big().Uint64(),
@@ -395,7 +395,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 		inner = &types.ArbitrumContractTx{
 			ChainId:   chainId,
 			RequestId: *requestId,
-			From:      util.RemapL1Address(poster),
+			From:      poster,
 			GasFeeCap: maxFeePerGas.Big(),
 			Gas:       gasLimit.Big().Uint64(),
 			To:        destination,
@@ -410,6 +410,10 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 }
 
 func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
+	to, err := util.AddressFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
 	balance, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
@@ -420,7 +424,8 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 	tx := &types.ArbitrumDepositTx{
 		ChainId:     chainId,
 		L1RequestId: *header.RequestId,
-		To:          util.RemapL1Address(header.Poster),
+		From:        header.Poster,
+		To:          to,
 		Value:       balance.Big(),
 	}
 	return types.NewTx(tx), nil
@@ -491,7 +496,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	tx := &types.ArbitrumSubmitRetryableTx{
 		ChainId:          chainId,
 		RequestId:        *header.RequestId,
-		From:             util.RemapL1Address(header.Poster),
+		From:             header.Poster,
 		L1BaseFee:        header.L1BaseFee,
 		DepositValue:     depositValue.Big(),
 		GasFeeCap:        maxFeePerGas.Big(),

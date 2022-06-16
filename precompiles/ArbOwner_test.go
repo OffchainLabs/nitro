@@ -32,8 +32,7 @@ func TestAddressSet(t *testing.T) {
 	callCtx := testContext(caller, evm)
 
 	// the zero address is an owner by default
-	ZeroAddressL2 := util.RemapL1Address(common.Address{})
-	Require(t, prec.RemoveChainOwner(callCtx, evm, ZeroAddressL2))
+	Require(t, prec.RemoveChainOwner(callCtx, evm, common.Address{}))
 
 	Require(t, prec.AddChainOwner(callCtx, evm, addr1))
 	Require(t, prec.AddChainOwner(callCtx, evm, addr2))
