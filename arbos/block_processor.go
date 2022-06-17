@@ -163,7 +163,7 @@ func ProduceBlockAdvanced(
 
 	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
-	gasLeft, _ := state.L2PricingState().PerBlockGasLimit(state.FormatVersion())
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
