@@ -5,10 +5,11 @@ package arbos
 
 import (
 	"errors"
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math"
 	"math/big"
 	"time"
+
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -246,7 +247,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, error) {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
@@ -260,10 +261,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	} else {
 		poster = p.evm.Context.Coinbase
 	}
-	posterCost, calldataUnits, _ := p.state.L1PricingState().PosterDataCost(p.msg, poster)
+	posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
 	if calldataUnits > 0 {
 		if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -296,7 +297,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return nil, core.ErrIntrinsicGas
+		return core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
@@ -309,7 +310,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 			*gasRemaining = gasAvailable
 		}
 	}
-	return nil, nil // TODO: verify that first value (tip recipient) should always be nil
+	return nil
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {

@@ -130,7 +130,7 @@ func init() {
 			return
 		}
 
-		posterCost, _, _ := state.L1PricingState().PosterDataCost(msg, header.Coinbase)
+		posterCost, _ := state.L1PricingState().PosterDataCost(msg, header.Coinbase)
 		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
