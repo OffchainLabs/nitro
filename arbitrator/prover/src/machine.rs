@@ -347,7 +347,7 @@ impl Module {
                     )
                 },
                 func_ty.clone(),
-                &types,
+                types,
             )?);
             host_call_hooks.push(None);
         }
@@ -1061,7 +1061,7 @@ impl Machine {
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
             ensure!(
-                &main_module.func_types[f as usize] == &expected_type,
+                main_module.func_types[f as usize] == expected_type,
                 "Run function doesn't match expected signature of [argc, argv]",
             );
             // Go's flags library panics if the argument list is empty.
@@ -1345,7 +1345,9 @@ impl Machine {
 
         let module = self.modules.last().expect("no module");
         let export = module.exports.iter().find(|x| x.0 == func);
-        let export = export.expect(&format!("func {} not found", func)).1;
+        let export = export
+            .unwrap_or_else(|| panic!("func {} not found", func))
+            .1;
 
         self.frame_stack.clear();
         self.block_stack.clear();
@@ -1361,7 +1363,7 @@ impl Machine {
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
-        if self.frame_stack.len() != 0 {
+        if !self.frame_stack.is_empty() {
             bail!(
                 "machine has not successfully computed a final result {:?}",
                 self.status
@@ -1452,20 +1454,6 @@ impl Machine {
             match inst.opcode {
                 Opcode::Unreachable => error!(),
                 Opcode::Nop => {}
-                Opcode::Block => {
-                    let idx = inst.argument_data as usize;
-                    self.block_stack.push(idx);
-                    debug_assert!(func.code.len() > idx);
-                }
-                Opcode::EndBlock => {
-                    self.block_stack.pop();
-                }
-                Opcode::EndBlockIf => {
-                    let x = self.value_stack.last().unwrap();
-                    if !x.is_i32_zero() {
-                        self.block_stack.pop().unwrap();
-                    }
-                }
                 Opcode::InitFrame => {
                     let caller_module_internals = self.value_stack.pop().unwrap().assume_u32();
                     let caller_module = self.value_stack.pop().unwrap().assume_u32();
@@ -1490,17 +1478,6 @@ impl Machine {
                     let x = self.value_stack.pop().unwrap();
                     if !x.is_i32_zero() {
                         self.pc.inst = inst.argument_data as usize;
-                        Machine::test_next_instruction(func, &self.pc);
-                    }
-                }
-                Opcode::Branch => {
-                    self.pc.inst = self.block_stack.pop().unwrap();
-                    Machine::test_next_instruction(func, &self.pc);
-                }
-                Opcode::BranchIf => {
-                    let x = self.value_stack.pop().unwrap();
-                    if !x.is_i32_zero() {
-                        self.pc.inst = self.block_stack.pop().unwrap();
                         Machine::test_next_instruction(func, &self.pc);
                     }
                 }
@@ -1868,19 +1845,11 @@ impl Machine {
                     }
                     self.value_stack.push(Value::I64(x));
                 }
-                Opcode::PushStackBoundary => {
-                    self.value_stack.push(Value::StackBoundary);
-                }
                 Opcode::MoveFromStackToInternal => {
                     self.internal_stack.push(self.value_stack.pop().unwrap());
                 }
                 Opcode::MoveFromInternalToStack => {
                     self.value_stack.push(self.internal_stack.pop().unwrap());
-                }
-                Opcode::IsStackBoundary => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.value_stack
-                        .push(Value::I32((val == Value::StackBoundary) as u32));
                 }
                 Opcode::Dup => {
                     let val = self.value_stack.last().cloned().unwrap();
