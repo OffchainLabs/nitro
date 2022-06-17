@@ -1401,11 +1401,6 @@ impl Machine {
                 self.status = MachineStatus::Errored;
                 break;
             }};
-            ($($message:tt),+) => {{
-                println!($($message),+);
-                self.status = MachineStatus::Errored;
-                break;
-            }};
         }
 
         for _ in 0..n {
@@ -1738,19 +1733,21 @@ impl Machine {
                     }
                 }
                 Opcode::IBinOp(w, op) => {
-                    use IBinOpType::*;
                     let vb = self.value_stack.pop();
                     let va = self.value_stack.pop();
                     match w {
                         IntegerValType::I32 => {
                             if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
+                                if op == IBinOpType::DivS
+                                    && (a as i32) == i32::MIN
+                                    && (b as i32) == -1
+                                {
+                                    error!();
+                                }
                                 let value = match exec_ibin_op(a, b, op) {
                                     Some(value) => value,
                                     None => error!(),
                                 };
-                                if op == DivS && (a as i32) == i32::MIN && (b as i32) == -1 {
-                                    error!();
-                                }
                                 self.value_stack.push(Value::I32(value))
                             } else {
                                 bail!("WASM validation failed: wrong types for i32binop");
@@ -1758,13 +1755,16 @@ impl Machine {
                         }
                         IntegerValType::I64 => {
                             if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
+                                if op == IBinOpType::DivS
+                                    && (a as i64) == i64::MIN
+                                    && (b as i64) == -1
+                                {
+                                    error!();
+                                }
                                 let value = match exec_ibin_op(a, b, op) {
                                     Some(value) => value,
                                     None => error!(),
                                 };
-                                if op == DivS && (a as i64) == i64::MIN && (b as i64) == -1 {
-                                    error!();
-                                }
                                 self.value_stack.push(Value::I64(value))
                             } else {
                                 bail!("WASM validation failed: wrong types for i64binop");

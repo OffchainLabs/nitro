@@ -67,13 +67,6 @@ pub enum IBinOpType {
     Rotr,
 }
 
-impl IBinOpType {
-    pub fn signed(&self) -> bool {
-        use IBinOpType::*;
-        matches!(self, DivS | RemS | ShrS)
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Opcode {
     Unreachable,
