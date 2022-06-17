@@ -5,6 +5,7 @@ package l1pricing
 
 import (
 	"errors"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -102,8 +103,8 @@ func (bpt *BatchPostersTable) AddPoster(posterAddress common.Address, payTo comm
 	return bpState, nil
 }
 
-func (bpt *BatchPostersTable) AllPosters() ([]common.Address, error) {
-	return bpt.posterAddrs.AllMembers()
+func (bpt *BatchPostersTable) AllPosters(maxNumToGet uint64) ([]common.Address, error) {
+	return bpt.posterAddrs.AllMembers(maxNumToGet)
 }
 
 func (bpt *BatchPostersTable) TotalFundsDue() (*big.Int, error) {
@@ -146,7 +147,7 @@ type FundsDueItem struct {
 
 func (bpt *BatchPostersTable) GetFundsDueList() ([]FundsDueItem, error) {
 	ret := []FundsDueItem{}
-	allPosters, err := bpt.AllPosters()
+	allPosters, err := bpt.AllPosters(math.MaxUint64)
 	if err != nil {
 		return nil, err
 	}

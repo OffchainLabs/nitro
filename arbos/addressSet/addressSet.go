@@ -65,10 +65,13 @@ func (aset *AddressSet) Clear() error {
 	return aset.size.Clear()
 }
 
-func (aset *AddressSet) AllMembers() ([]common.Address, error) {
+func (aset *AddressSet) AllMembers(maxNumToReturn uint64) ([]common.Address, error) {
 	size, err := aset.size.Get()
 	if err != nil {
 		return nil, err
+	}
+	if size > maxNumToReturn {
+		size = maxNumToReturn
 	}
 	ret := make([]common.Address, size)
 	for i := range ret {

@@ -5,6 +5,7 @@ package l1pricing
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/common/math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -213,7 +214,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if lastUpdateTime == 0 && currentTime > 0 { // it's the first update, so there isn't a last update time
 		lastUpdateTime = updateTime - 1
 	}
-	if updateTime > currentTime || updateTime < lastUpdateTime || currentTime == lastUpdateTime {
+	if updateTime >= currentTime || updateTime < lastUpdateTime {
 		return ErrInvalidTime
 	}
 	updateTimeDelta := updateTime - lastUpdateTime
@@ -271,7 +272,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	availableFunds = am.BigSub(availableFunds, paymentForRewards)
 
 	// settle up our batch poster payments owed, as much as possible
-	allPosterAddrs, err := batchPosterTable.AllPosters()
+	allPosterAddrs, err := batchPosterTable.AllPosters(math.MaxUint64)
 	if err != nil {
 		return err
 	}
