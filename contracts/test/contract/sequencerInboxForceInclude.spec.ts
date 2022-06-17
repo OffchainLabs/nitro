@@ -257,7 +257,6 @@ describe('SequencerInboxForceInclude', async () => {
 
     await sequencerInbox.initialize(
       bridgeProxy.address,
-      inbox.address,
       await dummyRollup.getAddress(),
       {
         delayBlocks: maxDelayBlocks,
