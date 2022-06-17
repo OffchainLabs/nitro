@@ -596,7 +596,6 @@ func (p Precompile) Call(
 	gasSupplied uint64,
 	evm *vm.EVM,
 ) (output []byte, gasLeft uint64, err error) {
-
 	arbosVersion := arbosState.ArbOSVersion(evm.StateDB)
 
 	if arbosVersion < p.arbosVersion {

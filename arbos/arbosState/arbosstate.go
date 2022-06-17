@@ -11,7 +11,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -48,6 +47,7 @@ type ArbosState struct {
 	sendMerkle        *merkleAccumulator.MerkleAccumulator
 	blockhashes       *blockhash.Blockhashes
 	chainId           storage.StorageBackedBigInt
+	genesisBlockNum   storage.StorageBackedUint64
 	backingStorage    *storage.Storage
 	Burner            burn.Burner
 }
@@ -77,6 +77,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
+		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
 		backingStorage,
 		burner,
 	}, nil
@@ -131,6 +132,7 @@ const (
 	upgradeTimestampOffset
 	networkFeeAccountOffset
 	chainIdOffset
+	genesisBlockNumOffset
 )
 
 type ArbosStateSubspaceID []byte
@@ -181,7 +183,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 
 	arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-	if arbosVersion < 1 || arbosVersion > 4 {
+	if arbosVersion != 1 {
 		return nil, fmt.Errorf("cannot initialize to unsupported ArbOS version %v", arbosVersion)
 	}
 
@@ -196,8 +198,9 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
+	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
-	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace), arbosVersion)
+	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
@@ -215,31 +218,15 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	return OpenArbosState(stateDB, burner)
 }
 
-var TestnetUpgrade2Owner = common.HexToAddress("0x40Fd01b32e97803f12693517776826a71e2B8D5f")
-
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, chainConfig *params.ChainConfig) {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
 		for upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
-			if state.arbosVersion == 1 {
-				// Upgrade version 1->2 adds a chain owner for the testnet
-				if arbmath.BigEquals(chainConfig.ChainID, params.ArbitrumTestnetChainConfig().ChainID) {
-					state.Restrict(state.chainOwners.Add(TestnetUpgrade2Owner))
-				}
-			} else if state.arbosVersion == 2 {
-				// Upgrade version 2->3 has no state changes
-			} else if state.arbosVersion == 3 {
-				// Upgrade version 3->4 adds two fields to the L2 pricing model
-				// (We don't bother to remove no-longer-used fields, for safety
-				//       and because they'll be removed when we telescope versions for re-launch.)
-				state.Restrict(state.l2PricingState.UpgradeToVersion4())
-			} else {
-				// code to upgrade to future versions will be put here
-				panic("Unable to perform requested ArbOS upgrade")
-			}
-			state.arbosVersion++
+			// code to upgrade to future versions will be put here
+			panic("Unable to perform requested ArbOS upgrade")
+			// state.arbosVersion++
 		}
 		state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), state.arbosVersion))
 	}
@@ -319,4 +306,8 @@ func (state *ArbosState) KeccakHash(data ...[]byte) (common.Hash, error) {
 
 func (state *ArbosState) ChainId() (*big.Int, error) {
 	return state.chainId.Get()
+}
+
+func (state *ArbosState) GenesisBlockNum() (uint64, error) {
+	return state.genesisBlockNum.Get()
 }
