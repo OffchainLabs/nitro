@@ -10,8 +10,6 @@ import (
 	"math/big"
 	"strconv"
 
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
-
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -50,10 +48,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	coinbase := common.Address{}
 	if l1info != nil {
 		timestamp = l1info.l1Timestamp
-		isBatchPoster, _ := state.L1PricingState().BatchPosterTable().ContainsPoster(l1info.poster)
-		if isBatchPoster {
-			coinbase = l1pricing.L1PricerFundsPoolAddress
-		}
+		coinbase = l1info.poster
 	}
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
@@ -416,9 +411,10 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		size, _ := acc.Size()
 		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
 		arbitrumHeader := types.HeaderInfo{
-			SendRoot:      root,
-			SendCount:     size,
-			L1BlockNumber: nextL1BlockNumber,
+			SendRoot:           root,
+			SendCount:          size,
+			L1BlockNumber:      nextL1BlockNumber,
+			ArbOSFormatVersion: state.FormatVersion(),
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}

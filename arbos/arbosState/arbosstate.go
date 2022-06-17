@@ -48,6 +48,7 @@ type ArbosState struct {
 	sendMerkle        *merkleAccumulator.MerkleAccumulator
 	blockhashes       *blockhash.Blockhashes
 	chainId           storage.StorageBackedBigInt
+	genesisBlockNum   storage.StorageBackedUint64
 	backingStorage    *storage.Storage
 	Burner            burn.Burner
 }
@@ -77,6 +78,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
+		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
 		backingStorage,
 		burner,
 	}, nil
@@ -131,6 +133,7 @@ const (
 	upgradeTimestampOffset
 	networkFeeAccountOffset
 	chainIdOffset
+	genesisBlockNumOffset
 )
 
 type ArbosStateSubspaceID []byte
@@ -196,6 +199,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
+	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace), arbosVersion)
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
@@ -316,4 +320,8 @@ func (state *ArbosState) KeccakHash(data ...[]byte) (common.Hash, error) {
 
 func (state *ArbosState) ChainId() (*big.Int, error) {
 	return state.chainId.Get()
+}
+
+func (state *ArbosState) GenesisBlockNum() (uint64, error) {
+	return state.genesisBlockNum.Get()
 }

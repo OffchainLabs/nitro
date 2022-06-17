@@ -264,7 +264,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if err != nil {
 		return err
 	}
-	err = util.TransferBalance(&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, util.TracingBeforeEVM)
+	err = util.TransferBalance(&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, util.TracingBeforeEVM, "batchPosterReward")
 	if err != nil {
 		return err
 	}
@@ -293,7 +293,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 			if err != nil {
 				return err
 			}
-			err = util.TransferBalance(&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, util.TracingBeforeEVM)
+			err = util.TransferBalance(&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, util.TracingBeforeEVM, "batchPosterRefund")
 			if err != nil {
 				return err
 			}
@@ -359,10 +359,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 
 func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, posterAddr common.Address) {
 	tx.PosterCost = common.Big0
-	tx.PosterIsReimbursable = false
 
-	contains, err := ps.batchPosterTable.ContainsPoster(posterAddr)
-	if err != nil || !contains {
+	if posterAddr != BatchPosterAddress {
 		return
 	}
 	txBytes, merr := tx.MarshalBinary()
@@ -382,23 +380,26 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, posterAddr common
 	numUnits := l1Bytes * params.TxDataNonZeroGasEIP2028
 	tx.PosterCost = am.BigMulByUint(pricePerUnit, numUnits)
 	tx.CalldataUnits = numUnits
-	tx.PosterIsReimbursable = true
 }
 
 const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
-func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64, bool) {
+func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64) {
 	if tx := message.UnderlyingTransaction(); tx != nil {
 		if tx.PosterCost == nil {
 			ps.AddPosterInfo(tx, poster)
 		}
-		return tx.PosterCost, tx.CalldataUnits, tx.PosterIsReimbursable
+		return tx.PosterCost, tx.CalldataUnits
+	}
+
+	if poster != BatchPosterAddress {
+		return common.Big0, 0
 	}
 
 	byteCount, err := byteCountAfterBrotli0(message.Data())
 	if err != nil {
 		log.Error("failed to compress tx", "err", err)
-		return common.Big0, 0, false
+		return common.Big0, 0
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
@@ -406,7 +407,7 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Add
 	pricePerUnit, _ := ps.PricePerUnit()
 
 	units := l1Bytes * params.TxDataNonZeroGasEIP2028
-	return am.BigMulByUint(pricePerUnit, units), units, true
+	return am.BigMulByUint(pricePerUnit, units), units
 }
 
 func byteCountAfterBrotli0(input []byte) (uint64, error) {

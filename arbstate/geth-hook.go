@@ -31,6 +31,12 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 	gasSupplied uint64,
 	info *vm.AdvancedPrecompileCall,
 ) (ret []byte, gasLeft uint64, err error) {
+
+	// Precompiles don't actually enter evm execution like normal calls do,
+	// so we need to increment the depth here to simulate the callstack change.
+	info.Evm.IncrementDepth()
+	defer info.Evm.DecrementDepth()
+
 	return p.inner.Call(
 		input, info.PrecompileAddress, info.ActingAsAddress,
 		info.Caller, info.Value, info.ReadOnly, gasSupplied, info.Evm,

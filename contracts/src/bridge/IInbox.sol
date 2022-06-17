@@ -23,6 +23,9 @@ error InsufficientValue(uint256 expected, uint256 actual);
 /// @dev submission cost provided isn't enough to create retryable ticket
 error InsufficientSubmissionCost(uint256 expected, uint256 actual);
 
+/// @dev address not allowed to interact with the given contract
+error NotAllowedOrigin(address origin);
+
 /// @dev used to convey retryable tx data in eth calls without requiring a tx trace
 /// this follows a pattern similar to EIP-3668 where reverts surface call information
 error RetryableData(

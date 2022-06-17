@@ -132,9 +132,19 @@ library RollupLib {
         bool hasSibling,
         bytes32 lastHash,
         bytes32 assertionExecHash,
-        bytes32 inboxAcc
+        bytes32 inboxAcc,
+        bytes32 wasmModuleRoot
     ) internal pure returns (bytes32) {
         uint8 hasSiblingInt = hasSibling ? 1 : 0;
-        return keccak256(abi.encodePacked(hasSiblingInt, lastHash, assertionExecHash, inboxAcc));
+        return
+            keccak256(
+                abi.encodePacked(
+                    hasSiblingInt,
+                    lastHash,
+                    assertionExecHash,
+                    inboxAcc,
+                    wasmModuleRoot
+                )
+            );
     }
 }

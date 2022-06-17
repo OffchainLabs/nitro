@@ -588,7 +588,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 memoryFrame.hasSibling,
                 memoryFrame.lastHash,
                 memoryFrame.executionHash,
-                memoryFrame.sequencerBatchAcc
+                memoryFrame.sequencerBatchAcc,
+                wasmModuleRoot
             );
             require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
 

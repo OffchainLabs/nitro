@@ -247,7 +247,8 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, error) {
 	if len(msg.L2msg) != 32 {
 		return nil, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
 	}
-	return new(big.Int).SetBytes(msg.L2msg), nil
+	chainId := new(big.Int).SetBytes(msg.L2msg[:32])
+	return chainId, nil
 }
 
 const (

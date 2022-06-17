@@ -302,7 +302,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         }
     }
 
-    function inboxAccs(uint256 index) external view returns (bytes32) {
+    function inboxAccs(uint256 index) external view override returns (bytes32) {
         return bridge.sequencerInboxAccs(index);
     }
 
@@ -316,6 +316,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function setMaxTimeVariation(ISequencerInbox.MaxTimeVariation memory maxTimeVariation_)
         external
+        override
         onlyRollupOwner
     {
         maxTimeVariation = maxTimeVariation_;
@@ -327,7 +328,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @param addr the address
      * @param isBatchPoster_ if the specified address should be authorized as a batch poster
      */
-    function setIsBatchPoster(address addr, bool isBatchPoster_) external onlyRollupOwner {
+    function setIsBatchPoster(address addr, bool isBatchPoster_) external override onlyRollupOwner {
         isBatchPoster[addr] = isBatchPoster_;
         emit OwnerFunctionCalled(1);
     }
@@ -336,7 +337,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @notice Makes Data Availability Service keyset valid
      * @param keysetBytes bytes of the serialized keyset
      */
-    function setValidKeyset(bytes calldata keysetBytes) external onlyRollupOwner {
+    function setValidKeyset(bytes calldata keysetBytes) external override onlyRollupOwner {
         bytes32 ksHash = keccak256(keysetBytes);
         if (dasKeySetInfo[ksHash].isValidKeyset) revert AlreadyValidDASKeyset(ksHash);
         dasKeySetInfo[ksHash] = DasKeySetInfo({
@@ -351,7 +352,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @notice Invalidates a Data Availability Service keyset
      * @param ksHash hash of the keyset
      */
-    function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
+    function invalidateKeysetHash(bytes32 ksHash) external override onlyRollupOwner {
         if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
         // we don't delete the block creation value since its used to fetch the SetValidKeyset
         // event efficiently. The event provides the hash preimage of the key.
