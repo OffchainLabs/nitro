@@ -29,31 +29,6 @@ type ArbSys struct {
 
 var InvalidBlockNum = errors.New("Invalid block number")
 
-func (con *ArbSys) emitL2ToL1Tx(
-	c ctx,
-	evm mech,
-	destination addr,
-	hash huge,
-	position huge,
-	ethBlockNum huge,
-	callvalue huge,
-	data []byte,
-) error {
-	return con.L2ToL1Tx(
-		c,
-		evm,
-		c.caller,
-		destination,
-		hash,
-		position,
-		evm.Context.BlockNumber,
-		ethBlockNum,
-		evm.Context.Time,
-		callvalue,
-		data,
-	)
-}
-
 // Gets the current L2 block number
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 	return evm.Context.BlockNumber, nil
@@ -176,13 +151,16 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 
 	leafNum := big.NewInt(int64(size - 1))
 
-	err = con.emitL2ToL1Tx(
+	err = con.L2ToL1Tx(
 		c,
 		evm,
+		c.caller,
 		destination,
 		sendHash.Big(),
 		leafNum,
+		evm.Context.BlockNumber,
 		bigL1BlockNum,
+		evm.Context.Time,
 		value,
 		calldataForL1,
 	)

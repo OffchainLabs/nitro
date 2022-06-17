@@ -105,7 +105,7 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 	l2pricing := c.State.L2PricingState()
 	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
 	maxTxGasLimit, err := l2pricing.PerBlockGasLimit()
-	return arbmath.UintToBig(speedLimit), common.Big0, arbmath.UintToBig(maxTxGasLimit), err
+	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxTxGasLimit), arbmath.UintToBig(maxTxGasLimit), err
 }
 
 // Get the minimum gas price needed for a transaction to succeed
