@@ -41,6 +41,9 @@ module.exports = {
   mocha: {
     timeout: 0,
   },
+  gasReporter: {
+    enabled: (process.env.DISABLE_GAS_REPORTER) ? false : true
+  },
   typechain: {
     outDir: 'build/types',
     target: 'ethers-v5',

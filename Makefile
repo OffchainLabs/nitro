@@ -118,8 +118,9 @@ clean:
 	rm -rf arbitrator/prover/test-cases/rust/target
 	rm -f arbitrator/prover/test-cases/*.wasm
 	rm -f arbitrator/prover/test-cases/go/main
+	rm -rf arbitrator/wasm-testsuite/tests
 	rm -rf $(output_root)
-	rm -f contracts/test/prover/proofs/*.json
+	rm -f contracts/test/prover/proofs/*.json contracts/test/prover/spec-proofs/*.json
 	rm -rf arbitrator/target
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
@@ -214,62 +215,16 @@ $(output_root)/machines/latest/soft-float.wasm: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o \
 		--no-entry -o $@ \
-		--export wavm__f32_abs \
-		--export wavm__f32_neg \
-		--export wavm__f32_ceil \
-		--export wavm__f32_floor \
-		--export wavm__f32_trunc \
-		--export wavm__f32_nearest \
-		--export wavm__f32_sqrt \
-		--export wavm__f32_add \
-		--export wavm__f32_sub \
-		--export wavm__f32_mul \
-		--export wavm__f32_div \
-		--export wavm__f32_min \
-		--export wavm__f32_max \
-		--export wavm__f32_copysign \
-		--export wavm__f32_eq \
-		--export wavm__f32_ne \
-		--export wavm__f32_lt \
-		--export wavm__f32_le \
-		--export wavm__f32_gt \
-		--export wavm__f32_ge \
-		--export wavm__i32_trunc_f32_s \
-		--export wavm__i32_trunc_f32_u \
-		--export wavm__i64_trunc_f32_s \
-		--export wavm__i64_trunc_f32_u \
-		--export wavm__f32_convert_i32_s \
-		--export wavm__f32_convert_i32_u \
-		--export wavm__f32_convert_i64_s \
-		--export wavm__f32_convert_i64_u \
-		--export wavm__f64_abs \
-		--export wavm__f64_neg \
-		--export wavm__f64_ceil \
-		--export wavm__f64_floor \
-		--export wavm__f64_trunc \
-		--export wavm__f64_nearest \
-		--export wavm__f64_sqrt \
-		--export wavm__f64_add \
-		--export wavm__f64_sub \
-		--export wavm__f64_mul \
-		--export wavm__f64_div \
-		--export wavm__f64_min \
-		--export wavm__f64_max \
-		--export wavm__f64_copysign \
-		--export wavm__f64_eq \
-		--export wavm__f64_ne \
-		--export wavm__f64_lt \
-		--export wavm__f64_le \
-		--export wavm__f64_gt \
-		--export wavm__f64_ge \
-		--export wavm__i32_trunc_f64_s \
-		--export wavm__i32_trunc_f64_u \
-		--export wavm__i64_trunc_f64_s \
-		--export wavm__i64_trunc_f64_u \
-		--export wavm__f64_convert_i32_s \
-		--export wavm__f64_convert_i32_u \
-		--export wavm__f64_convert_i64_s \
-		--export wavm__f64_convert_i64_u \
+		$(patsubst %,--export wavm__f32_%, abs neg ceil floor trunc nearest sqrt add sub mul div min max) \
+		$(patsubst %,--export wavm__f32_%, copysign eq ne lt le gt ge) \
+		$(patsubst %,--export wavm__f64_%, abs neg ceil floor trunc nearest sqrt add sub mul div min max) \
+		$(patsubst %,--export wavm__f64_%, copysign eq ne lt le gt ge) \
+		$(patsubst %,--export wavm__i32_trunc_%,     f32_s f32_u f64_s f64_u) \
+		$(patsubst %,--export wavm__i32_trunc_sat_%, f32_s f32_u f64_s f64_u) \
+		$(patsubst %,--export wavm__i64_trunc_%,     f32_s f32_u f64_s f64_u) \
+		$(patsubst %,--export wavm__i64_trunc_sat_%, f32_s f32_u f64_s f64_u) \
+		$(patsubst %,--export wavm__f32_convert_%, i32_s i32_u i64_s i64_u) \
+		$(patsubst %,--export wavm__f64_convert_%, i32_s i32_u i64_s i64_u) \
 		--export wavm__f32_demote_f64 \
 		--export wavm__f64_promote_f32
 
@@ -323,6 +278,7 @@ contracts/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbit
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint run --disable-all -E gofmt --fix
 	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
+	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
 	yarn --cwd contracts prettier:solidity
 	@touch $@
 

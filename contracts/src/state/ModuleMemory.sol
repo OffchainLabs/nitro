@@ -9,6 +9,7 @@ import "./Deserialize.sol";
 
 struct ModuleMemory {
     uint64 size;
+    uint64 maxSize;
     bytes32 merkleRoot;
 }
 
@@ -16,7 +17,7 @@ library ModuleMemoryLib {
     using MerkleProofLib for MerkleProof;
 
     function hash(ModuleMemory memory mem) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked("Memory:", mem.size, mem.merkleRoot));
+        return keccak256(abi.encodePacked("Memory:", mem.size, mem.maxSize, mem.merkleRoot));
     }
 
     function proveLeaf(

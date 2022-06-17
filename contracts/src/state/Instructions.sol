@@ -12,9 +12,6 @@ struct Instruction {
 library Instructions {
     uint16 internal constant UNREACHABLE = 0x00;
     uint16 internal constant NOP = 0x01;
-    uint16 internal constant BLOCK = 0x02;
-    uint16 internal constant BRANCH = 0x0C;
-    uint16 internal constant BRANCH_IF = 0x0D;
     uint16 internal constant RETURN = 0x0F;
     uint16 internal constant CALL = 0x10;
     uint16 internal constant CALL_INDIRECT = 0x11;
@@ -129,14 +126,11 @@ library Instructions {
     uint16 internal constant I64_EXTEND_16S = 0xC3;
     uint16 internal constant I64_EXTEND_32S = 0xC4;
 
-    uint16 internal constant END_BLOCK = 0x8000;
-    uint16 internal constant END_BLOCK_IF = 0x8001;
     uint16 internal constant INIT_FRAME = 0x8002;
-    uint16 internal constant ARBITRARY_JUMP_IF = 0x8003;
-    uint16 internal constant PUSH_STACK_BOUNDARY = 0x8004;
+    uint16 internal constant ARBITRARY_JUMP = 0x8003;
+    uint16 internal constant ARBITRARY_JUMP_IF = 0x8004;
     uint16 internal constant MOVE_FROM_STACK_TO_INTERNAL = 0x8005;
     uint16 internal constant MOVE_FROM_INTERNAL_TO_STACK = 0x8006;
-    uint16 internal constant IS_STACK_BOUNDARY = 0x8007;
     uint16 internal constant DUP = 0x8008;
     uint16 internal constant CROSS_MODULE_CALL = 0x8009;
     uint16 internal constant CALLER_MODULE_INTERNAL_CALL = 0x800A;
@@ -149,8 +143,6 @@ library Instructions {
     uint16 internal constant READ_PRE_IMAGE = 0x8020;
     uint16 internal constant READ_INBOX_MESSAGE = 0x8021;
     uint16 internal constant HALT_AND_SET_FINISHED = 0x8022;
-
-    uint16 internal constant ARBITRARY_JUMP = 0x8023;
 
     uint256 internal constant INBOX_INDEX_SEQUENCER = 0;
     uint256 internal constant INBOX_INDEX_DELAYED = 1;
