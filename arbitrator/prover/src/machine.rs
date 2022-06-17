@@ -930,7 +930,7 @@ impl Machine {
     pub fn from_binaries(
         libraries: &[WasmBinary<'_>],
         bin: WasmBinary<'_>,
-        language_support: bool,
+        runtime_support: bool,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
@@ -1037,8 +1037,9 @@ impl Machine {
         }
         let main_module_idx = modules.len() - 1;
         let main_module = &modules[main_module_idx];
+
         // Rust support
-        if let Some(&f) = main_module.exports.get("main").filter(|_| language_support) {
+        if let Some(&f) = main_module.exports.get("main").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
@@ -1053,8 +1054,9 @@ impl Machine {
             entry!(Drop);
             entry!(HaltAndSetFinished);
         }
+
         // Go support
-        if let Some(&f) = main_module.exports.get("run").filter(|_| language_support) {
+        if let Some(&f) = main_module.exports.get("run").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
@@ -1107,6 +1109,7 @@ impl Machine {
                 entry!(@cross, i.module, i.func);
             }
         }
+
         let entrypoint_types = vec![FunctionType::default()];
         let mut entrypoint_names = NameCustomSection {
             module: "entry".into(),
