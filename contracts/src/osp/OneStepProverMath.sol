@@ -291,7 +291,7 @@ contract OneStepProverMath is IOneStepProver {
                 // rotr
                 res = rotr32(a, b);
             } else {
-                (uint256 computed, bool err) = genericBinOp(a, b, opcodeOffset);
+                (uint64 computed, bool err) = genericBinOp(a, b, opcodeOffset);
                 if (err) {
                     mach.status = MachineStatus.ERRORED;
                     return;
