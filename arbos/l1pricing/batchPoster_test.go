@@ -79,7 +79,7 @@ func TestBatchPosterTable(t *testing.T) {
 	}
 
 	// test get/set of BP fields
-	bp1, err = bpTable.OpenPoster(addr1)
+	bp1, err = bpTable.OpenPoster(addr1, false)
 	Require(t, err)
 	err = bp1.SetPayTo(addr2)
 	Require(t, err)

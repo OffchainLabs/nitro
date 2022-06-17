@@ -112,7 +112,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	}
 	firstPoster := posterAddrs[0]
 	firstPayTo := common.Address{1, 2}
-	poster, err := posterTable.OpenPoster(firstPoster)
+	poster, err := posterTable.OpenPoster(firstPoster, true)
 	Require(t, err)
 	due, err := poster.FundsDue()
 	Require(t, err)

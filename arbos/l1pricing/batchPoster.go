@@ -20,6 +20,7 @@ var (
 	PosterInfoKey  = []byte{1}
 
 	ErrAlreadyExists = errors.New("tried to add a batch poster that already exists")
+	ErrNotExist      = errors.New("tried to open a batch poster that does not exist")
 )
 
 // layout of storage in the table
@@ -51,12 +52,15 @@ func OpenBatchPostersTable(storage *storage.Storage) *BatchPostersTable {
 	}
 }
 
-func (bpt *BatchPostersTable) OpenPoster(poster common.Address) (*BatchPosterState, error) {
+func (bpt *BatchPostersTable) OpenPoster(poster common.Address, createIfNotExist bool) (*BatchPosterState, error) {
 	isBatchPoster, err := bpt.posterAddrs.IsMember(poster)
 	if err != nil {
 		return nil, err
 	}
 	if !isBatchPoster {
+		if !createIfNotExist {
+			return nil, ErrNotExist
+		}
 		return bpt.AddPoster(poster, poster)
 	}
 	return bpt.internalOpen(poster), nil
@@ -147,7 +151,7 @@ func (bpt *BatchPostersTable) GetFundsDueList() ([]FundsDueItem, error) {
 		return nil, err
 	}
 	for _, posterAddr := range allPosters {
-		poster, err := bpt.OpenPoster(posterAddr)
+		poster, err := bpt.OpenPoster(posterAddr, false)
 		if err != nil {
 			return nil, err
 		}

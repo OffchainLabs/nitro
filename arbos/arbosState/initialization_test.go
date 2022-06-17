@@ -172,7 +172,7 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 		isPoster, err := posterTable.ContainsPoster(addr)
 		Require(t, err)
 		if acct.AggregatorInfo != nil && isPoster {
-			posterInfo, err := posterTable.OpenPoster(addr)
+			posterInfo, err := posterTable.OpenPoster(addr, false)
 			Require(t, err)
 			fc, err := posterInfo.PayTo()
 			Require(t, err)

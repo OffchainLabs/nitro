@@ -189,7 +189,7 @@ func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
 // Update the pricing model based on a payment by a batch poster
 func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *vm.EVM, updateTime uint64, currentTime uint64, batchPoster common.Address, weiSpent *big.Int) error {
 	batchPosterTable := ps.BatchPosterTable()
-	posterState, err := batchPosterTable.OpenPoster(batchPoster)
+	posterState, err := batchPosterTable.OpenPoster(batchPoster, true)
 	if err != nil {
 		return err
 	}
@@ -276,7 +276,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		return err
 	}
 	for _, posterAddr := range allPosterAddrs {
-		poster, err := batchPosterTable.OpenPoster(posterAddr)
+		poster, err := batchPosterTable.OpenPoster(posterAddr, false)
 		if err != nil {
 			return err
 		}
