@@ -1209,7 +1209,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		return err
 	}
 
-	genBlock := arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot)
+	genBlock := arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig)
 	blockHash := genBlock.Hash()
 
 	if storedGenHash == EmptyHash {
@@ -1220,6 +1220,16 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 	}
 
 	return nil
+}
+
+func TryReadStoredChainConfig(chainDb ethdb.Database) *params.ChainConfig {
+	EmptyHash := common.Hash{}
+
+	block0Hash := rawdb.ReadCanonicalHash(chainDb, 0)
+	if block0Hash == EmptyHash {
+		return nil
+	}
+	return rawdb.ReadChainConfig(chainDb, block0Hash)
 }
 
 func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) error {

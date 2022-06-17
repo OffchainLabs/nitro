@@ -73,8 +73,8 @@ type PricingModelHistory struct {
 }
 
 func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNumber) (PricingModelHistory, error) {
-	start, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, start)
-	end, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, end)
+	start, _ = api.blockchain.ClipToPostNitroGenesis(start)
+	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
 	blocks := end.Int64() - start.Int64()
 	if blocks <= 0 {
@@ -91,7 +91,8 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		L1BaseFeeUpdateTime: make([]uint64, blocks+1),
 	}
 
-	if start > core.NitroGenesisBlock {
+	genesisBlock := api.blockchain.Config().ArbitrumChainParams.GenesisBlockNum
+	if start > rpc.BlockNumber(genesisBlock) {
 		state, _, err := stateAndHeader(api.blockchain, uint64(start)-1)
 		if err != nil {
 			return history, err
@@ -149,8 +150,8 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 }
 
 func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.BlockNumber) ([]uint64, error) {
-	start, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, start)
-	end, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, end)
+	start, _ = api.blockchain.ClipToPostNitroGenesis(start)
+	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
 	blocks := end.Int64() - start.Int64()
 	if blocks <= 0 {
@@ -182,7 +183,7 @@ type TimeoutQueue struct {
 
 func (api *ArbDebugAPI) TimeoutQueue(ctx context.Context, blockNum rpc.BlockNumber) (TimeoutQueue, error) {
 
-	blockNum, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, blockNum)
+	blockNum, _ = api.blockchain.ClipToPostNitroGenesis(blockNum)
 
 	queue := TimeoutQueue{
 		BlockNumber: uint64(blockNum),
