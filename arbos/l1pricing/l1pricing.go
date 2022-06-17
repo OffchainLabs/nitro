@@ -203,7 +203,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if err != nil {
 		return err
 	}
-	oldShortfall := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+	oldSurplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
 
 	// compute allocation fraction -- will allocate updateTimeDelta/timeDelta fraction of units and funds to this update
 	lastUpdateTime, err := ps.LastUpdateTime()
@@ -321,7 +321,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		if err != nil {
 			return err
 		}
-		shortfall := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {
@@ -340,8 +340,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		allocPlusInert := am.BigAddByUint(inertiaUnits, unitsAllocated)
 		priceChange := am.BigDiv(
 			am.BigSub(
-				am.BigMul(shortfall, am.BigSub(equilUnits, common.Big1)),
-				am.BigMul(oldShortfall, equilUnits),
+				am.BigMul(surplus, am.BigSub(equilUnits, common.Big1)),
+				am.BigMul(oldSurplus, equilUnits),
 			),
 			am.BigMul(equilUnits, allocPlusInert),
 		)
