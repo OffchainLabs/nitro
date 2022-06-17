@@ -7,12 +7,11 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
@@ -30,48 +29,6 @@ type ArbSys struct {
 }
 
 var InvalidBlockNum = errors.New("Invalid block number")
-
-func (con *ArbSys) emitL2ToL1Tx(
-	c ctx,
-	evm mech,
-	destination addr,
-	hash huge,
-	position huge,
-	ethBlockNum huge,
-	callvalue huge,
-	data []byte,
-) error {
-	if c.State.FormatVersion() >= l2pricing.FirstExponentialPricingVersion {
-		return con.L2ToL1Tx(
-			c,
-			evm,
-			c.caller,
-			destination,
-			hash,
-			position,
-			evm.Context.BlockNumber,
-			ethBlockNum,
-			evm.Context.Time,
-			callvalue,
-			data,
-		)
-	} else {
-		return con.L2ToL1Transaction(
-			c,
-			evm,
-			c.caller,
-			destination,
-			hash,
-			position,
-			big.NewInt(0),
-			evm.Context.BlockNumber,
-			ethBlockNum,
-			evm.Context.Time,
-			callvalue,
-			data,
-		)
-	}
-}
 
 // Gets the current L2 block number
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
@@ -147,7 +104,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	if err != nil {
 		return nil, err
 	}
-	bigL1BlockNum := new(big.Int).SetUint64(l1BlockNum)
+	bigL1BlockNum := arbmath.UintToBig(l1BlockNum)
 
 	arbosState := c.State
 	sendHash, err := arbosState.KeccakHash(
@@ -174,7 +131,9 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	}
 
 	// burn the callvalue, which was previously deposited to this precompile's account
-	evm.StateDB.SubBalance(con.Address, value)
+	if err := util.BurnBalance(&con.Address, value, evm, util.TracingDuringEVM, "withdraw"); err != nil {
+		return nil, err
+	}
 
 	for _, merkleUpdateEvent := range merkleUpdateEvents {
 		position := merkletree.LevelAndLeaf{
@@ -195,13 +154,16 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 
 	leafNum := big.NewInt(int64(size - 1))
 
-	err = con.emitL2ToL1Tx(
+	err = con.L2ToL1Tx(
 		c,
 		evm,
+		c.caller,
 		destination,
 		sendHash.Big(),
 		leafNum,
+		evm.Context.BlockNumber,
 		bigL1BlockNum,
+		evm.Context.Time,
 		value,
 		calldataForL1,
 	)

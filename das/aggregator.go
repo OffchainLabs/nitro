@@ -51,7 +51,7 @@ type Aggregator struct {
 	config   AggregatorConfig
 	services []ServiceDetails
 
-	/// calculated fields
+	// calculated fields
 	requiredServicesForStore       int
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
@@ -340,4 +340,36 @@ func (a *Aggregator) String() string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+func (a *Aggregator) HealthCheck(ctx context.Context) error {
+	for _, serv := range a.services {
+		err := serv.service.HealthCheck(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *Aggregator) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	if len(a.services) == 0 {
+		return -1, errors.New("no DataAvailabilityService present")
+	}
+	expectedExpirationPolicy, err := a.services[0].service.ExpirationPolicy(ctx)
+	if err != nil {
+		return -1, err
+	}
+	// Even if a single service is different from the rest,
+	// then whole aggregator will be considered for mixed expiration timeout policy.
+	for _, serv := range a.services {
+		ep, err := serv.service.ExpirationPolicy(ctx)
+		if err != nil {
+			return -1, err
+		}
+		if ep != expectedExpirationPolicy {
+			return arbstate.MixedTimeout, nil
+		}
+	}
+	return expectedExpirationPolicy, nil
 }

@@ -26,3 +26,4 @@ contracts/test/prover/spec-proofs/*.json
 target/
 yarn-error.log
 local/
+testdata

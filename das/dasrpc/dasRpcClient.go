@@ -36,6 +36,9 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 }
 
 func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	if len(hash) != 32 {
+		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
+	}
 	var ret hexutil.Bytes
 	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash)); err != nil {
 		return nil, err
@@ -71,4 +74,17 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 
 func (c *DASRPCClient) String() string {
 	return fmt.Sprintf("DASRPCClient{url:%s}", c.url)
+}
+
+func (c *DASRPCClient) HealthCheck(ctx context.Context) error {
+	return c.clnt.CallContext(ctx, nil, "das_healthCheck")
+}
+
+func (c *DASRPCClient) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	var res string
+	err := c.clnt.CallContext(ctx, &res, "das_expirationPolicy")
+	if err != nil {
+		return -1, err
+	}
+	return arbstate.StringToExpirationPolicy(res)
 }

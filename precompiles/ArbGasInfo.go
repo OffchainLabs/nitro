@@ -104,41 +104,13 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
 	l2pricing := c.State.L2PricingState()
 	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
-	gasPoolMax, _ := l2pricing.GasPoolMax()
-	maxTxGasLimit, err := l2pricing.MaxPerBlockGasLimit()
-	return arbmath.UintToBig(speedLimit), big.NewInt(gasPoolMax), arbmath.UintToBig(maxTxGasLimit), err
+	maxTxGasLimit, err := l2pricing.PerBlockGasLimit()
+	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxTxGasLimit), arbmath.UintToBig(maxTxGasLimit), err
 }
 
 // Get the minimum gas price needed for a transaction to succeed
 func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
 	return c.State.L2PricingState().MinBaseFeeWei()
-}
-
-// Get the number of seconds worth of the speed limit the gas pool contains
-func (con ArbGasInfo) GetGasPoolSeconds(c ctx, evm mech) (uint64, error) {
-	return c.State.L2PricingState().GasPoolSeconds()
-}
-
-// Get the target fullness in bips the pricing model will try to keep the pool at
-func (con ArbGasInfo) GetGasPoolTarget(c ctx, evm mech) (uint64, error) {
-	target, err := c.State.L2PricingState().GasPoolTarget()
-	return uint64(target), err
-}
-
-// Get the extent in bips to which the pricing model favors filling the pool over increasing speeds
-func (con ArbGasInfo) GetGasPoolWeight(c ctx, evm mech) (uint64, error) {
-	weight, err := c.State.L2PricingState().GasPoolWeight()
-	return uint64(weight), err
-}
-
-// Get ArbOS's estimate of the amount of gas being burnt per second
-func (con ArbGasInfo) GetRateEstimate(c ctx, evm mech) (uint64, error) {
-	return c.State.L2PricingState().RateEstimate()
-}
-
-// Get how slowly ArbOS updates its estimate the amount of gas being burnt per second
-func (con ArbGasInfo) GetRateEstimateInertia(c ctx, evm mech) (uint64, error) {
-	return c.State.L2PricingState().RateEstimateInertia()
 }
 
 // Get the current estimate of the L1 basefee
@@ -159,11 +131,6 @@ func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 // Get the fee paid to the aggregator for posting this tx
 func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 	return c.txProcessor.PosterFee, nil
-}
-
-// Get the amount of gas remaining in the gas pool
-func (con ArbGasInfo) GetGasPool(c ctx, evm mech) (int64, error) {
-	return c.State.L2PricingState().GasPool_preExp()
 }
 
 // Get the backlogged amount of gas burnt in excess of the speed limit

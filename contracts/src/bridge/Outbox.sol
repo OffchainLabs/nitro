@@ -9,11 +9,14 @@ import "./IOutbox.sol";
 import "../libraries/MerkleLib.sol";
 import "../libraries/DelegateCallAware.sol";
 
+/// @dev this error is thrown since certain functions are only expected to be used in simulations, not in actual txs
+error SimulationOnlyEntrypoint();
+
 contract Outbox is DelegateCallAware, IOutbox {
     address public rollup; // the rollup contract
     IBridge public bridge; // the bridge contract
 
-    mapping(uint256 => bool) public spent; // maps leaf number => if spent
+    mapping(uint256 => bytes32) public spent; // packed spent bitmap
     mapping(bytes32 => bytes32) public roots; // maps root hashes => L2 block hash
 
     struct L2ToL1Context {
@@ -135,22 +138,56 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) external virtual {
-        bytes32 outputId;
-        {
-            bytes32 userTx = calculateItemHash(
-                l2Sender,
-                to,
-                l2Block,
-                l1Block,
-                l2Timestamp,
-                value,
-                data
-            );
+    ) external {
+        bytes32 userTx = calculateItemHash(
+            l2Sender,
+            to,
+            l2Block,
+            l1Block,
+            l2Timestamp,
+            value,
+            data
+        );
 
-            outputId = recordOutputAsSpent(proof, index, userTx);
-            emit OutBoxTransactionExecuted(to, l2Sender, 0, index);
-        }
+        recordOutputAsSpent(proof, index, userTx);
+
+        executeTransactionImpl(index, l2Sender, to, l2Block, l1Block, l2Timestamp, value, data);
+    }
+
+    /// @dev function used to simulate the result of a particular function call from the outbox
+    /// it is useful for things such as gas estimates. This function includes all costs except for
+    /// proof validation (which can be considered offchain as a somewhat of a fixed cost - it's
+    /// not really a fixed cost, but can be treated as so with a fixed overhead for gas estimation).
+    /// We can't include the cost of proof validation since this is intended to be used to simulate txs
+    /// that are included in yet-to-be confirmed merkle roots. The simulation entrypoint could instead pretend
+    /// to confirm a pending merkle root, but that would be less pratical for integrating with tooling.
+    /// It is only possible to trigger it when the msg sender is address zero, which should be impossible
+    /// unless under simulation in an eth_call or eth_estimateGas
+    function executeTransactionSimulation(
+        uint256 index,
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) external {
+        if (msg.sender != address(0)) revert SimulationOnlyEntrypoint();
+        executeTransactionImpl(index, l2Sender, to, l2Block, l1Block, l2Timestamp, value, data);
+    }
+
+    function executeTransactionImpl(
+        uint256 outputId,
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) internal {
+        emit OutBoxTransactionExecuted(to, l2Sender, 0, outputId);
 
         // we temporarily store the previous values so the outbox can naturally
         // unwind itself when there are nested calls to `executeTransaction`
@@ -161,7 +198,7 @@ contract Outbox is DelegateCallAware, IOutbox {
             l2Block: uint128(l2Block),
             l1Block: uint128(l1Block),
             timestamp: uint128(l2Timestamp),
-            outputId: outputId
+            outputId: bytes32(outputId)
         });
 
         // set and reset vars around execution so they remain valid during call
@@ -174,7 +211,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32[] memory proof,
         uint256 index,
         bytes32 item
-    ) internal returns (bytes32) {
+    ) internal {
         if (proof.length >= 256) revert ProofTooLong(proof.length);
         if (index >= 2**proof.length) revert PathNotMinimal(index, 2**proof.length);
 
@@ -182,10 +219,12 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
         if (roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
 
-        if (spent[index]) revert AlreadySpent(index);
-        spent[index] = true;
+        uint256 spentIndex = index / 255; // Note: Reserves the MSB.
+        uint256 bitOffset = index % 255;
 
-        return bytes32(index);
+        bytes32 replay = spent[spentIndex];
+        if (((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0)) revert AlreadySpent(index);
+        spent[spentIndex] = (replay | bytes32(1 << bitOffset));
     }
 
     function executeBridgeCall(

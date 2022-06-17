@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
@@ -57,106 +56,6 @@ type ArbDebugAPI struct {
 	blockchain *core.BlockChain
 }
 
-type PricingModelHistoryPreExp struct {
-	First                    uint64     `json:"first"`
-	Timestamp                []uint64   `json:"timestamp"`
-	BaseFee                  []*big.Int `json:"baseFee"`
-	RateEstimate             []uint64   `json:"rateEstimate"`
-	GasPool                  []int64    `json:"gasPool"`
-	GasUsed                  []uint64   `json:"gasUsed"`
-	L1BaseFeeEstimate        []*big.Int `json:"l1BaseFeeEstimate"`
-	L1BaseFeeUpdateTime      []uint64   `json:"l1BaseFeeUpdateTime"`
-	GasPoolMax               int64      `json:"gasPoolMax"`
-	GasPoolTarget            uint64     `json:"gasPoolTarget"`
-	GasPoolWeight            uint64     `json:"gasPoolWeight"`
-	SpeedLimit               uint64     `json:"speedLimit"`
-	MaxPerBlockGasLimit      uint64     `json:"maxPerBlockGasLimit"`
-	L1BaseFeeEstimateInertia uint64     `json:"l1BaseFeeEstimateInertia"`
-}
-
-func (api *ArbDebugAPI) PricingModelPreExp(ctx context.Context, start, end rpc.BlockNumber) (PricingModelHistoryPreExp, error) {
-	start, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, start)
-	end, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, end)
-
-	blocks := end.Int64() - start.Int64()
-	if blocks <= 0 {
-		return PricingModelHistoryPreExp{}, fmt.Errorf("invalid block range: %v to %v", start.Int64(), end.Int64())
-	}
-
-	history := PricingModelHistoryPreExp{
-		First:               uint64(start),
-		Timestamp:           make([]uint64, blocks),
-		BaseFee:             make([]*big.Int, blocks),
-		RateEstimate:        make([]uint64, blocks),
-		GasPool:             make([]int64, blocks),
-		GasUsed:             make([]uint64, blocks),
-		L1BaseFeeEstimate:   make([]*big.Int, blocks),
-		L1BaseFeeUpdateTime: make([]uint64, blocks+1),
-	}
-
-	if start > core.NitroGenesisBlock {
-		state, _, err := stateAndHeader(api.blockchain, uint64(start)-1)
-		if err != nil {
-			return history, err
-		}
-		l1BaseFeeUpdateTime, err := state.L1PricingState().LastL1BaseFeeUpdateTime()
-		if err != nil {
-			return history, err
-		}
-		history.L1BaseFeeUpdateTime[0] = l1BaseFeeUpdateTime
-	}
-
-	for i := uint64(0); i < uint64(blocks); i++ {
-		state, header, err := stateAndHeader(api.blockchain, i+uint64(start))
-		if err != nil {
-			return history, err
-		}
-		l1Pricing := state.L1PricingState()
-		l2Pricing := state.L2PricingState()
-
-		if state.FormatVersion() >= l2pricing.FirstExponentialPricingVersion {
-			// blocks from here on use the new model so we'll zero-fill the remaining values
-			break
-		}
-
-		rateEstimate, _ := l2Pricing.RateEstimate()
-		gasPool, _ := l2Pricing.GasPool_preExp()
-		l1BaseFeeEstimate, _ := l1Pricing.L1BaseFeeEstimateWei()
-		l1BaseFeeUpdateTime, err := l1Pricing.LastL1BaseFeeUpdateTime()
-		if err != nil {
-			return history, err
-		}
-
-		history.Timestamp[i] = header.Time
-		history.BaseFee[i] = header.BaseFee
-		history.RateEstimate[i] = rateEstimate
-		history.GasPool[i] = gasPool
-		history.GasUsed[i] = header.GasUsed
-		history.L1BaseFeeEstimate[i] = l1BaseFeeEstimate
-		history.L1BaseFeeUpdateTime[i+1] = l1BaseFeeUpdateTime
-
-		if i == uint64(blocks)-1 {
-			speedLimit, _ := l2Pricing.SpeedLimitPerSecond()
-			gasPoolMax, _ := l2Pricing.GasPoolMax()
-			gasPoolTarget, _ := l2Pricing.GasPoolTarget()
-			gasPoolWeight, _ := l2Pricing.GasPoolWeight()
-			maxPerBlockGasLimit, _ := l2Pricing.MaxPerBlockGasLimit()
-			l1BaseFeeEstimateInertia, err := l1Pricing.L1BaseFeeEstimateInertia()
-			if err != nil {
-				return history, err
-			}
-			history.SpeedLimit = speedLimit
-			history.GasPoolMax = gasPoolMax
-			history.GasPoolTarget = uint64(gasPoolTarget)
-			history.GasPoolWeight = uint64(gasPoolWeight)
-			history.MaxPerBlockGasLimit = maxPerBlockGasLimit
-			history.L1BaseFeeEstimateInertia = l1BaseFeeEstimateInertia
-		}
-	}
-
-	return history, nil
-}
-
 type PricingModelHistory struct {
 	First                    uint64     `json:"first"`
 	Timestamp                []uint64   `json:"timestamp"`
@@ -174,8 +73,8 @@ type PricingModelHistory struct {
 }
 
 func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNumber) (PricingModelHistory, error) {
-	start, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, start)
-	end, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, end)
+	start, _ = api.blockchain.ClipToPostNitroGenesis(start)
+	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
 	blocks := end.Int64() - start.Int64()
 	if blocks <= 0 {
@@ -192,7 +91,8 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		L1BaseFeeUpdateTime: make([]uint64, blocks+1),
 	}
 
-	if start > core.NitroGenesisBlock {
+	genesisBlock := api.blockchain.Config().ArbitrumChainParams.GenesisBlockNum
+	if start > rpc.BlockNumber(genesisBlock) {
 		state, _, err := stateAndHeader(api.blockchain, uint64(start)-1)
 		if err != nil {
 			return history, err
@@ -215,11 +115,6 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		history.Timestamp[i] = header.Time
 		history.BaseFee[i] = header.BaseFee
 
-		if state.FormatVersion() < l2pricing.FirstExponentialPricingVersion {
-			// this block doesn't use the exponential pricing model, so we'll zero-fill it
-			continue
-		}
-
 		gasBacklog, _ := l2Pricing.GasBacklog()
 		l1BaseFeeEstimate, _ := l1Pricing.L1BaseFeeEstimateWei()
 		l1BaseFeeUpdateTime, err := l1Pricing.LastL1BaseFeeUpdateTime()
@@ -234,7 +129,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 
 		if i == uint64(blocks)-1 {
 			speedLimit, _ := l2Pricing.SpeedLimitPerSecond()
-			maxPerBlockGasLimit, _ := l2Pricing.MaxPerBlockGasLimit()
+			maxPerBlockGasLimit, _ := l2Pricing.PerBlockGasLimit()
 			l1BaseFeeEstimateInertia, err := l1Pricing.L1BaseFeeEstimateInertia()
 			minBaseFee, _ := l2Pricing.MinBaseFeeWei()
 			pricingInertia, _ := l2Pricing.PricingInertia()
@@ -255,8 +150,8 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 }
 
 func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.BlockNumber) ([]uint64, error) {
-	start, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, start)
-	end, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, end)
+	start, _ = api.blockchain.ClipToPostNitroGenesis(start)
+	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
 	blocks := end.Int64() - start.Int64()
 	if blocks <= 0 {
@@ -288,7 +183,7 @@ type TimeoutQueue struct {
 
 func (api *ArbDebugAPI) TimeoutQueue(ctx context.Context, blockNum rpc.BlockNumber) (TimeoutQueue, error) {
 
-	blockNum, _ = arbitrum.ClipToPostNitroGenesis(api.blockchain, blockNum)
+	blockNum, _ = api.blockchain.ClipToPostNitroGenesis(blockNum)
 
 	queue := TimeoutQueue{
 		BlockNumber: uint64(blockNum),
