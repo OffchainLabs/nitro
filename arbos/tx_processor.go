@@ -109,7 +109,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbosAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
-		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM)
+		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM, "deposit")
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
@@ -128,7 +128,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		scenario := util.TracingDuringEVM
 
 		// mint funds with the deposit, then charge fees later
-		util.MintBalance(&from, tx.DepositValue, evm, scenario)
+		util.MintBalance(&from, tx.DepositValue, evm, scenario, "deposit")
 
 		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
 		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
@@ -136,14 +136,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
 		}
 
+		transfer := func(from, to *common.Address, amount *big.Int) error {
+			return util.TransferBalance(from, to, amount, evm, scenario, "during evm execution")
+		}
+
 		// move balance to the relevant parties
-		if err := util.TransferBalance(&from, &networkFeeAccount, submissionFee, evm, scenario); err != nil {
+		if err := transfer(&from, &networkFeeAccount, submissionFee); err != nil {
 			return true, 0, err, nil
 		}
-		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, excessDeposit, evm, scenario); err != nil {
+		if err := transfer(&from, &tx.FeeRefundAddr, excessDeposit); err != nil {
 			return true, 0, err, nil
 		}
-		if err := util.TransferBalance(&tx.From, &escrow, tx.Value, evm, scenario); err != nil {
+		if err := transfer(&tx.From, &escrow, tx.Value); err != nil {
 			return true, 0, err, nil
 		}
 
@@ -183,8 +187,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// pay for the retryable's gas and update the pools
-		err = util.TransferBalance(&tx.From, &networkFeeAccount, gascost, evm, scenario)
-		if err != nil {
+		if transfer(&tx.From, &networkFeeAccount, gascost) != nil {
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
 		}
@@ -229,14 +232,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
-		err = util.TransferBalance(&escrow, &tx.From, tx.Value, evm, util.TracingBeforeEVM)
-		if err != nil {
+		scenario := util.TracingBeforeEVM
+		if util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, "escrow") != nil {
 			return true, 0, err, nil
 		}
 
 		// The redeemer has pre-paid for this tx's gas
-		basefee := evm.Context.BaseFee
-		util.MintBalance(&tx.From, arbmath.BigMulByUint(basefee, tx.Gas), evm, util.TracingBeforeEVM)
+		prepaid := arbmath.BigMulByUint(evm.Context.BaseFee, tx.Gas)
+		util.MintBalance(&tx.From, prepaid, evm, scenario, "prepaid")
 		ticketId := tx.TicketId
 		p.CurrentRetryable = &ticketId
 	}
@@ -325,6 +328,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	underlyingTx := p.msg.UnderlyingTransaction()
 	gasPrice := p.evm.Context.BaseFee
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
+	scenario := util.TracingAfterEVM
 
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
@@ -336,13 +340,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		refund := arbmath.BigMulByUint(gasPrice, gasLeft)
 
 		// undo Geth's refund to the From address
-		err := util.TransferBalance(&inner.From, nil, refund, p.evm, util.TracingAfterEVM)
+		err := util.TransferBalance(&inner.From, nil, refund, p.evm, scenario, "undoRefund")
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, refund)
 		}
 
 		// refund the RefundTo by taking fees back from the network address
-		err = util.TransferBalance(&networkFeeAccount, &inner.RefundTo, refund, p.evm, util.TracingAfterEVM)
+		err = util.TransferBalance(&networkFeeAccount, &inner.RefundTo, refund, p.evm, scenario, "refund")
 		if err != nil {
 			// Normally the network fee address should be holding the gas funds.
 			// However, in theory, they could've been transfered out during the redeem attempt.
@@ -351,13 +355,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 		if success {
 			// we don't want to charge for this
-			tracingInfo := util.NewTracingInfo(p.evm, arbosAddress, p.msg.From(), util.TracingAfterEVM)
+			tracingInfo := util.NewTracingInfo(p.evm, arbosAddress, p.msg.From(), scenario)
 			state := arbosState.OpenSystemArbosStateOrPanic(p.evm.StateDB, tracingInfo, false)
-			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId, p.evm, util.TracingAfterEVM)
+			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId, p.evm, scenario)
 		} else {
 			// return the Callvalue to escrow
 			escrow := retryables.RetryableEscrowAddress(inner.TicketId)
-			err := util.TransferBalance(&inner.From, &escrow, inner.Value, p.evm, util.TracingAfterEVM)
+			err := util.TransferBalance(&inner.From, &escrow, inner.Value, p.evm, scenario, "escrow")
 			if err != nil {
 				// should be impossible because geth credited the inner.Value to inner.From before the transaction
 				// and the transaction reverted
@@ -380,8 +384,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		computeCost = totalCost
 	}
 
-	util.MintBalance(&networkFeeAccount, computeCost, p.evm, util.TracingAfterEVM)
-	util.MintBalance(&p.evm.Context.Coinbase, p.PosterFee, p.evm, util.TracingAfterEVM)
+	purpose := "feeCollection"
+	util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
+	util.MintBalance(&p.evm.Context.Coinbase, p.PosterFee, p.evm, scenario, purpose)
 
 	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price coud be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.

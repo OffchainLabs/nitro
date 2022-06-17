@@ -411,9 +411,10 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		size, _ := acc.Size()
 		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
 		arbitrumHeader := types.HeaderInfo{
-			SendRoot:      root,
-			SendCount:     size,
-			L1BlockNumber: nextL1BlockNumber,
+			SendRoot:           root,
+			SendCount:          size,
+			L1BlockNumber:      nextL1BlockNumber,
+			ArbOSFormatVersion: state.FormatVersion(),
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}

@@ -152,7 +152,11 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId)
+		genesisBlockNum, err := initialArbosState.GenesisBlockNum()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
+		}
+		chainConfig, err := arbos.GetChainConfig(chainId, genesisBlockNum)
 		if err != nil {
 			panic(err)
 		}
@@ -177,7 +181,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId)
+		chainConfig, err := arbos.GetChainConfig(chainId, 0)
 		if err != nil {
 			panic(err)
 		}
@@ -186,7 +190,7 @@ func main() {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}
 
-		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true))
+		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true), chainConfig)
 
 	}
 

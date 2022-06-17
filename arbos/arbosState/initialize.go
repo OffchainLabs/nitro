@@ -20,7 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 )
 
-func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint64, stateRoot common.Hash) *types.Block {
+func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint64, stateRoot common.Hash, chainConfig *params.ChainConfig) *types.Block {
 	head := &types.Header{
 		Number:     new(big.Int).SetUint64(blockNumber),
 		Nonce:      types.EncodeNonce(1), // the genesis block reads the init message
@@ -37,9 +37,10 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	}
 
 	genesisHeaderInfo := types.HeaderInfo{
-		SendRoot:      common.Hash{},
-		SendCount:     0,
-		L1BlockNumber: 0,
+		SendRoot:           common.Hash{},
+		SendCount:          0,
+		L1BlockNumber:      0,
+		ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion,
 	}
 	genesisHeaderInfo.UpdateHeaderWithInfo(head)
 
