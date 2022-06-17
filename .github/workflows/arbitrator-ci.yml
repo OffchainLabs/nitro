@@ -28,7 +28,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v1
         with:
-          token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
 
       - name: Install Ubuntu dependencies
@@ -139,7 +138,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all --manifest-path arbitrator/Cargo.toml
+          args: --all --manifest-path arbitrator/Cargo.toml -- -D warnings
 
       - name: Run rust tests
         uses: actions-rs/cargo@v1

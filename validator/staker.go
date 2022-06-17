@@ -6,10 +6,11 @@ package validator
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/offchainlabs/nitro/arbstate"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -51,27 +52,25 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type L1ValidatorConfig struct {
-	Enable              bool              `koanf:"enable"`
-	Strategy            string            `koanf:"strategy"`
-	StakerInterval      time.Duration     `koanf:"staker-interval"`
-	L1PostingStrategy   L1PostingStrategy `koanf:"posting-strategy"`
-	DisableChallenge    bool              `koanf:"disable-challenge"`
-	WithdrawDestination string            `koanf:"withdraw-destination"`
-	TargetMachineCount  int               `koanf:"target-machine-count"`
-	ConfirmationBlocks  int64             `koanf:"confirmation-blocks"`
-	Dangerous           DangerousConfig   `koanf:"dangerous"`
+	Enable             bool              `koanf:"enable"`
+	Strategy           string            `koanf:"strategy"`
+	StakerInterval     time.Duration     `koanf:"staker-interval"`
+	L1PostingStrategy  L1PostingStrategy `koanf:"posting-strategy"`
+	DisableChallenge   bool              `koanf:"disable-challenge"`
+	TargetMachineCount int               `koanf:"target-machine-count"`
+	ConfirmationBlocks int64             `koanf:"confirmation-blocks"`
+	Dangerous          DangerousConfig   `koanf:"dangerous"`
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
-	Enable:              false,
-	Strategy:            "Watchtower",
-	StakerInterval:      time.Minute,
-	L1PostingStrategy:   L1PostingStrategy{},
-	DisableChallenge:    false,
-	WithdrawDestination: "",
-	TargetMachineCount:  4,
-	ConfirmationBlocks:  12,
-	Dangerous:           DangerousConfig{},
+	Enable:             false,
+	Strategy:           "Watchtower",
+	StakerInterval:     time.Minute,
+	L1PostingStrategy:  L1PostingStrategy{},
+	DisableChallenge:   false,
+	TargetMachineCount: 4,
+	ConfirmationBlocks: 12,
+	Dangerous:          DangerousConfig{},
 }
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -80,7 +79,6 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
 	L1PostingStrategyAddOptions(prefix+".posting-strategy", f)
 	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
-	f.String(prefix+".withdraw-destination", DefaultL1ValidatorConfig.WithdrawDestination, "validator withdraw destination")
 	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
@@ -115,7 +113,6 @@ type Staker struct {
 	lastActCalledBlock      *big.Int
 	inactiveLastCheckedNode *nodeAndHash
 	bringActiveUntilNode    uint64
-	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
 	nitroMachineLoader      *NitroMachineLoader
 }
@@ -140,7 +137,7 @@ func NewStaker(
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
 	l2Blockchain *core.BlockChain,
-	das arbstate.SimpleDASReader,
+	das arbstate.DataAvailabilityReader,
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
@@ -157,10 +154,6 @@ func NewStaker(
 	if err != nil {
 		return nil, err
 	}
-	withdrawDestination := wallet.From()
-	if common.IsHexAddress(config.WithdrawDestination) {
-		withdrawDestination = common.HexToAddress(config.WithdrawDestination)
-	}
 	return &Staker{
 		L1Validator:         val,
 		l1Reader:            l1Reader,
@@ -169,7 +162,6 @@ func NewStaker(
 		config:              config,
 		highGasBlocksBuffer: big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:  nil,
-		withdrawDestination: withdrawDestination,
 		inboxReader:         inboxReader,
 		nitroMachineLoader:  nitroMachineLoader,
 	}, nil
@@ -335,7 +327,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				return nil, err
 			}
 			if stakeIsUnwanted {
-				_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx), s.withdrawDestination)
+				_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx))
 				if err != nil {
 					return nil, err
 				}
@@ -374,8 +366,8 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		if err != nil {
 			return nil, err
 		}
-		if withdrawable.Sign() > 0 && s.withdrawDestination != (common.Address{}) {
-			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx), s.withdrawDestination)
+		if withdrawable.Sign() > 0 {
+			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx))
 			if err != nil {
 				return nil, err
 			}

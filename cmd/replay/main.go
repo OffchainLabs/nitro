@@ -89,6 +89,13 @@ func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash []byte) 
 	return wavmio.ResolvePreImage(common.BytesToHash(hash)), nil
 }
 
+func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
+	return nil
+}
+
+func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.DiscardImmediately, nil
+}
 func main() {
 	wavmio.StubInit()
 
@@ -118,7 +125,7 @@ func main() {
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader arbstate.SimpleDASReader
+		var dasReader arbstate.DataAvailabilityReader
 		if dasEnabled {
 			dasReader = &PreimageDASReader{}
 		}
@@ -145,7 +152,11 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId)
+		genesisBlockNum, err := initialArbosState.GenesisBlockNum()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
+		}
+		chainConfig, err := arbos.GetChainConfig(chainId, genesisBlockNum)
 		if err != nil {
 			panic(err)
 		}
@@ -164,7 +175,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err := arbos.GetChainConfig(chainId)
+		chainConfig, err := arbos.GetChainConfig(chainId, 0)
 		if err != nil {
 			panic(err)
 		}
@@ -173,7 +184,7 @@ func main() {
 			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
 		}
 
-		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true))
+		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true), chainConfig)
 
 	}
 

@@ -130,12 +130,12 @@ func init() {
 			// if gas is free or there's no reimbursable poster, the user won't pay for L1 data costs
 			return
 		}
-		posterCost, _ := state.L1PricingState().PosterDataCost(msg, msg.From(), *poster)
+		posterCost := state.L1PricingState().PosterDataCost(msg, msg.From(), *poster)
 		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
 
-	core.GetArbOSComputeRate = func(statedb *state.StateDB) (float64, error) {
+	core.GetArbOSSpeedLimitPerSecond = func(statedb *state.StateDB) (uint64, error) {
 		arbosVersion := arbosState.ArbOSVersion(statedb)
 		if arbosVersion == 0 {
 			return 0.0, errors.New("ArbOS not installed")
@@ -151,12 +151,7 @@ func init() {
 			log.Error("failed to get the speed limit", "err", err)
 			return 0.0, err
 		}
-		rateEstimate, err := pricing.RateEstimate()
-		if err != nil {
-			log.Error("failed to get the rate estimate", "err", err)
-			return 0.0, err
-		}
-		return float64(rateEstimate) / float64(speedLimit), nil
+		return speedLimit, nil
 	}
 
 	arbSys, err := precompilesgen.ArbSysMetaData.GetAbi()

@@ -5,7 +5,6 @@
 pragma solidity ^0.8.0;
 
 import "./ValueStack.sol";
-import "./PcStack.sol";
 import "./Instructions.sol";
 import "./StackFrame.sol";
 
@@ -20,7 +19,6 @@ struct Machine {
     MachineStatus status;
     ValueStack valueStack;
     ValueStack internalStack;
-    PcStack blockStack;
     StackFrameWindow frameStack;
     bytes32 globalStateHash;
     uint32 moduleIdx;
@@ -30,7 +28,6 @@ struct Machine {
 }
 
 library MachineLib {
-    using PcStackLib for PcStack;
     using StackFrameLib for StackFrameWindow;
     using ValueStackLib for ValueStack;
 
@@ -43,7 +40,6 @@ library MachineLib {
                         "Machine running:",
                         mach.valueStack.hash(),
                         mach.internalStack.hash(),
-                        mach.blockStack.hash(),
                         mach.frameStack.hash(),
                         mach.globalStateHash,
                         mach.moduleIdx,

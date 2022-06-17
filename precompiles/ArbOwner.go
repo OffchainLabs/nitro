@@ -7,7 +7,6 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // This precompile provides owners with tools for managing the rollup.
@@ -67,26 +66,6 @@ func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error 
 // Sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.State.L2PricingState().SetSpeedLimitPerSecond(limit)
-}
-
-// Sets the number of seconds worth of the speed limit the gas pool contains
-func (con ArbOwner) SetGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
-	return c.State.L2PricingState().SetGasPoolSeconds(seconds)
-}
-
-// Set the target fullness in bips the pricing model will try to keep the pool at
-func (con ArbOwner) SetGasPoolTarget(c ctx, evm mech, target uint64) error {
-	return c.State.L2PricingState().SetGasPoolTarget(arbmath.SaturatingCastToBips(target))
-}
-
-// Set the extent in bips to which the pricing model favors filling the pool over increasing speeds
-func (con ArbOwner) SetGasPoolWeight(c ctx, evm mech, weight uint64) error {
-	return c.State.L2PricingState().SetGasPoolWeight(arbmath.SaturatingCastToBips(weight))
-}
-
-// Set how slowly ArbOS updates its estimate the amount of gas being burnt per second
-func (con ArbOwner) SetRateEstimateInertia(c ctx, evm mech, inertia uint64) error {
-	return c.State.L2PricingState().SetRateEstimateInertia(inertia)
 }
 
 // Sets the maximum size a tx (and block) can be

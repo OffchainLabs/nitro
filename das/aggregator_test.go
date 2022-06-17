@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"strconv"
@@ -27,19 +26,26 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	numBackendDAS := 10
 	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
-		dbPath, err := ioutil.TempDir("/tmp", "das_test")
+		dbPath := t.TempDir()
+		_, _, err := GenerateAndStoreKeys(dbPath)
 		Require(t, err)
-		defer os.RemoveAll(dbPath)
 
 		config := DataAvailabilityConfig{
-			DASConfig: StorageConfig{
-				KeyDir:            dbPath,
-				LocalConfig:       LocalConfig{dbPath},
-				AllowGenerateKeys: true,
+			Enable: true,
+			KeyConfig: KeyConfig{
+				KeyDir: dbPath,
+			},
+			LocalFileStorageConfig: LocalFileStorageConfig{
+				Enable:  true,
+				DataDir: dbPath,
 			},
 			L1NodeURL: "none",
 		}
-		das, err := NewDAS(ctx, config)
+
+		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
+		Require(t, err)
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
+		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -206,19 +212,26 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
-		dbPath, err := ioutil.TempDir("/tmp", "das_test")
+		dbPath := t.TempDir()
+		_, _, err := GenerateAndStoreKeys(dbPath)
 		Require(t, err)
-		defer os.RemoveAll(dbPath)
 
 		config := DataAvailabilityConfig{
-			DASConfig: StorageConfig{
-				KeyDir:            dbPath,
-				LocalConfig:       LocalConfig{dbPath},
-				AllowGenerateKeys: true,
+			Enable: true,
+			KeyConfig: KeyConfig{
+				KeyDir: dbPath,
+			},
+			LocalFileStorageConfig: LocalFileStorageConfig{
+				Enable:  true,
+				DataDir: dbPath,
 			},
 			L1NodeURL: "none",
 		}
-		das, err := NewDAS(ctx, config)
+
+		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
+		Require(t, err)
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
+		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)
@@ -312,20 +325,26 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	var backends []ServiceDetails
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	for i := 0; i < numBackendDAS; i++ {
-		dbPath, err := ioutil.TempDir("/tmp", "das_test")
+		dbPath := t.TempDir()
+		_, _, err := GenerateAndStoreKeys(dbPath)
 		Require(t, err)
-		defer os.RemoveAll(dbPath)
 
 		config := DataAvailabilityConfig{
-			DASConfig: StorageConfig{
-				KeyDir:            dbPath,
-				LocalConfig:       LocalConfig{dbPath},
-				AllowGenerateKeys: true,
+			Enable: true,
+			KeyConfig: KeyConfig{
+				KeyDir: dbPath,
+			},
+			LocalFileStorageConfig: LocalFileStorageConfig{
+				Enable:  true,
+				DataDir: dbPath,
 			},
 			L1NodeURL: "none",
 		}
 
-		das, err := NewDAS(ctx, config)
+		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
+		Require(t, err)
+		defer lifecycleManager.StopAndWaitUntil(time.Second)
+		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
 		pubKey, _, err := ReadKeysFromFile(dbPath)
 		Require(t, err)

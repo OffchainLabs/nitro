@@ -107,7 +107,7 @@ type validationStatus struct {
 	ModuleRoots []common.Hash    // non-atomic: present from the start
 }
 
-func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das arbstate.SimpleDASReader) (*BlockValidator, error) {
+func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das arbstate.DataAvailabilityReader) (*BlockValidator, error) {
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()

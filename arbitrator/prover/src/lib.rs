@@ -1,9 +1,11 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-#![allow(clippy::missing_safety_doc)] // We have a lot of unsafe ABI
+#![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 pub mod binary;
+/// cbindgen:ignore
+pub mod console;
 mod host;
 pub mod machine;
 /// cbindgen:ignore
@@ -11,7 +13,7 @@ mod memory;
 mod merkle;
 mod reinterpret;
 pub mod utils;
-mod value;
+pub mod value;
 pub mod wavm;
 
 use crate::machine::{argument_data_to_inbox, Machine};
@@ -77,6 +79,7 @@ unsafe fn arbitrator_load_machine_impl(
     let mach = Machine::from_paths(
         &libraries,
         binary_path,
+        true,
         false,
         false,
         Default::default(),

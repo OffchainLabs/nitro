@@ -6,8 +6,9 @@ package validator
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
+
+	"github.com/offchainlabs/nitro/arbstate"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -49,7 +50,7 @@ type L1Validator struct {
 	genesisBlockNumber      uint64
 
 	l2Blockchain       *core.BlockChain
-	das                arbstate.SimpleDASReader
+	das                arbstate.DataAvailabilityReader
 	inboxTracker       InboxTrackerInterface
 	txStreamer         TransactionStreamerInterface
 	blockValidator     *BlockValidator
@@ -62,7 +63,7 @@ func NewL1Validator(
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
 	l2Blockchain *core.BlockChain,
-	das arbstate.SimpleDASReader,
+	das arbstate.DataAvailabilityReader,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
@@ -558,8 +559,16 @@ func (v *L1Validator) createNewNodeAction(
 		NumBlocks: assertionNumBlocks,
 	}
 
+	wasmModuleRoot := v.lastWasmModuleRoot
+	if v.blockValidator == nil {
+		wasmModuleRoot, err = v.rollup.WasmModuleRoot(v.getCallOpts(ctx))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	executionHash := assertion.ExecutionHash()
-	newNodeHash := crypto.Keccak256Hash(hasSiblingByte[:], lastHash[:], executionHash[:], validatedBatchAcc[:])
+	newNodeHash := crypto.Keccak256Hash(hasSiblingByte[:], lastHash[:], executionHash[:], validatedBatchAcc[:], wasmModuleRoot[:])
 
 	action := createNodeAction{
 		assertion:         assertion,

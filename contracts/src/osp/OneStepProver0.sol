@@ -12,7 +12,6 @@ import "./IOneStepProver.sol";
 
 contract OneStepProver0 is IOneStepProver {
     using MerkleProofLib for MerkleProof;
-    using PcStackLib for PcStack;
     using StackFrameLib for StackFrameWindow;
     using ValueLib for Value;
     using ValueStackLib for ValueStack;
@@ -51,8 +50,6 @@ contract OneStepProver0 is IOneStepProver {
             ty = ValueType.F32;
         } else if (opcode == Instructions.F64_CONST) {
             ty = ValueType.F64;
-        } else if (opcode == Instructions.PUSH_STACK_BOUNDARY) {
-            ty = ValueType.STACK_BOUNDARY;
         } else {
             revert("CONST_PUSH_INVALID_OPCODE");
         }
@@ -83,39 +80,6 @@ contract OneStepProver0 is IOneStepProver {
             mach.valueStack.push(a);
         } else {
             mach.valueStack.push(b);
-        }
-    }
-
-    function executeBlock(
-        Machine memory mach,
-        Module memory,
-        Instruction calldata inst,
-        bytes calldata
-    ) internal pure {
-        uint32 targetPc = uint32(inst.argumentData);
-        require(targetPc == inst.argumentData, "BAD_BLOCK_PC");
-        mach.blockStack.push(targetPc);
-    }
-
-    function executeBranch(
-        Machine memory mach,
-        Module memory,
-        Instruction calldata,
-        bytes calldata
-    ) internal pure {
-        mach.functionPc = mach.blockStack.pop();
-    }
-
-    function executeBranchIf(
-        Machine memory mach,
-        Module memory,
-        Instruction calldata,
-        bytes calldata
-    ) internal pure {
-        uint32 cond = mach.valueStack.pop().assumeI32();
-        if (cond != 0) {
-            // Jump to target
-            mach.functionPc = mach.blockStack.pop();
         }
     }
 
@@ -419,27 +383,6 @@ contract OneStepProver0 is IOneStepProver {
         );
     }
 
-    function executeEndBlock(
-        Machine memory mach,
-        Module memory,
-        Instruction calldata,
-        bytes calldata
-    ) internal pure {
-        mach.blockStack.pop();
-    }
-
-    function executeEndBlockIf(
-        Machine memory mach,
-        Module memory,
-        Instruction calldata,
-        bytes calldata
-    ) internal pure {
-        uint32 cond = mach.valueStack.peek().assumeI32();
-        if (cond != 0) {
-            mach.blockStack.pop();
-        }
-    }
-
     function executeInitFrame(
         Machine memory mach,
         Module memory,
@@ -476,20 +419,6 @@ contract OneStepProver0 is IOneStepProver {
         }
     }
 
-    function executeIsStackBoundary(
-        Machine memory mach,
-        Module memory,
-        Instruction calldata,
-        bytes calldata
-    ) internal pure {
-        Value memory val = mach.valueStack.pop();
-        uint32 newContents = 0;
-        if (val.valueType == ValueType.STACK_BOUNDARY) {
-            newContents = 1;
-        }
-        mach.valueStack.push(ValueLib.newI32(newContents));
-    }
-
     function executeDup(
         Machine memory mach,
         Module memory,
@@ -519,12 +448,6 @@ contract OneStepProver0 is IOneStepProver {
             impl = executeUnreachable;
         } else if (opcode == Instructions.NOP) {
             impl = executeNop;
-        } else if (opcode == Instructions.BLOCK) {
-            impl = executeBlock;
-        } else if (opcode == Instructions.BRANCH) {
-            impl = executeBranch;
-        } else if (opcode == Instructions.BRANCH_IF) {
-            impl = executeBranchIf;
         } else if (opcode == Instructions.RETURN) {
             impl = executeReturn;
         } else if (opcode == Instructions.CALL) {
@@ -535,10 +458,6 @@ contract OneStepProver0 is IOneStepProver {
             impl = executeCallerModuleInternalCall;
         } else if (opcode == Instructions.CALL_INDIRECT) {
             impl = executeCallIndirect;
-        } else if (opcode == Instructions.END_BLOCK) {
-            impl = executeEndBlock;
-        } else if (opcode == Instructions.END_BLOCK_IF) {
-            impl = executeEndBlockIf;
         } else if (opcode == Instructions.ARBITRARY_JUMP) {
             impl = executeArbitraryJump;
         } else if (opcode == Instructions.ARBITRARY_JUMP_IF) {
@@ -557,18 +476,13 @@ contract OneStepProver0 is IOneStepProver {
             impl = executeDrop;
         } else if (opcode == Instructions.SELECT) {
             impl = executeSelect;
-        } else if (
-            (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST) ||
-            opcode == Instructions.PUSH_STACK_BOUNDARY
-        ) {
+        } else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST) {
             impl = executeConstPush;
         } else if (
             opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL ||
             opcode == Instructions.MOVE_FROM_INTERNAL_TO_STACK
         ) {
             impl = executeMoveInternal;
-        } else if (opcode == Instructions.IS_STACK_BOUNDARY) {
-            impl = executeIsStackBoundary;
         } else if (opcode == Instructions.DUP) {
             impl = executeDup;
         } else {

@@ -30,11 +30,12 @@ export function nodeHash(
   hasSibling: boolean,
   lastHash: BytesLike,
   assertionExecHash: BytesLike,
-  inboxAcc: BytesLike
+  inboxAcc: BytesLike,
+  wasmModuleRoot: BytesLike
 ): BytesLike {
   return ethers.utils.solidityKeccak256(
-    ["bool", "bytes32", "bytes32", "bytes32"],
-    [hasSibling, lastHash, assertionExecHash, inboxAcc]
+    ["bool", "bytes32", "bytes32", "bytes32", "bytes32"],
+    [hasSibling, lastHash, assertionExecHash, inboxAcc, wasmModuleRoot]
   );
 }
 
@@ -153,11 +154,13 @@ export class RollupContract {
     const inboxPosition = BigNumber.from(assertion.afterState.globalState.u64Vals[0]).toNumber();
     const afterInboxAcc =
       inboxPosition > 0 ? await sequencerInbox.inboxAccs(inboxPosition - 1) : constants.HashZero;
+    const wasmModuleRoot = await this.rollup.wasmModuleRoot();
     const newNodeHash = nodeHash(
       !!siblingNode,
       (siblingNode || parentNode).nodeHash,
       assertionExecutionHash(assertion),
-      afterInboxAcc
+      afterInboxAcc,
+      wasmModuleRoot
     );
     const tx = stakeToAdd
       ? await this.rollup.newStakeOnNewNode(assertion, newNodeHash, parentNode.inboxMaxCount, {
@@ -242,11 +245,13 @@ export async function forceCreateNode(
   const inboxPosition = BigNumber.from(assertion.afterState.globalState.u64Vals[0]).toNumber();
   const afterInboxAcc =
     inboxPosition > 0 ? await sequencerInbox.inboxAccs(inboxPosition - 1) : constants.HashZero;
+  const wasmModuleRoot = await rollupAdmin.wasmModuleRoot();
   const newNodeHash = nodeHash(
     !!siblingNode,
     (siblingNode || parentNode).nodeHash,
     assertionExecutionHash(assertion),
-    afterInboxAcc
+    afterInboxAcc,
+    wasmModuleRoot
   );
   const tx = await rollupAdmin.forceCreateNode(
     parentNode.nodeNum,
