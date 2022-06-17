@@ -234,9 +234,6 @@ pub struct Local {
 pub struct NameCustomSection {
     pub module: String,
     pub functions: HashMap<u32, String>,
-    // TODO: remove this when re-initializing the rollup
-    // this is kept around to deserialize old binaries
-    pub _locals_removed: HashMap<u32, HashMap<u32, String>>,
 }
 
 #[derive(Clone, Default)]

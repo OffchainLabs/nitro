@@ -102,19 +102,6 @@ impl fmt::Debug for Bytes32 {
     }
 }
 
-impl From<DeprecatedTableType> for TableType {
-    fn from(table: DeprecatedTableType) -> Self {
-        Self {
-            element_type: match table.ty {
-                DeprecatedRefType::FuncRef => Type::FuncRef,
-                DeprecatedRefType::ExternRef => Type::ExternRef,
-            },
-            initial: table.limits.minimum_size,
-            maximum: table.limits.maximum_size,
-        }
-    }
-}
-
 /// A Vec<u8> allocated with libc::malloc
 pub struct CBytes {
     ptr: *mut u8,
@@ -150,46 +137,6 @@ impl fmt::Debug for CBytes {
     }
 }
 
-// TODO: remove this when re-initializing the rollup
-// this is kept around to deserialize old binaries
-#[derive(Serialize, Deserialize)]
-pub enum DeprecatedRefType {
-    FuncRef,
-    ExternRef,
-}
-
-// TODO: remove this when re-initializing the rollup
-// this is kept around to deserialize old binaries
-#[derive(Serialize, Deserialize)]
-pub struct DeprecatedLimits {
-    pub minimum_size: u32,
-    pub maximum_size: Option<u32>,
-}
-
-// TODO: remove this when re-initializing the rollup
-// this is kept around to deserialize old binaries
-#[derive(Serialize, Deserialize)]
-pub struct DeprecatedTableType {
-    pub ty: DeprecatedRefType,
-    pub limits: DeprecatedLimits,
-}
-
-impl From<TableType> for DeprecatedTableType {
-    fn from(table: TableType) -> Self {
-        Self {
-            ty: match table.element_type {
-                Type::FuncRef => DeprecatedRefType::FuncRef,
-                Type::ExternRef => DeprecatedRefType::ExternRef,
-                x => panic!("impossible table type {:?}", x),
-            },
-            limits: DeprecatedLimits {
-                minimum_size: table.initial,
-                maximum_size: table.maximum,
-            },
-        }
-    }
-}
-
 impl From<&[u8]> for CBytes {
     fn from(slice: &[u8]) -> Self {
         if slice.is_empty() {
@@ -207,6 +154,27 @@ impl From<&[u8]> for CBytes {
             }
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "Type")]
+enum RemoteType {
+    I32,
+    I64,
+    F32,
+    F64,
+    V128,
+    FuncRef,
+    ExternRef,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "TableType")]
+pub struct RemoteTableType {
+    #[serde(with = "RemoteType")]
+    pub element_type: Type,
+    pub initial: u32,
+    pub maximum: Option<u32>,
 }
 
 impl Drop for CBytes {
