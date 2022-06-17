@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
@@ -103,7 +104,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	if err != nil {
 		return nil, err
 	}
-	bigL1BlockNum := new(big.Int).SetUint64(l1BlockNum)
+	bigL1BlockNum := arbmath.UintToBig(l1BlockNum)
 
 	arbosState := c.State
 	sendHash, err := arbosState.KeccakHash(
@@ -130,7 +131,9 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	}
 
 	// burn the callvalue, which was previously deposited to this precompile's account
-	evm.StateDB.SubBalance(con.Address, value)
+	if err := util.BurnBalance(&con.Address, value, evm, util.TracingDuringEVM, "withdraw"); err != nil {
+		return nil, err
+	}
 
 	for _, merkleUpdateEvent := range merkleUpdateEvents {
 		position := merkletree.LevelAndLeaf{
