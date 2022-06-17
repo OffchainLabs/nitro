@@ -476,7 +476,3 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
 }
-
-func (p *TxProcessor) DropTip() bool {
-	return true // TODO: verify that this is correct (always dropping tips)
-}
