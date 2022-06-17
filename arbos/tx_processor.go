@@ -339,7 +339,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		refund := arbmath.BigMulByUint(gasPrice, gasLeft)
 
 		// undo Geth's refund to the From address
-		err := util.TransferBalance(&inner.From, nil, refund, p.evm, scenario, "ignore")
+		err := util.TransferBalance(&inner.From, nil, refund, p.evm, scenario, "undoRefund")
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, refund)
 		}
