@@ -76,6 +76,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y make && \
     cargo install --force cbindgen
 COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
+COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header

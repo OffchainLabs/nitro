@@ -20,8 +20,8 @@ async function sendTestMessages() {
 }
 
 describe("OneStepProof", function () {
-  const root = "./test/prover/proofs/";
-  const dir = fs.readdirSync(root);
+  const arbProofsRoot = "./test/prover/proofs/";
+  const specProofsRoot = "./test/prover/spec-proofs/";
 
   before(async function () {
     await run("deploy", { "tags": "OneStepProofEntry" });
@@ -30,12 +30,22 @@ describe("OneStepProof", function () {
     await sendTestMessages();
   })
 
-  it("should deploy test harness", function() {})
-
-  for (let file of dir) {
+  const proofs = [];
+  for (let file of fs.readdirSync(arbProofsRoot)) {
     if (!file.endsWith(".json")) continue;
+    proofs.push([arbProofsRoot + file, file]);
+  }
+  if (fs.existsSync(specProofsRoot)) {
+    for (let file of fs.readdirSync(specProofsRoot)) {
+      if (!file.endsWith(".json")) continue;
+      proofs.push([specProofsRoot + file, file]);
+    }
+  }
+
+  it("should deploy test harness with " + proofs.length + " proofs", function() {})
+
+  for (const [path, file] of proofs) {
     it("Should pass " + file + " proofs", async function () {
-      let path = root + file;
       let proofs = JSON.parse(fs.readFileSync(path).toString('utf8'));
       const osp = await ethers.getContract("OneStepProofEntry");
       const seqInbox = await ethers.getContract("SequencerInboxStub");
@@ -50,7 +60,7 @@ describe("OneStepProof", function () {
         const inboxLimit = 1000000;
         const promise = osp.proveOneStep([inboxLimit, seqInbox.address, bridge.address], i, [...Buffer.from(proof.before, "hex")], [...Buffer.from(proof.proof, "hex")])
           .catch((err: any) => {
-            console.error("Error executing proof " + i);
+            console.error("Error executing proof " + i, err.reason);
             throw err;
           })
           .then((after: any) => assert.equal(after, "0x" + proof.after, "After state doesn't match after proof " + i))
@@ -65,6 +75,9 @@ describe("OneStepProof", function () {
 
       let stillWaiting = []
       do {
+        if (promises.length == 0) {
+          break;
+        }
         const finished: any = await Promise.race(promises.map((p, k) => p.then((_: any) => k)));
         if (finished == promises.length - 1) {
           promises.pop()
