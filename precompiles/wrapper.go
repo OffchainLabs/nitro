@@ -92,7 +92,7 @@ func (wrapper *OwnerPrecompile) Call(
 		return nil, burner.gasLeft, err
 	}
 
-	if !isOwner && (state.FormatVersion() >= 2 || caller != arbosState.TestnetUpgrade2Owner) {
+	if !isOwner {
 		return nil, burner.gasLeft, errors.New("unauthorized caller to access-controlled method")
 	}
 
