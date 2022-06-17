@@ -673,7 +673,6 @@ pub struct MachineState<'a> {
     status: MachineStatus,
     value_stack: Cow<'a, Vec<Value>>,
     internal_stack: Cow<'a, Vec<Value>>,
-    block_stack: Cow<'a, Vec<usize>>,
     frame_stack: Cow<'a, Vec<StackFrame>>,
     modules: Vec<ModuleState<'a>>,
     global_state: GlobalState,
@@ -737,7 +736,6 @@ pub struct Machine {
     status: MachineStatus,
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
-    block_stack: Vec<usize>,
     frame_stack: Vec<StackFrame>,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
@@ -768,13 +766,6 @@ where
 
 fn hash_value_stack(stack: &[Value]) -> Bytes32 {
     hash_stack(stack.iter().map(|v| v.hash()), "Value stack:")
-}
-
-fn hash_pc_stack(pcs: &[usize]) -> Bytes32 {
-    hash_stack(
-        pcs.iter().map(|pc| (*pc as u32).to_be_bytes()),
-        "Program counter stack:",
-    )
 }
 
 fn hash_stack_frame_stack(frames: &[StackFrame]) -> Bytes32 {
@@ -1179,7 +1170,6 @@ impl Machine {
             steps: 0,
             value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
             internal_stack: Vec::new(),
-            block_stack: Vec::new(),
             frame_stack: Vec::new(),
             modules,
             modules_merkle,
@@ -1227,7 +1217,6 @@ impl Machine {
             steps: 0,
             value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
             internal_stack: Vec::new(),
-            block_stack: Vec::new(),
             frame_stack: Vec::new(),
             modules,
             modules_merkle: None,
@@ -1273,7 +1262,6 @@ impl Machine {
             status: self.status,
             value_stack: Cow::Borrowed(&self.value_stack),
             internal_stack: Cow::Borrowed(&self.internal_stack),
-            block_stack: Cow::Borrowed(&self.block_stack),
             frame_stack: Cow::Borrowed(&self.frame_stack),
             modules,
             global_state: self.global_state.clone(),
@@ -1310,7 +1298,6 @@ impl Machine {
         self.status = new_state.status;
         self.value_stack = new_state.value_stack.into_owned();
         self.internal_stack = new_state.internal_stack.into_owned();
-        self.block_stack = new_state.block_stack.into_owned();
         self.frame_stack = new_state.frame_stack.into_owned();
         self.global_state = new_state.global_state;
         self.pc = new_state.pc;
@@ -1347,7 +1334,6 @@ impl Machine {
             .1;
 
         self.frame_stack.clear();
-        self.block_stack.clear();
         self.internal_stack.clear();
 
         self.pc = ProgramCounter {
@@ -2073,7 +2059,6 @@ impl Machine {
                 h.update(b"Machine running:");
                 h.update(&hash_value_stack(&self.value_stack));
                 h.update(&hash_value_stack(&self.internal_stack));
-                h.update(&hash_pc_stack(&self.block_stack));
                 h.update(hash_stack_frame_stack(&self.frame_stack));
                 h.update(self.global_state.hash());
                 h.update(&u32::try_from(self.pc.module).unwrap().to_be_bytes());
@@ -2114,10 +2099,6 @@ impl Machine {
             hash_value_stack,
             |v| v.serialize_for_proof(),
         ));
-
-        data.extend(prove_stack(&self.block_stack, 1, hash_pc_stack, |pc| {
-            (*pc as u32).to_be_bytes()
-        }));
 
         data.extend(prove_window(
             &self.frame_stack,

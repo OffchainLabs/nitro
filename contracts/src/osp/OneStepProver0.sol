@@ -12,7 +12,6 @@ import "./IOneStepProver.sol";
 
 contract OneStepProver0 is IOneStepProver {
     using MerkleProofLib for MerkleProof;
-    using PcStackLib for PcStack;
     using StackFrameLib for StackFrameWindow;
     using ValueLib for Value;
     using ValueStackLib for ValueStack;

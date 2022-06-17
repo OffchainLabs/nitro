@@ -6,7 +6,6 @@ pragma solidity ^0.8.0;
 
 import "./Value.sol";
 import "./ValueStack.sol";
-import "./PcStack.sol";
 import "./Machine.sol";
 import "./Instructions.sol";
 import "./StackFrame.sol";
@@ -118,23 +117,6 @@ library Deserialize {
             (proved[i], offset) = value(proof, offset);
         }
         stack = ValueStack({proved: ValueArray(proved), remainingHash: remainingHash});
-    }
-
-    function pcStack(bytes calldata proof, uint256 startOffset)
-        internal
-        pure
-        returns (PcStack memory stack, uint256 offset)
-    {
-        offset = startOffset;
-        bytes32 remainingHash;
-        (remainingHash, offset) = b32(proof, offset);
-        uint256 provedLength;
-        (provedLength, offset) = u256(proof, offset);
-        uint32[] memory proved = new uint32[](provedLength);
-        for (uint256 i = 0; i < proved.length; i++) {
-            (proved[i], offset) = u32(proof, offset);
-        }
-        stack = PcStack({proved: PcArray(proved), remainingHash: remainingHash});
     }
 
     function instruction(bytes calldata proof, uint256 startOffset)
@@ -276,7 +258,6 @@ library Deserialize {
         }
         ValueStack memory values;
         ValueStack memory internalStack;
-        PcStack memory blocks;
         bytes32 globalStateHash;
         uint32 moduleIdx;
         uint32 functionIdx;
@@ -285,7 +266,6 @@ library Deserialize {
         bytes32 modulesRoot;
         (values, offset) = valueStack(proof, offset);
         (internalStack, offset) = valueStack(proof, offset);
-        (blocks, offset) = pcStack(proof, offset);
         (frameStack, offset) = stackFrameWindow(proof, offset);
         (globalStateHash, offset) = b32(proof, offset);
         (moduleIdx, offset) = u32(proof, offset);
@@ -296,7 +276,6 @@ library Deserialize {
             status: status,
             valueStack: values,
             internalStack: internalStack,
-            blockStack: blocks,
             frameStack: frameStack,
             globalStateHash: globalStateHash,
             moduleIdx: moduleIdx,
