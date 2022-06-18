@@ -106,11 +106,11 @@ This component maintains the last 256 L1 block hashes in a circular buffer. This
 
 ### [`l1PricingState`][l1PricingState_link]<a name=l1PricingState></a>
 
-In addition to supporting the [`ArbAggregator precompile`](Precompiles.md#ArbAggregator), the L1 pricing state provides tools for determining the L1 component of a transaction's gas costs. Aggregators, whose compressed batches are the messages ArbOS uses to build L2 blocks, inform ArbOS of their compression ratios so that L2 fees can be fairly allocated between the network fee account and the aggregator posting a given transaction.
+In addition to supporting the [`ArbAggregator precompile`](Precompiles.md#ArbAggregator), the L1 pricing state provides tools for determining the L1 component of a transaction's gas costs. This part of the state tracks the total amount of funds collected from transactions in L1 gas fees, as well as the funds spent by batch posters to post data batches on L1. 
 
-Theoretically an aggregator can lie about its compression ratio to slightly inflate the fees their users (and only their users) pay, but a malicious aggregator already has the ability to extract MEV from them so no trust assumptions change. Lying about the ratio being higher than it is is self defeating since it burns money, as is choosing to not compress their users' transactions.
+Based on this information, ArbOS maintains an L1 data fee, also tracked as part of this state, which determines how much transactions will be charged for L1 fees. This value is adjusted dynamically by ArbOS so that fees collected are approximately equal to batch posting costs, over time.
 
-The L1 pricing state also keeps a running estimate of the L1 gas price, which updates as ArbOS processes delayed messages.
+
 
 [l1PricingState_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/l1pricing/l1pricing.go#L16
 
