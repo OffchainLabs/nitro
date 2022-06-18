@@ -29,6 +29,7 @@ func BuildBlock(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	inbox arbstate.InboxBackend,
+	seqBatch []byte,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
@@ -45,10 +46,13 @@ func BuildBlock(
 	delayedMessagesRead = inboxMultiplexer.DelayedMessagesRead()
 	l1Message := message.Message
 
-	block, _ := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig,
+	batchFetcher := func(uint64) ([]byte, error) {
+		return seqBatch, nil
+	}
+	block, _, err := arbos.ProduceBlock(
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher,
 	)
-	return block, nil
+	return block, err
 }
 
 // A simple mock inbox multiplexer backend
@@ -142,7 +146,7 @@ func Fuzz(input []byte) int {
 		positionWithinMessage: 0,
 		delayedMessages:       delayedMessages,
 	}
-	_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox)
+	_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox, seqBatch)
 	if err != nil {
 		// With the fixed header it shouldn't be possible to read a delayed message,
 		// and no other type of error should be possible.

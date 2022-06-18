@@ -5,10 +5,12 @@
 pragma solidity ^0.8.0;
 
 import "./IBridge.sol";
+import "./IInbox.sol";
 import "./ISequencerInbox.sol";
 import "../rollup/IRollupLogic.sol";
 import "./Messages.sol";
 
+import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
 import {GasRefundEnabled, IGasRefunder} from "../libraries/IGasRefunder.sol";
 import "../libraries/DelegateCallAware.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
@@ -25,6 +27,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
+    IInbox public delayedInbox;
 
     /// @dev The size of the batch header
     uint256 public constant HEADER_LENGTH = 40;
@@ -46,12 +49,14 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     function initialize(
         IBridge delayedBridge_,
+        IInbox delayedInbox_,
         address rollup_,
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
         if (delayedBridge != IBridge(address(0))) revert AlreadyInit();
         if (delayedBridge_ == IBridge(address(0))) revert HadZeroInit();
         delayedBridge = delayedBridge_;
+        delayedInbox = delayedInbox_;
         rollup = rollup_;
         maxTimeVariation = maxTimeVariation_;
     }
@@ -150,6 +155,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             dataHash,
             afterDelayedMessagesRead
         );
+        if (data.length > 0) {
+            _reportBatchSpending(dataHash, sequenceNumber);
+        }
         emit SequencerBatchDelivered(
             inboxAccs.length - 1,
             beforeAcc,
@@ -188,6 +196,10 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             BatchDataLocation.SeparateBatchEvent
         );
         emit SequencerBatchData(sequenceNumber, data);
+    }
+
+    function _reportBatchSpending(bytes32 dataHash, uint256 sequenceNumber) internal {
+        delayedInbox.submitBatchSpendingReportTransaction(msg.sender, dataHash, sequenceNumber);
     }
 
     function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32) {

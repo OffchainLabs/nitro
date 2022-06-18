@@ -154,16 +154,22 @@ func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.
 
 func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, account statetransfer.AccountInitializationInfo) error {
 	l1pState := arbosState.L1PricingState()
+	posterTable := l1pState.BatchPosterTable()
 	if account.AggregatorInfo != nil {
-		err := l1pState.SetAggregatorFeeCollector(account.Addr, account.AggregatorInfo.FeeCollector)
+		isPoster, err := posterTable.ContainsPoster(account.Addr)
 		if err != nil {
 			return err
 		}
-	}
-	if account.AggregatorToPay != nil {
-		err := l1pState.SetUserSpecifiedAggregator(account.Addr, account.AggregatorToPay)
-		if err != nil {
-			return err
+		if isPoster {
+			// poster is already authorized, just set its fee collector
+			poster, err := posterTable.OpenPoster(account.Addr, false)
+			if err != nil {
+				return err
+			}
+			err = poster.SetPayTo(account.AggregatorInfo.FeeCollector)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

@@ -19,6 +19,10 @@ type ArbOwner struct {
 	OwnerActsGasCost func(bytes4, addr, []byte) (uint64, error)
 }
 
+var (
+	ErrOutOfBounds = errors.New("value out of bounds")
+)
+
 // Add account as a chain owner
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
 	return c.State.ChainOwners().Add(newOwner)
@@ -40,17 +44,12 @@ func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 
 // Retrieves the list of chain owners
 func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.ChainOwners().AllMembers()
-}
-
-// Sets the L1 basefee estimate directly, bypassing the autoregression
-func (con ArbOwner) SetL1BaseFeeEstimate(c ctx, evm mech, priceInWei huge) error {
-	return c.State.L1PricingState().SetL1BaseFeeEstimateWei(priceInWei)
+	return c.State.ChainOwners().AllMembers(65536)
 }
 
 // Set how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64) error {
-	return c.State.L1PricingState().SetL1BaseFeeEstimateInertia(inertia)
+	return c.State.L1PricingState().SetInertia(inertia)
 }
 
 // Sets the L2 gas price directly, bypassing the pool calculus
@@ -96,4 +95,20 @@ func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount a
 // Upgrades ArbOS to the requested version at the requested timestamp
 func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, timestamp uint64) error {
 	return c.State.ScheduleArbOSUpgrade(newVersion, timestamp)
+}
+
+func (con ArbOwner) SetL1PricingEquilibrationUnits(c ctx, evm mech, equilibrationUnits huge) error {
+	return c.State.L1PricingState().SetEquilibrationUnits(equilibrationUnits)
+}
+
+func (con ArbOwner) SetL1PricingInertia(c ctx, evm mech, inertia uint64) error {
+	return c.State.L1PricingState().SetInertia(inertia)
+}
+
+func (con ArbOwner) SetL1PricingRewardRecipient(c ctx, evm mech, recipient addr) error {
+	return c.State.L1PricingState().SetPayRewardsTo(recipient)
+}
+
+func (con ArbOwner) SetL1PricingRewardRate(c ctx, evm mech, weiPerUnit uint64) error {
+	return c.State.L1PricingState().SetPerUnitReward(weiPerUnit)
 }

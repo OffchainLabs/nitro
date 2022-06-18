@@ -9,6 +9,8 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -268,8 +270,19 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	var gasNeededToStartEVM uint64
 	gasPrice := p.evm.Context.BaseFee
-	coinbase := p.evm.Context.Coinbase
-	posterCost := p.state.L1PricingState().PosterDataCost(p.msg, p.msg.From(), coinbase)
+
+	var poster common.Address
+	if p.msg.RunMode() != types.MessageCommitMode {
+		poster = l1pricing.BatchPosterAddress
+	} else {
+		poster = p.evm.Context.Coinbase
+	}
+	posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
+	if calldataUnits > 0 {
+		if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
+			return err
+		}
+	}
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
@@ -287,6 +300,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		// Pad the L1 cost by 10% in case the L1 gas price rises
 		posterCost = arbmath.BigMulByFrac(posterCost, 110, 100)
 	}
+
 	if gasPrice.Sign() > 0 {
 		posterCostInL2Gas := arbmath.BigDiv(posterCost, gasPrice) // the cost as if it were an amount of gas
 		if !posterCostInL2Gas.IsUint64() {

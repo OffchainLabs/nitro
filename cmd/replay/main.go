@@ -164,7 +164,13 @@ func main() {
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
 		chainContext := WavmChainContext{}
-		newBlock, _ = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig)
+		batchFetcher := func(batchNum uint64) ([]byte, error) {
+			return wavmio.ReadInboxMessage(batchNum), nil
+		}
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
+		if err != nil {
+			panic(err)
+		}
 
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.

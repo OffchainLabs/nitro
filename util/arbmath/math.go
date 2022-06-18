@@ -28,6 +28,14 @@ func MinInt(value, ceiling int64) int64 {
 	return value
 }
 
+// the minimum of two uints
+func MinUint(value, ceiling uint64) uint64 {
+	if value > ceiling {
+		return ceiling
+	}
+	return value
+}
+
 // the maximum of two ints
 func MaxInt(value, floor int64) int64 {
 	if value < floor {
@@ -126,6 +134,16 @@ func BigMul(multiplicand *big.Int, multiplier *big.Int) *big.Int {
 // divide a huge by another
 func BigDiv(dividend *big.Int, divisor *big.Int) *big.Int {
 	return new(big.Int).Div(dividend, divisor)
+}
+
+// absolute value of a huge
+func BigAbs(value *big.Int) *big.Int {
+	return new(big.Int).Abs(value)
+}
+
+// add a uint to a huge
+func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
+	return new(big.Int).Add(augend, UintToBig(addend))
 }
 
 // multiply a huge by a rational
@@ -249,6 +267,16 @@ func SaturatingUCast(value int64) uint64 {
 		return 0
 	}
 	return uint64(value)
+}
+
+func SaturatingCastToUint(value *big.Int) uint64 {
+	if value.Sign() < 0 {
+		return 0
+	}
+	if !value.IsUint64() {
+		return math.MaxUint64
+	}
+	return value.Uint64()
 }
 
 // the number of eth-words needed to store n bytes

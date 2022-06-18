@@ -63,7 +63,6 @@ type PricingModelHistory struct {
 	GasBacklog               []uint64   `json:"gasBacklog"`
 	GasUsed                  []uint64   `json:"gasUsed"`
 	L1BaseFeeEstimate        []*big.Int `json:"l1BaseFeeEstimate"`
-	L1BaseFeeUpdateTime      []uint64   `json:"l1BaseFeeUpdateTime"`
 	MinBaseFee               *big.Int   `json:"minBaseFee"`
 	SpeedLimit               uint64     `json:"speedLimit"`
 	MaxPerBlockGasLimit      uint64     `json:"maxPerBlockGasLimit"`
@@ -82,26 +81,12 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 	}
 
 	history := PricingModelHistory{
-		First:               uint64(start),
-		Timestamp:           make([]uint64, blocks),
-		BaseFee:             make([]*big.Int, blocks),
-		GasBacklog:          make([]uint64, blocks),
-		GasUsed:             make([]uint64, blocks),
-		L1BaseFeeEstimate:   make([]*big.Int, blocks),
-		L1BaseFeeUpdateTime: make([]uint64, blocks+1),
-	}
-
-	genesisBlock := api.blockchain.Config().ArbitrumChainParams.GenesisBlockNum
-	if start > rpc.BlockNumber(genesisBlock) {
-		state, _, err := stateAndHeader(api.blockchain, uint64(start)-1)
-		if err != nil {
-			return history, err
-		}
-		l1BaseFeeUpdateTime, err := state.L1PricingState().LastL1BaseFeeUpdateTime()
-		if err != nil {
-			return history, err
-		}
-		history.L1BaseFeeUpdateTime[0] = l1BaseFeeUpdateTime
+		First:             uint64(start),
+		Timestamp:         make([]uint64, blocks),
+		BaseFee:           make([]*big.Int, blocks),
+		GasBacklog:        make([]uint64, blocks),
+		GasUsed:           make([]uint64, blocks),
+		L1BaseFeeEstimate: make([]*big.Int, blocks),
 	}
 
 	for i := uint64(0); i < uint64(blocks); i++ {
@@ -116,21 +101,16 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		history.BaseFee[i] = header.BaseFee
 
 		gasBacklog, _ := l2Pricing.GasBacklog()
-		l1BaseFeeEstimate, _ := l1Pricing.L1BaseFeeEstimateWei()
-		l1BaseFeeUpdateTime, err := l1Pricing.LastL1BaseFeeUpdateTime()
-		if err != nil {
-			return history, err
-		}
+		l1BaseFeeEstimate, _ := l1Pricing.PricePerUnit()
 
 		history.GasBacklog[i] = gasBacklog
 		history.GasUsed[i] = header.GasUsed
 		history.L1BaseFeeEstimate[i] = l1BaseFeeEstimate
-		history.L1BaseFeeUpdateTime[i+1] = l1BaseFeeUpdateTime
 
 		if i == uint64(blocks)-1 {
 			speedLimit, _ := l2Pricing.SpeedLimitPerSecond()
 			maxPerBlockGasLimit, _ := l2Pricing.PerBlockGasLimit()
-			l1BaseFeeEstimateInertia, err := l1Pricing.L1BaseFeeEstimateInertia()
+			l1BaseFeeEstimateInertia, err := l1Pricing.Inertia()
 			minBaseFee, _ := l2Pricing.MinBaseFeeWei()
 			pricingInertia, _ := l2Pricing.PricingInertia()
 			backlogTolerance, _ := l2Pricing.BacklogTolerance()

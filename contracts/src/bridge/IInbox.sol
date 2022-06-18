@@ -76,6 +76,12 @@ interface IInbox is IMessageProvider {
         bytes calldata data
     ) external payable returns (uint256);
 
+    function submitBatchSpendingReportTransaction(
+        address batchPosterAddr,
+        bytes32 dataHash,
+        uint256 batchNumber
+    ) external returns (uint256);
+
     /// @dev Gas limit and maxFeePerGas should not be set to 1 as that is used to trigger the RetryableData error
     function createRetryableTicket(
         address to,

@@ -142,6 +142,7 @@ func checkRetryables(arbState *ArbosState, expected []statetransfer.Initializati
 
 func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfer.AccountInitializationInfo, t *testing.T) {
 	l1p := arbState.L1PricingState()
+	posterTable := l1p.BatchPosterTable()
 	for _, acct := range accts {
 		addr := acct.Addr
 		if db.GetNonce(addr) != acct.Nonce {
@@ -168,18 +169,15 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 				t.Fatal(err)
 			}
 		}
-		if acct.AggregatorInfo != nil {
-			fc, err := l1p.AggregatorFeeCollector(addr)
+		isPoster, err := posterTable.ContainsPoster(addr)
+		Require(t, err)
+		if acct.AggregatorInfo != nil && isPoster {
+			posterInfo, err := posterTable.OpenPoster(addr, false)
+			Require(t, err)
+			fc, err := posterInfo.PayTo()
 			Require(t, err)
 			if fc != acct.AggregatorInfo.FeeCollector {
 				t.Fatal()
-			}
-		}
-		if acct.AggregatorToPay != nil {
-			aggregator, err := l1p.ReimbursableAggregatorForSender(addr)
-			Require(t, err)
-			if aggregator == nil || *aggregator != *acct.AggregatorToPay {
-				Fail(t)
 			}
 		}
 	}

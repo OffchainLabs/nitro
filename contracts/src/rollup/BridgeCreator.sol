@@ -101,8 +101,13 @@ contract BridgeCreator is Ownable {
         }
 
         frame.delayedBridge.initialize();
-        frame.sequencerInbox.initialize(IBridge(frame.delayedBridge), rollup, maxTimeVariation);
-        frame.inbox.initialize(IBridge(frame.delayedBridge));
+        frame.sequencerInbox.initialize(
+            IBridge(frame.delayedBridge),
+            IInbox(frame.inbox),
+            rollup,
+            maxTimeVariation
+        );
+        frame.inbox.initialize(IBridge(frame.delayedBridge), ISequencerInbox(frame.sequencerInbox));
         frame.rollupEventBridge.initialize(address(frame.delayedBridge), rollup);
         frame.outbox.initialize(rollup, IBridge(frame.delayedBridge));
 

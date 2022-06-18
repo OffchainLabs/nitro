@@ -24,9 +24,6 @@ interface ArbOwner {
     /// @notice Retrieves the list of chain owners
     function getAllChainOwners() external view returns (address[] memory);
 
-    /// @notice Set the L1 basefee estimate directly, bypassing the autoregression
-    function setL1BaseFeeEstimate(uint256 priceInWei) external;
-
     /// @notice Set how slowly ArbOS updates its estimate of the L1 basefee
     function setL1BaseFeeEstimateInertia(uint64 inertia) external;
 
@@ -56,6 +53,18 @@ interface ArbOwner {
 
     /// @notice Upgrades ArbOS to the requested version at the requested timestamp
     function scheduleArbOSUpgrade(uint64 newVersion, uint64 timestamp) external;
+
+    /// @notice Sets equilibration units parameter for L1 price adjustment algorithm
+    function setL1PricingEquilibrationUnits(uint256 equilibrationUnits) external;
+
+    /// @notice Sets inertia parameter for L1 price adjustment algorithm
+    function setL1PricingInertia(uint64 inertia) external;
+
+    /// @notice Sets reward recipient address for L1 price adjustment algorithm
+    function setL1PricingRewardRecipient(address recipient) external;
+
+    /// @notice Sets reward amount for L1 price adjustment algorithm, in wei per unit
+    function setL1PricingRewardRate(uint64 weiPerUnit) external;
 
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);

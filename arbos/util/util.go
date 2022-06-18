@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var AddressAliasOffset *big.Int
@@ -24,6 +25,8 @@ var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
 var ParseL2ToL1TxLog func(interface{}, *types.Log) error
 var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataStartBlock func([]byte) ([]interface{}, error)
+var PackInternalTxDataBatchPostingReport func(...interface{}) ([]byte, error)
+var UnpackInternalTxDataBatchPostingReport func([]byte) ([]interface{}, error)
 var PackArbRetryableTxRedeem func(...interface{}) ([]byte, error)
 
 func init() {
@@ -32,7 +35,7 @@ func init() {
 		panic("Error initializing AddressAliasOffset")
 	}
 	AddressAliasOffset = offset
-	InverseAddressAliasOffset = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
+	InverseAddressAliasOffset = arbmath.BigSub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
 
 	// Create a mechanism for parsing event logs
 	logParser := func(source string, name string) func(interface{}, *types.Log) error {
@@ -88,6 +91,7 @@ func init() {
 
 	acts := precompilesgen.ArbosActsABI
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")
+	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = callParser(acts, "batchPostingReport")
 	PackArbRetryableTxRedeem, _ = callParser(precompilesgen.ArbRetryableTxABI, "redeem")
 }
 

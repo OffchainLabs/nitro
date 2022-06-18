@@ -11,6 +11,10 @@ type ArbosActs struct {
 	CallerNotArbOSError func() error
 }
 
-func (con ArbosActs) StartBlock(c ctx, evm mech, l1BaseFee huge, l1BlockNumber, timeLastBlock uint64) error {
+func (con ArbosActs) StartBlock(c ctx, evm mech, l1BaseFee huge, l1BlockNumber, l2BlockNumber, timeLastBlock uint64) error {
+	return con.CallerNotArbOSError()
+}
+
+func (con ArbosActs) BatchPostingReport(c ctx, evm mech, batchTimestamp huge, batchPosterAddress addr, batchNumber uint64, batchDataGas uint64, l1BaseFeeWei huge) error {
 	return con.CallerNotArbOSError()
 }
