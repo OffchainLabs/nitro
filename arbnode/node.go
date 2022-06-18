@@ -682,6 +682,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
+	txStreamer.SetInboxReader(inboxReader)
 
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
 	if config.Wasm.RootPath != "" {

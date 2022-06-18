@@ -124,7 +124,7 @@ func (n NodeInterface) EstimateRetryableTicket(
 		pRetryTo = &to
 	}
 
-	l1BaseFee, _ := c.State.L1PricingState().L1BaseFeeEstimateWei()
+	l1BaseFee, _ := c.State.L1PricingState().PricePerUnit()
 	maxSubmissionFee := retryables.RetryableSubmissionFee(len(data), l1BaseFee)
 
 	submitTx := &types.ArbitrumSubmitRetryableTx{

@@ -8,6 +8,7 @@ uint8 constant L2_MSG = 3;
 uint8 constant L1MessageType_L2FundedByL1 = 7;
 uint8 constant L1MessageType_submitRetryableTx = 9;
 uint8 constant L1MessageType_ethDeposit = 12;
+uint8 constant L1MessageType_batchPostingReport = 13;
 uint8 constant L2MessageType_unsignedEOATx = 0;
 uint8 constant L2MessageType_unsignedContractTx = 1;
 

@@ -5,6 +5,7 @@
 pragma solidity ^0.8.4;
 
 import "./IInbox.sol";
+import "./ISequencerInbox.sol";
 import "./IBridge.sol";
 
 import "./Messages.sol";
@@ -15,6 +16,7 @@ import {
     L1MessageType_L2FundedByL1,
     L1MessageType_submitRetryableTx,
     L1MessageType_ethDeposit,
+    L1MessageType_batchPostingReport,
     L2MessageType_unsignedEOATx,
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
@@ -31,6 +33,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
  */
 contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     IBridge public override bridge;
+    ISequencerInbox public sequencerInbox;
 
     /// ------------------------------------ allow list start ------------------------------------ ///
 
@@ -83,9 +86,14 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         _unpause();
     }
 
-    function initialize(IBridge _bridge) external initializer onlyDelegated {
+    function initialize(IBridge _bridge, ISequencerInbox _sequencerInbox)
+        external
+        initializer
+        onlyDelegated
+    {
         if (address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
+        sequencerInbox = _sequencerInbox;
         allowListEnabled = false;
         __Pausable_init();
     }
@@ -224,6 +232,26 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     uint256(uint160(to)),
                     value,
                     data
+                )
+            );
+    }
+
+    function submitBatchSpendingReportTransaction(
+        address batchPosterAddr,
+        bytes32 dataHash,
+        uint256 batchNumber
+    ) external virtual override whenNotPaused returns (uint256) {
+        require(ISequencerInbox(msg.sender) == sequencerInbox, "unauthorized");
+        return
+            _deliverMessage(
+                L1MessageType_batchPostingReport,
+                batchPosterAddr,
+                abi.encodePacked(
+                    block.timestamp,
+                    batchPosterAddr,
+                    dataHash,
+                    batchNumber,
+                    block.basefee
                 )
             );
     }

@@ -450,6 +450,10 @@ func (sbbi *StorageBackedBigInt) Set(val *big.Int) error {
 	return sbbi.StorageSlot.Set(common.BigToHash(val))
 }
 
+func (sbbi *StorageBackedBigInt) SetByUint(val uint64) error {
+	return sbbi.StorageSlot.Set(util.UintToHash(val))
+}
+
 type StorageBackedAddress struct {
 	StorageSlot
 }

@@ -5,12 +5,8 @@ package precompiles
 
 import (
 	"errors"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math/big"
-
-	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // Provides aggregators and their users methods for configuring how they participate in L1 aggregation.
@@ -20,87 +16,74 @@ type ArbAggregator struct {
 	Address addr // 0x6d
 }
 
-// Gets an account's preferred aggregator
+var ErrNotOwner = errors.New("must be called by chain owner")
+
+// [Deprecated]
 func (con ArbAggregator) GetPreferredAggregator(c ctx, evm mech, address addr) (prefAgg addr, isDefault bool, err error) {
-	l1p := c.State.L1PricingState()
-	maybePrefAgg, err := l1p.UserSpecifiedAggregator(address)
-	if err != nil {
-		return common.Address{}, false, err
-	}
-	if maybePrefAgg != nil {
-		return *maybePrefAgg, false, nil
-	}
-	maybeReimbursableAgg, err := l1p.ReimbursableAggregatorForSender(address)
-	if err != nil || maybeReimbursableAgg == nil {
-		return common.Address{}, false, err
-	}
-	return *maybeReimbursableAgg, true, nil
+	return l1pricing.BatchPosterAddress, true, err
 }
 
-// Sets the caller's preferred aggregator to that provided
-func (con ArbAggregator) SetPreferredAggregator(c ctx, evm mech, prefAgg addr) error {
-	var maybePrefAgg *common.Address
-	if prefAgg != (common.Address{}) {
-		maybePrefAgg = &prefAgg
-	}
-	return c.State.L1PricingState().SetUserSpecifiedAggregator(c.caller, maybePrefAgg)
-}
-
-// Gets the chain's default aggregator
+// [Deprecated]
 func (con ArbAggregator) GetDefaultAggregator(c ctx, evm mech) (addr, error) {
-	return c.State.L1PricingState().DefaultAggregator()
+	return l1pricing.BatchPosterAddress, nil
 }
 
-// Sets the chain's default aggregator (caller must be the current default aggregator, its fee collector, or an owner)
-func (con ArbAggregator) SetDefaultAggregator(c ctx, evm mech, newDefault addr) error {
-	l1State := c.State.L1PricingState()
-	defaultAgg, err := l1State.DefaultAggregator()
+// Get the addresses of all current batch posters
+func (con ArbAggregator) GetBatchPosters(c ctx, evm mech) ([]addr, error) {
+	return c.State.L1PricingState().BatchPosterTable().AllPosters(65536)
+}
+
+func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) error {
+	isOwner, err := c.State.ChainOwners().IsMember(c.caller)
 	if err != nil {
 		return err
 	}
-	allowed, err := accountIsAggregatorOrCollectorOrOwner(c.caller, defaultAgg, c.State)
+	if !isOwner {
+		return ErrNotOwner
+	}
+	batchPosterTable := c.State.L1PricingState().BatchPosterTable()
+	isBatchPoster, err := batchPosterTable.ContainsPoster(newBatchPoster)
 	if err != nil {
 		return err
 	}
-	if !allowed {
-		return errors.New("Only the current default (or its fee collector / chain owner) may change the default")
+	if !isBatchPoster {
+		_, err = batchPosterTable.AddPoster(newBatchPoster, newBatchPoster)
+		if err != nil {
+			return err
+		}
 	}
-	return l1State.SetDefaultAggregator(newDefault)
+	return nil
 }
 
-// Get the aggregator's compression ratio, measured in basis points
-func (con ArbAggregator) GetCompressionRatio(c ctx, evm mech, aggregator addr) (uint64, error) {
-	ratio, err := c.State.L1PricingState().AggregatorCompressionRatio(aggregator)
-	return uint64(ratio), err
+// Gets a batch poster's fee collector
+func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, batchPoster addr) (addr, error) {
+	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster, false)
+	if err != nil {
+		return addr{}, err
+	}
+	return posterInfo.PayTo()
 }
 
-// Set the aggregator's compression ratio, measured in basis points
-func (con ArbAggregator) SetCompressionRatio(c ctx, evm mech, aggregator addr, newRatio uint64) error {
-	allowed, err := accountIsAggregatorOrCollectorOrOwner(c.caller, aggregator, c.State)
+// Sets a batch poster's fee collector (caller must be the batch poster, its fee collector, or an owner)
+func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, batchPoster addr, newFeeCollector addr) error {
+	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster, false)
 	if err != nil {
 		return err
 	}
-	if !allowed {
-		return errors.New("Only an aggregator (or its fee collector / chain owner) may change its compression ratio")
-	}
-	return c.State.L1PricingState().SetAggregatorCompressionRatio(aggregator, arbmath.Bips(newRatio))
-}
-
-// Gets an aggregator's fee collector
-func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, aggregator addr) (addr, error) {
-	return c.State.L1PricingState().AggregatorFeeCollector(aggregator)
-}
-
-// Sets an aggregator's fee collector (caller must be the aggregator, its fee collector, or an owner)
-func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, aggregator addr, newFeeCollector addr) error {
-	allowed, err := accountIsAggregatorOrCollectorOrOwner(c.caller, aggregator, c.State)
+	oldFeeCollector, err := posterInfo.PayTo()
 	if err != nil {
 		return err
 	}
-	if !allowed {
-		return errors.New("Only an aggregator (or its fee collector / chain owner) may change its fee collector")
+	if c.caller != batchPoster && c.caller != oldFeeCollector {
+		isOwner, err := c.State.ChainOwners().IsMember(c.caller)
+		if err != nil {
+			return err
+		}
+		if !isOwner {
+			return errors.New("Only a batch poster (or its fee collector / chain owner) may change its fee collector")
+		}
 	}
-	return c.State.L1PricingState().SetAggregatorFeeCollector(aggregator, newFeeCollector)
+	return posterInfo.SetPayTo(newFeeCollector)
 }
 
 // Gets an aggregator's current fixed fee to submit a tx
@@ -113,16 +96,4 @@ func (con ArbAggregator) GetTxBaseFee(c ctx, evm mech, aggregator addr) (huge, e
 func (con ArbAggregator) SetTxBaseFee(c ctx, evm mech, aggregator addr, feeInL1Gas huge) error {
 	// This is deprecated and is now a no-op.
 	return nil
-}
-
-func accountIsAggregatorOrCollectorOrOwner(account, aggregator addr, state *arbosState.ArbosState) (bool, error) {
-	if account == aggregator {
-		return true, nil
-	}
-	l1State := state.L1PricingState()
-	collector, err := l1State.AggregatorFeeCollector(aggregator)
-	if account == collector || err != nil {
-		return true, err
-	}
-	return state.ChainOwners().IsMember(account)
 }

@@ -7,17 +7,15 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/offchainlabs/nitro/util/arbmath"
+
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/util"
-)
-
-// Types of ArbitrumInternalTx, distinguished by the first data byte
-const (
-	// Contains 8 bytes indicating the big endian L1 block number to set
-	arbInternalTxStartBlock uint8 = 0
 )
 
 func InternalTxStartBlock(
@@ -34,49 +32,64 @@ func InternalTxStartBlock(
 	if l1BaseFee == nil {
 		l1BaseFee = big.NewInt(0)
 	}
-	data, err := util.PackInternalTxDataStartBlock(l1BaseFee, l1BlockNum, timePassed)
+	data, err := util.PackInternalTxDataStartBlock(l1BaseFee, l1BlockNum, l2BlockNum, timePassed)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to pack internal tx %v", err))
 	}
 	return &types.ArbitrumInternalTx{
-		ChainId:       chainId,
-		SubType:       arbInternalTxStartBlock,
-		Data:          data,
-		L2BlockNumber: l2BlockNum,
+		ChainId: chainId,
+		Data:    data,
 	}
 }
 
 func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) {
-	inputs, err := util.UnpackInternalTxDataStartBlock(tx.Data)
-	if err != nil {
-		panic(err)
-	}
-	l1BaseFee, _ := inputs[0].(*big.Int)   // current block's
-	l1BlockNumber, _ := inputs[1].(uint64) // current block's
-	timePassed, _ := inputs[2].(uint64)    // since last block
-
-	nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
-	state.Restrict(err)
-
-	l2BaseFee, err := state.L2PricingState().BaseFeeWei()
-	state.Restrict(err)
-
-	if l1BlockNumber >= nextL1BlockNumber {
-		var prevHash common.Hash
-		if evm.Context.BlockNumber.Sign() > 0 {
-			prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
+	switch *(*[4]byte)(tx.Data[:4]) {
+	case InternalTxStartBlockMethodID:
+		inputs, err := util.UnpackInternalTxDataStartBlock(tx.Data)
+		if err != nil {
+			panic(err)
 		}
-		state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash))
+		l1BlockNumber, _ := inputs[1].(uint64) // current block's
+		timePassed, _ := inputs[2].(uint64)    // since last block
+
+		nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
+		state.Restrict(err)
+
+		l2BaseFee, err := state.L2PricingState().BaseFeeWei()
+		state.Restrict(err)
+
+		if l1BlockNumber >= nextL1BlockNumber {
+			var prevHash common.Hash
+			if evm.Context.BlockNumber.Sign() > 0 {
+				prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
+			}
+			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash))
+		}
+
+		currentTime := evm.Context.Time.Uint64()
+
+		// Try to reap 2 retryables
+		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+		_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+
+		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+
+		state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
+	case InternalTxBatchPostingReportMethodID:
+		inputs, err := util.UnpackInternalTxDataBatchPostingReport(tx.Data)
+		if err != nil {
+			panic(err)
+		}
+		batchTimestamp, _ := inputs[0].(*big.Int)
+		batchPosterAddress, _ := inputs[1].(common.Address)
+		// ignore input[2], batchNumber, which exist because we might need them in the future
+		batchDataGas, _ := inputs[3].(uint64)
+		l1BaseFeeWei, _ := inputs[4].(*big.Int)
+
+		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, batchDataGas)
+		err = state.L1PricingState().UpdateForBatchPosterSpending(evm.StateDB, evm, batchTimestamp.Uint64(), evm.Context.Time.Uint64(), batchPosterAddress, weiSpent)
+		if err != nil {
+			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
+		}
 	}
-
-	currentTime := evm.Context.Time.Uint64()
-
-	// Try to reap 2 retryables
-	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
-	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
-
-	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
-	state.L1PricingState().UpdatePricingModel(l1BaseFee, currentTime)
-
-	state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
 }
