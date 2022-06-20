@@ -5,6 +5,7 @@ package l1pricing
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/common/math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -189,7 +190,7 @@ func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
 // Update the pricing model based on a payment by a batch poster
 func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *vm.EVM, updateTime uint64, currentTime uint64, batchPoster common.Address, weiSpent *big.Int) error {
 	batchPosterTable := ps.BatchPosterTable()
-	posterState, err := batchPosterTable.OpenPoster(batchPoster)
+	posterState, err := batchPosterTable.OpenPoster(batchPoster, true)
 	if err != nil {
 		return err
 	}
@@ -203,7 +204,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if err != nil {
 		return err
 	}
-	oldShortfall := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+	oldSurplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
 
 	// compute allocation fraction -- will allocate updateTimeDelta/timeDelta fraction of units and funds to this update
 	lastUpdateTime, err := ps.LastUpdateTime()
@@ -213,7 +214,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if lastUpdateTime == 0 && currentTime > 0 { // it's the first update, so there isn't a last update time
 		lastUpdateTime = updateTime - 1
 	}
-	if updateTime > currentTime || updateTime < lastUpdateTime || currentTime == lastUpdateTime {
+	if updateTime >= currentTime || updateTime < lastUpdateTime {
 		return ErrInvalidTime
 	}
 	updateTimeDelta := updateTime - lastUpdateTime
@@ -271,12 +272,12 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	availableFunds = am.BigSub(availableFunds, paymentForRewards)
 
 	// settle up our batch poster payments owed, as much as possible
-	allPosterAddrs, err := batchPosterTable.AllPosters()
+	allPosterAddrs, err := batchPosterTable.AllPosters(math.MaxUint64)
 	if err != nil {
 		return err
 	}
 	for _, posterAddr := range allPosterAddrs {
-		poster, err := batchPosterTable.OpenPoster(posterAddr)
+		poster, err := batchPosterTable.OpenPoster(posterAddr, false)
 		if err != nil {
 			return err
 		}
@@ -321,7 +322,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		if err != nil {
 			return err
 		}
-		shortfall := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {
@@ -340,8 +341,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		allocPlusInert := am.BigAddByUint(inertiaUnits, unitsAllocated)
 		priceChange := am.BigDiv(
 			am.BigSub(
-				am.BigMul(shortfall, am.BigSub(equilUnits, common.Big1)),
-				am.BigMul(oldShortfall, equilUnits),
+				am.BigMul(surplus, am.BigSub(equilUnits, common.Big1)),
+				am.BigMul(oldSurplus, equilUnits),
 			),
 			am.BigMul(equilUnits, allocPlusInert),
 		)

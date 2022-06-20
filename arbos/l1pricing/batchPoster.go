@@ -5,6 +5,7 @@ package l1pricing
 
 import (
 	"errors"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -13,42 +14,54 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+const totalFundsDueOffset = 0
+
 var (
 	PosterAddrsKey = []byte{0}
 	PosterInfoKey  = []byte{1}
 
 	ErrAlreadyExists = errors.New("tried to add a batch poster that already exists")
+	ErrNotExist      = errors.New("tried to open a batch poster that does not exist")
 )
 
 // layout of storage in the table
 type BatchPostersTable struct {
-	posterAddrs *addressSet.AddressSet
-	posterInfo  *storage.Storage
+	posterAddrs   *addressSet.AddressSet
+	posterInfo    *storage.Storage
+	totalFundsDue storage.StorageBackedBigInt
 }
 
 type BatchPosterState struct {
-	fundsDue storage.StorageBackedBigInt
-	payTo    storage.StorageBackedAddress
+	fundsDue     storage.StorageBackedBigInt
+	payTo        storage.StorageBackedAddress
+	postersTable *BatchPostersTable
 }
 
 func InitializeBatchPostersTable(storage *storage.Storage) error {
-	// no initialization needed for posterInfo
+	totalFundsDue := storage.OpenStorageBackedBigInt(totalFundsDueOffset)
+	if err := totalFundsDue.Set(common.Big0); err != nil {
+		return err
+	}
 	return addressSet.Initialize(storage.OpenSubStorage(PosterAddrsKey))
 }
 
 func OpenBatchPostersTable(storage *storage.Storage) *BatchPostersTable {
 	return &BatchPostersTable{
-		posterAddrs: addressSet.OpenAddressSet(storage.OpenSubStorage(PosterAddrsKey)),
-		posterInfo:  storage.OpenSubStorage(PosterInfoKey),
+		posterAddrs:   addressSet.OpenAddressSet(storage.OpenSubStorage(PosterAddrsKey)),
+		posterInfo:    storage.OpenSubStorage(PosterInfoKey),
+		totalFundsDue: storage.OpenStorageBackedBigInt(totalFundsDueOffset),
 	}
 }
 
-func (bpt *BatchPostersTable) OpenPoster(poster common.Address) (*BatchPosterState, error) {
+func (bpt *BatchPostersTable) OpenPoster(poster common.Address, createIfNotExist bool) (*BatchPosterState, error) {
 	isBatchPoster, err := bpt.posterAddrs.IsMember(poster)
 	if err != nil {
 		return nil, err
 	}
 	if !isBatchPoster {
+		if !createIfNotExist {
+			return nil, ErrNotExist
+		}
 		return bpt.AddPoster(poster, poster)
 	}
 	return bpt.internalOpen(poster), nil
@@ -57,8 +70,9 @@ func (bpt *BatchPostersTable) OpenPoster(poster common.Address) (*BatchPosterSta
 func (bpt *BatchPostersTable) internalOpen(poster common.Address) *BatchPosterState {
 	bpStorage := bpt.posterInfo.OpenSubStorage(poster.Bytes())
 	return &BatchPosterState{
-		fundsDue: bpStorage.OpenStorageBackedBigInt(0),
-		payTo:    bpStorage.OpenStorageBackedAddress(1),
+		fundsDue:     bpStorage.OpenStorageBackedBigInt(0),
+		payTo:        bpStorage.OpenStorageBackedAddress(1),
+		postersTable: bpt,
 	}
 }
 
@@ -89,28 +103,12 @@ func (bpt *BatchPostersTable) AddPoster(posterAddress common.Address, payTo comm
 	return bpState, nil
 }
 
-func (bpt *BatchPostersTable) AllPosters() ([]common.Address, error) {
-	return bpt.posterAddrs.AllMembers()
+func (bpt *BatchPostersTable) AllPosters(maxNumToGet uint64) ([]common.Address, error) {
+	return bpt.posterAddrs.AllMembers(maxNumToGet)
 }
 
 func (bpt *BatchPostersTable) TotalFundsDue() (*big.Int, error) {
-	allPosters, err := bpt.AllPosters()
-	if err != nil {
-		return nil, err
-	}
-	ret := common.Big0
-	for _, posterAddr := range allPosters {
-		poster, err := bpt.OpenPoster(posterAddr)
-		if err != nil {
-			return nil, err
-		}
-		fundsDue, err := poster.FundsDue()
-		if err != nil {
-			return nil, err
-		}
-		ret = arbmath.BigAdd(ret, fundsDue)
-	}
-	return ret, nil
+	return bpt.totalFundsDue.Get()
 }
 
 func (bps *BatchPosterState) FundsDue() (*big.Int, error) {
@@ -118,6 +116,19 @@ func (bps *BatchPosterState) FundsDue() (*big.Int, error) {
 }
 
 func (bps *BatchPosterState) SetFundsDue(val *big.Int) error {
+	fundsDue := bps.fundsDue
+	totalFundsDue := bps.postersTable.totalFundsDue
+	prev, err := fundsDue.Get()
+	if err != nil {
+		return err
+	}
+	prevTotal, err := totalFundsDue.Get()
+	if err != nil {
+		return err
+	}
+	if err := totalFundsDue.Set(arbmath.BigSub(arbmath.BigAdd(prevTotal, val), prev)); err != nil {
+		return err
+	}
 	return bps.fundsDue.Set(val)
 }
 
@@ -136,12 +147,12 @@ type FundsDueItem struct {
 
 func (bpt *BatchPostersTable) GetFundsDueList() ([]FundsDueItem, error) {
 	ret := []FundsDueItem{}
-	allPosters, err := bpt.AllPosters()
+	allPosters, err := bpt.AllPosters(math.MaxUint64)
 	if err != nil {
 		return nil, err
 	}
 	for _, posterAddr := range allPosters {
-		poster, err := bpt.OpenPoster(posterAddr)
+		poster, err := bpt.OpenPoster(posterAddr, false)
 		if err != nil {
 			return nil, err
 		}

@@ -5,6 +5,7 @@ package l1pricing
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"math/big"
@@ -24,7 +25,7 @@ func TestBatchPosterTable(t *testing.T) {
 	pay2 := common.Address{8, 10, 12, 14}
 
 	// test creation and counting of bps
-	allPosters, err := bpTable.AllPosters()
+	allPosters, err := bpTable.AllPosters(math.MaxUint64)
 	Require(t, err)
 	if len(allPosters) != 0 {
 		t.Fatal()
@@ -72,14 +73,14 @@ func TestBatchPosterTable(t *testing.T) {
 		t.Fatal()
 	}
 
-	allPosters, err = bpTable.AllPosters()
+	allPosters, err = bpTable.AllPosters(math.MaxUint64)
 	Require(t, err)
 	if len(allPosters) != 2 {
 		t.Fatal()
 	}
 
 	// test get/set of BP fields
-	bp1, err = bpTable.OpenPoster(addr1)
+	bp1, err = bpTable.OpenPoster(addr1, false)
 	Require(t, err)
 	err = bp1.SetPayTo(addr2)
 	Require(t, err)

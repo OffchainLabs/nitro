@@ -16,7 +16,8 @@ use std::{borrow::Cow, convert::TryFrom};
 pub struct Memory {
     buffer: Vec<u8>,
     #[serde(skip)]
-    merkle: Option<Merkle>,
+    pub merkle: Option<Merkle>,
+    pub max_size: u64,
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -48,15 +49,16 @@ fn div_round_up(num: usize, denom: usize) -> usize {
 impl Memory {
     pub const LEAF_SIZE: usize = 32;
     /// Only used when initializing a memory to determine its size
-    pub const PAGE_SIZE: usize = 65536;
+    pub const PAGE_SIZE: u64 = 65536;
     /// The number of layers in the memory merkle tree
     /// 1 + log2(2^32 / LEAF_SIZE) = 1 + log2(2^(32 - log2(LEAF_SIZE))) = 1 + 32 - 5
     const MEMORY_LAYERS: usize = 1 + 32 - 5;
 
-    pub fn new(size: usize) -> Memory {
+    pub fn new(size: usize, max_size: u64) -> Memory {
         Memory {
             buffer: vec![0u8; size],
             merkle: None,
+            max_size,
         }
     }
 
@@ -106,6 +108,7 @@ impl Memory {
         let mut h = Keccak256::new();
         h.update("Memory:");
         h.update((self.buffer.len() as u64).to_be_bytes());
+        h.update(self.max_size.to_be_bytes());
         h.update(self.merkelize().root());
         h.finalize().into()
     }

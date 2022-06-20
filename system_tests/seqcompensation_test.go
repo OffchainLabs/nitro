@@ -55,12 +55,4 @@ func TestSequencerCompensation(t *testing.T) {
 	if initialSeqBalance.Sign() != 0 {
 		Fail(t, "Unexpected initial sequencer balance:", initialSeqBalance)
 	}
-	finalSeqBalance, err := l2clientB.BalanceAt(ctx, l1pricing.L1PricerFundsPoolAddress, nil)
-	Require(t, err)
-	// Comment out this check, because new scheme doesn't reimburse sequencer immediately
-	// if finalSeqBalance.Sign() <= 0 {
-	//	Fail(t, "Unexpected final sequencer balance:", finalSeqBalance)
-	//}
-	_ = finalSeqBalance
-
 }

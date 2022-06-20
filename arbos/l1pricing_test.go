@@ -5,6 +5,7 @@ package arbos
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -105,14 +106,14 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	if evm.StateDB.GetBalance(rewardAddress).Sign() != 0 {
 		t.Fatal()
 	}
-	posterAddrs, err := posterTable.AllPosters()
+	posterAddrs, err := posterTable.AllPosters(math.MaxUint64)
 	Require(t, err)
 	if len(posterAddrs) != 1 {
 		t.Fatal()
 	}
 	firstPoster := posterAddrs[0]
 	firstPayTo := common.Address{1, 2}
-	poster, err := posterTable.OpenPoster(firstPoster)
+	poster, err := posterTable.OpenPoster(firstPoster, true)
 	Require(t, err)
 	due, err := poster.FundsDue()
 	Require(t, err)

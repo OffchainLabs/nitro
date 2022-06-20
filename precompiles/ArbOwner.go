@@ -44,7 +44,7 @@ func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 
 // Retrieves the list of chain owners
 func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.ChainOwners().AllMembers()
+	return c.State.ChainOwners().AllMembers(65536)
 }
 
 // Set how slowly ArbOS updates its estimate of the L1 basefee

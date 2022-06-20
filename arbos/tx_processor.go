@@ -253,7 +253,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	gasPrice := p.evm.Context.BaseFee
 
 	var poster common.Address
-	if p.msg.RunMode() == types.MessageGasEstimationMode {
+	if p.msg.RunMode() != types.MessageCommitMode {
 		poster = l1pricing.BatchPosterAddress
 	} else {
 		poster = p.evm.Context.Coinbase

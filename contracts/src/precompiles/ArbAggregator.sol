@@ -21,12 +21,6 @@ interface ArbAggregator {
     /// @return Batch poster addresses
     function getBatchPosters() external view returns (address[] memory);
 
-    /// @notice Deprecated, use addBatchPoster instead
-    /// @notice Adds newBatchPoster as a batch poster, if it is not already a batch poster
-    /// This reverts unless called by a chain owner
-    /// @param newBatchPoster New batch poster
-    function setDefaultAggregator(address newBatchPoster) external;
-
     /// @notice Adds newBatchPoster as a batch poster
     /// This reverts unless called by a chain owner
     /// @param newBatchPoster New batch poster

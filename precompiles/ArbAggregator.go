@@ -5,7 +5,7 @@ package precompiles
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math/big"
 )
 
@@ -20,54 +20,17 @@ var ErrNotOwner = errors.New("must be called by chain owner")
 
 // [Deprecated]
 func (con ArbAggregator) GetPreferredAggregator(c ctx, evm mech, address addr) (prefAgg addr, isDefault bool, err error) {
-	posters, err := c.State.L1PricingState().BatchPosterTable().AllPosters()
-	if err != nil {
-		return common.Address{}, false, err
-	}
-	if len(posters) == 0 {
-		return common.Address{}, false, errors.New("no batch posters exist")
-	}
-	return posters[0], true, err
+	return l1pricing.BatchPosterAddress, true, err
 }
 
 // [Deprecated]
 func (con ArbAggregator) GetDefaultAggregator(c ctx, evm mech) (addr, error) {
-	posters, err := c.State.L1PricingState().BatchPosterTable().AllPosters()
-	if err != nil {
-		return common.Address{}, err
-	}
-	if len(posters) == 0 {
-		return common.Address{}, errors.New("no batch posters exist")
-	}
-	return posters[0], err
+	return l1pricing.BatchPosterAddress, nil
 }
 
 // Get the addresses of all current batch posters
 func (con ArbAggregator) GetBatchPosters(c ctx, evm mech) ([]addr, error) {
-	return c.State.L1PricingState().BatchPosterTable().AllPosters()
-}
-
-// [Deprecated]
-func (con ArbAggregator) SetDefaultAggregator(c ctx, evm mech, newDefault addr) error {
-	isOwner, err := c.State.ChainOwners().IsMember(c.caller)
-	if err != nil {
-		return err
-	}
-	if !isOwner {
-		return ErrNotOwner
-	}
-	batchPosterTable := c.State.L1PricingState().BatchPosterTable()
-	isBatchPoster, err := batchPosterTable.ContainsPoster(newDefault)
-	if err != nil {
-		return err
-	}
-	if !isBatchPoster {
-		_, err = batchPosterTable.AddPoster(newDefault, newDefault)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.State.L1PricingState().BatchPosterTable().AllPosters(65536)
 }
 
 func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) error {
@@ -94,7 +57,7 @@ func (con ArbAggregator) AddBatchPoster(c ctx, evm mech, newBatchPoster addr) er
 
 // Gets a batch poster's fee collector
 func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, batchPoster addr) (addr, error) {
-	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster)
+	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster, false)
 	if err != nil {
 		return addr{}, err
 	}
@@ -103,7 +66,7 @@ func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, batchPoster addr) (add
 
 // Sets a batch poster's fee collector (caller must be the batch poster, its fee collector, or an owner)
 func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, batchPoster addr, newFeeCollector addr) error {
-	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster)
+	posterInfo, err := c.State.L1PricingState().BatchPosterTable().OpenPoster(batchPoster, false)
 	if err != nil {
 		return err
 	}

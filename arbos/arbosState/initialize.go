@@ -160,8 +160,13 @@ func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, acco
 		if err != nil {
 			return err
 		}
-		if !isPoster {
-			_, err = posterTable.AddPoster(account.Addr, account.AggregatorInfo.FeeCollector)
+		if isPoster {
+			// poster is already authorized, just set its fee collector
+			poster, err := posterTable.OpenPoster(account.Addr, false)
+			if err != nil {
+				return err
+			}
+			err = poster.SetPayTo(account.AggregatorInfo.FeeCollector)
 			if err != nil {
 				return err
 			}
