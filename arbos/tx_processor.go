@@ -68,6 +68,19 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
+// Attempts to subtract up to `take` from `pool` without going negative.
+// Returns the amount subtracted from `pool`.
+func takeFunds(pool *big.Int, take *big.Int) *big.Int {
+	if arbmath.BigLessThan(pool, take) {
+		oldPool := new(big.Int).Set(pool)
+		pool.Set(common.Big0)
+		return oldPool
+	} else {
+		pool.Sub(pool, take)
+		return new(big.Int).Set(take)
+	}
+}
+
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
@@ -78,7 +91,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	}
 
 	var tracingInfo *util.TracingInfo
-	from := p.msg.From()
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
 	evm := p.evm
@@ -89,6 +101,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 		evm.IncrementDepth() // fake a call
 		tracer := evm.Config.Tracer
+		from := p.msg.From()
 		start := time.Now()
 		tracer.CaptureStart(evm, from, *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
 
@@ -129,9 +142,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		scenario := util.TracingDuringEVM
 
 		// mint funds with the deposit, then charge fees later
-		availableRefund := arbmath.BigSub(tx.DepositValue, tx.Value)
-		availableRefund = arbmath.BigMax(availableRefund, common.Big0)
-		util.MintBalance(&from, tx.DepositValue, evm, scenario, "deposit")
+		availableRefund := new(big.Int).Set(tx.DepositValue)
+		takeFunds(availableRefund, tx.Value)
+		util.MintBalance(&tx.From, tx.DepositValue, evm, scenario, "deposit")
 
 		transfer := func(from, to *common.Address, amount *big.Int) error {
 			return util.TransferBalance(from, to, amount, evm, scenario, "during evm execution")
@@ -139,21 +152,23 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// collect the submission fee
 		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
-		if err := transfer(&from, &networkFeeAccount, submissionFee); err != nil {
+		if err := transfer(&tx.From, &networkFeeAccount, submissionFee); err != nil {
 			return true, 0, err, nil
 		}
+		takeFunds(availableRefund, submissionFee)
 
 		// refund excess submission fee
 		submissionFeeRefund := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
 		if submissionFeeRefund.Sign() < 0 {
 			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
 		}
-		submissionFeeRefund = arbmath.BigMin(submissionFeeRefund, availableRefund)
-		submissionFeeRefund = arbmath.BigMin(submissionFeeRefund, statedb.GetBalance(from))
-		availableRefund.Sub(availableRefund, submissionFeeRefund)
-		if err := transfer(&from, &tx.FeeRefundAddr, submissionFeeRefund); err != nil {
+		submissionFeeRefund = takeFunds(availableRefund, submissionFeeRefund)
+		if err := transfer(&tx.From, &tx.FeeRefundAddr, submissionFeeRefund); err != nil {
+			// should never happen as from's balance should be at least availableRefund at this point
 			glog.Error("failed to transfer submissionFeeRefund", "err", err)
 		}
+
+		// move the callvalue into escrow
 		if err := transfer(&tx.From, &escrow, tx.Value); err != nil {
 			return true, 0, err, nil
 		}
@@ -199,13 +214,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			panic(err)
 		}
 
+		withholdenGasFunds := takeFunds(availableRefund, gascost) // gascost is conceptually charged before the gas price refund
 		gasPriceRefund := arbmath.BigMulByUint(arbmath.BigSub(tx.GasFeeCap, basefee), tx.Gas)
-		gasPriceRefund = arbmath.BigMin(gasPriceRefund, availableRefund)
-		gasPriceRefund = arbmath.BigMin(gasPriceRefund, statedb.GetBalance(from))
-		availableRefund.Sub(availableRefund, gasPriceRefund)
-		if err := transfer(&from, &tx.FeeRefundAddr, gasPriceRefund); err != nil {
+		gasPriceRefund = takeFunds(availableRefund, gasPriceRefund)
+		if err := transfer(&tx.From, &tx.FeeRefundAddr, gasPriceRefund); err != nil {
 			glog.Error("failed to transfer gasPriceRefund", "err", err)
 		}
+		availableRefund.Add(availableRefund, withholdenGasFunds)
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
@@ -354,8 +369,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
-		refund := arbmath.BigMulByUint(gasPrice, gasLeft)
-		refund = arbmath.BigMin(refund, inner.MaxRefund)
+		maxRefund := new(big.Int).Set(inner.MaxRefund)
+		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
+		takeFunds(maxRefund, arbmath.BigMulByUint(gasPrice, gasUsed))
+		// Refund any unused gas, without overdrafting the L1 deposit.
+		refund := takeFunds(maxRefund, arbmath.BigMulByUint(gasPrice, gasLeft))
 
 		// undo Geth's refund to the From address
 		err := util.TransferBalance(&inner.From, nil, refund, p.evm, scenario, "undoRefund")
