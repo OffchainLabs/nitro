@@ -27,6 +27,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         connectedContracts.bridge.setDelayedInbox(address(connectedContracts.inbox), true);
         connectedContracts.bridge.setSequencerInbox(address(connectedContracts.sequencerInbox));
 
+        inbox = connectedContracts.inbox;
         outbox = connectedContracts.outbox;
         connectedContracts.bridge.setOutbox(address(connectedContracts.outbox), true);
         rollupEventInbox = connectedContracts.rollupEventInbox;

@@ -122,13 +122,13 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             _totalDelayedMessagesRead
         );
         (
-            uint256 seqMessageCount,
+            uint256 seqMessageIndex,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(dataHash, _totalDelayedMessagesRead, 0);
         emit SequencerBatchDelivered(
-            seqMessageCount,
+            seqMessageIndex,
             beforeAcc,
             afterAcc,
             delayedAcc,
@@ -152,12 +152,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             afterDelayedMessagesRead
         );
         (
-            uint256 seqMessageCount,
+            uint256 seqMessageIndex,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, data.length);
-        if (seqMessageCount != sequenceNumber) revert BadSequencerNumber();
+        if (seqMessageIndex != sequenceNumber) revert BadSequencerNumber();
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
@@ -184,12 +184,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         // we set the calldata length posted to 0 here since the caller isn't the origin
         // of the tx, so they might have not paid tx input cost for the calldata
         (
-            uint256 seqMessageCount,
+            uint256 seqMessageIndex,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, 0);
-        if (seqMessageCount != sequenceNumber) revert BadSequencerNumber();
+        if (seqMessageIndex != sequenceNumber) revert BadSequencerNumber();
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
@@ -210,15 +210,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         }
         // the first byte is used to identify the type of batch data
         // das batches expect to have the type byte set, followed by the keyset (so they should have at least 33 bytes)
-        if (data.length < 33 || data[0] & 0x80 == 0) {
-            // not a DAS batch, so we don't need keyset validation
-            _;
-        } else {
+        if (data.length >= 33 && data[0] & 0x80 != 0) {
             // we skip the first byte, then read the next 32 bytes for the keyset
             bytes32 dasKeysetHash = bytes32(data[1:33]);
             if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
-            _;
         }
+        _;
     }
 
     function packHeader(uint256 afterDelayedMessagesRead)
@@ -266,7 +263,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     )
         internal
         returns (
-            uint256 seqMessageCount,
+            uint256 seqMessageIndex,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 acc
@@ -275,7 +272,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (afterDelayedMessagesRead < totalDelayedMessagesRead) revert DelayedBackwards();
         if (afterDelayedMessagesRead > bridge.delayedMessageCount()) revert DelayedTooFar();
 
-        (seqMessageCount, beforeAcc, delayedAcc, acc) = bridge.enqueueSequencerMessage(
+        (seqMessageIndex, beforeAcc, delayedAcc, acc) = bridge.enqueueSequencerMessage(
             dataHash,
             afterDelayedMessagesRead
         );
@@ -290,7 +287,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
                 block.timestamp,
                 batchPoster,
                 dataHash,
-                seqMessageCount,
+                seqMessageIndex,
                 block.basefee
             );
             uint256 msgNum = bridge.submitBatchSpendingReport(

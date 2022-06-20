@@ -80,13 +80,13 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         override
         onlySequencerInbox
         returns (
-            uint256 seqMessageCount,
+            uint256 seqMessageIndex,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 acc
         )
     {
-        seqMessageCount = sequencerInboxAccs.length;
+        seqMessageIndex = sequencerInboxAccs.length;
         if (sequencerInboxAccs.length > 0) {
             beforeAcc = sequencerInboxAccs[sequencerInboxAccs.length - 1];
         }
