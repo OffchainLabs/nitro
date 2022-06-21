@@ -157,7 +157,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             bytes32 delayedAcc,
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, data.length);
-        if (seqMessageIndex != sequenceNumber) revert BadSequencerNumber();
+        if (seqMessageIndex != sequenceNumber) revert BadSequencerNumber(seqMessageIndex, sequenceNumber);
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
@@ -189,7 +189,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             bytes32 delayedAcc,
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, 0);
-        if (seqMessageIndex != sequenceNumber) revert BadSequencerNumber();
+        if (seqMessageIndex != sequenceNumber) revert BadSequencerNumber(seqMessageIndex, sequenceNumber);
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,

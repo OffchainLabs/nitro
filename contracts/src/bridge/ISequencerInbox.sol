@@ -69,7 +69,7 @@ interface ISequencerInbox is IDelayedMessageProvider {
     error NotBatchPoster();
 
     /// @dev The sequence number provided to this message was inconsistent with the number of batches already included
-    error BadSequencerNumber();
+    error BadSequencerNumber(uint256 stored, uint256 received);
 
     /// @dev The batch data has the inbox authenticated bit set, but the batch data was not authenticated by the inbox
     error DataNotAuthenticated();
