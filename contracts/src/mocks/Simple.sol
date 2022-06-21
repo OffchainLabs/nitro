@@ -4,10 +4,13 @@
 
 pragma solidity ^0.8.0;
 
+import "../precompiles/ArbRetryableTx.sol";
+
 contract Simple {
     uint64 public counter;
 
     event CounterEvent(uint64 count);
+    event RedeemedEvent(address caller, address redeemer);
     event NullEvent();
 
     function increment() external {
@@ -17,6 +20,11 @@ contract Simple {
     function incrementEmit() external {
         counter++;
         emit CounterEvent(counter);
+    }
+
+    function incrementRedeem() external {
+        counter++;
+        emit RedeemedEvent(msg.sender, ArbRetryableTx(address(110)).getCurrentRedeemer());
     }
 
     function emitNullEvent() external {

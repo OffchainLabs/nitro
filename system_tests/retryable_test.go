@@ -199,7 +199,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		// send enough L2 gas for intrinsic but not compute
 		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
 		big.NewInt(l2pricing.InitialBaseFeeWei*2),
-		simpleABI.Methods["increment"].ID,
+		simpleABI.Methods["incrementRedeem"].ID,
 	)
 	Require(t, err)
 
@@ -251,6 +251,19 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 	if counter != 1 {
 		Fail(t, "Unexpected counter:", counter)
+	}
+
+	if len(receipt.Logs) != 1 {
+		Fail(t, "Unexpected log count:", len(receipt.Logs))
+	}
+	parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
+	Require(t, err)
+	aliasedSender := util.RemapL1Address(usertxopts.From)
+	if parsed.Caller != aliasedSender {
+		Fail(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
+	}
+	if parsed.Redeemer != ownerTxOpts.From {
+		Fail(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
 	}
 }
 

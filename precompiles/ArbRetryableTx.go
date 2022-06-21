@@ -217,6 +217,14 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	return con.Canceled(c, evm, ticketId)
 }
 
+func (con ArbRetryableTx) GetCurrentRedeemer(c ctx, evm mech) (common.Address, error) {
+	if c.txProcessor.CurrentRefundTo != nil {
+		return *c.txProcessor.CurrentRefundTo, nil
+	} else {
+		return common.Address{}, nil
+	}
+}
+
 func (con ArbRetryableTx) SubmitRetryable(
 	c ctx, evm mech, requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
 	gasLimit uint64, maxSubmissionFee huge,

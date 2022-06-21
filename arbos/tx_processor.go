@@ -43,6 +43,7 @@ type TxProcessor struct {
 	TopTxType        *byte // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
+	CurrentRefundTo  *common.Address
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
@@ -57,6 +58,7 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		TopTxType:        nil,
 		evm:              evm,
 		CurrentRetryable: nil,
+		CurrentRefundTo:  nil,
 	}
 }
 
@@ -273,7 +275,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		prepaid := arbmath.BigMulByUint(evm.Context.BaseFee, tx.Gas)
 		util.MintBalance(&tx.From, prepaid, evm, scenario, "prepaid")
 		ticketId := tx.TicketId
+		refundTo := tx.RefundTo
 		p.CurrentRetryable = &ticketId
+		p.CurrentRefundTo = &refundTo
 	}
 	return false, 0, nil, nil
 }
