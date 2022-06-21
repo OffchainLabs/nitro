@@ -68,7 +68,15 @@ contract BridgeStub is IBridge {
             bytes32 acc
         )
     {
-        // TODO: implement stub logic
+        seqMessageIndex = sequencerInboxAccs.length;
+        if (sequencerInboxAccs.length > 0) {
+            beforeAcc = sequencerInboxAccs[sequencerInboxAccs.length - 1];
+        }
+        if (afterDelayedMessagesRead > 0) {
+            delayedAcc = delayedInboxAccs[afterDelayedMessagesRead - 1];
+        }
+        acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));
+        sequencerInboxAccs.push(acc);
     }
 
     function submitBatchSpendingReport(address batchPoster, bytes32 dataHash)
