@@ -106,9 +106,9 @@ This component maintains the last 256 L1 block hashes in a circular buffer. This
 
 ### [`l1PricingState`][l1PricingState_link]<a name=l1PricingState></a>
 
-In addition to supporting the [`ArbAggregator precompile`](Precompiles.md#ArbAggregator), the L1 pricing state provides tools for determining the L1 component of a transaction's gas costs. This part of the state tracks the total amount of funds collected from transactions in L1 gas fees, as well as the funds spent by batch posters to post data batches on L1. 
+In addition to supporting the [`ArbAggregator precompile`](Precompiles.md#ArbAggregator), the L1 pricing state provides tools for determining the L1 component of a transaction's gas costs. This part of the state tracks both the total amount of funds collected from transactions in L1 gas fees, as well as the funds spent by batch posters to post data batches on L1. 
 
-Based on this information, ArbOS maintains an L1 data fee, also tracked as part of this state, which determines how much transactions will be charged for L1 fees. This value is adjusted dynamically by ArbOS so that fees collected are approximately equal to batch posting costs, over time.
+Based on this information, ArbOS maintains an L1 data fee, also tracked as part of this state, which determines how much transactions will be charged for L1 fees. ArbOS dynamically adjusts this value so that fees collected are approximately equal to batch posting costs, over time.
 
 
 
