@@ -59,7 +59,7 @@ describe("OneStepProof", function () {
         const proof = proofs[i];
         isdone.push(false);
         const inboxLimit = 1000000;
-        const promise = osp.proveOneStep([inboxLimit, seqInbox.address, bridge.address], i, [...Buffer.from(proof.before, "hex")], [...Buffer.from(proof.proof, "hex")])
+        const promise = osp.proveOneStep([inboxLimit, bridge.address], i, [...Buffer.from(proof.before, "hex")], [...Buffer.from(proof.proof, "hex")])
           .catch((err: any) => {
             console.error("Error executing proof " + i, err.reason);
             throw err;
