@@ -50,16 +50,24 @@ func retryableSetup(t *testing.T) (
 	lookupSubmitRetryableL2TxHash := func(l1Receipt *types.Receipt) common.Hash {
 		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber)
 		Require(t, err)
-		if len(messages) != 1 {
-			Fail(t, "expected 1 message from retryable submission, found", len(messages))
+		if len(messages) == 0 {
+			Fail(t, "didn't find message for retryable submission")
 		}
-		txs, err := messages[0].Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID, nil)
-		Require(t, err)
-		if len(txs) != 1 {
-			Fail(t, "expected 1 tx from retryable submission, found", len(txs))
+		var submissionTxs []*types.Transaction
+		for _, message := range messages {
+			txs, err := message.Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID, nil)
+			Require(t, err)
+			for _, tx := range txs {
+				if tx.Type() == types.ArbitrumSubmitRetryableTxType {
+					submissionTxs = append(submissionTxs, tx)
+				}
+			}
+		}
+		if len(submissionTxs) != 1 {
+			Fail(t, "expected 1 tx from retryable submission, found", len(submissionTxs))
 		}
 
-		return txs[0].Hash()
+		return submissionTxs[0].Hash()
 	}
 
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
