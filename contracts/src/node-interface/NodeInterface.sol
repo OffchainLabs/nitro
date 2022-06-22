@@ -85,7 +85,7 @@ interface NodeInterface {
         returns (
             uint64 gasEstimate,
             uint64 gasEstimateForL1,
-            uint64 baseFee,
-            uint64 l1BaseFeeEstimate
+            uint256 baseFee,
+            uint256 l1BaseFeeEstimate
         );
 }

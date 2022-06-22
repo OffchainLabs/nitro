@@ -131,7 +131,7 @@ func TestComponentEstimate(t *testing.T) {
 	defer cancel()
 
 	l2info, node, client := CreateTestL2(t, ctx)
-	l1BaseFee := uint64(l1pricing.InitialPricePerUnitWei * 16)
+	l1BaseFee := big.NewInt(l1pricing.InitialPricePerUnitWei * 16)
 	l2BaseFee := GetBaseFee(t, client, ctx)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)
@@ -179,8 +179,8 @@ func TestComponentEstimate(t *testing.T) {
 
 	gasEstimate, _ := outputs[0].(uint64)
 	gasEstimateForL1, _ := outputs[1].(uint64)
-	baseFee, _ := outputs[2].(uint64)
-	l1BaseFeeEstimate, _ := outputs[3].(uint64)
+	baseFee, _ := outputs[2].(*big.Int)
+	l1BaseFeeEstimate, _ := outputs[3].(*big.Int)
 
 	tx := l2info.SignTxAs("User", &types.DynamicFeeTx{
 		ChainID:   node.ArbInterface.BlockChain().Config().ChainID,
@@ -197,10 +197,10 @@ func TestComponentEstimate(t *testing.T) {
 
 	colors.PrintBlue("Est. ", gasEstimate, " - ", gasEstimateForL1, " = ", l2Estimate)
 
-	if l1BaseFeeEstimate != l1BaseFee {
+	if !arbmath.BigEquals(l1BaseFeeEstimate, l1BaseFee) {
 		Fail(t, l1BaseFeeEstimate, l1BaseFee)
 	}
-	if baseFee != l2BaseFee.Uint64() {
+	if !arbmath.BigEquals(baseFee, l2BaseFee) {
 		Fail(t, baseFee, l2BaseFee.Uint64())
 	}
 

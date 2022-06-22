@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -420,10 +421,10 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 func (n NodeInterface) GasEstimateComponents(
 	c ctx, evm mech, value huge, to addr, contractCreation bool, data []byte,
-) (uint64, uint64, uint64, uint64, error) {
+) (uint64, uint64, huge, huge, error) {
 	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, nil, nil, err
 	}
 
 	msg := n.sourceMessage
@@ -455,7 +456,7 @@ func (n NodeInterface) GasEstimateComponents(
 
 	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, gasCap)
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, nil, nil, err
 	}
 	total := uint64(totalRaw)
 
@@ -463,26 +464,26 @@ func (n NodeInterface) GasEstimateComponents(
 
 	msg, err = args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, nil, nil, err
 	}
 	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
 
 	baseFee, err := c.State.L2PricingState().BaseFeeWei()
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, nil, nil, err
 	}
 	l1BaseFeeEstimate, err := pricing.L1BaseFeeEstimate()
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, nil, nil, err
 	}
 
 	// Compute the fee paid for L1 in L2 terms
 	//   See in GasChargingHook that this does not induce truncation error
 	//
-	feeForL1 = arbmath.BigMulByUfrac(feeForL1, 110, 100)
+	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
 	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
 
-	return total, gasForL1, baseFee.Uint64(), l1BaseFeeEstimate.Uint64(), nil
+	return total, gasForL1, baseFee, l1BaseFeeEstimate, nil
 }
 
 func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) (uint64, error) {
