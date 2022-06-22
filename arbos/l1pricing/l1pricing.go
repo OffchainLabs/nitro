@@ -240,8 +240,6 @@ func (ps *L1PricingState) getPosterInfoWithoutCache(tx *types.Transaction, sende
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
 	if !util.TxTypeHasPosterCosts(txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
-		atomic.StoreInt32(&tx.PosterIsReimbursable, 0)
-		tx.PosterCost.Store(common.Big0)
 		return common.Big0, false
 	}
 
