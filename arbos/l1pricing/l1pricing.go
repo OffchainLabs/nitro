@@ -392,6 +392,7 @@ func (ps *L1PricingState) getPosterInfoWithoutCache(tx *types.Transaction, poste
 	return am.BigMulByUint(pricePerUnit, numUnits), numUnits
 }
 
+// Returns the poster cost and the calldata units for a transaction
 func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address) (*big.Int, uint64) {
 	cost, _ := tx.PosterCost.Load().(*big.Int)
 	if cost != nil {
