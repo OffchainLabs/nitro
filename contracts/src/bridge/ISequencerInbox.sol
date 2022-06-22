@@ -6,8 +6,9 @@ pragma solidity ^0.8.0;
 
 import "../libraries/IGasRefunder.sol";
 import {AlreadyInit, HadZeroInit, NotOrigin, DataTooLarge, NotRollup} from "../libraries/Error.sol";
+import "./IDelayedMessageProvider.sol";
 
-interface ISequencerInbox {
+interface ISequencerInbox is IDelayedMessageProvider {
     struct MaxTimeVariation {
         uint256 delayBlocks;
         uint256 futureBlocks;
@@ -55,9 +56,6 @@ interface ISequencerInbox {
     /// @dev Thrown when someone attempts to read more messages than exist
     error DelayedTooFar();
 
-    /// @dev Thrown if the length of the header plus the length of the batch overflows
-    error DataLengthOverflow();
-
     /// @dev Force include can only read messages more blocks old than the delay period
     error ForceIncludeBlockTooSoon();
 
@@ -71,7 +69,7 @@ interface ISequencerInbox {
     error NotBatchPoster();
 
     /// @dev The sequence number provided to this message was inconsistent with the number of batches already included
-    error BadSequencerNumber();
+    error BadSequencerNumber(uint256 stored, uint256 received);
 
     /// @dev The batch data has the inbox authenticated bit set, but the batch data was not authenticated by the inbox
     error DataNotAuthenticated();
