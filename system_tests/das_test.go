@@ -406,6 +406,7 @@ func enableLogging(logLvl int) {
 }
 
 func initTest(t *testing.T) {
+	t.Parallel()
 	loggingStr := os.Getenv("LOGGING")
 	if len(loggingStr) > 0 {
 		var err error

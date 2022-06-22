@@ -53,6 +53,7 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 }
 
 func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) {
+	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)

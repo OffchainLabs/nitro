@@ -23,6 +23,7 @@ import (
 )
 
 func TestSequencerFeePaid(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, _, l2client, _, _, _, stack := CreateTestNodeOnL1(t, ctx, true)
@@ -66,6 +67,7 @@ func TestSequencerFeePaid(t *testing.T) {
 }
 
 func TestSequencerPriceAdjusts(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

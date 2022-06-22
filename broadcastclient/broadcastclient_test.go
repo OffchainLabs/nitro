@@ -18,6 +18,7 @@ import (
 )
 
 func TestReceiveMessages(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -109,6 +110,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, 
 }
 
 func TestServerClientDisconnect(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -158,6 +160,7 @@ func TestServerClientDisconnect(t *testing.T) {
 }
 
 func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -187,6 +190,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 }
 
 func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
+	t.Parallel()
 	/* Uncomment to enable logging
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlTrace)

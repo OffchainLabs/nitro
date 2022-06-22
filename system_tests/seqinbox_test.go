@@ -39,6 +39,7 @@ type blockTestState struct {
 const seqInboxTestIters = 40
 
 func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	conf := arbnode.ConfigDefaultL1Test()
