@@ -120,7 +120,7 @@ interface IRollupAdmin {
      * @param _inbox Inbox contract to add or remove
      * @param _enabled New status of inbox
      */
-    function setInbox(address _inbox, bool _enabled) external;
+    function setDelayedInbox(address _inbox, bool _enabled) external;
 
     /**
      * @notice Pause interaction with the rollup contract
@@ -210,4 +210,10 @@ interface IRollupAdmin {
      * @param newWasmModuleRoot new module root
      */
     function setWasmModuleRoot(bytes32 newWasmModuleRoot) external;
+
+    /**
+     * @notice set a new sequencer inbox contract
+     * @param _sequencerInbox new address of sequencer inbox
+     */
+    function setSequencerInbox(address _sequencerInbox) external;
 }

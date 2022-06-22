@@ -5,7 +5,7 @@
 pragma solidity ^0.8.4;
 
 import "./IBridge.sol";
-import "./IMessageProvider.sol";
+import "./IDelayedMessageProvider.sol";
 import {AlreadyInit, NotOrigin, DataTooLarge} from "../libraries/Error.sol";
 
 /// @dev The contract is paused, so cannot be paused
@@ -41,7 +41,7 @@ error RetryableData(
     bytes data
 );
 
-interface IInbox is IMessageProvider {
+interface IInbox is IDelayedMessageProvider {
     function sendL2Message(bytes calldata messageData) external returns (uint256);
 
     function sendUnsignedTransaction(
@@ -75,12 +75,6 @@ interface IInbox is IMessageProvider {
         address to,
         bytes calldata data
     ) external payable returns (uint256);
-
-    function submitBatchSpendingReportTransaction(
-        address batchPosterAddr,
-        bytes32 dataHash,
-        uint256 batchNumber
-    ) external returns (uint256);
 
     /// @dev Gas limit and maxFeePerGas should not be set to 1 as that is used to trigger the RetryableData error
     function createRetryableTicket(

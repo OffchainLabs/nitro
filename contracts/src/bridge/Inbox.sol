@@ -16,7 +16,6 @@ import {
     L1MessageType_L2FundedByL1,
     L1MessageType_submitRetryableTx,
     L1MessageType_ethDeposit,
-    L1MessageType_batchPostingReport,
     L2MessageType_unsignedEOATx,
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
@@ -236,26 +235,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             );
     }
 
-    function submitBatchSpendingReportTransaction(
-        address batchPosterAddr,
-        bytes32 dataHash,
-        uint256 batchNumber
-    ) external virtual override whenNotPaused returns (uint256) {
-        require(ISequencerInbox(msg.sender) == sequencerInbox, "unauthorized");
-        return
-            _deliverMessage(
-                L1MessageType_batchPostingReport,
-                batchPosterAddr,
-                abi.encodePacked(
-                    block.timestamp,
-                    batchPosterAddr,
-                    dataHash,
-                    batchNumber,
-                    block.basefee
-                )
-            );
-    }
-
     /**
      * @notice Get the L1 fee for submitting a retryable
      * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
@@ -276,24 +255,23 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /// Look into retryable tickets if you are interested in this functionality.
     /// @dev this function should not be called inside contract constructors
     function depositEth() public payable override whenNotPaused onlyAllowed returns (uint256) {
-        address sender = msg.sender;
+        address dest = msg.sender;
 
         // solhint-disable-next-line avoid-tx-origin
-        if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
+        if (AddressUpgradeable.isContract(msg.sender) || tx.origin != msg.sender) {
             // isContract check fails if this function is called during a contract's constructor.
             // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
             // If the caller is an EOA, we adjust the address.
             // This is needed because unsigned messages to the L2 (such as retryables)
             // have the L1 sender address mapped.
-            // Here we preemptively reverse the mapping for EOAs so deposits work as expected
-            sender = AddressAliasHelper.undoL1ToL2Alias(sender);
+            dest = AddressAliasHelper.applyL1ToL2Alias(msg.sender);
         }
 
         return
             _deliverMessage(
                 L1MessageType_ethDeposit,
-                sender, // arb-os will add the alias to this value
-                abi.encodePacked(msg.value)
+                msg.sender,
+                abi.encodePacked(dest, msg.value)
             );
     }
 
@@ -472,7 +450,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     ) internal returns (uint256) {
         if (_messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
+        uint256 msgNum = deliverToBridge(
+            _kind,
+            AddressAliasHelper.applyL1ToL2Alias(_sender),
+            keccak256(_messageData)
+        );
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
     }
