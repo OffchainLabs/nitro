@@ -5,7 +5,9 @@ package l1pricing
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
+	"sync/atomic"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
@@ -232,22 +234,20 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(uint64(ratio)))
 }
 
-func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster common.Address) {
-
-	tx.PosterCost = big.NewInt(0)
-	tx.PosterIsReimbursable = false
+func (ps *L1PricingState) getPosterInfoWithoutCache(tx *types.Transaction, sender, poster common.Address) (*big.Int, bool) {
 
 	aggregator, perr := ps.ReimbursableAggregatorForSender(sender)
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
 	if !util.TxTypeHasPosterCosts(txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
-		return
+		atomic.StoreInt32(&tx.PosterIsReimbursable, 0)
+		tx.PosterCost.Store(common.Big0)
+		return common.Big0, false
 	}
 
 	l1Bytes, err := byteCountAfterBrotli0(txBytes)
 	if err != nil {
-		log.Error("failed to compress tx", "err", err)
-		return
+		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
@@ -259,8 +259,22 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
 	adjustedL1Fee := arbmath.BigMulByBips(l1Fee, ratio)
 
-	tx.PosterIsReimbursable = true
-	tx.PosterCost = adjustedL1Fee
+	return adjustedL1Fee, true
+}
+
+func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, sender, poster common.Address) (*big.Int, bool) {
+	cost, _ := tx.PosterCost.Load().(*big.Int)
+	if cost != nil {
+		return cost, atomic.LoadInt32(&tx.PosterIsReimbursable) != 0
+	}
+	cost, reimbursable := ps.getPosterInfoWithoutCache(tx, sender, poster)
+	var reimbursableInt int32
+	if reimbursable {
+		reimbursableInt = 1
+	}
+	atomic.StoreInt32(&tx.PosterIsReimbursable, reimbursableInt)
+	tx.PosterCost.Store(cost)
+	return cost, reimbursable
 }
 
 const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
@@ -268,10 +282,7 @@ const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encode
 func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address) (*big.Int, bool) {
 
 	if tx := message.UnderlyingTransaction(); tx != nil {
-		if tx.PosterCost == nil {
-			ps.AddPosterInfo(tx, sender, poster)
-		}
-		return tx.PosterCost, tx.PosterIsReimbursable
+		return ps.GetPosterInfo(tx, sender, poster)
 	}
 
 	if message.RunMode() == types.MessageGasEstimationMode {
