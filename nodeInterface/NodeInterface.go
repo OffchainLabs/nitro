@@ -418,7 +418,9 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	return send, root, hashes32, nil
 }
 
-func (n NodeInterface) GasEstimateComponents(c ctx, evm mech, data []byte) (uint64, uint64, uint64, uint64, error) {
+func (n NodeInterface) GasEstimateComponents(
+	c ctx, evm mech, value huge, to addr, contractCreation bool, data []byte,
+) (uint64, uint64, uint64, uint64, error) {
 	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
 	if err != nil {
 		return 0, 0, 0, 0, err
@@ -429,12 +431,10 @@ func (n NodeInterface) GasEstimateComponents(c ctx, evm mech, data []byte) (uint
 	chainid := evm.ChainConfig().ChainID
 	backend := node.Backend.APIBackend()
 	gasCap := backend.RPCGasCap()
-	block := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(n.header.Number.Int64()))
+	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
 
 	from := msg.From()
-	to := msg.To()
 	gas := msg.Gas()
-	value := msg.Value()
 	nonce := msg.Nonce()
 	maxFeePerGas := msg.GasFeeCap()
 	maxPriorityFeePerGas := msg.GasTipCap()
@@ -442,13 +442,15 @@ func (n NodeInterface) GasEstimateComponents(c ctx, evm mech, data []byte) (uint
 	args := arbitrum.TransactionArgs{
 		ChainID:              (*hexutil.Big)(chainid),
 		From:                 &from,
-		To:                   to,
 		Gas:                  (*hexutil.Uint64)(&gas),
 		MaxFeePerGas:         (*hexutil.Big)(maxFeePerGas),
 		MaxPriorityFeePerGas: (*hexutil.Big)(maxPriorityFeePerGas),
 		Value:                (*hexutil.Big)(value),
 		Nonce:                (*hexutil.Uint64)(&nonce),
 		Data:                 (*hexutil.Bytes)(&data),
+	}
+	if !contractCreation {
+		args.To = &to
 	}
 
 	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, gasCap)

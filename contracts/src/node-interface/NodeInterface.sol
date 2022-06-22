@@ -67,17 +67,21 @@ interface NodeInterface {
 
     /**
      * @notice Same as native gas estimation, but with additional info on the l1 costs
-     * @param data the tx's calldata. Everything else like "from" and "to" are copied over
+     * @param data the tx's calldata. Everything else like "From" and "Gas" are copied over
+     * @param to the tx's "To" (ignored when contractCreation is true)
+     * @param contractCreation whether "To" is omitted
      * @return gasEstimate an estimate of the total amount of gas needed for this tx
      * @return gasEstimateForL1 an estimate of the amount of gas needed for the l1 component of this tx
      * @return baseFee the l2 base fee
      * @return l1BaseFeeEstimate ArbOS's l1 estimate of the l1 base fee
      */
     function gasEstimateComponents(
+        address to,
+        bool contractCreation,
         bytes calldata data
     )
         external
-        view
+        payable
         returns (
             uint64 gasEstimate,
             uint64 gasEstimateForL1,

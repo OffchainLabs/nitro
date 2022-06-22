@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -130,24 +131,11 @@ func TestComponentEstimate(t *testing.T) {
 	defer cancel()
 
 	l2info, node, client := CreateTestL2(t, ctx)
-	// auth := l2info.GetDefaultTransactOpts("Owner", ctx)
-
-	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, client)
-	Require(t, err)
-	/*arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
-	Require(t, err)*/
-
 	l1BaseFee := uint64(l1pricing.InitialPricePerUnitWei * 16)
 	l2BaseFee := GetBaseFee(t, client, ctx)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)
 	colors.PrintGrey("l2 basefee ", l2BaseFee)
-
-	// set the l1 base fee
-	/*tx, err := arbOwner.(&auth, l1BaseFee)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)*/
 
 	userBalance := big.NewInt(1e16)
 	maxPriorityFeePerGas := big.NewInt(0)
@@ -158,37 +146,62 @@ func TestComponentEstimate(t *testing.T) {
 
 	from := l2info.GetAddress("User")
 	to := testhelpers.RandomAddress()
-	//gas := uint64(100000000)
-	data := []byte{0x00, 0x12}
+	gas := uint64(100000000)
+	calldata := []byte{0x00, 0x12}
 	value := big.NewInt(4096)
 
-	callOpts := &bind.CallOpts{
-		From: from,
+	nodeAbi, err := node_interfacegen.NodeInterfaceMetaData.GetAbi()
+	Require(t, err)
+
+	nodeMethod := nodeAbi.Methods["gasEstimateComponents"]
+	estimateCalldata := append([]byte{}, nodeMethod.ID...)
+	packed, err := nodeMethod.Inputs.Pack(to, false, calldata)
+	Require(t, err)
+	estimateCalldata = append(estimateCalldata, packed...)
+
+	msg := ethereum.CallMsg{
+		From:      from,
+		To:        &types.NodeInterfaceAddress,
+		Gas:       gas,
+		GasFeeCap: maxFeePerGas,
+		GasTipCap: maxPriorityFeePerGas,
+		Value:     value,
+		Data:      estimateCalldata,
+	}
+	returnData, err := client.CallContract(ctx, msg, nil)
+	Require(t, err)
+
+	outputs, err := nodeMethod.Outputs.Unpack(returnData)
+	Require(t, err)
+	if len(outputs) != 4 {
+		Fail(t, "expected 4 outputs from gasEstimateComponents, got", len(outputs))
 	}
 
-	estimates, err := nodeInterface.GasEstimateComponents(callOpts, data)
-	Require(t, err)
+	gasEstimate, _ := outputs[0].(uint64)
+	gasEstimateForL1, _ := outputs[1].(uint64)
+	baseFee, _ := outputs[2].(uint64)
+	l1BaseFeeEstimate, _ := outputs[3].(uint64)
 
 	tx := l2info.SignTxAs("User", &types.DynamicFeeTx{
 		ChainID:   node.ArbInterface.BlockChain().Config().ChainID,
 		Nonce:     0,
 		GasTipCap: maxPriorityFeePerGas,
 		GasFeeCap: maxFeePerGas,
-		Gas:       estimates.GasEstimate,
+		Gas:       gasEstimate,
 		To:        (*common.Address)(&to),
 		Value:     value,
-		Data:      data,
+		Data:      calldata,
 	})
 
-	l2Estimate := estimates.GasEstimate - estimates.GasEstimateForL1
+	l2Estimate := gasEstimate - gasEstimateForL1
 
-	colors.PrintBlue("Est. ", estimates.GasEstimate, " - ", estimates.GasEstimateForL1, " = ", l2Estimate)
+	colors.PrintBlue("Est. ", gasEstimate, " - ", gasEstimateForL1, " = ", l2Estimate)
 
-	if estimates.L1BaseFeeEstimate != l1BaseFee {
-		Fail(t, estimates.L1BaseFeeEstimate, l1BaseFee)
+	if l1BaseFeeEstimate != l1BaseFee {
+		Fail(t, l1BaseFeeEstimate, l1BaseFee)
 	}
-	if estimates.BaseFee != l2BaseFee.Uint64() {
-		Fail(t, estimates.BaseFee, l2BaseFee.Uint64())
+	if baseFee != l2BaseFee.Uint64() {
+		Fail(t, baseFee, l2BaseFee.Uint64())
 	}
 
 	Require(t, client.SendTransaction(ctx, tx))
