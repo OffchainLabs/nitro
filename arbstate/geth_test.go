@@ -73,6 +73,9 @@ func TestEthDepositMessage(t *testing.T) {
 		L1BaseFee:   big.NewInt(10000000000000),
 	}
 	msgBuf := bytes.Buffer{}
+	if err := util.AddressToWriter(addr, &msgBuf); err != nil {
+		t.Error(err)
+	}
 	if err := util.HashToWriter(balance, &msgBuf); err != nil {
 		t.Error(err)
 	}
@@ -88,7 +91,11 @@ func TestEthDepositMessage(t *testing.T) {
 
 	secondRequestId := common.BigToHash(big.NewInt(4))
 	header.RequestId = &secondRequestId
+	header.Poster = util.RemapL1Address(addr)
 	msgBuf2 := bytes.Buffer{}
+	if err := util.AddressToWriter(addr, &msgBuf2); err != nil {
+		t.Error(err)
+	}
 	if err := util.HashToWriter(balance2, &msgBuf2); err != nil {
 		t.Error(err)
 	}
@@ -103,7 +110,7 @@ func TestEthDepositMessage(t *testing.T) {
 
 	RunMessagesThroughAPI(t, [][]byte{serialized, serialized2}, statedb)
 
-	balanceAfter := statedb.GetBalance(util.RemapL1Address(addr))
+	balanceAfter := statedb.GetBalance(addr)
 	if balanceAfter.Cmp(new(big.Int).Add(balance.Big(), balance2.Big())) != 0 {
 		Fail(t)
 	}

@@ -30,7 +30,7 @@ import {
   SequencerInbox__factory,
   TransparentUpgradeableProxy__factory,
 } from '../../build/types'
-import { initializeAccounts } from './utils'
+import { applyAlias, initializeAccounts } from './utils'
 import { Event } from '@ethersproject/contracts'
 import { Interface } from '@ethersproject/abi'
 import {
@@ -84,16 +84,16 @@ describe('SequencerInboxForceInclude', async () => {
     amount: BigNumber,
     data: string,
   ) => {
-    const countBefore = (await bridge.functions.messageCount())[0].toNumber()
+    const countBefore = (await bridge.functions.delayedMessageCount())[0].toNumber()
     const sendUnsignedTx = await inbox
       .connect(sender)
       .sendUnsignedTransaction(l2Gas, l2GasPrice, nonce, destAddr, amount, data)
     const sendUnsignedTxReceipt = await sendUnsignedTx.wait()
 
-    const countAfter = (await bridge.functions.messageCount())[0].toNumber()
+    const countAfter = (await bridge.functions.delayedMessageCount())[0].toNumber()
     expect(countAfter, 'Unexpected inbox count').to.eq(countBefore + 1)
 
-    const senderAddr = await sender.getAddress()
+    const senderAddr = applyAlias(await sender.getAddress())
 
     const messageDeliveredEvent = getMessageDeliveredEvents(
       sendUnsignedTxReceipt,
@@ -102,7 +102,7 @@ describe('SequencerInboxForceInclude', async () => {
     const blockL1 = await sender.provider!.getBlock(l1BlockNumber)
     const baseFeeL1 = blockL1.baseFeePerGas!.toNumber()
     const l1BlockTimestamp = blockL1.timestamp
-    const delayedAcc = await bridge.inboxAccs(countBefore)
+    const delayedAcc = await bridge.delayedInboxAccs(countBefore)
 
     // need to hex pad the address
     const messageDataHash = ethers.utils.solidityKeccak256(
@@ -138,7 +138,7 @@ describe('SequencerInboxForceInclude', async () => {
     expect(prevAccumulator, 'Incorrect prev accumulator').to.eq(
       countBefore === 0
         ? ethers.utils.hexZeroPad('0x', 32)
-        : await bridge.inboxAccs(countBefore - 1),
+        : await bridge.delayedInboxAccs(countBefore - 1),
     )
 
     const nextAcc = (
@@ -257,7 +257,6 @@ describe('SequencerInboxForceInclude', async () => {
 
     await sequencerInbox.initialize(
       bridgeProxy.address,
-      inbox.address,
       await dummyRollup.getAddress(),
       {
         delayBlocks: maxDelayBlocks,
@@ -268,7 +267,8 @@ describe('SequencerInboxForceInclude', async () => {
     )
     await inbox.initialize(bridgeProxy.address, sequencerInbox.address)
 
-    await bridge.setInbox(inbox.address, true)
+    await bridge.setDelayedInbox(inbox.address, true)
+    await bridge.setSequencerInbox(sequencerInbox.address)
 
     const messageTester = (await (
       await ethers.getContractFactory('MessageTester')

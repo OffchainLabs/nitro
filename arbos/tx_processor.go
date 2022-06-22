@@ -122,9 +122,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
 		defer (startTracer())()
-		if p.msg.From() != arbosAddress {
-			return false, 0, errors.New("deposit not from arbAddress"), nil
-		}
 		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM, "deposit")
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:

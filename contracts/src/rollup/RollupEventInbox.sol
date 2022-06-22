@@ -4,16 +4,16 @@
 
 pragma solidity ^0.8.0;
 
-import "./IRollupEventBridge.sol";
+import "./IRollupEventInbox.sol";
 import "../bridge/IBridge.sol";
-import "../bridge/IMessageProvider.sol";
+import "../bridge/IDelayedMessageProvider.sol";
 import "../libraries/DelegateCallAware.sol";
 import {INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
 
 /**
  * @title The inbox for rollup protocol events
  */
-contract RollupEventBridge is IRollupEventBridge, IMessageProvider, DelegateCallAware {
+contract RollupEventInbox is IRollupEventInbox, IDelayedMessageProvider, DelegateCallAware {
     uint8 internal constant CREATE_NODE_EVENT = 0;
     uint8 internal constant CONFIRM_NODE_EVENT = 1;
     uint8 internal constant REJECT_NODE_EVENT = 2;
