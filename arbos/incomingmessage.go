@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 const (
@@ -539,6 +540,12 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher
 			batchDataGas += params.TxDataNonZeroGasEIP2028
 		}
 	}
+
+	// the poster also pays to keccak the batch and place it and a batch-posting report into the inbox
+	keccakWords := arbmath.WordsForBytes(uint64(len(batchData)))
+	batchDataGas += params.Keccak256Gas + (keccakWords * params.Keccak256WordGas)
+	batchDataGas += 2 * params.SstoreSetGasEIP2200
+
 	data, err := util.PackInternalTxDataBatchPostingReport(
 		batchTimestamp.Big(), batchPosterAddr, batchNum, batchDataGas, l1BaseFee.Big(),
 	)
