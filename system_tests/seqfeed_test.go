@@ -32,6 +32,7 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.BroadcastClientConf
 }
 
 func TestSequencerFeed(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -67,6 +68,7 @@ func TestSequencerFeed(t *testing.T) {
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -111,6 +113,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 }
 
 func testLyingSequencer(t *testing.T, dasModeStr string) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
