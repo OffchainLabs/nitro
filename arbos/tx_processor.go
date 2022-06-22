@@ -156,7 +156,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if err := transfer(&tx.From, &networkFeeAccount, submissionFee); err != nil {
 			return true, 0, err, nil
 		}
-		withholdenSubmissionFee := takeFunds(availableRefund, submissionFee)
+		withheldSubmissionFee := takeFunds(availableRefund, submissionFee)
 
 		// refund excess submission fee
 		submissionFeeRefund := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
@@ -215,14 +215,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			panic(err)
 		}
 
-		withholdenGasFunds := takeFunds(availableRefund, gascost) // gascost is conceptually charged before the gas price refund
+		withheldGasFunds := takeFunds(availableRefund, gascost) // gascost is conceptually charged before the gas price refund
 		gasPriceRefund := arbmath.BigMulByUint(arbmath.BigSub(tx.GasFeeCap, basefee), tx.Gas)
 		gasPriceRefund = takeFunds(availableRefund, gasPriceRefund)
 		if err := transfer(&tx.From, &tx.FeeRefundAddr, gasPriceRefund); err != nil {
 			glog.Error("failed to transfer gasPriceRefund", "err", err)
 		}
-		availableRefund.Add(availableRefund, withholdenGasFunds)
-		availableRefund.Add(availableRefund, withholdenSubmissionFee)
+		availableRefund.Add(availableRefund, withheldGasFunds)
+		availableRefund.Add(availableRefund, withheldSubmissionFee)
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
@@ -378,7 +378,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 		// undo Geth's refund to the From address
 		gasRefund := arbmath.BigMulByUint(gasPrice, gasLeft)
-		err := util.TransferBalance(&inner.From, nil, gasRefund, p.evm, scenario, "undoRefund")
+		err := util.BurnBalance(&inner.From, gasRefund, p.evm, scenario, "undoRefund")
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
 		}
