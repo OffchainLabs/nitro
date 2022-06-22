@@ -5,7 +5,9 @@ package l1pricing
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common/math"
 
@@ -368,39 +370,44 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	return nil
 }
 
-func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, posterAddr common.Address) {
-	tx.PosterCost = common.Big0
+func (ps *L1PricingState) getPosterInfoWithoutCache(tx *types.Transaction, posterAddr common.Address) (*big.Int, uint64) {
 
 	if posterAddr != BatchPosterAddress {
-		return
+		return common.Big0, 0
 	}
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
 	if !util.TxTypeHasPosterCosts(txType) || merr != nil {
-		return
+		return common.Big0, 0
 	}
 
 	l1Bytes, err := byteCountAfterBrotli0(txBytes)
 	if err != nil {
-		log.Error("failed to compress tx", "err", err)
-		return
+		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
 	pricePerUnit, _ := ps.PricePerUnit()
 	numUnits := l1Bytes * params.TxDataNonZeroGasEIP2028
-	tx.PosterCost = am.BigMulByUint(pricePerUnit, numUnits)
-	tx.CalldataUnits = numUnits
+	return am.BigMulByUint(pricePerUnit, numUnits), numUnits
+}
+
+func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address) (*big.Int, uint64) {
+	cost, _ := tx.PosterCost.Load().(*big.Int)
+	if cost != nil {
+		return cost, atomic.LoadUint64(&tx.CalldataUnits)
+	}
+	cost, units := ps.getPosterInfoWithoutCache(tx, poster)
+	atomic.StoreUint64(&tx.CalldataUnits, units)
+	tx.PosterCost.Store(cost)
+	return cost, units
 }
 
 const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
 func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64) {
 	if tx := message.UnderlyingTransaction(); tx != nil {
-		if tx.PosterCost == nil {
-			ps.AddPosterInfo(tx, poster)
-		}
-		return tx.PosterCost, tx.CalldataUnits
+		return ps.GetPosterInfo(tx, poster)
 	}
 
 	if poster != BatchPosterAddress {
