@@ -21,6 +21,7 @@ import (
 )
 
 func TestTips(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, _, l2client, l1info, _, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
@@ -105,6 +106,7 @@ func TestSequencerWontPostWhenNotPreferred(t *testing.T) {
 }
 
 func TestSequencerFeePaid(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, _, l2client, _, _, _, stack := CreateTestNodeOnL1(t, ctx, true)

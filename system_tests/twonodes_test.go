@@ -14,6 +14,7 @@ import (
 )
 
 func testTwoNodesSimple(t *testing.T, dasModeStr string) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

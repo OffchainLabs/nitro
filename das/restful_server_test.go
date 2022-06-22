@@ -15,7 +15,6 @@ import (
 )
 
 const LocalServerAddressForTest = "localhost"
-const LocalServerPortForTest = 9877
 
 func TestRestfulClientServer(t *testing.T) { //nolint
 	initTest(t)
@@ -27,7 +26,7 @@ func TestRestfulClientServer(t *testing.T) { //nolint
 	data := []byte("Testing a restful server now.")
 	dataHash := crypto.Keccak256(data)
 
-	server, err := NewRestfulDasServer(LocalServerAddressForTest, LocalServerPortForTest, storage)
+	server, port, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage)
 	Require(t, err)
 
 	err = storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
@@ -35,7 +34,7 @@ func TestRestfulClientServer(t *testing.T) { //nolint
 
 	time.Sleep(100 * time.Millisecond)
 
-	client := NewRestfulDasClient("http", LocalServerAddressForTest, LocalServerPortForTest)
+	client := NewRestfulDasClient("http", LocalServerAddressForTest, port)
 	returnedData, err := client.GetByHash(ctx, dataHash)
 	Require(t, err)
 	if !bytes.Equal(data, returnedData) {

@@ -5,8 +5,9 @@ package das
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -19,9 +20,9 @@ func TestRestfulServerList(t *testing.T) {
 
 	urlsIn := []string{"https://supersecret.nowhere.com:9871", "http://www.google.com"}
 	listContents := urlsIn[0] + " \t" + urlsIn[1]
-	server := newListHttpServerForTest(LocalServerPortForTest, listContents)
+	port, server := newListHttpServerForTest(t, listContents)
 
-	listUrl := "http://localhost:" + strconv.FormatInt(LocalServerPortForTest, 10) //nolint
+	listUrl := fmt.Sprintf("http://localhost:%d", port)
 	urls, err := RestfulServerURLsFromList(ctx, listUrl)
 	Require(t, err)
 	if !stringListIsPermutation(urlsIn, urls) {
@@ -40,9 +41,9 @@ func TestRestfulServerListDaemon(t *testing.T) {
 
 	urlsIn := []string{"https://supersecret.nowhere.com:9871", "http://www.google.com"}
 	listContents := urlsIn[0] + " \t" + urlsIn[1]
-	server := newListHttpServerForTest(LocalServerPortForTest, listContents)
+	port, server := newListHttpServerForTest(t, listContents)
 
-	listUrl := "http://localhost:" + strconv.FormatInt(LocalServerPortForTest, 10) //nolint
+	listUrl := fmt.Sprintf("http://localhost:%d", port)
 
 	listChan := StartRestfulServerListFetchDaemon(ctx, listUrl, 200*time.Millisecond)
 	for i := 0; i < 4; i++ {
@@ -72,15 +73,17 @@ func stringListIsPermutation(lis1, lis2 []string) bool {
 	return true
 }
 
-func newListHttpServerForTest(port int64, contents string) *http.Server {
+func newListHttpServerForTest(t *testing.T, contents string) (int, *http.Server) {
 	server := &http.Server{
-		Addr:    ":" + strconv.FormatInt(port, 10),
 		Handler: &testHandler{contents},
 	}
+	listener, err := net.Listen("tcp", ":0")
+	Require(t, err)
 	go func() {
-		_ = server.ListenAndServe()
+		_ = server.Serve(listener)
 	}()
-	return server
+	tcpAddr, _ := listener.Addr().(*net.TCPAddr)
+	return tcpAddr.Port, server
 }
 
 type testHandler struct {

@@ -45,6 +45,7 @@ func InitOneContract(prand *testhelpers.PseudoRandomDataSource) (*statetransfer.
 }
 
 func TestInitContract(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	expectedSums := make(map[common.Address]*big.Int)
