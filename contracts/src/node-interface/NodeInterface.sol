@@ -61,7 +61,7 @@ interface NodeInterface {
     /**
      * @notice Gets the number of L1 confirmations of the sequencer batch producing the requested L2 block
      * This gets the number of L1 confirmations for the input message producing the L2 block,
-     * which happens well before the L1 rollup contract confirms the L2 block. Use eth_call to call.
+     * which happens well before the L1 rollup contract confirms the L2 block.
      * Throws if block doesnt exist in the L2 chain. Use eth_call to call.
      * @param blockHash The hash of the L2 block being queried
      * @return confirmations The number of L1 confirmations the sequencer batch has. Returns 0 if block not yet included in an L1 batch.
