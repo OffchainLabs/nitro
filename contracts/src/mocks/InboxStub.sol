@@ -99,6 +99,14 @@ contract InboxStub is IInbox {
         revert("NOT_IMPLEMENTED");
     }
 
+    function submitBatchSpendingReportTransaction(
+        address,
+        bytes32,
+        uint256
+    ) external pure override returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
     function createRetryableTicket(
         address,
         uint256,

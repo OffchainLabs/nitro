@@ -86,13 +86,6 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 }
 
 func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
-	agg, err := state.L1PricingState().ReimbursableAggregatorForSender(sender)
-	if err != nil {
-		return err
-	}
-	if agg == nil || *agg != l1pricing.SequencerAddress {
-		return errors.New("transaction sender's preferred aggregator is not the sequencer")
-	}
 	return nil
 }
 
@@ -217,7 +210,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 
 	header := &arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_L2Message,
-		Poster:      l1pricing.SequencerAddress,
+		Poster:      l1pricing.BatchPosterAddress,
 		BlockNumber: l1Block,
 		Timestamp:   uint64(timestamp),
 		RequestId:   nil,

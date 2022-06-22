@@ -26,15 +26,22 @@ interface ArbosActs {
     /**
      * @notice ArbOS "calls" this when starting a block
      * @param l1BaseFee the L1 BaseFee
-     * @param l2BaseFeeLastBlock the L2 BaseFee in the last block's header
      * @param l1BlockNumber the L1 block number
      * @param timePassed number of seconds since the last block
      */
     function startBlock(
         uint256 l1BaseFee,
-        uint256 l2BaseFeeLastBlock,
         uint64 l1BlockNumber,
+        uint64 l2BlockNumber,
         uint64 timePassed
+    ) external;
+
+    function batchPostingReport(
+        uint256 batchTimestamp,
+        address batchPosterAddress,
+        uint64 batchNumber,
+        uint64 batchDataGas,
+        uint256 l1BaseFeeWei
     ) external;
 
     error CallerNotArbOS();

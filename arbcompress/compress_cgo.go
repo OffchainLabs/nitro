@@ -20,7 +20,11 @@ import (
 func Decompress(input []byte, maxSize int) ([]byte, error) {
 	outbuf := make([]byte, maxSize)
 	outsize := C.size_t(maxSize)
-	res := C.BrotliDecoderDecompress(C.size_t(len(input)), (*C.uint8_t)(&input[0]), &outsize, (*C.uint8_t)(&outbuf[0]))
+	var ptr *C.uint8_t
+	if len(input) > 0 {
+		ptr = (*C.uint8_t)(&input[0])
+	}
+	res := C.BrotliDecoderDecompress(C.size_t(len(input)), ptr, &outsize, (*C.uint8_t)(&outbuf[0]))
 	if res != 1 {
 		return nil, fmt.Errorf("failed decompression: %d", res)
 	}

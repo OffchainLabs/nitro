@@ -187,6 +187,7 @@ fn fuzz_impl(data: &[u8]) -> Result<()> {
         &[],
         wavm_binary,
         true,
+        true,
         false,
         GlobalState::default(),
         Default::default(),

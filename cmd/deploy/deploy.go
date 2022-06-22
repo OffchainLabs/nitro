@@ -7,12 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/validator"
 	"io/ioutil"
 	"math/big"
 	"os"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"

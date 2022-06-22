@@ -66,7 +66,8 @@ pub enum FloatInstruction {
     UnOp(FloatType, FloatUnOp),
     BinOp(FloatType, FloatBinOp),
     RelOp(FloatType, FloatRelOp),
-    TruncIntOp(IntegerValType, FloatType, bool),
+    /// The bools represent (saturating, signed)
+    TruncIntOp(IntegerValType, FloatType, bool, bool),
     ConvertIntOp(FloatType, IntegerValType, bool),
     F32DemoteF64,
     F64PromoteF32,
@@ -80,7 +81,7 @@ impl FloatInstruction {
             FloatInstruction::RelOp(t, _) => {
                 FunctionType::new(vec![t.into(); 2], vec![ArbValueType::I32])
             }
-            FloatInstruction::TruncIntOp(i, f, _) => {
+            FloatInstruction::TruncIntOp(i, f, ..) => {
                 FunctionType::new(vec![f.into()], vec![i.into()])
             }
             FloatInstruction::ConvertIntOp(f, i, _) => {
@@ -171,12 +172,15 @@ impl FromStr for FloatInstruction {
             map(
                 all_consuming(tuple((
                     parse_int_type,
-                    tag("_trunc_"),
+                    alt((
+                        value(true, tag("_trunc_sat_")),
+                        value(false, tag("_trunc_")),
+                    )),
                     parse_fp_type,
                     tag("_"),
                     parse_signedness,
                 ))),
-                |(i, _, f, _, s)| FloatInstruction::TruncIntOp(i, f, s),
+                |(i, sat, f, _, s)| FloatInstruction::TruncIntOp(i, f, sat, s),
             ),
             map(
                 all_consuming(tuple((
@@ -230,9 +234,6 @@ pub struct Local {
 pub struct NameCustomSection {
     pub module: String,
     pub functions: HashMap<u32, String>,
-    // TODO: remove this when re-initializing the rollup
-    // this is kept around to deserialize old binaries
-    pub _locals_removed: HashMap<u32, HashMap<u32, String>>,
 }
 
 #[derive(Clone, Default)]

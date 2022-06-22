@@ -19,9 +19,11 @@ contracts/cache/
 solgen/go/
 contracts/deployments/
 contracts/test/prover/proofs/*.json
+contracts/test/prover/spec-proofs/*.json
 .make/
 /cmd/statetransfer/statetransfer
 /reproducible-wasm/*.wasm
 target/
 yarn-error.log
 local/
+testdata

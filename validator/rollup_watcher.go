@@ -177,7 +177,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 		if i > 0 {
 			lastHashIsSibling[0] = 1
 		}
-		lastHash = crypto.Keccak256Hash(lastHashIsSibling[:], lastHash[:], parsedLog.ExecutionHash[:], parsedLog.AfterInboxBatchAcc[:])
+		lastHash = crypto.Keccak256Hash(lastHashIsSibling[:], lastHash[:], parsedLog.ExecutionHash[:], parsedLog.AfterInboxBatchAcc[:], parsedLog.WasmModuleRoot[:])
 		infos = append(infos, &NodeInfo{
 			NodeNum:            parsedLog.NodeNum,
 			BlockProposed:      ethLog.BlockNumber,

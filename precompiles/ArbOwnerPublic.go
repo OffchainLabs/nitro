@@ -16,7 +16,7 @@ type ArbOwnerPublic struct {
 
 // Retrieves the list of chain owners
 func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.State.ChainOwners().AllMembers()
+	return c.State.ChainOwners().AllMembers(65536)
 }
 
 // See if the user is a chain owner

@@ -4,6 +4,7 @@
 package addressSet
 
 import (
+	"github.com/ethereum/go-ethereum/common/math"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -92,7 +93,7 @@ func TestAddressSet(t *testing.T) {
 	}
 
 	Require(t, aset.Add(addr1))
-	all, err := aset.AllMembers()
+	all, err := aset.AllMembers(math.MaxUint64)
 	Require(t, err)
 	if len(all) != 2 {
 		Fail(t)

@@ -92,11 +92,25 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		Fail(t, "Unexpected balance:", l2balance)
 	}
 
-	lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
+	lastBlock, err := l2clientB.BlockByNumber(ctx, nil)
 	Require(t, err)
+	for {
+		usefulBlock := false
+		for _, tx := range lastBlock.Transactions() {
+			if tx.Type() != types.ArbitrumInternalTxType {
+				usefulBlock = true
+				break
+			}
+		}
+		if usefulBlock {
+			break
+		}
+		lastBlock, err = l2clientB.BlockByHash(ctx, lastBlock.ParentHash())
+		Require(t, err)
+	}
 	testDeadLine, _ := t.Deadline()
 	nodeA.StopAndWait()
-	if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), time.Until(testDeadLine)-time.Second*10) {
+	if !nodeB.BlockValidator.WaitForBlock(lastBlock.NumberU64(), time.Until(testDeadLine)-time.Second*10) {
 		Fail(t, "did not validate all blocks")
 	}
 	nodeB.StopAndWait()
