@@ -18,6 +18,7 @@ import (
 )
 
 func TestDelayInboxLong(t *testing.T) {
+	t.Parallel()
 	addLocalLoops := 3
 	messagesPerAddLocal := 1000
 	messagesPerDelayed := 10

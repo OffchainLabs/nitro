@@ -111,6 +111,7 @@ func TestRetryableNoExist(t *testing.T) {
 }
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
+	t.Parallel()
 	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -180,6 +181,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 }
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
+	t.Parallel()
 	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -272,6 +274,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 }
 
 func TestSubmissionGasCosts(t *testing.T) {
+	t.Parallel()
 	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t)
 	defer teardown()
 

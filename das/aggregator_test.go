@@ -264,6 +264,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 }
 
 func initTest(t *testing.T) int {
+	t.Parallel()
 	seed := time.Now().UnixNano()
 	seedStr := os.Getenv("SEED")
 	if len(seedStr) > 0 {

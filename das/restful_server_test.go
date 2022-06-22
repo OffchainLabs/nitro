@@ -6,18 +6,36 @@ package das
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
 const LocalServerAddressForTest = "localhost"
-const LocalServerPortForTest = 9877
 
-func TestRestfulClientServer(t *testing.T) { //nolint
+func NewRestfulDasServerOnRandomPort(address string, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, int, error) {
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:0", address))
+	if err != nil {
+		return nil, 0, err
+	}
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return nil, 0, errors.New("attempt to listen on TCP returned non-TCP address")
+	}
+	rds, err := NewRestfulDasServerOnListener(listener, storageService)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rds, tcpAddr.Port, nil
+}
+
+func TestRestfulClientServer(t *testing.T) {
 	initTest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -27,7 +45,7 @@ func TestRestfulClientServer(t *testing.T) { //nolint
 	data := []byte("Testing a restful server now.")
 	dataHash := crypto.Keccak256(data)
 
-	server, err := NewRestfulDasServer(LocalServerAddressForTest, LocalServerPortForTest, storage)
+	server, port, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage)
 	Require(t, err)
 
 	err = storage.Put(ctx, data, uint64(time.Now().Add(time.Hour).Unix()))
@@ -35,7 +53,7 @@ func TestRestfulClientServer(t *testing.T) { //nolint
 
 	time.Sleep(100 * time.Millisecond)
 
-	client := NewRestfulDasClient("http", LocalServerAddressForTest, LocalServerPortForTest)
+	client := NewRestfulDasClient("http", LocalServerAddressForTest, port)
 	returnedData, err := client.GetByHash(ctx, dataHash)
 	Require(t, err)
 	if !bytes.Equal(data, returnedData) {

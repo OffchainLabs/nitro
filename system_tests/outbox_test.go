@@ -24,6 +24,7 @@ import (
 )
 
 func TestOutboxProofs(t *testing.T) {
+	t.Parallel()
 	arbstate.RequireHookedGeth()
 	rand.Seed(time.Now().UTC().UnixNano())
 	ctx, cancel := context.WithCancel(context.Background())
