@@ -30,6 +30,8 @@ import (
 
 var arbosAddress = types.ArbosAddress
 
+const GasEstimationL1PricePadding arbmath.Bips = 11000 // pad estimates by 10%
+
 // A TxProcessor is created and freed for every L2 transaction.
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
@@ -278,8 +280,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		}
 		gasPrice = adjustedPrice
 
-		// Pad the L1 cost by 10% in case the L1 gas price rises
-		posterCost = arbmath.BigMulByFrac(posterCost, 110, 100)
+		// Pad the L1 cost in case the L1 gas price rises
+		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
 	}
 
 	if gasPrice.Sign() > 0 {
