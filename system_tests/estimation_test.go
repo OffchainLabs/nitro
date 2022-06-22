@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -129,24 +130,24 @@ func TestComponentEstimate(t *testing.T) {
 	defer cancel()
 
 	l2info, node, client := CreateTestL2(t, ctx)
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	// auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, client)
 	Require(t, err)
-	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
-	Require(t, err)
+	/*arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
+	Require(t, err)*/
 
-	l1BaseFee := big.NewInt(2e8)
+	l1BaseFee := uint64(l1pricing.InitialPricePerUnitWei * 16)
 	l2BaseFee := GetBaseFee(t, client, ctx)
 
 	colors.PrintGrey("l1 basefee ", l1BaseFee)
 	colors.PrintGrey("l2 basefee ", l2BaseFee)
 
 	// set the l1 base fee
-	tx, err := arbOwner.SetL1BaseFeeEstimate(&auth, l1BaseFee)
+	/*tx, err := arbOwner.(&auth, l1BaseFee)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
+	Require(t, err)*/
 
 	userBalance := big.NewInt(1e16)
 	maxPriorityFeePerGas := big.NewInt(0)
@@ -157,16 +158,18 @@ func TestComponentEstimate(t *testing.T) {
 
 	from := l2info.GetAddress("User")
 	to := testhelpers.RandomAddress()
-	gas := uint64(1000000)
+	//gas := uint64(100000000)
 	data := []byte{0x00, 0x12}
 	value := big.NewInt(4096)
 
-	estimates, err := nodeInterface.GasEstimateComponents(
-		&bind.CallOpts{}, from, to, false, gas, maxFeePerGas, maxPriorityFeePerGas, value, data,
-	)
+	callOpts := &bind.CallOpts{
+		From: from,
+	}
+
+	estimates, err := nodeInterface.GasEstimateComponents(callOpts, data)
 	Require(t, err)
 
-	tx = l2info.SignTxAs("User", &types.DynamicFeeTx{
+	tx := l2info.SignTxAs("User", &types.DynamicFeeTx{
 		ChainID:   node.ArbInterface.BlockChain().Config().ChainID,
 		Nonce:     0,
 		GasTipCap: maxPriorityFeePerGas,
@@ -181,8 +184,8 @@ func TestComponentEstimate(t *testing.T) {
 
 	colors.PrintBlue("Est. ", estimates.GasEstimate, " - ", estimates.GasEstimateForL1, " = ", l2Estimate)
 
-	if estimates.L1BaseFeeEstimate != l1BaseFee.Uint64() {
-		Fail(t, estimates.L1BaseFeeEstimate, l1BaseFee.Uint64())
+	if estimates.L1BaseFeeEstimate != l1BaseFee {
+		Fail(t, estimates.L1BaseFeeEstimate, l1BaseFee)
 	}
 	if estimates.BaseFee != l2BaseFee.Uint64() {
 		Fail(t, estimates.BaseFee, l2BaseFee.Uint64())

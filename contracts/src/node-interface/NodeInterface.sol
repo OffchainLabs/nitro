@@ -67,20 +67,13 @@ interface NodeInterface {
 
     /**
      * @notice Same as native gas estimation, but with additional info on the l1 costs
-     * @param ignoreTo whether to drop the "to" field
+     * @param data the tx's calldata. Everything else like "from" and "to" are copied over
      * @return gasEstimate an estimate of the total amount of gas needed for this tx
      * @return gasEstimateForL1 an estimate of the amount of gas needed for the l1 component of this tx
      * @return baseFee the l2 base fee
      * @return l1BaseFeeEstimate ArbOS's l1 estimate of the l1 base fee
      */
     function gasEstimateComponents(
-        address from,
-        address to,
-        bool ignoreTo,
-        uint64 gas,
-        uint256 maxFeePerGas,
-        uint256 maxPriorityFeePerGas,
-        uint256 value,
         bytes calldata data
     )
         external

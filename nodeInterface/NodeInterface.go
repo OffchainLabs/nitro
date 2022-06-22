@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -417,40 +418,37 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	return send, root, hashes32, nil
 }
 
-func (n NodeInterface) GasEstimateComponents(
-	c ctx,
-	evm mech,
-	from, to addr,
-	ignoreTo bool,
-	gas uint64,
-	maxFeePerGas, maxPriorityFeePerGas, value huge,
-	data []byte,
-) (uint64, uint64, uint64, uint64, error) {
-
+func (n NodeInterface) GasEstimateComponents(c ctx, evm mech, data []byte) (uint64, uint64, uint64, uint64, error) {
 	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
 
+	msg := n.sourceMessage
 	context := n.context
 	chainid := evm.ChainConfig().ChainID
 	backend := node.Backend.APIBackend()
 	gasCap := backend.RPCGasCap()
 	block := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(n.header.Number.Int64()))
-	nonce := uint64(0)
+
+	from := msg.From()
+	to := msg.To()
+	gas := msg.Gas()
+	value := msg.Value()
+	nonce := msg.Nonce()
+	maxFeePerGas := msg.GasFeeCap()
+	maxPriorityFeePerGas := msg.GasTipCap()
 
 	args := arbitrum.TransactionArgs{
 		ChainID:              (*hexutil.Big)(chainid),
 		From:                 &from,
+		To:                   to,
 		Gas:                  (*hexutil.Uint64)(&gas),
 		MaxFeePerGas:         (*hexutil.Big)(maxFeePerGas),
 		MaxPriorityFeePerGas: (*hexutil.Big)(maxPriorityFeePerGas),
 		Value:                (*hexutil.Big)(value),
 		Nonce:                (*hexutil.Uint64)(&nonce),
 		Data:                 (*hexutil.Bytes)(&data),
-	}
-	if !ignoreTo {
-		args.To = &to
 	}
 
 	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, gasCap)
@@ -461,24 +459,17 @@ func (n NodeInterface) GasEstimateComponents(
 
 	pricing := c.State.L1PricingState()
 
-	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
+	msg, err = args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
-	poster, err := pricing.ReimbursableAggregatorForSender(from)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	if poster == nil {
-		poster = &addr{}
-	}
-	feeForL1, _ := pricing.PosterDataCost(msg, from, *poster)
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
 
 	baseFee, err := c.State.L2PricingState().BaseFeeWei()
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
-	l1BaseFeeEstimate, err := pricing.L1BaseFeeEstimateWei()
+	l1BaseFeeEstimate, err := pricing.L1BaseFeeEstimate()
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
