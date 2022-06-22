@@ -32,22 +32,6 @@ func NewRestfulDasServer(address string, port uint64, storageService arbstate.Da
 	return NewRestfulDasServerOnListener(listener, storageService)
 }
 
-func NewRestfulDasServerOnRandomPort(address string, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, int, error) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:0", address))
-	if err != nil {
-		return nil, 0, err
-	}
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		return nil, 0, errors.New("attempt to listen on TCP returned non-TCP address")
-	}
-	rds, err := NewRestfulDasServerOnListener(listener, storageService)
-	if err != nil {
-		return nil, 0, err
-	}
-	return rds, tcpAddr.Port, nil
-}
-
 func NewRestfulDasServerOnListener(listener net.Listener, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
 
 	ret := &RestfulDasServer{

@@ -6,17 +6,36 @@ package das
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
 const LocalServerAddressForTest = "localhost"
 
-func TestRestfulClientServer(t *testing.T) { //nolint
+func NewRestfulDasServerOnRandomPort(address string, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, int, error) {
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:0", address))
+	if err != nil {
+		return nil, 0, err
+	}
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return nil, 0, errors.New("attempt to listen on TCP returned non-TCP address")
+	}
+	rds, err := NewRestfulDasServerOnListener(listener, storageService)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rds, tcpAddr.Port, nil
+}
+
+func TestRestfulClientServer(t *testing.T) {
 	initTest(t)
 
 	ctx, cancel := context.WithCancel(context.Background())

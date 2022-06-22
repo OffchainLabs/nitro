@@ -77,7 +77,7 @@ func newListHttpServerForTest(t *testing.T, contents string) (int, *http.Server)
 	server := &http.Server{
 		Handler: &testHandler{contents},
 	}
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	go func() {
 		_ = server.Serve(listener)
