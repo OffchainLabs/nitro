@@ -17,6 +17,7 @@ type NodeInterfaceDebug struct {
 	Address       addr
 	backend       core.NodeInterfaceBackendAPI
 	context       context.Context
+	header        *types.Header
 	sourceMessage types.Message
 	returnMessage struct {
 		message *types.Message

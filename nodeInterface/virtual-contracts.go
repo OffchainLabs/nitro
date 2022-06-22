@@ -66,6 +66,7 @@ func init() {
 				duplicate := *nodeInterfaceImpl
 				duplicate.backend = backend
 				duplicate.context = ctx
+				duplicate.header = header
 				duplicate.sourceMessage = msg
 				duplicate.returnMessage.message = returnMessage
 				duplicate.returnMessage.changed = &swapMessages
@@ -75,6 +76,7 @@ func init() {
 				duplicate := *nodeInterfaceDebugImpl
 				duplicate.backend = backend
 				duplicate.context = ctx
+				duplicate.header = header
 				duplicate.sourceMessage = msg
 				duplicate.returnMessage.message = returnMessage
 				duplicate.returnMessage.changed = &swapMessages
