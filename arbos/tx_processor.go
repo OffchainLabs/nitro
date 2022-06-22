@@ -154,7 +154,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if err := transfer(&tx.From, &networkFeeAccount, submissionFee); err != nil {
 			return true, 0, err, nil
 		}
-		takeFunds(availableRefund, submissionFee)
+		withholdenSubmissionFee := takeFunds(availableRefund, submissionFee)
 
 		// refund excess submission fee
 		submissionFeeRefund := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
@@ -220,6 +220,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			glog.Error("failed to transfer gasPriceRefund", "err", err)
 		}
 		availableRefund.Add(availableRefund, withholdenGasFunds)
+		availableRefund.Add(availableRefund, withholdenSubmissionFee)
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
@@ -230,6 +231,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			ticketId,
 			tx.FeeRefundAddr,
 			availableRefund,
+			submissionFee,
 		)
 		p.state.Restrict(err)
 
@@ -244,6 +246,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			types.NewTx(retryTxInner).Hash(),
 			tx.FeeRefundAddr,
 			availableRefund,
+			submissionFee,
 		)
 		if err != nil {
 			glog.Error("failed to emit RedeemScheduled event", "err", err)
@@ -370,26 +373,47 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
+
+		// undo Geth's refund to the From address
+		gasRefund := arbmath.BigMulByUint(gasPrice, gasLeft)
+		err := util.TransferBalance(&inner.From, nil, gasRefund, p.evm, scenario, "undoRefund")
+		if err != nil {
+			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
+		}
+
 		maxRefund := new(big.Int).Set(inner.MaxRefund)
+		refundNetworkFee := func(amount *big.Int) {
+			const errLog = "network fee address doesn't have enough funds to give user refund"
+
+			// Refund funds to the fee refund address without overdrafting the L1 deposit.
+			toRefundAddr := takeFunds(maxRefund, amount)
+			err = util.TransferBalance(&networkFeeAccount, &inner.RefundTo, toRefundAddr, p.evm, scenario, "refund")
+			if err != nil {
+				// Normally the network fee address should be holding any collected fees.
+				// However, in theory, they could've been transfered out during the redeem attempt.
+				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
+				log.Error(errLog, "err", err)
+			}
+			// Any extra refund can't be given to the fee refund address if it didn't come from the L1 deposit.
+			// Instead, give the refund to the retryable from address.
+			err = util.TransferBalance(&networkFeeAccount, &inner.From, arbmath.BigSub(amount, toRefundAddr), p.evm, scenario, "refund")
+			if err != nil {
+				log.Error(errLog, "err", err)
+			}
+		}
+
+		if success {
+			// If successful, refund the submission fee.
+			refundNetworkFee(inner.SubmissionFeeRefund)
+		} else {
+			// The submission fee is still taken from the L1 deposit earlier, even if it's not refunded.
+			takeFunds(maxRefund, inner.SubmissionFeeRefund)
+		}
 		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
 		takeFunds(maxRefund, arbmath.BigMulByUint(gasPrice, gasUsed))
 		// Refund any unused gas, without overdrafting the L1 deposit.
-		refund := takeFunds(maxRefund, arbmath.BigMulByUint(gasPrice, gasLeft))
+		refundNetworkFee(gasRefund)
 
-		// undo Geth's refund to the From address
-		err := util.TransferBalance(&inner.From, nil, refund, p.evm, scenario, "undoRefund")
-		if err != nil {
-			log.Error("Uh oh, Geth didn't refund the user", inner.From, refund)
-		}
-
-		// refund the RefundTo by taking fees back from the network address
-		err = util.TransferBalance(&networkFeeAccount, &inner.RefundTo, refund, p.evm, scenario, "refund")
-		if err != nil {
-			// Normally the network fee address should be holding the gas funds.
-			// However, in theory, they could've been transfered out during the redeem attempt.
-			// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
-			log.Error("network fee address doesn't have enough funds to give user refund", "err", err)
-		}
 		if success {
 			// we don't want to charge for this
 			tracingInfo := util.NewTracingInfo(p.evm, arbosAddress, p.msg.From(), scenario)
@@ -473,6 +497,7 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 			event.TicketId,
 			event.GasDonor,
 			event.MaxRefund,
+			event.SubmissionFeeRefund,
 		)
 		scheduled = append(scheduled, types.NewTx(redeem))
 	}

@@ -329,12 +329,6 @@ func TestSubmissionGasCosts(t *testing.T) {
 	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGasLimit)
 	excessWei.Add(excessWei, arbmath.BigMul(excessGasPrice, retryableGas))
 
-	l1HeaderAfterSubmit, err := l1client.HeaderByHash(ctx, l1receipt.BlockHash)
-	Require(t, err)
-	l1BaseFee := l1HeaderAfterSubmit.BaseFee
-	submitFee := arbmath.BigMulByUint(l1BaseFee, uint64(1400+6*len(retryableCallData)))
-	submissionFeeRefund := arbmath.BigSub(maxSubmissionFee, submitFee)
-
 	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
 	beneficiaryFunds, err := l2client.BalanceAt(ctx, beneficiaryAddress, nil)
@@ -370,7 +364,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	colors.PrintBlue("Excess Gas       ", excessGasLimit)
 	colors.PrintBlue("Excess Wei       ", excessWei)
 	colors.PrintMint("Fee Refund       ", refundFunds)
-	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(excessWei, submissionFeeRefund)) {
+	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(excessWei, maxSubmissionFee)) {
 		Fail(t, "The Fee Refund Address didn't receive the right funds")
 	}
 

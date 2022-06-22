@@ -21,11 +21,11 @@ type ArbRetryableTx struct {
 	Address                 addr
 	TicketCreated           func(ctx, mech, bytes32) error
 	LifetimeExtended        func(ctx, mech, bytes32, huge) error
-	RedeemScheduled         func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge) error
+	RedeemScheduled         func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, huge, huge) error
 	Canceled                func(ctx, mech, bytes32) error
 	TicketCreatedGasCost    func(bytes32) (uint64, error)
 	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
-	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr, huge) (uint64, error)
+	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr, huge, huge) (uint64, error)
 	CanceledGasCost         func(bytes32) (uint64, error)
 
 	// deprecated event
@@ -79,6 +79,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		ticketId,
 		c.caller,
 		maxRefund,
+		common.Big0,
 	)
 	if err != nil {
 		return hash{}, err
@@ -86,7 +87,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
 	//     by that much, so that we'll donate the correct amount of gas
-	eventCost, err := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0)
+	eventCost, err := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0, common.Big0)
 	if err != nil {
 		return hash{}, err
 	}
@@ -108,7 +109,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	retryTx := types.NewTx(retryTxInner)
 	retryTxHash := retryTx.Hash()
 
-	err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, nonce, gasToDonate, c.caller, maxRefund)
+	err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, nonce, gasToDonate, c.caller, maxRefund, common.Big0)
 	if err != nil {
 		return hash{}, err
 	}

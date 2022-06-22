@@ -88,7 +88,8 @@ interface ArbRetryableTx {
         uint64 indexed sequenceNum,
         uint64 donatedGas,
         address gasDonor,
-        uint256 maxRefund
+        uint256 maxRefund,
+        uint256 submissionFeeRefund
     );
     event Canceled(bytes32 indexed ticketId);
 
