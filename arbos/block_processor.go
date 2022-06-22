@@ -224,8 +224,8 @@ func ProduceBlockAdvanced(
 
 			if gasPrice.Sign() > 0 {
 				dataGas = math.MaxUint64
-				state.L1PricingState().AddPosterInfo(tx, poster)
-				posterCostInL2Gas := arbmath.BigDiv(tx.PosterCost, gasPrice)
+				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster)
+				posterCostInL2Gas := arbmath.BigDiv(posterCost, gasPrice)
 
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
