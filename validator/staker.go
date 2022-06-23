@@ -266,7 +266,9 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	// If the wallet address is zero, or the wallet address isn't staked,
 	// this will return the latest node and its hash (atomically).
-	latestStakedNodeNum, latestStakedNodeInfo, err := s.validatorUtils.LatestStaked(callOpts, s.rollupAddress, walletAddressOrZero)
+	latestStakedNodeNum, latestStakedNodeInfo, err := s.validatorUtils.LatestStaked(
+		callOpts, s.rollupAddress, walletAddressOrZero,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -336,6 +338,16 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				log.Info("removing old stake to re-place stake on latest confirmed node")
 			}
 			return s.wallet.ExecuteTransactions(ctx, s.builder)
+		}
+	}
+
+	if rawInfo != nil {
+		exists, err := s.rollup.NodeHasStaker(callOpts, rawInfo.LatestStakedNode, *walletAddress)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			fmt.Printf("NodeHasStaker is false for own latest staked node %v\n", rawInfo.LatestStakedNode)
 		}
 	}
 
