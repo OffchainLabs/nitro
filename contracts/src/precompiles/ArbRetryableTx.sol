@@ -56,6 +56,13 @@ interface ArbRetryableTx {
     function cancel(bytes32 ticketId) external;
 
     /**
+     * @notice Gets the redeemer of the current retryable redeem attempt.
+     * Returns the zero address if the current transaction is not a retryable redeem attempt.
+     * If this is an auto-redeem, returns the fee refund address of the retryable.
+     */
+    function getCurrentRedeemer() external view returns (address);
+
+    /**
      * @notice Do not call. This method represents a retryable submission to aid explorers.
      * Calling it will always revert.
      */
@@ -80,7 +87,9 @@ interface ArbRetryableTx {
         bytes32 indexed retryTxHash,
         uint64 indexed sequenceNum,
         uint64 donatedGas,
-        address gasDonor
+        address gasDonor,
+        uint256 maxRefund,
+        uint256 submissionFeeRefund
     );
     event Canceled(bytes32 indexed ticketId);
 
