@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"time"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -41,6 +42,7 @@ func main() {
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumDevTestChainConfig().ChainID.Uint64(), "L2 chain ID")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
+	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
@@ -67,7 +69,13 @@ func main() {
 	machineConfig := validator.DefaultNitroMachineConfig
 	machineConfig.RootPath = *wasmrootpath
 
-	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, headerreader.DefaultConfig, machineConfig)
+	headerReaderConfig := headerreader.DefaultConfig
+	headerReaderConfig.TxTimeout = *txTimeout
+
+	deployPtr, err := arbnode.DeployOnL1(
+		ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators,
+		common.HexToHash(*wasmmoduleroot), l2ChainId, headerReaderConfig, machineConfig,
+	)
 	if err != nil {
 		flag.Usage()
 		log.Error("error deploying on l1")
