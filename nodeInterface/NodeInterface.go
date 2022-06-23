@@ -427,6 +427,10 @@ func (n NodeInterface) GasEstimateComponents(
 		return 0, 0, nil, nil, err
 	}
 
+	if to == types.NodeInterfaceAddress || to == types.NodeInterfaceDebugAddress {
+		return 0, 0, nil, nil, errors.New("cannot estimate virtual contract")
+	}
+
 	msg := n.sourceMessage
 	context := n.context
 	chainid := evm.ChainConfig().ChainID
