@@ -35,6 +35,8 @@ func main() {
 	l1conn := flag.String("l1conn", "", "l1 connection")
 	l1keystore := flag.String("l1keystore", "", "l1 private key store")
 	deployAccount := flag.String("l1DeployAccount", "", "l1 seq account to use (default is first account in keystore)")
+	ownerAddress := flag.String("ownerAddress", "", "the rollup owner's address")
+	sequencerAddress := flag.String("sequencerAddress", "", "the sequencer's address")
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
@@ -66,6 +68,13 @@ func main() {
 		panic(err)
 	}
 
+	if !common.IsHexAddress(*sequencerAddress) {
+		panic("please specify a valid sequencer address")
+	}
+	if !common.IsHexAddress(*ownerAddress) {
+		panic("please specify a valid rollup owner address")
+	}
+
 	machineConfig := validator.DefaultNitroMachineConfig
 	machineConfig.RootPath = *wasmrootpath
 
@@ -73,8 +82,16 @@ func main() {
 	headerReaderConfig.TxTimeout = *txTimeout
 
 	deployPtr, err := arbnode.DeployOnL1(
-		ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators,
-		common.HexToHash(*wasmmoduleroot), l2ChainId, headerReaderConfig, machineConfig,
+		ctx,
+		l1client,
+		l1TransactionOpts,
+		common.HexToAddress(*sequencerAddress),
+		common.HexToAddress(*ownerAddress),
+		*authorizevalidators,
+		common.HexToHash(*wasmmoduleroot),
+		l2ChainId,
+		headerReaderConfig,
+		machineConfig,
 	)
 	if err != nil {
 		flag.Usage()
