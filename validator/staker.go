@@ -341,16 +341,6 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	if rawInfo != nil {
-		exists, err := s.rollup.NodeHasStaker(callOpts, rawInfo.LatestStakedNode, *walletAddress)
-		if err != nil {
-			return nil, err
-		}
-		if !exists {
-			fmt.Printf("NodeHasStaker is false for own latest staked node %v\n", rawInfo.LatestStakedNode)
-		}
-	}
-
 	// Resolve nodes if either we're on the make nodes strategy,
 	// or we're on the stake latest strategy but don't have a stake
 	// (attempt to reduce the current required stake).

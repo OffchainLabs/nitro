@@ -203,7 +203,7 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			if tx.Type() == types.ArbitrumInternalTxType {
+			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 			}
