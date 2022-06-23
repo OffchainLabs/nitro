@@ -369,7 +369,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         }
 
         return
-            unsafeCreateRetryableTicket(
+            unsafeCreateRetryableTicketInternal(
                 to,
                 l2CallValue,
                 maxSubmissionCost,
@@ -398,7 +398,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @param data ABI encoded data of L2 message
      * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
      */
-    function unsafeCreateRetryableTicket(
+    function unsafeCreateRetryableTicketInternal(
         address to,
         uint256 l2CallValue,
         uint256 maxSubmissionCost,
@@ -407,7 +407,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) public payable virtual override whenNotPaused onlyAllowed returns (uint256) {
+    ) internal virtual whenNotPaused onlyAllowed returns (uint256) {
         // gas price and limit of 1 should never be a valid input, so instead they are used as
         // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
         if (gasLimit == 1 || maxFeePerGas == 1)
@@ -445,6 +445,19 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     data
                 )
             );
+    }
+
+    function unsafeCreateRetryableTicket(
+        address,
+        uint256,
+        uint256,
+        address,
+        address,
+        uint256,
+        uint256,
+        bytes calldata
+    ) public payable override returns (uint256) {
+        revert("UNSAFE_RETRYABLES_TEMPORARILY_DISABLED");
     }
 
     function _deliverMessage(

@@ -88,6 +88,7 @@ interface IInbox is IDelayedMessageProvider {
         bytes calldata data
     ) external payable returns (uint256);
 
+    /// @notice TEMPORARILY DISABLED as exact mechanics are being worked out
     /// @dev Gas limit and maxFeePerGas should not be set to 1 as that is used to trigger the RetryableData error
     function unsafeCreateRetryableTicket(
         address to,
