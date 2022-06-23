@@ -506,6 +506,7 @@ type SequencerConfig struct {
 	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed"`
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
+	SenderWhitelist             []string                 `koanf:"sender-whitelist"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -522,6 +523,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxBlockSpeed:               time.Millisecond * 10,
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
+	SenderWhitelist:             nil,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -530,6 +532,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
+	f.StringArray(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "whitelist of authorized senders (if empty, everyone is allowed)")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 

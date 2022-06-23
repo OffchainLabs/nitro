@@ -6,11 +6,12 @@ package arbnode
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"math"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -41,10 +42,11 @@ func (i *txQueueItem) returnResult(err error) {
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
-	txStreamer *TransactionStreamer
-	txQueue    chan txQueueItem
-	l1Reader   *headerreader.HeaderReader
-	config     SequencerConfig
+	txStreamer      *TransactionStreamer
+	txQueue         chan txQueueItem
+	l1Reader        *headerreader.HeaderReader
+	config          SequencerConfig
+	senderWhitelist map[common.Address]struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -55,17 +57,40 @@ type Sequencer struct {
 }
 
 func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfig) (*Sequencer, error) {
+	senderWhitelist := make(map[common.Address]struct{})
+	for _, address := range config.SenderWhitelist {
+		if len(address) == 0 {
+			continue
+		}
+		if !common.IsHexAddress(address) {
+			return nil, fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
+		}
+		senderWhitelist[common.HexToAddress(address)] = struct{}{}
+	}
 	return &Sequencer{
-		txStreamer:    txStreamer,
-		txQueue:       make(chan txQueueItem, 128),
-		l1Reader:      l1Reader,
-		config:        config,
-		l1BlockNumber: 0,
-		l1Timestamp:   0,
+		txStreamer:      txStreamer,
+		txQueue:         make(chan txQueueItem, 128),
+		l1Reader:        l1Reader,
+		config:          config,
+		senderWhitelist: senderWhitelist,
+		l1BlockNumber:   0,
+		l1Timestamp:     0,
 	}, nil
 }
 
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	if len(s.senderWhitelist) > 0 {
+		signer := types.LatestSigner(s.txStreamer.bc.Config())
+		sender, err := types.Sender(signer, tx)
+		if err != nil {
+			return err
+		}
+		_, authorized := s.senderWhitelist[sender]
+		if !authorized {
+			return errors.New("transaction sender is not on the whitelist")
+		}
+	}
+
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
 		tx,
