@@ -291,7 +291,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer, rollupOwner common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -330,7 +330,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 			StakeToken:                     common.Address{},
 			BaseStake:                      big.NewInt(params.Ether),
 			WasmModuleRoot:                 wasmModuleRoot,
-			Owner:                          deployAuth.From,
+			Owner:                          rollupOwner,
 			LoserStakeEscrow:               common.Address{},
 			ChainId:                        chainId,
 			SequencerInboxMaxTimeVariation: seqInboxParams,
@@ -353,10 +353,14 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	if err != nil {
 		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
 	}
-	tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	if err != nil {
-		return nil, fmt.Errorf("error setting is batch poster: %w", err)
+
+	// if a zero sequencer address is specified, don't authorize any sequencers
+	if sequencer != (common.Address{}) {
+		tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
+		err = andTxSucceeded(ctx, l1Reader, tx, err)
+		if err != nil {
+			return nil, fmt.Errorf("error setting is batch poster: %w", err)
+		}
 	}
 
 	var allowValidators []bool

@@ -6,11 +6,12 @@ package arbnode
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"math"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
