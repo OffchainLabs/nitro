@@ -4,7 +4,7 @@
 
 pragma solidity ^0.8.4;
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
 import "./IBridge.sol";
@@ -20,7 +20,7 @@ import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
  * Since the escrow is held here, this contract also contains a list of allowed
  * outboxes that can make calls from here and withdraw this escrow.
  */
-contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
+contract Bridge is Initializable, DelegateCallAware, IBridge {
     using AddressUpgradeable for address;
 
     struct InOutInfo {
@@ -42,13 +42,24 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     /// @dev Accumulator for sequencer inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override sequencerInboxAccs;
 
+    IOwnable public override rollup;
     address public sequencerInbox;
 
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
-    function initialize() external initializer onlyDelegated {
+    function initialize(IOwnable rollup_) external initializer onlyDelegated {
         _activeOutbox = EMPTY_ACTIVEOUTBOX;
-        __Ownable_init();
+        rollup = rollup_;
+    }
+
+    modifier onlyRollupOrOwner() {
+        if (msg.sender != address(rollup)) {
+            address rollupOwner = rollup.owner();
+            if (msg.sender != rollupOwner) {
+                revert NotRollupOrOwner(msg.sender, address(rollup), rollupOwner);
+            }
+        }
+        _;
     }
 
     /// @dev returns the address of current active Outbox, or zero if no outbox is active
@@ -197,12 +208,12 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         emit BridgeCallTriggered(msg.sender, to, value, data);
     }
 
-    function setSequencerInbox(address _sequencerInbox) external override onlyOwner {
+    function setSequencerInbox(address _sequencerInbox) external override onlyRollupOrOwner {
         sequencerInbox = _sequencerInbox;
         emit SequencerInboxUpdated(_sequencerInbox);
     }
 
-    function setDelayedInbox(address inbox, bool enabled) external override onlyOwner {
+    function setDelayedInbox(address inbox, bool enabled) external override onlyRollupOrOwner {
         InOutInfo storage info = allowedDelayedInboxesMap[inbox];
         bool alreadyEnabled = info.allowed;
         emit InboxToggle(inbox, enabled);
@@ -222,7 +233,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         }
     }
 
-    function setOutbox(address outbox, bool enabled) external override onlyOwner {
+    function setOutbox(address outbox, bool enabled) external override onlyRollupOrOwner {
         if (outbox == EMPTY_ACTIVEOUTBOX) revert InvalidOutboxSet(outbox);
 
         InOutInfo storage info = allowedOutboxesMap[outbox];

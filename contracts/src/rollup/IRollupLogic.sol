@@ -8,8 +8,9 @@ import "./RollupLib.sol";
 import "./IRollupCore.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
+import "../bridge/IOwnable.sol";
 
-interface IRollupUserAbs is IRollupCore {
+interface IRollupUserAbs is IRollupCore, IOwnable {
     /// @dev the user logic just validated configuration and shouldn't write to state during init
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address stakeToken) external view;
@@ -53,8 +54,6 @@ interface IRollupUserAbs is IRollupCore {
     function requireUnresolved(uint256 nodeNum) external view;
 
     function withdrawStakerFunds() external returns (uint256);
-
-    function owner() external view returns (address);
 
     function createChallenge(
         address[2] calldata stakers,

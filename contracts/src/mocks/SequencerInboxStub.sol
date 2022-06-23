@@ -13,7 +13,7 @@ contract SequencerInboxStub is SequencerInbox {
         ISequencerInbox.MaxTimeVariation memory maxTimeVariation_
     ) {
         bridge = bridge_;
-        rollup = msg.sender;
+        rollup = IOwnable(msg.sender);
         maxTimeVariation = maxTimeVariation_;
         isBatchPoster[sequencer_] = true;
     }

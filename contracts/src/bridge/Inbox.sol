@@ -21,7 +21,6 @@ import {
 } from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
@@ -42,7 +41,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     event AllowListAddressSet(address indexed user, bool val);
     event AllowListEnabledUpdated(bool isEnabled);
 
-    function setAllowList(address[] memory user, bool[] memory val) external onlyOwner {
+    function setAllowList(address[] memory user, bool[] memory val) external onlyRollupOrOwner {
         require(user.length == val.length, "INVALID_INPUT");
 
         for (uint256 i = 0; i < user.length; i++) {
@@ -51,7 +50,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         }
     }
 
-    function setAllowListEnabled(bool _allowListEnabled) external onlyOwner {
+    function setAllowListEnabled(bool _allowListEnabled) external onlyRollupOrOwner {
         require(_allowListEnabled != allowListEnabled, "ALREADY_SET");
         allowListEnabled = _allowListEnabled;
         emit AllowListEnabledUpdated(_allowListEnabled);
@@ -68,20 +67,24 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     /// ------------------------------------ allow list end ------------------------------------ ///
 
-    modifier onlyOwner() {
-        // whoevever owns the Bridge, also owns the Inbox. this is usually the rollup contract
-        address bridgeOwner = OwnableUpgradeable(address(bridge)).owner();
-        if (msg.sender != bridgeOwner) revert NotOwner(msg.sender, bridgeOwner);
+    modifier onlyRollupOrOwner() {
+        IOwnable rollup = bridge.rollup();
+        if (msg.sender != address(rollup)) {
+            address rollupOwner = rollup.owner();
+            if (msg.sender != rollupOwner) {
+                revert NotRollupOrOwner(msg.sender, address(rollup), rollupOwner);
+            }
+        }
         _;
     }
 
     /// @notice pauses all inbox functionality
-    function pause() external onlyOwner {
+    function pause() external onlyRollupOrOwner {
         _pause();
     }
 
     /// @notice unpauses all inbox functionality
-    function unpause() external onlyOwner {
+    function unpause() external onlyRollupOrOwner {
         _unpause();
     }
 
@@ -369,7 +372,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         }
 
         return
-            unsafeCreateRetryableTicket(
+            unsafeCreateRetryableTicketInternal(
                 to,
                 l2CallValue,
                 maxSubmissionCost,
@@ -398,7 +401,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @param data ABI encoded data of L2 message
      * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
      */
-    function unsafeCreateRetryableTicket(
+    function unsafeCreateRetryableTicketInternal(
         address to,
         uint256 l2CallValue,
         uint256 maxSubmissionCost,
@@ -407,7 +410,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) public payable virtual override whenNotPaused onlyAllowed returns (uint256) {
+    ) internal virtual whenNotPaused onlyAllowed returns (uint256) {
         // gas price and limit of 1 should never be a valid input, so instead they are used as
         // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
         if (gasLimit == 1 || maxFeePerGas == 1)
@@ -445,6 +448,19 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     data
                 )
             );
+    }
+
+    function unsafeCreateRetryableTicket(
+        address,
+        uint256,
+        uint256,
+        address,
+        address,
+        uint256,
+        uint256,
+        bytes calldata
+    ) public payable override returns (uint256) {
+        revert("UNSAFE_RETRYABLES_TEMPORARILY_DISABLED");
     }
 
     function _deliverMessage(

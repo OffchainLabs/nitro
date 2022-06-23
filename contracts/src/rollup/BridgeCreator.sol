@@ -98,13 +98,11 @@ contract BridgeCreator is Ownable {
             );
         }
 
-        frame.bridge.initialize();
-        frame.sequencerInbox.initialize(IBridge(frame.bridge), rollup, maxTimeVariation);
+        frame.bridge.initialize(IOwnable(rollup));
+        frame.sequencerInbox.initialize(IBridge(frame.bridge), maxTimeVariation);
         frame.inbox.initialize(IBridge(frame.bridge), ISequencerInbox(frame.sequencerInbox));
-        frame.rollupEventInbox.initialize(address(frame.bridge), rollup);
-        frame.outbox.initialize(rollup, IBridge(frame.bridge));
-
-        frame.bridge.transferOwnership(rollup);
+        frame.rollupEventInbox.initialize(IBridge(frame.bridge));
+        frame.outbox.initialize(IBridge(frame.bridge));
 
         return (
             frame.bridge,
