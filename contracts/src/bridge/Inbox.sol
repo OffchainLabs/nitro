@@ -21,7 +21,6 @@ import {
 } from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
@@ -42,7 +41,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     event AllowListAddressSet(address indexed user, bool val);
     event AllowListEnabledUpdated(bool isEnabled);
 
-    function setAllowList(address[] memory user, bool[] memory val) external onlyOwner {
+    function setAllowList(address[] memory user, bool[] memory val) external onlyRollupOrOwner {
         require(user.length == val.length, "INVALID_INPUT");
 
         for (uint256 i = 0; i < user.length; i++) {
@@ -51,7 +50,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         }
     }
 
-    function setAllowListEnabled(bool _allowListEnabled) external onlyOwner {
+    function setAllowListEnabled(bool _allowListEnabled) external onlyRollupOrOwner {
         require(_allowListEnabled != allowListEnabled, "ALREADY_SET");
         allowListEnabled = _allowListEnabled;
         emit AllowListEnabledUpdated(_allowListEnabled);
@@ -68,20 +67,24 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     /// ------------------------------------ allow list end ------------------------------------ ///
 
-    modifier onlyOwner() {
-        // whoevever owns the Bridge, also owns the Inbox. this is usually the rollup contract
-        address bridgeOwner = OwnableUpgradeable(address(bridge)).owner();
-        if (msg.sender != bridgeOwner) revert NotOwner(msg.sender, bridgeOwner);
+    modifier onlyRollupOrOwner() {
+        IOwnable rollup = bridge.rollup();
+        if (msg.sender != address(rollup)) {
+            address rollupOwner = rollup.owner();
+            if (msg.sender != rollupOwner) {
+                revert NotRollupOrOwner(msg.sender, address(rollup), rollupOwner);
+            }
+        }
         _;
     }
 
     /// @notice pauses all inbox functionality
-    function pause() external onlyOwner {
+    function pause() external onlyRollupOrOwner {
         _pause();
     }
 
     /// @notice unpauses all inbox functionality
-    function unpause() external onlyOwner {
+    function unpause() external onlyRollupOrOwner {
         _unpause();
     }
 

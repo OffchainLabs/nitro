@@ -33,7 +33,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     /// the sequencer inbox has authenticated the data. Currently not used.
     bytes1 public constant DATA_AUTHENTICATED_FLAG = 0x40;
 
-    address public rollup;
+    IOwnable public rollup;
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
@@ -44,19 +44,18 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     mapping(bytes32 => DasKeySetInfo) public dasKeySetInfo;
 
     modifier onlyRollupOwner() {
-        if (msg.sender != IRollupUserAbs(rollup).owner()) revert NotOwner(msg.sender, rollup);
+        if (msg.sender != rollup.owner()) revert NotOwner(msg.sender, address(rollup));
         _;
     }
 
     function initialize(
         IBridge bridge_,
-        address rollup_,
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
         if (bridge != IBridge(address(0))) revert AlreadyInit();
         if (bridge_ == IBridge(address(0))) revert HadZeroInit();
         bridge = bridge_;
-        rollup = rollup_;
+        rollup = bridge_.rollup();
         maxTimeVariation = maxTimeVariation_;
     }
 
@@ -176,7 +175,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
     ) external override refundsGas(gasRefunder) {
-        if (!isBatchPoster[msg.sender] && msg.sender != rollup) revert NotBatchPoster();
+        if (!isBatchPoster[msg.sender] && msg.sender != address(rollup)) revert NotBatchPoster();
 
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,

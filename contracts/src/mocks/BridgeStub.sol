@@ -154,4 +154,8 @@ contract BridgeStub is IBridge {
     function sequencerMessageCount() external view override returns (uint256) {
         return sequencerInboxAccs.length;
     }
+
+    function rollup() external pure override returns (IOwnable) {
+        revert("NOT_IMPLEMENTED");
+    }
 }

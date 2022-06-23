@@ -248,16 +248,16 @@ describe('SequencerInboxForceInclude', async () => {
     )
 
     const bridge = await bridgeFac.attach(bridgeProxy.address).connect(user)
+    const bridgeAdmin = await bridgeFac.attach(bridgeProxy.address).connect(dummyRollup)
     const sequencerInbox = await sequencerInboxFac
       .attach(sequencerInboxProxy.address)
       .connect(user)
     const inbox = await inboxFac.attach(inboxProxy.address).connect(user)
 
-    await bridge.initialize()
+    await bridge.initialize(await dummyRollup.getAddress())
 
     await sequencerInbox.initialize(
       bridgeProxy.address,
-      await dummyRollup.getAddress(),
       {
         delayBlocks: maxDelayBlocks,
         delaySeconds: maxDelayTime,
@@ -267,8 +267,8 @@ describe('SequencerInboxForceInclude', async () => {
     )
     await inbox.initialize(bridgeProxy.address, sequencerInbox.address)
 
-    await bridge.setDelayedInbox(inbox.address, true)
-    await bridge.setSequencerInbox(sequencerInbox.address)
+    await bridgeAdmin.setDelayedInbox(inbox.address, true)
+    await bridgeAdmin.setSequencerInbox(sequencerInbox.address)
 
     const messageTester = (await (
       await ethers.getContractFactory('MessageTester')
