@@ -19,21 +19,21 @@ contract RollupEventInbox is IRollupEventInbox, IDelayedMessageProvider, Delegat
     uint8 internal constant REJECT_NODE_EVENT = 2;
     uint8 internal constant STAKE_CREATED_EVENT = 3;
 
-    IBridge public bridge;
-    address public rollup;
+    IBridge public override bridge;
+    address public override rollup;
 
     modifier onlyRollup() {
         require(msg.sender == rollup, "ONLY_ROLLUP");
         _;
     }
 
-    function initialize(address _bridge, address _rollup) external onlyDelegated {
-        require(rollup == address(0), "ALREADY_INIT");
-        bridge = IBridge(_bridge);
-        rollup = _rollup;
+    function initialize(IBridge _bridge) external override onlyDelegated {
+        require(address(bridge) == address(0), "ALREADY_INIT");
+        bridge = _bridge;
+        rollup = address(_bridge.rollup());
     }
 
-    function rollupInitialized(uint256 chainId) external onlyRollup {
+    function rollupInitialized(uint256 chainId) external override onlyRollup {
         bytes memory initMsg = abi.encodePacked(chainId);
         uint256 num = bridge.enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,

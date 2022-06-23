@@ -4,7 +4,8 @@
 
 pragma solidity ^0.8.4;
 
-import {NotContract} from "../libraries/Error.sol";
+import {NotContract, NotRollupOrOwner} from "../libraries/Error.sol";
+import "./IOwnable.sol";
 
 /// @dev Thrown when an un-authorized address tries to access an only-inbox function
 /// @param sender The un-authorized sender
@@ -96,4 +97,6 @@ interface IBridge {
     function delayedMessageCount() external view returns (uint256);
 
     function sequencerMessageCount() external view returns (uint256);
+
+    function rollup() external view returns (IOwnable);
 }

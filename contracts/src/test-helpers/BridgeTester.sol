@@ -209,4 +209,8 @@ contract BridgeTester is OwnableUpgradeable, DelegateCallAware, IBridge {
     }
 
     receive() external payable {}
+
+    function rollup() external pure override returns (IOwnable) {
+        revert("NOT_IMPLEMENTED");
+    }
 }

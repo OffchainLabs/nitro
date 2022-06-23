@@ -9,7 +9,7 @@ import "../bridge/IBridge.sol";
 interface IRollupEventInbox {
     function bridge() external view returns (IBridge);
 
-    function initialize(address _bridge, address _rollup) external;
+    function initialize(IBridge _bridge) external;
 
     function rollup() external view returns (address);
 
