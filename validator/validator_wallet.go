@@ -157,8 +157,16 @@ func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *Vali
 		totalAmount = totalAmount.Add(totalAmount, tx.Value())
 	}
 
+	balanceInContract, err := v.l1Reader.Client().BalanceAt(ctx, *v.address, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	oldAuthValue := v.auth.Value
-	v.auth.Value = totalAmount
+	v.auth.Value = new(big.Int).Sub(totalAmount, balanceInContract)
+	if v.auth.Value.Sign() < 0 {
+		v.auth.Value.SetInt64(0)
+	}
 	defer (func() { v.auth.Value = oldAuthValue })()
 
 	arbTx, err := v.con.ExecuteTransactions(v.auth, data, dest, amount)
