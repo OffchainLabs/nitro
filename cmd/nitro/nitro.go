@@ -465,14 +465,13 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	switch l1ChainId.Uint64() {
 	case 1: // mainnet
-		switch k.String("l2.rollup.rollup") {
-		case "", "0x767cff8d8de386d7cbe91dbd39675132ba2f5967":
+		switch k.Int64("l2.chain-id") {
+		case 0:
+			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
+		case 42161:
 			return nil, nil, nil, nil, nil, errors.New("mainnet not supported yet")
-		}
-	case 5: // goerli
-		switch k.String("l2.rollup.rollup") {
-		case "", "0x767cff8d8de386d7cbe91dbd39675132ba2f5967":
-			if err := applyNitroDevNetRollupParameters(k); err != nil {
+		case 42170:
+			if err := applyNitroAnytrustTBDRollupParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
 		}
@@ -519,18 +518,18 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyNitroDevNetRollupParameters(k *koanf.Koanf) error {
+func applyNitroAnytrustTBDRollupParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
-		"persistent.chain":                   "goerli",
-		"node.forwarding-target":             "https://nitro-devnet.arbitrum.io/rpc",
-		"node.feed.input.url":                "wss://nitro-devnet.arbitrum.io/feed",
-		"l1.rollup.bridge":                   "0x9903a892da86c1e04522d63b08e5514a921e81df",
-		"l1.rollup.inbox":                    "0x1fdbbcc914e84af593884bf8e8dd6877c29035a2",
-		"l1.rollup.rollup":                   "0x767cff8d8de386d7cbe91dbd39675132ba2f5967",
-		"l1.rollup.sequencer-inbox":          "0xb32f4257e05c56c53d46bbec9e85770eb52425d6",
-		"l1.rollup.validator-utils":          "0x96f42d78bac19a050595c4ea6f64fe355e0af90a",
-		"l1.rollup.validator-wallet-creator": "0xd562adc7ff479461d29e3a3c602a017c34196add",
-		"l1.rollup.deployed-at":              6664425,
-		"l2.chain-id":                        421612,
+		"persistent.chain":                   "mainnet-anytrust",
+		"node.forwarding-target":             "https://a4ba.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://a4ba.arbitrum.io/feed",
+		"l1.rollup.bridge":                   "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
+		"l1.rollup.inbox":                    "0xc4448b71118c9071bcb9734a0eac55d18a153949",
+		"l1.rollup.rollup":                   "0xfb209827c58283535b744575e11953dcc4bead88",
+		"l1.rollup.sequencer-inbox":          "0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b",
+		"l1.rollup.validator-utils":          "0x2B081fbaB646D9013f2699BebEf62B7e7d7F0976",
+		"l1.rollup.validator-wallet-creator": "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
+		"l1.rollup.deployed-at":              15016829,
+		"l2.chain-id":                        42170,
 	}, "."), nil)
 }
