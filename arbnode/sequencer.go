@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -58,7 +59,8 @@ type Sequencer struct {
 
 func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfig) (*Sequencer, error) {
 	senderWhitelist := make(map[common.Address]struct{})
-	for _, address := range config.SenderWhitelist {
+	entries := strings.Split(config.SenderWhitelist, ",")
+	for _, address := range entries {
 		if len(address) == 0 {
 			continue
 		}
