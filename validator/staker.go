@@ -266,7 +266,9 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	// If the wallet address is zero, or the wallet address isn't staked,
 	// this will return the latest node and its hash (atomically).
-	latestStakedNodeNum, latestStakedNodeInfo, err := s.validatorUtils.LatestStaked(callOpts, s.rollupAddress, walletAddressOrZero)
+	latestStakedNodeNum, latestStakedNodeInfo, err := s.validatorUtils.LatestStaked(
+		callOpts, s.rollupAddress, walletAddressOrZero,
+	)
 	if err != nil {
 		return nil, err
 	}
