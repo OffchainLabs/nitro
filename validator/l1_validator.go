@@ -154,7 +154,7 @@ func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Tra
 	return v.wallet.TimeoutChallenges(ctx, v.challengeManagerAddress, challengesToEliminate)
 }
 
-func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo) (bool, error) {
+func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, latestConfirmedNode *uint64) (bool, error) {
 	callOpts := v.getCallOpts(ctx)
 	confirmType, err := v.validatorUtils.CheckDecidableNextNode(callOpts, v.rollupAddress)
 	if err != nil {
@@ -181,7 +181,11 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo) (bo
 		}
 		afterGs := nodeInfo.AfterState().GlobalState
 		_, err = v.rollup.ConfirmNextNode(v.builder.Auth(ctx), afterGs.BlockHash, afterGs.SendRoot)
-		return true, err
+		if err != nil {
+			return false, err
+		}
+		*latestConfirmedNode = unresolvedNodeIndex
+		return true, nil
 	default:
 		return false, nil
 	}
