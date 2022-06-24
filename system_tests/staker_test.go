@@ -213,7 +213,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			}
 		}
 
-		if err != nil || strings.Contains(err.Error(), "waiting") {
+		if err != nil && strings.Contains(err.Error(), "waiting") {
 			colors.PrintRed("retrying ", err.Error(), i)
 			time.Sleep(20 * time.Millisecond)
 			i--
