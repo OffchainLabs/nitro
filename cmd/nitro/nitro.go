@@ -463,8 +463,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		}
 	}
 
-	switch l1ChainId.Uint64() {
-	case 1: // mainnet
+	if l1ChainId.Uint64() == 1 { // mainnet
 		switch k.Int64("l2.chain-id") {
 		case 0:
 			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
