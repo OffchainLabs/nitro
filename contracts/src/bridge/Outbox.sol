@@ -226,7 +226,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         return ((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0);
     }
 
-    function isSpent(uint256 index) public view returns (bool) {
+    function isSpent(uint256 index) external view returns (bool) {
         (, uint256 bitOffset, bytes32 replay) = _calcSpentIndexOffset(index);
         return _isSpent(bitOffset, replay);
     }
