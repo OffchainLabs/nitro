@@ -207,6 +207,30 @@ contract Outbox is DelegateCallAware, IOutbox {
         context = prevContext;
     }
 
+    function _calcSpentIndexOffset(uint256 index)
+        internal
+        view
+        returns (
+            uint256,
+            uint256,
+            bytes32
+        )
+    {
+        uint256 spentIndex = index / 255; // Note: Reserves the MSB.
+        uint256 bitOffset = index % 255;
+        bytes32 replay = spent[spentIndex];
+        return (spentIndex, bitOffset, replay);
+    }
+
+    function _isSpent(uint256 bitOffset, bytes32 replay) internal pure returns (bool) {
+        return ((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0);
+    }
+
+    function isSpent(uint256 index) public view returns (bool) {
+        (, uint256 bitOffset, bytes32 replay) = _calcSpentIndexOffset(index);
+        return _isSpent(bitOffset, replay);
+    }
+
     function recordOutputAsSpent(
         bytes32[] memory proof,
         uint256 index,
@@ -219,11 +243,9 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
         if (roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
 
-        uint256 spentIndex = index / 255; // Note: Reserves the MSB.
-        uint256 bitOffset = index % 255;
+        (uint256 spentIndex, uint256 bitOffset, bytes32 replay) = _calcSpentIndexOffset(index);
 
-        bytes32 replay = spent[spentIndex];
-        if (((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0)) revert AlreadySpent(index);
+        if (_isSpent(bitOffset, replay)) revert AlreadySpent(index);
         spent[spentIndex] = (replay | bytes32(1 << bitOffset));
     }
 
