@@ -8,8 +8,9 @@ import "./RollupLib.sol";
 import "./IRollupCore.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
+import "../bridge/IOwnable.sol";
 
-interface IRollupUserAbs is IRollupCore {
+interface IRollupUserAbs is IRollupCore, IOwnable {
     /// @dev the user logic just validated configuration and shouldn't write to state during init
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address stakeToken) external view;
@@ -53,8 +54,6 @@ interface IRollupUserAbs is IRollupCore {
     function requireUnresolved(uint256 nodeNum) external view;
 
     function withdrawStakerFunds() external returns (uint256);
-
-    function owner() external view returns (address);
 
     function createChallenge(
         address[2] calldata stakers,
@@ -120,7 +119,7 @@ interface IRollupAdmin {
      * @param _inbox Inbox contract to add or remove
      * @param _enabled New status of inbox
      */
-    function setInbox(address _inbox, bool _enabled) external;
+    function setDelayedInbox(address _inbox, bool _enabled) external;
 
     /**
      * @notice Pause interaction with the rollup contract
@@ -210,4 +209,10 @@ interface IRollupAdmin {
      * @param newWasmModuleRoot new module root
      */
     function setWasmModuleRoot(bytes32 newWasmModuleRoot) external;
+
+    /**
+     * @notice set a new sequencer inbox contract
+     * @param _sequencerInbox new address of sequencer inbox
+     */
+    function setSequencerInbox(address _sequencerInbox) external;
 }

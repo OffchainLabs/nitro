@@ -271,10 +271,9 @@ contract OneStepProverMemory is IOneStepProver {
         uint32 oldPages = uint32(mod.moduleMemory.size / PAGE_SIZE);
         uint32 growingPages = mach.valueStack.pop().assumeI32();
         // Safe as the input integers are too small to overflow a uint256
-        uint256 newSize = (uint256(oldPages) + uint256(growingPages)) * PAGE_SIZE;
-        // Note: we require the size remain *below* 2^32, meaning the actual limit is 2^32-PAGE_SIZE
-        if (newSize < (1 << 32)) {
-            mod.moduleMemory.size = uint64(newSize);
+        uint256 newSize = uint256(oldPages) + uint256(growingPages);
+        if (newSize <= mod.moduleMemory.maxSize) {
+            mod.moduleMemory.size = uint64(newSize * PAGE_SIZE);
             mach.valueStack.push(ValueLib.newI32(oldPages));
         } else {
             mach.valueStack.push(ValueLib.newI32(~uint32(0)));

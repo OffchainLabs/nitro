@@ -51,7 +51,7 @@ type Aggregator struct {
 	config   AggregatorConfig
 	services []ServiceDetails
 
-	/// calculated fields
+	// calculated fields
 	requiredServicesForStore       int
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte

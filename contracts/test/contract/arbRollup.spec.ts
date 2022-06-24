@@ -161,7 +161,9 @@ const setup = async () => {
     oneStepProofEntry.address,
     challengeManagerTemplate.address,
     rollupAdminLogicTemplate.address,
-    rollupUserLogicTemplate.address
+    rollupUserLogicTemplate.address,
+    ethers.constants.AddressZero,
+    ethers.constants.AddressZero
   );
 
   const nonce = await rollupCreator.signer.provider!.getTransactionCount(rollupCreator.address);
@@ -211,10 +213,10 @@ const setup = async () => {
     rollupAdminLogicTemplate,
     rollupUserLogicTemplate,
     blockChallengeFactory: challengeManagerTemplateFac,
-    rollupEventBridge: await rollupAdmin.rollupEventBridge(),
+    rollupEventBridge: await rollupAdmin.rollupEventInbox(),
     outbox: await rollupAdmin.outbox(),
     sequencerInbox: rollupCreatedEvent.sequencerInbox,
-    delayedBridge: rollupCreatedEvent.delayedBridge,
+    delayedBridge: rollupCreatedEvent.bridge,
   };
 };
 
@@ -350,12 +352,15 @@ describe("ArbRollup", () => {
     await expect(
       rollupAdmin.initialize(await getDefaultConfig(), {
         challengeManager: constants.AddressZero,
-        delayedBridge: constants.AddressZero,
+        bridge: constants.AddressZero,
+        inbox: constants.AddressZero,
         outbox: constants.AddressZero,
         rollupAdminLogic: constants.AddressZero,
-        rollupEventBridge: constants.AddressZero,
+        rollupEventInbox: constants.AddressZero,
         rollupUserLogic: constants.AddressZero,
         sequencerInbox: constants.AddressZero,
+        validatorUtils: constants.AddressZero,
+        validatorWalletCreator: constants.AddressZero,
       })
     ).to.be.revertedWith("Initializable: contract is already initialized");
   });

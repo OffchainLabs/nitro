@@ -164,7 +164,7 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		return common.Address{}, fmt.Errorf("inbox deploy error: %w", err)
 	}
 
-	rollupEventBridgeTemplate, tx, _, err := rollupgen.DeployRollupEventBridge(auth, client)
+	rollupEventBridgeTemplate, tx, _, err := rollupgen.DeployRollupEventInbox(auth, client)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("rollup event bridge deploy error: %w", err)
@@ -232,33 +232,45 @@ func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderRe
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, error) {
+func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
 	if err != nil {
-		return nil, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, l1Reader, auth)
 	if err != nil {
-		return nil, common.Address{}, err
+		return nil, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
 	}
 
 	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
 	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
+	}
+
+	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator utils deploy error: %w", err)
+	}
+
+	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("validator wallet creator deploy error: %w", err)
 	}
 
 	tx, err = rollupCreator.SetTemplates(
@@ -268,16 +280,18 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		challengeManagerAddr,
 		rollupAdminLogic,
 		rollupUserLogic,
+		validatorUtils,
+		validatorWalletCreator,
 	)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("rollup set template error: %w", err)
+		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("rollup set template error: %w", err)
 	}
 
-	return rollupCreator, rollupCreatorAddress, nil
+	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer, rollupOwner common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -290,7 +304,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		}
 	}
 
-	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1Reader, deployAuth)
+	rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
@@ -316,7 +330,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 			StakeToken:                     common.Address{},
 			BaseStake:                      big.NewInt(params.Ether),
 			WasmModuleRoot:                 wasmModuleRoot,
-			Owner:                          deployAuth.From,
+			Owner:                          rollupOwner,
 			LoserStakeEscrow:               common.Address{},
 			ChainId:                        chainId,
 			SequencerInboxMaxTimeVariation: seqInboxParams,
@@ -339,22 +353,14 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	if err != nil {
 		return nil, fmt.Errorf("error getting sequencer inbox: %w", err)
 	}
-	tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	if err != nil {
-		return nil, fmt.Errorf("error setting is batch poster: %w", err)
-	}
 
-	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(deployAuth, l1client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	if err != nil {
-		return nil, fmt.Errorf("validator utils deploy error: %w", err)
-	}
-
-	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(deployAuth, l1client)
-	err = andTxSucceeded(ctx, l1Reader, tx, err)
-	if err != nil {
-		return nil, fmt.Errorf("validator utils deploy error: %w", err)
+	// if a zero sequencer address is specified, don't authorize any sequencers
+	if sequencer != (common.Address{}) {
+		tx, err = sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
+		err = andTxSucceeded(ctx, l1Reader, tx, err)
+		if err != nil {
+			return nil, fmt.Errorf("error setting is batch poster: %w", err)
+		}
 	}
 
 	var allowValidators []bool
@@ -376,7 +382,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	}
 
 	return &RollupAddresses{
-		Bridge:                 info.DelayedBridge,
+		Bridge:                 info.Bridge,
 		Inbox:                  info.InboxAddress,
 		SequencerInbox:         info.SequencerInbox,
 		DeployedAt:             receipt.BlockNumber.Uint64(),
@@ -504,6 +510,7 @@ type SequencerConfig struct {
 	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed"`
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
+	SenderWhitelist             []string                 `koanf:"sender-whitelist"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -520,6 +527,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxBlockSpeed:               time.Millisecond * 10,
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
+	SenderWhitelist:             nil,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -528,6 +536,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
+	f.StringArray(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "whitelist of authorized senders (if empty, everyone is allowed)")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -682,6 +691,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
+	txStreamer.SetInboxReader(inboxReader)
 
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
 	if config.Wasm.RootPath != "" {
@@ -1209,7 +1219,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		return err
 	}
 
-	genBlock := arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot)
+	genBlock := arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig)
 	blockHash := genBlock.Hash()
 
 	if storedGenHash == EmptyHash {
@@ -1220,6 +1230,16 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 	}
 
 	return nil
+}
+
+func TryReadStoredChainConfig(chainDb ethdb.Database) *params.ChainConfig {
+	EmptyHash := common.Hash{}
+
+	block0Hash := rawdb.ReadCanonicalHash(chainDb, 0)
+	if block0Hash == EmptyHash {
+		return nil
+	}
+	return rawdb.ReadChainConfig(chainDb, block0Hash)
 }
 
 func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) error {

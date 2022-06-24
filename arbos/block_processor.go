@@ -29,10 +29,12 @@ import (
 // set by the precompile module, to avoid a package dependence cycle
 var ArbRetryableTxAddress common.Address
 var ArbSysAddress common.Address
+var InternalTxStartBlockMethodID [4]byte
+var InternalTxBatchPostingReportMethodID [4]byte
 var RedeemScheduledEventID common.Hash
 var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
-var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
+var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
@@ -95,6 +97,8 @@ func noopSequencingHooks() *SequencingHooks {
 	}
 }
 
+type FallibleBatchFetcher func(batchNum uint64) ([]byte, error)
+
 func ProduceBlock(
 	message *L1IncomingMessage,
 	delayedMessagesRead uint64,
@@ -102,17 +106,30 @@ func ProduceBlock(
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
-) (*types.Block, types.Receipts) {
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID)
+	batchFetcher FallibleBatchFetcher,
+) (*types.Block, types.Receipts, error) {
+	var batchFetchErr error
+	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64) []byte {
+		data, err := batchFetcher(batchNum)
+		if err != nil {
+			batchFetchErr = err
+			return nil
+		}
+		return data
+	})
+	if batchFetchErr != nil {
+		return nil, nil, batchFetchErr
+	}
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
 	}
 
 	hooks := noopSequencingHooks()
-	return ProduceBlockAdvanced(
+	block, receipts := ProduceBlockAdvanced(
 		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
+	return block, receipts, nil
 }
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
@@ -146,7 +163,7 @@ func ProduceBlockAdvanced(
 
 	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
-	gasLeft, _ := state.L2PricingState().PerBlockGasLimit(state.FormatVersion())
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
@@ -186,10 +203,7 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			switch tx := tx.GetInner().(type) {
-			case *types.ArbitrumInternalTx:
-				tx.TxIndex = uint64(len(receipts))
-			default:
+			if tx.Type() != types.ArbitrumInternalTxType {
 				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 			}
@@ -210,7 +224,7 @@ func ProduceBlockAdvanced(
 
 			if gasPrice.Sign() > 0 {
 				dataGas = math.MaxUint64
-				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, sender, poster)
+				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster)
 				posterCostInL2Gas := arbmath.BigDiv(posterCost, gasPrice)
 
 				if posterCostInL2Gas.IsUint64() {
@@ -397,9 +411,10 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		size, _ := acc.Size()
 		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
 		arbitrumHeader := types.HeaderInfo{
-			SendRoot:      root,
-			SendCount:     size,
-			L1BlockNumber: nextL1BlockNumber,
+			SendRoot:           root,
+			SendCount:          size,
+			L1BlockNumber:      nextL1BlockNumber,
+			ArbOSFormatVersion: state.FormatVersion(),
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}

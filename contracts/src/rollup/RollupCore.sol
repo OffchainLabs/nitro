@@ -9,7 +9,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "./Node.sol";
 import "./IRollupCore.sol";
 import "./RollupLib.sol";
-import "./IRollupEventBridge.sol";
+import "./IRollupEventInbox.sol";
 import "./IRollupCore.sol";
 
 import "../challenge/IChallengeManager.sol";
@@ -31,11 +31,17 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     uint256 public baseStake;
     bytes32 public wasmModuleRoot;
 
-    IBridge public delayedBridge;
-    ISequencerInbox public sequencerBridge;
+    IInbox public inbox;
+    IBridge public bridge;
     IOutbox public outbox;
-    IRollupEventBridge public rollupEventBridge;
+    ISequencerInbox public sequencerInbox;
+    IRollupEventInbox public rollupEventInbox;
     IChallengeManager public override challengeManager;
+
+    // misc useful contracts when interacting with the rollup
+    address public validatorUtils;
+    address public validatorWalletCreator;
+
     // when a staker loses a challenge, half of their funds get escrowed in this address
     address public loserStakeEscrow;
     address public stakeToken;
@@ -63,6 +69,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
     mapping(address => uint256) private _withdrawableFunds;
     uint256 public totalWithdrawableFunds;
+    uint256 public rollupDeploymentBlock;
 
     // The node number of the initial node
     uint64 internal constant GENESIS_NODE = 0;
@@ -529,7 +536,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         {
             // validate data
             memoryFrame.prevNode = getNode(prevNodeNum);
-            memoryFrame.currentInboxSize = sequencerBridge.batchCount();
+            memoryFrame.currentInboxSize = bridge.sequencerMessageCount();
 
             // Make sure the previous state is correct against the node being built on
             require(
@@ -560,7 +567,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             require(afterInboxCount <= memoryFrame.currentInboxSize, "INBOX_PAST_END");
             // This gives replay protection against the state of the inbox
             if (afterInboxCount > 0) {
-                memoryFrame.sequencerBatchAcc = sequencerBridge.inboxAccs(afterInboxCount - 1);
+                memoryFrame.sequencerBatchAcc = bridge.sequencerInboxAccs(afterInboxCount - 1);
             }
         }
 
@@ -582,7 +589,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 memoryFrame.hasSibling,
                 memoryFrame.lastHash,
                 memoryFrame.executionHash,
-                memoryFrame.sequencerBatchAcc
+                memoryFrame.sequencerBatchAcc,
+                wasmModuleRoot
             );
             require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
 

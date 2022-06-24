@@ -4,11 +4,16 @@
 
 pragma solidity ^0.8.4;
 
-import {NotContract} from "../libraries/Error.sol";
+import {NotContract, NotRollupOrOwner} from "../libraries/Error.sol";
+import "./IOwnable.sol";
 
 /// @dev Thrown when an un-authorized address tries to access an only-inbox function
 /// @param sender The un-authorized sender
-error NotInbox(address sender);
+error NotDelayedInbox(address sender);
+
+/// @dev Thrown when an un-authorized address tries to access an only-sequencer-inbox function
+/// @param sender The un-authorized sender
+error NotSequencerInbox(address sender);
 
 /// @dev Thrown when an un-authorized address tries to access an only-outbox function
 /// @param sender The un-authorized sender
@@ -41,11 +46,26 @@ interface IBridge {
 
     event OutboxToggle(address indexed outbox, bool enabled);
 
+    event SequencerInboxUpdated(address newSequencerInbox);
+
     function enqueueDelayedMessage(
         uint8 kind,
         address sender,
         bytes32 messageDataHash
     ) external payable returns (uint256);
+
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+        external
+        returns (
+            uint256 seqMessageIndex,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 acc
+        );
+
+    function submitBatchSpendingReport(address batchPoster, bytes32 dataHash)
+        external
+        returns (uint256 msgNum);
 
     function executeCall(
         address to,
@@ -54,19 +74,29 @@ interface IBridge {
     ) external returns (bool success, bytes memory returnData);
 
     // These are only callable by the admin
-    function setInbox(address inbox, bool enabled) external;
+    function setDelayedInbox(address inbox, bool enabled) external;
 
     function setOutbox(address inbox, bool enabled) external;
 
+    function setSequencerInbox(address _sequencerInbox) external;
+
     // View functions
+
+    function sequencerInbox() external view returns (address);
 
     function activeOutbox() external view returns (address);
 
-    function allowedInboxes(address inbox) external view returns (bool);
+    function allowedDelayedInboxes(address inbox) external view returns (bool);
 
     function allowedOutboxes(address outbox) external view returns (bool);
 
-    function inboxAccs(uint256 index) external view returns (bytes32);
+    function delayedInboxAccs(uint256 index) external view returns (bytes32);
 
-    function messageCount() external view returns (uint256);
+    function sequencerInboxAccs(uint256 index) external view returns (bytes32);
+
+    function delayedMessageCount() external view returns (uint256);
+
+    function sequencerMessageCount() external view returns (uint256);
+
+    function rollup() external view returns (IOwnable);
 }

@@ -5,10 +5,12 @@
 pragma solidity ^0.8.0;
 
 import "./IBridge.sol";
+import "./IInbox.sol";
 import "./ISequencerInbox.sol";
 import "../rollup/IRollupLogic.sol";
 import "./Messages.sol";
 
+import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
 import {GasRefundEnabled, IGasRefunder} from "../libraries/IGasRefunder.sol";
 import "../libraries/DelegateCallAware.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
@@ -21,10 +23,9 @@ import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
  * sequencer within a time limit they can be force included into the rollup inbox by anyone.
  */
 contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox {
-    bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
-    IBridge public delayedBridge;
+    IBridge public bridge;
 
     /// @dev The size of the batch header
     uint256 public constant HEADER_LENGTH = 40;
@@ -32,27 +33,29 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     /// the sequencer inbox has authenticated the data. Currently not used.
     bytes1 public constant DATA_AUTHENTICATED_FLAG = 0x40;
 
-    address public rollup;
+    IOwnable public rollup;
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
-    mapping(bytes32 => bool) public isValidKeysetHash;
-    mapping(bytes32 => uint256) public keysetHashCreationBlock;
+    struct DasKeySetInfo {
+        bool isValidKeyset;
+        uint64 creationBlock;
+    }
+    mapping(bytes32 => DasKeySetInfo) public dasKeySetInfo;
 
     modifier onlyRollupOwner() {
-        if (msg.sender != IRollupUserAbs(rollup).owner()) revert NotOwner(msg.sender, rollup);
+        if (msg.sender != rollup.owner()) revert NotOwner(msg.sender, address(rollup));
         _;
     }
 
     function initialize(
-        IBridge delayedBridge_,
-        address rollup_,
+        IBridge bridge_,
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
-        if (delayedBridge != IBridge(address(0))) revert AlreadyInit();
-        if (delayedBridge_ == IBridge(address(0))) revert HadZeroInit();
-        delayedBridge = delayedBridge_;
-        rollup = rollup_;
+        if (bridge != IBridge(address(0))) revert AlreadyInit();
+        if (bridge_ == IBridge(address(0))) revert HadZeroInit();
+        bridge = bridge_;
+        rollup = bridge_.rollup();
         maxTimeVariation = maxTimeVariation_;
     }
 
@@ -107,22 +110,24 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         // Verify that message hash represents the last message sequence of delayed message to be included
         bytes32 prevDelayedAcc = 0;
         if (_totalDelayedMessagesRead > 1) {
-            prevDelayedAcc = delayedBridge.inboxAccs(_totalDelayedMessagesRead - 2);
+            prevDelayedAcc = bridge.delayedInboxAccs(_totalDelayedMessagesRead - 2);
         }
         if (
-            delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) !=
+            bridge.delayedInboxAccs(_totalDelayedMessagesRead - 1) !=
             Messages.accumulateInboxMessage(prevDelayedAcc, messageHash)
         ) revert IncorrectMessagePreimage();
 
         (bytes32 dataHash, TimeBounds memory timeBounds) = formEmptyDataHash(
             _totalDelayedMessagesRead
         );
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            dataHash,
-            _totalDelayedMessagesRead
-        );
+        (
+            uint256 seqMessageIndex,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, _totalDelayedMessagesRead, 0);
         emit SequencerBatchDelivered(
-            inboxAccs.length - 1,
+            seqMessageIndex,
             beforeAcc,
             afterAcc,
             delayedAcc,
@@ -141,17 +146,20 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
-        if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
             afterDelayedMessagesRead
         );
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            dataHash,
-            afterDelayedMessagesRead
-        );
+        (
+            uint256 seqMessageIndex,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, data.length);
+        if (seqMessageIndex != sequenceNumber)
+            revert BadSequencerNumber(seqMessageIndex, sequenceNumber);
         emit SequencerBatchDelivered(
-            inboxAccs.length - 1,
+            sequenceNumber,
             beforeAcc,
             afterAcc,
             delayedAcc,
@@ -167,17 +175,22 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
     ) external override refundsGas(gasRefunder) {
-        if (!isBatchPoster[msg.sender] && msg.sender != rollup) revert NotBatchPoster();
-        if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
+        if (!isBatchPoster[msg.sender] && msg.sender != address(rollup)) revert NotBatchPoster();
 
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
             afterDelayedMessagesRead
         );
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            dataHash,
-            afterDelayedMessagesRead
-        );
+        // we set the calldata length posted to 0 here since the caller isn't the origin
+        // of the tx, so they might have not paid tx input cost for the calldata
+        (
+            uint256 seqMessageIndex,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, 0);
+        if (seqMessageIndex != sequenceNumber)
+            revert BadSequencerNumber(seqMessageIndex, sequenceNumber);
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
@@ -190,15 +203,20 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         emit SequencerBatchData(sequenceNumber, data);
     }
 
-    function dasKeysetHashFromBatchData(bytes memory data) internal pure returns (bytes32) {
-        if (data.length < 33 || data[0] & 0x80 == 0) {
-            return bytes32(0);
+    modifier validateBatchData(bytes calldata data) {
+        uint256 fullDataLen = HEADER_LENGTH + data.length;
+        if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
+        if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
+            revert DataNotAuthenticated();
         }
-        bytes32 temp;
-        assembly {
-            temp := mload(add(data, 33))
+        // the first byte is used to identify the type of batch data
+        // das batches expect to have the type byte set, followed by the keyset (so they should have at least 33 bytes)
+        if (data.length >= 33 && data[0] & 0x80 != 0) {
+            // we skip the first byte, then read the next 32 bytes for the keyset
+            bytes32 dasKeysetHash = bytes32(data[1:33]);
+            if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
         }
-        return temp;
+        _;
     }
 
     function packHeader(uint256 afterDelayedMessagesRead)
@@ -222,29 +240,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     function formDataHash(bytes calldata data, uint256 afterDelayedMessagesRead)
         internal
         view
+        validateBatchData(data)
         returns (bytes32, TimeBounds memory)
     {
-        bytes32 dasKeysetHash = dasKeysetHashFromBatchData(data);
-        if (dasKeysetHash != bytes32(0)) {
-            if (!isValidKeysetHash[dasKeysetHash]) revert NoSuchKeyset(dasKeysetHash);
-        }
-        uint256 fullDataLen = HEADER_LENGTH + data.length;
-        if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
-        if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
-        bytes memory fullData = new bytes(fullDataLen);
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
-
-        for (uint256 i = 0; i < HEADER_LENGTH; i++) {
-            fullData[i] = header[i];
-        }
-        if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
-            revert DataNotAuthenticated();
-        }
-        // copy data into fullData at offset of HEADER_LENGTH (the extra 32 offset is because solidity puts the array len first)
-        assembly {
-            calldatacopy(add(fullData, add(HEADER_LENGTH, 32)), data.offset, data.length)
-        }
-        return (keccak256(fullData), timeBounds);
+        bytes32 dataHash = keccak256(bytes.concat(header, data));
+        return (dataHash, timeBounds);
     }
 
     function formEmptyDataHash(uint256 afterDelayedMessagesRead)
@@ -256,31 +257,55 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return (keccak256(header), timeBounds);
     }
 
-    function addSequencerL2BatchImpl(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+    function addSequencerL2BatchImpl(
+        bytes32 dataHash,
+        uint256 afterDelayedMessagesRead,
+        uint256 calldataLengthPosted
+    )
         internal
         returns (
+            uint256 seqMessageIndex,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 acc
         )
     {
         if (afterDelayedMessagesRead < totalDelayedMessagesRead) revert DelayedBackwards();
-        if (afterDelayedMessagesRead > delayedBridge.messageCount()) revert DelayedTooFar();
+        if (afterDelayedMessagesRead > bridge.delayedMessageCount()) revert DelayedTooFar();
 
-        if (inboxAccs.length > 0) {
-            beforeAcc = inboxAccs[inboxAccs.length - 1];
-        }
-        if (afterDelayedMessagesRead > 0) {
-            delayedAcc = delayedBridge.inboxAccs(afterDelayedMessagesRead - 1);
-        }
+        (seqMessageIndex, beforeAcc, delayedAcc, acc) = bridge.enqueueSequencerMessage(
+            dataHash,
+            afterDelayedMessagesRead
+        );
 
-        acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));
-        inboxAccs.push(acc);
         totalDelayedMessagesRead = afterDelayedMessagesRead;
+
+        if (calldataLengthPosted > 0) {
+            // this msg isn't included in the current sequencer batch, but instead added to
+            // the delayed messages queue that is yet to be included
+            address batchPoster = msg.sender;
+            bytes memory spendingReportMsg = abi.encodePacked(
+                block.timestamp,
+                batchPoster,
+                dataHash,
+                seqMessageIndex,
+                block.basefee
+            );
+            uint256 msgNum = bridge.submitBatchSpendingReport(
+                batchPoster,
+                keccak256(spendingReportMsg)
+            );
+            // this is the same event used by Inbox.sol after including a message to the delayed message accumulator
+            emit InboxMessageDelivered(msgNum, spendingReportMsg);
+        }
+    }
+
+    function inboxAccs(uint256 index) external view override returns (bytes32) {
+        return bridge.sequencerInboxAccs(index);
     }
 
     function batchCount() external view override returns (uint256) {
-        return inboxAccs.length;
+        return bridge.sequencerMessageCount();
     }
 
     /**
@@ -289,6 +314,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      */
     function setMaxTimeVariation(ISequencerInbox.MaxTimeVariation memory maxTimeVariation_)
         external
+        override
         onlyRollupOwner
     {
         maxTimeVariation = maxTimeVariation_;
@@ -300,7 +326,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @param addr the address
      * @param isBatchPoster_ if the specified address should be authorized as a batch poster
      */
-    function setIsBatchPoster(address addr, bool isBatchPoster_) external onlyRollupOwner {
+    function setIsBatchPoster(address addr, bool isBatchPoster_) external override onlyRollupOwner {
         isBatchPoster[addr] = isBatchPoster_;
         emit OwnerFunctionCalled(1);
     }
@@ -309,11 +335,13 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @notice Makes Data Availability Service keyset valid
      * @param keysetBytes bytes of the serialized keyset
      */
-    function setValidKeyset(bytes calldata keysetBytes) external onlyRollupOwner {
+    function setValidKeyset(bytes calldata keysetBytes) external override onlyRollupOwner {
         bytes32 ksHash = keccak256(keysetBytes);
-        if (isValidKeysetHash[ksHash]) revert AlreadyValidDASKeyset(ksHash);
-        isValidKeysetHash[ksHash] = true;
-        keysetHashCreationBlock[ksHash] = block.number;
+        if (dasKeySetInfo[ksHash].isValidKeyset) revert AlreadyValidDASKeyset(ksHash);
+        dasKeySetInfo[ksHash] = DasKeySetInfo({
+            isValidKeyset: true,
+            creationBlock: uint64(block.number)
+        });
         emit SetValidKeyset(ksHash, keysetBytes);
         emit OwnerFunctionCalled(2);
     }
@@ -322,16 +350,24 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @notice Invalidates a Data Availability Service keyset
      * @param ksHash hash of the keyset
      */
-    function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
-        if (!isValidKeysetHash[ksHash]) revert NoSuchKeyset(ksHash);
-        isValidKeysetHash[ksHash] = false;
+    function invalidateKeysetHash(bytes32 ksHash) external override onlyRollupOwner {
+        if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
+        // we don't delete the block creation value since its used to fetch the SetValidKeyset
+        // event efficiently. The event provides the hash preimage of the key.
+        // this is still needed when syncing the chain after a keyset is invalidated.
+        dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
     }
 
+    function isValidKeysetHash(bytes32 ksHash) external view returns (bool) {
+        return dasKeySetInfo[ksHash].isValidKeyset;
+    }
+
+    /// @notice the creation block is intended to still be available after a keyset is deleted
     function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
-        uint256 bnum = keysetHashCreationBlock[ksHash];
-        if (bnum == 0) revert NoSuchKeyset(ksHash);
-        return bnum;
+        DasKeySetInfo memory ksInfo = dasKeySetInfo[ksHash];
+        if (ksInfo.creationBlock == 0) revert NoSuchKeyset(ksHash);
+        return uint256(ksInfo.creationBlock);
     }
 }
