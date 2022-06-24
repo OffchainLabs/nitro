@@ -264,12 +264,12 @@ var launchTime = time.Now().Format("2006_01_02__15_04")
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
 	machConf := v.MachineLoader.GetConfig()
 	outDirPath := filepath.Join(machConf.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
-	err := os.MkdirAll(outDirPath, 0777)
+	err := os.MkdirAll(outDirPath, 0755)
 	if err != nil {
 		return err
 	}
 
-	cmdFile, err := os.Create(filepath.Join(outDirPath, "run-prover.sh"))
+	cmdFile, err := os.OpenFile(filepath.Join(outDirPath, "run-prover.sh"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
 	}
@@ -350,10 +350,6 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	}
 
 	_, err = cmdFile.WriteString(" \"$@\"\n")
-	if err != nil {
-		return err
-	}
-	err = cmdFile.Chmod(0777)
 	if err != nil {
 		return err
 	}
