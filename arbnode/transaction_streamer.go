@@ -144,23 +144,13 @@ func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbuti
 func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
 	iter := db.NewIterator(prefix, minKey)
 	defer iter.Release()
-	for {
-		if iter.Error() != nil {
-			return iter.Error()
-		}
-		key := iter.Key()
-		if len(key) == 0 {
-			break
-		}
-		err := batch.Delete(key)
+	for iter.Next() {
+		err := batch.Delete(iter.Key())
 		if err != nil {
 			return err
 		}
-		if !iter.Next() {
-			break
-		}
 	}
-	return nil
+	return iter.Error()
 }
 
 func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.MessageIndex) error {

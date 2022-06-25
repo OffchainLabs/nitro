@@ -277,14 +277,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 	seqBatchIter := t.db.NewIterator(delayedSequencedPrefix, uint64ToBytes(newDelayedCount))
 	defer seqBatchIter.Release()
 	var reorgSeqBatchesToCount *uint64
-	for {
-		err = seqBatchIter.Error()
-		if err != nil {
-			return err
-		}
-		if len(seqBatchIter.Key()) == 0 {
-			break
-		}
+	for seqBatchIter.Next() {
 		var batchSeqNum uint64
 		err := rlp.DecodeBytes(seqBatchIter.Value(), &batchSeqNum)
 		if err != nil {
@@ -300,7 +293,10 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 			// meaning that the last and only batch is at sequence number 0.
 			reorgSeqBatchesToCount = &batchSeqNum
 		}
-		seqBatchIter.Next()
+	}
+	err = seqBatchIter.Error()
+	if err != nil {
+		return err
 	}
 	// Release the iterator early.
 	// It's fine to call Release multiple times,
