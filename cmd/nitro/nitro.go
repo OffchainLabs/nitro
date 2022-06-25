@@ -285,6 +285,11 @@ func main() {
 		}
 	}
 
+	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
+		flag.Usage()
+		panic("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
+	}
+
 	if nodeConfig.Metrics {
 		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
 
