@@ -30,6 +30,9 @@ type InboxTracker struct {
 }
 
 func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
+	if txStreamer.bc.Config().ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
+		return nil, errors.New("data availability service required but unconfigured")
+	}
 	db := &InboxTracker{
 		db:         rawdb.NewTable(raw, arbitrumPrefix),
 		txStreamer: txStreamer,
