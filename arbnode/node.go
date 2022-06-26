@@ -680,6 +680,8 @@ func createNodeImpl(
 			dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
 		}
 		dataAvailabilityService = das.NewTimeoutWrapper(dataAvailabilityService, config.DataAvailability.RequestTimeout)
+	} else if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
+		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
 	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
