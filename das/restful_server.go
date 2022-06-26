@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/coreos/etcd/pkg/pathutil"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
@@ -67,7 +69,7 @@ const expirationPolicyRequestPath = "/expiration-policy/"
 const getByHashRequestPath = "/get-by-hash/"
 
 func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	requestPath := r.URL.Path
+	requestPath := pathutil.CanonicalURLPath(r.URL.Path)
 	log.Debug("Got request", "requestPath", requestPath)
 	switch {
 	case strings.HasPrefix(requestPath, healthRequestPath):
