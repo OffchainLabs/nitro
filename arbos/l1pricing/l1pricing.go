@@ -200,7 +200,7 @@ func (ps *L1PricingState) L1BaseFeeEstimate() (*big.Int, error) {
 }
 
 // Update the pricing model based on a payment by a batch poster
-func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *vm.EVM, updateTime uint64, currentTime uint64, batchPoster common.Address, weiSpent *big.Int) error {
+func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *vm.EVM, arbosVersion uint64, updateTime uint64, currentTime uint64, batchPoster common.Address, weiSpent *big.Int) error {
 	batchPosterTable := ps.BatchPosterTable()
 	posterState, err := batchPosterTable.OpenPoster(batchPoster, true)
 	if err != nil {
@@ -226,11 +226,15 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if lastUpdateTime == 0 && currentTime > 0 { // it's the first update, so there isn't a last update time
 		lastUpdateTime = updateTime - 1
 	}
-	if updateTime >= currentTime || updateTime < lastUpdateTime {
+	if updateTime > currentTime || (arbosVersion < 2 && updateTime == currentTime) || updateTime < lastUpdateTime {
 		return ErrInvalidTime
 	}
 	allocationNumerator := updateTime - lastUpdateTime
 	allocationDenominator := currentTime - lastUpdateTime
+	if allocationDenominator == 0 {
+		allocationNumerator = 1
+		allocationDenominator = 1
+	}
 
 	// allocate units to this update
 	unitsSinceUpdate, err := ps.UnitsSinceUpdate()
