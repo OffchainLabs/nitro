@@ -470,11 +470,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     ) internal returns (uint256) {
         if (_messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(
-            _kind,
-            AddressAliasHelper.applyL1ToL2Alias(_sender),
-            keccak256(_messageData)
-        );
+        uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
     }
@@ -484,6 +480,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.enqueueDelayedMessage{value: msg.value}(kind, sender, messageDataHash);
+        return
+            bridge.enqueueDelayedMessage{value: msg.value}(
+                kind,
+                AddressAliasHelper.applyL1ToL2Alias(sender),
+                messageDataHash
+            );
     }
 }
