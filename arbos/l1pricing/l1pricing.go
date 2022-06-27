@@ -229,15 +229,15 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if updateTime >= currentTime || updateTime < lastUpdateTime {
 		return ErrInvalidTime
 	}
-	updateTimeDelta := updateTime - lastUpdateTime
-	timeDelta := currentTime - lastUpdateTime
+	allocationNumerator := updateTime - lastUpdateTime
+	allocationDenominator := currentTime - lastUpdateTime
 
 	// allocate units to this update
 	unitsSinceUpdate, err := ps.UnitsSinceUpdate()
 	if err != nil {
 		return err
 	}
-	unitsAllocated := unitsSinceUpdate * updateTimeDelta / timeDelta
+	unitsAllocated := unitsSinceUpdate * allocationNumerator / allocationDenominator
 	unitsSinceUpdate -= unitsAllocated
 	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
 		return err
@@ -262,7 +262,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 
 	// allocate funds to this update
 	collectedSinceUpdate := statedb.GetBalance(L1PricerFundsPoolAddress)
-	availableFunds := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate, updateTimeDelta), timeDelta)
+	availableFunds := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate, allocationNumerator), allocationDenominator)
 
 	// pay rewards, as much as possible
 	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
