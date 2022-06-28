@@ -123,8 +123,9 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
-# Download WASM machines
+# Download WAVM machines
 RUN bash -c 'r=0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v1-rc1/machine.wavm.br'
+RUN bash -c 'r=0xee16b2358c81be2b9feb8486f052e74f18b8a790e4e77b4dc9e4f34d71d3b4c0 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v2/machine.wavm.br'
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
