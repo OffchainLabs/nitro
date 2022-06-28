@@ -1934,7 +1934,7 @@ impl Machine {
                             }
                         }
                     } else {
-                        if msg_num <= self.first_too_far {
+                        if msg_num < self.first_too_far {
                             eprintln!("{} {msg_num}", Color::red("Missing inbox message"));
                             self.eprint_backtrace();
                             bail!(
