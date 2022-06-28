@@ -2354,7 +2354,7 @@ impl Machine {
 
     pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {
         self.inbox_contents.insert((identifier, index), data);
-        if index > self.first_too_far {
+        if index >= self.first_too_far {
             self.first_too_far = index + 1
         }
     }
