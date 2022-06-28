@@ -4,6 +4,7 @@
 package arbos
 
 import (
+	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -137,7 +138,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	Require(t, err)
 
 	// submit a fake spending update, then check that balances are correct
-	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 1, 3, firstPoster, new(big.Int).SetUint64(testParams.fundsSpent))
+	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, arbosSt.FormatVersion(), 1, 3, firstPoster, new(big.Int).SetUint64(testParams.fundsSpent))
 	Require(t, err)
 	rewardRecipientBalance := evm.StateDB.GetBalance(rewardAddress)
 	if !arbmath.BigEquals(rewardRecipientBalance, expectedResults.rewardRecipientBalance) {
@@ -156,6 +157,25 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	if !arbmath.BigEquals(fundsStillHeld, expectedResults.fundsStillHeld) {
 		t.Fatal()
 	}
+}
+
+func TestUpdateTimeUpgradeBehavior(t *testing.T) {
+	evm := newMockEVMForTesting()
+	burner := burn.NewSystemBurner(nil, false)
+	arbosSt, err := arbosState.OpenArbosState(evm.StateDB, burner)
+	Require(t, err)
+
+	poster := common.Address{3, 4, 5}
+
+	l1p := arbosSt.L1PricingState()
+
+	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 1, 1, 1, poster, common.Big1)
+	if !errors.Is(err, l1pricing.ErrInvalidTime) {
+		t.Fatal()
+	}
+
+	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 2, 1, 1, poster, common.Big1)
+	Require(t, err)
 }
 
 func newMockEVMForTesting() *vm.EVM {
