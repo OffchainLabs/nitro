@@ -36,3 +36,9 @@ error NotContract(address addr);
 /// @param actualLength The length of the merkle proof provided
 /// @param maxProofLength The max length a merkle proof can have
 error MerkleProofTooLong(uint256 actualLength, uint256 maxProofLength);
+
+/// @dev Thrown when an un-authorized address tries to access an admin function
+/// @param sender The un-authorized sender
+/// @param rollup The rollup, which would be authorized
+/// @param owner The rollup's owner, which would be authorized
+error NotRollupOrOwner(address sender, address rollup, address owner);

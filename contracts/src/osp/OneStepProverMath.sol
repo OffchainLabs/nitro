@@ -210,38 +210,38 @@ contract OneStepProverMath is IOneStepProver {
         uint64 a,
         uint64 b,
         uint16 opcodeOffset
-    ) internal pure returns (uint64) {
+    ) internal pure returns (uint64, bool) {
         unchecked {
             if (opcodeOffset == 0) {
                 // add
-                return a + b;
+                return (a + b, false);
             } else if (opcodeOffset == 1) {
                 // sub
-                return a - b;
+                return (a - b, false);
             } else if (opcodeOffset == 2) {
                 // mul
-                return a * b;
+                return (a * b, false);
             } else if (opcodeOffset == 4) {
                 // div_u
                 if (b == 0) {
-                    return 0;
+                    return (0, true);
                 }
-                return a / b;
+                return (a / b, false);
             } else if (opcodeOffset == 6) {
                 // rem_u
                 if (b == 0) {
-                    return 0;
+                    return (0, true);
                 }
-                return a % b;
+                return (a % b, false);
             } else if (opcodeOffset == 7) {
                 // and
-                return a & b;
+                return (a & b, false);
             } else if (opcodeOffset == 8) {
                 // or
-                return a | b;
+                return (a | b, false);
             } else if (opcodeOffset == 9) {
                 // xor
-                return a ^ b;
+                return (a ^ b, false);
             } else {
                 revert("INVALID_GENERIC_BIN_OP");
             }
@@ -263,18 +263,18 @@ contract OneStepProverMath is IOneStepProver {
         unchecked {
             if (opcodeOffset == 3) {
                 // div_s
-                if (b == 0) {
-                    res = 0;
-                } else {
-                    res = uint32(int32(a) / int32(b));
+                if (b == 0 || (int32(a) == -2147483648 && int32(b) == -1)) {
+                    mach.status = MachineStatus.ERRORED;
+                    return;
                 }
+                res = uint32(int32(a) / int32(b));
             } else if (opcodeOffset == 5) {
                 // rem_s
                 if (b == 0) {
-                    res = 0;
-                } else {
-                    res = uint32(int32(a) % int32(b));
+                    mach.status = MachineStatus.ERRORED;
+                    return;
                 }
+                res = uint32(int32(a) % int32(b));
             } else if (opcodeOffset == 10) {
                 // shl
                 res = a << (b % 32);
@@ -291,7 +291,12 @@ contract OneStepProverMath is IOneStepProver {
                 // rotr
                 res = rotr32(a, b);
             } else {
-                res = uint32(genericBinOp(a, b, opcodeOffset));
+                (uint64 computed, bool err) = genericBinOp(a, b, opcodeOffset);
+                if (err) {
+                    mach.status = MachineStatus.ERRORED;
+                    return;
+                }
+                res = uint32(computed);
             }
         }
 
@@ -313,18 +318,18 @@ contract OneStepProverMath is IOneStepProver {
         unchecked {
             if (opcodeOffset == 3) {
                 // div_s
-                if (b == 0) {
-                    res = 0;
-                } else {
-                    res = uint64(int64(a) / int64(b));
+                if (b == 0 || (int64(a) == -9223372036854775808 && int64(b) == -1)) {
+                    mach.status = MachineStatus.ERRORED;
+                    return;
                 }
+                res = uint64(int64(a) / int64(b));
             } else if (opcodeOffset == 5) {
                 // rem_s
                 if (b == 0) {
-                    res = 0;
-                } else {
-                    res = uint64(int64(a) % int64(b));
+                    mach.status = MachineStatus.ERRORED;
+                    return;
                 }
+                res = uint64(int64(a) % int64(b));
             } else if (opcodeOffset == 10) {
                 // shl
                 res = a << (b % 64);
@@ -341,7 +346,12 @@ contract OneStepProverMath is IOneStepProver {
                 // rotr
                 res = rotr64(a, b);
             } else {
-                res = genericBinOp(a, b, opcodeOffset);
+                bool err;
+                (res, err) = genericBinOp(a, b, opcodeOffset);
+                if (err) {
+                    mach.status = MachineStatus.ERRORED;
+                    return;
+                }
             }
         }
 

@@ -7,8 +7,9 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
+
+	"github.com/offchainlabs/nitro/arbstate"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -416,12 +417,14 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if err != nil {
 		return err
 	}
+	var batchInfo []BatchInfo
 	if tooFar {
 		// Just record the part of block creation before the message is read
-		_, preimages, err := RecordBlockCreation(m.blockchain, blockHeader, nil)
+		_, preimages, readBatchInfo, err := RecordBlockCreation(ctx, m.blockchain, m.inboxReader, blockHeader, nil, true)
 		if err != nil {
 			return err
 		}
+		batchInfo = readBatchInfo
 		err = SetMachinePreimageResolver(ctx, machine, preimages, nil, m.blockchain, m.das)
 		if err != nil {
 			return err
@@ -440,7 +443,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		if nextHeader == nil {
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
-		preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message, false)
+		preimages, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(ctx, m.blockchain, m.inboxReader, nextHeader, blockHeader, message, false)
 		if err != nil {
 			return err
 		}
@@ -448,7 +451,12 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		if err != nil {
 			return err
 		}
-		err = SetMachinePreimageResolver(ctx, machine, preimages, batchBytes, m.blockchain, m.das)
+		readBatchInfo = append(readBatchInfo, BatchInfo{
+			Number: startGlobalState.Batch,
+			Data:   batchBytes,
+		})
+		batchInfo = readBatchInfo
+		err = SetMachinePreimageResolver(ctx, machine, preimages, batchInfo, m.blockchain, m.das)
 		if err != nil {
 			return err
 		}
@@ -462,7 +470,9 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 				return err
 			}
 		}
-		err = machine.AddSequencerInboxMessage(startGlobalState.Batch, batchBytes)
+	}
+	for _, batch := range batchInfo {
+		err = machine.AddSequencerInboxMessage(batch.Number, batch.Data)
 		if err != nil {
 			return err
 		}

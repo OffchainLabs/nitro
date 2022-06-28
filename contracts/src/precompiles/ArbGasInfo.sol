@@ -75,7 +75,7 @@ interface ArbGasInfo {
             uint256
         );
 
-    /// @notice Get the gas accounting parameters
+    /// @notice Get the gas accounting parameters. `gasPoolMax` is always zero, as the exponential pricing model has no such notion.
     /// @return (speedLimitPerSecond, gasPoolMax, maxTxGasLimit)
     function getGasAccountingParams()
         external
@@ -89,21 +89,6 @@ interface ArbGasInfo {
     /// @notice Get the minimum gas price needed for a tx to succeed
     function getMinimumGasPrice() external view returns (uint256);
 
-    /// @notice Get the number of seconds worth of the speed limit the gas pool contains
-    function getGasPoolSeconds() external view returns (uint64);
-
-    /// @notice Get the target fullness in bips the pricing model will try to keep the pool at
-    function getGasPoolTarget() external view returns (uint64);
-
-    /// @notice Get the extent in bips to which the pricing model favors filling the pool over increasing speeds
-    function getGasPoolWeight() external view returns (uint64);
-
-    /// @notice Get ArbOS's estimate of the amount of gas being burnt per second
-    function getRateEstimate() external view returns (uint64);
-
-    /// @notice Get how slowly ArbOS updates its estimate the amount of gas being burnt per second
-    function getRateEstimateInertia() external view returns (uint64);
-
     /// @notice Get ArbOS's estimate of the L1 basefee in wei
     function getL1BaseFeeEstimate() external view returns (uint256);
 
@@ -115,9 +100,6 @@ interface ArbGasInfo {
 
     /// @notice Get L1 gas fees paid by the current transaction
     function getCurrentTxL1GasFees() external view returns (uint256);
-
-    /// @notice Get the amount of gas remaining in the gas pool
-    function getGasPool() external view returns (int64);
 
     /// @notice Get the backlogged amount of gas burnt in excess of the speed limit
     function getGasBacklog() external view returns (uint64);

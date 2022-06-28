@@ -44,9 +44,9 @@ func (aset *AddressSet) GetAnyMember() (*common.Address, error) {
 	if err != nil || size == 0 {
 		return nil, err
 	}
-	addrAsHash, err := aset.backingStorage.GetByUint64(1)
-	addr := common.BytesToAddress(addrAsHash.Bytes())
-	return &addr, err
+	sba := aset.backingStorage.OpenStorageBackedAddressOrNil(1)
+	addr, err := sba.Get()
+	return addr, err
 }
 
 func (aset *AddressSet) Clear() error {
@@ -65,18 +65,21 @@ func (aset *AddressSet) Clear() error {
 	return aset.size.Clear()
 }
 
-func (aset *AddressSet) AllMembers() ([]common.Address, error) {
+func (aset *AddressSet) AllMembers(maxNumToReturn uint64) ([]common.Address, error) {
 	size, err := aset.size.Get()
 	if err != nil {
 		return nil, err
 	}
+	if size > maxNumToReturn {
+		size = maxNumToReturn
+	}
 	ret := make([]common.Address, size)
 	for i := range ret {
-		bytes, err := aset.backingStorage.GetByUint64(uint64(i + 1))
+		sba := aset.backingStorage.OpenStorageBackedAddress(uint64(i + 1))
+		ret[i], err = sba.Get()
 		if err != nil {
 			return nil, err
 		}
-		ret[i] = common.BytesToAddress(bytes.Bytes())
 	}
 	return ret, nil
 }
@@ -90,13 +93,15 @@ func (aset *AddressSet) Add(addr common.Address) error {
 	if err != nil {
 		return err
 	}
+	sba := aset.backingStorage.OpenStorageBackedAddress(1 + size)
 	slot := util.UintToHash(1 + size)
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	err = aset.byAddress.Set(addrAsHash, slot)
 	if err != nil {
 		return err
 	}
-	err = aset.backingStorage.Set(slot, addrAsHash)
+	sba = aset.backingStorage.OpenStorageBackedAddress(1 + size)
+	err = sba.Set(addr)
 	if err != nil {
 		return err
 	}

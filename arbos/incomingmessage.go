@@ -16,8 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 const (
@@ -29,6 +31,7 @@ const (
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
 	L1MessageType_Initialize            = 11
 	L1MessageType_EthDeposit            = 12
+	L1MessageType_BatchPostingReport    = 13
 	L1MessageType_Invalid               = 0xFF
 )
 
@@ -169,7 +172,9 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 	}, nil
 }
 
-func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Transactions, error) {
+type InfallibleBatchFetcher func(batchNum uint64) []byte
+
+func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
 	if len(msg.L2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
@@ -199,7 +204,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 			ChainId:     chainId,
 			L1RequestId: depositRequestId,
 			// Matches the From of parseUnsignedTx
-			To:    util.RemapL1Address(msg.Header.Poster),
+			To:    msg.Header.Poster,
 			Value: tx.Value(),
 		})
 		return types.Transactions{deposit, tx}, nil
@@ -220,6 +225,12 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	case L1MessageType_RollupEvent:
 		log.Debug("ignoring rollup event message")
 		return types.Transactions{}, nil
+	case L1MessageType_BatchPostingReport:
+		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, batchFetcher)
+		if err != nil {
+			return nil, err
+		}
+		return types.Transactions{tx}, nil
 	case L1MessageType_Invalid:
 		// intentionally invalid message
 		return nil, errors.New("invalid message")
@@ -234,7 +245,7 @@ func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, error) {
 	if msg.Header.Kind != L1MessageType_Initialize {
 		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
 	}
-	if len(msg.L2msg) != 64 {
+	if len(msg.L2msg) != 32 {
 		return nil, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
 	}
 	chainId := new(big.Int).SetBytes(msg.L2msg[:32])
@@ -371,7 +382,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 	case L2MessageKind_UnsignedUserTx:
 		inner = &types.ArbitrumUnsignedTx{
 			ChainId:   chainId,
-			From:      util.RemapL1Address(poster),
+			From:      poster,
 			Nonce:     nonce,
 			GasFeeCap: maxFeePerGas.Big(),
 			Gas:       gasLimit.Big().Uint64(),
@@ -386,7 +397,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 		inner = &types.ArbitrumContractTx{
 			ChainId:   chainId,
 			RequestId: *requestId,
-			From:      util.RemapL1Address(poster),
+			From:      poster,
 			GasFeeCap: maxFeePerGas.Big(),
 			Gas:       gasLimit.Big().Uint64(),
 			To:        destination,
@@ -401,6 +412,10 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 }
 
 func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
+	to, err := util.AddressFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
 	balance, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
@@ -411,7 +426,8 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 	tx := &types.ArbitrumDepositTx{
 		ChainId:     chainId,
 		L1RequestId: *header.RequestId,
-		To:          util.RemapL1Address(header.Poster),
+		From:        header.Poster,
+		To:          to,
 		Value:       balance.Big(),
 	}
 	return types.NewTx(tx), nil
@@ -482,7 +498,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	tx := &types.ArbitrumSubmitRetryableTx{
 		ChainId:          chainId,
 		RequestId:        *header.RequestId,
-		From:             util.RemapL1Address(header.Poster),
+		From:             header.Poster,
 		L1BaseFee:        header.L1BaseFee,
 		DepositValue:     depositValue.Big(),
 		GasFeeCap:        maxFeePerGas.Big(),
@@ -495,4 +511,55 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		RetryData:        retryData,
 	}
 	return types.NewTx(tx), err
+}
+
+func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher InfallibleBatchFetcher) (*types.Transaction, error) {
+	batchTimestamp, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	batchPosterAddr, err := util.AddressFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	_, err = util.HashFromReader(rd) // unused: data hash
+	if err != nil {
+		return nil, err
+	}
+	batchNumHash, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	batchNum := batchNumHash.Big().Uint64()
+
+	l1BaseFee, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	batchData := batchFetcher(batchNum)
+	var batchDataGas uint64
+	for _, b := range batchData {
+		if b == 0 {
+			batchDataGas += params.TxDataZeroGas
+		} else {
+			batchDataGas += params.TxDataNonZeroGasEIP2028
+		}
+	}
+
+	// the poster also pays to keccak the batch and place it and a batch-posting report into the inbox
+	keccakWords := arbmath.WordsForBytes(uint64(len(batchData)))
+	batchDataGas += params.Keccak256Gas + (keccakWords * params.Keccak256WordGas)
+	batchDataGas += 2 * params.SstoreSetGasEIP2200
+
+	data, err := util.PackInternalTxDataBatchPostingReport(
+		batchTimestamp.Big(), batchPosterAddr, batchNum, batchDataGas, l1BaseFee.Big(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return types.NewTx(&types.ArbitrumInternalTx{
+		ChainId: chainId,
+		Data:    data,
+		// don't need to fill in the other fields, since they exist only to ensure uniqueness, and batchNum is already unique
+	}), nil
 }

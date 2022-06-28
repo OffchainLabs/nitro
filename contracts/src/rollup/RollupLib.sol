@@ -11,7 +11,8 @@ import "../bridge/ISequencerInbox.sol";
 
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
-import "./IRollupEventBridge.sol";
+import "../bridge/IInbox.sol";
+import "./IRollupEventInbox.sol";
 import "./IRollupLogic.sol";
 
 struct Config {
@@ -28,13 +29,17 @@ struct Config {
 }
 
 struct ContractDependencies {
-    IBridge delayedBridge;
+    IBridge bridge;
     ISequencerInbox sequencerInbox;
+    IInbox inbox;
     IOutbox outbox;
-    IRollupEventBridge rollupEventBridge;
+    IRollupEventInbox rollupEventInbox;
     IChallengeManager challengeManager;
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;
+    // misc contracts that are useful when interacting with the rollup
+    address validatorUtils;
+    address validatorWalletCreator;
 }
 
 library RollupLib {
@@ -128,9 +133,19 @@ library RollupLib {
         bool hasSibling,
         bytes32 lastHash,
         bytes32 assertionExecHash,
-        bytes32 inboxAcc
+        bytes32 inboxAcc,
+        bytes32 wasmModuleRoot
     ) internal pure returns (bytes32) {
         uint8 hasSiblingInt = hasSibling ? 1 : 0;
-        return keccak256(abi.encodePacked(hasSiblingInt, lastHash, assertionExecHash, inboxAcc));
+        return
+            keccak256(
+                abi.encodePacked(
+                    hasSiblingInt,
+                    lastHash,
+                    assertionExecHash,
+                    inboxAcc,
+                    wasmModuleRoot
+                )
+            );
     }
 }

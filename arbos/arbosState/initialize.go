@@ -5,7 +5,6 @@ package arbosState
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"math/big"
 
@@ -21,7 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 )
 
-func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint64, stateRoot common.Hash) *types.Block {
+func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint64, stateRoot common.Hash, chainConfig *params.ChainConfig) *types.Block {
 	head := &types.Header{
 		Number:     new(big.Int).SetUint64(blockNumber),
 		Nonce:      types.EncodeNonce(1), // the genesis block reads the init message
@@ -38,9 +37,10 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	}
 
 	genesisHeaderInfo := types.HeaderInfo{
-		SendRoot:      common.Hash{},
-		SendCount:     0,
-		L1BlockNumber: 0,
+		SendRoot:           common.Hash{},
+		SendCount:          0,
+		L1BlockNumber:      0,
+		ArbOSFormatVersion: chainConfig.ArbitrumChainParams.InitialArbOSVersion,
 	}
 	genesisHeaderInfo.UpdateHeaderWithInfo(head)
 
@@ -149,7 +149,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		}
 		accountsRead++
 		if accountsPerSync > 0 && (accountsRead%accountsPerSync == 0) {
-			log.Print(fmt.Sprintf("imported %v accounts", accountsRead))
+			log.Printf("imported %v accounts", accountsRead)
 			_, err := commit()
 			if err != nil {
 				return common.Hash{}, err
@@ -182,16 +182,22 @@ func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.
 
 func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, account statetransfer.AccountInitializationInfo) error {
 	l1pState := arbosState.L1PricingState()
+	posterTable := l1pState.BatchPosterTable()
 	if account.AggregatorInfo != nil {
-		err := l1pState.SetAggregatorFeeCollector(account.Addr, account.AggregatorInfo.FeeCollector)
+		isPoster, err := posterTable.ContainsPoster(account.Addr)
 		if err != nil {
 			return err
 		}
-	}
-	if account.AggregatorToPay != nil {
-		err := l1pState.SetUserSpecifiedAggregator(account.Addr, account.AggregatorToPay)
-		if err != nil {
-			return err
+		if isPoster {
+			// poster is already authorized, just set its fee collector
+			poster, err := posterTable.OpenPoster(account.Addr, false)
+			if err != nil {
+				return err
+			}
+			err = poster.SetPayTo(account.AggregatorInfo.FeeCollector)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

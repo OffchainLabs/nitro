@@ -4,21 +4,23 @@
 
 pragma solidity ^0.8.4;
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
 import "./IBridge.sol";
 import "./Messages.sol";
 import "../libraries/DelegateCallAware.sol";
 
+import {L1MessageType_batchPostingReport} from "../libraries/MessageTypes.sol";
+
 /**
  * @title Staging ground for incoming and outgoing messages
- * @notice Holds the inbox accumulator for delayed messages, and is the ETH escrow
- * for value sent with these messages.
+ * @notice Holds the inbox accumulator for sequenced and delayed messages.
+ * It is also the ETH escrow for value sent with these messages.
  * Since the escrow is held here, this contract also contains a list of allowed
  * outboxes that can make calls from here and withdraw this escrow.
  */
-contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
+contract Bridge is Initializable, DelegateCallAware, IBridge {
     using AddressUpgradeable for address;
 
     struct InOutInfo {
@@ -26,22 +28,38 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         bool allowed;
     }
 
-    mapping(address => InOutInfo) private allowedInboxesMap;
+    mapping(address => InOutInfo) private allowedDelayedInboxesMap;
     mapping(address => InOutInfo) private allowedOutboxesMap;
 
-    address[] public allowedInboxList;
+    address[] public allowedDelayedInboxList;
     address[] public allowedOutboxList;
 
     address private _activeOutbox;
 
     /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
-    bytes32[] public override inboxAccs;
+    bytes32[] public override delayedInboxAccs;
+
+    /// @dev Accumulator for sequencer inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
+    bytes32[] public override sequencerInboxAccs;
+
+    IOwnable public override rollup;
+    address public sequencerInbox;
 
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
-    function initialize() external initializer onlyDelegated {
+    function initialize(IOwnable rollup_) external initializer onlyDelegated {
         _activeOutbox = EMPTY_ACTIVEOUTBOX;
-        __Ownable_init();
+        rollup = rollup_;
+    }
+
+    modifier onlyRollupOrOwner() {
+        if (msg.sender != address(rollup)) {
+            address rollupOwner = rollup.owner();
+            if (msg.sender != rollupOwner) {
+                revert NotRollupOrOwner(msg.sender, address(rollup), rollupOwner);
+            }
+        }
+        _;
     }
 
     /// @dev returns the address of current active Outbox, or zero if no outbox is active
@@ -55,12 +73,62 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         return outbox;
     }
 
-    function allowedInboxes(address inbox) external view override returns (bool) {
-        return allowedInboxesMap[inbox].allowed;
+    function allowedDelayedInboxes(address inbox) external view override returns (bool) {
+        return allowedDelayedInboxesMap[inbox].allowed;
     }
 
     function allowedOutboxes(address outbox) external view override returns (bool) {
         return allowedOutboxesMap[outbox].allowed;
+    }
+
+    modifier onlySequencerInbox() {
+        if (msg.sender != sequencerInbox) revert NotSequencerInbox(msg.sender);
+        _;
+    }
+
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+        external
+        override
+        onlySequencerInbox
+        returns (
+            uint256 seqMessageIndex,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 acc
+        )
+    {
+        seqMessageIndex = sequencerInboxAccs.length;
+        if (sequencerInboxAccs.length > 0) {
+            beforeAcc = sequencerInboxAccs[sequencerInboxAccs.length - 1];
+        }
+        if (afterDelayedMessagesRead > 0) {
+            delayedAcc = delayedInboxAccs[afterDelayedMessagesRead - 1];
+        }
+        acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));
+        sequencerInboxAccs.push(acc);
+    }
+
+    /**
+     * @dev allows the sequencer inbox to submit a delayed message of the batchPostingReport type
+     * This is done through a separate function entrypoint instead of allowing the sequencer inbox
+     * to call `enqueueDelayedMessage` to avoid the gas overhead of an extra SLOAD in either
+     * every delayed inbox or every sequencer inbox call.
+     */
+    function submitBatchSpendingReport(address sender, bytes32 messageDataHash)
+        external
+        override
+        onlySequencerInbox
+        returns (uint256)
+    {
+        return
+            addMessageToDelayedAccumulator(
+                L1MessageType_batchPostingReport,
+                sender,
+                uint64(block.number),
+                uint64(block.timestamp), // solhint-disable-line not-rely-on-time,
+                block.basefee,
+                messageDataHash
+            );
     }
 
     /**
@@ -73,9 +141,9 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         address sender,
         bytes32 messageDataHash
     ) external payable override returns (uint256) {
-        if (!allowedInboxesMap[msg.sender].allowed) revert NotInbox(msg.sender);
+        if (!allowedDelayedInboxesMap[msg.sender].allowed) revert NotDelayedInbox(msg.sender);
         return
-            addMessageToAccumulator(
+            addMessageToDelayedAccumulator(
                 kind,
                 sender,
                 uint64(block.number),
@@ -85,7 +153,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
             );
     }
 
-    function addMessageToAccumulator(
+    function addMessageToDelayedAccumulator(
         uint8 kind,
         address sender,
         uint64 blockNumber,
@@ -93,7 +161,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         uint256 baseFeeL1,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        uint256 count = inboxAccs.length;
+        uint256 count = delayedInboxAccs.length;
         bytes32 messageHash = Messages.messageHash(
             kind,
             sender,
@@ -105,9 +173,9 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         );
         bytes32 prevAcc = 0;
         if (count > 0) {
-            prevAcc = inboxAccs[count - 1];
+            prevAcc = delayedInboxAccs[count - 1];
         }
-        inboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
+        delayedInboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
         emit MessageDelivered(
             count,
             prevAcc,
@@ -140,25 +208,32 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         emit BridgeCallTriggered(msg.sender, to, value, data);
     }
 
-    function setInbox(address inbox, bool enabled) external override onlyOwner {
-        InOutInfo storage info = allowedInboxesMap[inbox];
+    function setSequencerInbox(address _sequencerInbox) external override onlyRollupOrOwner {
+        sequencerInbox = _sequencerInbox;
+        emit SequencerInboxUpdated(_sequencerInbox);
+    }
+
+    function setDelayedInbox(address inbox, bool enabled) external override onlyRollupOrOwner {
+        InOutInfo storage info = allowedDelayedInboxesMap[inbox];
         bool alreadyEnabled = info.allowed;
         emit InboxToggle(inbox, enabled);
         if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
             return;
         }
         if (enabled) {
-            allowedInboxesMap[inbox] = InOutInfo(allowedInboxList.length, true);
-            allowedInboxList.push(inbox);
+            allowedDelayedInboxesMap[inbox] = InOutInfo(allowedDelayedInboxList.length, true);
+            allowedDelayedInboxList.push(inbox);
         } else {
-            allowedInboxList[info.index] = allowedInboxList[allowedInboxList.length - 1];
-            allowedInboxesMap[allowedInboxList[info.index]].index = info.index;
-            allowedInboxList.pop();
-            delete allowedInboxesMap[inbox];
+            allowedDelayedInboxList[info.index] = allowedDelayedInboxList[
+                allowedDelayedInboxList.length - 1
+            ];
+            allowedDelayedInboxesMap[allowedDelayedInboxList[info.index]].index = info.index;
+            allowedDelayedInboxList.pop();
+            delete allowedDelayedInboxesMap[inbox];
         }
     }
 
-    function setOutbox(address outbox, bool enabled) external override onlyOwner {
+    function setOutbox(address outbox, bool enabled) external override onlyRollupOrOwner {
         if (outbox == EMPTY_ACTIVEOUTBOX) revert InvalidOutboxSet(outbox);
 
         InOutInfo storage info = allowedOutboxesMap[outbox];
@@ -178,7 +253,11 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         }
     }
 
-    function messageCount() external view override returns (uint256) {
-        return inboxAccs.length;
+    function delayedMessageCount() external view override returns (uint256) {
+        return delayedInboxAccs.length;
+    }
+
+    function sequencerMessageCount() external view override returns (uint256) {
+        return sequencerInboxAccs.length;
     }
 }

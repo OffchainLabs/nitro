@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"time"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -34,14 +35,16 @@ func main() {
 	l1conn := flag.String("l1conn", "", "l1 connection")
 	l1keystore := flag.String("l1keystore", "", "l1 private key store")
 	deployAccount := flag.String("l1DeployAccount", "", "l1 seq account to use (default is first account in keystore)")
+	ownerAddress := flag.String("ownerAddress", "", "the rollup owner's address")
+	sequencerAddress := flag.String("sequencerAddress", "", "the sequencer's address")
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
 	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumDevTestChainConfig().ChainID.Uint64(), "L2 chain ID")
-	genesisBlockNum := flag.Uint64("genesisBlockNum", 0, "block number of nitro genesis block")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
+	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
@@ -65,10 +68,31 @@ func main() {
 		panic(err)
 	}
 
+	if !common.IsHexAddress(*sequencerAddress) {
+		panic("please specify a valid sequencer address")
+	}
+	if !common.IsHexAddress(*ownerAddress) {
+		panic("please specify a valid rollup owner address")
+	}
+
 	machineConfig := validator.DefaultNitroMachineConfig
 	machineConfig.RootPath = *wasmrootpath
 
-	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, *genesisBlockNum, headerreader.DefaultConfig, machineConfig)
+	headerReaderConfig := headerreader.DefaultConfig
+	headerReaderConfig.TxTimeout = *txTimeout
+
+	deployPtr, err := arbnode.DeployOnL1(
+		ctx,
+		l1client,
+		l1TransactionOpts,
+		common.HexToAddress(*sequencerAddress),
+		common.HexToAddress(*ownerAddress),
+		*authorizevalidators,
+		common.HexToHash(*wasmmoduleroot),
+		l2ChainId,
+		headerReaderConfig,
+		machineConfig,
+	)
 	if err != nil {
 		flag.Usage()
 		log.Error("error deploying on l1")

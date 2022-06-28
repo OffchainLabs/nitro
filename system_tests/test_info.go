@@ -64,9 +64,7 @@ func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
 	return NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), big.NewInt(params.GWei*100), params.TxGas)
 }
 
-func (b *BlockchainTestInfo) GenerateAccount(name string) {
-	b.T.Helper()
-
+func GetTestKeyForAccountName(t *testing.T, name string) *ecdsa.PrivateKey {
 	nameBytes := []byte(name)
 	seedBytes := make([]byte, 0, 128)
 	for len(seedBytes) < 64 {
@@ -75,8 +73,20 @@ func (b *BlockchainTestInfo) GenerateAccount(name string) {
 	seedReader := bytes.NewReader(seedBytes)
 	privateKey, err := ecdsa.GenerateKey(crypto.S256(), seedReader)
 	if err != nil {
-		b.T.Fatal(err)
+		t.Fatal(err)
 	}
+	return privateKey
+}
+
+func GetTestAddressForAccountName(t *testing.T, name string) common.Address {
+	privateKey := GetTestKeyForAccountName(t, name)
+	return crypto.PubkeyToAddress(privateKey.PublicKey)
+}
+
+func (b *BlockchainTestInfo) GenerateAccount(name string) {
+	b.T.Helper()
+
+	privateKey := GetTestKeyForAccountName(b.T, name)
 	if b.Accounts[name] != nil {
 		b.T.Fatal("account already exists")
 	}

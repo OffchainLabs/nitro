@@ -6,7 +6,6 @@ package precompiles
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math/big"
 	"reflect"
 	"strconv"
@@ -25,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -58,12 +58,14 @@ const (
 )
 
 type Precompile struct {
-	methods      map[[4]byte]PrecompileMethod
-	events       map[string]PrecompileEvent
-	errors       map[string]PrecompileError
-	implementer  reflect.Value
-	address      common.Address
-	arbosVersion uint64
+	methods       map[[4]byte]PrecompileMethod
+	methodsByName map[string]PrecompileMethod
+	events        map[string]PrecompileEvent
+	errors        map[string]PrecompileError
+	name          string
+	implementer   reflect.Value
+	address       common.Address
+	arbosVersion  uint64
 }
 
 type PrecompileMethod struct {
@@ -118,7 +120,7 @@ func (e *SolError) Error() string {
 func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Precompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
-		log.Fatal("Bad ABI")
+		log.Crit("Bad ABI")
 	}
 
 	implementerType := reflect.TypeOf(implementer)
@@ -126,12 +128,12 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 
 	_, ok := implementerType.Elem().FieldByName("Address")
 	if !ok {
-		log.Fatal("Implementer for precompile ", contract, " is missing an Address field")
+		log.Crit("Implementer for precompile ", contract, " is missing an Address field")
 	}
 
 	address, ok := reflect.ValueOf(implementer).Elem().FieldByName("Address").Interface().(addr)
 	if !ok {
-		log.Fatal("Implementer for precompile ", contract, "'s Address field has the wrong type")
+		log.Crit("Implementer for precompile ", contract, "'s Address field has the wrong type")
 	}
 
 	gethAbiFuncTypeEquality := func(actual, geth reflect.Type) bool {
@@ -154,6 +156,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 	}
 
 	methods := make(map[[4]byte]PrecompileMethod)
+	methodsByName := make(map[string]PrecompileMethod)
 	events := make(map[string]PrecompileEvent)
 	errors := make(map[string]PrecompileError)
 
@@ -164,7 +167,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 		name = capitalize + name[1:]
 
 		if len(method.ID) != 4 {
-			log.Fatal("Method ID isn't 4 bytes")
+			log.Crit("Method ID isn't 4 bytes")
 		}
 		id := *(*[4]byte)(method.ID)
 
@@ -172,7 +175,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 
 		handler, ok := implementerType.MethodByName(name)
 		if !ok {
-			log.Fatal("Precompile ", contract, " must implement ", name)
+			log.Crit("Precompile ", contract, " must implement ", name)
 		}
 
 		var needs = []reflect.Type{
@@ -196,7 +199,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 			needs = append(needs, reflect.TypeOf(&big.Int{}))
 			purity = payable
 		default:
-			log.Fatal("Unknown state mutability ", method.StateMutability)
+			log.Crit("Unknown state mutability ", method.StateMutability)
 		}
 
 		for _, arg := range method.Inputs {
@@ -212,19 +215,21 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 		expectedHandlerType := reflect.FuncOf(needs, outputs, false)
 
 		if !gethAbiFuncTypeEquality(handler.Type, expectedHandlerType) {
-			log.Fatal(
+			log.Crit(
 				"Precompile "+contract+"'s "+name+"'s implementer has the wrong type\n",
 				"\texpected:\t", expectedHandlerType, "\n\tbut have:\t", handler.Type,
 			)
 		}
 
-		methods[id] = PrecompileMethod{
+		method := PrecompileMethod{
 			name,
 			method,
 			purity,
 			handler,
 			0,
 		}
+		methods[id] = method
+		methodsByName[name] = method
 	}
 
 	// provide the implementer mechanisms to emit logs for the solidity events
@@ -255,7 +260,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 			if arg.Indexed {
 				_, ok := supportedIndices[arg.Type.String()]
 				if !ok {
-					log.Fatal(
+					log.Crit(
 						"Please change the solidity for precompile ", contract,
 						"'s event ", name, ":\n\tEvent indices of type ",
 						arg.Type.String(), " are not supported",
@@ -274,20 +279,20 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 
 		field, ok := implementerType.Elem().FieldByName(name)
 		if !ok {
-			log.Fatal(missing, "event ", name, " of type\n\t", expectedFieldType)
+			log.Crit(missing, "event ", name, " of type\n\t", expectedFieldType)
 		}
 		costField, ok := implementerType.Elem().FieldByName(name + "GasCost")
 		if !ok {
-			log.Fatal(missing, "event ", name, "'s GasCost of type\n\t", expectedCostType)
+			log.Crit(missing, "event ", name, "'s GasCost of type\n\t", expectedCostType)
 		}
 		if !gethAbiFuncTypeEquality(field.Type, expectedFieldType) {
-			log.Fatal(
+			log.Crit(
 				context, "'s field for event ", name, " has the wrong type\n",
 				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
 			)
 		}
 		if !gethAbiFuncTypeEquality(costField.Type, expectedCostType) {
-			log.Fatal(
+			log.Crit(
 				context, "'s field for event ", name, "GasCost has the wrong type\n",
 				"\texpected:\t", expectedCostType, "\n\tbut have:\t", costField.Type,
 			)
@@ -444,10 +449,10 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 
 		field, ok := implementerType.Elem().FieldByName(name + "Error")
 		if !ok {
-			log.Fatal(missing, "custom error ", name, "Error of type\n\t", expectedFieldType)
+			log.Crit(missing, "custom error ", name, "Error of type\n\t", expectedFieldType)
 		}
 		if field.Type != expectedFieldType {
-			log.Fatal(
+			log.Crit(
 				context, "'s field for error ", name, "Error has the wrong type\n",
 				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
 			)
@@ -487,8 +492,10 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 
 	return address, Precompile{
 		methods,
+		methodsByName,
 		events,
 		errors,
+		contract,
 		reflect.ValueOf(implementer),
 		address,
 		0,
@@ -518,7 +525,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
-	insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 
 	eventCtx := func(gasLimit uint64, err error) *Context {
 		if err != nil {
@@ -534,9 +540,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
-	emitReedeemScheduled := func(evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr) error {
-		context := eventCtx(ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}))
-		return ArbRetryableImpl.RedeemScheduled(context, evm, ticketId, retryTxHash, nonce, gas, donor)
+	emitReedeemScheduled := func(evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr, maxRefund *big.Int, submissionFeeRefund *big.Int) error {
+		context := eventCtx(ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, common.Big0, common.Big0))
+		return ArbRetryableImpl.RedeemScheduled(context, evm, ticketId, retryTxHash, nonce, gas, donor, maxRefund, submissionFeeRefund)
 	}
 	arbos.EmitReedeemScheduledEvent = emitReedeemScheduled
 	arbos.EmitTicketCreatedEvent = func(evm mech, ticketId bytes32) error {
@@ -559,12 +565,24 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
+	ArbosActs := insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
+	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
+	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
+
 	return contracts
 }
 
 func (p Precompile) SwapImpl(impl interface{}) Precompile {
 	p.implementer = reflect.ValueOf(impl)
 	return p
+}
+
+func (p Precompile) GetMethodID(name string) bytes4 {
+	method, ok := p.methodsByName[name]
+	if !ok {
+		panic(fmt.Sprintf("Precompile %v does not have a method with the name %v", p.name, name))
+	}
+	return *(*bytes4)(method.template.ID)
 }
 
 // call a precompile in typed form, deserializing its inputs and serializing its outputs
@@ -578,7 +596,6 @@ func (p Precompile) Call(
 	gasSupplied uint64,
 	evm *vm.EVM,
 ) (output []byte, gasLeft uint64, err error) {
-
 	arbosVersion := arbosState.ArbOSVersion(evm.StateDB)
 
 	if arbosVersion < p.arbosVersion {
@@ -661,7 +678,7 @@ func (p Precompile) Call(
 		reflectArgs = append(reflectArgs, reflect.ValueOf(evm))
 		reflectArgs = append(reflectArgs, reflect.ValueOf(value))
 	default:
-		log.Fatal("Unknown state mutability ", method.purity)
+		log.Crit("Unknown state mutability ", method.purity)
 	}
 
 	args, err := method.template.Inputs.Unpack(input[4:])
@@ -680,7 +697,8 @@ func (p Precompile) Call(
 		// the last arg is always the error status
 		errRet, ok := reflectResult[resultCount].Interface().(error)
 		if !ok {
-			log.Fatal("final return value must be error")
+			log.Error("final precompile return value must be error")
+			return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
 		}
 		var solErr *SolError
 		isSolErr := errors.As(errRet, &solErr)
@@ -701,9 +719,8 @@ func (p Precompile) Call(
 
 	encoded, err := method.template.Outputs.PackValues(result)
 	if err != nil {
-		// in production we'll just revert, but for now this
-		// will catch implementation errors
-		log.Fatal("Could not encode precompile result ", err)
+		log.Error("could not encode precompile result", "err", err)
+		return nil, callerCtx.gasLeft, vm.ErrExecutionReverted
 	}
 
 	resultCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(encoded)))

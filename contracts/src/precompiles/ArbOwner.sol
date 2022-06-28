@@ -24,9 +24,6 @@ interface ArbOwner {
     /// @notice Retrieves the list of chain owners
     function getAllChainOwners() external view returns (address[] memory);
 
-    /// @notice Set the L1 basefee estimate directly, bypassing the autoregression
-    function setL1BaseFeeEstimate(uint256 priceInWei) external;
-
     /// @notice Set how slowly ArbOS updates its estimate of the L1 basefee
     function setL1BaseFeeEstimateInertia(uint64 inertia) external;
 
@@ -38,18 +35,6 @@ interface ArbOwner {
 
     /// @notice Set the computational speed limit for the chain
     function setSpeedLimit(uint64 limit) external;
-
-    /// @notice Set the number of seconds worth of the speed limit the gas pool contains
-    function setGasPoolSeconds(uint64 factor) external;
-
-    /// @notice Set the target fullness in bips the pricing model will try to keep the pool at
-    function setGasPoolTarget(uint64 target) external;
-
-    /// @notice Set the extent in bips to which the pricing model favors filling the pool over increasing speeds
-    function setGasPoolWeight(uint64 weight) external;
-
-    /// @notice Set how slowly ArbOS updates its estimate the amount of gas being burnt per second
-    function setRateEstimateInertia(uint64 inertia) external;
 
     /// @notice Set the maximum size a tx (and block) can be
     function setMaxTxGasLimit(uint64 limit) external;
@@ -68,6 +53,18 @@ interface ArbOwner {
 
     /// @notice Upgrades ArbOS to the requested version at the requested timestamp
     function scheduleArbOSUpgrade(uint64 newVersion, uint64 timestamp) external;
+
+    /// @notice Sets equilibration units parameter for L1 price adjustment algorithm
+    function setL1PricingEquilibrationUnits(uint256 equilibrationUnits) external;
+
+    /// @notice Sets inertia parameter for L1 price adjustment algorithm
+    function setL1PricingInertia(uint64 inertia) external;
+
+    /// @notice Sets reward recipient address for L1 price adjustment algorithm
+    function setL1PricingRewardRecipient(address recipient) external;
+
+    /// @notice Sets reward amount for L1 price adjustment algorithm, in wei per unit
+    function setL1PricingRewardRate(uint64 weiPerUnit) external;
 
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);

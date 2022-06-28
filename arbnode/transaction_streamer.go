@@ -55,6 +55,7 @@ type TransactionStreamer struct {
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
+	inboxReader     *InboxReader
 }
 
 func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastServer *broadcaster.Broadcaster) (*TransactionStreamer, error) {
@@ -97,6 +98,16 @@ func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
 	s.coordinator = coordinator
 }
 
+func (s *TransactionStreamer) SetInboxReader(inboxReader *InboxReader) {
+	if s.Started() {
+		panic("trying to set inbox reader after start")
+	}
+	if s.inboxReader != nil {
+		panic("trying to set inbox reader when already set")
+	}
+	s.inboxReader = inboxReader
+}
+
 func (s *TransactionStreamer) cleanupInconsistentState() error {
 	// If it doesn't exist yet, set the message count to 0
 	hasMessageCount, err := s.db.Has(messageCountKey)
@@ -134,23 +145,13 @@ func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbuti
 func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
 	iter := db.NewIterator(prefix, minKey)
 	defer iter.Release()
-	for {
-		if iter.Error() != nil {
-			return iter.Error()
-		}
-		key := iter.Key()
-		if len(key) == 0 {
-			break
-		}
-		err := batch.Delete(key)
+	for iter.Next() {
+		err := batch.Delete(iter.Key())
 		if err != nil {
 			return err
 		}
-		if !iter.Next() {
-			break
-		}
 	}
-	return nil
+	return iter.Error()
 }
 
 func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.MessageIndex) error {
@@ -602,7 +603,6 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 }
 
 func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
-	// TODO: when block 0 is no longer necessarily the genesis, track this and update core.NitroGenesisBlock
 	return s.bc.Config().ArbitrumChainParams.GenesisBlockNum, nil
 }
 
@@ -698,6 +698,10 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 	}()
 
+	batchFetcher := func(batchNum uint64) ([]byte, error) {
+		return s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	}
+
 	for pos < msgCount {
 
 		statedb, err = s.bc.StateAt(lastBlockHeader.Root)
@@ -722,14 +726,18 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			return err
 		}
 
-		block, receipts := arbos.ProduceBlock(
+		block, receipts, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
 			lastBlockHeader,
 			statedb,
 			s.bc,
 			s.bc.Config(),
+			batchFetcher,
 		)
+		if err != nil {
+			return err
+		}
 
 		// ProduceBlock advances one message
 		pos++

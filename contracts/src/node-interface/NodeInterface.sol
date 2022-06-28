@@ -11,7 +11,8 @@ pragma solidity >=0.4.21 <0.9.0;
  */
 interface NodeInterface {
     /**
-     * @notice Estimate the cost of putting a message in the L2 inbox that is reexecuted
+     * @notice Estimate the cost of putting a message in the L2 inbox that is reexecuted.
+     * Use eth_estimateGas to call.
      * @param sender sender of the L1 and L2 transaction
      * @param deposit amount to deposit to sender in L2
      * @param to destination L2 contract address
@@ -31,7 +32,8 @@ interface NodeInterface {
     ) external;
 
     /**
-     * @notice Constructs an outbox proof of an l2->l1 send's existence in the outbox accumulator
+     * @notice Constructs an outbox proof of an l2->l1 send's existence in the outbox accumulator.
+     * Use eth_call to call.
      * @param size the number of elements in the accumulator
      * @param leaf the position of the send in the accumulator
      * @return send the l2->l1 send's hash
@@ -48,8 +50,9 @@ interface NodeInterface {
         );
 
     /**
-     * @notice Finds the L1 batch containing a requested L2 block, reverting if none does
-     * Throws if block doesn't exist, or if block number is 0
+     * @notice Finds the L1 batch containing a requested L2 block, reverting if none does.
+     * Use eth_call to call.
+     * Throws if block doesn't exist, or if block number is 0. Use eth_call
      * @param blockNum The L2 block being queried
      * @return batch The L1 block containing the requested L2 block
      */
@@ -59,9 +62,33 @@ interface NodeInterface {
      * @notice Gets the number of L1 confirmations of the sequencer batch producing the requested L2 block
      * This gets the number of L1 confirmations for the input message producing the L2 block,
      * which happens well before the L1 rollup contract confirms the L2 block.
-     * Throws if block doesnt exist in the L2 chain.
+     * Throws if block doesnt exist in the L2 chain. Use eth_call to call.
      * @param blockHash The hash of the L2 block being queried
      * @return confirmations The number of L1 confirmations the sequencer batch has. Returns 0 if block not yet included in an L1 batch.
      */
     function getL1Confirmations(bytes32 blockHash) external view returns (uint64 confirmations);
+
+    /**
+     * @notice Same as native gas estimation, but with additional info on the l1 costs. Use eth_call to call.
+     * @param data the tx's calldata. Everything else like "From" and "Gas" are copied over
+     * @param to the tx's "To" (ignored when contractCreation is true)
+     * @param contractCreation whether "To" is omitted
+     * @return gasEstimate an estimate of the total amount of gas needed for this tx
+     * @return gasEstimateForL1 an estimate of the amount of gas needed for the l1 component of this tx
+     * @return baseFee the l2 base fee
+     * @return l1BaseFeeEstimate ArbOS's l1 estimate of the l1 base fee
+     */
+    function gasEstimateComponents(
+        address to,
+        bool contractCreation,
+        bytes calldata data
+    )
+        external
+        payable
+        returns (
+            uint64 gasEstimate,
+            uint64 gasEstimateForL1,
+            uint256 baseFee,
+            uint256 l1BaseFeeEstimate
+        );
 }

@@ -125,7 +125,7 @@ func TestDASRekey(t *testing.T) {
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigA.DataAvailability.Enable = true
+	l1NodeConfigB.DataAvailability.Enable = true
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
@@ -406,6 +406,7 @@ func enableLogging(logLvl int) {
 }
 
 func initTest(t *testing.T) {
+	t.Parallel()
 	loggingStr := os.Getenv("LOGGING")
 	if len(loggingStr) > 0 {
 		var err error

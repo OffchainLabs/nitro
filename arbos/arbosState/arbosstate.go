@@ -11,7 +11,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -184,7 +183,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 
 	arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-	if arbosVersion < 1 || arbosVersion > 4 {
+	if arbosVersion < 1 || arbosVersion > 2 {
 		return nil, fmt.Errorf("cannot initialize to unsupported ArbOS version %v", arbosVersion)
 	}
 
@@ -201,17 +200,14 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
-	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace), arbosVersion)
+	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
 	blockhash.InitializeBlockhashes(sto.OpenSubStorage(blockhashesSubspace))
 
-	// by default, the remapped zero address is the initial chain owner
-	initialChainOwner := util.RemapL1Address(common.Address{})
-	if chainConfig.ArbitrumChainParams.InitialChainOwner != (common.Address{}) {
-		initialChainOwner = chainConfig.ArbitrumChainParams.InitialChainOwner
-	}
+	// may be the zero address
+	initialChainOwner := chainConfig.ArbitrumChainParams.InitialChainOwner
 	ownersStorage := sto.OpenSubStorage(chainOwnerSubspace)
 	_ = addressSet.Initialize(ownersStorage)
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)
@@ -219,28 +215,16 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	return OpenArbosState(stateDB, burner)
 }
 
-var TestnetUpgrade2Owner = common.HexToAddress("0x40Fd01b32e97803f12693517776826a71e2B8D5f")
-
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, chainConfig *params.ChainConfig) {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
 		for upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
-			if state.arbosVersion == 1 {
-				// Upgrade version 1->2 adds a chain owner for the testnet
-				if arbmath.BigEquals(chainConfig.ChainID, params.ArbitrumTestnetChainConfig().ChainID) {
-					state.Restrict(state.chainOwners.Add(TestnetUpgrade2Owner))
-				}
-			} else if state.arbosVersion == 2 {
-				// Upgrade version 2->3 has no state changes
-			} else if state.arbosVersion == 3 {
-				// Upgrade version 3->4 adds two fields to the L2 pricing model
-				// (We don't bother to remove no-longer-used fields, for safety
-				//       and because they'll be removed when we telescope versions for re-launch.)
-				state.Restrict(state.l2PricingState.UpgradeToVersion4())
-			} else {
-				// code to upgrade to future versions will be put here
+			switch state.arbosVersion {
+			case 1:
+				// version 1->2 has no state changes
+			default:
 				panic("Unable to perform requested ArbOS upgrade")
 			}
 			state.arbosVersion++

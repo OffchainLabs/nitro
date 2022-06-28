@@ -160,7 +160,18 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, common.Hash{}, chainId, 0, headerreader.TestConfig, validator.DefaultNitroMachineConfig)
+	addresses, err := arbnode.DeployOnL1(
+		ctx,
+		l1client,
+		&l1TransactionOpts,
+		l1info.GetAddress("Sequencer"),
+		l1info.GetAddress("RollupOwner"),
+		0,
+		common.Hash{},
+		chainId,
+		headerreader.TestConfig,
+		validator.DefaultNitroMachineConfig,
+	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
@@ -212,6 +223,8 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 
 	if !isSequencer {
 		nodeConfig.BatchPoster.Enable = false
+		nodeConfig.Sequencer.Enable = false
+		nodeConfig.DelayedSequencer.Enable = false
 	}
 	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 

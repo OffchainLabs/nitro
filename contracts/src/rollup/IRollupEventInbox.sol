@@ -6,12 +6,12 @@ pragma solidity ^0.8.0;
 
 import "../bridge/IBridge.sol";
 
-interface IRollupEventBridge {
+interface IRollupEventInbox {
     function bridge() external view returns (IBridge);
 
-    function initialize(address _bridge, address _rollup) external;
+    function initialize(IBridge _bridge) external;
 
     function rollup() external view returns (address);
 
-    function rollupInitialized(uint256 chainId, uint64 genesisBlockNum) external;
+    function rollupInitialized(uint256 chainId) external;
 }

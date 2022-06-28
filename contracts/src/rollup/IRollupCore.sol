@@ -17,7 +17,7 @@ interface IRollupCore {
         bool isStaked;
     }
 
-    event RollupInitialized(bytes32 machineHash, uint256 chainId, uint64 genesisBlockNum);
+    event RollupInitialized(bytes32 machineHash, uint256 chainId);
 
     event NodeCreated(
         uint64 indexed nodeNum,
@@ -59,13 +59,13 @@ interface IRollupCore {
 
     function wasmModuleRoot() external view returns (bytes32);
 
-    function delayedBridge() external view returns (IBridge);
+    function bridge() external view returns (IBridge);
 
-    function sequencerBridge() external view returns (ISequencerInbox);
+    function sequencerInbox() external view returns (ISequencerInbox);
 
     function outbox() external view returns (IOutbox);
 
-    function rollupEventBridge() external view returns (IRollupEventBridge);
+    function rollupEventInbox() external view returns (IRollupEventInbox);
 
     function challengeManager() external view returns (IChallengeManager);
 

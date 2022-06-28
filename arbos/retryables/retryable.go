@@ -145,7 +145,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 	escrowAddress := RetryableEscrowAddress(id)
 	beneficiaryAddress := common.BytesToAddress(beneficiary[:])
 	amount := evm.StateDB.GetBalance(escrowAddress)
-	err = util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario)
+	err = util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario, "escrow")
 	if err != nil {
 		return false, err
 	}
@@ -328,7 +328,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 	return windowsLeftStorage.Set(windowsLeft - 1)
 }
 
-func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
+func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address, maxRefund *big.Int, submissionFeeRefund *big.Int) (*types.ArbitrumRetryTx, error) {
 	from, err := retryable.From()
 	if err != nil {
 		return nil, err
@@ -346,16 +346,18 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 		return nil, err
 	}
 	return &types.ArbitrumRetryTx{
-		ChainId:   chainId,
-		Nonce:     nonce,
-		From:      from,
-		GasFeeCap: gasFeeCap,
-		Gas:       gas,
-		To:        to,
-		Value:     callvalue,
-		Data:      calldata,
-		TicketId:  ticketId,
-		RefundTo:  refundTo,
+		ChainId:             chainId,
+		Nonce:               nonce,
+		From:                from,
+		GasFeeCap:           gasFeeCap,
+		Gas:                 gas,
+		To:                  to,
+		Value:               callvalue,
+		Data:                calldata,
+		TicketId:            ticketId,
+		RefundTo:            refundTo,
+		MaxRefund:           maxRefund,
+		SubmissionFeeRefund: submissionFeeRefund,
 	}, nil
 }
 

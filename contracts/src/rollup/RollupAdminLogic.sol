@@ -21,16 +21,26 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         onlyProxy
         initializer
     {
-        delayedBridge = connectedContracts.delayedBridge;
-        sequencerBridge = connectedContracts.sequencerInbox;
+        rollupDeploymentBlock = block.number;
+        bridge = connectedContracts.bridge;
+        sequencerInbox = connectedContracts.sequencerInbox;
+        connectedContracts.bridge.setDelayedInbox(address(connectedContracts.inbox), true);
+        connectedContracts.bridge.setSequencerInbox(address(connectedContracts.sequencerInbox));
+
+        inbox = connectedContracts.inbox;
         outbox = connectedContracts.outbox;
-        delayedBridge.setOutbox(address(connectedContracts.outbox), true);
-        rollupEventBridge = connectedContracts.rollupEventBridge;
-        delayedBridge.setInbox(address(connectedContracts.rollupEventBridge), true);
+        connectedContracts.bridge.setOutbox(address(connectedContracts.outbox), true);
+        rollupEventInbox = connectedContracts.rollupEventInbox;
+        connectedContracts.bridge.setDelayedInbox(
+            address(connectedContracts.rollupEventInbox),
+            true
+        );
 
-        rollupEventBridge.rollupInitialized(config.chainId, config.genesisBlockNum);
-        sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
+        connectedContracts.rollupEventInbox.rollupInitialized(config.chainId);
+        connectedContracts.sequencerInbox.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
 
+        validatorUtils = connectedContracts.validatorUtils;
+        validatorWalletCreator = connectedContracts.validatorWalletCreator;
         challengeManager = connectedContracts.challengeManager;
 
         Node memory node = createInitialNode();
@@ -53,7 +63,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
 
         stakeToken = config.stakeToken;
 
-        emit RollupInitialized(config.wasmModuleRoot, config.chainId, config.genesisBlockNum);
+        emit RollupInitialized(config.wasmModuleRoot, config.chainId);
     }
 
     function createInitialNode() private view returns (Node memory) {
@@ -84,7 +94,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      */
     function setOutbox(IOutbox _outbox) external override {
         outbox = _outbox;
-        delayedBridge.setOutbox(address(_outbox), true);
+        bridge.setOutbox(address(_outbox), true);
         emit OwnerFunctionCalled(0);
     }
 
@@ -94,7 +104,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      */
     function removeOldOutbox(address _outbox) external override {
         require(_outbox != address(outbox), "CUR_OUTBOX");
-        delayedBridge.setOutbox(_outbox, false);
+        bridge.setOutbox(_outbox, false);
         emit OwnerFunctionCalled(1);
     }
 
@@ -103,8 +113,8 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * @param _inbox Inbox contract to add or remove
      * @param _enabled New status of inbox
      */
-    function setInbox(address _inbox, bool _enabled) external override {
-        delayedBridge.setInbox(address(_inbox), _enabled);
+    function setDelayedInbox(address _inbox, bool _enabled) external override {
+        bridge.setDelayedInbox(address(_inbox), _enabled);
         emit OwnerFunctionCalled(2);
     }
 
@@ -295,5 +305,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     function setWasmModuleRoot(bytes32 newWasmModuleRoot) external override {
         wasmModuleRoot = newWasmModuleRoot;
         emit OwnerFunctionCalled(26);
+    }
+
+    /**
+     * @notice set a new sequencer inbox contract
+     * @param _sequencerInbox new address of sequencer inbox
+     */
+    function setSequencerInbox(address _sequencerInbox) external override {
+        bridge.setSequencerInbox(_sequencerInbox);
+        emit OwnerFunctionCalled(27);
     }
 }

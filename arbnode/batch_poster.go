@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/andybalholm/brotli"
@@ -353,12 +354,18 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	if err != nil {
 		return nil, err
 	}
+
 	forcePostBatch := timeSinceNextMessage >= b.config.MaxBatchPostInterval
+	haveUsefulMessage := false
+
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
 			log.Error("error getting message from streamer", "error", err)
 			break
+		}
+		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
+			haveUsefulMessage = true
 		}
 		success, err := b.building.segments.AddMessage(&msg)
 		if err != nil {
@@ -366,17 +373,20 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 			break
 		}
 		if !success {
-			forcePostBatch = true // this batch is full
+			// this batch is full
+			forcePostBatch = true
+			haveUsefulMessage = true
 			break
 		}
 		b.building.msgCount++
 	}
+
 	if b.building.segments.IsEmpty() {
 		// we don't need to post a batch for the time being
 		b.pendingMsgTimestamp = time.Now()
 		return nil, nil
 	}
-	if !forcePostBatch {
+	if !forcePostBatch || !haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
 		return nil, nil

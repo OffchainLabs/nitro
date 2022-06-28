@@ -15,7 +15,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/statetransfer"
 
-	"github.com/offchainlabs/nitro/arbos/util"
 	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 
@@ -29,14 +28,12 @@ import (
 )
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, *core.BlockChain) {
-	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
-
 	chainConfig := params.ArbitrumDevTestChainConfig()
 
 	initData := statetransfer.ArbosInitializationInfo{
 		Accounts: []statetransfer.AccountInitializationInfo{
 			{
-				Addr:       rewrittenOwnerAddress,
+				Addr:       ownerAddress,
 				EthBalance: big.NewInt(params.Ether),
 			},
 		},
@@ -74,7 +71,6 @@ type blockTestState struct {
 
 func TestTransactionStreamer(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
-	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
 	inbox, bc := NewTransactionStreamerForTest(t, ownerAddress)
 
@@ -90,9 +86,9 @@ func TestTransactionStreamer(t *testing.T) {
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]*big.Int{
-			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(int64(nitroutil.NormalizeL2GasForL1GasInitial(1_000_000, params.GWei)))),
+			ownerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(int64(nitroutil.NormalizeL2GasForL1GasInitial(1_000_000, params.GWei)))),
 		},
-		accounts:    []common.Address{rewrittenOwnerAddress},
+		accounts:    []common.Address{ownerAddress},
 		numMessages: 1,
 		blockNumber: 0,
 	})
@@ -135,11 +131,14 @@ func TestTransactionStreamer(t *testing.T) {
 				l2Message = append(l2Message, math.U256Bytes(big.NewInt(l2pricing.InitialBaseFeeWei))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
 				l2Message = append(l2Message, math.U256Bytes(value)...)
+				var requestId common.Hash
+				binary.BigEndian.PutUint64(requestId.Bytes()[:8], uint64(i))
 				messages = append(messages, arbstate.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
-							Kind:   arbos.L1MessageType_L2Message,
-							Poster: util.InverseRemapL1Address(source),
+							Kind:      arbos.L1MessageType_L2Message,
+							Poster:    source,
+							RequestId: &requestId,
 						},
 						L2msg: l2Message,
 					},
