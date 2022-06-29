@@ -22,12 +22,13 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
-func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, *core.BlockChain) {
+func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 
 	initData := statetransfer.ArbosInitializationInfo{
@@ -59,7 +60,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 
-	return inbox, bc
+	return inbox, db, bc
 }
 
 type blockTestState struct {
@@ -72,7 +73,7 @@ type blockTestState struct {
 func TestTransactionStreamer(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
 
-	inbox, bc := NewTransactionStreamerForTest(t, ownerAddress)
+	inbox, _, bc := NewTransactionStreamerForTest(t, ownerAddress)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

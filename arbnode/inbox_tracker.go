@@ -277,7 +277,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		return err
 	}
 
-	seqBatchIter := t.db.NewIterator(delayedSequencedPrefix, uint64ToKey(newDelayedCount))
+	seqBatchIter := t.db.NewIterator(delayedSequencedPrefix, uint64ToKey(newDelayedCount+1))
 	defer seqBatchIter.Release()
 	var reorgSeqBatchesToCount *uint64
 	for seqBatchIter.Next() {

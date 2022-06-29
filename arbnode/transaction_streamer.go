@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -272,11 +273,13 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	return s.AddMessages(0, false, []arbstate.MessageWithMetadata{{
 		Message: &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
-				Kind: arbos.L1MessageType_Initialize,
+				Kind:      arbos.L1MessageType_Initialize,
+				RequestId: &common.Hash{},
+				L1BaseFee: common.Big0,
 			},
 			L2msg: math.U256Bytes(s.bc.Config().ChainID),
 		},
-		DelayedMessagesRead: 0,
+		DelayedMessagesRead: 1,
 	}})
 }
 
