@@ -142,7 +142,7 @@ func (n NodeInterface) EstimateRetryableTicket(
 		GasFeeCap:        n.sourceMessage.GasPrice(),
 		Gas:              n.sourceMessage.Gas(),
 		RetryTo:          pRetryTo,
-		Value:            l2CallValue,
+		RetryValue:       l2CallValue,
 		Beneficiary:      callValueRefundAddress,
 		MaxSubmissionFee: maxSubmissionFee,
 		FeeRefundAddr:    excessFeeRefundAddress,

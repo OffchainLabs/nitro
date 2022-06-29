@@ -144,7 +144,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// mint funds with the deposit, then charge fees later
 		availableRefund := new(big.Int).Set(tx.DepositValue)
-		takeFunds(availableRefund, tx.Value)
+		takeFunds(availableRefund, tx.RetryValue)
 		util.MintBalance(&tx.From, tx.DepositValue, evm, scenario, "deposit")
 
 		transfer := func(from, to *common.Address, amount *big.Int) error {
@@ -170,7 +170,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// move the callvalue into escrow
-		if err := transfer(&tx.From, &escrow, tx.Value); err != nil {
+		if err := transfer(&tx.From, &escrow, tx.RetryValue); err != nil {
 			return true, 0, err, nil
 		}
 
@@ -183,7 +183,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			timeout,
 			tx.From,
 			tx.RetryTo,
-			underlyingTx.Value(),
+			tx.RetryValue,
 			tx.Beneficiary,
 			tx.RetryData,
 		)
@@ -257,7 +257,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if evm.Config.Debug {
 			redeem, err := util.PackArbRetryableTxRedeem(ticketId)
 			if err == nil {
-				tracingInfo.MockCall(redeem, usergas, from, types.ArbRetryableTxAddress, tx.Value)
+				tracingInfo.MockCall(redeem, usergas, from, types.ArbRetryableTxAddress, common.Big0)
 			} else {
 				glog.Error("failed to abi-encode auto-redeem", "err", err)
 			}
