@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -339,6 +340,9 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 			return err
 		}
 		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+		colors.PrintBlue("Units allocated: ", unitsAllocated)
+		colors.PrintMint("Surplus: ", surplus)
+		colors.PrintMint("Old surplus: ", oldSurplus)
 
 		inertia, err := ps.Inertia()
 		if err != nil {
@@ -348,11 +352,13 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 		if err != nil {
 			return err
 		}
+		colors.PrintGrey("Equilibration units: ", equilUnits)
 		inertiaUnits := am.BigDivByUint(equilUnits, inertia)
 		price, err := ps.PricePerUnit()
 		if err != nil {
 			return err
 		}
+		colors.PrintGrey("Inertia units: ", inertiaUnits)
 
 		allocPlusInert := am.BigAddByUint(inertiaUnits, unitsAllocated)
 		priceChange := am.BigDiv(
@@ -362,6 +368,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 			),
 			am.BigMul(equilUnits, allocPlusInert),
 		)
+		colors.PrintBlue("Price change: ", priceChange)
 
 		newPrice := am.BigAdd(price, priceChange)
 		if newPrice.Sign() < 0 {
