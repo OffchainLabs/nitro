@@ -6,6 +6,7 @@ package arbnode
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"sync"
 	"time"
 
@@ -77,6 +78,21 @@ func (t *InboxTracker) Initialize() error {
 			return err
 		}
 		log.Info("InboxTracker", "SequencerBatchCount", 0)
+	} else {
+		data, err := t.db.Get(sequencerBatchCountKey)
+		if err != nil {
+			return err
+		}
+		if len(data) == 8 {
+			data, err = rlp.EncodeToBytes(binary.BigEndian.Uint64(data))
+			if err != nil {
+				return err
+			}
+			err = t.db.Put(sequencerBatchCountKey, data)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	return batch.Write()
