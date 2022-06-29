@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -29,16 +28,16 @@ type InboxTracker struct {
 	das        arbstate.DataAvailabilityReader
 }
 
-func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
 	if txStreamer.bc.Config().ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
 		return nil, errors.New("data availability service required but unconfigured")
 	}
-	db := &InboxTracker{
-		db:         rawdb.NewTable(raw, arbitrumPrefix),
+	tracker := &InboxTracker{
+		db:         db,
 		txStreamer: txStreamer,
 		das:        das,
 	}
-	return db, nil
+	return tracker, nil
 }
 
 func (t *InboxTracker) SetBlockValidator(validator *validator.BlockValidator) {

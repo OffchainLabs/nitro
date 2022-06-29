@@ -40,16 +40,17 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		},
 	}
 
-	db := rawdb.NewMemoryDatabase()
+	chainDb := rawdb.NewMemoryDatabase()
+	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	bc, err := WriteOrTestBlockChain(db, nil, initReader, 0, chainConfig)
+	bc, err := WriteOrTestBlockChain(chainDb, nil, initReader, 0, chainConfig)
 
 	if err != nil {
 		Fail(t, err)
 	}
 
-	inbox, err := NewTransactionStreamer(db, bc, nil)
+	inbox, err := NewTransactionStreamer(arbDb, bc, nil)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -60,7 +61,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 
-	return inbox, db, bc
+	return inbox, arbDb, bc
 }
 
 type blockTestState struct {

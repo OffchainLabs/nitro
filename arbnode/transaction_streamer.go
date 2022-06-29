@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -60,7 +59,7 @@ type TransactionStreamer struct {
 
 func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastServer *broadcaster.Broadcaster) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
-		db:                 rawdb.NewTable(db, arbitrumPrefix),
+		db:                 db,
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
 		newBlockNotifier:   make(chan struct{}, 1),
