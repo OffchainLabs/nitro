@@ -142,11 +142,15 @@ func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbuti
 	return batch.Write()
 }
 
-func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
-	iter := db.NewIterator(prefix, minKey)
+func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, column databaseColumn, minKey []byte) error {
+	iter := db.NewIterator(column.Prefix, minKey)
 	defer iter.Release()
 	for iter.Next() {
-		err := batch.Delete(iter.Key())
+		key := iter.Key()
+		if len(key) != column.KeyLength() {
+			continue
+		}
+		err := batch.Delete(key)
 		if err != nil {
 			return err
 		}
@@ -184,7 +188,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 		log.Warn("reorg target block not found", "block", targetBlock)
 	}
 
-	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
+	err = deleteStartingAt(s.db, batch, messageColumn, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
 	}
@@ -200,16 +204,16 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	return nil
 }
 
-func dbKey(prefix []byte, pos uint64) []byte {
+func dbKey(column databaseColumn, pos uint64) []byte {
 	var key []byte
-	key = append(key, prefix...)
+	key = append(key, column.Prefix...)
 	key = append(key, uint64ToKey(uint64(pos))...)
 	return key
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
 func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error) {
-	key := dbKey(messagePrefix, uint64(seqNum))
+	key := dbKey(messageColumn, uint64(seqNum))
 	data, err := s.db.Get(key)
 	if err != nil {
 		return arbstate.MessageWithMetadata{}, err
@@ -322,7 +326,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 		if len(messages) == 0 {
 			break
 		}
-		key := dbKey(messagePrefix, uint64(pos))
+		key := dbKey(messageColumn, uint64(pos))
 		hasMessage, err := s.db.Has(key)
 		if err != nil {
 			return err
@@ -639,7 +643,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 		batch = s.db.NewBatch()
 	}
 	for i, msg := range messages {
-		key := dbKey(messagePrefix, uint64(pos)+uint64(i))
+		key := dbKey(messageColumn, uint64(pos)+uint64(i))
 		msgBytes, err := rlp.EncodeToBytes(msg)
 		if err != nil {
 			return err
