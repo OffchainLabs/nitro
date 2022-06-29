@@ -71,7 +71,7 @@ func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastSer
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
 // Generally this is only used for database keys, which need sorted.
 // A shorter RLP encoding is usually used for database values.
-func uint64ToBytes(x uint64) []byte {
+func uint64ToKey(x uint64) []byte {
 	data := make([]byte, 8)
 	binary.BigEndian.PutUint64(data, x)
 	return data
@@ -183,7 +183,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 		return err
 	}
 
-	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(uint64(count)))
+	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 func dbKey(prefix []byte, pos uint64) []byte {
 	var key []byte
 	key = append(key, prefix...)
-	key = append(key, uint64ToBytes(uint64(pos))...)
+	key = append(key, uint64ToKey(uint64(pos))...)
 	return key
 }
 
