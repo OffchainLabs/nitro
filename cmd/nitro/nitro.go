@@ -290,11 +290,10 @@ func main() {
 		}
 	}
 
+	testUpdateTxIndex(chainDb, chainConfig)
 	if nodeConfig.QuitAfterInit {
-		testUpdateTxIndex(chainDb, chainConfig)
 		return
 	}
-	go testUpdateTxIndex(chainDb, chainConfig)
 
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
 		flag.Usage()
