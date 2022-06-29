@@ -79,7 +79,21 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		bridgeAddress:     [20]byte{},
 		serialized:        serializedUserMsgBatch,
 	}
-	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch})
+	emptyBatch := &SequencerInboxBatch{
+		BlockHash:         [32]byte{},
+		BlockNumber:       0,
+		SequenceNumber:    2,
+		BeforeInboxAcc:    [32]byte{2},
+		AfterInboxAcc:     [32]byte{3},
+		AfterDelayedAcc:   userDelayed.AfterInboxAcc(),
+		AfterDelayedCount: 2,
+		TimeBounds:        bridgegen.ISequencerInboxTimeBounds{},
+		txIndexInBlock:    0,
+		dataLocation:      0,
+		bridgeAddress:     [20]byte{},
+		serialized:        serializedUserMsgBatch,
+	}
+	err = tracker.AddSequencerBatches(ctx, nil, []*SequencerInboxBatch{initMsgBatch, userMsgBatch, emptyBatch})
 	Require(t, err)
 
 	// Reorg out the user delayed message
@@ -104,7 +118,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		Fail(t, "Unexpected tracker batch count", batchCount, "(expected 1)")
 	}
 
-	emptyBatch := &SequencerInboxBatch{
+	emptyBatch = &SequencerInboxBatch{
 		BlockHash:         [32]byte{},
 		BlockNumber:       0,
 		SequenceNumber:    1,

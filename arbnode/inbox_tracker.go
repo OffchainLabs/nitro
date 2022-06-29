@@ -406,7 +406,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 
 	dbBatch := t.db.NewBatch()
-	err := deleteStartingAt(t.db, dbBatch, delayedSequencedPrefix, uint64ToKey(prevbatchmeta.DelayedMessageCount))
+	err := deleteStartingAt(t.db, dbBatch, delayedSequencedPrefix, uint64ToKey(prevbatchmeta.DelayedMessageCount+1))
 	if err != nil {
 		return err
 	}
@@ -462,6 +462,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		currentpos += 1
 	}
 
+	lastBatchMeta := prevbatchmeta
 	for _, batch := range batches {
 		meta := BatchMetadata{
 			Accumulator:         batch.AfterInboxAcc,
@@ -482,10 +483,16 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		if err != nil {
 			return err
 		}
-		err = dbBatch.Put(dbKey(delayedSequencedPrefix, batch.AfterDelayedCount), seqNumData)
-		if err != nil {
-			return err
+		if batch.AfterDelayedCount < lastBatchMeta.DelayedMessageCount {
+			return errors.New("batch delayed message count went backwards")
 		}
+		if batch.AfterDelayedCount > lastBatchMeta.DelayedMessageCount {
+			err = dbBatch.Put(dbKey(delayedSequencedPrefix, batch.AfterDelayedCount), seqNumData)
+			if err != nil {
+				return err
+			}
+		}
+		lastBatchMeta = meta
 	}
 
 	err = deleteStartingAt(t.db, dbBatch, sequencerBatchMetaPrefix, uint64ToKey(pos))
@@ -585,7 +592,7 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 
 	dbBatch := t.db.NewBatch()
 
-	err := deleteStartingAt(t.db, dbBatch, delayedSequencedPrefix, uint64ToKey(prevBatchMeta.DelayedMessageCount))
+	err := deleteStartingAt(t.db, dbBatch, delayedSequencedPrefix, uint64ToKey(prevBatchMeta.DelayedMessageCount+1))
 	if err != nil {
 		return err
 	}

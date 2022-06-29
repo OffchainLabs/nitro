@@ -143,7 +143,7 @@ func TestTransactionStreamer(t *testing.T) {
 						},
 						L2msg: l2Message,
 					},
-					DelayedMessagesRead: 0,
+					DelayedMessagesRead: 1,
 				})
 				state.balances[source].Sub(state.balances[source], value)
 				if state.balances[dest] == nil {

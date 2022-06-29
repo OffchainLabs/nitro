@@ -168,20 +168,20 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	}
 	// We can safely cast blockNum to a uint64 as we checked count == 0 above
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
-	if targetBlock == nil {
-		return errors.New("reorg target block not found")
-	}
+	if targetBlock != nil {
+		if s.validator != nil {
+			err = s.validator.ReorgToBlock(targetBlock.NumberU64(), targetBlock.Hash())
+			if err != nil {
+				return err
+			}
+		}
 
-	if s.validator != nil {
-		err = s.validator.ReorgToBlock(targetBlock.NumberU64(), targetBlock.Hash())
+		err = s.bc.ReorgToOldBlock(targetBlock)
 		if err != nil {
 			return err
 		}
-	}
-
-	err = s.bc.ReorgToOldBlock(targetBlock)
-	if err != nil {
-		return err
+	} else {
+		log.Warn("reorg target block not found", "block", targetBlock)
 	}
 
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
