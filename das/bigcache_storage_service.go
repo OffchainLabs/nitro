@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -50,17 +51,17 @@ func NewBigCacheStorageService(bigCacheConfig BigCacheConfig, baseStorageService
 	}, nil
 }
 
-func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	log.Trace("das.BigCacheStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", bcs)
+func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
+	log.Trace("das.BigCacheStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", bcs)
 
-	ret, err := bcs.bigCache.Get(string(key))
+	ret, err := bcs.bigCache.Get(string(key.Bytes()))
 	if err != nil {
 		ret, err = bcs.baseStorageService.GetByHash(ctx, key)
 		if err != nil {
 			return nil, err
 		}
 
-		err = bcs.bigCache.Set(string(key), ret)
+		err = bcs.bigCache.Set(string(key.Bytes()), ret)
 		if err != nil {
 			return nil, err
 		}
@@ -76,8 +77,7 @@ func (bcs *BigCacheStorageService) Put(ctx context.Context, value []byte, timeou
 	if err != nil {
 		return err
 	}
-	err = bcs.bigCache.Set(string(dastree.Hash(value)), value)
-	return err
+	return bcs.bigCache.Set(string(dastree.HashBytes(value)), value)
 }
 
 func (bcs *BigCacheStorageService) Sync(ctx context.Context) error {

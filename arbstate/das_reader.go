@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -19,7 +20,7 @@ import (
 )
 
 type DataAvailabilityReader interface {
-	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
+	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
 	HealthCheck(ctx context.Context) error
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
 }
@@ -123,7 +124,7 @@ func (cert *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
 	da DataAvailabilityReader,
 ) (*DataAvailabilityKeyset, error) {
-	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash[:])
+	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash)
 	if err != nil {
 		return nil, err
 	}

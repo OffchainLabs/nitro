@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type MemoryBackedStorageService struct { // intended for testing and debugging
@@ -29,16 +28,14 @@ func NewMemoryBackedStorageService(ctx context.Context) StorageService {
 	}
 }
 
-func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	log.Trace("das.MemoryBackedStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", m)
+func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
+	log.Trace("das.MemoryBackedStorageService.GetByHash", "key", key, "this", m)
 	m.rwmutex.RLock()
 	defer m.rwmutex.RUnlock()
 	if m.closed {
 		return nil, ErrClosed
 	}
-	var h32 [32]byte
-	copy(h32[:], key)
-	res, found := m.contents[h32]
+	res, found := m.contents[key]
 	if !found {
 		return nil, ErrNotFound
 	}
@@ -52,8 +49,7 @@ func (m *MemoryBackedStorageService) Put(ctx context.Context, data []byte, expir
 	if m.closed {
 		return ErrClosed
 	}
-	h32 := common.BytesToHash(dastree.Hash(data))
-	m.contents[h32] = append([]byte{}, data...)
+	m.contents[dastree.Hash(data)] = append([]byte{}, data...)
 	return nil
 }
 

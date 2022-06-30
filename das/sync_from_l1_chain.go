@@ -105,7 +105,7 @@ func SyncStorageServiceFromChain(
 					return err
 				}
 				for hash, contents := range preimages {
-					_, err := syncTo.GetByHash(ctx, hash.Bytes())
+					_, err := syncTo.GetByHash(ctx, hash)
 					if errors.Is(err, ErrNotFound) {
 						if err := syncTo.Put(ctx, contents, arbmath.SaturatingUAdd(uint64(time.Now().Unix()), expirationTime)); err != nil {
 							return err

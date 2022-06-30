@@ -4,7 +4,6 @@
 package das
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/das/dastree"
@@ -174,8 +174,8 @@ type SimpleDASReaderAggregator struct {
 	statMessages chan readerStatMessage
 }
 
-func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	log.Trace("das.SimpleDASReaderAggregator.GetByHash", "key", pretty.FirstFewBytes(hash), "this", a)
+func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	log.Trace("das.SimpleDASReaderAggregator.GetByHash", "key", pretty.PrettyHash(hash), "this", a)
 
 	type dataErrorPair struct {
 		data []byte
@@ -237,7 +237,7 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) 
 }
 
 func (a *SimpleDASReaderAggregator) tryGetByHash(
-	ctx context.Context, hash []byte, reader arbstate.DataAvailabilityReader,
+	ctx context.Context, hash common.Hash, reader arbstate.DataAvailabilityReader,
 ) ([]byte, error) {
 	stat := readerStatMessage{reader: reader}
 	stat.success = false
@@ -245,7 +245,7 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(
 	start := time.Now()
 	result, err := reader.GetByHash(ctx, hash)
 	if err == nil {
-		if bytes.Equal(dastree.Hash(result), hash) {
+		if dastree.Hash(result) == hash {
 			stat.success = true
 		} else {
 			err = fmt.Errorf("SimpleDASReaderAggregator got result from reader(%v) not matching hash", reader)

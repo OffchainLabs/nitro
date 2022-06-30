@@ -42,7 +42,7 @@ func DasRecoverSigner(data []byte, timeout uint64, sig []byte) (common.Address, 
 func dasStoreHash(data []byte, timeout uint64) []byte {
 	var buf8 [8]byte
 	binary.BigEndian.PutUint64(buf8[:], timeout)
-	return dastree.Hash(uniquifyingPrefix, buf8[:], data)
+	return dastree.HashBytes(uniquifyingPrefix, buf8[:], data)
 }
 
 type StoreSigningDAS struct {

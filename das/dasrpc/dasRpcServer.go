@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -81,7 +82,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 }
 
 func (serv *DASRPCServer) GetByHash(ctx context.Context, certBytes hexutil.Bytes) (hexutil.Bytes, error) {
-	return serv.localDAS.GetByHash(ctx, certBytes)
+	return serv.localDAS.GetByHash(ctx, common.BytesToHash(certBytes))
 }
 
 func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {

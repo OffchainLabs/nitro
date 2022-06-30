@@ -138,7 +138,7 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Failed to deserialize DAS message", "err", err)
 		return nil, nil
 	}
-	keysetPreimage, err := dasReader.GetByHash(ctx, cert.KeysetHash[:])
+	keysetPreimage, err := dasReader.GetByHash(ctx, cert.KeysetHash)
 	if err == nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
 		err = ErrHashMismatch
 	}
@@ -164,7 +164,7 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Data availability cert expires too soon", "err", "")
 		return nil, nil
 	}
-	payload, err := dasReader.GetByHash(ctx, cert.DataHash[:])
+	payload, err := dasReader.GetByHash(ctx, cert.DataHash)
 	if err == nil && !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
 		err = ErrHashMismatch
 	}

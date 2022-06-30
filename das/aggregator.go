@@ -165,7 +165,7 @@ func NewAggregatorWithSeqInboxCaller(
 	}, nil
 }
 
-func (a *Aggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (a *Aggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	// Query all services, even those that didn't sign.
 	// They may have been late in returning a response after storing the data,
 	// or got the data by some other means.
@@ -180,7 +180,7 @@ func (a *Aggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error)
 				errorChan <- err
 				return
 			}
-			if bytes.Equal(dastree.Hash(blob), hash) {
+			if dastree.Hash(blob) == hash {
 				blobChan <- blob
 			} else {
 				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
@@ -269,7 +269,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 			// SignersMask from backend DAS is ignored.
 
-			if !bytes.Equal(cert.DataHash[:], expectedHash) {
+			if cert.DataHash != expectedHash {
 				responses <- storeResponse{d, nil, errors.New("Hash verification failed.")}
 				return
 			}
@@ -313,7 +313,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	aggCert.Sig = blsSignatures.AggregateSignatures(sigs)
 	aggPubKey := blsSignatures.AggregatePublicKeys(pubKeys)
 	aggCert.SignersMask = aggSignersMask
-	copy(aggCert.DataHash[:], expectedHash)
+	aggCert.DataHash = expectedHash
 	aggCert.Timeout = timeout
 	aggCert.KeysetHash = a.keysetHash
 

@@ -3,7 +3,11 @@
 
 package pretty
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/ethereum/go-ethereum/common"
+)
 
 func FirstFewBytes(b []byte) string {
 	if len(b) < 9 {
@@ -11,6 +15,10 @@ func FirstFewBytes(b []byte) string {
 	} else {
 		return fmt.Sprintf("[% x ... ]", b[:8])
 	}
+}
+
+func PrettyHash(hash common.Hash) string {
+	return FirstFewBytes(hash.Bytes())
 }
 
 func FirstFewChars(s string) string {

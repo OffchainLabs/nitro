@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
@@ -132,7 +133,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	responseData, err := rds.storage.GetByHash(r.Context(), hashBytes[:32])
+	responseData, err := rds.storage.GetByHash(r.Context(), common.BytesToHash(hashBytes[:32]))
 	if err != nil {
 		log.Warn("Unable to find data", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusNotFound)

@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/das/dastree"
@@ -45,13 +46,13 @@ func NewLocalFileStorageService(dataDir string) (StorageService, error) {
 	return &LocalFileStorageService{dataDir: dataDir}, nil
 }
 
-func (s *LocalFileStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", s)
+func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
+	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s)
 	pathname := s.dataDir + "/" + EncodeStorageServiceKey(key)
 	data, err := os.ReadFile(pathname)
 	if err != nil {
 		// Just for backward compatability.
-		pathname = s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
+		pathname = s.dataDir + "/" + base32.StdEncoding.EncodeToString(key.Bytes())
 		data, err = os.ReadFile(pathname)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {

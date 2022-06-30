@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -157,8 +158,9 @@ func (d *SignAfterStoreDAS) Store(
 		}
 	}
 
-	c = &arbstate.DataAvailabilityCertificate{}
-	copy(c.DataHash[:], dastree.Hash(message))
+	c = &arbstate.DataAvailabilityCertificate{
+		DataHash: dastree.Hash(message),
+	}
 
 	c.Timeout = timeout
 	c.SignersMask = 1 // The aggregator will override this if we're part of a committee.
@@ -183,7 +185,7 @@ func (d *SignAfterStoreDAS) Store(
 	return c, nil
 }
 
-func (d *SignAfterStoreDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (d *SignAfterStoreDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	return d.storageService.GetByHash(ctx, hash)
 }
 

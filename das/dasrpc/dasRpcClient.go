@@ -4,11 +4,11 @@
 package dasrpc
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -35,15 +35,15 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 	}, nil
 }
 
-func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (c *DASRPCClient) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	if len(hash) != 32 {
 		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
 	}
 	var ret hexutil.Bytes
-	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash)); err != nil {
+	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash[:])); err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(hash, dastree.Hash(ret)) { // check hash because RPC server might be untrusted
+	if hash != dastree.Hash(ret) { // check hash because RPC server might be untrusted
 		return nil, arbstate.ErrHashMismatch
 	}
 	return ret, nil
@@ -55,20 +55,16 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	if err := c.clnt.CallContext(ctx, &ret, "das_store", hexutil.Bytes(message), hexutil.Uint64(timeout), hexutil.Bytes(reqSig)); err != nil {
 		return nil, err
 	}
-	var keysetHash [32]byte
-	copy(keysetHash[:], ret.KeysetHash)
-	var dataHash [32]byte
-	copy(dataHash[:], ret.DataHash)
 	respSig, err := blsSignatures.SignatureFromBytes(ret.Sig)
 	if err != nil {
 		return nil, err
 	}
 	return &arbstate.DataAvailabilityCertificate{
-		DataHash:    dataHash,
+		DataHash:    common.BytesToHash(ret.DataHash),
 		Timeout:     uint64(ret.Timeout),
 		SignersMask: uint64(ret.SignersMask),
 		Sig:         respSig,
-		KeysetHash:  keysetHash,
+		KeysetHash:  common.BytesToHash(ret.KeysetHash),
 	}, nil
 }
 

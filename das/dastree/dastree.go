@@ -13,10 +13,10 @@ const binSize = 64 * 1024 // 64 kB
 
 type bytes32 = common.Hash
 
-func Hash(preimage ...[]byte) []byte {
+func Hash(preimage ...[]byte) bytes32 {
 	// Algorithm
 	//  1. split the preimage into 64kB bins and hash them to produces the tree's leaves
-	//  2. repeatedly hash pairs over and over, bubbling up any odd-one's out, forming the root
+	//  2. repeatedly hash pairs over and over, bubbling up any odd-one's out, to form the root
 	//
 	//            r         <=>  hash(hash(0, 1), 2)           step 2
 	//           / \
@@ -29,7 +29,7 @@ func Hash(preimage ...[]byte) []byte {
 		unrolled = append(unrolled, slice...)
 	}
 	if len(unrolled) == 0 {
-		return crypto.Keccak256([]byte{})
+		return crypto.Keccak256Hash([]byte{})
 	}
 
 	length := int64(len(unrolled))
@@ -53,6 +53,9 @@ func Hash(preimage ...[]byte) []byte {
 		}
 		layer = paired
 	}
+	return layer[0]
+}
 
-	return layer[0][:]
+func HashBytes(preimage ...[]byte) []byte {
+	return Hash(preimage...).Bytes()
 }
