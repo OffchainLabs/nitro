@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -106,8 +107,7 @@ func chainFetchGetByHash(
 	hash []byte,
 ) ([]byte, error) {
 	// try to fetch from the cache
-	var hash32 [32]byte
-	copy(hash32[:], hash)
+	hash32 := common.BytesToHash(hash)
 	res, ok := cache.get(hash32)
 	if ok {
 		return res, nil
@@ -115,7 +115,7 @@ func chainFetchGetByHash(
 
 	// try to fetch from the inner DAS
 	innerRes, err := daReader.GetByHash(ctx, hash)
-	if err == nil && bytes.Equal(hash, crypto.Keccak256(innerRes)) {
+	if err == nil && bytes.Equal(hash, dastree.Hash(innerRes)) {
 		return innerRes, nil
 	}
 

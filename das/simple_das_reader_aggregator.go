@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
@@ -236,14 +236,16 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) 
 	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS Reader: %v", errorCollection)
 }
 
-func (a *SimpleDASReaderAggregator) tryGetByHash(ctx context.Context, hash []byte, reader arbstate.DataAvailabilityReader) ([]byte, error) {
+func (a *SimpleDASReaderAggregator) tryGetByHash(
+	ctx context.Context, hash []byte, reader arbstate.DataAvailabilityReader,
+) ([]byte, error) {
 	stat := readerStatMessage{reader: reader}
 	stat.success = false
 
 	start := time.Now()
 	result, err := reader.GetByHash(ctx, hash)
 	if err == nil {
-		if bytes.Equal(crypto.Keccak256(result), hash) {
+		if bytes.Equal(dastree.Hash(result), hash) {
 			stat.success = true
 		} else {
 			err = fmt.Errorf("SimpleDASReaderAggregator got result from reader(%v) not matching hash", reader)

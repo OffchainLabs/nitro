@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -180,7 +180,7 @@ func (a *Aggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error)
 				errorChan <- err
 				return
 			}
-			if bytes.Equal(crypto.Keccak256(blob), hash) {
+			if bytes.Equal(dastree.Hash(blob), hash) {
 				blobChan <- blob
 			} else {
 				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
@@ -248,7 +248,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 	responses := make(chan storeResponse, len(a.services))
 
-	expectedHash := crypto.Keccak256(message)
+	expectedHash := dastree.Hash(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
 			cert, err := d.service.Store(ctx, message, timeout, sig)

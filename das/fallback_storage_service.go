@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
@@ -82,7 +82,7 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]b
 		if err != nil {
 			return nil, err
 		}
-		if bytes.Equal(key, crypto.Keccak256(data)) {
+		if bytes.Equal(key, dastree.Hash(data)) {
 			putErr := f.StorageService.Put(ctx, data, arbmath.SaturatingUAdd(uint64(time.Now().Unix()), f.backupRetentionSeconds))
 			if putErr != nil && !f.ignoreRetentionWriteErrors {
 				return nil, err

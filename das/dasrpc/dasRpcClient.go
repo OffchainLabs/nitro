@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -43,7 +43,7 @@ func (c *DASRPCClient) GetByHash(ctx context.Context, hash []byte) ([]byte, erro
 	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash)); err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(hash, crypto.Keccak256(ret)) { // check hash because RPC server might be untrusted
+	if !bytes.Equal(hash, dastree.Hash(ret)) { // check hash because RPC server might be untrusted
 		return nil, arbstate.ErrHashMismatch
 	}
 	return ret, nil

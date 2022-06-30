@@ -1,0 +1,18 @@
+// Copyright 2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+package das
+
+import (
+	"time"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/pretty"
+)
+
+func logPut(store string, data []byte, timeout uint64, reader arbstate.DataAvailabilityReader) {
+	log.Trace(
+		store, "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", reader,
+	)
+}

@@ -13,8 +13,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 // Implements DataAvailabilityReader
@@ -66,7 +66,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(hash, crypto.Keccak256(decodedBytes)) {
+	if !bytes.Equal(hash, dastree.Hash(decodedBytes)) {
 		return nil, arbstate.ErrHashMismatch
 	}
 

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	badger "github.com/dgraph-io/badger/v3"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
@@ -105,7 +105,7 @@ func (dbs *DBStorageService) Put(ctx context.Context, data []byte, timeout uint6
 	log.Trace("das.DBStorageService.Put", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", dbs)
 
 	return dbs.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry(crypto.Keccak256(data), data)
+		e := badger.NewEntry(dastree.Hash(data), data)
 		if dbs.discardAfterTimeout {
 			e = e.WithTTL(time.Until(time.Unix(int64(timeout), 0)))
 		}
@@ -140,7 +140,7 @@ func (dbs *DBStorageService) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	res, err := dbs.GetByHash(ctx, crypto.Keccak256(testData))
+	res, err := dbs.GetByHash(ctx, dastree.Hash(testData))
 	if err != nil {
 		return err
 	}

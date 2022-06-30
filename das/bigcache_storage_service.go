@@ -10,10 +10,10 @@ import (
 
 	"github.com/allegro/bigcache"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -71,13 +71,12 @@ func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key []byte) ([
 }
 
 func (bcs *BigCacheStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	log.Trace("das.BigCacheStorageService.Put", "message", pretty.FirstFewBytes(value), "timeout", time.Unix(int64(timeout), 0), "this", bcs)
-
+	logPut("das.BigCacheStorageService.Put", value, timeout, bcs)
 	err := bcs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
 	}
-	err = bcs.bigCache.Set(string(crypto.Keccak256(value)), value)
+	err = bcs.bigCache.Set(string(dastree.Hash(value)), value)
 	return err
 }
 

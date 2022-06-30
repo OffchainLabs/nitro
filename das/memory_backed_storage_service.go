@@ -7,11 +7,11 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -46,15 +46,13 @@ func (m *MemoryBackedStorageService) GetByHash(ctx context.Context, key []byte) 
 }
 
 func (m *MemoryBackedStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
-	log.Trace("das.MemoryBackedStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(expirationTime), 0), "this", m)
+	logPut("das.MemoryBackedStorageService.Store", data, expirationTime, m)
 	m.rwmutex.Lock()
 	defer m.rwmutex.Unlock()
 	if m.closed {
 		return ErrClosed
 	}
-	var h32 [32]byte
-	h := crypto.Keccak256(data)
-	copy(h32[:], h)
+	h32 := common.BytesToHash(dastree.Hash(data))
 	m.contents[h32] = append([]byte{}, data...)
 	return nil
 }

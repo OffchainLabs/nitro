@@ -11,12 +11,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/pretty"
 
@@ -139,7 +139,9 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 	}, nil
 }
 
-func (d *SignAfterStoreDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (d *SignAfterStoreDAS) Store(
+	ctx context.Context, message []byte, timeout uint64, sig []byte,
+) (c *arbstate.DataAvailabilityCertificate, err error) {
 	log.Trace("das.SignAfterStoreDAS.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", d)
 	if d.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
@@ -156,7 +158,7 @@ func (d *SignAfterStoreDAS) Store(ctx context.Context, message []byte, timeout u
 	}
 
 	c = &arbstate.DataAvailabilityCertificate{}
-	copy(c.DataHash[:], crypto.Keccak256(message))
+	copy(c.DataHash[:], dastree.Hash(message))
 
 	c.Timeout = timeout
 	c.SignersMask = 1 // The aggregator will override this if we're part of a committee.
