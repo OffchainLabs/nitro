@@ -575,6 +575,7 @@ func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
 	chainDb ethdb.Database,
+	arbDb ethdb.Database,
 	config *Config,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
@@ -592,7 +593,7 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, config.L1Reader)
 	}
 
-	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
 	if err != nil {
 		return nil, err
 	}
@@ -685,7 +686,7 @@ func createNodeImpl(
 	}
 
 	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
-	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityReader)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dataAvailabilityReader)
 	if err != nil {
 		return nil, err
 	}
@@ -710,7 +711,7 @@ func createNodeImpl(
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader)
 		if err != nil {
 			return nil, err
 		}
@@ -958,6 +959,7 @@ func CreateNode(
 	ctx context.Context,
 	stack *node.Node,
 	chainDb ethdb.Database,
+	arbDb ethdb.Database,
 	config *Config,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
@@ -965,7 +967,7 @@ func CreateNode(
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
 ) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
 	if err != nil {
 		return nil, err
 	}
