@@ -590,8 +590,8 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig) 
 	log.Info("writing Tx lookup entries")
 	batch := chainDb.NewBatch()
 	for blockNum := uint64(0); blockNum <= lastBlock; blockNum++ {
-		blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
-		block := rawdb.ReadBlock(chainDb, blockHash, lastBlock)
+		blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
+		block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
 		rawdb.WriteTxLookupEntriesByBlock(batch, block)
 		rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
 		if (batch.ValueSize() >= ethdb.IdealBatchSize) || blockNum == lastBlock {
@@ -599,12 +599,12 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig) 
 			if err != nil {
 				panic(err)
 			}
-			err = chainDb.Sync()
-			if err != nil {
-				panic(err)
-			}
 			batch.Reset()
 		}
+	}
+	err := chainDb.Sync()
+	if err != nil {
+		panic(err)
 	}
 	log.Info("Tx lookup entries written")
 }
