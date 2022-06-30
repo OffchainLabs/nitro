@@ -180,7 +180,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 			return err
 		}
 	} else {
-		log.Warn("reorg target block not found", "block", targetBlock)
+		log.Warn("reorg target block not found", "block", blockNum)
 	}
 
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
