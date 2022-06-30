@@ -137,12 +137,10 @@ func NewAggregatorWithSeqInboxCaller(
 	if err := keyset.Serialize(ksBuf); err != nil {
 		return nil, err
 	}
-	keysetHashBuf, err := keyset.Hash()
+	keysetHash, err := keyset.Hash()
 	if err != nil {
 		return nil, err
 	}
-	var keysetHash [32]byte
-	copy(keysetHash[:], keysetHashBuf)
 	if config.DumpKeyset {
 		fmt.Printf("Keyset: %s\n", hexutil.Encode(ksBuf.Bytes()))
 		fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))

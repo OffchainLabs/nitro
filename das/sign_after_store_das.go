@@ -118,12 +118,10 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 	if err := keyset.Serialize(ksBuf); err != nil {
 		return nil, err
 	}
-	ksHashBuf, err := keyset.Hash()
+	ksHash, err := keyset.Hash()
 	if err != nil {
 		return nil, err
 	}
-	var ksHash [32]byte
-	copy(ksHash[:], ksHashBuf)
 
 	var bpVerifier *BatchPosterVerifier
 	if seqInboxCaller != nil {

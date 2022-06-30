@@ -169,12 +169,12 @@ func (keyset *DataAvailabilityKeyset) Serialize(wr io.Writer) error {
 	return nil
 }
 
-func (keyset *DataAvailabilityKeyset) Hash() ([]byte, error) {
+func (keyset *DataAvailabilityKeyset) Hash() (common.Hash, error) {
 	wr := bytes.NewBuffer([]byte{})
 	if err := keyset.Serialize(wr); err != nil {
-		return nil, err
+		return common.Hash{}, err
 	}
-	return crypto.Keccak256(wr.Bytes()), nil
+	return crypto.Keccak256Hash(wr.Bytes()), nil
 }
 
 func DeserializeKeyset(rd io.Reader) (*DataAvailabilityKeyset, error) {
