@@ -200,7 +200,15 @@ func (ps *L1PricingState) L1BaseFeeEstimate() (*big.Int, error) {
 }
 
 // Update the pricing model based on a payment by a batch poster
-func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *vm.EVM, arbosVersion uint64, updateTime uint64, currentTime uint64, batchPoster common.Address, weiSpent *big.Int) error {
+func (ps *L1PricingState) UpdateForBatchPosterSpending(
+	statedb vm.StateDB,
+	evm *vm.EVM,
+	arbosVersion uint64,
+	updateTime, currentTime uint64,
+	batchPoster common.Address,
+	weiSpent *big.Int,
+	scenario util.TracingScenario,
+) error {
 	batchPosterTable := ps.BatchPosterTable()
 	posterState, err := batchPosterTable.OpenPoster(batchPoster, true)
 	if err != nil {
@@ -281,7 +289,9 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 	if err != nil {
 		return err
 	}
-	err = util.TransferBalance(&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, util.TracingBeforeEVM, "batchPosterReward")
+	err = util.TransferBalance(
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+	)
 	if err != nil {
 		return err
 	}
@@ -310,7 +320,9 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(statedb vm.StateDB, evm *
 			if err != nil {
 				return err
 			}
-			err = util.TransferBalance(&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, util.TracingBeforeEVM, "batchPosterRefund")
+			err = util.TransferBalance(
+				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+			)
 			if err != nil {
 				return err
 			}
