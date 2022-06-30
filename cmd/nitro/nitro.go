@@ -214,6 +214,11 @@ func main() {
 		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
 
+	arbDb, err := stack.OpenDatabaseWithFreezer("arbitrumdata", 0, 0, "", "", false)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to open database: %v", err))
+	}
+
 	if nodeConfig.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(nodeConfig.ImportFile)
 		if err != nil {
@@ -299,7 +304,7 @@ func main() {
 		}
 	}
 
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
 	if err != nil {
 		panic(err)
 	}
