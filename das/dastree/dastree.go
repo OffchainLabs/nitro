@@ -34,7 +34,11 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 		unrolled = append(unrolled, slice...)
 	}
 	if len(unrolled) == 0 {
-		return crypto.Keccak256Hash(crypto.Keccak256([]byte{}))
+		innerKeccak := crypto.Keccak256Hash([]byte{})
+		outerKeccak := crypto.Keccak256Hash(innerKeccak.Bytes())
+		record(outerKeccak, innerKeccak.Bytes())
+		record(innerKeccak, []byte{})
+		return outerKeccak
 	}
 
 	length := int64(len(unrolled))
@@ -84,8 +88,8 @@ func Content(root common.Hash, oracle func(common.Hash) []byte) ([]byte, error) 
 
 	for len(stack) > 0 {
 		node := stack[len(stack)-1]
-		under := oracle(node)
 		stack = stack[:len(stack)-1]
+		under := oracle(node)
 
 		switch len(under) {
 		case 32:
@@ -95,7 +99,7 @@ func Content(root common.Hash, oracle func(common.Hash) []byte) ([]byte, error) 
 			after := common.BytesToHash(under[32:]) // so we reverse their order
 			stack = append(stack, after, prior)
 		default:
-			return nil, fmt.Errorf("failed to resolve preimage %v", node)
+			return nil, fmt.Errorf("failed to resolve preimage %v %v", len(under), node)
 		}
 	}
 

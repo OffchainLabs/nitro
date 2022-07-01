@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -16,29 +17,31 @@ import (
 func TestDASTree(t *testing.T) {
 	store := make(map[bytes32][]byte)
 	tests := [][]byte{{}, {0x32}, crypto.Keccak256(), crypto.Keccak256([]byte{0x32})}
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 64; i++ {
 		large := make([]byte, rand.Intn(8*binSize))
 		tests = append(tests, large)
 	}
 
 	record := func(key bytes32, value []byte) {
+		colors.PrintGrey("storing ", key, " ", pretty.FirstFewBytes(value))
 		store[key] = value
 	}
 	oracle := func(key bytes32) []byte {
 		preimage, ok := store[key]
 		if !ok {
-			t.Error("no preimage for key", key)
-			return []byte{}
+			Fail(t, "no preimage for key", key)
 		}
+		colors.PrintBlue("loading ", key, " ", pretty.FirstFewBytes(preimage))
 		return preimage
 	}
 
+	hashes := map[bytes32][]byte{}
 	for _, test := range tests {
 		hash := RecordHash(record, test)
-		store[hash] = test
+		hashes[hash] = test
 	}
 
-	for key, value := range store {
+	for key, value := range hashes {
 		preimage, err := Content(key, oracle)
 		Require(t, err, key)
 
