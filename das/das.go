@@ -47,12 +47,15 @@ type DataAvailabilityConfig struct {
 
 	L1NodeURL             string `koanf:"l1-node-url"`
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+
+	PanicOnError bool `koanf:"panic-on-error"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	RequestTimeout:                5 * time.Second,
 	Enable:                        false,
 	RestfulClientAggregatorConfig: DefaultRestfulClientAggregatorConfig,
+	PanicOnError:                  false,
 }
 
 func OptionalAddressFromString(s string) (*common.Address, error) {
@@ -71,6 +74,7 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
+	f.Bool(prefix+".panic-on-error", DefaultDataAvailabilityConfig.PanicOnError, "whether the Data Availability Service should fail fast on errors (not recommended)")
 
 	f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service request timeout duration")
 
