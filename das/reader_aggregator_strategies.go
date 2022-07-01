@@ -30,10 +30,15 @@ func (s *abstractAggregatorStrategy) update(readers []arbstate.DataAvailabilityR
 	s.Lock()
 	defer s.Unlock()
 
-	s.readers = make([]arbstate.DataAvailabilityReader, len(readers))
-	copy(s.readers, readers)
-
-	s.stats = make(map[arbstate.DataAvailabilityReader]readerStats)
+	if len(s.readers) == 0 {
+		s.readers = make([]arbstate.DataAvailabilityReader, len(readers))
+		copy(s.readers, readers)
+	} else {
+		s.readers = append(s.readers, readers...)
+	}
+	if s.stats == nil {
+		s.stats = make(map[arbstate.DataAvailabilityReader]readerStats)
+	}
 	for k, v := range stats {
 		s.stats[k] = v
 	}
