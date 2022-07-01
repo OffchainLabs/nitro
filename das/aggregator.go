@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/pretty"
@@ -84,7 +83,7 @@ func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services 
 	if config.L1NodeURL == "none" {
 		return NewAggregatorWithSeqInboxCaller(config.AggregatorConfig, services, nil)
 	}
-	l1client, err := ethclient.DialContext(ctx, config.L1NodeURL)
+	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 	if err != nil {
 		return nil, err
 	}
