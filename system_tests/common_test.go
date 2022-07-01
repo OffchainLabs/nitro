@@ -376,7 +376,8 @@ func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig
 			Enable:  enableDbStorage,
 			DataDir: dbPath,
 		},
-		L1NodeURL: "none",
+		L1NodeURL:    "none",
+		PanicOnError: true,
 	}
 
 	l1NodeConfigA.DataAvailability = dasConfig
