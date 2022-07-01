@@ -65,6 +65,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		SignersMask: uint64(ret.SignersMask),
 		Sig:         respSig,
 		KeysetHash:  common.BytesToHash(ret.KeysetHash),
+		Version:     byte(ret.Version),
 	}, nil
 }
 

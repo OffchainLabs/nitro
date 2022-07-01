@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
@@ -86,7 +87,7 @@ type PreimageDASReader struct {
 }
 
 func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	return wavmio.ResolvePreImage(hash), nil
+	return dastree.Content(hash, wavmio.ResolvePreImage)
 }
 
 func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {

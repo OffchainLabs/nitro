@@ -31,6 +31,10 @@ var ErrHashMismatch = errors.New("Result does not match expected hash")
 // which will retrieve the full batch data.
 const DASMessageHeaderFlag byte = 0x80
 
+// Indicates that this DAS certificate data employs the new merkelization strategy.
+// Ignored when DASMessageHeaderFlag is not set.
+const TreeDASMessageHeaderFlag byte = 0x08
+
 // Indicates that this message was authenticated by L1. Currently unused.
 const L1AuthenticatedMessageHeaderFlag byte = 0x40
 
@@ -42,6 +46,10 @@ const BrotliMessageHeaderByte byte = 0
 
 func IsDASMessageHeaderByte(header byte) bool {
 	return (DASMessageHeaderFlag & header) > 0
+}
+
+func IsTreeDASMessageHeaderByte(header byte) bool {
+	return (TreeDASMessageHeaderFlag & header) > 0
 }
 
 func IsZeroheavyEncodedHeaderByte(header byte) bool {
@@ -58,6 +66,7 @@ type DataAvailabilityCertificate struct {
 	Timeout     uint64
 	SignersMask uint64
 	Sig         blsSignatures.Signature
+	Version     uint8
 }
 
 func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err error) {
@@ -89,6 +98,15 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 	}
 	c.Timeout = binary.BigEndian.Uint64(timeoutBuf[:])
 
+	if IsTreeDASMessageHeaderByte(header) {
+		var versionBuf [1]byte
+		_, err = io.ReadFull(r, versionBuf[:])
+		if err != nil {
+			return nil, err
+		}
+		c.Version = versionBuf[0]
+	}
+
 	var signersMaskBuf [8]byte
 	_, err = io.ReadFull(r, signersMaskBuf[:])
 	if err != nil {
@@ -110,12 +128,16 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 }
 
 func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
-	buf := make([]byte, 0, 32+8)
+	buf := make([]byte, 0, 32+9)
 	buf = append(buf, c.DataHash[:]...)
 
 	var intData [8]byte
 	binary.BigEndian.PutUint64(intData[:], c.Timeout)
 	buf = append(buf, intData[:]...)
+
+	if c.Version != 0 {
+		buf = append(buf, c.Version)
+	}
 
 	return buf
 }

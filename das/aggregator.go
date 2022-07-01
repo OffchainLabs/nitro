@@ -255,7 +255,9 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 				return
 			}
 
-			verified, err := blsSignatures.VerifySignature(cert.Sig, serializeSignableFields(cert), d.pubKey)
+			verified, err := blsSignatures.VerifySignature(
+				cert.Sig, cert.SerializeSignableFields(), d.pubKey,
+			)
 			if err != nil {
 				responses <- storeResponse{d, nil, err}
 				return
@@ -315,7 +317,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	aggCert.Timeout = timeout
 	aggCert.KeysetHash = a.keysetHash
 
-	verified, err := blsSignatures.VerifySignature(aggCert.Sig, serializeSignableFields(&aggCert), aggPubKey)
+	// Rachel TODO: count up requiredServicesForStore number on each version
+	aggCert.Version = 1
+
+	verified, err := blsSignatures.VerifySignature(aggCert.Sig, aggCert.SerializeSignableFields(), aggPubKey)
 	if err != nil {
 		return nil, err
 	}

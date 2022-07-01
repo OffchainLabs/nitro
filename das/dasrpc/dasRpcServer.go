@@ -63,6 +63,7 @@ type StoreResult struct {
 	SignersMask hexutil.Uint64 `json:"signersMask,omitempty"`
 	KeysetHash  hexutil.Bytes  `json:"keysetHash,omitempty"`
 	Sig         hexutil.Bytes  `json:"sig,omitempty"`
+	Version     hexutil.Uint64 `json:"version,omitempty"`
 }
 
 func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
@@ -78,6 +79,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		Timeout:     hexutil.Uint64(cert.Timeout),
 		SignersMask: hexutil.Uint64(cert.SignersMask),
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
+		Version:     hexutil.Uint64(cert.Version),
 	}, nil
 }
 

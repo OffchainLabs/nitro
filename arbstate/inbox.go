@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/zeroheavy"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -139,7 +140,7 @@ func RecoverPayloadFromDasBatch(
 		return nil, nil
 	}
 	keysetPreimage, err := dasReader.GetByHash(ctx, cert.KeysetHash)
-	if err == nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
+	if err == nil && cert.KeysetHash != crypto.Keccak256Hash(keysetPreimage) {
 		err = ErrHashMismatch
 	}
 	if err != nil {
@@ -147,7 +148,7 @@ func RecoverPayloadFromDasBatch(
 		return nil, err
 	}
 	if preimages != nil {
-		preimages[common.BytesToHash(cert.KeysetHash[:])] = keysetPreimage
+		preimages[cert.KeysetHash] = keysetPreimage
 	}
 	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage))
 	if err != nil {
@@ -164,8 +165,14 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Data availability cert expires too soon", "err", "")
 		return nil, nil
 	}
-	payload, err := dasReader.GetByHash(ctx, cert.DataHash)
-	if err == nil && !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
+
+	newDataHash := cert.DataHash
+	if cert.Version == 0 {
+		newDataHash = crypto.Keccak256Hash(cert.DataHash[:])
+	}
+
+	payload, err := dasReader.GetByHash(ctx, newDataHash)
+	if err == nil && crypto.Keccak256Hash(payload) != cert.DataHash {
 		err = ErrHashMismatch
 	}
 	if err != nil {
@@ -173,7 +180,15 @@ func RecoverPayloadFromDasBatch(
 		return nil, err
 	}
 	if preimages != nil {
-		preimages[common.BytesToHash(cert.DataHash[:])] = payload
+		if cert.Version == 0 {
+			preimages[cert.DataHash] = payload
+			preimages[newDataHash] = cert.DataHash[:]
+		} else {
+			record := func(key common.Hash, value []byte) {
+				preimages[key] = value
+			}
+			dastree.RecordHash(record, payload)
+		}
 	}
 
 	return payload, nil

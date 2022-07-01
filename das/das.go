@@ -55,37 +55,6 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	RestfulClientAggregatorConfig: DefaultRestfulClientAggregatorConfig,
 }
 
-/* TODO put these checks somewhere
-func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
-	if c.ModeImpl == "" {
-		return 0, errors.New("--data-availability.mode missing")
-	}
-
-	if c.ModeImpl == OnchainDataAvailabilityString {
-		return OnchainDataAvailability, nil
-	}
-
-	if c.ModeImpl == DASDataAvailabilityString {
-		if c.DASConfig.LocalConfig.DataDir == "" || (c.DASConfig.KeyDir == "" && c.DASConfig.PrivKey == "") {
-			flag.Usage()
-			return 0, errors.New("--data-availability.das.local.data-dir and --data-availability.das.key-dir must be specified if mode is set to das")
-		}
-		return DASDataAvailability, nil
-	}
-
-	if c.ModeImpl == AggregatorDataAvailabilityString {
-		if reflect.DeepEqual(c.AggregatorConfig, DefaultAggregatorConfig) {
-			flag.Usage()
-			return 0, errors.New("--data-availability.aggregator.X config options must be specified if mode is set to aggregator")
-		}
-		return AggregatorDataAvailability, nil
-	}
-
-	flag.Usage()
-	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
-}
-*/
-
 func OptionalAddressFromString(s string) (*common.Address, error) {
 	if s == "none" {
 		return nil, nil
@@ -125,25 +94,17 @@ func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 }
 
-func serializeSignableFields(c *arbstate.DataAvailabilityCertificate) []byte {
-	buf := make([]byte, 0, 32+8)
-	buf = append(buf, c.DataHash[:]...)
-
-	var intData [8]byte
-	binary.BigEndian.PutUint64(intData[:], c.Timeout)
-	buf = append(buf, intData[:]...)
-
-	return buf
-}
-
 func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {
+
+	flags := arbstate.DASMessageHeaderFlag
+	if c.Version != 0 {
+		flags |= arbstate.TreeDASMessageHeaderFlag
+	}
+
 	buf := make([]byte, 0)
-
-	buf = append(buf, arbstate.DASMessageHeaderFlag)
-
+	buf = append(buf, flags)
 	buf = append(buf, c.KeysetHash[:]...)
-
-	buf = append(buf, serializeSignableFields(c)...)
+	buf = append(buf, c.SerializeSignableFields()...)
 
 	var intData [8]byte
 	binary.BigEndian.PutUint64(intData[:], c.SignersMask)

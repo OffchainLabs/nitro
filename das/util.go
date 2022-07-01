@@ -11,8 +11,9 @@ import (
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
-func logPut(store string, data []byte, timeout uint64, reader arbstate.DataAvailabilityReader) {
+func logPut(store string, data []byte, timeout uint64, reader arbstate.DataAvailabilityReader, more ...interface{}) {
 	log.Trace(
-		store, "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", reader,
+		store, "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0),
+		"this", reader, more,
 	)
 }

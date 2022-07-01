@@ -157,10 +157,11 @@ func (d *SignAfterStoreDAS) Store(
 	}
 
 	c = &arbstate.DataAvailabilityCertificate{
+		Timeout:  timeout,
 		DataHash: dastree.Hash(message),
+		Version:  1,
 	}
 
-	c.Timeout = timeout
 	c.SignersMask = 1 // The aggregator will override this if we're part of a committee.
 
 	fields := c.SerializeSignableFields()
