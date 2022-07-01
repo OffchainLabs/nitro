@@ -12,10 +12,19 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/pretty"
+)
+
+var (
+	restGetByHashRequestGauge = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/requests", nil)
+	restGetByHashSuccessGauge = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/success", nil)
+	restGetByHashFailureGauge = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/failure", nil)
+	restGetByHashTimer        = metrics.NewRegisteredTimer("arb/das/rest/getbyhash/timer", nil)
 )
 
 type RestfulDasServer struct {
@@ -119,6 +128,17 @@ func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *h
 
 func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
 	log.Debug("Got request", "requestPath", requestPath)
+	restGetByHashRequestGauge.Inc(1)
+	start := time.Now()
+	success := false
+	defer func() {
+		if success {
+			restGetByHashSuccessGauge.Inc(1)
+		} else {
+			restGetByHashFailureGauge.Inc(1)
+		}
+		restGetByHashTimer.UpdateSince(start)
+	}()
 
 	hashBytes, err := DecodeStorageServiceKey(strings.TrimPrefix(requestPath, "/get-by-hash/"))
 	if err != nil {
