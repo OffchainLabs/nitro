@@ -77,7 +77,7 @@ func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet
 	f.Int(prefix+".exploit-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploitIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode")
 }
 
-func AddAggregatorReadersOnRestfulServerListUpdate(ctx context.Context, config *RestfulClientAggregatorConfig, a *SimpleDASReaderAggregator, combinedUrls map[string]bool) {
+func addAggregatorReadersOnRestfulServerListUpdate(ctx context.Context, config *RestfulClientAggregatorConfig, a *SimpleDASReaderAggregator, combinedUrls map[string]bool) {
 	onlineUrlsChan := StartRestfulServerListFetchDaemon(ctx, config.OnlineUrlList, config.OnlineUrlListFetchInterval)
 
 	addRestfulDasClients := func(urls []string) bool {
@@ -163,7 +163,7 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 		return nil, fmt.Errorf("Unknown RestfulClientAggregator strategy '%s', use --help to see available strategies.", config.Strategy)
 	}
 	a.strategy.update(a.readers, a.stats)
-	AddAggregatorReadersOnRestfulServerListUpdate(ctx, config, &a, combinedUrls)
+	addAggregatorReadersOnRestfulServerListUpdate(ctx, config, &a, combinedUrls)
 	return &a, nil
 }
 
