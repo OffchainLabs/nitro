@@ -21,10 +21,16 @@ import (
 )
 
 var (
-	restGetByHashRequestGauge = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/requests", nil)
-	restGetByHashSuccessGauge = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/success", nil)
-	restGetByHashFailureGauge = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/failure", nil)
-	restGetByHashTimer        = metrics.NewRegisteredTimer("arb/das/rest/getbyhash/timer", nil)
+	restGetByHashRequestGauge       = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/requests", nil)
+	restGetByHashSuccessGauge       = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/success", nil)
+	restGetByHashFailureGauge       = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/failure", nil)
+	restGetByHashReturnedBytesGauge = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/bytes", nil)
+
+	// This histogram is set with the default parameters of go-ethereum/metrics/Timer.
+	// If requests are infrequent, then the reservoir size parameter can be adjusted
+	// downwards to make a smaller window of samples that are included. The alpha parameter
+	// can be adjusted to downweight the importance of older samples.
+	restGetByHashDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rest/getbyhash/duration", nil, metrics.NewExpDecaySample(1028, 0.015))
 )
 
 type RestfulDasServer struct {
@@ -137,7 +143,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		} else {
 			restGetByHashFailureGauge.Inc(1)
 		}
-		restGetByHashTimer.UpdateSince(start)
+		restGetByHashDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
 	hashBytes, err := DecodeStorageServiceKey(strings.TrimPrefix(requestPath, "/get-by-hash/"))
@@ -164,6 +170,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 	base64.StdEncoding.Encode(encodedResponseData, responseData)
 	var response RestfulDasServerResponse
 	response.Data = string(encodedResponseData)
+	restGetByHashReturnedBytesGauge.Inc(int64(len(response.Data)))
 
 	err = json.NewEncoder(w).Encode(response)
 	if err != nil {
@@ -172,6 +179,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	w.Header()[cacheControlKey] = []string{cacheControlValue}
+	success = true
 }
 
 func (rds *RestfulDasServer) GetServerExitedChan() <-chan interface{} { // channel will close when server terminates
