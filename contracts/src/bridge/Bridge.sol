@@ -260,4 +260,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
     function sequencerMessageCount() external view override returns (uint256) {
         return sequencerInboxAccs.length;
     }
+
+    // For the classic -> nitro migration. TODO: remove post-migration.
+    function acceptFundsFromOldBridge() external payable {}
 }
