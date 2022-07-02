@@ -17,7 +17,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"golang.org/x/term"
 
@@ -774,7 +773,7 @@ func SetUpDataAvailabilityWithoutNode(
 ) (das.DataAvailabilityService, *das.LifecycleManager, error) {
 	var l1Reader *headerreader.HeaderReader
 	if config.L1NodeURL != "" && config.L1NodeURL != "none" {
-		l1Client, err := ethclient.DialContext(ctx, config.L1NodeURL)
+		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 		if err != nil {
 			return nil, nil, err
 		}
