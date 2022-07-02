@@ -2,6 +2,7 @@ package das
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -23,12 +24,13 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-var sequencerBridgeABI *abi.ABI
+var sequencerInboxABI *abi.ABI
 var batchDeliveredID common.Hash
 var addSequencerL2BatchFromOriginCallABI abi.Method
 var sequencerBatchDataABI abi.Event
 
 const sequencerBatchDataEvent = "SequencerBatchData"
+const sequencerBatchDeliveredEvent = "SequencerBatchDelivered"
 
 // TODO: can we use the generated ABI for BatchDataLocation enum?
 type batchDataLocation uint8
@@ -40,13 +42,13 @@ const (
 
 func init() {
 	var err error
-	sequencerBridgeABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
+	sequencerInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
-	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
-	sequencerBatchDataABI = sequencerBridgeABI.Events[sequencerBatchDataEvent]
-	addSequencerL2BatchFromOriginCallABI = sequencerBridgeABI.Methods["addSequencerL2BatchFromOrigin"]
+	batchDeliveredID = sequencerInboxABI.Events[sequencerBatchDeliveredEvent].ID
+	sequencerBatchDataABI = sequencerInboxABI.Events[sequencerBatchDataEvent]
+	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin"]
 }
 
 type SyncToStorageConfig struct {
@@ -70,6 +72,7 @@ var DefaultSyncToStorageConfig = SyncToStorageConfig{
 func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".eager", DefaultSyncToStorageConfig.Eager, "eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily")
 	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block")
+	f.Uint64(prefix+".l1-blocks-per-read", DefaultSyncToStorageConfig.L1BlocksPerRead, "when eagerly syncing, max l1 blocks to read per poll")
 	f.Duration(prefix+".retention-period", DefaultSyncToStorageConfig.RetentionPeriod, "period to retain synced data (defaults to forever)")
 	f.Duration(prefix+".delay-on-error", DefaultSyncToStorageConfig.DelayOnError, "time to wait if encountered an error before retrying")
 	f.Bool(prefix+".ignore-write-errors", DefaultSyncToStorageConfig.IgnoreWriteErrors, "log only on failures to write when syncing; otherwise treat it as an error")
@@ -112,22 +115,25 @@ func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSo
 		inboxAddr:      inboxAddr,
 		catchingUp:     true,
 		lowBlockNr:     config.EagerLowerBoundBlock,
-		lastBatchCount: nil,
+		lastBatchCount: big.NewInt(0),
 	}, nil
 }
 
-func (s *l1SyncService) processBatchDelivered(ctx context.Context, log *types.Log) error {
+func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDeliveredLog types.Log) error {
 	data := []byte{}
-	deliveredEvent := new(bridgegen.SequencerInboxSequencerBatchDelivered)
-	err := sequencerBridgeABI.UnpackIntoInterface(deliveredEvent, sequencerBatchDataEvent, log.Data)
+	deliveredEvent, err := s.inboxContract.ParseSequencerBatchDelivered(batchDeliveredLog)
 	if err != nil {
 		return err
 	}
-	// TODO: retention time should start on log event, not on current time
-	storeUntil := arbmath.SaturatingUAdd(uint64(time.Now().Unix()), uint64(s.config.RetentionPeriod.Seconds())) // TODO: support limited retention period
+	log.Info("BatchDelivered", "log", batchDeliveredLog, "event", deliveredEvent)
+	storeUntil := arbmath.SaturatingUAdd(deliveredEvent.TimeBounds.MaxTimestamp, uint64(s.config.RetentionPeriod.Seconds())) // TODO: support limited retention period
+	if storeUntil < uint64(time.Now().Unix()) {
+		// old batch - no need to store
+		return nil
+	}
 	if deliveredEvent.DataLocation == uint8(batchDataSeparateEvent) {
 		query := ethereum.FilterQuery{
-			BlockHash: &log.BlockHash,
+			BlockHash: &batchDeliveredLog.BlockHash,
 			Addresses: []common.Address{s.inboxAddr},
 			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {common.BigToHash(deliveredEvent.BatchSequenceNumber)}},
 		}
@@ -138,14 +144,13 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, log *types.Lo
 		if len(logs) != 1 {
 			return fmt.Errorf("found %d data logs for sequence 0x%x (expected 1)", len(logs), deliveredEvent.BatchSequenceNumber)
 		}
-		dataEvent := new(bridgegen.SequencerInboxSequencerBatchData)
-		err = sequencerBridgeABI.UnpackIntoInterface(dataEvent, sequencerBatchDataEvent, log.Data)
+		dataEvent, err := s.inboxContract.ParseSequencerBatchData(logs[0])
 		if err != nil {
 			return err
 		}
 		data = dataEvent.Data
 	} else if deliveredEvent.DataLocation == uint8(batchDataTxInput) {
-		tx, err := s.l1Reader.Client().TransactionInBlock(ctx, log.BlockHash, log.TxIndex)
+		tx, err := s.l1Reader.Client().TransactionInBlock(ctx, batchDeliveredLog.BlockHash, batchDeliveredLog.TxIndex)
 		if err != nil {
 			return err
 		}
@@ -160,15 +165,27 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, log *types.Lo
 			return fmt.Errorf("couldn't parse data for sequence 0x%x", deliveredEvent.BatchSequenceNumber)
 		}
 	}
-	if len(data) < 41 {
+	if len(data) < 1 {
 		// no data - nothing to do
+		log.Warn("BatchDelivered - no data found", "data", data)
 		return nil
 	}
-	if !arbstate.IsDASMessageHeaderByte(data[40]) {
+	if !arbstate.IsDASMessageHeaderByte(data[0]) {
+		log.Warn("BatchDelivered - data not DAS")
 		return nil
 	}
+
+	header := make([]byte, 40)
+	binary.BigEndian.PutUint64(header[:8], deliveredEvent.TimeBounds.MinTimestamp)
+	binary.BigEndian.PutUint64(header[8:16], deliveredEvent.TimeBounds.MaxTimestamp)
+	binary.BigEndian.PutUint64(header[16:24], deliveredEvent.TimeBounds.MinBlockNumber)
+	binary.BigEndian.PutUint64(header[24:32], deliveredEvent.TimeBounds.MaxBlockNumber)
+	binary.BigEndian.PutUint64(header[32:40], deliveredEvent.AfterDelayedMessagesRead.Uint64())
+
+	data = append(header, data...)
 	preimages := make(map[common.Hash][]byte)
 	if _, err = arbstate.RecoverPayloadFromDasBatch(ctx, data, s.dataSource, preimages); err != nil {
+		log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
 		return err
 	}
 	for hash, contents := range preimages {
@@ -181,9 +198,13 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, log *types.Lo
 			return err
 		}
 	}
-	updatedBatchCount := new(big.Int).Add(deliveredEvent.BatchSequenceNumber, common.Big1)
+	seqNumber := deliveredEvent.BatchSequenceNumber
+	if seqNumber == nil {
+		seqNumber = common.Big0
+	}
+	updatedBatchCount := new(big.Int).Add(seqNumber, common.Big1)
 	if s.lastBatchCount.Cmp(updatedBatchCount) <= 0 {
-		s.lastBatchCount.Set(deliveredEvent.BatchSequenceNumber)
+		s.lastBatchCount.Set(seqNumber)
 		s.lastBatchAcc = deliveredEvent.AfterAcc
 	}
 	return nil
@@ -200,9 +221,8 @@ func (s *l1SyncService) processBlockRange(ctx context.Context, lowerBound, highe
 	if err != nil {
 		return err
 	}
-	for _, log := range logs {
-		thisLog := log
-		if err := s.processBatchDelivered(ctx, &thisLog); err != nil {
+	for _, deliveredLog := range logs {
+		if err := s.processBatchDelivered(ctx, deliveredLog); err != nil {
 			return err
 		}
 	}
