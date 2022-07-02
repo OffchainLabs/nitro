@@ -791,9 +791,6 @@ func SetUpDataAvailability(
 			return nil, nil, err
 		}
 		seqInboxCaller = &seqInbox.SequencerInboxCaller
-	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
-		l1Client = nil
-		seqInboxAddress = nil
 	} else if len(config.L1NodeURL) > 0 && len(config.SequencerInboxAddress) > 0 {
 		l1Client, err = ethclient.DialContext(ctx, config.L1NodeURL)
 		if err != nil {
@@ -900,12 +897,16 @@ func SetUpDataAvailability(
 
 		topLevelDas = rpcAggregator
 	} else if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
+		_seqInboxCaller := seqInboxCaller
+		if config.DisableSignatureChecking {
+			_seqInboxCaller = nil
+		}
 
 		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
 			ctx,
 			config.KeyConfig,
-			seqInboxCaller,
+			_seqInboxCaller,
 			topLevelStorageService,
 		)
 		if err != nil {
