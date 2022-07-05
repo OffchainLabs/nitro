@@ -100,8 +100,6 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 		return nil, errors.New("No URLs were specified with either of rest-aggregator.urls or rest-aggregator.online-url-list")
 	}
 
-	a.urls = combinedUrls
-
 	urls := make([]string, 0, len(combinedUrls))
 	for url := range combinedUrls {
 		urls = append(urls, url)
@@ -168,7 +166,6 @@ type readerStatMessage struct {
 type SimpleDASReaderAggregator struct {
 	stopwaiter.StopWaiter
 
-	urls   map[string]bool
 	config *RestfulClientAggregatorConfig
 
 	// readers and stats are only to be updated by the stats goroutine
@@ -271,17 +268,30 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 	onlineUrlsChan := StartRestfulServerListFetchDaemon(ctx, a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
 
 	updateRestfulDasClients := func(urls []string) bool {
-		for _, url := range urls {
-			if a.urls[url] {
-				continue
-			}
-			a.urls[url] = true
+		combinedUrls := append(a.config.Urls, urls...)
+		combinedReaders := make(map[arbstate.DataAvailabilityReader]bool)
+		for _, url := range combinedUrls {
 			reader, err := NewRestfulDasClientFromURL(url)
 			if err != nil {
 				return false
 			}
+			combinedReaders[reader] = true
+		}
+		a.readers = make([]arbstate.DataAvailabilityReader, 0, len(combinedUrls))
+		// Update reader and add newly added stats
+		for reader := range combinedReaders {
 			a.readers = append(a.readers, reader)
+			if _, ok := a.stats[reader]; ok {
+				continue
+			}
 			a.stats[reader] = make([]readerStat, 0, a.config.MaxPerEndpointStats)
+		}
+		// Delete stats for removed reader
+		for reader := range a.stats {
+			if combinedReaders[reader] {
+				continue
+			}
+			delete(a.stats, reader)
 		}
 		return true
 	}
