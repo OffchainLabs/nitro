@@ -39,7 +39,8 @@ func TestRPC(t *testing.T) {
 			Enable:  true,
 			DataDir: dataDir,
 		},
-		L1NodeURL: "none",
+		L1NodeURL:      "none",
+		RequestTimeout: 5 * time.Second,
 	}
 
 	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)

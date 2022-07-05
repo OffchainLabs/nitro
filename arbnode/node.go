@@ -679,7 +679,12 @@ func createNodeImpl(
 		} else {
 			dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
 		}
-		dataAvailabilityService = das.NewTimeoutWrapper(dataAvailabilityService, config.DataAvailability.RequestTimeout)
+		dataAvailabilityService = das.NewTimeoutWrapper(
+			dataAvailabilityService, config.DataAvailability.RequestTimeout,
+		)
+		if config.DataAvailability.PanicOnError {
+			dataAvailabilityService = das.NewPanicWrapper(dataAvailabilityService)
+		}
 	} else if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
@@ -785,9 +790,6 @@ func SetUpDataAvailability(
 			return nil, nil, err
 		}
 		seqInboxCaller = &seqInbox.SequencerInboxCaller
-	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
-		l1Client = nil
-		seqInboxAddress = nil
 	} else if len(config.L1NodeURL) > 0 && len(config.SequencerInboxAddress) > 0 {
 		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 		if err != nil {
@@ -894,12 +896,16 @@ func SetUpDataAvailability(
 
 		topLevelDas = rpcAggregator
 	} else if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
+		_seqInboxCaller := seqInboxCaller
+		if config.DisableSignatureChecking {
+			_seqInboxCaller = nil
+		}
 
 		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
 			ctx,
 			config.KeyConfig,
-			seqInboxCaller,
+			_seqInboxCaller,
 			topLevelStorageService,
 		)
 		if err != nil {
