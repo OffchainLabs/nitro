@@ -268,7 +268,8 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 	onlineUrlsChan := StartRestfulServerListFetchDaemon(ctx, a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
 
 	updateRestfulDasClients := func(urls []string) bool {
-		combinedUrls := append(a.config.Urls, urls...)
+		combinedUrls := a.config.Urls
+		combinedUrls = append(combinedUrls, urls...)
 		combinedReaders := make(map[arbstate.DataAvailabilityReader]bool)
 		for _, url := range combinedUrls {
 			reader, err := NewRestfulDasClientFromURL(url)
