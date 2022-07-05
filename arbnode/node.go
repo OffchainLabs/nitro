@@ -17,7 +17,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"golang.org/x/term"
 
@@ -790,7 +789,7 @@ func SetUpDataAvailability(
 		l1Client = nil
 		seqInboxAddress = nil
 	} else if len(config.L1NodeURL) > 0 && len(config.SequencerInboxAddress) > 0 {
-		l1Client, err = ethclient.DialContext(ctx, config.L1NodeURL)
+		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 		if err != nil {
 			return nil, nil, err
 		}
