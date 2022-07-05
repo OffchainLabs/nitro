@@ -94,6 +94,7 @@ func TestSequencerPriceAdjusts(t *testing.T) {
 	colors.PrintBlue("    L1 base fee ", l1Header.BaseFee)
 	colors.PrintBlue("    L1 estimate ", lastEstimate)
 
+	numRetrogradeMoves := 0
 	for i := 0; i < 128; i++ {
 		tx, receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2info, l2client, ctx)
 		header, err := l2client.HeaderByHash(ctx, receipt.BlockHash)
@@ -117,8 +118,12 @@ func TestSequencerPriceAdjusts(t *testing.T) {
 			oldDiff := arbmath.BigAbs(arbmath.BigSub(lastEstimate, l1Header.BaseFee))
 			newDiff := arbmath.BigAbs(arbmath.BigSub(actualL1FeePerUnit, l1Header.BaseFee))
 
-			if arbmath.BigGreaterThan(newDiff, oldDiff) {
-				Fail(t, "L1 gas price estimate should tend toward the basefee")
+			if timesPriceAdjusted > 0 && arbmath.BigGreaterThan(newDiff, oldDiff) {
+				if numRetrogradeMoves == 0 {
+					numRetrogradeMoves++
+				} else {
+					Fail(t, "L1 gas price estimate should tend toward the basefee", timesPriceAdjusted, newDiff, oldDiff, lastEstimate, estimatedL1FeePerUnit, l1Header.BaseFee, actualL1FeePerUnit)
+				}
 			}
 			diff := arbmath.BigAbs(arbmath.BigSub(actualL1FeePerUnit, estimatedL1FeePerUnit))
 			maxDiffToAllow := arbmath.BigDivByUint(actualL1FeePerUnit, 100)

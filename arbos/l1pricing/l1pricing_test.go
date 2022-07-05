@@ -52,7 +52,7 @@ func TestTxFixedCost(t *testing.T) {
 
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL1PricingState(sto)
+	err := InitializeL1PricingState(sto, 2)
 	Require(t, err)
 	ps := OpenL1PricingState(sto)
 

@@ -63,7 +63,7 @@ func TestL1Pricing(t *testing.T) {
 
 func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 	ret := &l1TestExpectedResults{}
-	availableFunds := arbmath.UintToBig(input.fundsCollectedPerSecond)
+	availableFunds := arbmath.UintToBig(3 * input.fundsCollectedPerSecond)
 	fundsWantedForRewards := big.NewInt(int64(input.unitReward * input.unitsPerSecond))
 	unitsAllocated := arbmath.UintToBig(input.unitsPerSecond)
 	if arbmath.BigLessThan(availableFunds, fundsWantedForRewards) {
@@ -80,7 +80,7 @@ func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 	}
 	ret.fundsReceived = maxCollectable
 	availableFunds = arbmath.BigSub(availableFunds, maxCollectable)
-	ret.fundsStillHeld = arbmath.BigAdd(arbmath.UintToBig(2*input.fundsCollectedPerSecond), availableFunds)
+	ret.fundsStillHeld = availableFunds
 
 	return ret
 }
