@@ -117,13 +117,8 @@ func startClientStore(args []string) error {
 	}
 
 	serializedCert := das.Serialize(cert)
-	encodedCert := make([]byte, base64.StdEncoding.EncodedLen(len(serializedCert)))
-	base64.StdEncoding.Encode(encodedCert, serializedCert)
-	fmt.Printf("Base64 Encoded Cert: %s\n", string(encodedCert))
-
-	encodedDataHash := make([]byte, base64.StdEncoding.EncodedLen(len(cert.DataHash)))
-	base64.StdEncoding.Encode(encodedDataHash, cert.DataHash[:])
-	fmt.Printf("Base64 Encoded Data Hash: %s\n", string(encodedDataHash))
+	fmt.Printf("Hex Encoded Cert: %s\n", string(hexutil.Encode(serializedCert)))
+	fmt.Printf("Hex Encoded Data Hash: %s\n", string(hexutil.Encode(cert.DataHash[:])))
 
 	return nil
 }

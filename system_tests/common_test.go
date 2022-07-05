@@ -429,8 +429,10 @@ func setupConfigWithDAS(
 			Enable:  enableDbStorage,
 			DataDir: dbPath,
 		},
-		L1NodeURL:    "none",
-		PanicOnError: true,
+		RequestTimeout:           5 * time.Second,
+		L1NodeURL:                "none",
+		PanicOnError:             true,
+		DisableSignatureChecking: true,
 	}
 
 	l1NodeConfigA.DataAvailability = dasConfig
