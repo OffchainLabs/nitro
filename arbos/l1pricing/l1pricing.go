@@ -313,11 +313,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	availableFunds = statedb.GetBalance(L1PricerFundsPoolAddress)
 
 	// settle up payments owed to the batch poster, as much as possible
-	poster, err := batchPosterTable.OpenPoster(batchPoster, false)
-	if err != nil {
-		return err
-	}
-	balanceDueToPoster, err := poster.FundsDue()
+	balanceDueToPoster, err := posterState.FundsDue()
 	if err != nil {
 		return err
 	}
@@ -326,7 +322,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		balanceToTransfer = availableFunds
 	}
 	if balanceToTransfer.Sign() > 0 {
-		addrToPay, err := poster.PayTo()
+		addrToPay, err := posterState.PayTo()
 		if err != nil {
 			return err
 		}
@@ -337,7 +333,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 			return err
 		}
 		balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
-		err = poster.SetFundsDue(balanceDueToPoster)
+		err = posterState.SetFundsDue(balanceDueToPoster)
 		if err != nil {
 			return err
 		}
