@@ -230,7 +230,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	scenario util.TracingScenario,
 ) error {
 	if arbosVersion < 2 {
-		return ps._preVersion2_UpdateForBatchPosterSpending(statedb, evm, arbosVersion, updateTime, currentTime, batchPoster, weiSpent, scenario)
+		return ps._preVersion2_UpdateForBatchPosterSpending(statedb, evm, updateTime, currentTime, batchPoster, weiSpent, scenario)
 	}
 
 	batchPosterTable := ps.BatchPosterTable()
@@ -312,41 +312,34 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	}
 	availableFunds = statedb.GetBalance(L1PricerFundsPoolAddress)
 
-	// settle up our batch poster payments owed, as much as possible
-	allPosterAddrs, err := batchPosterTable.AllPosters(math.MaxUint64)
+	// settle up payments owed to the batch poster, as much as possible
+	poster, err := batchPosterTable.OpenPoster(batchPoster, false)
 	if err != nil {
 		return err
 	}
-	for _, posterAddr := range allPosterAddrs {
-		poster, err := batchPosterTable.OpenPoster(posterAddr, false)
+	balanceDueToPoster, err := poster.FundsDue()
+	if err != nil {
+		return err
+	}
+	balanceToTransfer := balanceDueToPoster
+	if am.BigLessThan(availableFunds, balanceToTransfer) {
+		balanceToTransfer = availableFunds
+	}
+	if balanceToTransfer.Sign() > 0 {
+		addrToPay, err := poster.PayTo()
 		if err != nil {
 			return err
 		}
-		balanceDueToPoster, err := poster.FundsDue()
+		err = util.TransferBalance(
+			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+		)
 		if err != nil {
 			return err
 		}
-		balanceToTransfer := balanceDueToPoster
-		if am.BigLessThan(availableFunds, balanceToTransfer) {
-			balanceToTransfer = availableFunds
-		}
-		if balanceToTransfer.Sign() > 0 {
-			addrToPay, err := poster.PayTo()
-			if err != nil {
-				return err
-			}
-			err = util.TransferBalance(
-				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
-			)
-			if err != nil {
-				return err
-			}
-			availableFunds = statedb.GetBalance(L1PricerFundsPoolAddress)
-			balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
-			err = poster.SetFundsDue(balanceDueToPoster)
-			if err != nil {
-				return err
-			}
+		balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
+		err = poster.SetFundsDue(balanceDueToPoster)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -409,7 +402,6 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	statedb vm.StateDB,
 	evm *vm.EVM,
-	arbosVersion uint64,
 	updateTime, currentTime uint64,
 	batchPoster common.Address,
 	weiSpent *big.Int,
