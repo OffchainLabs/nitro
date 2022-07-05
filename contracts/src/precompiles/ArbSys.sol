@@ -38,7 +38,7 @@ interface ArbSys {
      * @notice Returns 0 since Nitro has no concept of storage gas
      * @return int 0
      */
-    function getStorageGasAvailable() external returns (uint256);
+    function getStorageGasAvailable() external view returns (uint256);
 
     /**
      * @notice check if current call is coming from l1

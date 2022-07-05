@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -61,7 +60,7 @@ func NewSignAfterStoreDAS(ctx context.Context, config DataAvailabilityConfig, st
 	if config.L1NodeURL == "none" {
 		return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService)
 	}
-	l1client, err := ethclient.Dial(config.L1NodeURL)
+	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 	if err != nil {
 		return nil, err
 	}
