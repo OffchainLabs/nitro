@@ -50,9 +50,11 @@ func TestTxFixedCost(t *testing.T) {
 	}
 }
 
+const latestArbosVersion = 2
+
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL1PricingState(sto, 2)
+	err := InitializeL1PricingState(sto, latestArbosVersion)
 	Require(t, err)
 	ps := OpenL1PricingState(sto)
 
