@@ -47,19 +47,21 @@ type BatchPoster struct {
 }
 
 type BatchPosterConfig struct {
-	Enable               bool          `koanf:"enable"`
-	MaxBatchSize         int           `koanf:"max-size"`
-	MaxBatchPostInterval time.Duration `koanf:"max-interval"`
-	BatchPollDelay       time.Duration `koanf:"poll-delay"`
-	PostingErrorDelay    time.Duration `koanf:"error-delay"`
-	CompressionLevel     int           `koanf:"compression-level"`
-	DASRetentionPeriod   time.Duration `koanf:"das-retention-period"`
-	HighGasThreshold     float32       `koanf:"high-gas-threshold"`
-	HighGasDelay         time.Duration `koanf:"high-gas-delay"`
+	Enable                             bool          `koanf:"enable"`
+	DisableDasFallbackStoreDataOnChain bool          `koanf:"disable-das-fallback-store-data-on-chain"`
+	MaxBatchSize                       int           `koanf:"max-size"`
+	MaxBatchPostInterval               time.Duration `koanf:"max-interval"`
+	BatchPollDelay                     time.Duration `koanf:"poll-delay"`
+	PostingErrorDelay                  time.Duration `koanf:"error-delay"`
+	CompressionLevel                   int           `koanf:"compression-level"`
+	DASRetentionPeriod                 time.Duration `koanf:"das-retention-period"`
+	HighGasThreshold                   float32       `koanf:"high-gas-threshold"`
+	HighGasDelay                       time.Duration `koanf:"high-gas-delay"`
 }
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
+	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback to storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
 	f.Duration(prefix+".max-interval", DefaultBatchPosterConfig.MaxBatchPostInterval, "maximum batch posting interval")
 	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
@@ -71,15 +73,16 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	Enable:               false,
-	MaxBatchSize:         100000,
-	BatchPollDelay:       time.Second * 10,
-	PostingErrorDelay:    time.Second * 10,
-	MaxBatchPostInterval: time.Hour,
-	CompressionLevel:     brotli.DefaultCompression,
-	DASRetentionPeriod:   time.Hour * 24 * 15,
-	HighGasThreshold:     150.,
-	HighGasDelay:         14 * time.Hour,
+	Enable:                             false,
+	DisableDasFallbackStoreDataOnChain: false,
+	MaxBatchSize:                       100000,
+	BatchPollDelay:                     time.Second * 10,
+	PostingErrorDelay:                  time.Second * 10,
+	MaxBatchPostInterval:               time.Hour,
+	CompressionLevel:                   brotli.DefaultCompression,
+	DASRetentionPeriod:                 time.Hour * 24 * 15,
+	HighGasThreshold:                   150.,
+	HighGasDelay:                       14 * time.Hour,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -405,6 +408,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 		cert, err := b.das.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()), []byte{}) // b.das will append signature if enabled
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
+			if b.config.DisableDasFallbackStoreDataOnChain {
+				return nil, errors.New("Unable to batch to DAS and fall back to storing data on chain is disabled")
+			}
 		} else {
 			sequencerMsg = das.Serialize(cert)
 		}
