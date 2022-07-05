@@ -5,7 +5,9 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -67,6 +69,10 @@ func TestSequencerFeePaid(t *testing.T) {
 }
 
 func TestSequencerPriceAdjusts(t *testing.T) {
+	f, err := os.Create("testSequencerPriceAdjusts.csv")
+	Require(t, err)
+	defer func() { _ = f.Close() }()
+
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -114,6 +120,7 @@ func TestSequencerPriceAdjusts(t *testing.T) {
 			colors.PrintGrey("ArbOS updated its L1 estimate")
 			colors.PrintGrey("    L1 base fee ", l1Header.BaseFee)
 			colors.PrintGrey("    L1 estimate ", lastEstimate, " ➤ ", estimatedL1FeePerUnit, " = ", actualL1FeePerUnit)
+			fmt.Fprintln(f, i, ",", l1Header.BaseFee, ",", lastEstimate, ",", estimatedL1FeePerUnit, ",", actualL1FeePerUnit)
 
 			oldDiff := arbmath.BigAbs(arbmath.BigSub(lastEstimate, l1Header.BaseFee))
 			newDiff := arbmath.BigAbs(arbmath.BigSub(actualL1FeePerUnit, l1Header.BaseFee))
