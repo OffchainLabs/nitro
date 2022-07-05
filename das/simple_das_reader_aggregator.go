@@ -77,40 +77,6 @@ func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet
 	f.Int(prefix+".exploit-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploitIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode")
 }
 
-func addAggregatorReadersOnRestfulServerListUpdate(ctx context.Context, config *RestfulClientAggregatorConfig, a *SimpleDASReaderAggregator, combinedUrls map[string]bool) {
-	onlineUrlsChan := StartRestfulServerListFetchDaemon(ctx, config.OnlineUrlList, config.OnlineUrlListFetchInterval)
-
-	addRestfulDasClients := func(urls []string) bool {
-		for _, url := range urls {
-			if combinedUrls[url] {
-				continue
-			}
-			combinedUrls[url] = true
-			reader, err := NewRestfulDasClientFromURL(url)
-			if err != nil {
-				return false
-			}
-			a.readers = append(a.readers, reader)
-			a.stats[reader] = make([]readerStat, 0, config.MaxPerEndpointStats)
-		}
-		a.strategy.update(a.readers, a.stats)
-		return true
-	}
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case onlineUrls := <-onlineUrlsChan:
-				if !addRestfulDasClients(onlineUrls) {
-					return
-				}
-			}
-		}
-	}()
-}
-
 func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
 	a := SimpleDASReaderAggregator{
 		config: config,
@@ -133,6 +99,8 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 	if len(combinedUrls) == 0 {
 		return nil, errors.New("No URLs were specified with either of rest-aggregator.urls or rest-aggregator.online-url-list")
 	}
+
+	a.urls = combinedUrls
 
 	urls := make([]string, 0, len(combinedUrls))
 	for url := range combinedUrls {
@@ -163,7 +131,6 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 		return nil, fmt.Errorf("Unknown RestfulClientAggregator strategy '%s', use --help to see available strategies.", config.Strategy)
 	}
 	a.strategy.update(a.readers, a.stats)
-	addAggregatorReadersOnRestfulServerListUpdate(ctx, config, &a, combinedUrls)
 	return &a, nil
 }
 
@@ -201,6 +168,7 @@ type readerStatMessage struct {
 type SimpleDASReaderAggregator struct {
 	stopwaiter.StopWaiter
 
+	urls   map[string]bool
 	config *RestfulClientAggregatorConfig
 
 	// readers and stats are only to be updated by the stats goroutine
@@ -300,6 +268,24 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(ctx context.Context, hash []byt
 }
 
 func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
+	onlineUrlsChan := StartRestfulServerListFetchDaemon(ctx, a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
+
+	updateRestfulDasClients := func(urls []string) bool {
+		for _, url := range urls {
+			if a.urls[url] {
+				continue
+			}
+			a.urls[url] = true
+			reader, err := NewRestfulDasClientFromURL(url)
+			if err != nil {
+				return false
+			}
+			a.readers = append(a.readers, reader)
+			a.stats[reader] = make([]readerStat, 0, a.config.MaxPerEndpointStats)
+		}
+		a.strategy.update(a.readers, a.stats)
+		return true
+	}
 	a.StopWaiter.Start(ctx)
 
 	a.StopWaiter.LaunchThread(func(innerCtx context.Context) {
@@ -319,6 +305,10 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 				// Strategy update happens in same goroutine as updates to the stats
 				// to avoid needing extra synchronization.
 				a.strategy.update(a.readers, a.stats)
+			case onlineUrls := <-onlineUrlsChan:
+				if !updateRestfulDasClients(onlineUrls) {
+					return
+				}
 			}
 		}
 	})
