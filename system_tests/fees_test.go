@@ -93,7 +93,7 @@ func TestSequencerPriceAdjusts(t *testing.T) {
 	l1Header, err := l1client.HeaderByNumber(ctx, nil)
 	Require(t, err)
 
-	sequencerBalanceBefore := GetBalance(t, ctx, l2client, l1pricing.BatchPosterAddress)
+	rewardRecipientBalanceBefore := GetBalance(t, ctx, l2client, l1pricing.BatchPosterAddress)
 	timesPriceAdjusted := 0
 
 	colors.PrintBlue("Initial values")
@@ -163,15 +163,34 @@ func TestSequencerPriceAdjusts(t *testing.T) {
 		}
 	}
 
-	sequencerBalanceAfter := GetBalance(t, ctx, l2client, l1pricing.BatchPosterAddress)
-	colors.PrintMint("sequencer balance ", sequencerBalanceBefore, " ➤ ", sequencerBalanceAfter)
+	rewardRecipientBalanceAfter := GetBalance(t, ctx, l2client, l1pricing.BatchPosterAddress)
+	colors.PrintMint("reward recipient balance ", rewardRecipientBalanceBefore, " ➤ ", rewardRecipientBalanceAfter)
 	colors.PrintMint("price changes     ", timesPriceAdjusted)
 
 	if timesPriceAdjusted == 0 {
 		Fail(t, "L1 gas price estimate never adjusted")
 	}
-	if !arbmath.BigGreaterThan(sequencerBalanceAfter, sequencerBalanceBefore) {
-		Fail(t, "sequencer didn't get paid")
+	if !arbmath.BigGreaterThan(rewardRecipientBalanceAfter, rewardRecipientBalanceBefore) {
+		Fail(t, "reward recipient didn't get paid")
+	}
+
+	arbAggregator, err := precompilesgen.NewArbAggregator(common.HexToAddress("0x6d"), l2client)
+	Require(t, err)
+	batchPosterAddresses, err := arbAggregator.GetBatchPosters(&bind.CallOpts{Context: ctx})
+	Require(t, err)
+	numReimbursed := 0
+	for _, bpAddr := range batchPosterAddresses {
+		if bpAddr != common.HexToAddress("A4b000000000000000000073657175656e636572") && bpAddr != l1pricing.L1PricerFundsPoolAddress {
+			numReimbursed++
+			bal, err := l1client.BalanceAt(ctx, bpAddr, nil)
+			Require(t, err)
+			if bal.Sign() == 0 {
+				Fail(t, "Batch poster balance is zero for", bpAddr)
+			}
+		}
+	}
+	if numReimbursed != 1 {
+		Fail(t, "Wrong number of batch posters were reimbursed", numReimbursed)
 	}
 }
 
