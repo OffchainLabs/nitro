@@ -283,7 +283,6 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 			a.readers = append(a.readers, reader)
 			a.stats[reader] = make([]readerStat, 0, a.config.MaxPerEndpointStats)
 		}
-		a.strategy.update(a.readers, a.stats)
 		return true
 	}
 	a.StopWaiter.Start(ctx)
