@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -71,7 +72,10 @@ func TestSequencerFeePaid(t *testing.T) {
 func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	t.Parallel()
 
-	f, err := os.Create(fmt.Sprintf("testSequencerPriceAdjustsFrom%v.csv", initialEstimate))
+	_ = os.Mkdir("test-data", 0766)
+	path := filepath.Join("test-data", fmt.Sprintf("testSequencerPriceAdjustsFrom%v.csv", initialEstimate))
+
+	f, err := os.Create(path)
 	Require(t, err)
 	defer func() { Require(t, f.Close()) }()
 
@@ -142,15 +146,22 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 			colors.PrintGrey("    L1 base fee ", l1Header.BaseFee)
 			colors.PrintGrey("    L1 estimate ", lastEstimate, " ➤ ", estimatedL1FeePerUnit, " = ", actualL1FeePerUnit)
 			colors.PrintGrey("    Surplus ", surplus)
-			fmt.Fprintln(f, i, ",", l1Header.BaseFee, ",", lastEstimate, ",", estimatedL1FeePerUnit, ",", actualL1FeePerUnit, ",", surplus)
+			fmt.Fprintf(
+				f, "%v, %v, %v, %v, %v, %v\n", i, l1Header.BaseFee, lastEstimate,
+				estimatedL1FeePerUnit, actualL1FeePerUnit, surplus,
+			)
 
 			oldDiff := arbmath.BigAbs(arbmath.BigSub(lastEstimate, l1Header.BaseFee))
 			newDiff := arbmath.BigAbs(arbmath.BigSub(actualL1FeePerUnit, l1Header.BaseFee))
+			cmpDiff := arbmath.BigGreaterThan(newDiff, oldDiff)
+			signums := surplus.Sign() == arbmath.BigSub(actualL1FeePerUnit, l1Header.BaseFee).Sign()
 
-			if timesPriceAdjusted > 0 && arbmath.BigGreaterThan(newDiff, oldDiff) && surplus.Sign() == arbmath.BigSub(actualL1FeePerUnit, l1Header.BaseFee).Sign() {
+			if timesPriceAdjusted > 0 && cmpDiff && signums {
 				numRetrogradeMoves++
 				if numRetrogradeMoves > 1 {
-					Fail(t, "L1 gas price estimate should tend toward the basefee", timesPriceAdjusted, newDiff, oldDiff, lastEstimate, estimatedL1FeePerUnit, l1Header.BaseFee, actualL1FeePerUnit, surplus)
+					colors.PrintRed(timesPriceAdjusted, newDiff, oldDiff, lastEstimate, surplus)
+					colors.PrintRed(estimatedL1FeePerUnit, l1Header.BaseFee, actualL1FeePerUnit)
+					Fail(t, "L1 gas price estimate should tend toward the basefee")
 				}
 			} else {
 				numRetrogradeMoves = 0
