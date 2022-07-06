@@ -116,7 +116,8 @@ func main() {
 			panic(err)
 		}
 
-		if nodeConfig.Node.BatchPoster.Enable || nodeConfig.Node.Validator.Enable {
+		validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey {
 			l1TransactionOpts, err = util.GetTransactOptsFromWallet(
 				l1Wallet,
 				new(big.Int).SetUint64(nodeConfig.L1.ChainID),
