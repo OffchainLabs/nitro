@@ -24,4 +24,3 @@ error NotOutbox(address sender);
 /// @dev the provided outbox address isn't valid
 /// @param outbox address of outbox being set
 error InvalidOutboxSet(address outbox);
-
