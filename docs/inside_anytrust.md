@@ -4,7 +4,7 @@ AnyTrust is a variant of Arbitrum Nitro technology that lowers costs by acceptin
 
 The Arbitrum protocol requires that all Arbitrum nodes, including validators (nodes that verify correctness of the chain and are prepared to stake on correct results), have access to the data of every L2 transaction in the Arbitrum chain's inbox. An Arbitrum rollup provides data access by posting the data (in batched, compressed form) on L1 Ethereum as calldata. The Ethereum gas to pay for this is the largest component of cost in Arbitrum.
 
-AnyTrust relies instead on an external Data Availability Committee (hereafter, "the Committee") to store data and provide it on demand. The Committee has N members, of which AnyTrust assumes at least two are honest.  The AnyTrust model guarantees that if N-1 Committee members promise to provide access to some data, and at least one of the promising parties is honest, the data will be available and the AnyTrust protocol will function correctly.
+AnyTrust relies instead on an external Data Availability Committee (hereafter, "the Committee") to store data and provide it on demand. The Committee has N members, of which AnyTrust assumes at least two are honest.  The AnyTrust model guarantees that if N-1 Committee members promise to provide access to some data, at least one of the promising parties must be honest, ensuring that the data will be available so that the rollup protocol can function correctly.
 
 ## Keysets
 
