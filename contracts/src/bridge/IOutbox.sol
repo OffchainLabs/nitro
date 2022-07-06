@@ -4,6 +4,9 @@
 
 pragma solidity ^0.8.4;
 
+// pattern of separating custom errors into a different file is used to allow for wider version compatibility in the interfaces
+import "./IOutboxNoErrors.sol";
+
 import {AlreadyInit, NotRollup} from "../libraries/Error.sol";
 
 /// @dev The provided proof was too long
@@ -25,28 +28,3 @@ error AlreadySpent(uint256 index);
 
 /// @dev A call to the bridge failed with no return data
 error BridgeCallFailed();
-
-interface IOutbox {
-    event SendRootUpdated(bytes32 indexed blockHash, bytes32 indexed outputRoot);
-    event OutBoxTransactionExecuted(
-        address indexed to,
-        address indexed l2Sender,
-        uint256 indexed zero,
-        uint256 transactionIndex
-    );
-
-    function l2ToL1Sender() external view returns (address);
-
-    function l2ToL1Block() external view returns (uint256);
-
-    function l2ToL1EthBlock() external view returns (uint256);
-
-    function l2ToL1Timestamp() external view returns (uint256);
-
-    // @deprecated batch number is now always 0
-    function l2ToL1BatchNum() external view returns (uint256);
-
-    function l2ToL1OutputId() external view returns (bytes32);
-
-    function updateSendRoot(bytes32 sendRoot, bytes32 l2BlockHash) external;
-}

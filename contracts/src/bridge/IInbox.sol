@@ -4,8 +4,9 @@
 
 pragma solidity ^0.8.4;
 
-import "./IBridge.sol";
-import "./IDelayedMessageProvider.sol";
+// pattern of separating custom errors into a different file is used to allow for wider version compatibility in the interfaces
+import "./IInboxNoErrors.sol";
+
 import {AlreadyInit, NotOrigin, DataTooLarge} from "../libraries/Error.sol";
 
 /// @dev The contract is paused, so cannot be paused
@@ -40,71 +41,3 @@ error RetryableData(
     uint256 maxFeePerGas,
     bytes data
 );
-
-interface IInbox is IDelayedMessageProvider {
-    function sendL2Message(bytes calldata messageData) external returns (uint256);
-
-    function sendUnsignedTransaction(
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        uint256 nonce,
-        address to,
-        uint256 value,
-        bytes calldata data
-    ) external returns (uint256);
-
-    function sendContractTransaction(
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        address to,
-        uint256 value,
-        bytes calldata data
-    ) external returns (uint256);
-
-    function sendL1FundedUnsignedTransaction(
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        uint256 nonce,
-        address to,
-        bytes calldata data
-    ) external payable returns (uint256);
-
-    function sendL1FundedContractTransaction(
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        address to,
-        bytes calldata data
-    ) external payable returns (uint256);
-
-    /// @dev Gas limit and maxFeePerGas should not be set to 1 as that is used to trigger the RetryableData error
-    function createRetryableTicket(
-        address to,
-        uint256 arbTxCallValue,
-        uint256 maxSubmissionCost,
-        address submissionRefundAddress,
-        address valueRefundAddress,
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        bytes calldata data
-    ) external payable returns (uint256);
-
-    /// @notice TEMPORARILY DISABLED as exact mechanics are being worked out
-    /// @dev Gas limit and maxFeePerGas should not be set to 1 as that is used to trigger the RetryableData error
-    function unsafeCreateRetryableTicket(
-        address to,
-        uint256 arbTxCallValue,
-        uint256 maxSubmissionCost,
-        address submissionRefundAddress,
-        address valueRefundAddress,
-        uint256 gasLimit,
-        uint256 maxFeePerGas,
-        bytes calldata data
-    ) external payable returns (uint256);
-
-    function depositEth() external payable returns (uint256);
-
-    /// @notice deprecated in favour of depositEth with no parameters
-    function depositEth(uint256 maxSubmissionCost) external payable returns (uint256);
-
-    function bridge() external view returns (IBridge);
-}
