@@ -40,7 +40,7 @@ type RestfulClientAggregatorConfig struct {
 var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
 	Urls:                               []string{},
 	OnlineUrlList:                      "",
-	OnlineUrlListFetchInterval:         1 * time.Second,
+	OnlineUrlListFetchInterval:         1 * time.Hour,
 	Strategy:                           "simple-explore-exploit",
 	StrategyUpdateInterval:             10 * time.Second,
 	WaitBeforeTryNext:                  2 * time.Second,
@@ -265,16 +265,17 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(ctx context.Context, hash []byt
 }
 
 func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
-	onlineUrlsChan := StartRestfulServerListFetchDaemon(ctx, a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
+	a.StopWaiter.Start(ctx)
+	onlineUrlsChan := StartRestfulServerListFetchDaemon(a.StopWaiter.GetContext(), a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
 
-	updateRestfulDasClients := func(urls []string) bool {
+	updateRestfulDasClients := func(urls []string) {
 		combinedUrls := a.config.Urls
 		combinedUrls = append(combinedUrls, urls...)
 		combinedReaders := make(map[arbstate.DataAvailabilityReader]bool)
 		for _, url := range combinedUrls {
 			reader, err := NewRestfulDasClientFromURL(url)
 			if err != nil {
-				return false
+				return
 			}
 			combinedReaders[reader] = true
 		}
@@ -294,9 +295,7 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 			}
 			delete(a.stats, reader)
 		}
-		return true
 	}
-	a.StopWaiter.Start(ctx)
 
 	a.StopWaiter.LaunchThread(func(innerCtx context.Context) {
 		updateStrategyTicker := time.NewTicker(a.config.StrategyUpdateInterval)
@@ -316,9 +315,7 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 				// to avoid needing extra synchronization.
 				a.strategy.update(a.readers, a.stats)
 			case onlineUrls := <-onlineUrlsChan:
-				if !updateRestfulDasClients(onlineUrls) {
-					return
-				}
+				updateRestfulDasClients(onlineUrls)
 			}
 		}
 	})
