@@ -54,7 +54,8 @@ func startLocalDASServer(
 			Enable:  true,
 			DataDir: keyDir,
 		},
-		L1NodeURL: "none",
+		L1NodeURL:      "none",
+		RequestTimeout: 5 * time.Second,
 	}
 
 	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
@@ -261,6 +262,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 			KeyDir: keyDir,
 		},
 
+		RequestTimeout: 5 * time.Second,
 		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 	}
 
@@ -290,6 +292,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		},
 
 		// AggregatorConfig set up below
+		RequestTimeout: 5 * time.Second,
 	}
 
 	beConfigA := dasrpc.BackendConfig{
@@ -334,7 +337,8 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 		// AggregatorConfig set up below
 
-		L1NodeURL: "none",
+		L1NodeURL:      "none",
+		RequestTimeout: 5 * time.Second,
 	}
 
 	l1NodeConfigB.BatchPoster.Enable = false
@@ -352,6 +356,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 			Enable:  true,
 			DataDir: fileDataDir,
 		},
+		RequestTimeout: 5 * time.Second,
 	}
 
 	restServerDAS, rpcServerLifecycleManager, err := das.CreatePersistentStorageService(ctx, &restServerConfig)
@@ -386,6 +391,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		},
 
 		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
+		RequestTimeout: 5 * time.Second,
 	}
 	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigC)
 
