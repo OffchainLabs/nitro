@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 // solhint-disable-next-line compiler-version
-pragma solidity >=0.6.0 <0.9.0;
+pragma solidity >=0.6.2 <0.9.0;
 
 interface IOutbox {
     event SendRootUpdated(bytes32 indexed blockHash, bytes32 indexed outputRoot);
