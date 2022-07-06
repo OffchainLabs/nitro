@@ -260,4 +260,6 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
     function sequencerMessageCount() external view override returns (uint256) {
         return sequencerInboxAccs.length;
     }
+
+    function acceptFundsFromOldBridge() external payable {}
 }

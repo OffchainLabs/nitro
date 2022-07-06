@@ -220,4 +220,6 @@ contract BridgeTester is Initializable, DelegateCallAware, IBridge {
     }
 
     receive() external payable {}
+
+    function acceptFundsFromOldBridge() external payable {}
 }

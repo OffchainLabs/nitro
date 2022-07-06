@@ -99,4 +99,6 @@ interface IBridge {
     function sequencerMessageCount() external view returns (uint256);
 
     function rollup() external view returns (IOwnable);
+
+    function acceptFundsFromOldBridge() external payable;
 }
