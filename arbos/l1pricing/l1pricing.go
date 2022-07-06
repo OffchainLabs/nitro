@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -209,14 +208,6 @@ func (ps *L1PricingState) PricePerUnit() (*big.Int, error) {
 
 func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
 	return ps.pricePerUnit.Set(price)
-}
-
-func (ps *L1PricingState) L1BaseFeeEstimate() (*big.Int, error) {
-	perUnit, err := ps.pricePerUnit.Get()
-	if err != nil {
-		return nil, err
-	}
-	return arbmath.BigMulByUint(perUnit, 16), nil
 }
 
 // Update the pricing model based on a payment by a batch poster

@@ -109,4 +109,7 @@ interface ArbGasInfo {
 
     /// @notice Get the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
     function getGasBacklogTolerance() external view returns (uint64);
+
+    /// @notice Returns the surplus of funds for L1 batch posting payments (may be negative).
+    function getL1PricingSurplus() external view returns (int256);
 }
