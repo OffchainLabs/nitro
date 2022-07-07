@@ -261,5 +261,6 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         return sequencerInboxAccs.length;
     }
 
+    /// @dev For the classic -> nitro migration. TODO: remove post-migration.
     function acceptFundsFromOldBridge() external payable {}
 }
