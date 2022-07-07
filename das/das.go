@@ -51,6 +51,9 @@ type DataAvailabilityConfig struct {
 	L1NodeURL             string `koanf:"l1-node-url"`
 	L1ConnectionAttempts  int    `koanf:"l1-connection-attempts"`
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+
+	PanicOnError             bool `koanf:"panic-on-error"`
+	DisableSignatureChecking bool `koanf:"disable-signature-checking"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
@@ -58,6 +61,7 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	Enable:                        false,
 	RestfulClientAggregatorConfig: DefaultRestfulClientAggregatorConfig,
 	L1ConnectionAttempts:          15,
+	PanicOnError:                  false,
 }
 
 /* TODO put these checks somewhere
@@ -107,6 +111,8 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
+	f.Bool(prefix+".panic-on-error", DefaultDataAvailabilityConfig.PanicOnError, "whether the Data Availability Service should fail immediately on errors (not recommended)")
+	f.Bool(prefix+".disable-signature-checking", DefaultDataAvailabilityConfig.DisableSignatureChecking, "disables signature checking on Data Availability Store requests (DANGEROUS, FOR TESTING ONLY)")
 
 	f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service request timeout duration")
 
