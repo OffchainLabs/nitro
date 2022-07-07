@@ -36,6 +36,14 @@ func MinUint(value, ceiling uint64) uint64 {
 	return value
 }
 
+// the minimum of two 32-bit uints
+func MinUint32(value, ceiling uint32) uint32 {
+	if value > ceiling {
+		return ceiling
+	}
+	return value
+}
+
 // the maximum of two ints
 func MaxInt(value, floor int64) int64 {
 	if value < floor {
@@ -288,6 +296,13 @@ func WordsForBytes(nbytes uint64) uint64 {
 func UintToBytes(value uint64) []byte {
 	result := make([]byte, 8)
 	binary.BigEndian.PutUint64(result, value)
+	return result
+}
+
+// casts a uint32 to its big-endian representation
+func Uint32ToBytes(value uint32) []byte {
+	result := make([]byte, 4)
+	binary.BigEndian.PutUint32(result, value)
 	return result
 }
 

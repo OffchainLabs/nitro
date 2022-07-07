@@ -18,18 +18,24 @@ func TestDASTree(t *testing.T) {
 	store := make(map[bytes32][]byte)
 	tests := [][]byte{{}, {0x32}, crypto.Keccak256(), crypto.Keccak256([]byte{0x32})}
 	for i := 0; i < 64; i++ {
-		large := make([]byte, rand.Intn(8*binSize))
+		large := make([]byte, rand.Intn(12*BinSize))
 		tests = append(tests, large)
 	}
 
 	record := func(key bytes32, value []byte) {
 		colors.PrintGrey("storing ", key, " ", pretty.FirstFewBytes(value))
 		store[key] = value
+		if crypto.Keccak256Hash(value) != key {
+			Fail(t, "key not the hash of value")
+		}
 	}
 	oracle := func(key bytes32) []byte {
 		preimage, ok := store[key]
 		if !ok {
 			Fail(t, "no preimage for key", key)
+		}
+		if crypto.Keccak256Hash(preimage) != key {
+			Fail(t, "key not the hash of preimage")
 		}
 		colors.PrintBlue("loading ", key, " ", pretty.FirstFewBytes(preimage))
 		return preimage

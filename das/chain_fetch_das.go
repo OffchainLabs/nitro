@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das/dastree"
@@ -138,7 +137,7 @@ func chainFetchGetByHash(
 		return nil, err
 	}
 	for iter.Next() {
-		if hash == crypto.Keccak256Hash(iter.Event.KeysetBytes) {
+		if hash == dastree.Hash(iter.Event.KeysetBytes) {
 			cache.put(hash, iter.Event.KeysetBytes)
 			return iter.Event.KeysetBytes, nil
 		}

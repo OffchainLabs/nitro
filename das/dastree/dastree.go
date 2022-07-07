@@ -11,20 +11,25 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-const binSize = 64 * 1024 // 64 kB
+const BinSize = 64 * 1024 // 64 kB
 
 type bytes32 = common.Hash
 
+type node struct {
+	hash bytes32
+	size uint32
+}
+
 func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 	// Algorithm
-	//  1. split the preimage into 64kB bins and hash them to produces the tree's leaves
-	//  2. repeatedly hash pairs over and over, bubbling up any odd-one's out, to form the root
+	//  1. split the preimage into 64kB bins and hash them to produce the tree's leaves
+	//  2. repeatedly hash pairs and their combined length, bubbling up any odd-one's out, to form the root
 	//
-	//            r         <=>  hash(hash(0, 1), 2)           step 2
+	//            r         <=>  hash(hash(0, 1), 2, len(0:2))        step 2
 	//           / \
-	//          *   2       <=>  hash(0, 1), 2                 step 1
+	//          *   2       <=>  hash(0, 1, len(0:1)), 2              step 1
 	//         / \
-	//        0   1         <=>  0, 1, 2                       step 0
+	//        0   1         <=>  0, 1, 2                              step 0
 	//
 	//  Intermediate hashes like '*' from above may be recorded via the `record` closure
 	//
@@ -41,28 +46,35 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 		return outerKeccak
 	}
 
-	length := int64(len(unrolled))
-	leaves := []bytes32{}
-	for bin := int64(0); bin < length; bin += binSize {
-		end := arbmath.MinInt(bin+binSize, length)
+	length := uint32(len(unrolled))
+	leaves := []node{}
+	for bin := uint32(0); bin < length; bin += BinSize {
+		end := arbmath.MinUint32(bin+BinSize, length)
 		content := unrolled[bin:end]
 		innerKeccak := crypto.Keccak256Hash(content)
 		outerKeccak := crypto.Keccak256Hash(innerKeccak.Bytes())
 		record(outerKeccak, innerKeccak.Bytes())
 		record(innerKeccak, content)
-		leaves = append(leaves, outerKeccak)
+		leaves = append(leaves, node{outerKeccak, end - bin})
 	}
 
 	layer := leaves
 	for len(layer) > 1 {
 		prior := len(layer)
 		after := prior/2 + prior%2
-		paired := make([]bytes32, after)
+		paired := make([]node, after)
 		for i := 0; i < prior-1; i += 2 {
-			leftChild := layer[i].Bytes()
-			rightChild := layer[i+1].Bytes()
-			parent := crypto.Keccak256Hash(leftChild, rightChild)
-			record(parent, append(leftChild, rightChild...))
+			firstHash := layer[i].hash.Bytes()
+			otherHash := layer[i+1].hash.Bytes()
+			sizeUnder := layer[i].size + layer[i+1].size
+			dataUnder := firstHash
+			dataUnder = append(dataUnder, otherHash...)
+			dataUnder = append(dataUnder, arbmath.Uint32ToBytes(sizeUnder)...)
+			parent := node{
+				crypto.Keccak256Hash(dataUnder),
+				sizeUnder,
+			}
+			record(parent.hash, dataUnder)
 			paired[i/2] = parent
 		}
 		if prior%2 == 1 {
@@ -70,7 +82,7 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 		}
 		layer = paired
 	}
-	return layer[0]
+	return layer[0].hash
 }
 
 func Hash(preimage ...[]byte) bytes32 {
@@ -82,9 +94,15 @@ func HashBytes(preimage ...[]byte) []byte {
 	return Hash(preimage...).Bytes()
 }
 
-func Content(root common.Hash, oracle func(common.Hash) []byte) ([]byte, error) {
-	leaves := []common.Hash{}
-	stack := []common.Hash{root}
+func FlatHashToTreeHash(flat bytes32) bytes32 {
+	// Forms a degenerate dastree that's just a single leaf
+	// note: the inner preimage may be arbitrarily larger than the 64 kB standard
+	return crypto.Keccak256Hash(flat[:])
+}
+
+func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
+	leaves := []bytes32{}
+	stack := []bytes32{root}
 
 	for len(stack) > 0 {
 		node := stack[len(stack)-1]
@@ -94,9 +112,9 @@ func Content(root common.Hash, oracle func(common.Hash) []byte) ([]byte, error) 
 		switch len(under) {
 		case 32:
 			leaves = append(leaves, common.BytesToHash(under))
-		case 64:
-			prior := common.BytesToHash(under[:32]) // we want to expand leftward,
-			after := common.BytesToHash(under[32:]) // so we reverse their order
+		case 68:
+			prior := common.BytesToHash(under[:32])   // we want to expand leftward,
+			after := common.BytesToHash(under[32:64]) // so we reverse their order
 			stack = append(stack, after, prior)
 		default:
 			return nil, fmt.Errorf("failed to resolve preimage %v %v", len(under), node)

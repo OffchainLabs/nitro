@@ -139,8 +139,13 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Failed to deserialize DAS message", "err", err)
 		return nil, nil
 	}
+
+	recordPreimage := func(key common.Hash, value []byte) {
+		preimages[key] = value
+	}
+
 	keysetPreimage, err := dasReader.GetByHash(ctx, cert.KeysetHash)
-	if err == nil && cert.KeysetHash != crypto.Keccak256Hash(keysetPreimage) {
+	if err == nil && cert.KeysetHash != dastree.Hash(keysetPreimage) {
 		err = ErrHashMismatch
 	}
 	if err != nil {
@@ -148,8 +153,9 @@ func RecoverPayloadFromDasBatch(
 		return nil, err
 	}
 	if preimages != nil {
-		preimages[cert.KeysetHash] = keysetPreimage
+		dastree.RecordHash(recordPreimage, keysetPreimage)
 	}
+
 	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage))
 	if err != nil {
 		log.Error("Couldn't deserialize keyset", "err", err)
@@ -160,34 +166,39 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Bad signature on DAS batch", "err", err)
 		return nil, nil
 	}
+
 	maxTimestamp := binary.BigEndian.Uint64(sequencerMsg[8:16])
 	if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
 		log.Error("Data availability cert expires too soon", "err", "")
 		return nil, nil
 	}
 
-	newDataHash := cert.DataHash
-	if cert.Version == 0 {
-		newDataHash = crypto.Keccak256Hash(cert.DataHash[:])
+	dataHash := cert.DataHash
+	treeHash := dataHash
+	version := cert.Version
+	if version == 0 {
+		treeHash = dastree.FlatHashToTreeHash(dataHash)
 	}
 
-	payload, err := dasReader.GetByHash(ctx, newDataHash)
-	if err == nil && crypto.Keccak256Hash(payload) != cert.DataHash {
-		err = ErrHashMismatch
-	}
+	payload, err := dasReader.GetByHash(ctx, treeHash)
 	if err != nil {
 		log.Error("Couldn't fetch DAS batch contents", "err", err)
 		return nil, err
 	}
+	switch {
+	case version == 0 && crypto.Keccak256Hash(payload) != dataHash:
+		fallthrough
+	case version == 1 && dastree.Hash(payload) != dataHash:
+		log.Error("Couldn't fetch DAS batch contents", "err", ErrHashMismatch, "version", version)
+		return nil, err
+	}
+
 	if preimages != nil {
 		if cert.Version == 0 {
-			preimages[cert.DataHash] = payload
-			preimages[newDataHash] = cert.DataHash[:]
+			preimages[dataHash] = payload
+			preimages[treeHash] = dataHash[:]
 		} else {
-			record := func(key common.Hash, value []byte) {
-				preimages[key] = value
-			}
-			dastree.RecordHash(record, payload)
+			dastree.RecordHash(recordPreimage, payload)
 		}
 	}
 

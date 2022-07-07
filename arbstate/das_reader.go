@@ -13,10 +13,10 @@ import (
 	"io"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 type DataAvailabilityReader interface {
@@ -150,7 +150,7 @@ func (cert *DataAvailabilityCertificate) RecoverKeyset(
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(crypto.Keccak256(keysetBytes), cert.KeysetHash[:]) {
+	if dastree.Hash(keysetBytes) != cert.KeysetHash {
 		return nil, errors.New("keyset hash does not match cert")
 	}
 	return DeserializeKeyset(bytes.NewReader(keysetBytes))
@@ -196,7 +196,10 @@ func (keyset *DataAvailabilityKeyset) Hash() (common.Hash, error) {
 	if err := keyset.Serialize(wr); err != nil {
 		return common.Hash{}, err
 	}
-	return crypto.Keccak256Hash(wr.Bytes()), nil
+	if wr.Len() > dastree.BinSize {
+		return common.Hash{}, errors.New("keyset too large")
+	}
+	return dastree.Hash(wr.Bytes()), nil
 }
 
 func DeserializeKeyset(rd io.Reader) (*DataAvailabilityKeyset, error) {
