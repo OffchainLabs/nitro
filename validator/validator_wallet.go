@@ -72,6 +72,9 @@ func (v *ValidatorWallet) Address() *common.Address {
 }
 
 func (v *ValidatorWallet) From() common.Address {
+	if v.auth == nil {
+		return common.Address{}
+	}
 	return v.auth.From
 }
 
