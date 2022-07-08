@@ -35,7 +35,7 @@ func main() {
 
 	renames := make(map[string]string)
 
-	err := filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
+	err = filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			colors.PrintRed("skipping ", path, err)
 			return nil
