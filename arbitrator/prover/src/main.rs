@@ -4,6 +4,7 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
+    console::Color,
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
     utils::{Bytes32, CBytes},
     wavm::Opcode,
@@ -350,10 +351,7 @@ fn main() -> Result<()> {
     println!("End machine backtrace:");
     for (module, func, pc) in mach.get_backtrace() {
         let func = rustc_demangle::demangle(&func);
-        println!(
-            "  {} \x1b[32m{}\x1b[0m @ \x1b[36m{}\x1b[0m",
-            module, func, pc
-        );
+        println!("  {} {} @ {}", module, Color::mint(func), Color::blue(pc));
     }
 
     if let Some(out) = opts.output {
