@@ -334,7 +334,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			return err
 		}
 		if !wasEmpty && (current != c.config.MyUrl) {
-			return fmt.Errorf("%w: redis shows chosen: %s", ErrNotMainSequencer, current)
+			return fmt.Errorf("%w: failed to catch lock. redis shows chosen: %s", ErrRetrySequencer, current)
 		}
 		remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, tx)
 		if err != nil {
@@ -342,7 +342,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		}
 		if remoteMsgCount > msgCountExpected {
 			log.Info("coordinator failed to become main", "expected", msgCountExpected, "found", remoteMsgCount, "message is nil?", messageData == nil)
-			return fmt.Errorf("%w: expected msg %d found %d", ErrNotMainSequencer, msgCountExpected, remoteMsgCount)
+			return fmt.Errorf("%w: failed to catch lock. expected msg %d found %d", ErrRetrySequencer, msgCountExpected, remoteMsgCount)
 		}
 		pipe := tx.TxPipeline()
 		initialDuration := c.config.LockoutDuration
@@ -364,7 +364,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		pipe.PExpireAt(ctx, myLivelinessKey, lockoutUntil)
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
-			return fmt.Errorf("%w: transaction failed", ErrNotMainSequencer)
+			return fmt.Errorf("%w: failed to catch sequencer lock", ErrRetrySequencer)
 		}
 		if err != nil {
 			return fmt.Errorf("chosen sequencer failed to update redis: %w", err)
@@ -710,15 +710,13 @@ func (c *SeqCoordinator) StopAndWait() {
 	c.client.Close()
 }
 
-var ErrNotMainSequencer = errors.New("not main sequencer")
-
 func (c *SeqCoordinator) CurrentlyChosen() bool {
 	return time.Now().Before(atomicTimeRead(&c.lockoutUntil))
 }
 
 func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
 	if !c.CurrentlyChosen() {
-		return ErrNotMainSequencer
+		return fmt.Errorf("%w: not main sequencer", ErrRetrySequencer)
 	}
 	if err := c.chosenOneUpdate(c.GetContext(), pos, pos+1, msg); err != nil {
 		return err

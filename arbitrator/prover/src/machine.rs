@@ -743,6 +743,7 @@ pub struct Machine {
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
+    first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
     initial_hash: Bytes32,
     context: u64,
@@ -1167,6 +1168,13 @@ impl Machine {
             ));
         }
 
+        // find the first inbox index that's out of bounds
+        let first_too_far = inbox_contents
+            .iter()
+            .map(|((_, index), _)| *index + 1)
+            .max()
+            .unwrap_or(0);
+
         let mut mach = Machine {
             status: MachineStatus::Running,
             steps: 0,
@@ -1179,6 +1187,7 @@ impl Machine {
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_contents,
+            first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             initial_hash: Bytes32::default(),
             context: 0,
@@ -1226,6 +1235,7 @@ impl Machine {
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_contents: Default::default(),
+            first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             initial_hash: Bytes32::default(),
             context: 0,
@@ -1893,17 +1903,11 @@ impl Machine {
                             self.value_stack.push(Value::I32(len as u32));
                         } else {
                             eprintln!(
-                                "\x1b[31mMissing requested preimage\x1b[0m for hash {}",
-                                hash,
+                                "{} for hash {}",
+                                Color::red("Missing requested preimage"),
+                                Color::red(hash),
                             );
-                            eprintln!("Backtrace:");
-                            for (module, func, pc) in self.get_backtrace() {
-                                let func = rustc_demangle::demangle(&func);
-                                eprintln!(
-                                    "  {} \x1b[32m{}\x1b[0m @ \x1b[36m{}\x1b[0m",
-                                    module, func, pc
-                                );
-                            }
+                            self.eprint_backtrace();
                             bail!("missing requested preimage for hash {}", hash);
                         }
                     } else {
@@ -1930,6 +1934,14 @@ impl Machine {
                             }
                         }
                     } else {
+                        if msg_num < self.first_too_far {
+                            eprintln!("{} {msg_num}", Color::red("Missing inbox message"));
+                            self.eprint_backtrace();
+                            bail!(
+                                "missing inbox message {msg_num} of {}",
+                                self.first_too_far - 1
+                            );
+                        }
                         self.status = MachineStatus::TooFar;
                         break;
                     }
@@ -2342,6 +2354,9 @@ impl Machine {
 
     pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {
         self.inbox_contents.insert((identifier, index), data);
+        if index >= self.first_too_far {
+            self.first_too_far = index + 1
+        }
     }
 
     pub fn get_module_names(&self, module: usize) -> Option<&NameCustomSection> {
@@ -2370,5 +2385,13 @@ impl Machine {
             }
         }
         res
+    }
+
+    pub fn eprint_backtrace(&self) {
+        eprintln!("Backtrace:");
+        for (module, func, pc) in self.get_backtrace() {
+            let func = rustc_demangle::demangle(&func);
+            eprintln!("  {} {} @ {}", module, Color::mint(func), Color::blue(pc));
+        }
     }
 }
