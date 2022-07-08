@@ -35,7 +35,7 @@ func main() {
 
 	renames := make(map[string]string)
 
-	filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
+	err := filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			colors.PrintRed("skipping ", path, err)
 			return nil
@@ -67,6 +67,9 @@ func main() {
 		renames[path] = stem + tree.Hex()
 		return nil
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	for name, rename := range renames {
 		println(name, colors.Grey, "=>", colors.Clear, rename)
