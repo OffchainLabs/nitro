@@ -2,29 +2,30 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.4;
+// solhint-disable-next-line compiler-version
+pragma solidity >=0.6.9 <0.9.0;
 
-// pattern of separating custom errors into a different file is used to allow for wider version compatibility in the interfaces
-import "./IOutboxNoErrors.sol";
+interface IOutbox {
+    event SendRootUpdated(bytes32 indexed blockHash, bytes32 indexed outputRoot);
+    event OutBoxTransactionExecuted(
+        address indexed to,
+        address indexed l2Sender,
+        uint256 indexed zero,
+        uint256 transactionIndex
+    );
 
-import {AlreadyInit, NotRollup} from "../libraries/Error.sol";
+    function l2ToL1Sender() external view returns (address);
 
-/// @dev The provided proof was too long
-/// @param proofLength The length of the too-long proof
-error ProofTooLong(uint256 proofLength);
+    function l2ToL1Block() external view returns (uint256);
 
-/// @dev The output index was greater than the maximum
-/// @param index The output index
-/// @param maxIndex The max the index could be
-error PathNotMinimal(uint256 index, uint256 maxIndex);
+    function l2ToL1EthBlock() external view returns (uint256);
 
-/// @dev The calculated root does not exist
-/// @param root The calculated root
-error UnknownRoot(bytes32 root);
+    function l2ToL1Timestamp() external view returns (uint256);
 
-/// @dev The record has already been spent
-/// @param index The index of the spent record
-error AlreadySpent(uint256 index);
+    // @deprecated batch number is now always 0
+    function l2ToL1BatchNum() external view returns (uint256);
 
-/// @dev A call to the bridge failed with no return data
-error BridgeCallFailed();
+    function l2ToL1OutputId() external view returns (bytes32);
+
+    function updateSendRoot(bytes32 sendRoot, bytes32 l2BlockHash) external;
+}

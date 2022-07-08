@@ -4,6 +4,19 @@
 
 pragma solidity ^0.8.4;
 
+import {
+    AlreadyInit,
+    NotOrigin,
+    DataTooLarge,
+    AlreadyPaused,
+    AlreadyUnpaused,
+    Paused,
+    InsufficientValue,
+    InsufficientSubmissionCost,
+    NotAllowedOrigin,
+    RetryableData,
+    NotRollupOrOwner
+} from "../libraries/Error.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
 import "./IBridge.sol";
