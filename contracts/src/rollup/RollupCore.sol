@@ -552,7 +552,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             if (afterInboxCount == prevInboxPosition) {
                 require(
                     assertion.afterState.globalState.getPositionInMessage() >=
-                        assertion.afterState.globalState.getPositionInMessage(),
+                        assertion.beforeState.globalState.getPositionInMessage(),
                     "INBOX_POS_IN_MSG_BACKWARDS"
                 );
             }
