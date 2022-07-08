@@ -240,8 +240,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	if lastUpdateTime == 0 && updateTime > 0 { // it's the first update, so there isn't a last update time
-		lastUpdateTime = updateTime - 1
+	if lastUpdateTime == 0 {
+		return ps.SetLastUpdateTime(updateTime) // skip the first update
 	}
 	if updateTime > currentTime || updateTime < lastUpdateTime {
 		return ErrInvalidTime
