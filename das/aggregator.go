@@ -315,8 +315,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	aggCert.DataHash = expectedHash
 	aggCert.Timeout = timeout
 	aggCert.KeysetHash = a.keysetHash
-
-	// Rachel TODO: count up requiredServicesForStore number on each version
 	aggCert.Version = 1
 
 	verified, err := blsSignatures.VerifySignature(aggCert.Sig, aggCert.SerializeSignableFields(), aggPubKey)
