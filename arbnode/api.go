@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -42,9 +43,9 @@ func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.Bl
 	return a.val.ValidateBlock(ctx, header, moduleRoot)
 }
 
-func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (uint64, error) {
+func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (hexutil.Uint64, error) {
 	block := a.val.LastBlockValidated()
-	return block, nil
+	return hexutil.Uint64(block), nil
 }
 
 func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (common.Hash, error) {
