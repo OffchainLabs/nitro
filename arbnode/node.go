@@ -454,24 +454,20 @@ var ConfigDefault = Config{
 }
 
 func ConfigDefaultL1Test() *Config {
-	config := ConfigDefault
+	config := ConfigDefaultL1NonSequencerTest()
 	config.Sequencer = TestSequencerConfig
-	config.L1Reader = headerreader.TestConfig
-	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
-	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
-	config.BlockValidator = validator.TestBlockValidatorConfig
 
-	return &config
+	return config
 }
 
 func ConfigDefaultL1NonSequencerTest() *Config {
 	config := ConfigDefault
-	config.Sequencer.Enable = false
 	config.L1Reader = headerreader.TestConfig
 	config.InboxReader = TestInboxReaderConfig
+	config.Sequencer.Enable = false
 	config.DelayedSequencer.Enable = false
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
