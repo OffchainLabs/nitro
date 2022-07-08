@@ -75,6 +75,9 @@ func (p *TxProcessor) PopCaller() {
 // Attempts to subtract up to `take` from `pool` without going negative.
 // Returns the amount subtracted from `pool`.
 func takeFunds(pool *big.Int, take *big.Int) *big.Int {
+	if take.Sign() < 0 {
+		panic("Attempted to take a negative amount of funds")
+	}
 	if arbmath.BigLessThan(pool, take) {
 		oldPool := new(big.Int).Set(pool)
 		pool.Set(common.Big0)
@@ -204,7 +207,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
 
-		if arbmath.BigLessThan(tx.GasFeeCap, basefee) && p.msg.RunMode() != types.MessageGasEstimationMode {
+		if arbmath.BigLessThan(tx.GasFeeCap, basefee) && (p.msg.RunMode() != types.MessageGasEstimationMode || tx.GasFeeCap.BitLen() > 0) {
 			// user's bid was too low
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
@@ -217,6 +220,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		withheldGasFunds := takeFunds(availableRefund, gascost) // gascost is conceptually charged before the gas price refund
 		gasPriceRefund := arbmath.BigMulByUint(arbmath.BigSub(tx.GasFeeCap, basefee), tx.Gas)
+		if gasPriceRefund.Sign() < 0 {
+			// This should only be possible during gas estimation mode
+			gasPriceRefund.SetInt64(0)
+		}
 		gasPriceRefund = takeFunds(availableRefund, gasPriceRefund)
 		if err := transfer(&tx.From, &tx.FeeRefundAddr, gasPriceRefund); err != nil {
 			glog.Error("failed to transfer gasPriceRefund", "err", err)
