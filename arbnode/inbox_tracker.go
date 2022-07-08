@@ -6,6 +6,7 @@ package arbnode
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -90,7 +91,7 @@ func (t *InboxTracker) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	if !hasKey {
-		return common.Hash{}, accumulatorNotFound
+		return common.Hash{}, fmt.Errorf("%w: delayedAcc", accumulatorNotFound)
 	}
 	data, err := t.db.Get(key)
 	if err != nil {
@@ -131,7 +132,7 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 		return BatchMetadata{}, err
 	}
 	if !hasKey {
-		return BatchMetadata{}, accumulatorNotFound
+		return BatchMetadata{}, fmt.Errorf("%w: batchmetadata", accumulatorNotFound)
 	}
 	data, err := t.db.Get(key)
 	if err != nil {

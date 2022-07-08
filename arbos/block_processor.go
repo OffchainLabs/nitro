@@ -118,7 +118,7 @@ func ProduceBlock(
 		return data
 	})
 	if batchFetchErr != nil {
-		return nil, nil, batchFetchErr
+		return nil, nil, fmt.Errorf("%w: in ProduceBlock/batchFatcher", batchFetchErr)
 	}
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)

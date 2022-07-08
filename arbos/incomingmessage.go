@@ -228,7 +228,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher
 	case L1MessageType_BatchPostingReport:
 		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, batchFetcher)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: during batchPostingReport", err)
 		}
 		return types.Transactions{tx}, nil
 	case L1MessageType_Invalid:
