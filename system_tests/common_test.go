@@ -281,10 +281,13 @@ func Fail(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
-func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
-	nodeConf := arbnode.ConfigDefaultL1Test()
-	nodeConf.BatchPoster.Enable = false
-	nodeConf.BlockValidator.Enable = blockValidator
+func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, dasConfig *das.DataAvailabilityConfig) (*ethclient.Client, *arbnode.Node) {
+	nodeConf := arbnode.ConfigDefaultL1NonSequencerTest()
+	if dasConfig == nil {
+		nodeConf.DataAvailability.Enable = false
+	} else {
+		nodeConf.DataAvailability = *dasConfig
+	}
 	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, nodeConf)
 }
 
