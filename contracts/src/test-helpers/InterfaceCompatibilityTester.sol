@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 // solhint-disable-next-line compiler-version
-pragma solidity >=0.6.2 <0.9.0;
+pragma solidity >=0.6.9 <0.9.0;
 
-import "../bridge/IBridgeNoErrors.sol";
-import "../bridge/IOutboxNoErrors.sol";
-import "../bridge/IInboxNoErrors.sol";
+import "../bridge/IBridge.sol";
+import "../bridge/IOutbox.sol";
+import "../bridge/IInbox.sol";
+import "../bridge/ISequencerInbox.sol";
