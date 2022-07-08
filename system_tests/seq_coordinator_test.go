@@ -94,7 +94,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 			DelayedMessagesRead: 1,
 		}
 		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
-		if errors.Is(err, arbnode.ErrNotMainSequencer) {
+		if errors.Is(err, arbnode.ErrRetrySequencer) {
 			return false
 		}
 		Require(t, err)
