@@ -6,6 +6,7 @@ package precompiles
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -63,7 +64,10 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	gasForL1Calldata := arbmath.BigDiv(weiForL1Calldata, l2GasPrice)
+	gasForL1Calldata := common.Big0
+	if l2GasPrice.Sign() > 0 {
+		gasForL1Calldata = arbmath.BigDiv(weiForL1Calldata, l2GasPrice)
+	}
 
 	perL2Tx := big.NewInt(l1pricing.TxFixedCost)
 	return perL2Tx, gasForL1Calldata, storageArbGas, nil
