@@ -384,7 +384,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 	if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
 
 		if kind == BatchSegmentKindL2MessageBrotli {
-			decompressed, err := arbcompress.Decompress(segment[1:], arbos.MaxL2MessageSize)
+			decompressed, err := arbcompress.Decompress(segment, arbos.MaxL2MessageSize)
 			if err != nil {
 				log.Info("dropping compressed message", "err", err, "delayedMsg", r.delayedMessagesRead)
 				return nil, nil
