@@ -170,7 +170,7 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 		preimage = append(preimage, bin...)
 	}
 
-	// Check the hash matches. Given the size data this shouldn't be possible but we'll check anyway
+	// Check the hash matches. Given the size data this should never fail but we'll check anyway
 	if Hash(preimage) != root {
 		return nil, fmt.Errorf("preimage not canonically hashed")
 	}
