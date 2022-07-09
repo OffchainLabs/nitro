@@ -54,6 +54,7 @@ COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
 COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/replay ./cmd/replay
+COPY ./das/dastree ./das/dastree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
