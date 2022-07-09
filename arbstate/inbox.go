@@ -191,6 +191,9 @@ func RecoverPayloadFromDasBatch(
 	case version == 1 && dastree.Hash(payload) != dataHash:
 		log.Error("Couldn't fetch DAS batch contents", "err", ErrHashMismatch, "version", version)
 		return nil, err
+	case version >= 2:
+		log.Error("Committee signed unsuported certificate format", "version", version, "payload", payload)
+		panic("node software out of date")
 	}
 
 	if preimages != nil {

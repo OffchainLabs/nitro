@@ -16,7 +16,10 @@ import (
 
 func TestDASTree(t *testing.T) {
 	store := make(map[bytes32][]byte)
-	tests := [][]byte{{}, {0x32}, crypto.Keccak256(), crypto.Keccak256([]byte{0x32})}
+	tests := [][]byte{
+		{}, {0x32}, crypto.Keccak256(),
+		make([]byte, BinSize), make([]byte, BinSize+1), make([]byte, 4*BinSize),
+	}
 	for i := 0; i < 64; i++ {
 		large := make([]byte, rand.Intn(12*BinSize))
 		tests = append(tests, large)

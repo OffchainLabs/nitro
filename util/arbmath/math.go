@@ -15,6 +15,15 @@ func NextPowerOf2(value uint64) uint64 {
 	return 1 << Log2ceil(value)
 }
 
+// the smallest power of no less than the input
+func NextOrCurrentPowerOf2(value uint64) uint64 {
+	power := NextPowerOf2(value)
+	if power == 2*value {
+		power /= 2
+	}
+	return power
+}
+
 // the log2 of the int, rounded up
 func Log2ceil(value uint64) uint64 {
 	return uint64(64 - bits.LeadingZeros64(value))

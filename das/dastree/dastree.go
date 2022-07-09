@@ -4,6 +4,7 @@
 package dastree
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -96,34 +97,82 @@ func HashBytes(preimage ...[]byte) []byte {
 
 func FlatHashToTreeHash(flat bytes32) bytes32 {
 	// Forms a degenerate dastree that's just a single leaf
-	// note: the inner preimage may be arbitrarily larger than the 64 kB standard
+	// note: the inner preimage may be larger than the 64 kB standard
 	return crypto.Keccak256Hash(flat[:])
 }
 
 func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
-	leaves := []bytes32{}
-	stack := []bytes32{root}
+	// Reverses hashes to reveal the full preimage under the root using the preimage oracle.
+	// This function also checks that the size-data is consistent and that the hash is canonical.
+	//
+	// Notes
+	//     1. Because we accept degenerate dastrees, we can't check that single-leaf trees are canonical.
+	//     2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
+	//     3. Only the committee can produce trees unwrapped by this function
+	//
+
+	total := uint32(0)
+	upper := oracle(root)
+	switch len(upper) {
+	case 32:
+		return oracle(common.BytesToHash(upper)), nil
+	case 68:
+		total = binary.BigEndian.Uint32(upper[64:])
+	default:
+		return nil, fmt.Errorf("invalid root with preimage of size %v: %v %v", len(upper), root, upper)
+	}
+
+	leaves := []node{}
+	stack := []node{{hash: root, size: total}}
 
 	for len(stack) > 0 {
-		node := stack[len(stack)-1]
+		place := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		under := oracle(node)
+		under := oracle(place.hash)
 
 		switch len(under) {
 		case 32:
-			leaves = append(leaves, common.BytesToHash(under))
+			leaf := node{
+				hash: common.BytesToHash(under),
+				size: place.size,
+			}
+			leaves = append(leaves, leaf)
 		case 68:
-			prior := common.BytesToHash(under[:32])   // we want to expand leftward,
-			after := common.BytesToHash(under[32:64]) // so we reverse their order
+			count := binary.BigEndian.Uint32(under[64:])
+			power := uint32(arbmath.NextOrCurrentPowerOf2(uint64(count)))
+
+			if place.size != count {
+				return nil, fmt.Errorf("invalid size data: %v vs %v for %v", count, place.size, under)
+			}
+
+			prior := node{
+				hash: common.BytesToHash(under[:32]),
+				size: power / 2,
+			}
+			after := node{
+				hash: common.BytesToHash(under[32:64]),
+				size: count - power/2,
+			}
+
+			// we want to expand leftward so we reverse their order
 			stack = append(stack, after, prior)
 		default:
-			return nil, fmt.Errorf("failed to resolve preimage %v %v", len(under), node)
+			return nil, fmt.Errorf("failed to resolve preimage %v %v", place.hash, under)
 		}
 	}
 
 	preimage := []byte{}
-	for _, leaf := range leaves {
-		preimage = append(preimage, oracle(leaf)...)
+	for i, leaf := range leaves {
+		bin := oracle(leaf.hash)
+		if len(bin) != int(leaf.size) {
+			return nil, fmt.Errorf("leaf %v has an incorrectly sized bin: %v vs %v", i, len(bin), leaf.size)
+		}
+		preimage = append(preimage, bin...)
+	}
+
+	// Check the hash matches. Given the size data this shouldn't be possible but we'll check anyway
+	if Hash(preimage) != root {
+		return nil, fmt.Errorf("preimage not canonically hashed")
 	}
 	return preimage, nil
 }
