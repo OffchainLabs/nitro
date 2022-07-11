@@ -31,11 +31,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigB.BatchPoster.Enable = false
-	l1NodeConfigB.BlockValidator.Enable = true
-	l1NodeConfigB.DataAvailability = l1NodeConfigA.DataAvailability
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	validatorConfig.BlockValidator.Enable = true
+	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, validatorConfig)
 
 	l2info.GenerateAccount("User2")
 
