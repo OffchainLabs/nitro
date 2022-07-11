@@ -21,7 +21,7 @@ func TestSequencerCompensation(t *testing.T) {
 	l2info, node1, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, false)
+	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, nil)
 
 	l2info.GenerateAccount("User2")
 
