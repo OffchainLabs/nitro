@@ -45,8 +45,10 @@ func main() {
 		}
 		stem := filepath.Dir(path) + "/"
 		name := info.Name()
+		zero := false
 		if name[:2] == "0x" {
 			name = name[2:]
+			zero = true
 		}
 
 		hashbytes, err := hex.DecodeString(name)
@@ -64,7 +66,11 @@ func main() {
 			panic(fmt.Sprintf("file hash %v does not match its contents", path))
 		}
 
-		renames[path] = stem + tree.Hex()
+		newName := tree.Hex()
+		if !zero {
+			newName = newName[2:]
+		}
+		renames[path] = stem + newName
 		return nil
 	})
 	if err != nil {
