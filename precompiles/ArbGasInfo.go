@@ -125,3 +125,18 @@ func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
 func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().BacklogTolerance()
 }
+
+func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
+	ps := c.State.L1PricingState()
+	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
+	if err != nil {
+		return nil, err
+	}
+	fundsDueForRewards, err := ps.FundsDueForRewards()
+	if err != nil {
+		return nil, err
+	}
+	haveFunds := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
+	return arbmath.BigSub(haveFunds, needFunds), nil
+}

@@ -199,7 +199,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
-	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
+	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), arbosVersion)
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
@@ -223,7 +223,9 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 		for upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
 			switch state.arbosVersion {
 			case 1:
-				// version 1->2 has no state changes
+				if err := state.l1PricingState.SetLastSurplus(common.Big0); err != nil {
+					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
+				}
 			default:
 				panic("Unable to perform requested ArbOS upgrade")
 			}
