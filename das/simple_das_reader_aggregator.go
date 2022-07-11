@@ -168,6 +168,7 @@ type SimpleDASReaderAggregator struct {
 
 	config *RestfulClientAggregatorConfig
 
+	readersMutex sync.RWMutex
 	// readers and stats are only to be updated by the stats goroutine
 	readers []arbstate.DataAvailabilityReader
 	stats   map[arbstate.DataAvailabilityReader]readerStats
@@ -178,6 +179,8 @@ type SimpleDASReaderAggregator struct {
 }
 
 func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	a.readersMutex.RLock()
+	defer a.readersMutex.RUnlock()
 	log.Trace("das.SimpleDASReaderAggregator.GetByHash", "key", pretty.FirstFewBytes(hash), "this", a)
 
 	type dataErrorPair struct {
@@ -269,6 +272,8 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 	onlineUrlsChan := StartRestfulServerListFetchDaemon(a.StopWaiter.GetContext(), a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
 
 	updateRestfulDasClients := func(urls []string) {
+		a.readersMutex.Lock()
+		defer a.readersMutex.Unlock()
 		combinedUrls := a.config.Urls
 		combinedUrls = append(combinedUrls, urls...)
 		combinedReaders := make(map[arbstate.DataAvailabilityReader]bool)
@@ -344,6 +349,8 @@ func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
 }
 
 func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	a.readersMutex.RLock()
+	defer a.readersMutex.RUnlock()
 	if len(a.readers) == 0 {
 		return -1, errors.New("no DataAvailabilityService present")
 	}
