@@ -17,7 +17,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"golang.org/x/term"
@@ -574,6 +573,7 @@ func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
 	chainDb ethdb.Database,
+	arbDb ethdb.Database,
 	config *Config,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
@@ -591,7 +591,7 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, config.L1Reader)
 	}
 
-	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
 	if err != nil {
 		return nil, err
 	}
@@ -678,13 +678,18 @@ func createNodeImpl(
 		} else {
 			dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
 		}
-		dataAvailabilityService = das.NewTimeoutWrapper(dataAvailabilityService, config.DataAvailability.RequestTimeout)
+		dataAvailabilityService = das.NewTimeoutWrapper(
+			dataAvailabilityService, config.DataAvailability.RequestTimeout,
+		)
+		if config.DataAvailability.PanicOnError {
+			dataAvailabilityService = das.NewPanicWrapper(dataAvailabilityService)
+		}
 	} else if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
 	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
-	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityReader)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dataAvailabilityReader)
 	if err != nil {
 		return nil, err
 	}
@@ -709,7 +714,7 @@ func createNodeImpl(
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader)
 		if err != nil {
 			return nil, err
 		}
@@ -784,11 +789,8 @@ func SetUpDataAvailability(
 			return nil, nil, err
 		}
 		seqInboxCaller = &seqInbox.SequencerInboxCaller
-	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
-		l1Client = nil
-		seqInboxAddress = nil
 	} else if len(config.L1NodeURL) > 0 && len(config.SequencerInboxAddress) > 0 {
-		l1Client, err = ethclient.DialContext(ctx, config.L1NodeURL)
+		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -893,12 +895,16 @@ func SetUpDataAvailability(
 
 		topLevelDas = rpcAggregator
 	} else if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
+		_seqInboxCaller := seqInboxCaller
+		if config.DisableSignatureChecking {
+			_seqInboxCaller = nil
+		}
 
 		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
 			ctx,
 			config.KeyConfig,
-			seqInboxCaller,
+			_seqInboxCaller,
 			topLevelStorageService,
 		)
 		if err != nil {
@@ -957,6 +963,7 @@ func CreateNode(
 	ctx context.Context,
 	stack *node.Node,
 	chainDb ethdb.Database,
+	arbDb ethdb.Database,
 	config *Config,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
@@ -964,7 +971,7 @@ func CreateNode(
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
 ) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
 	if err != nil {
 		return nil, err
 	}

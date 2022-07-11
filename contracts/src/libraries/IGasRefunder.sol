@@ -23,6 +23,7 @@ abstract contract GasRefundEnabled {
             uint256 calldataSize = 0;
             // if triggered in a contract call, the spender may be overrefunded by appending dummy data to the call
             // so we check if it is a top level call, which would mean the sender paid calldata as part of tx.input
+            // solhint-disable-next-line avoid-tx-origin
             if (msg.sender == tx.origin) {
                 assembly {
                     calldataSize := calldatasize()

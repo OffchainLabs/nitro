@@ -179,18 +179,19 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 	return addresses
 }
 
-func createL2BlockChain(t *testing.T, l2info *BlockchainTestInfo, chainConfig *params.ChainConfig) (*BlockchainTestInfo, *node.Node, ethdb.Database, *core.BlockChain) {
+func createL2BlockChain(t *testing.T, l2info *BlockchainTestInfo, chainConfig *params.ChainConfig) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 	stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
 	chainDb := rawdb.NewMemoryDatabase()
+	arbDb := rawdb.NewMemoryDatabase()
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
 	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, 0)
 	Require(t, err)
-	return l2info, stack, chainDb, blockchain
+	return l2info, stack, chainDb, arbDb, blockchain
 }
 
 func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Client {
@@ -213,7 +214,7 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (l2
 
 func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.Config, chainConfig *params.ChainConfig) (l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
 	l1info, l1client, l1backend, l1stack = CreateTestL1BlockChain(t, nil)
-	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
+	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
@@ -226,7 +227,7 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 		nodeConfig.Sequencer.Enable = false
 		nodeConfig.DelayedSequencer.Enable = false
 	}
-	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
+	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 
 	Require(t, err)
 	Require(t, node.Start(ctx))
@@ -242,8 +243,8 @@ func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbn
 }
 
 func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info, params.ArbitrumDevTestChainConfig())
-	node, err := arbnode.CreateNode(ctx, stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, params.ArbitrumDevTestChainConfig())
+	node, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil)
 	Require(t, err)
 
 	// Give the node an init message
@@ -296,12 +297,13 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
 	l2chainDb := rawdb.NewMemoryDatabase()
+	l2arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), 0)
 	Require(t, err)
 
-	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil)
+	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil)
 	Require(t, err)
 
 	err = node.Start(ctx)
@@ -374,7 +376,10 @@ func setupConfigWithDAS(t *testing.T, dasModeString string) (*params.ChainConfig
 			Enable:  enableDbStorage,
 			DataDir: dbPath,
 		},
-		L1NodeURL: "none",
+		PanicOnError:             true,
+		DisableSignatureChecking: true,
+		L1NodeURL:                "none",
+		RequestTimeout:           5 * time.Second,
 	}
 
 	l1NodeConfigA.DataAvailability = dasConfig
