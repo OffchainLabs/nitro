@@ -449,8 +449,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	purpose := "feeCollection"
 	util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
-	l1PricerAddress := l1pricing.L1PricerFundsPoolAddress
-	util.MintBalance(&l1PricerAddress, p.PosterFee, p.evm, scenario, purpose)
+	if p.state.FormatVersion() >= 2 {
+		l1PricerAddress := l1pricing.L1PricerFundsPoolAddress
+		util.MintBalance(&l1PricerAddress, p.PosterFee, p.evm, scenario, purpose)
+	} else {
+		util.MintBalance(&p.evm.Context.Coinbase, p.PosterFee, p.evm, scenario, purpose)
+	}
 
 	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price coud be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.
