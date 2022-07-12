@@ -468,7 +468,7 @@ func (sba *StorageBackedAddress) Get() (common.Address, error) {
 }
 
 func (sba *StorageBackedAddress) Set(val common.Address) error {
-	return sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+	return sba.StorageSlot.Set(util.AddressToHash(val))
 }
 
 type StorageBackedAddressOrNil struct {

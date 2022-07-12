@@ -136,9 +136,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
 	// The client node, connects to lying sequencer's feed
-	nodeConfigB := arbnode.ConfigDefaultL1Test()
+	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigB.Feed.Output.Enable = false
-	nodeConfigB.BatchPoster.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
