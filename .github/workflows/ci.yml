@@ -136,4 +136,4 @@ jobs:
           skip-pkg-cache: true
 
       - name: run tests with race detection
-        run: go test ./... -race -v -parallel=1
+        run: for i in {1..5}; do go test ./... -race -v -parallel=1 || exit 1; done
