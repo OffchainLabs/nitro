@@ -136,7 +136,7 @@ jobs:
           skip-pkg-cache: true
 
       - name: run tests with race detection
-        run: go test ./... -race -parallel=1
+        run: go test ./... -race -v -parallel=1
 
       - name: run tests without race detection
         if: always()
