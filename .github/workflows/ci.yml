@@ -136,13 +136,7 @@ jobs:
           skip-pkg-cache: true
 
       - name: run tests with race detection
-        run: gotestsum --format short-verbose --jsonfile test-output-withrace.json -- ./... -race -parallel=1
-
-      - name: Annotate tests with race detection
-        if: always()
-        uses: guyarb/golang-test-annotations@v0.5.0
-        with:
-          test-results: test-output-withrace.json
+        run: go test ./... -race -parallel=1
 
       - name: run tests without race detection
         if: always()
