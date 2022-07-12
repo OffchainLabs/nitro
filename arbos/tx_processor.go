@@ -211,21 +211,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if arbmath.BigLessThan(balance, maxGasCost) || usergas < params.TxGas || maxFeePerGasTooLow {
 			// User either specified too low of a gas fee cap, didn't have enough balance to pay for gas,
 			// or the specified gas limit is below the minimum transaction gas cost.
-			// Either way, attempt to refund the gas costs and the submission fee, since we're not doing the auto-redeem.
-
-			// First, we give the submission fee back to the transaction sender:
-			if err := transfer(&networkFeeAccount, &tx.From, submissionFee); err != nil {
-				glog.Error("failed to refund submissionFee", "err", err)
-			}
-			// Then, as was previously limited by availableRefund, we attempt to move the refund to the fee refund address.
-			// If the deposit value was lower than the submission fee, only some (or none) of the submission fee may be moved.
-			// In that case, any amount up to the deposit value will be refunded to the fee refund address,
-			// with the rest remaining in the transaction sender's address (as that's where the funds were pulled from).
-			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee); err != nil {
-				glog.Error("failed to refund withheldSubmissionFee", "err", err)
-			}
-
-			// Next, attempt to refund the gas costs (currently sitting in the transaction sender's account).
+			// Either way, attempt to refund the gas costs, since we're not doing the auto-redeem.
 			gasCostRefund := takeFunds(availableRefund, maxGasCost)
 			if err := transfer(&tx.From, &tx.FeeRefundAddr, gasCostRefund); err != nil {
 				// should never happen as from's balance should be at least availableRefund at this point
