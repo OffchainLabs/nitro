@@ -99,11 +99,7 @@ func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, erro
 
 // Get the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
-	ppu, err := c.State.L1PricingState().PricePerUnit()
-	if err != nil {
-		return nil, err
-	}
-	return arbmath.BigMulByUint(ppu, params.TxDataNonZeroGasEIP2028), nil
+	return con.GetL1BaseFeeEstimate(c, evm)
 }
 
 // Get the fee paid to the aggregator for posting this tx
