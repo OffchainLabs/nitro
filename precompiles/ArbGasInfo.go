@@ -103,7 +103,10 @@ func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 	if err != nil {
 		return nil, err
 	}
-	return arbmath.BigMulByUint(ppu, params.TxDataNonZeroGasEIP2028), nil
+	if c.State.FormatVersion() < 2 {
+		ppu = arbmath.BigMulByUint(ppu, params.TxDataNonZeroGasEIP2028)
+	}
+	return ppu, nil
 }
 
 // Get the fee paid to the aggregator for posting this tx
