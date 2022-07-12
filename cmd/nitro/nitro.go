@@ -215,7 +215,7 @@ func main() {
 		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
 
-	arbDb, err := stack.OpenDatabaseWithFreezer("arbitrumdata", 0, 0, "", "", false)
+	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
