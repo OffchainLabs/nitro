@@ -71,7 +71,7 @@ const (
 	InitialPricePerUnitWei           = 50 * params.GWei
 )
 
-func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64) error {
+func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64, initialChainOwner common.Address) error {
 	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
@@ -80,7 +80,11 @@ func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64) error {
 	if _, err := bpTable.AddPoster(BatchPosterAddress, BatchPosterPayToAddress); err != nil {
 		return err
 	}
-	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(BatchPosterAddress)); err != nil {
+	initialRewardsRecipient := BatchPosterAddress
+	if arbosVersion >= 2 {
+		initialRewardsRecipient = initialChainOwner
+	}
+	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(initialRewardsRecipient)); err != nil {
 		return err
 	}
 	equilibrationUnits := sto.OpenStorageBackedBigInt(equilibrationUnitsOffset)
