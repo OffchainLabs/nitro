@@ -173,7 +173,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// move the callvalue into escrow
-		if err := transfer(&tx.From, &escrow, tx.RetryValue); err != nil {
+		if callValueErr := transfer(&tx.From, &escrow, tx.RetryValue); callValueErr != nil {
+			// The sender doesn't have enough balance to pay for the retryable's callvalue.
 			// Since we can't create the retryable, we should refund the submission fee.
 			// First, we give the submission fee back to the transaction sender:
 			if err := transfer(&networkFeeAccount, &tx.From, submissionFee); err != nil {
@@ -186,7 +187,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee); err != nil {
 				glog.Error("failed to refund withheldSubmissionFee", "err", err)
 			}
-			return true, 0, err, nil
+			return true, 0, callValueErr, nil
 		}
 
 		time := evm.Context.Time.Uint64()
