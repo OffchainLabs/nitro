@@ -197,7 +197,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 		}
 	}
 
-	rewardRecipientBalanceAfter := GetBalance(t, ctx, l2client, l1pricing.BatchPosterAddress)
+	rewardRecipientBalanceAfter := GetBalance(t, ctx, l2client, chainConfig.ArbitrumChainParams.InitialChainOwner)
 	colors.PrintMint("reward recipient balance ", rewardRecipientBalanceBefore, " ➤ ", rewardRecipientBalanceAfter)
 	colors.PrintMint("price changes     ", timesPriceAdjusted)
 
