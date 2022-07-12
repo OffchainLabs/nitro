@@ -35,8 +35,8 @@ func main() {
 	l1conn := flag.String("l1conn", "", "l1 connection")
 	l1keystore := flag.String("l1keystore", "", "l1 private key store")
 	deployAccount := flag.String("l1DeployAccount", "", "l1 seq account to use (default is first account in keystore)")
-	ownerAddress := flag.String("ownerAddress", "", "the rollup owner's address")
-	sequencerAddress := flag.String("sequencerAddress", "", "the sequencer's address")
+	ownerAddressString := flag.String("ownerAddress", "", "the rollup owner's address")
+	sequencerAddressString := flag.String("sequencerAddress", "", "the sequencer's address")
 	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	wasmrootpath := flag.String("wasmrootpath", "", "path to machine folders")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
@@ -68,11 +68,16 @@ func main() {
 		panic(err)
 	}
 
-	if !common.IsHexAddress(*sequencerAddress) {
-		panic("please specify a valid sequencer address")
+	if !common.IsHexAddress(*sequencerAddressString) && len(*sequencerAddressString) > 0 {
+		panic("specified sequencer address is invalid")
 	}
-	if !common.IsHexAddress(*ownerAddress) {
+	if !common.IsHexAddress(*ownerAddressString) {
 		panic("please specify a valid rollup owner address")
+	}
+	sequencerAddress := common.HexToAddress(*sequencerAddressString)
+	ownerAddress := common.HexToAddress(*ownerAddressString)
+	if sequencerAddress != (common.Address{}) && ownerAddress != l1TransactionOpts.From {
+		panic("cannot specify sequencer address if owner is not deployer")
 	}
 
 	machineConfig := validator.DefaultNitroMachineConfig
@@ -85,8 +90,8 @@ func main() {
 		ctx,
 		l1client,
 		l1TransactionOpts,
-		common.HexToAddress(*sequencerAddress),
-		common.HexToAddress(*ownerAddress),
+		sequencerAddress,
+		ownerAddress,
 		*authorizevalidators,
 		common.HexToHash(*wasmmoduleroot),
 		l2ChainId,

@@ -63,7 +63,7 @@ func TestL1Pricing(t *testing.T) {
 
 func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 	ret := &l1TestExpectedResults{}
-	availableFunds := arbmath.UintToBig(input.fundsCollectedPerSecond)
+	availableFunds := arbmath.UintToBig(3 * input.fundsCollectedPerSecond)
 	fundsWantedForRewards := big.NewInt(int64(input.unitReward * input.unitsPerSecond))
 	unitsAllocated := arbmath.UintToBig(input.unitsPerSecond)
 	if arbmath.BigLessThan(availableFunds, fundsWantedForRewards) {
@@ -80,7 +80,7 @@ func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 	}
 	ret.fundsReceived = maxCollectable
 	availableFunds = arbmath.BigSub(availableFunds, maxCollectable)
-	ret.fundsStillHeld = arbmath.BigAdd(arbmath.UintToBig(2*input.fundsCollectedPerSecond), availableFunds)
+	ret.fundsStillHeld = availableFunds
 
 	return ret
 }
@@ -182,6 +182,78 @@ func TestUpdateTimeUpgradeBehavior(t *testing.T) {
 
 	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 2, 1, 1, poster, common.Big1, util.TracingDuringEVM)
 	Require(t, err)
+}
+
+func TestL1PriceEquilibrationUp(t *testing.T) {
+	_testL1PriceEquilibration(t, big.NewInt(1_000_000_000), big.NewInt(5_000_000_000))
+}
+
+func TestL1PriceEquilibrationDown(t *testing.T) {
+	_testL1PriceEquilibration(t, big.NewInt(5_000_000_000), big.NewInt(1_000_000_000))
+}
+
+func TestL1PriceEquilibrationConstant(t *testing.T) {
+	_testL1PriceEquilibration(t, big.NewInt(2_000_000_000), big.NewInt(2_000_000_000))
+}
+
+func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, equilibriumL1BasefeeEstimate *big.Int) {
+	evm := newMockEVMForTesting()
+	stateDb := evm.StateDB
+	state, err := arbosState.OpenArbosState(stateDb, burn.NewSystemBurner(nil, false))
+	Require(t, err)
+
+	l1p := state.L1PricingState()
+	err = l1p.SetPerUnitReward(0)
+	Require(t, err)
+	err = l1p.SetPricePerUnit(initialL1BasefeeEstimate)
+	Require(t, err)
+
+	bpAddr := common.Address{3, 4, 5, 6}
+	l1PoolAddress := l1pricing.L1PricerFundsPoolAddress
+	for i := 0; i < 10; i++ {
+		unitsToAdd := l1pricing.InitialEquilibrationUnits
+		oldUnits, err := l1p.UnitsSinceUpdate()
+		Require(t, err)
+		err = l1p.SetUnitsSinceUpdate(oldUnits + unitsToAdd)
+		Require(t, err)
+		currentPricePerUnit, err := l1p.PricePerUnit()
+		Require(t, err)
+		feesToAdd := arbmath.BigMulByUint(currentPricePerUnit, unitsToAdd)
+		util.MintBalance(&l1PoolAddress, feesToAdd, evm, util.TracingBeforeEVM, "test")
+		err = l1p.UpdateForBatchPosterSpending(
+			evm.StateDB,
+			evm,
+			2,
+			uint64(10*(i+1)),
+			uint64(10*(i+1)+5),
+			bpAddr,
+			arbmath.BigMulByUint(equilibriumL1BasefeeEstimate, unitsToAdd),
+			util.TracingBeforeEVM,
+		)
+		Require(t, err)
+	}
+	expectedMovement := arbmath.BigSub(equilibriumL1BasefeeEstimate, initialL1BasefeeEstimate)
+	actualPricePerUnit, err := l1p.PricePerUnit()
+	Require(t, err)
+	actualMovement := arbmath.BigSub(actualPricePerUnit, initialL1BasefeeEstimate)
+	if expectedMovement.Sign() != actualMovement.Sign() {
+		Fail(t, "L1 data fee moved in wrong direction", initialL1BasefeeEstimate, equilibriumL1BasefeeEstimate, actualPricePerUnit)
+	}
+	expectedMovement = new(big.Int).Abs(expectedMovement)
+	actualMovement = new(big.Int).Abs(actualMovement)
+	if !_withinOnePercent(expectedMovement, actualMovement) {
+		Fail(t, "Expected vs actual movement are too far apart")
+	}
+}
+
+func _withinOnePercent(v1, v2 *big.Int) bool {
+	if arbmath.BigMulByUint(v1, 100).Cmp(arbmath.BigMulByUint(v2, 101)) > 0 {
+		return false
+	}
+	if arbmath.BigMulByUint(v2, 100).Cmp(arbmath.BigMulByUint(v1, 101)) > 0 {
+		return false
+	}
+	return true
 }
 
 func newMockEVMForTesting() *vm.EVM {

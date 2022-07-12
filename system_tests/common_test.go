@@ -318,11 +318,14 @@ func Create2ndNode(
 	first *arbnode.Node,
 	l1stack *node.Node,
 	l2InitData *statetransfer.ArbosInitializationInfo,
-	blockValidator bool,
+	dasConfig *das.DataAvailabilityConfig,
 ) (*ethclient.Client, *arbnode.Node) {
-	nodeConf := arbnode.ConfigDefaultL1Test()
-	nodeConf.BatchPoster.Enable = false
-	nodeConf.BlockValidator.Enable = blockValidator
+	nodeConf := arbnode.ConfigDefaultL1NonSequencerTest()
+	if dasConfig == nil {
+		nodeConf.DataAvailability.Enable = false
+	} else {
+		nodeConf.DataAvailability = *dasConfig
+	}
 	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, nodeConf)
 }
 
