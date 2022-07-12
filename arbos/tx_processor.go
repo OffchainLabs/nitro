@@ -58,15 +58,17 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	tracingInfo := util.NewTracingInfo(evm, msg.From(), arbosAddress, util.TracingBeforeEVM)
 	arbosState := arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 	return &TxProcessor{
-		msg:              msg,
-		state:            arbosState,
-		PosterFee:        new(big.Int),
-		posterGas:        0,
-		Callers:          []common.Address{},
-		TopTxType:        nil,
-		evm:              evm,
-		CurrentRetryable: nil,
-		CurrentRefundTo:  nil,
+		msg:                 msg,
+		state:               arbosState,
+		PosterFee:           new(big.Int),
+		posterGas:           0,
+		Callers:             []common.Address{},
+		TopTxType:           nil,
+		evm:                 evm,
+		CurrentRetryable:    nil,
+		CurrentRefundTo:     nil,
+		cachedL1BlockNumber: nil,
+		cachedL1BlockHashes: make(map[uint64]common.Hash),
 	}
 }
 
