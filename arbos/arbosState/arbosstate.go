@@ -193,21 +193,26 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		stateDB.SetCode(precompile, []byte{byte(vm.INVALID)})
 	}
 
+	// may be the zero address
+	initialChainOwner := chainConfig.ArbitrumChainParams.InitialChainOwner
+
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), arbosVersion)
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
+	if arbosVersion >= 2 {
+		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), util.AddressToHash(initialChainOwner))
+	} else {
+		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
+	}
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
-	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), arbosVersion)
+	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), arbosVersion, initialChainOwner)
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
 	blockhash.InitializeBlockhashes(sto.OpenSubStorage(blockhashesSubspace))
 
-	// may be the zero address
-	initialChainOwner := chainConfig.ArbitrumChainParams.InitialChainOwner
 	ownersStorage := sto.OpenSubStorage(chainOwnerSubspace)
 	_ = addressSet.Initialize(ownersStorage)
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)
