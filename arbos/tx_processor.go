@@ -46,6 +46,11 @@ type TxProcessor struct {
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
 	CurrentRefundTo  *common.Address
+
+	// Caches for the latest L1 block number and hash,
+	// for the NUMBER and BLOCKHASH opcodes.
+	cachedL1BlockNumber *uint64
+	cachedL1BlockHashes map[uint64]common.Hash
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
@@ -507,21 +512,38 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
+	if p.cachedL1BlockNumber != nil {
+		return *p.cachedL1BlockNumber, nil
+	}
 	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From(), arbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return 0, err
 	}
-	return state.Blockhashes().NextBlockNumber()
+	blockNum, err := state.Blockhashes().NextBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	p.cachedL1BlockNumber = &blockNum
+	return blockNum, nil
 }
 
 func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64) (common.Hash, error) {
+	hash, cached := p.cachedL1BlockHashes[l1BlockNumber]
+	if cached {
+		return hash, nil
+	}
 	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From(), arbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return state.Blockhashes().BlockHash(l1BlockNumber)
+	hash, err = state.Blockhashes().BlockHash(l1BlockNumber)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	p.cachedL1BlockHashes[l1BlockNumber] = hash
+	return hash, nil
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
