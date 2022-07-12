@@ -174,6 +174,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// move the callvalue into escrow
 		if err := transfer(&tx.From, &escrow, tx.RetryValue); err != nil {
+			// Since we can't create the retryable, we should refund the submission fee.
+			// First, we give the submission fee back to the transaction sender:
+			if err := transfer(&networkFeeAccount, &tx.From, submissionFee); err != nil {
+				glog.Error("failed to refund submissionFee", "err", err)
+			}
+			// Then, as limited by availableRefund, we attempt to move the refund to the fee refund address.
+			// If the deposit value was lower than the submission fee, only some (or none) of the submission fee may be moved.
+			// In that case, any amount up to the deposit value will be refunded to the fee refund address,
+			// with the rest remaining in the transaction sender's address (as that's where the funds were pulled from).
+			if err := transfer(&tx.From, &tx.FeeRefundAddr, withheldSubmissionFee); err != nil {
+				glog.Error("failed to refund withheldSubmissionFee", "err", err)
+			}
 			return true, 0, err, nil
 		}
 
