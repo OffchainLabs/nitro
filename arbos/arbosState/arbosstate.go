@@ -5,7 +5,6 @@ package arbosState
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"math/big"
 
@@ -182,9 +181,9 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, ErrAlreadyInitialized
 	}
 
-	arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-	if arbosVersion < 1 || arbosVersion > 2 {
-		return nil, fmt.Errorf("cannot initialize to unsupported ArbOS version %v", arbosVersion)
+	desiredArbosVersion := chainConfig.ArbitrumChainParams.InitialArbOSVersion
+	if desiredArbosVersion == 0 {
+		return nil, errors.New("cannot initialize to ArbOS version 0")
 	}
 
 	// Solidity requires call targets have code, but precompiles don't.
@@ -193,7 +192,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		stateDB.SetCode(precompile, []byte{byte(vm.INVALID)})
 	}
 
-	_ = sto.SetUint64ByUint64(uint64(versionOffset), arbosVersion)
+	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1) // initialize to version 1; upgrade at end of this func if needed
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
@@ -212,27 +211,38 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = addressSet.Initialize(ownersStorage)
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)
 
-	return OpenArbosState(stateDB, burner)
+	aState, err := OpenArbosState(stateDB, burner)
+	if err != nil {
+		return nil, err
+	}
+	if desiredArbosVersion > 1 {
+		aState.UpgradeArbosVersion(desiredArbosVersion)
+	}
+	return aState, err
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, chainConfig *params.ChainConfig) {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
-	if upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
-		for upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
-			switch state.arbosVersion {
-			case 1:
-				if err := state.l1PricingState.SetLastSurplus(common.Big0); err != nil {
-					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
-				}
-			default:
-				panic("Unable to perform requested ArbOS upgrade")
-			}
-			state.arbosVersion++
-		}
-		state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), state.arbosVersion))
+	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
+		state.UpgradeArbosVersion(upgradeTo)
 	}
+}
+
+func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64) {
+	for state.arbosVersion < upgradeTo {
+		switch state.arbosVersion {
+		case 1:
+			if err := state.l1PricingState.SetLastSurplus(common.Big0); err != nil {
+				panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
+			}
+		default:
+			panic("Unable to perform requested ArbOS upgrade")
+		}
+		state.arbosVersion++
+	}
+	state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), state.arbosVersion))
 }
 
 func (state *ArbosState) ScheduleArbOSUpgrade(newVersion uint64, timestamp uint64) error {
