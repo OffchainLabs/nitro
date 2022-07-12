@@ -75,6 +75,9 @@ func (p *TxProcessor) PopCaller() {
 // Attempts to subtract up to `take` from `pool` without going negative.
 // Returns the amount subtracted from `pool`.
 func takeFunds(pool *big.Int, take *big.Int) *big.Int {
+	if take.Sign() < 0 {
+		panic("Attempted to take a negative amount of funds")
+	}
 	if arbmath.BigLessThan(pool, take) {
 		oldPool := new(big.Int).Set(pool)
 		pool.Set(common.Big0)
@@ -197,19 +200,22 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		balance := statedb.GetBalance(tx.From)
 		basefee := evm.Context.BaseFee
 		usergas := p.msg.Gas()
-		gascost := arbmath.BigMulByUint(basefee, usergas)
 
-		if arbmath.BigLessThan(balance, gascost) || usergas < params.TxGas {
-			// user didn't have or provide enough gas to do an initial redeem
-			return true, 0, nil, underlyingTx.Hash().Bytes()
-		}
-
-		if arbmath.BigLessThan(tx.GasFeeCap, basefee) && p.msg.RunMode() != types.MessageGasEstimationMode {
-			// user's bid was too low
+		maxGasCost := arbmath.BigMulByUint(tx.GasFeeCap, usergas)
+		maxFeePerGasTooLow := arbmath.BigLessThan(tx.GasFeeCap, basefee) && (p.msg.RunMode() != types.MessageGasEstimationMode || tx.GasFeeCap.BitLen() > 0)
+		if arbmath.BigLessThan(balance, maxGasCost) || usergas < params.TxGas || maxFeePerGasTooLow {
+			// user either specified too low of a gas fee cap, didn't have enough balance to pay for gas,
+			// or the specified gas limit is below the minimum transaction gas cost
+			gasCostRefund := takeFunds(availableRefund, maxGasCost)
+			if err := transfer(&tx.From, &tx.FeeRefundAddr, gasCostRefund); err != nil {
+				// should never happen as from's balance should be at least availableRefund at this point
+				glog.Error("failed to transfer gasCostRefund", "err", err)
+			}
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
 
 		// pay for the retryable's gas and update the pools
+		gascost := arbmath.BigMulByUint(basefee, usergas)
 		if transfer(&tx.From, &networkFeeAccount, gascost) != nil {
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
@@ -217,6 +223,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		withheldGasFunds := takeFunds(availableRefund, gascost) // gascost is conceptually charged before the gas price refund
 		gasPriceRefund := arbmath.BigMulByUint(arbmath.BigSub(tx.GasFeeCap, basefee), tx.Gas)
+		if gasPriceRefund.Sign() < 0 {
+			// This should only be possible during gas estimation mode
+			gasPriceRefund.SetInt64(0)
+		}
 		gasPriceRefund = takeFunds(availableRefund, gasPriceRefund)
 		if err := transfer(&tx.From, &tx.FeeRefundAddr, gasPriceRefund); err != nil {
 			glog.Error("failed to transfer gasPriceRefund", "err", err)
