@@ -69,6 +69,9 @@ interface ArbOwner {
     /// @notice Set how much ArbOS charges per L1 gas spent on transaction data.
     function setL1PricePerUnit(uint256 pricePerUnit) external;
 
+    /// @notice Sets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
+    function setPerBatchGasCharge(int256 cost) external;
+
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
 }

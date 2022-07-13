@@ -136,3 +136,7 @@ func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
 	return arbmath.BigSub(haveFunds, needFunds), nil
 }
+
+func (con ArbGasInfo) GetPerBatchGasCharge(c ctx, evm mech) (*big.Int, error) {
+	return c.State.L1PricingState().PerBatchGasCost()
+}
