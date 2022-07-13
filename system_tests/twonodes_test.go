@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbnode"
 )
 
 func testTwoNodesSimple(t *testing.T, dasModeStr string) {
@@ -25,11 +24,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigB.BatchPoster.Enable = false
-	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigB.DataAvailability = l1NodeConfigA.DataAvailability
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability)
 
 	l2info.GenerateAccount("User2")
 

@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -41,6 +40,7 @@ type L1PricingState struct {
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
 	unitsSinceUpdate storage.StorageBackedUint64 // calldata units collected for since last update
 	pricePerUnit     storage.StorageBackedBigInt // current price per calldata unit
+	lastSurplus      storage.StorageBackedBigInt // introduced in ArbOS version 2
 }
 
 var (
@@ -61,6 +61,7 @@ const (
 	fundsDueForRewardsOffset
 	unitsSinceOffset
 	pricePerUnitOffset
+	lastSurplusOffset
 )
 
 const (
@@ -70,7 +71,7 @@ const (
 	InitialPricePerUnitWei           = 50 * params.GWei
 )
 
-func InitializeL1PricingState(sto *storage.Storage) error {
+func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64, initialChainOwner common.Address) error {
 	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
@@ -79,7 +80,11 @@ func InitializeL1PricingState(sto *storage.Storage) error {
 	if _, err := bpTable.AddPoster(BatchPosterAddress, BatchPosterPayToAddress); err != nil {
 		return err
 	}
-	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(BatchPosterAddress)); err != nil {
+	initialRewardsRecipient := BatchPosterAddress
+	if arbosVersion >= 2 {
+		initialRewardsRecipient = initialChainOwner
+	}
+	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(initialRewardsRecipient)); err != nil {
 		return err
 	}
 	equilibrationUnits := sto.OpenStorageBackedBigInt(equilibrationUnitsOffset)
@@ -97,7 +102,16 @@ func InitializeL1PricingState(sto *storage.Storage) error {
 		return err
 	}
 	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
-	return pricePerUnit.SetByUint(InitialPricePerUnitWei)
+	if err := pricePerUnit.SetByUint(InitialPricePerUnitWei); err != nil {
+		return err
+	}
+	if arbosVersion >= 2 {
+		lastSurplus := sto.OpenStorageBackedBigInt(lastSurplusOffset)
+		if err := lastSurplus.Set(common.Big0); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
@@ -112,6 +126,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset),
 		sto.OpenStorageBackedUint64(unitsSinceOffset),
 		sto.OpenStorageBackedBigInt(pricePerUnitOffset),
+		sto.OpenStorageBackedBigInt(lastSurplusOffset),
 	}
 }
 
@@ -175,6 +190,14 @@ func (ps *L1PricingState) SetUnitsSinceUpdate(units uint64) error {
 	return ps.unitsSinceUpdate.Set(units)
 }
 
+func (ps *L1PricingState) LastSurplus() (*big.Int, error) {
+	return ps.lastSurplus.Get()
+}
+
+func (ps *L1PricingState) SetLastSurplus(val *big.Int) error {
+	return ps.lastSurplus.Set(val)
+}
+
 func (ps *L1PricingState) AddToUnitsSinceUpdate(units uint64) error {
 	oldUnits, err := ps.unitsSinceUpdate.Get()
 	if err != nil {
@@ -191,19 +214,185 @@ func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
 	return ps.pricePerUnit.Set(price)
 }
 
-func (ps *L1PricingState) L1BaseFeeEstimate() (*big.Int, error) {
-	perUnit, err := ps.pricePerUnit.Get()
-	if err != nil {
-		return nil, err
-	}
-	return arbmath.BigMulByUint(perUnit, 16), nil
-}
-
 // Update the pricing model based on a payment by a batch poster
 func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	statedb vm.StateDB,
 	evm *vm.EVM,
 	arbosVersion uint64,
+	updateTime, currentTime uint64,
+	batchPoster common.Address,
+	weiSpent *big.Int,
+	scenario util.TracingScenario,
+) error {
+	if arbosVersion < 2 {
+		return ps._preVersion2_UpdateForBatchPosterSpending(statedb, evm, updateTime, currentTime, batchPoster, weiSpent, scenario)
+	}
+
+	batchPosterTable := ps.BatchPosterTable()
+	posterState, err := batchPosterTable.OpenPoster(batchPoster, true)
+	if err != nil {
+		return err
+	}
+
+	fundsDueForRewards, err := ps.FundsDueForRewards()
+	if err != nil {
+		return err
+	}
+
+	// compute allocation fraction -- will allocate updateTimeDelta/timeDelta fraction of units and funds to this update
+	lastUpdateTime, err := ps.LastUpdateTime()
+	if err != nil {
+		return err
+	}
+	if lastUpdateTime == 0 && updateTime > 0 { // it's the first update, so there isn't a last update time
+		lastUpdateTime = updateTime - 1
+	}
+	if updateTime > currentTime || updateTime < lastUpdateTime {
+		return ErrInvalidTime
+	}
+	allocationNumerator := updateTime - lastUpdateTime
+	allocationDenominator := currentTime - lastUpdateTime
+	if allocationDenominator == 0 {
+		allocationNumerator = 1
+		allocationDenominator = 1
+	}
+
+	// allocate units to this update
+	unitsSinceUpdate, err := ps.UnitsSinceUpdate()
+	if err != nil {
+		return err
+	}
+	unitsAllocated := unitsSinceUpdate * allocationNumerator / allocationDenominator
+	unitsSinceUpdate -= unitsAllocated
+	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
+		return err
+	}
+
+	dueToPoster, err := posterState.FundsDue()
+	if err != nil {
+		return err
+	}
+	err = posterState.SetFundsDue(am.BigAdd(dueToPoster, weiSpent))
+	if err != nil {
+		return err
+	}
+	perUnitReward, err := ps.PerUnitReward()
+	if err != nil {
+		return err
+	}
+	fundsDueForRewards = am.BigAdd(fundsDueForRewards, am.BigMulByUint(am.UintToBig(unitsAllocated), perUnitReward))
+	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
+		return err
+	}
+
+	// pay rewards, as much as possible
+	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
+	availableFunds := statedb.GetBalance(L1PricerFundsPoolAddress)
+	if am.BigLessThan(availableFunds, paymentForRewards) {
+		paymentForRewards = availableFunds
+	}
+	fundsDueForRewards = am.BigSub(fundsDueForRewards, paymentForRewards)
+	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
+		return err
+	}
+	payRewardsTo, err := ps.PayRewardsTo()
+	if err != nil {
+		return err
+	}
+	err = util.TransferBalance(
+		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+	)
+	if err != nil {
+		return err
+	}
+	availableFunds = statedb.GetBalance(L1PricerFundsPoolAddress)
+
+	// settle up payments owed to the batch poster, as much as possible
+	balanceDueToPoster, err := posterState.FundsDue()
+	if err != nil {
+		return err
+	}
+	balanceToTransfer := balanceDueToPoster
+	if am.BigLessThan(availableFunds, balanceToTransfer) {
+		balanceToTransfer = availableFunds
+	}
+	if balanceToTransfer.Sign() > 0 {
+		addrToPay, err := posterState.PayTo()
+		if err != nil {
+			return err
+		}
+		err = util.TransferBalance(
+			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+		)
+		if err != nil {
+			return err
+		}
+		balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
+		err = posterState.SetFundsDue(balanceDueToPoster)
+		if err != nil {
+			return err
+		}
+	}
+
+	// update time
+	if err := ps.SetLastUpdateTime(updateTime); err != nil {
+		return err
+	}
+
+	// adjust the price
+	if unitsAllocated > 0 {
+		totalFundsDue, err := batchPosterTable.TotalFundsDue()
+		if err != nil {
+			return err
+		}
+		fundsDueForRewards, err = ps.FundsDueForRewards()
+		if err != nil {
+			return err
+		}
+		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+
+		inertia, err := ps.Inertia()
+		if err != nil {
+			return err
+		}
+		equilUnits, err := ps.EquilibrationUnits()
+		if err != nil {
+			return err
+		}
+		inertiaUnits := am.BigDivByUint(equilUnits, inertia)
+		price, err := ps.PricePerUnit()
+		if err != nil {
+			return err
+		}
+
+		allocPlusInert := am.BigAddByUint(inertiaUnits, unitsAllocated)
+		oldSurplus, err := ps.LastSurplus()
+		if err != nil {
+			return err
+		}
+
+		desiredDerivative := am.BigDiv(new(big.Int).Neg(surplus), equilUnits)
+		actualDerivative := am.BigDivByUint(am.BigSub(surplus, oldSurplus), unitsAllocated)
+		changeDerivativeBy := am.BigSub(desiredDerivative, actualDerivative)
+		priceChange := am.BigDiv(am.BigMulByUint(changeDerivativeBy, unitsAllocated), allocPlusInert)
+
+		if err := ps.SetLastSurplus(surplus); err != nil {
+			return err
+		}
+		newPrice := am.BigAdd(price, priceChange)
+		if newPrice.Sign() < 0 {
+			newPrice = common.Big0
+		}
+		if err := ps.SetPricePerUnit(newPrice); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
+	statedb vm.StateDB,
+	evm *vm.EVM,
 	updateTime, currentTime uint64,
 	batchPoster common.Address,
 	weiSpent *big.Int,
@@ -234,7 +423,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if lastUpdateTime == 0 && currentTime > 0 { // it's the first update, so there isn't a last update time
 		lastUpdateTime = updateTime - 1
 	}
-	if updateTime > currentTime || (arbosVersion < 2 && updateTime == currentTime) || updateTime < lastUpdateTime {
+	if updateTime >= currentTime || updateTime < lastUpdateTime {
 		return ErrInvalidTime
 	}
 	allocationNumerator := updateTime - lastUpdateTime

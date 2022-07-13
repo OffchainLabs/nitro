@@ -453,13 +453,23 @@ var ConfigDefault = Config{
 }
 
 func ConfigDefaultL1Test() *Config {
-	config := ConfigDefault
+	config := ConfigDefaultL1NonSequencerTest()
 	config.Sequencer = TestSequencerConfig
-	config.L1Reader = headerreader.TestConfig
-	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
+
+	return config
+}
+
+func ConfigDefaultL1NonSequencerTest() *Config {
+	config := ConfigDefault
+	config.L1Reader = headerreader.TestConfig
+	config.InboxReader = TestInboxReaderConfig
+	config.Sequencer.Enable = false
+	config.DelayedSequencer.Enable = false
+	config.BatchPoster.Enable = false
+	config.SeqCoordinator.Enable = false
 	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
 	config.BlockValidator = validator.TestBlockValidatorConfig
 
@@ -476,15 +486,18 @@ func ConfigDefaultL2Test() *Config {
 }
 
 type DangerousConfig struct {
-	NoL1Listener bool `koanf:"no-l1-listener"`
+	NoL1Listener bool  `koanf:"no-l1-listener"`
+	ReorgToBlock int64 `koanf:"reorg-to-block"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
 	NoL1Listener: false,
+	ReorgToBlock: -1,
 }
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
+	f.Int64(prefix+".reorg-to-block", DefaultDangerousConfig.ReorgToBlock, "DANGEROUS! forces a reorg to an old block height. To be used for testing only. -1 to disable")
 }
 
 type DangerousSequencerConfig struct {
@@ -581,6 +594,22 @@ func createNodeImpl(
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
 ) (*Node, error) {
+	if config.Dangerous.ReorgToBlock >= 0 {
+		blockNum := uint64(config.Dangerous.ReorgToBlock)
+		genesis := l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum
+		if blockNum < genesis {
+			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, genesis)
+		}
+		block := l2BlockChain.GetBlockByNumber(blockNum)
+		if block == nil {
+			return nil, fmt.Errorf("didn't find reorg target block number %v", blockNum)
+		}
+		err := l2BlockChain.ReorgToOldBlock(block)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -739,7 +768,7 @@ func createNodeImpl(
 		if txOpts == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, txOpts, dataAvailabilityService)
+		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, txOpts, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}
