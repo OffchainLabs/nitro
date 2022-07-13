@@ -334,10 +334,15 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash,
 }
 
 func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash, chainId *big.Int, txKind byte) (*types.Transaction, error) {
-	gasLimit, err := util.HashFromReader(rd)
+	gasLimitHash, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
+	gasLimitBig := gasLimitHash.Big()
+	if !gasLimitBig.IsUint64() {
+		return nil, errors.New("unsigned user tx gas limit >= 2^64")
+	}
+	gasLimit := gasLimitBig.Uint64()
 
 	maxFeePerGas, err := util.HashFromReader(rd)
 	if err != nil {
@@ -385,7 +390,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 			From:      poster,
 			Nonce:     nonce,
 			GasFeeCap: maxFeePerGas.Big(),
-			Gas:       gasLimit.Big().Uint64(),
+			Gas:       gasLimit,
 			To:        destination,
 			Value:     value.Big(),
 			Data:      calldata,
@@ -399,7 +404,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 			RequestId: *requestId,
 			From:      poster,
 			GasFeeCap: maxFeePerGas.Big(),
-			Gas:       gasLimit.Big().Uint64(),
+			Gas:       gasLimit,
 			To:        destination,
 			Value:     value.Big(),
 			Data:      calldata,
