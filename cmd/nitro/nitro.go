@@ -481,7 +481,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		case 42161:
 			return nil, nil, nil, nil, nil, errors.New("mainnet not supported yet")
 		case 42170:
-			if err := applyNitroAnytrustTBDRollupParameters(k); err != nil {
+			if err := applyArbitrumNovaRollupParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
 		}
@@ -528,9 +528,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyNitroAnytrustTBDRollupParameters(k *koanf.Koanf) error {
+func applyArbitrumNovaRollupParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
-		"persistent.chain":                   "mainnet-anytrust",
+		"persistent.chain":                   "nova",
 		"node.forwarding-target":             "https://a4ba.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://a4ba.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",

@@ -187,9 +187,12 @@ func (s *Staker) Start(ctxIn context.Context) {
 			backoff = time.Second
 			return s.config.StakerInterval
 		}
-		log.Warn("error acting as staker", "err", err)
-		if backoff < 60*time.Second {
-			backoff *= 2
+		backoff *= 2
+		if backoff > time.Minute {
+			backoff = time.Minute
+			log.Error("error acting as staker", "err", err)
+		} else {
+			log.Warn("error acting as staker", "err", err)
 		}
 		return backoff
 	})
