@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
@@ -622,8 +621,7 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Add
 
 	byteCount, err := byteCountAfterBrotli0(message.Data())
 	if err != nil {
-		log.Error("failed to compress tx", "err", err)
-		return common.Big0, 0
+		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
