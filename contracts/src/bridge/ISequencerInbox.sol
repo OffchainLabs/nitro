@@ -2,10 +2,11 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.0;
+// solhint-disable-next-line compiler-version
+pragma solidity >=0.6.9 <0.9.0;
+pragma experimental ABIEncoderV2;
 
 import "../libraries/IGasRefunder.sol";
-import {AlreadyInit, HadZeroInit, NotOrigin, DataTooLarge, NotRollup} from "../libraries/Error.sol";
 import "./IDelayedMessageProvider.sol";
 
 interface ISequencerInbox is IDelayedMessageProvider {
@@ -49,36 +50,6 @@ interface ISequencerInbox is IDelayedMessageProvider {
 
     /// @dev a keyset was invalidated
     event InvalidateKeyset(bytes32 indexed keysetHash);
-
-    /// @dev Thrown when someone attempts to read fewer messages than have already been read
-    error DelayedBackwards();
-
-    /// @dev Thrown when someone attempts to read more messages than exist
-    error DelayedTooFar();
-
-    /// @dev Force include can only read messages more blocks old than the delay period
-    error ForceIncludeBlockTooSoon();
-
-    /// @dev Force include can only read messages more seconds old than the delay period
-    error ForceIncludeTimeTooSoon();
-
-    /// @dev The message provided did not match the hash in the delayed inbox
-    error IncorrectMessagePreimage();
-
-    /// @dev This can only be called by the batch poster
-    error NotBatchPoster();
-
-    /// @dev The sequence number provided to this message was inconsistent with the number of batches already included
-    error BadSequencerNumber(uint256 stored, uint256 received);
-
-    /// @dev The batch data has the inbox authenticated bit set, but the batch data was not authenticated by the inbox
-    error DataNotAuthenticated();
-
-    /// @dev Tried to create an already valid Data Availability Service keyset
-    error AlreadyValidDASKeyset(bytes32);
-
-    /// @dev Tried to use or invalidate an already invalid Data Availability Service keyset
-    error NoSuchKeyset(bytes32);
 
     function inboxAccs(uint256 index) external view returns (bytes32);
 
