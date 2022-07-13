@@ -57,6 +57,7 @@ type BatchPosterConfig struct {
 	DASRetentionPeriod                 time.Duration `koanf:"das-retention-period"`
 	HighGasThreshold                   float32       `koanf:"high-gas-threshold"`
 	HighGasDelay                       time.Duration `koanf:"high-gas-delay"`
+	GasRefunderAddress                 string        `koanf:"gas-refunder-address"`
 }
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -70,6 +71,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
 	f.Float32(prefix+".high-gas-threshold", DefaultBatchPosterConfig.HighGasThreshold, "If the gas price in gwei is above this amount, delay posting a batch")
 	f.Duration(prefix+".high-gas-delay", DefaultBatchPosterConfig.HighGasDelay, "The maximum delay while waiting for the gas price to go below the high gas threshold")
+	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -83,6 +85,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
 	HighGasThreshold:                   150.,
 	HighGasDelay:                       14 * time.Hour,
+	GasRefunderAddress:                 "",
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -95,12 +98,16 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DASRetentionPeriod:   time.Hour * 24 * 15,
 	HighGasThreshold:     0.,
 	HighGasDelay:         0,
+	GasRefunderAddress:   "",
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
+	}
+	if len(config.GasRefunderAddress) > 0 && !common.IsHexAddress(config.GasRefunderAddress) {
+		return nil, fmt.Errorf("invalid gas refunder address \"%v\"", config.GasRefunderAddress)
 	}
 	return &BatchPoster{
 		l1Reader:      l1Reader,
@@ -109,7 +116,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		config:        config,
 		inboxContract: inboxContract,
 		transactOpts:  transactOpts,
-		gasRefunder:   refunder,
+		gasRefunder:   common.HexToAddress(config.GasRefunderAddress),
 		das:           das,
 	}, nil
 }
