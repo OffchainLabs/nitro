@@ -125,7 +125,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         }
         allowListEnabled = false;
         bridge = _bridge;
-        _pause();
     }
 
     /**
