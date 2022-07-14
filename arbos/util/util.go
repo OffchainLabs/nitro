@@ -27,6 +27,9 @@ var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataStartBlock func([]byte) ([]interface{}, error)
 var PackInternalTxDataBatchPostingReport func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataBatchPostingReport func([]byte) ([]interface{}, error)
+var PackInternalTxDataBatchPostingReportV2 func(...interface{}) ([]byte, error)
+var UnpackInternalTxDataBatchPostingReportV2 func([]byte) ([]interface{}, error)
+
 var PackArbRetryableTxRedeem func(...interface{}) ([]byte, error)
 
 func init() {
@@ -91,7 +94,12 @@ func init() {
 
 	acts := precompilesgen.ArbosActsABI
 	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")
-	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = callParser(acts, "batchPostingReport")
+	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = callParser(
+		acts, "batchPostingReport",
+	)
+	PackInternalTxDataBatchPostingReportV2, UnpackInternalTxDataBatchPostingReportV2 = callParser(
+		acts, "batchPostingReportV2",
+	)
 	PackArbRetryableTxRedeem, _ = callParser(precompilesgen.ArbRetryableTxABI, "redeem")
 }
 
@@ -105,6 +113,14 @@ func HashFromReader(rd io.Reader) (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	return common.BytesToHash(buf), nil
+}
+
+func BigIntFromReader(rd io.Reader) (*big.Int, error) {
+	hash, err := HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	return hash.Big(), nil
 }
 
 func HashToWriter(val common.Hash, wr io.Writer) error {

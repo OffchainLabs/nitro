@@ -426,7 +426,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	txOpts := *b.transactOpts
 	txOpts.Context = ctx
 	txOpts.NoSend = true
-	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(&txOpts, new(big.Int).SetUint64(batchSeqNum), sequencerMsg, new(big.Int).SetUint64(b.building.segments.delayedMsg), b.gasRefunder)
+	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(
+		&txOpts, arbmath.UintToBig(batchSeqNum), sequencerMsg,
+		arbmath.UintToBig(b.building.segments.delayedMsg), b.gasRefunder,
+	)
 	if err != nil {
 		return nil, err
 	}

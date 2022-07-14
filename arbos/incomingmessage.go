@@ -518,8 +518,10 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	return types.NewTx(tx), err
 }
 
-func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher InfallibleBatchFetcher) (*types.Transaction, error) {
-	batchTimestamp, err := util.HashFromReader(rd)
+func parseBatchPostingReportMessage(
+	rd io.Reader, chainId *big.Int, batchFetcher InfallibleBatchFetcher,
+) (*types.Transaction, error) {
+	batchTimestamp, err := util.BigIntFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -537,10 +539,18 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher
 	}
 	batchNum := batchNumHash.Big().Uint64()
 
-	l1BaseFee, err := util.HashFromReader(rd)
+	l1BaseFee, err := util.BigIntFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
+
+	// Version 2 batch posting reports are distinguished by the presence of the runtime costs at the end
+	runtimeGas, err := util.Uint64FromReader(rd)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	reportV2 := err == nil
+
 	batchData := batchFetcher(batchNum)
 	var batchDataGas uint64
 	for _, b := range batchData {
@@ -556,9 +566,17 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher
 	batchDataGas += params.Keccak256Gas + (keccakWords * params.Keccak256WordGas)
 	batchDataGas += 2 * params.SstoreSetGasEIP2200
 
-	data, err := util.PackInternalTxDataBatchPostingReport(
-		batchTimestamp.Big(), batchPosterAddr, batchNum, batchDataGas, l1BaseFee.Big(),
-	)
+	data := []byte{}
+
+	if reportV2 {
+		data, err = util.PackInternalTxDataBatchPostingReportV2(
+			batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee, runtimeGas,
+		)
+	} else {
+		data, err = util.PackInternalTxDataBatchPostingReport(
+			batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}

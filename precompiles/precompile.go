@@ -568,6 +568,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbosActs := insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
+	arbos.InternalTxBatchPostingReportV2MethodID = ArbosActs.GetMethodID("BatchPostingReportV2")
 
 	return contracts
 }

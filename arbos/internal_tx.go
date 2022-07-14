@@ -75,7 +75,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
 
 		state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
-	case InternalTxBatchPostingReportMethodID:
+	case InternalTxBatchPostingReportV2MethodID:
 		inputs, err := util.UnpackInternalTxDataBatchPostingReport(tx.Data)
 		if err != nil {
 			panic(err)
@@ -83,6 +83,17 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		batchTimestamp, _ := inputs[0].(*big.Int)
 		batchPosterAddress, _ := inputs[1].(common.Address)
 		// ignore input[2], batchNumber, which exist because we might need them in the future
+		batchDataGas, _ := inputs[3].(uint64)
+		l1BaseFeeWei, _ := inputs[4].(*big.Int)
+
+	case InternalTxBatchPostingReportMethodID:
+		inputs, err := util.UnpackInternalTxDataBatchPostingReport(tx.Data)
+		if err != nil {
+			panic(err)
+		}
+		batchTimestamp, _ := inputs[0].(*big.Int)
+		batchPosterAddress, _ := inputs[1].(common.Address)
+		// we ignore input[2], the batchNumber
 		batchDataGas, _ := inputs[3].(uint64)
 		l1BaseFeeWei, _ := inputs[4].(*big.Int)
 

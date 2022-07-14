@@ -44,5 +44,14 @@ interface ArbosActs {
         uint256 l1BaseFeeWei
     ) external;
 
+    function batchPostingReportV2(
+        uint256 batchTimestamp,
+        address batchPosterAddress,
+        uint64 batchNumber,
+        uint64 batchDataGas,
+        uint256 l1BaseFeeWei
+        uint64 runtimeGas,
+    ) external;
+
     error CallerNotArbOS();
 }
