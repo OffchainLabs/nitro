@@ -37,11 +37,11 @@ type L1PricingState struct {
 	lastUpdateTime     storage.StorageBackedUint64 // timestamp of the last update from L1 that we processed
 	fundsDueForRewards storage.StorageBackedBigInt
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
-	unitsSinceUpdate storage.StorageBackedUint64 // calldata units collected for since last update
-	pricePerUnit     storage.StorageBackedBigInt // current price per calldata unit
-	lastSurplus      storage.StorageBackedBigInt // introduced in ArbOS version 2
-	perBatchGasCost  storage.StorageBackedBigInt // introduced in ArbOS version 2
-	perBatchCostCap  storage.StorageBackedUint64 // introduced in ArbOS version 2
+	unitsSinceUpdate   storage.StorageBackedUint64 // calldata units collected for since last update
+	pricePerUnit       storage.StorageBackedBigInt // current price per calldata unit
+	lastSurplus        storage.StorageBackedBigInt // introduced in ArbOS version 2
+	perBatchGasCost    storage.StorageBackedBigInt // introduced in ArbOS version 2
+	amortizedCostCapBP storage.StorageBackedUint64 // in basis points, 0 means no cap; introduced in ArbOS version 2
 }
 
 var (
@@ -64,7 +64,7 @@ const (
 	pricePerUnitOffset
 	lastSurplusOffset
 	perBatchGasCostOffset
-	perBatchCostCapOffset
+	amortizedCostCapBPOffset
 )
 
 const (
@@ -126,7 +126,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedBigInt(pricePerUnitOffset),
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
 		sto.OpenStorageBackedBigInt(perBatchGasCostOffset),
-		sto.OpenStorageBackedUint64(perBatchCostCapOffset),
+		sto.OpenStorageBackedUint64(amortizedCostCapBPOffset),
 	}
 }
 
@@ -222,12 +222,12 @@ func (ps *L1PricingState) SetPerBatchGasCost(cost *big.Int) error {
 	return ps.perBatchGasCost.Set(cost)
 }
 
-func (ps *L1PricingState) PerBatchCostCap() (uint64, error) {
-	return ps.perBatchCostCap.Get()
+func (ps *L1PricingState) AmortizedCostCapBP() (uint64, error) {
+	return ps.amortizedCostCapBP.Get()
 }
 
-func (ps *L1PricingState) SetPerBatchCostCap(cap uint64) error {
-	return ps.perBatchCostCap.Set(cap)
+func (ps *L1PricingState) SetAmortizedCostCapBP(cap uint64) error {
+	return ps.amortizedCostCapBP.Set(cap)
 }
 
 // Update the pricing model based on a payment by a batch poster

@@ -235,7 +235,7 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 				if err := l1p.SetPerBatchGasCost(common.Big0); err != nil {
 					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
 				}
-				if err := l1p.SetPerBatchCostCap(0); err != nil {
+				if err := l1p.SetAmortizedCostCapBP(0); err != nil {
 					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
 				}
 			default:
