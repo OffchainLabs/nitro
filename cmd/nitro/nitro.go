@@ -544,8 +544,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 func applyArbitrumNovaRollupParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                   "nova",
-		"node.forwarding-target":             "https://a4ba.arbitrum.io/rpc",
-		"node.feed.input.url":                "wss://a4ba.arbitrum.io/feed",
+		"node.forwarding-target":             "https://nova.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://nova.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
 		"l1.rollup.inbox":                    "0xc4448b71118c9071bcb9734a0eac55d18a153949",
 		"l1.rollup.rollup":                   "0xfb209827c58283535b744575e11953dcc4bead88",
