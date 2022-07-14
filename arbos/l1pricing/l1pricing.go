@@ -41,6 +41,7 @@ type L1PricingState struct {
 	pricePerUnit     storage.StorageBackedBigInt // current price per calldata unit
 	lastSurplus      storage.StorageBackedBigInt // introduced in ArbOS version 2
 	perBatchGasCost  storage.StorageBackedBigInt // introduced in ArbOS version 2
+	perBatchCostCap  storage.StorageBackedUint64 // introduced in ArbOS version 2
 }
 
 var (
@@ -63,6 +64,7 @@ const (
 	pricePerUnitOffset
 	lastSurplusOffset
 	perBatchGasCostOffset
+	perBatchCostCapOffset
 )
 
 const (
@@ -124,6 +126,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedBigInt(pricePerUnitOffset),
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
 		sto.OpenStorageBackedBigInt(perBatchGasCostOffset),
+		sto.OpenStorageBackedUint64(perBatchCostCapOffset),
 	}
 }
 
@@ -217,6 +220,14 @@ func (ps *L1PricingState) PerBatchGasCost() (*big.Int, error) {
 
 func (ps *L1PricingState) SetPerBatchGasCost(cost *big.Int) error {
 	return ps.perBatchGasCost.Set(cost)
+}
+
+func (ps *L1PricingState) PerBatchCostCap() (uint64, error) {
+	return ps.perBatchCostCap.Get()
+}
+
+func (ps *L1PricingState) SetPerBatchCostCap(cap uint64) error {
+	return ps.perBatchCostCap.Set(cap)
 }
 
 // Update the pricing model based on a payment by a batch poster

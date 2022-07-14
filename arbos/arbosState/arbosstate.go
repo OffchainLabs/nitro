@@ -228,10 +228,14 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 		for upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
 			switch state.arbosVersion {
 			case 1:
-				if err := state.l1PricingState.SetLastSurplus(common.Big0); err != nil {
+				l1p := state.l1PricingState
+				if err := l1p.SetLastSurplus(common.Big0); err != nil {
 					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
 				}
-				if err := state.l1PricingState.SetPerBatchGasCost(common.Big0); err != nil {
+				if err := l1p.SetPerBatchGasCost(common.Big0); err != nil {
+					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
+				}
+				if err := l1p.SetPerBatchCostCap(0); err != nil {
 					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
 				}
 			default:
