@@ -238,6 +238,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	updateTime, currentTime uint64,
 	batchPoster common.Address,
 	weiSpent *big.Int,
+	l1Basefee *big.Int,
 	scenario util.TracingScenario,
 ) error {
 	if arbosVersion < 2 {
@@ -282,6 +283,19 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	unitsSinceUpdate -= unitsAllocated
 	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
 		return err
+	}
+
+	// impose cap on amortized cost, if there is one
+	amortizedCostCapBP, err := ps.AmortizedCostCapBP()
+	if err != nil {
+		return err
+	}
+	if amortizedCostCapBP != 0 {
+		weiSpentCap := am.BigMulByBips(am.BigMulByUint(l1Basefee, unitsAllocated), am.SaturatingCastToBips(amortizedCostCapBP))
+		if am.BigLessThan(weiSpentCap, weiSpent) {
+			// apply the cap on assignment of amortized cost; the difference will be a loss for the batch poster
+			weiSpent = weiSpentCap
+		}
 	}
 
 	dueToPoster, err := posterState.FundsDue()
