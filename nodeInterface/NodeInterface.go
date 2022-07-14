@@ -513,3 +513,55 @@ func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) 
 	}
 	return validator.FindBatchContainingMessageIndex(node.InboxTracker, pos, high)
 }
+
+func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum huge, index uint64) (
+	Proof []bytes32,
+	Path huge,
+	L2Sender addr,
+	L1Dest addr,
+	L2Block huge,
+	L1Block huge,
+	Timestamp huge,
+	Amount huge,
+	CalldataForL1 []byte,
+	err error) {
+
+	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return
+	}
+	if node.ClassicOutboxRetriever == nil {
+		err = errors.New("this node doesnt support classicLookupMessageBatchProof")
+		return
+	}
+	msg, err := node.ClassicOutboxRetriever.GetMsg(batchNum, index)
+	if err != nil {
+		return
+	}
+	Proof = msg.ProofNodes
+	Path = msg.PathInt
+	data := msg.Data
+	if len(data) < 1+6*32 {
+		err = errors.New("unexpected L2 to L1 tx result length")
+		return
+	}
+	if data[0] != 0x3 {
+		err = errors.New("unexpected type code")
+		return
+	}
+	data = data[1:]
+	L2Sender = common.BytesToAddress(data[:32])
+	data = data[32:]
+	L1Dest = common.BytesToAddress(data[:32])
+	data = data[32:]
+	L2Block = new(big.Int).SetBytes(data[:32])
+	data = data[32:]
+	L1Block = new(big.Int).SetBytes(data[:32])
+	data = data[32:]
+	Timestamp = new(big.Int).SetBytes(data[:32])
+	data = data[32:]
+	Amount = new(big.Int).SetBytes(data[:32])
+	data = data[32:]
+	CalldataForL1 = data
+	return
+}
