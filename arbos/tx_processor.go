@@ -601,6 +601,13 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 	return hash, nil
 }
 
+func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
+	if p.state.FormatVersion() >= 3 {
+		return evm.Context.BaseFee
+	}
+	return evm.GasPrice
+}
+
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
 	receipt.GasUsedForL1 = p.posterGas
 }
