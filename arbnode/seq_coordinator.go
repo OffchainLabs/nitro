@@ -525,12 +525,18 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	if c.prevChosenSequencer == c.config.MyUrl {
 		return c.updatePrevKnownChosen(ctx, chosenSeq)
 	}
-	if chosenSeq != c.config.MyUrl && chosenSeq != c.prevChosenSequencer {
+	chosenSeqChanged := chosenSeq != c.prevChosenSequencer
+	wrongForwardingTarget := c.sequencer != nil && c.sequencer.ForwardTarget() != chosenSeq
+	if chosenSeq != c.config.MyUrl && (chosenSeqChanged || wrongForwardingTarget) {
+		if chosenSeqChanged {
+			log.Info("chosen sequencer changed", "chosen", chosenSeq)
+		} else {
+			log.Info("attempting to reconnect to chosen sequencer", "chosen", chosenSeq)
+		}
 		if c.sequencer != nil {
 			c.sequencer.ForwardTo(chosenSeq)
 		}
 		c.prevChosenSequencer = chosenSeq
-		log.Info("chosen sequencer changed", "chosen", chosenSeq)
 	}
 
 	// read messages from redis
