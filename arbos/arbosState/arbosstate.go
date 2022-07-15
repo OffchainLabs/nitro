@@ -6,6 +6,7 @@ package arbosState
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common/math"
 	"log"
 	"math/big"
 
@@ -183,7 +184,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 
 	arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-	if arbosVersion < 1 || arbosVersion > 2 {
+	if arbosVersion < 1 || arbosVersion > 3 {
 		return nil, fmt.Errorf("cannot initialize to unsupported ArbOS version %v", arbosVersion)
 	}
 
@@ -235,8 +236,9 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 				if err := l1p.SetPerBatchGasCost(common.Big0); err != nil {
 					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
 				}
-				if err := l1p.SetAmortizedCostCapBP(0); err != nil {
-					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
+			case 2:
+				if err := state.l1PricingState.SetAmortizedCostCapBP(math.MaxUint64); err != nil {
+					panic("Error encountered when trying to upgrade ArbOS version 2 to version 3")
 				}
 			default:
 				panic("Unable to perform requested ArbOS upgrade")

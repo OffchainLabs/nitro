@@ -62,6 +62,22 @@ func TestL1Pricing(t *testing.T) {
 			amortizationCapBips:     math.MaxUint64,
 			l1BasefeeGwei:           10,
 		},
+		{
+			unitReward:              10,
+			unitsPerSecond:          78,
+			fundsCollectedPerSecond: 7800,
+			fundsSpent:              3000,
+			amortizationCapBips:     100,
+			l1BasefeeGwei:           10,
+		},
+		{
+			unitReward:              0,
+			unitsPerSecond:          78,
+			fundsCollectedPerSecond: 7800 * params.GWei,
+			fundsSpent:              3000 * params.GWei,
+			amortizationCapBips:     100,
+			l1BasefeeGwei:           10,
+		},
 	}
 	for _, input := range inputs {
 		expectedResult := expectedResultsForL1Test(input)
@@ -72,8 +88,9 @@ func TestL1Pricing(t *testing.T) {
 func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 	ret := &l1TestExpectedResults{}
 	availableFunds := arbmath.UintToBig(3 * input.fundsCollectedPerSecond)
+	uncappedAvailableFunds := availableFunds
 	if input.amortizationCapBips != 0 {
-		availableFundsCap := arbmath.BigMulByBips(arbmath.BigMulByUint(arbmath.UintToBig(input.unitsPerSecond), input.l1BasefeeGwei), arbmath.SaturatingCastToBips(input.amortizationCapBips))
+		availableFundsCap := arbmath.BigMulByBips(arbmath.BigMulByUint(arbmath.UintToBig(input.unitsPerSecond), input.l1BasefeeGwei*params.GWei), arbmath.SaturatingCastToBips(input.amortizationCapBips))
 		if arbmath.BigLessThan(availableFundsCap, availableFunds) {
 			availableFunds = availableFundsCap
 		}
@@ -86,6 +103,7 @@ func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 		ret.rewardRecipientBalance = fundsWantedForRewards
 	}
 	availableFunds = arbmath.BigSub(availableFunds, ret.rewardRecipientBalance)
+	uncappedAvailableFunds = arbmath.BigSub(uncappedAvailableFunds, ret.rewardRecipientBalance)
 	ret.unitsRemaining = (3 * input.unitsPerSecond) - unitsAllocated.Uint64()
 
 	maxCollectable := big.NewInt(int64(input.fundsSpent))
@@ -93,8 +111,8 @@ func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 		maxCollectable = availableFunds
 	}
 	ret.fundsReceived = maxCollectable
-	availableFunds = arbmath.BigSub(availableFunds, maxCollectable)
-	ret.fundsStillHeld = availableFunds
+	uncappedAvailableFunds = arbmath.BigSub(uncappedAvailableFunds, maxCollectable)
+	ret.fundsStillHeld = uncappedAvailableFunds
 
 	return ret
 }
@@ -177,7 +195,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	}
 	fundsStillHeld := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
 	if !arbmath.BigEquals(fundsStillHeld, expectedResults.fundsStillHeld) {
-		t.Fatal()
+		t.Fatal(fundsStillHeld, expectedResults.fundsStillHeld)
 	}
 }
 
@@ -196,7 +214,7 @@ func TestUpdateTimeUpgradeBehavior(t *testing.T) {
 		t.Fatal()
 	}
 
-	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 2, 1, 1, poster, common.Big1, arbmath.UintToBig(10*params.GWei), util.TracingDuringEVM)
+	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 3, 1, 1, poster, common.Big1, arbmath.UintToBig(10*params.GWei), util.TracingDuringEVM)
 	Require(t, err)
 }
 
@@ -239,7 +257,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,
-			2,
+			3,
 			uint64(10*(i+1)),
 			uint64(10*(i+1)+5),
 			bpAddr,
