@@ -348,6 +348,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	var gasNeededToStartEVM uint64
 	gasPrice := p.evm.Context.BaseFee
 
+	if p.msg.RunMode() != types.MessageCommitMode && p.msg.GasFeeCap().Sign() == 0 {
+		gasPrice.SetInt64(0) // gasprice zero behavior
+	}
+
 	var poster common.Address
 	if p.msg.RunMode() != types.MessageCommitMode {
 		poster = l1pricing.BatchPosterAddress
