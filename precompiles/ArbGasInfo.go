@@ -6,6 +6,7 @@ package precompiles
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -63,7 +64,10 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	gasForL1Calldata := arbmath.BigDiv(weiForL1Calldata, l2GasPrice)
+	gasForL1Calldata := common.Big0
+	if l2GasPrice.Sign() > 0 {
+		gasForL1Calldata = arbmath.BigDiv(weiForL1Calldata, l2GasPrice)
+	}
 
 	perL2Tx := big.NewInt(l1pricing.TxFixedCost)
 	return perL2Tx, gasForL1Calldata, storageArbGas, nil
@@ -99,11 +103,7 @@ func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, erro
 
 // Get the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
-	ppu, err := c.State.L1PricingState().PricePerUnit()
-	if err != nil {
-		return nil, err
-	}
-	return arbmath.BigMulByUint(ppu, params.TxDataNonZeroGasEIP2028), nil
+	return con.GetL1BaseFeeEstimate(c, evm)
 }
 
 // Get the fee paid to the aggregator for posting this tx
@@ -124,4 +124,19 @@ func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
 // Get the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
 func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().BacklogTolerance()
+}
+
+func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
+	ps := c.State.L1PricingState()
+	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
+	if err != nil {
+		return nil, err
+	}
+	fundsDueForRewards, err := ps.FundsDueForRewards()
+	if err != nil {
+		return nil, err
+	}
+	haveFunds := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
+	return arbmath.BigSub(haveFunds, needFunds), nil
 }

@@ -4,6 +4,23 @@
 
 pragma solidity ^0.8.0;
 
+import {
+    AlreadyInit,
+    HadZeroInit,
+    NotOrigin,
+    DataTooLarge,
+    NotRollup,
+    DelayedBackwards,
+    DelayedTooFar,
+    ForceIncludeBlockTooSoon,
+    ForceIncludeTimeTooSoon,
+    IncorrectMessagePreimage,
+    NotBatchPoster,
+    BadSequencerNumber,
+    DataNotAuthenticated,
+    AlreadyValidDASKeyset,
+    NoSuchKeyset
+} from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";

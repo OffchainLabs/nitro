@@ -476,7 +476,7 @@ func (n NodeInterface) GasEstimateComponents(
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
-	l1BaseFeeEstimate, err := pricing.L1BaseFeeEstimate()
+	l1BaseFeeEstimate, err := pricing.PricePerUnit()
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}

@@ -21,7 +21,10 @@
     "build": "./scripts/build.bash",
     "solhint": "solhint -f table src/**/*.sol",
     "prettier:solidity": "prettier --write src/**/*.sol",
-    "hardhat:prod": "hardhat --config hardhat.prod-config.js"
+    "hardhat:prod": "hardhat --config hardhat.prod-config.js",
+    "build:0.6": "INTERFACE_TESTER_SOLC_VERSION=0.6.9 yarn run build",
+    "build:0.7": "INTERFACE_TESTER_SOLC_VERSION=0.7.0 yarn run build",
+    "test:compatibility": "yarn run build:0.6 && yarn run build:0.7"
   },
   "dependencies": {
     "@openzeppelin/contracts": "4.5.0",

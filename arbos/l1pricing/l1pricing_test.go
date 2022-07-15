@@ -4,10 +4,11 @@
 package l1pricing
 
 import (
-	am "github.com/offchainlabs/nitro/util/arbmath"
 	"math"
 	"math/big"
 	"testing"
+
+	am "github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -50,9 +51,11 @@ func TestTxFixedCost(t *testing.T) {
 	}
 }
 
+const latestArbosVersion = 2
+
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL1PricingState(sto)
+	err := InitializeL1PricingState(sto, latestArbosVersion, common.Address{})
 	Require(t, err)
 	ps := OpenL1PricingState(sto)
 
