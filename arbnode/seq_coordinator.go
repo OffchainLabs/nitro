@@ -486,15 +486,20 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 	if nextChosen != c.config.MyUrl {
 		// was the active sequencer, but no longer
 		atomicTimeWrite(&c.lockoutUntil, time.Time{})
+		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
-			// If this fails we'll try to reconnect next update loop (and it's logged in ForwardTo).
-			_ = c.sequencer.ForwardTo(nextChosen)
+			err := c.sequencer.ForwardTo(nextChosen)
+			if err != nil {
+				// The error was already logged in ForwardTo, just clean up state.
+				// Setting prevChosenSequencer to an empty string will cause the next update to attempt to reconnect.
+				setPrevChosenTo = ""
+			}
 		}
 		if err := c.chosenOneRelease(ctx); err != nil {
 			log.Warn("coordinator failed chosen one release", "err", err)
 			return c.retryAfterRedisError()
 		}
-		c.prevChosenSequencer = nextChosen
+		c.prevChosenSequencer = setPrevChosenTo
 		log.Info("released chosen-coordinator lock", "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
