@@ -119,5 +119,5 @@ interface NodeInterface {
             uint256 timestamp,
             uint256 amount,
             bytes memory calldataForL1
-        );        
+        );
 }
