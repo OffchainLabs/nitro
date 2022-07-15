@@ -346,11 +346,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
-	gasPrice := p.evm.Context.BaseFee
-
-	if p.msg.RunMode() != types.MessageCommitMode && p.msg.GasFeeCap().Sign() == 0 {
-		gasPrice.SetInt64(0) // gasprice zero behavior
-	}
+	gasPrice := p.GetPaidGasPrice()
 
 	var poster common.Address
 	if p.msg.RunMode() != types.MessageCommitMode {
@@ -424,8 +420,8 @@ func (p *TxProcessor) ForceRefundGas() uint64 {
 func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
-	gasPrice := p.evm.Context.BaseFee
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
+	gasPrice := p.GetPaidGasPrice()
 	scenario := util.TracingAfterEVM
 
 	if gasLeft > p.msg.Gas() {
@@ -605,9 +601,17 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 	return hash, nil
 }
 
+func (p *TxProcessor) GetPaidGasPrice() *big.Int {
+	gasPrice := p.evm.Context.BaseFee
+	if p.msg.RunMode() != types.MessageCommitMode && p.msg.GasFeeCap().Sign() == 0 {
+		gasPrice.SetInt64(0) // gasprice zero behavior
+	}
+	return gasPrice
+}
+
 func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
 	if p.state.FormatVersion() >= 3 {
-		return evm.Context.BaseFee
+		return p.GetPaidGasPrice()
 	}
 	return evm.GasPrice
 }
