@@ -346,7 +346,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
-	gasPrice := p.GetPaidGasPrice()
+	gasPrice := p.evm.Context.BaseFee
 
 	var poster common.Address
 	if p.msg.RunMode() != types.MessageCommitMode {
@@ -421,7 +421,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
-	gasPrice := p.GetPaidGasPrice()
+	gasPrice := p.evm.Context.BaseFee
 	scenario := util.TracingAfterEVM
 
 	if gasLeft > p.msg.Gas() {
