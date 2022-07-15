@@ -133,8 +133,6 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		history.L1LastUpdateTime[i] = l1LastUpdateTime
 		history.L1LastSurplus[i] = l1LastSurplus
 
-		state, _, err := stateAndHeader(api.blockchain, i+uint64(start))
-
 		if i == uint64(blocks)-1 {
 			speedLimit, _ := l2Pricing.SpeedLimitPerSecond()
 			perBlockGasLimit, _ := l2Pricing.PerBlockGasLimit()
