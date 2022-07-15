@@ -515,16 +515,7 @@ func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) 
 }
 
 func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum huge, index uint64) (
-	Proof []bytes32,
-	Path huge,
-	L2Sender addr,
-	L1Dest addr,
-	L2Block huge,
-	L1Block huge,
-	Timestamp huge,
-	Amount huge,
-	CalldataForL1 []byte,
-	err error) {
+	proof []bytes32, path huge, l2Sender addr, l1Dest addr, l2Block huge, l1Block huge, timestamp huge, amount huge, calldataForL1 []byte, err error) {
 
 	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
 	if err != nil {
@@ -538,8 +529,8 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 	if err != nil {
 		return
 	}
-	Proof = msg.ProofNodes
-	Path = msg.PathInt
+	proof = msg.ProofNodes
+	path = msg.PathInt
 	data := msg.Data
 	if len(data) < 1+6*32 {
 		err = errors.New("unexpected L2 to L1 tx result length")
@@ -550,18 +541,18 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 		return
 	}
 	data = data[1:]
-	L2Sender = common.BytesToAddress(data[:32])
+	l2Sender = common.BytesToAddress(data[:32])
 	data = data[32:]
-	L1Dest = common.BytesToAddress(data[:32])
+	l1Dest = common.BytesToAddress(data[:32])
 	data = data[32:]
-	L2Block = new(big.Int).SetBytes(data[:32])
+	l2Block = new(big.Int).SetBytes(data[:32])
 	data = data[32:]
-	L1Block = new(big.Int).SetBytes(data[:32])
+	l1Block = new(big.Int).SetBytes(data[:32])
 	data = data[32:]
-	Timestamp = new(big.Int).SetBytes(data[:32])
+	timestamp = new(big.Int).SetBytes(data[:32])
 	data = data[32:]
-	Amount = new(big.Int).SetBytes(data[:32])
+	amount = new(big.Int).SetBytes(data[:32])
 	data = data[32:]
-	CalldataForL1 = data
+	calldataForL1 = data
 	return
 }
