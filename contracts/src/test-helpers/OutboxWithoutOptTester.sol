@@ -4,6 +4,15 @@
 
 pragma solidity ^0.8.4;
 
+import {
+    AlreadyInit,
+    NotRollup,
+    ProofTooLong,
+    PathNotMinimal,
+    UnknownRoot,
+    AlreadySpent,
+    BridgeCallFailed
+} from "../libraries/Error.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 import "../libraries/MerkleLib.sol";

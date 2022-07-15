@@ -183,7 +183,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 
 	arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
-	if arbosVersion < 1 || arbosVersion > 2 {
+	if arbosVersion < 1 || arbosVersion > 3 {
 		return nil, fmt.Errorf("cannot initialize to unsupported ArbOS version %v", arbosVersion)
 	}
 
@@ -231,6 +231,8 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 				if err := state.l1PricingState.SetLastSurplus(common.Big0); err != nil {
 					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
 				}
+			case 2:
+				panic("TODO: Upgrade 3 is not finalized yet")
 			default:
 				panic("Unable to perform requested ArbOS upgrade")
 			}

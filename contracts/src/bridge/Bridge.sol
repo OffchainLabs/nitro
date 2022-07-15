@@ -7,6 +7,14 @@ pragma solidity ^0.8.4;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
+import {
+    NotContract,
+    NotRollupOrOwner,
+    NotDelayedInbox,
+    NotSequencerInbox,
+    NotOutbox,
+    InvalidOutboxSet
+} from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./Messages.sol";
 import "../libraries/DelegateCallAware.sol";
@@ -260,4 +268,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
     function sequencerMessageCount() external view override returns (uint256) {
         return sequencerInboxAccs.length;
     }
+
+    /// @dev For the classic -> nitro migration. TODO: remove post-migration.
+    function acceptFundsFromOldBridge() external payable {}
 }
