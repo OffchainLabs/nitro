@@ -487,7 +487,8 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 		// was the active sequencer, but no longer
 		atomicTimeWrite(&c.lockoutUntil, time.Time{})
 		if c.sequencer != nil {
-			c.sequencer.ForwardTo(nextChosen)
+			// If this fails we'll try to reconnect next update loop (and it's logged in ForwardTo).
+			_ = c.sequencer.ForwardTo(nextChosen)
 		}
 		if err := c.chosenOneRelease(ctx); err != nil {
 			log.Warn("coordinator failed chosen one release", "err", err)
@@ -525,18 +526,19 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	if c.prevChosenSequencer == c.config.MyUrl {
 		return c.updatePrevKnownChosen(ctx, chosenSeq)
 	}
-	chosenSeqChanged := chosenSeq != c.prevChosenSequencer
-	wrongForwardingTarget := c.sequencer != nil && c.sequencer.ForwardTarget() != chosenSeq
-	if chosenSeq != c.config.MyUrl && (chosenSeqChanged || wrongForwardingTarget) {
-		if chosenSeqChanged {
+	if chosenSeq != c.config.MyUrl && chosenSeq != c.prevChosenSequencer {
+		var err error
+		if c.sequencer != nil {
+			err = c.sequencer.ForwardTo(chosenSeq)
+		}
+		if err == nil {
+			c.prevChosenSequencer = chosenSeq
 			log.Info("chosen sequencer changed", "chosen", chosenSeq)
 		} else {
-			log.Info("attempting to reconnect to chosen sequencer", "chosen", chosenSeq)
+			// The error was already logged in ForwardTo, just clean up state.
+			// Next run this will attempt to reconnect.
+			c.prevChosenSequencer = ""
 		}
-		if c.sequencer != nil {
-			c.sequencer.ForwardTo(chosenSeq)
-		}
-		c.prevChosenSequencer = chosenSeq
 	}
 
 	// read messages from redis
