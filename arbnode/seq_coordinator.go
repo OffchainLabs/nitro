@@ -486,14 +486,20 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 	if nextChosen != c.config.MyUrl {
 		// was the active sequencer, but no longer
 		atomicTimeWrite(&c.lockoutUntil, time.Time{})
+		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
-			c.sequencer.ForwardTo(nextChosen)
+			err := c.sequencer.ForwardTo(nextChosen)
+			if err != nil {
+				// The error was already logged in ForwardTo, just clean up state.
+				// Setting prevChosenSequencer to an empty string will cause the next update to attempt to reconnect.
+				setPrevChosenTo = ""
+			}
 		}
 		if err := c.chosenOneRelease(ctx); err != nil {
 			log.Warn("coordinator failed chosen one release", "err", err)
 			return c.retryAfterRedisError()
 		}
-		c.prevChosenSequencer = nextChosen
+		c.prevChosenSequencer = setPrevChosenTo
 		log.Info("released chosen-coordinator lock", "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
@@ -526,11 +532,18 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.updatePrevKnownChosen(ctx, chosenSeq)
 	}
 	if chosenSeq != c.config.MyUrl && chosenSeq != c.prevChosenSequencer {
+		var err error
 		if c.sequencer != nil {
-			c.sequencer.ForwardTo(chosenSeq)
+			err = c.sequencer.ForwardTo(chosenSeq)
 		}
-		c.prevChosenSequencer = chosenSeq
-		log.Info("chosen sequencer changed", "chosen", chosenSeq)
+		if err == nil {
+			c.prevChosenSequencer = chosenSeq
+			log.Info("chosen sequencer changed", "chosen", chosenSeq)
+		} else {
+			// The error was already logged in ForwardTo, just clean up state.
+			// Next run this will attempt to reconnect.
+			c.prevChosenSequencer = ""
+		}
 	}
 
 	// read messages from redis
@@ -673,8 +686,9 @@ func (h seqCoordinatorChosenHealthcheck) ServeHTTP(response http.ResponseWriter,
 
 func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
 	server := &http.Server{
-		Addr:    c.config.ChosenHealthcheckAddr,
-		Handler: seqCoordinatorChosenHealthcheck{c},
+		Addr:              c.config.ChosenHealthcheckAddr,
+		Handler:           seqCoordinatorChosenHealthcheck{c},
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {

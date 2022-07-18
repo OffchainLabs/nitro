@@ -315,4 +315,13 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         bridge.setSequencerInbox(_sequencerInbox);
         emit OwnerFunctionCalled(27);
     }
+
+    /**
+     * @notice sets the rollup's inbox reference. Does not update the bridge's view.
+     * @param newInbox new address of inbox
+     */
+    function setInbox(IInbox newInbox) external {
+        inbox = newInbox;
+        emit OwnerFunctionCalled(28);
+    }
 }

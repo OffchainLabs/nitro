@@ -56,7 +56,8 @@ func NewRestfulDasServerOnListener(listener net.Listener, storageService arbstat
 	}
 
 	ret.server = &http.Server{
-		Handler: ret,
+		Handler:           ret,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
