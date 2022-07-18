@@ -10,12 +10,17 @@ import (
 	"math/big"
 	"sort"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -34,6 +39,7 @@ type NodeInterface struct {
 	Address       addr
 	backend       core.NodeInterfaceBackendAPI
 	context       context.Context
+	header        *types.Header
 	sourceMessage types.Message
 	returnMessage struct {
 		message *types.Message
@@ -124,7 +130,7 @@ func (n NodeInterface) EstimateRetryableTicket(
 		pRetryTo = &to
 	}
 
-	l1BaseFee, _ := c.State.L1PricingState().L1BaseFeeEstimateWei()
+	l1BaseFee, _ := c.State.L1PricingState().PricePerUnit()
 	maxSubmissionFee := retryables.RetryableSubmissionFee(len(data), l1BaseFee)
 
 	submitTx := &types.ArbitrumSubmitRetryableTx{
@@ -136,7 +142,7 @@ func (n NodeInterface) EstimateRetryableTicket(
 		GasFeeCap:        n.sourceMessage.GasPrice(),
 		Gas:              n.sourceMessage.Gas(),
 		RetryTo:          pRetryTo,
-		Value:            l2CallValue,
+		RetryValue:       l2CallValue,
 		Beneficiary:      callValueRefundAddress,
 		MaxSubmissionFee: maxSubmissionFee,
 		FeeRefundAddr:    excessFeeRefundAddress,
@@ -411,6 +417,77 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 		hashes32[i] = bytes32(hash)
 	}
 	return send, root, hashes32, nil
+}
+
+func (n NodeInterface) GasEstimateComponents(
+	c ctx, evm mech, value huge, to addr, contractCreation bool, data []byte,
+) (uint64, uint64, huge, huge, error) {
+	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, 0, nil, nil, err
+	}
+
+	if to == types.NodeInterfaceAddress || to == types.NodeInterfaceDebugAddress {
+		return 0, 0, nil, nil, errors.New("cannot estimate virtual contract")
+	}
+
+	msg := n.sourceMessage
+	context := n.context
+	chainid := evm.ChainConfig().ChainID
+	backend := node.Backend.APIBackend()
+	gasCap := backend.RPCGasCap()
+	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
+
+	from := msg.From()
+	gas := msg.Gas()
+	nonce := msg.Nonce()
+	maxFeePerGas := msg.GasFeeCap()
+	maxPriorityFeePerGas := msg.GasTipCap()
+
+	args := arbitrum.TransactionArgs{
+		ChainID:              (*hexutil.Big)(chainid),
+		From:                 &from,
+		Gas:                  (*hexutil.Uint64)(&gas),
+		MaxFeePerGas:         (*hexutil.Big)(maxFeePerGas),
+		MaxPriorityFeePerGas: (*hexutil.Big)(maxPriorityFeePerGas),
+		Value:                (*hexutil.Big)(value),
+		Nonce:                (*hexutil.Uint64)(&nonce),
+		Data:                 (*hexutil.Bytes)(&data),
+	}
+	if !contractCreation {
+		args.To = &to
+	}
+
+	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, gasCap)
+	if err != nil {
+		return 0, 0, nil, nil, err
+	}
+	total := uint64(totalRaw)
+
+	pricing := c.State.L1PricingState()
+
+	msg, err = args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
+	if err != nil {
+		return 0, 0, nil, nil, err
+	}
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+
+	baseFee, err := c.State.L2PricingState().BaseFeeWei()
+	if err != nil {
+		return 0, 0, nil, nil, err
+	}
+	l1BaseFeeEstimate, err := pricing.PricePerUnit()
+	if err != nil {
+		return 0, 0, nil, nil, err
+	}
+
+	// Compute the fee paid for L1 in L2 terms
+	//   See in GasChargingHook that this does not induce truncation error
+	//
+	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
+	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
+
+	return total, gasForL1, baseFee, l1BaseFeeEstimate, nil
 }
 
 func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) (uint64, error) {

@@ -6,7 +6,6 @@ package das
 import (
 	"bytes"
 	"context"
-	"encoding/base32"
 	"errors"
 	"io"
 	"testing"
@@ -40,7 +39,7 @@ type mockS3Downloader struct {
 }
 
 func (m *mockS3Downloader) Download(ctx context.Context, w io.WriterAt, input *s3.GetObjectInput, options ...func(*manager.Downloader)) (n int64, err error) {
-	key, err := base32.StdEncoding.DecodeString(*input.Key)
+	key, err := DecodeStorageServiceKey(*input.Key)
 	if err != nil {
 		return 0, err
 	}
@@ -59,7 +58,7 @@ func (m *mockS3Downloader) Download(ctx context.Context, w io.WriterAt, input *s
 func NewTestS3StorageService(ctx context.Context, s3Config genericconf.S3Config) (StorageService, error) {
 	mockStorageService := NewMemoryBackedStorageService(ctx)
 	return &S3StorageService{
-		s3Config:   s3Config,
+		bucket:     s3Config.Bucket,
 		uploader:   &mockS3Uploader{mockStorageService},
 		downloader: &mockS3Downloader{mockStorageService}}, nil
 }

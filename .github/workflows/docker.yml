@@ -23,7 +23,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
 
       - name: Set up Docker Buildx
@@ -35,8 +34,8 @@ jobs:
         uses: actions/cache@v2
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-a-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-buildx-a-
+          key: ${{ runner.os }}-buildx-b-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-buildx-b-
 
       - name: Build nitro-node docker
         uses: docker/build-push-action@v2

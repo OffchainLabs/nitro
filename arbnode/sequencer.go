@@ -6,11 +6,13 @@ package arbnode
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -41,10 +43,11 @@ func (i *txQueueItem) returnResult(err error) {
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
-	txStreamer *TransactionStreamer
-	txQueue    chan txQueueItem
-	l1Reader   *headerreader.HeaderReader
-	config     SequencerConfig
+	txStreamer      *TransactionStreamer
+	txQueue         chan txQueueItem
+	l1Reader        *headerreader.HeaderReader
+	config          SequencerConfig
+	senderWhitelist map[common.Address]struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -55,17 +58,43 @@ type Sequencer struct {
 }
 
 func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfig) (*Sequencer, error) {
+	senderWhitelist := make(map[common.Address]struct{})
+	entries := strings.Split(config.SenderWhitelist, ",")
+	for _, address := range entries {
+		if len(address) == 0 {
+			continue
+		}
+		if !common.IsHexAddress(address) {
+			return nil, fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
+		}
+		senderWhitelist[common.HexToAddress(address)] = struct{}{}
+	}
 	return &Sequencer{
-		txStreamer:    txStreamer,
-		txQueue:       make(chan txQueueItem, 128),
-		l1Reader:      l1Reader,
-		config:        config,
-		l1BlockNumber: 0,
-		l1Timestamp:   0,
+		txStreamer:      txStreamer,
+		txQueue:         make(chan txQueueItem, 128),
+		l1Reader:        l1Reader,
+		config:          config,
+		senderWhitelist: senderWhitelist,
+		l1BlockNumber:   0,
+		l1Timestamp:     0,
 	}, nil
 }
 
+var ErrRetrySequencer = errors.New("please retry transaction")
+
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	if len(s.senderWhitelist) > 0 {
+		signer := types.LatestSigner(s.txStreamer.bc.Config())
+		sender, err := types.Sender(signer, tx)
+		if err != nil {
+			return err
+		}
+		_, authorized := s.senderWhitelist[sender]
+		if !authorized {
+			return errors.New("transaction sender is not on the whitelist")
+		}
+	}
+
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
 		tx,
@@ -86,13 +115,6 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 }
 
 func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
-	agg, err := state.L1PricingState().ReimbursableAggregatorForSender(sender)
-	if err != nil {
-		return err
-	}
-	if agg == nil || *agg != l1pricing.SequencerAddress {
-		return errors.New("transaction sender's preferred aggregator is not the sequencer")
-	}
 	return nil
 }
 
@@ -112,7 +134,7 @@ func (s *Sequencer) ForwardTarget() string {
 	return s.forwarder.target
 }
 
-func (s *Sequencer) ForwardTo(url string) {
+func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
 	s.forwarder = NewForwarder(url)
@@ -121,6 +143,7 @@ func (s *Sequencer) ForwardTo(url string) {
 		log.Error("failed to set forward agent", "err", err)
 		s.forwarder = nil
 	}
+	return err
 }
 
 func (s *Sequencer) DontForward() {
@@ -217,7 +240,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 
 	header := &arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_L2Message,
-		Poster:      l1pricing.SequencerAddress,
+		Poster:      l1pricing.BatchPosterAddress,
 		BlockNumber: l1Block,
 		Timestamp:   uint64(timestamp),
 		RequestId:   nil,
@@ -234,7 +257,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
-	if errors.Is(err, ErrNotMainSequencer) {
+	if errors.Is(err, ErrRetrySequencer) {
 		// we changed roles
 		// forward if we have where to
 		if s.forwardIfSet(queueItems) {
@@ -251,7 +274,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		return
 	}
 	if err != nil {
-		log.Error("error sequencing transactions", "err", err)
+		log.Warn("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
 		}

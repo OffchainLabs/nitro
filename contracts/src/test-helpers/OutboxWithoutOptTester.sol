@@ -4,6 +4,15 @@
 
 pragma solidity ^0.8.4;
 
+import {
+    AlreadyInit,
+    NotRollup,
+    ProofTooLong,
+    PathNotMinimal,
+    UnknownRoot,
+    AlreadySpent,
+    BridgeCallFailed
+} from "../libraries/Error.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 import "../libraries/MerkleLib.sol";
@@ -29,10 +38,10 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
     L2ToL1Context internal context;
     uint128 public constant OUTBOX_VERSION = 2;
 
-    function initialize(address _rollup, IBridge _bridge) external {
-        if (rollup != address(0)) revert AlreadyInit();
-        rollup = _rollup;
+    function initialize(IBridge _bridge) external {
+        if (address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
+        rollup = address(_bridge.rollup());
     }
 
     function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external override {

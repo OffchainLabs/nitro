@@ -6,10 +6,13 @@ package das
 import (
 	"context"
 	"errors"
-	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 var ErrArchiveTimeout = errors.New("Archiver timed out")
@@ -78,6 +81,8 @@ func NewArchivingStorageService(
 }
 
 func (serv *ArchivingStorageService) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+	log.Trace("das.ArchivingStorageService.GetByHash", "key", pretty.FirstFewBytes(hash), "this", serv)
+
 	data, err := serv.inner.GetByHash(ctx, hash)
 	if err != nil {
 		return nil, err
@@ -91,6 +96,8 @@ func (serv *ArchivingStorageService) GetByHash(ctx context.Context, hash []byte)
 }
 
 func (serv *ArchivingStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
+	log.Trace("das.ArchivingStorageService.Put", "message", pretty.FirstFewBytes(data), "this", serv)
+
 	if err := serv.inner.Put(ctx, data, expiration); err != nil {
 		return err
 	}
@@ -126,8 +133,8 @@ func (serv *ArchivingStorageService) Close(ctx context.Context) error {
 	}
 }
 
-func (serv *ArchivingStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return DiscardAfterArchiveTimeout
+func (serv *ArchivingStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return arbstate.DiscardAfterArchiveTimeout, nil
 }
 
 func (serv *ArchivingStorageService) GetArchiverErrorSignalChan() <-chan interface{} {
@@ -142,17 +149,25 @@ func (serv *ArchivingStorageService) String() string {
 	return "ArchivingStorageService(" + serv.inner.String() + ")"
 }
 
+func (serv *ArchivingStorageService) HealthCheck(ctx context.Context) error {
+	err := serv.inner.HealthCheck(ctx)
+	if err != nil {
+		return err
+	}
+	return serv.archiveTo.HealthCheck(ctx)
+}
+
 type ArchivingSimpleDASReader struct {
 	wrapped *ArchivingStorageService
 }
 
 func NewArchivingSimpleDASReader(
 	ctx context.Context,
-	inner arbstate.SimpleDASReader,
+	inner arbstate.DataAvailabilityReader,
 	archiveTo StorageService,
 	archiveExpirationSeconds uint64,
 ) (*ArchivingSimpleDASReader, error) {
-	arch, err := NewArchivingStorageService(ctx, &limitedStorageService{inner}, archiveTo, archiveExpirationSeconds)
+	arch, err := NewArchivingStorageService(ctx, &readLimitedStorageService{inner}, archiveTo, archiveExpirationSeconds)
 	if err != nil {
 		return nil, err
 	}
@@ -167,34 +182,18 @@ func (asdr *ArchivingSimpleDASReader) Close(ctx context.Context) error {
 	return asdr.wrapped.Close(ctx)
 }
 
-func (serv *ArchivingSimpleDASReader) GetArchiverErrorSignalChan() <-chan interface{} {
-	return serv.wrapped.GetArchiverErrorSignalChan()
+func (asdr *ArchivingSimpleDASReader) GetArchiverErrorSignalChan() <-chan interface{} {
+	return asdr.wrapped.GetArchiverErrorSignalChan()
 }
 
-func (serv *ArchivingSimpleDASReader) GetArchiverError() error {
-	return serv.wrapped.GetArchiverError()
+func (asdr *ArchivingSimpleDASReader) GetArchiverError() error {
+	return asdr.wrapped.GetArchiverError()
 }
 
-type limitedStorageService struct {
-	arbstate.SimpleDASReader
+func (asdr *ArchivingSimpleDASReader) HealthCheck(ctx context.Context) error {
+	return asdr.wrapped.HealthCheck(ctx)
 }
 
-func (lss *limitedStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
-	return errors.New("invalid operation")
-}
-
-func (lss *limitedStorageService) Sync(ctx context.Context) error {
-	return errors.New("invalid operation")
-}
-
-func (lss *limitedStorageService) Close(ctx context.Context) error {
-	return errors.New("invalid operation")
-}
-
-func (lss *limitedStorageService) ExpirationPolicy(ctx context.Context) ExpirationPolicy {
-	return -1
-}
-
-func (lss *limitedStorageService) String() string {
-	return ""
+func (asdr *ArchivingSimpleDASReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	return asdr.wrapped.ExpirationPolicy(ctx)
 }

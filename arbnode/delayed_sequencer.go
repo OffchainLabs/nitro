@@ -6,7 +6,6 @@ package arbnode
 import (
 	"context"
 	"errors"
-	"github.com/offchainlabs/nitro/util/headerreader"
 	"math/big"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -44,7 +44,7 @@ func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
-	Enable:           true,
+	Enable:           false,
 	FinalizeDistance: 12,
 	TimeAggregate:    time.Minute,
 }

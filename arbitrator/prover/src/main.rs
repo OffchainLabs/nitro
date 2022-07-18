@@ -4,11 +4,11 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
-    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver},
+    console::Color,
+    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
     utils::{Bytes32, CBytes},
     wavm::Opcode,
 };
-use serde::Serialize;
 use sha3::{Digest, Keccak256};
 use std::io::BufWriter;
 use std::sync::Arc;
@@ -73,13 +73,6 @@ struct Opts {
     /// Generate WAVM binary, until host io state, and module root and exit
     #[structopt(long)]
     generate_binaries: Option<PathBuf>,
-}
-
-#[derive(Serialize)]
-struct ProofInfo {
-    before: String,
-    proof: String,
-    after: String,
 }
 
 fn parse_size_delim(path: &Path) -> Result<Vec<Vec<u8>>> {
@@ -188,6 +181,7 @@ fn main() -> Result<()> {
     let mut mach = Machine::from_paths(
         &opts.libraries,
         &opts.binary,
+        true,
         opts.always_merkleize,
         opts.allow_hostapi,
         global_state,
@@ -357,10 +351,7 @@ fn main() -> Result<()> {
     println!("End machine backtrace:");
     for (module, func, pc) in mach.get_backtrace() {
         let func = rustc_demangle::demangle(&func);
-        println!(
-            "  {} \x1b[32m{}\x1b[0m @ \x1b[36m{}\x1b[0m",
-            module, func, pc
-        );
+        println!("  {} {} @ {}", module, Color::mint(func), Color::blue(pc));
     }
 
     if let Some(out) = opts.output {

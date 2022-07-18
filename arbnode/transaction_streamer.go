@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -54,11 +54,12 @@ type TransactionStreamer struct {
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
+	inboxReader     *InboxReader
 }
 
 func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastServer *broadcaster.Broadcaster) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
-		db:                 rawdb.NewTable(db, arbitrumPrefix),
+		db:                 db,
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
 		newBlockNotifier:   make(chan struct{}, 1),
@@ -70,7 +71,7 @@ func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastSer
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
 // Generally this is only used for database keys, which need sorted.
 // A shorter RLP encoding is usually used for database values.
-func uint64ToBytes(x uint64) []byte {
+func uint64ToKey(x uint64) []byte {
 	data := make([]byte, 8)
 	binary.BigEndian.PutUint64(data, x)
 	return data
@@ -94,6 +95,16 @@ func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
 		panic("trying to set coordinator when already set")
 	}
 	s.coordinator = coordinator
+}
+
+func (s *TransactionStreamer) SetInboxReader(inboxReader *InboxReader) {
+	if s.Started() {
+		panic("trying to set inbox reader after start")
+	}
+	if s.inboxReader != nil {
+		panic("trying to set inbox reader when already set")
+	}
+	s.inboxReader = inboxReader
 }
 
 func (s *TransactionStreamer) cleanupInconsistentState() error {
@@ -133,23 +144,13 @@ func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbuti
 func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
 	iter := db.NewIterator(prefix, minKey)
 	defer iter.Release()
-	for {
-		if iter.Error() != nil {
-			return iter.Error()
-		}
-		key := iter.Key()
-		if len(key) == 0 {
-			break
-		}
-		err := batch.Delete(key)
+	for iter.Next() {
+		err := batch.Delete(iter.Key())
 		if err != nil {
 			return err
 		}
-		if !iter.Next() {
-			break
-		}
 	}
-	return nil
+	return iter.Error()
 }
 
 func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.MessageIndex) error {
@@ -166,23 +167,23 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	}
 	// We can safely cast blockNum to a uint64 as we checked count == 0 above
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
-	if targetBlock == nil {
-		return errors.New("reorg target block not found")
-	}
+	if targetBlock != nil {
+		if s.validator != nil {
+			err = s.validator.ReorgToBlock(targetBlock.NumberU64(), targetBlock.Hash())
+			if err != nil {
+				return err
+			}
+		}
 
-	if s.validator != nil {
-		err = s.validator.ReorgToBlock(targetBlock.NumberU64(), targetBlock.Hash())
+		err = s.bc.ReorgToOldBlock(targetBlock)
 		if err != nil {
 			return err
 		}
+	} else {
+		log.Warn("reorg target block not found", "block", blockNum)
 	}
 
-	err = s.bc.ReorgToOldBlock(targetBlock)
-	if err != nil {
-		return err
-	}
-
-	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(uint64(count)))
+	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
 	}
@@ -201,7 +202,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 func dbKey(prefix []byte, pos uint64) []byte {
 	var key []byte
 	key = append(key, prefix...)
-	key = append(key, uint64ToBytes(uint64(pos))...)
+	key = append(key, uint64ToKey(uint64(pos))...)
 	return key
 }
 
@@ -271,11 +272,13 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	return s.AddMessages(0, false, []arbstate.MessageWithMetadata{{
 		Message: &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
-				Kind: arbos.L1MessageType_Initialize,
+				Kind:      arbos.L1MessageType_Initialize,
+				RequestId: &common.Hash{},
+				L1BaseFee: common.Big0,
 			},
 			L2msg: math.U256Bytes(s.bc.Config().ChainID),
 		},
-		DelayedMessagesRead: 0,
+		DelayedMessagesRead: 1,
 	}})
 }
 
@@ -448,7 +451,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		return err
 	}
 	if lastBlockHeader.Number.Int64() != expectedBlockNum {
-		return fmt.Errorf("block production not caught up: last block number %v but expected %v", lastBlockHeader.Number, expectedBlockNum)
+		return fmt.Errorf("%w: block production not caught up: last block number %v but expected %v", ErrRetrySequencer, lastBlockHeader.Number, expectedBlockNum)
 	}
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
@@ -600,8 +603,7 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 }
 
 func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
-	// TODO: when block 0 is no longer necessarily the genesis, track this and update core.NitroGenesisBlock
-	return 0, nil
+	return s.bc.Config().ArbitrumChainParams.GenesisBlockNum, nil
 }
 
 func (s *TransactionStreamer) BlockNumberToMessageCount(blockNum uint64) (arbutil.MessageIndex, error) {
@@ -696,6 +698,10 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 	}()
 
+	batchFetcher := func(batchNum uint64) ([]byte, error) {
+		return s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	}
+
 	for pos < msgCount {
 
 		statedb, err = s.bc.StateAt(lastBlockHeader.Root)
@@ -720,14 +726,18 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			return err
 		}
 
-		block, receipts := arbos.ProduceBlock(
+		block, receipts, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
 			lastBlockHeader,
 			statedb,
 			s.bc,
 			s.bc.Config(),
+			batchFetcher,
 		)
+		if err != nil {
+			return err
+		}
 
 		// ProduceBlock advances one message
 		pos++

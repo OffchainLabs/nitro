@@ -24,7 +24,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
 
       - name: Install dependencies
@@ -40,7 +39,7 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.17.x
+          go-version: 1.18.x
 
       - name: Install wasm-ld
         run: |
@@ -137,7 +136,7 @@ jobs:
           skip-pkg-cache: true
 
       - name: run tests with race detection
-        run: gotestsum --format short-verbose --jsonfile test-output-withrace.json -- -race ./...
+        run: gotestsum --format short-verbose --jsonfile test-output-withrace.json -- ./... -race -parallel=1
 
       - name: Annotate tests with race detection
         if: always()
@@ -147,7 +146,7 @@ jobs:
 
       - name: run tests without race detection
         if: always()
-        run: gotestsum --format short-verbose --jsonfile test-output.json -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/...
+        run: gotestsum --format short-verbose --jsonfile test-output.json -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
 
       - name: Annotate tests without race detection
         if: always()

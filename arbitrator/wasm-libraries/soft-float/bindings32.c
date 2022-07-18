@@ -108,8 +108,10 @@ uint32_t wavm__f32_div(uint32_t va, uint32_t vb) {
 uint32_t wavm__f32_min(uint32_t va, uint32_t vb) {
 	float32_t a = {va};
 	float32_t b = {vb};
-	if (f32_isNaN(a) || f32_isNaN(b)) {
+	if (f32_isNaN(a)) {
 		return a.v;
+	} else if (f32_isNaN(b)) {
+		return b.v;
 	} else if (f32_isInfinity(a) && f32_isNegative(a)) {
 		return a.v;
 	} else if (f32_isInfinity(b) && f32_isNegative(b)) {
@@ -132,8 +134,10 @@ uint32_t wavm__f32_min(uint32_t va, uint32_t vb) {
 uint32_t wavm__f32_max(uint32_t va, uint32_t vb) {
 	float32_t a = {va};
 	float32_t b = {vb};
-	if (f32_isNaN(a) || f32_isNaN(b)) {
+	if (f32_isNaN(a)) {
 		return a.v;
+	} else if (f32_isNaN(b)) {
+		return b.v;
 	} else if (f32_isInfinity(a) && !f32_isNegative(a)) {
 		return a.v;
 	} else if (f32_isInfinity(b) && !f32_isNegative(b)) {
@@ -198,39 +202,113 @@ uint8_t wavm__f32_ge(uint32_t va, uint32_t vb) {
 }
 
 int32_t wavm__i32_trunc_f32_s(uint32_t v) {
-	float32_t f = {v};
-	// A rounded up floating point version of 1 << 32
-	float32_t max = {0x4f800000};
-	if (f32_le(max, f)) {
-		return (1u << 31) - 1;
+	// signed truncation is defined over (i32::min - 1, i32::max + 1)
+	float32_t max = {0x4f000000};  // i32::max + 1 = 0x4F000000
+	float32_t min = {0xcf000001};  // i32::min - 1 = 0xCF000000 (adjusted due to rounding)
+	float32_t val = {v};
+	if (f32_isNaN(val) || f32_le(max, val) || f32_le(val, min)) {
+		__builtin_trap();
 	}
-	return f32_to_i32(f, softfloat_round_minMag, true);
+	return f32_to_i32(val, softfloat_round_minMag, true);
+}
+
+int32_t wavm__i32_trunc_sat_f32_s(uint32_t v) {
+	// signed truncation is defined over (i32::min - 1, i32::max + 1)
+	float32_t max = {0x4f000000};  // i32::max + 1 = 0x4F000000
+	float32_t min = {0xcf000001};  // i32::min - 1 = 0xCF000000 (adjusted due to rounding)
+	float32_t val = {v};
+	if (f32_isNaN(val)) {
+		return 0;
+	}
+	if (f32_le(max, val)) {
+		return 2147483647;
+	}
+	if (f32_le(val, min)) {
+		return -2147483648;
+	}
+	return f32_to_i32(val, softfloat_round_minMag, true);
 }
 
 uint32_t wavm__i32_trunc_f32_u(uint32_t v) {
-	float32_t f = {v};
-	if (f32_isNegative(f)) {
+	// unsigned truncation is defined over (-1, u32::max + 1)
+	float32_t max = {0x4f800000};  // u32::max + 1 = 0x4f800000
+	float32_t min = {0xbf800000};  // -1           = 0xbf800000
+	float32_t val = {v};
+	if (f32_isNaN(val) || f32_le(max, val) || f32_le(val, min)) {
+		__builtin_trap();
+	}
+	if (f32_isNegative(val)) {
 		return 0;
 	}
-	return f32_to_ui32(f, softfloat_round_minMag, true);
+	return f32_to_ui32(val, softfloat_round_minMag, true);
+}
+
+uint32_t wavm__i32_trunc_sat_f32_u(uint32_t v) {
+	// unsigned truncation is defined over (-1, u32::max + 1)
+	float32_t max = {0x4f800000};  // u32::max + 1 = 0x4f800000
+	float32_t val = {v};
+	if (f32_isNaN(val) || f32_isNegative(val)) {
+		return 0;
+	}
+	if (f32_le(max, val)) {
+		return ~0u;
+	}
+	return f32_to_ui32(val, softfloat_round_minMag, true);
 }
 
 int64_t wavm__i64_trunc_f32_s(uint32_t v) {
-	float32_t f = {v};
-	// A rounded down floating point version of 1 << 64
-	float32_t max = {0x5f800000};
-	if (f32_lt(max, f)) {
-		return (1ull << 63) - 1;
+	// unsigned truncation is defined over (i64::min - 1, i64::max + 1)
+	float32_t max = {0x5f000000};  // i64::max + 1 = 0x5f000000
+	float32_t min = {0xdf000001};  // i64::min - 1 = 0xdf000000 (adjusted due to rounding)
+	float32_t val = {v};
+	if (f32_isNaN(val) || f32_le(max, val) || f32_le(val, min)) {
+		__builtin_trap();
 	}
-	return f32_to_i64(f, softfloat_round_minMag, true);
+	return f32_to_i64(val, softfloat_round_minMag, true);
+}
+
+int64_t wavm__i64_trunc_sat_f32_s(uint32_t v) {
+	// unsigned truncation is defined over (i64::min - 1, i64::max + 1)
+	float32_t max = {0x5f000000};  // i64::max + 1 = 0x5f000000
+	float32_t min = {0xdf000001};  // i64::min - 1 = 0xdf000000 (adjusted due to rounding)
+	float32_t val = {v};
+	if (f32_isNaN(val)) {
+		return 0;
+	}
+	if (f32_le(max, val)) {
+		return 9223372036854775807ll;
+	}
+	if (f32_le(val, min)) {
+		return -(((int64_t) 1) << 63);
+	}
+	return f32_to_i64(val, softfloat_round_minMag, true);
 }
 
 uint64_t wavm__i64_trunc_f32_u(uint32_t v) {
-	float32_t f = {v};
-	if (f32_isNegative(f)) {
+	// unsigned truncation is defined over (-1, i64::max + 1)
+	float32_t max = {0x5f800000};  // i64::max + 1 = 0x5f800000
+	float32_t min = {0xbf800000};  // -1           = 0xbf800000
+	float32_t val = {v};
+	if (f32_isNaN(val) || f32_le(max, val) || f32_le(val, min)) {
+		__builtin_trap();
+	}
+	if (f32_isNegative(val)) {
 		return 0;
 	}
-	return f32_to_ui64(f, softfloat_round_minMag, true);
+	return f32_to_ui64(val, softfloat_round_minMag, true);
+}
+
+uint64_t wavm__i64_trunc_sat_f32_u(uint32_t v) {
+	// unsigned truncation is defined over (-1, i64::max + 1)
+	float32_t max = {0x5f800000};  // i64::max + 1 = 0x5f800000
+	float32_t val = {v};
+	if (f32_isNaN(val) || f32_isNegative(val)) {
+		return 0;
+	}
+	if (f32_le(max, val)) {
+		return ~0ull;
+	}
+	return f32_to_ui64(val, softfloat_round_minMag, true);
 }
 
 uint32_t wavm__f32_convert_i32_s(int32_t x) {

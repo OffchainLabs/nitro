@@ -184,6 +184,8 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				if strings.Contains(err.Error(), "i/o timeout") {
 					log.Error("Server connection timed out without receiving data", "url", bc.websocketUrl, "err", err)
+				} else if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					log.Warn("readData returned EOF", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				} else {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}

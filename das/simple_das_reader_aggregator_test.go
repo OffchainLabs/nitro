@@ -20,17 +20,19 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	storage1, storage2, storage3 := NewLocalDiskStorageService(t.TempDir()), NewLocalDiskStorageService(t.TempDir()), NewLocalDiskStorageService(t.TempDir())
+	storage1, storage2, storage3 := NewMemoryBackedStorageService(ctx), NewMemoryBackedStorageService(ctx), NewMemoryBackedStorageService(ctx)
 
 	data1 := []byte("Testing a restful server now.")
 	dataHash1 := crypto.Keccak256(data1)
 
-	server1, server2, server3 :=
-		NewRestfulDasServerHTTP(LocalServerAddressForTest, 9888, storage1),
-		NewRestfulDasServerHTTP(LocalServerAddressForTest, 9889, storage2),
-		NewRestfulDasServerHTTP(LocalServerAddressForTest, 9890, storage3)
+	server1, err := NewRestfulDasServer(LocalServerAddressForTest, 9888, storage1)
+	Require(t, err)
+	server2, err := NewRestfulDasServer(LocalServerAddressForTest, 9889, storage2)
+	Require(t, err)
+	server3, err := NewRestfulDasServer(LocalServerAddressForTest, 9890, storage3)
+	Require(t, err)
 
-	err := storage1.Put(ctx, data1, uint64(time.Now().Add(time.Hour).Unix()))
+	err = storage1.Put(ctx, data1, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
 	err = storage2.Put(ctx, data1, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)
@@ -47,7 +49,7 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 		MaxPerEndpointStats:    10,
 	}
 
-	agg, err := NewRestfulClientAggregator(&config)
+	agg, err := NewRestfulClientAggregator(ctx, &config)
 	Require(t, err)
 
 	returnedData, err := agg.GetByHash(ctx, dataHash1)

@@ -17,31 +17,24 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/das"
 )
 
 func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bool) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeString)
+	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeString)
 
 	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigB.BatchPoster.Enable = false
-	l1NodeConfigB.BlockValidator.Enable = true
-	l1NodeConfigB.DataAvailability.ModeImpl = dasModeString
-	dasConfig := das.StorageConfig{
-		KeyDir:            dbPath,
-		LocalConfig:       das.LocalConfig{DataDir: dbPath},
-		AllowGenerateKeys: true,
-	}
-	l1NodeConfigB.DataAvailability.DASConfig = dasConfig
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	validatorConfig.BlockValidator.Enable = true
+	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, validatorConfig)
 
 	l2info.GenerateAccount("User2")
 
@@ -99,20 +92,34 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		Fail(t, "Unexpected balance:", l2balance)
 	}
 
-	lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
+	lastBlock, err := l2clientB.BlockByNumber(ctx, nil)
 	Require(t, err)
+	for {
+		usefulBlock := false
+		for _, tx := range lastBlock.Transactions() {
+			if tx.Type() != types.ArbitrumInternalTxType {
+				usefulBlock = true
+				break
+			}
+		}
+		if usefulBlock {
+			break
+		}
+		lastBlock, err = l2clientB.BlockByHash(ctx, lastBlock.ParentHash())
+		Require(t, err)
+	}
 	testDeadLine, _ := t.Deadline()
 	nodeA.StopAndWait()
-	if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), time.Until(testDeadLine)-time.Second*10) {
+	if !nodeB.BlockValidator.WaitForBlock(lastBlock.NumberU64(), time.Until(testDeadLine)-time.Second*10) {
 		Fail(t, "did not validate all blocks")
 	}
 	nodeB.StopAndWait()
 }
 
 func TestBlockValidatorSimple(t *testing.T) {
-	testBlockValidatorSimple(t, das.OnchainDataAvailabilityString, false)
+	testBlockValidatorSimple(t, "onchain", false)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, das.DASDataAvailabilityString, false)
+	testBlockValidatorSimple(t, "files", false)
 }

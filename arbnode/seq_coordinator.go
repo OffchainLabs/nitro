@@ -36,6 +36,7 @@ const LIVELINESS_KEY_PREFIX string = "coordinator.liveliness." // Per server. On
 const MESSAGE_KEY_PREFIX string = "coordinator.msg."           // Per Message. Only written by sequencer holding CHOSEN
 const LIVELINESS_VAL string = "OK"
 const INVALID_VAL string = "INVALID"
+const INVALID_URL string = "<?INVALID-URL?>"
 
 type SeqCoordinator struct {
 	stopwaiter.StopWaiter
@@ -107,7 +108,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:         time.Second,
 	AllowedMsgLag:         200,
 	MaxMsgPerPoll:         2000,
-	MyUrl:                 "",
+	MyUrl:                 INVALID_URL,
 	SigningKey:            "",
 	Dangerous:             DefaultSeqCoordinatorDangerousConfig,
 }
@@ -126,7 +127,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:   time.Millisecond * 3,
 	AllowedMsgLag:   5,
 	MaxMsgPerPoll:   20,
-	MyUrl:           "",
+	MyUrl:           INVALID_URL,
 	SigningKey:      "b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
 	Dangerous: SeqCoordinatorDangerousConfig{
 		DisableSignatureVerification: false,
@@ -174,6 +175,9 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, conf
 	fallbackVerificationKey, err := loadSigningKey(config.FallbackVerificationKey)
 	if err != nil {
 		return nil, err
+	}
+	if config.MyUrl == "" {
+		config.MyUrl = INVALID_URL
 	}
 	coordinator := &SeqCoordinator{
 		streamer:                streamer,
@@ -330,7 +334,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			return err
 		}
 		if !wasEmpty && (current != c.config.MyUrl) {
-			return fmt.Errorf("%w: redis shows chosen: %s", ErrNotMainSequencer, current)
+			return fmt.Errorf("%w: failed to catch lock. redis shows chosen: %s", ErrRetrySequencer, current)
 		}
 		remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, tx)
 		if err != nil {
@@ -338,7 +342,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		}
 		if remoteMsgCount > msgCountExpected {
 			log.Info("coordinator failed to become main", "expected", msgCountExpected, "found", remoteMsgCount, "message is nil?", messageData == nil)
-			return fmt.Errorf("%w: expected msg %d found %d", ErrNotMainSequencer, msgCountExpected, remoteMsgCount)
+			return fmt.Errorf("%w: failed to catch lock. expected msg %d found %d", ErrRetrySequencer, msgCountExpected, remoteMsgCount)
 		}
 		pipe := tx.TxPipeline()
 		initialDuration := c.config.LockoutDuration
@@ -360,7 +364,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		pipe.PExpireAt(ctx, myLivelinessKey, lockoutUntil)
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
-			return fmt.Errorf("%w: transaction failed", ErrNotMainSequencer)
+			return fmt.Errorf("%w: failed to catch sequencer lock", ErrRetrySequencer)
 		}
 		if err != nil {
 			return fmt.Errorf("chosen sequencer failed to update redis: %w", err)
@@ -482,14 +486,20 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 	if nextChosen != c.config.MyUrl {
 		// was the active sequencer, but no longer
 		atomicTimeWrite(&c.lockoutUntil, time.Time{})
+		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
-			c.sequencer.ForwardTo(nextChosen)
+			err := c.sequencer.ForwardTo(nextChosen)
+			if err != nil {
+				// The error was already logged in ForwardTo, just clean up state.
+				// Setting prevChosenSequencer to an empty string will cause the next update to attempt to reconnect.
+				setPrevChosenTo = ""
+			}
 		}
 		if err := c.chosenOneRelease(ctx); err != nil {
 			log.Warn("coordinator failed chosen one release", "err", err)
 			return c.retryAfterRedisError()
 		}
-		c.prevChosenSequencer = nextChosen
+		c.prevChosenSequencer = setPrevChosenTo
 		log.Info("released chosen-coordinator lock", "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
@@ -500,7 +510,7 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 	}
 	localMsgCount, err := c.streamer.GetMessageCount()
 	if err != nil {
-		log.Crit("coordinator cannot read message count", "err", err)
+		log.Error("coordinator cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
 	err = c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
@@ -522,17 +532,24 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.updatePrevKnownChosen(ctx, chosenSeq)
 	}
 	if chosenSeq != c.config.MyUrl && chosenSeq != c.prevChosenSequencer {
+		var err error
 		if c.sequencer != nil {
-			c.sequencer.ForwardTo(chosenSeq)
+			err = c.sequencer.ForwardTo(chosenSeq)
 		}
-		c.prevChosenSequencer = chosenSeq
-		log.Info("chosen sequencer changed", "chosen", chosenSeq)
+		if err == nil {
+			c.prevChosenSequencer = chosenSeq
+			log.Info("chosen sequencer changed", "chosen", chosenSeq)
+		} else {
+			// The error was already logged in ForwardTo, just clean up state.
+			// Next run this will attempt to reconnect.
+			c.prevChosenSequencer = ""
+		}
 	}
 
 	// read messages from redis
 	localMsgCount, err := c.streamer.GetMessageCount()
 	if err != nil {
-		log.Crit("cannot read message count", "err", err)
+		log.Error("cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
 	remoteMsgCount, err := c.GetRemoteMsgCount(ctx)
@@ -596,10 +613,14 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		}
 	}
 
+	if c.config.MyUrl == INVALID_URL {
+		return c.noRedisError()
+	}
+
 	// can take over as main sequencer?
 	if localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl {
 		if c.sequencer == nil {
-			log.Crit("myurl main sequencer, but no sequencer exists")
+			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
@@ -665,8 +686,9 @@ func (h seqCoordinatorChosenHealthcheck) ServeHTTP(response http.ResponseWriter,
 
 func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
 	server := &http.Server{
-		Addr:    c.config.ChosenHealthcheckAddr,
-		Handler: seqCoordinatorChosenHealthcheck{c},
+		Addr:              c.config.ChosenHealthcheckAddr,
+		Handler:           seqCoordinatorChosenHealthcheck{c},
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
@@ -702,15 +724,13 @@ func (c *SeqCoordinator) StopAndWait() {
 	c.client.Close()
 }
 
-var ErrNotMainSequencer = errors.New("not main sequencer")
-
 func (c *SeqCoordinator) CurrentlyChosen() bool {
 	return time.Now().Before(atomicTimeRead(&c.lockoutUntil))
 }
 
 func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
 	if !c.CurrentlyChosen() {
-		return ErrNotMainSequencer
+		return fmt.Errorf("%w: not main sequencer", ErrRetrySequencer)
 	}
 	if err := c.chosenOneUpdate(c.GetContext(), pos, pos+1, msg); err != nil {
 		return err

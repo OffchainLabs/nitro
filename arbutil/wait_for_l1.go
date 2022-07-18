@@ -19,6 +19,7 @@ import (
 type L1Interface interface {
 	bind.ContractBackend
 	ethereum.ChainReader
+	ethereum.ChainStateReader
 	ethereum.TransactionReader
 	TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error)
 	BlockNumber(ctx context.Context) (uint64, error)

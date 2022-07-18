@@ -13,7 +13,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -33,6 +32,7 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.BroadcastClientConf
 }
 
 func TestSequencerFeed(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -68,6 +68,7 @@ func TestSequencerFeed(t *testing.T) {
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -112,11 +113,12 @@ func TestRelayedSequencerFeed(t *testing.T) {
 }
 
 func testLyingSequencer(t *testing.T, dasModeStr string) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// The truthful sequencer
-	chainConfig, nodeConfigA, dbPath, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
+	chainConfig, nodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
 	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
@@ -127,30 +129,17 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
-	nodeConfigC.DataAvailability.ModeImpl = dasModeStr
-	dasConfig := das.StorageConfig{
-		KeyDir:            dbPath,
-		LocalConfig:       das.LocalConfig{DataDir: dbPath},
-		AllowGenerateKeys: true,
-	}
-	nodeConfigC.DataAvailability.DASConfig = dasConfig
+	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest("0")
 	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
 	// The client node, connects to lying sequencer's feed
-	nodeConfigB := arbnode.ConfigDefaultL1Test()
+	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigB.Feed.Output.Enable = false
-	nodeConfigB.BatchPoster.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
-	nodeConfigB.DataAvailability.ModeImpl = dasModeStr
-	dasConfigB := das.StorageConfig{
-		KeyDir:            dbPath,
-		LocalConfig:       das.LocalConfig{DataDir: dbPath},
-		AllowGenerateKeys: true,
-	}
-	nodeConfigB.DataAvailability.DASConfig = dasConfigB
+	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
@@ -221,9 +210,9 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 }
 
 func TestLyingSequencer(t *testing.T) {
-	testLyingSequencer(t, das.OnchainDataAvailabilityString)
+	testLyingSequencer(t, "onchain")
 }
 
 func TestLyingSequencerLocalDAS(t *testing.T) {
-	testLyingSequencer(t, das.DASDataAvailabilityString)
+	testLyingSequencer(t, "files")
 }

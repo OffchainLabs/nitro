@@ -72,6 +72,9 @@ func (v *ValidatorWallet) Address() *common.Address {
 }
 
 func (v *ValidatorWallet) From() common.Address {
+	if v.auth == nil {
+		return common.Address{}
+	}
 	return v.auth.From
 }
 
@@ -157,8 +160,16 @@ func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *Vali
 		totalAmount = totalAmount.Add(totalAmount, tx.Value())
 	}
 
+	balanceInContract, err := v.l1Reader.Client().BalanceAt(ctx, *v.address, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	oldAuthValue := v.auth.Value
-	v.auth.Value = totalAmount
+	v.auth.Value = new(big.Int).Sub(totalAmount, balanceInContract)
+	if v.auth.Value.Sign() < 0 {
+		v.auth.Value.SetInt64(0)
+	}
 	defer (func() { v.auth.Value = oldAuthValue })()
 
 	arbTx, err := v.con.ExecuteTransactions(v.auth, data, dest, amount)
@@ -209,7 +220,8 @@ func CreateValidatorWallet(
 		return parsed.WalletAddress, err
 	}
 
-	tx, err := walletCreator.CreateWallet(transactAuth)
+	var initialExecutorAllowedDests []common.Address
+	tx, err := walletCreator.CreateWallet(transactAuth, initialExecutorAllowedDests)
 	if err != nil {
 		return common.Address{}, err
 	}

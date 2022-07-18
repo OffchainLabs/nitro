@@ -4,7 +4,21 @@
 
 pragma solidity ^0.8.4;
 
+import {
+    AlreadyInit,
+    NotOrigin,
+    DataTooLarge,
+    AlreadyPaused,
+    AlreadyUnpaused,
+    Paused,
+    InsufficientValue,
+    InsufficientSubmissionCost,
+    NotAllowedOrigin,
+    RetryableData,
+    NotRollupOrOwner
+} from "../libraries/Error.sol";
 import "./IInbox.sol";
+import "./ISequencerInbox.sol";
 import "./IBridge.sol";
 
 import "./Messages.sol";
@@ -20,7 +34,6 @@ import {
 } from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
@@ -31,27 +44,73 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
  */
 contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     IBridge public override bridge;
+    ISequencerInbox public sequencerInbox;
 
-    modifier onlyOwner() {
-        // whoevever owns the Bridge, also owns the Inbox. this is usually the rollup contract
-        address bridgeOwner = OwnableUpgradeable(address(bridge)).owner();
-        if (msg.sender != bridgeOwner) revert NotOwner(msg.sender, bridgeOwner);
+    /// ------------------------------------ allow list start ------------------------------------ ///
+
+    bool public allowListEnabled;
+    mapping(address => bool) public isAllowed;
+
+    event AllowListAddressSet(address indexed user, bool val);
+    event AllowListEnabledUpdated(bool isEnabled);
+
+    function setAllowList(address[] memory user, bool[] memory val) external onlyRollupOrOwner {
+        require(user.length == val.length, "INVALID_INPUT");
+
+        for (uint256 i = 0; i < user.length; i++) {
+            isAllowed[user[i]] = val[i];
+            emit AllowListAddressSet(user[i], val[i]);
+        }
+    }
+
+    function setAllowListEnabled(bool _allowListEnabled) external onlyRollupOrOwner {
+        require(_allowListEnabled != allowListEnabled, "ALREADY_SET");
+        allowListEnabled = _allowListEnabled;
+        emit AllowListEnabledUpdated(_allowListEnabled);
+    }
+
+    /// @dev this modifier checks the tx.origin instead of msg.sender for convenience (ie it allows
+    /// allowed users to interact with the token bridge without needing the token bridge to be allowList aware).
+    /// this modifier is not intended to use to be used for security (since this opens the allowList to
+    /// a smart contract phishing risk).
+    modifier onlyAllowed() {
+        // solhint-disable-next-line avoid-tx-origin
+        if (allowListEnabled && !isAllowed[tx.origin]) revert NotAllowedOrigin(tx.origin);
+        _;
+    }
+
+    /// ------------------------------------ allow list end ------------------------------------ ///
+
+    modifier onlyRollupOrOwner() {
+        IOwnable rollup = bridge.rollup();
+        if (msg.sender != address(rollup)) {
+            address rollupOwner = rollup.owner();
+            if (msg.sender != rollupOwner) {
+                revert NotRollupOrOwner(msg.sender, address(rollup), rollupOwner);
+            }
+        }
         _;
     }
 
     /// @notice pauses all inbox functionality
-    function pause() external onlyOwner {
+    function pause() external onlyRollupOrOwner {
         _pause();
     }
 
     /// @notice unpauses all inbox functionality
-    function unpause() external onlyOwner {
+    function unpause() external onlyRollupOrOwner {
         _unpause();
     }
 
-    function initialize(IBridge _bridge) external initializer onlyDelegated {
+    function initialize(IBridge _bridge, ISequencerInbox _sequencerInbox)
+        external
+        initializer
+        onlyDelegated
+    {
         if (address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
+        sequencerInbox = _sequencerInbox;
+        allowListEnabled = false;
         __Pausable_init();
     }
 
@@ -64,6 +123,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 sstore(i, 0)
             }
         }
+        allowListEnabled = false;
         bridge = _bridge;
     }
 
@@ -75,6 +135,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     function sendL2MessageFromOrigin(bytes calldata messageData)
         external
         whenNotPaused
+        onlyAllowed
         returns (uint256)
     {
         // solhint-disable-next-line avoid-tx-origin
@@ -95,6 +156,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         external
         override
         whenNotPaused
+        onlyAllowed
         returns (uint256)
     {
         return _deliverMessage(L2_MSG, msg.sender, messageData);
@@ -106,7 +168,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 nonce,
         address to,
         bytes calldata data
-    ) external payable virtual override whenNotPaused returns (uint256) {
+    ) external payable virtual override whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -128,7 +190,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         address to,
         bytes calldata data
-    ) external payable virtual override whenNotPaused returns (uint256) {
+    ) external payable virtual override whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -151,7 +213,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         uint256 value,
         bytes calldata data
-    ) external virtual override whenNotPaused returns (uint256) {
+    ) external virtual override whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -174,7 +236,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         uint256 value,
         bytes calldata data
-    ) external virtual override whenNotPaused returns (uint256) {
+    ) external virtual override whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -209,30 +271,37 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /// @dev this does not trigger the fallback function when receiving in the L2 side.
     /// Look into retryable tickets if you are interested in this functionality.
     /// @dev this function should not be called inside contract constructors
-    function depositEth() public payable override whenNotPaused returns (uint256) {
-        address sender = msg.sender;
+    function depositEth() public payable override whenNotPaused onlyAllowed returns (uint256) {
+        address dest = msg.sender;
 
         // solhint-disable-next-line avoid-tx-origin
-        if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
+        if (AddressUpgradeable.isContract(msg.sender) || tx.origin != msg.sender) {
             // isContract check fails if this function is called during a contract's constructor.
             // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
             // If the caller is an EOA, we adjust the address.
             // This is needed because unsigned messages to the L2 (such as retryables)
             // have the L1 sender address mapped.
-            // Here we preemptively reverse the mapping for EOAs so deposits work as expected
-            sender = AddressAliasHelper.undoL1ToL2Alias(sender);
+            dest = AddressAliasHelper.applyL1ToL2Alias(msg.sender);
         }
 
         return
             _deliverMessage(
                 L1MessageType_ethDeposit,
-                sender, // arb-os will add the alias to this value
-                abi.encodePacked(msg.value)
+                msg.sender,
+                abi.encodePacked(dest, msg.value)
             );
     }
 
     /// @notice deprecated in favour of depositEth with no parameters
-    function depositEth(uint256) external payable virtual override whenNotPaused returns (uint256) {
+    function depositEth(uint256)
+        external
+        payable
+        virtual
+        override
+        whenNotPaused
+        onlyAllowed
+        returns (uint256)
+    {
         return depositEth();
     }
 
@@ -259,7 +328,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) external payable virtual whenNotPaused returns (uint256) {
+    ) external payable virtual whenNotPaused onlyAllowed returns (uint256) {
         return
             unsafeCreateRetryableTicket(
                 to,
@@ -296,10 +365,14 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) external payable virtual override whenNotPaused returns (uint256) {
+    ) external payable virtual override whenNotPaused onlyAllowed returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
-        if (msg.value < maxSubmissionCost + l2CallValue)
-            revert InsufficientValue(maxSubmissionCost + l2CallValue, msg.value);
+        if (msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
+            revert InsufficientValue(
+                maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
+                msg.value
+            );
+        }
 
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
@@ -351,7 +424,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) public payable virtual override whenNotPaused returns (uint256) {
+    ) public payable virtual override whenNotPaused onlyAllowed returns (uint256) {
         // gas price and limit of 1 should never be a valid input, so instead they are used as
         // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
         if (gasLimit == 1 || maxFeePerGas == 1)
@@ -408,6 +481,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.enqueueDelayedMessage{value: msg.value}(kind, sender, messageDataHash);
+        return
+            bridge.enqueueDelayedMessage{value: msg.value}(
+                kind,
+                AddressAliasHelper.applyL1ToL2Alias(sender),
+                messageDataHash
+            );
     }
 }

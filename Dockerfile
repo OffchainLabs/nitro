@@ -38,8 +38,8 @@ RUN apt-get update && apt-get install -y curl build-essential=12.9
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
 RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
-    # pinned rust 1.60.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.60.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+    # pinned rust 1.61.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.61.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
@@ -69,13 +69,14 @@ COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompile
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.57-slim-bullseye as prover-header-builder
+FROM rust:1.61-slim-bullseye as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make && \
     cargo install --force cbindgen
 COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
+COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
@@ -83,7 +84,7 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch as prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.57-slim-bullseye as prover-builder
+FROM rust:1.61-slim-bullseye as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -122,11 +123,9 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
-# Download old WASM module roots
-#RUN bash -c 'r=0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br'
-RUN bash -c 'r=0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br'
-RUN bash -c 'r=0xdd45c240cfe6624a7dfd0b0c965bf21301ebeea7a6a2a696781a6e03b04dc288 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v3/machine.wavm.br'
-RUN bash -c 'r=0x3d946791b42cc1069694cfab9feedc5d5ccd36cb792a2a7ed57b8cba412f65ac && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v3.1/machine.wavm.br'
+# Download WAVM machines
+RUN bash -c 'r=0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v1-rc1/machine.wavm.br'
+RUN bash -c 'r=0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v2.1/machine.wavm.br'
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace

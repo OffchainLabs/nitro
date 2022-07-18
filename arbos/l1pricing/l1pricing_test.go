@@ -8,13 +8,13 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/util/arbmath"
+	am "github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
 )
 
 func TestTxFixedCost(t *testing.T) {
@@ -51,39 +51,24 @@ func TestTxFixedCost(t *testing.T) {
 	}
 }
 
+const latestArbosVersion = 2
+
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL1PricingState(sto)
+	err := InitializeL1PricingState(sto, latestArbosVersion, common.Address{})
 	Require(t, err)
 	ps := OpenL1PricingState(sto)
 
-	tyme, err := ps.LastL1BaseFeeUpdateTime()
+	tyme, err := ps.LastUpdateTime()
 	Require(t, err)
 	if tyme != 0 {
 		Fail(t)
 	}
 
-	priceEstimate, err := ps.L1BaseFeeEstimateWei()
+	initialPriceEstimate := am.UintToBig(InitialPricePerUnitWei)
+	priceEstimate, err := ps.PricePerUnit()
 	Require(t, err)
-	if priceEstimate.Cmp(big.NewInt(InitialL1BaseFeeEstimate)) != 0 {
+	if priceEstimate.Cmp(initialPriceEstimate) != 0 {
 		Fail(t)
-	}
-
-	newPrice := big.NewInt(20 * params.GWei)
-	ps.UpdatePricingModel(newPrice, 2)
-	priceEstimate, err = ps.L1BaseFeeEstimateWei()
-	Require(t, err)
-
-	if priceEstimate.Cmp(newPrice) <= 0 || priceEstimate.Cmp(big.NewInt(InitialL1BaseFeeEstimate)) >= 0 {
-		Fail(t)
-	}
-
-	ps.UpdatePricingModel(newPrice, uint64(1)<<63)
-	priceEstimate, err = ps.L1BaseFeeEstimateWei()
-	Require(t, err)
-
-	priceLimit := arbmath.BigAdd(newPrice, big.NewInt(300))
-	if arbmath.BigGreaterThan(priceEstimate, priceLimit) || arbmath.BigLessThan(priceEstimate, newPrice) {
-		Fail(t, priceEstimate)
 	}
 }

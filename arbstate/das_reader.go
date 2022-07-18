@@ -9,21 +9,19 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbos/util"
+	"fmt"
 	"io"
 
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
-type SimpleDASReader interface {
+type DataAvailabilityReader interface {
 	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
-}
-
-type DataAvailabilityServiceReader interface {
-	SimpleDASReader
-	KeysetFromHash(ctx context.Context, ksHash []byte) ([]byte, error)
-	CurrentKeysetBytes(ctx context.Context) ([]byte, error)
+	HealthCheck(ctx context.Context) error
+	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
 }
 
 var ErrHashMismatch = errors.New("Result does not match expected hash")
@@ -38,12 +36,19 @@ const L1AuthenticatedMessageHeaderFlag byte = 0x40
 // Indicates that this message is zeroheavy-encoded.
 const ZeroheavyMessageHeaderFlag byte = 0x20
 
+// Indicates that the message is brotli-compressed.
+const BrotliMessageHeaderByte byte = 0
+
 func IsDASMessageHeaderByte(header byte) bool {
 	return (DASMessageHeaderFlag & header) > 0
 }
 
 func IsZeroheavyEncodedHeaderByte(header byte) bool {
 	return (ZeroheavyMessageHeaderFlag & header) > 0
+}
+
+func IsBrotliMessageHeaderByte(b uint8) bool {
+	return b == BrotliMessageHeaderByte
 }
 
 type DataAvailabilityCertificate struct {
@@ -116,9 +121,9 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 
 func (cert *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
-	das DataAvailabilityServiceReader,
+	da DataAvailabilityReader,
 ) (*DataAvailabilityKeyset, error) {
-	keysetBytes, err := das.KeysetFromHash(ctx, cert.KeysetHash[:])
+	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash[:])
 	if err != nil {
 		return nil, err
 	}
@@ -130,9 +135,9 @@ func (cert *DataAvailabilityCertificate) RecoverKeyset(
 
 func (cert *DataAvailabilityCertificate) VerifyNonPayloadParts(
 	ctx context.Context,
-	das DataAvailabilityServiceReader,
+	da DataAvailabilityReader,
 ) error {
-	keyset, err := cert.RecoverKeyset(ctx, das)
+	keyset, err := cert.RecoverKeyset(ctx, da)
 	if err != nil {
 		return err
 	}
@@ -227,4 +232,49 @@ func (keyset *DataAvailabilityKeyset) VerifySignature(signersMask uint64, data [
 		return errors.New("bad signature")
 	}
 	return nil
+}
+
+type ExpirationPolicy int64
+
+const (
+	KeepForever                ExpirationPolicy = iota // Data is kept forever
+	DiscardAfterArchiveTimeout                         // Data is kept till Archive timeout (Archive Timeout is defined by archiving node, assumed to be as long as minimum data timeout)
+	DiscardAfterDataTimeout                            // Data is kept till aggregator provided timeout (Aggregator provides a timeout for data while making the put call)
+	MixedTimeout                                       // Used for cases with mixed type of timeout policy(Mainly used for aggregators which have data availability services with multiply type of timeout policy)
+	DiscardImmediately                                 // Data is never stored (Mainly used for empty/wrapper/placeholder classes)
+	// Add more type of expiration policy.
+)
+
+func (ep ExpirationPolicy) String() (string, error) {
+	switch ep {
+	case KeepForever:
+		return "KeepForever", nil
+	case DiscardAfterArchiveTimeout:
+		return "DiscardAfterArchiveTimeout", nil
+	case DiscardAfterDataTimeout:
+		return "DiscardAfterDataTimeout", nil
+	case MixedTimeout:
+		return "MixedTimeout", nil
+	case DiscardImmediately:
+		return "DiscardImmediately", nil
+	default:
+		return "", errors.New("unknown Expiration Policy")
+	}
+}
+
+func StringToExpirationPolicy(s string) (ExpirationPolicy, error) {
+	switch s {
+	case "KeepForever":
+		return KeepForever, nil
+	case "DiscardAfterArchiveTimeout":
+		return DiscardAfterArchiveTimeout, nil
+	case "DiscardAfterDataTimeout":
+		return DiscardAfterDataTimeout, nil
+	case "MixedTimeout":
+		return MixedTimeout, nil
+	case "DiscardImmediately":
+		return DiscardImmediately, nil
+	default:
+		return -1, fmt.Errorf("invalid Expiration Policy: %s", s)
+	}
 }

@@ -1,13 +1,14 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package replay_fuzz
+package arbtest
 
 import (
 	"context"
 	"encoding/binary"
 	"errors"
 	"math/big"
+	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -29,6 +30,7 @@ func BuildBlock(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	inbox arbstate.InboxBackend,
+	seqBatch []byte,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
@@ -45,10 +47,13 @@ func BuildBlock(
 	delayedMessagesRead = inboxMultiplexer.DelayedMessagesRead()
 	l1Message := message.Message
 
-	block, _ := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig,
+	batchFetcher := func(uint64) ([]byte, error) {
+		return seqBatch, nil
+	}
+	block, _, err := arbos.ProduceBlock(
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher,
 	)
-	return block, nil
+	return block, err
 }
 
 // A simple mock inbox multiplexer backend
@@ -103,51 +108,55 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 	return nil
 }
 
-func Fuzz(input []byte) int {
-	chainDb := rawdb.NewMemoryDatabase()
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}), params.ArbitrumTestnetChainConfig())
-	if err != nil {
-		panic(err)
-	}
-	statedb, err := state.New(stateRoot, state.NewDatabase(chainDb), nil)
-	if err != nil {
-		panic(err)
-	}
-	genesis := &types.Header{
-		Number:     new(big.Int),
-		Nonce:      types.EncodeNonce(0),
-		Time:       0,
-		ParentHash: common.Hash{},
-		Extra:      []byte("Arbitrum"),
-		GasLimit:   l2pricing.GethBlockGasLimit,
-		GasUsed:    0,
-		BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
-		Difficulty: big.NewInt(1),
-		MixDigest:  common.Hash{},
-		Coinbase:   common.Address{},
-		Root:       stateRoot,
-	}
+func FuzzStateTransition(f *testing.F) {
+	f.Fuzz(func(t *testing.T, seqMsg []byte, delayedMsg []byte) {
+		chainDb := rawdb.NewMemoryDatabase()
+		stateRoot, err := arbosState.InitializeArbosInDatabase(
+			chainDb,
+			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
+			params.ArbitrumRollupGoerliTestnetChainConfig(),
+		)
+		if err != nil {
+			panic(err)
+		}
+		statedb, err := state.New(stateRoot, state.NewDatabase(chainDb), nil)
+		if err != nil {
+			panic(err)
+		}
+		genesis := &types.Header{
+			Number:     new(big.Int),
+			Nonce:      types.EncodeNonce(0),
+			Time:       0,
+			ParentHash: common.Hash{},
+			Extra:      []byte("Arbitrum"),
+			GasLimit:   l2pricing.GethBlockGasLimit,
+			GasUsed:    0,
+			BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
+			Difficulty: big.NewInt(1),
+			MixDigest:  common.Hash{},
+			Coinbase:   common.Address{},
+			Root:       stateRoot,
+		}
 
-	// Append a header to the input (this part is authenticated by L1).
-	// The first 32 bytes encode timestamp and L1 block number bounds.
-	// For simplicity, those are all set to 0.
-	// The next 8 bytes encode the after delayed message count.
-	delayedMessages := [][]byte{input}
-	seqBatch := make([]byte, 40)
-	binary.BigEndian.PutUint64(seqBatch[32:], uint64(len(delayedMessages)))
-	seqBatch = append(seqBatch, input...)
-	inbox := &inboxBackend{
-		batchSeqNum:           0,
-		batches:               [][]byte{seqBatch},
-		positionWithinMessage: 0,
-		delayedMessages:       delayedMessages,
-	}
-	_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox)
-	if err != nil {
-		// With the fixed header it shouldn't be possible to read a delayed message,
-		// and no other type of error should be possible.
-		panic(err)
-	}
-
-	return 0
+		// Append a header to the input (this part is authenticated by L1).
+		// The first 32 bytes encode timestamp and L1 block number bounds.
+		// For simplicity, those are all set to 0.
+		// The next 8 bytes encode the after delayed message count.
+		delayedMessages := [][]byte{delayedMsg}
+		seqBatch := make([]byte, 40)
+		binary.BigEndian.PutUint64(seqBatch[32:], uint64(len(delayedMessages)))
+		seqBatch = append(seqBatch, seqMsg...)
+		inbox := &inboxBackend{
+			batchSeqNum:           0,
+			batches:               [][]byte{seqBatch},
+			positionWithinMessage: 0,
+			delayedMessages:       delayedMessages,
+		}
+		_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox, seqBatch)
+		if err != nil {
+			// With the fixed header it shouldn't be possible to read a delayed message,
+			// and no other type of error should be possible.
+			panic(err)
+		}
+	})
 }

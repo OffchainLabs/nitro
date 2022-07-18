@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -50,16 +51,27 @@ func retryableSetup(t *testing.T) (
 	lookupSubmitRetryableL2TxHash := func(l1Receipt *types.Receipt) common.Hash {
 		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber)
 		Require(t, err)
-		if len(messages) != 1 {
-			Fail(t, "expected 1 message from retryable submission, found", len(messages))
+		if len(messages) == 0 {
+			Fail(t, "didn't find message for retryable submission")
 		}
-		txs, err := messages[0].Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID)
-		Require(t, err)
-		if len(txs) != 1 {
-			Fail(t, "expected 1 tx from retryable submission, found", len(txs))
+		var submissionTxs []*types.Transaction
+		for _, message := range messages {
+			if message.Message.Header.Kind != arbos.L1MessageType_SubmitRetryable {
+				continue
+			}
+			txs, err := message.Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID, nil)
+			Require(t, err)
+			for _, tx := range txs {
+				if tx.Type() == types.ArbitrumSubmitRetryableTxType {
+					submissionTxs = append(submissionTxs, tx)
+				}
+			}
+		}
+		if len(submissionTxs) != 1 {
+			Fail(t, "expected 1 tx from retryable submission, found", len(submissionTxs))
 		}
 
-		return txs[0].Hash()
+		return submissionTxs[0].Hash()
 	}
 
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
@@ -99,6 +111,7 @@ func TestRetryableNoExist(t *testing.T) {
 }
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
+	t.Parallel()
 	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -168,6 +181,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 }
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
+	t.Parallel()
 	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -191,7 +205,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		// send enough L2 gas for intrinsic but not compute
 		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
 		big.NewInt(l2pricing.InitialBaseFeeWei*2),
-		simpleABI.Methods["increment"].ID,
+		simpleABI.Methods["incrementRedeem"].ID,
 	)
 	Require(t, err)
 
@@ -244,9 +258,23 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	if counter != 1 {
 		Fail(t, "Unexpected counter:", counter)
 	}
+
+	if len(receipt.Logs) != 1 {
+		Fail(t, "Unexpected log count:", len(receipt.Logs))
+	}
+	parsed, err := simple.ParseRedeemedEvent(*receipt.Logs[0])
+	Require(t, err)
+	aliasedSender := util.RemapL1Address(usertxopts.From)
+	if parsed.Caller != aliasedSender {
+		Fail(t, "Unexpected caller", parsed.Caller, "expected", aliasedSender)
+	}
+	if parsed.Redeemer != ownerTxOpts.From {
+		Fail(t, "Unexpected redeemer", parsed.Redeemer, "expected", ownerTxOpts.From)
+	}
 }
 
 func TestSubmissionGasCosts(t *testing.T) {
+	t.Parallel()
 	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
@@ -269,12 +297,13 @@ func TestSubmissionGasCosts(t *testing.T) {
 	Require(t, err)
 
 	usefulGas := params.TxGas
-	excessGas := uint64(808)
+	excessGasLimit := uint64(808)
 
 	maxSubmissionFee := big.NewInt(1e13)
-	retryableGas := arbmath.UintToBig(usefulGas + excessGas) // will only burn the intrinsic cost
+	retryableGas := arbmath.UintToBig(usefulGas + excessGasLimit) // will only burn the intrinsic cost
 	retryableL2CallValue := big.NewInt(1e4)
 	retryableCallData := []byte{}
+	gasFeeCap := big.NewInt(l2pricing.InitialBaseFeeWei * 2)
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		receiveAddress,
@@ -283,7 +312,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		feeRefundAddress,
 		beneficiaryAddress,
 		retryableGas,
-		big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		gasFeeCap,
 		retryableCallData,
 	)
 	Require(t, err)
@@ -296,13 +325,9 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 	l2BaseFee := GetBaseFee(t, l2client, ctx)
-	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGas)
-
-	l1HeaderAfterSubmit, err := l1client.HeaderByHash(ctx, l1receipt.BlockHash)
-	Require(t, err)
-	l1BaseFee := l1HeaderAfterSubmit.BaseFee
-	submitFee := arbmath.BigMulByUint(l1BaseFee, uint64(1400+6*len(retryableCallData)))
-	submissionFeeRefund := arbmath.BigSub(maxSubmissionFee, submitFee)
+	excessGasPrice := arbmath.BigSub(gasFeeCap, l2BaseFee)
+	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGasLimit)
+	excessWei.Add(excessWei, arbmath.BigMul(excessGasPrice, retryableGas))
 
 	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
@@ -334,16 +359,17 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 
 	// the fee refund address should recieve the excess gas
-	colors.PrintBlue("Base Fee      ", l2BaseFee)
-	colors.PrintBlue("Excess Gas    ", excessGas)
-	colors.PrintBlue("Excess Wei    ", excessWei)
-	colors.PrintMint("Fee Refund    ", refundFunds)
-	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(excessWei, submissionFeeRefund)) {
+	colors.PrintBlue("Base Fee         ", l2BaseFee)
+	colors.PrintBlue("Excess Gas Price ", excessGasPrice)
+	colors.PrintBlue("Excess Gas       ", excessGasLimit)
+	colors.PrintBlue("Excess Wei       ", excessWei)
+	colors.PrintMint("Fee Refund       ", refundFunds)
+	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(excessWei, maxSubmissionFee)) {
 		Fail(t, "The Fee Refund Address didn't receive the right funds")
 	}
 
 	// the faucet must pay for both the gas used and the call value supplied
-	expectedGasChange := arbmath.BigMul(l2BaseFee, retryableGas)
+	expectedGasChange := arbmath.BigMul(gasFeeCap, retryableGas)
 	expectedGasChange = arbmath.BigSub(expectedGasChange, usertxopts.Value) // the user is credited this
 	expectedGasChange = arbmath.BigAdd(expectedGasChange, maxSubmissionFee)
 	expectedGasChange = arbmath.BigAdd(expectedGasChange, retryableL2CallValue)

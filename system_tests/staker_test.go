@@ -14,12 +14,14 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -53,6 +55,7 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 }
 
 func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) {
+	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
@@ -61,7 +64,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if faultyStaker {
 		l2info.GenerateGenesysAccount("FaultyAddr", common.Big1)
 	}
-	l2clientB, l2nodeB := Create2ndNode(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, false)
+	l2clientB, l2nodeB := Create2ndNode(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, nil)
 
 	nodeAGenesis := l2nodeA.Backend.APIBackend().CurrentHeader().Hash()
 	nodeBGenesis := l2nodeB.Backend.APIBackend().CurrentHeader().Hash()
@@ -185,7 +188,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		defer close(backgroundTxsShutdownChan)
 		err := makeBackgroundTxs(backgroundTxsCtx, l2info, l2clientA, l2clientB, faultyStaker)
 		if !errors.Is(err, context.Canceled) {
-			t.Error("error making background txs", err)
+			Fail(t, "error making background txs", err)
 		}
 	})()
 
@@ -209,6 +212,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				stakerBTxs++
 			}
 		}
+
+		if err != nil && strings.Contains(err.Error(), "waiting") {
+			colors.PrintRed("retrying ", err.Error(), i)
+			time.Sleep(20 * time.Millisecond)
+			i--
+			continue
+		}
+
 		if err != nil && faultyStaker && i%2 == 1 {
 			// Check if this is an expected error from the faulty staker.
 			if strings.Contains(err.Error(), "agreed with entire challenge") {
@@ -246,7 +257,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		isHonestZombie, err := rollup.IsZombie(&bind.CallOpts{}, valWalletAddrA)
 		Require(t, err)
 		if isHonestZombie {
-			t.Fatal("staker A became a zombie")
+			Fail(t, "staker A became a zombie")
 		}
 		for j := 0; j < 5; j++ {
 			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
@@ -254,7 +265,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 
 	if stakerATxs == 0 || stakerBTxs == 0 {
-		t.Fatal("staker didn't make txs: staker A made", stakerATxs, "staker B made", stakerBTxs)
+		Fail(t, "staker didn't make txs: staker A made", stakerATxs, "staker B made", stakerBTxs)
 	}
 
 	latestConfirmedNode, err := rollup.LatestConfirmed(&bind.CallOpts{})
@@ -263,24 +274,24 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	if latestConfirmedNode <= 1 && !honestStakerInactive {
 		latestCreatedNode, err := rollup.LatestNodeCreated(&bind.CallOpts{})
 		Require(t, err)
-		t.Fatal("latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)
+		Fail(t, "latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)
 	}
 
 	if faultyStaker && !sawStakerZombie {
-		t.Fatal("staker B didn't become a zombie despite being faulty")
+		Fail(t, "staker B didn't become a zombie despite being faulty")
 	}
 
 	isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
 	Require(t, err)
 	if !isStaked {
-		t.Fatal("staker A isn't staked")
+		Fail(t, "staker A isn't staked")
 	}
 
 	if !faultyStaker {
 		isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrB)
 		Require(t, err)
 		if !isStaked {
-			t.Fatal("staker B isn't staked")
+			Fail(t, "staker B isn't staked")
 		}
 	}
 }

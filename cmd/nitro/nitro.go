@@ -105,12 +105,6 @@ func main() {
 		}
 	}
 
-	// Perform sanity check on mode
-	_, err = nodeConfig.Node.DataAvailability.Mode()
-	if err != nil {
-		panic(err.Error())
-	}
-
 	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
 	var daSigner func([]byte) ([]byte, error)
@@ -122,7 +116,8 @@ func main() {
 			panic(err)
 		}
 
-		if nodeConfig.Node.BatchPoster.Enable || nodeConfig.Node.Validator.Enable {
+		validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey {
 			l1TransactionOpts, err = util.GetTransactOptsFromWallet(
 				l1Wallet,
 				new(big.Int).SetUint64(nodeConfig.L1.ChainID),
@@ -220,6 +215,11 @@ func main() {
 		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
 
+	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to open database: %v", err))
+	}
+
 	if nodeConfig.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(nodeConfig.ImportFile)
 		if err != nil {
@@ -241,19 +241,13 @@ func main() {
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
 
-	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID))
-	if err != nil {
-		panic(err)
-	}
+	var chainConfig *params.ChainConfig
 
 	var l2BlockChain *core.BlockChain
 	if nodeConfig.NoInit {
-		blocksInDb, err := chainDb.Ancients()
-		if err != nil {
-			panic(err)
-		}
-		if blocksInDb == 0 {
-			panic("No initialization mode supplied, no blocks in Db")
+		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
+		if chainConfig == nil {
+			panic("No initialization mode supplied, chain data not in Db")
 		}
 		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), chainConfig)
 		if err != nil {
@@ -265,6 +259,10 @@ func main() {
 			panic(err)
 		}
 		blockNum, err := arbnode.ImportBlocksToChainDb(chainDb, blockReader)
+		if err != nil {
+			panic(err)
+		}
+		chainConfig, err = arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), blockNum)
 		if err != nil {
 			panic(err)
 		}
@@ -293,6 +291,11 @@ func main() {
 		}
 	}
 
+	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
+		flag.Usage()
+		panic("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
+	}
+
 	if nodeConfig.Metrics {
 		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
 
@@ -302,7 +305,7 @@ func main() {
 		}
 	}
 
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
 	if err != nil {
 		panic(err)
 	}
@@ -471,16 +474,27 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		}
 	}
 
-	switch l1ChainId.Uint64() {
-	case 1: // mainnet
-		switch k.String("l2.rollup.rollup") {
-		case "", "0x767cff8d8de386d7cbe91dbd39675132ba2f5967":
+	if l1ChainId.Uint64() == 1 { // mainnet
+		switch k.Int64("l2.chain-id") {
+		case 0:
+			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
+		case 42161:
 			return nil, nil, nil, nil, nil, errors.New("mainnet not supported yet")
+		case 42170:
+			if err := applyArbitrumNovaRollupParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
 		}
-	case 5: // goerli
-		switch k.String("l2.rollup.rollup") {
-		case "", "0x767cff8d8de386d7cbe91dbd39675132ba2f5967":
-			if err := applyNitroDevNetRollupParameters(k); err != nil {
+	} else if l1ChainId.Uint64() == 5 {
+		switch k.Int64("l2.chain-id") {
+		case 0:
+			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
+		case 421613:
+			if err := applyArbitrumRollupGoerliTestnetParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+		case 421703:
+			if err := applyArbitrumAnytrustGoerliTestnetParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
 		}
@@ -527,18 +541,43 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyNitroDevNetRollupParameters(k *koanf.Koanf) error {
+func applyArbitrumNovaRollupParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
-		"persistent.chain":                   "goerli",
-		"node.forwarding-target":             "https://nitro-devnet.arbitrum.io/rpc",
-		"node.feed.input.url":                "wss://nitro-devnet.arbitrum.io/feed",
-		"l1.rollup.bridge":                   "0x9903a892da86c1e04522d63b08e5514a921e81df",
-		"l1.rollup.inbox":                    "0x1fdbbcc914e84af593884bf8e8dd6877c29035a2",
-		"l1.rollup.rollup":                   "0x767cff8d8de386d7cbe91dbd39675132ba2f5967",
-		"l1.rollup.sequencer-inbox":          "0xb32f4257e05c56c53d46bbec9e85770eb52425d6",
-		"l1.rollup.validator-utils":          "0x96f42d78bac19a050595c4ea6f64fe355e0af90a",
-		"l1.rollup.validator-wallet-creator": "0xd562adc7ff479461d29e3a3c602a017c34196add",
-		"l1.rollup.deployed-at":              6664425,
-		"l2.chain-id":                        421612,
+		"persistent.chain":                                       "nova",
+		"node.forwarding-target":                                 "https://nova.arbitrum.io/rpc",
+		"node.feed.input.url":                                    "wss://nova.arbitrum.io/feed",
+		"node.data-availability.enable":                          true,
+		"node.data-availability.rest-aggregator.enable":          true,
+		"node.data-availability.rest-aggregator.online-url-list": "https://nova.arbitrum.io/das-servers",
+		"l1.rollup.bridge":                                       "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
+		"l1.rollup.inbox":                                        "0xc4448b71118c9071bcb9734a0eac55d18a153949",
+		"l1.rollup.rollup":                                       "0xfb209827c58283535b744575e11953dcc4bead88",
+		"l1.rollup.sequencer-inbox":                              "0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b",
+		"l1.rollup.validator-utils":                              "0x2B081fbaB646D9013f2699BebEf62B7e7d7F0976",
+		"l1.rollup.validator-wallet-creator":                     "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
+		"l1.rollup.deployed-at":                                  15016829,
+		"l2.chain-id":                                            42170,
+	}, "."), nil)
+}
+
+func applyArbitrumRollupGoerliTestnetParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain":                   "goerli-rollup",
+		"node.forwarding-target":             "https://goerli-rollup.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://goerli-rollup.arbitrum.io/feed",
+		"l1.rollup.bridge":                   "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72",
+		"l1.rollup.inbox":                    "0x6bebc4925716945d46f0ec336d5c2564f419682c",
+		"l1.rollup.rollup":                   "0x45e5caea8768f42b385a366d3551ad1e0cbfab17",
+		"l1.rollup.sequencer-inbox":          "0x0484a87b144745a2e5b7c359552119b6ea2917a9",
+		"l1.rollup.validator-utils":          "0x344f651fe566a02db939c8657427deb5524ea78e",
+		"l1.rollup.validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
+		"l1.rollup.deployed-at":              7217526,
+		"l2.chain-id":                        421613,
+	}, "."), nil)
+}
+
+func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain": "goerli-anytrust",
 	}, "."), nil)
 }

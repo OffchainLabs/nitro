@@ -1,6 +1,10 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+// race detection makes things slow and miss timeouts
+//go:build !race
+// +build !race
+
 package arbtest
 
 import (
@@ -18,6 +22,7 @@ import (
 )
 
 func TestBloom(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	nodeconfig := arbnode.ConfigDefaultL2Test()

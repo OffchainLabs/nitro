@@ -6,10 +6,11 @@ package validator
 import (
 	"context"
 	"fmt"
-	"github.com/offchainlabs/nitro/arbstate"
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/offchainlabs/nitro/arbstate"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -51,27 +52,25 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type L1ValidatorConfig struct {
-	Enable              bool              `koanf:"enable"`
-	Strategy            string            `koanf:"strategy"`
-	StakerInterval      time.Duration     `koanf:"staker-interval"`
-	L1PostingStrategy   L1PostingStrategy `koanf:"posting-strategy"`
-	DisableChallenge    bool              `koanf:"disable-challenge"`
-	WithdrawDestination string            `koanf:"withdraw-destination"`
-	TargetMachineCount  int               `koanf:"target-machine-count"`
-	ConfirmationBlocks  int64             `koanf:"confirmation-blocks"`
-	Dangerous           DangerousConfig   `koanf:"dangerous"`
+	Enable             bool              `koanf:"enable"`
+	Strategy           string            `koanf:"strategy"`
+	StakerInterval     time.Duration     `koanf:"staker-interval"`
+	L1PostingStrategy  L1PostingStrategy `koanf:"posting-strategy"`
+	DisableChallenge   bool              `koanf:"disable-challenge"`
+	TargetMachineCount int               `koanf:"target-machine-count"`
+	ConfirmationBlocks int64             `koanf:"confirmation-blocks"`
+	Dangerous          DangerousConfig   `koanf:"dangerous"`
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
-	Enable:              false,
-	Strategy:            "Watchtower",
-	StakerInterval:      time.Minute,
-	L1PostingStrategy:   L1PostingStrategy{},
-	DisableChallenge:    false,
-	WithdrawDestination: "",
-	TargetMachineCount:  4,
-	ConfirmationBlocks:  12,
-	Dangerous:           DangerousConfig{},
+	Enable:             false,
+	Strategy:           "Watchtower",
+	StakerInterval:     time.Minute,
+	L1PostingStrategy:  L1PostingStrategy{},
+	DisableChallenge:   false,
+	TargetMachineCount: 4,
+	ConfirmationBlocks: 12,
+	Dangerous:          DangerousConfig{},
 }
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -80,7 +79,6 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
 	L1PostingStrategyAddOptions(prefix+".posting-strategy", f)
 	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
-	f.String(prefix+".withdraw-destination", DefaultL1ValidatorConfig.WithdrawDestination, "validator withdraw destination")
 	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
@@ -115,7 +113,6 @@ type Staker struct {
 	lastActCalledBlock      *big.Int
 	inactiveLastCheckedNode *nodeAndHash
 	bringActiveUntilNode    uint64
-	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
 	nitroMachineLoader      *NitroMachineLoader
 }
@@ -140,7 +137,7 @@ func NewStaker(
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
 	l2Blockchain *core.BlockChain,
-	das arbstate.SimpleDASReader,
+	das arbstate.DataAvailabilityReader,
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
@@ -157,10 +154,6 @@ func NewStaker(
 	if err != nil {
 		return nil, err
 	}
-	withdrawDestination := wallet.From()
-	if common.IsHexAddress(config.WithdrawDestination) {
-		withdrawDestination = common.HexToAddress(config.WithdrawDestination)
-	}
 	return &Staker{
 		L1Validator:         val,
 		l1Reader:            l1Reader,
@@ -169,7 +162,6 @@ func NewStaker(
 		config:              config,
 		highGasBlocksBuffer: big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:  nil,
-		withdrawDestination: withdrawDestination,
 		inboxReader:         inboxReader,
 		nitroMachineLoader:  nitroMachineLoader,
 	}, nil
@@ -195,9 +187,12 @@ func (s *Staker) Start(ctxIn context.Context) {
 			backoff = time.Second
 			return s.config.StakerInterval
 		}
-		log.Warn("error acting as staker", "err", err)
-		if backoff < 60*time.Second {
-			backoff *= 2
+		backoff *= 2
+		if backoff > time.Minute {
+			backoff = time.Minute
+			log.Error("error acting as staker", "err", err)
+		} else {
+			log.Warn("error acting as staker", "err", err)
 		}
 		return backoff
 	})
@@ -274,7 +269,9 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	// If the wallet address is zero, or the wallet address isn't staked,
 	// this will return the latest node and its hash (atomically).
-	latestStakedNodeNum, latestStakedNodeInfo, err := s.validatorUtils.LatestStaked(callOpts, s.rollupAddress, walletAddressOrZero)
+	latestStakedNodeNum, latestStakedNodeInfo, err := s.validatorUtils.LatestStaked(
+		callOpts, s.rollupAddress, walletAddressOrZero,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -322,9 +319,41 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		return nil, err
 	}
 
+	requiredStakeElevated, err := s.isRequiredStakeElevated(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Resolve nodes if either we're on the make nodes strategy,
+	// or we're on the stake latest strategy but don't have a stake
+	// (attempt to reduce the current required stake).
+	shouldResolveNodes := effectiveStrategy >= MakeNodesStrategy ||
+		(effectiveStrategy >= StakeLatestStrategy && rawInfo == nil && requiredStakeElevated)
+	resolvingNode := false
+	if shouldResolveNodes {
+		arbTx, err := s.resolveTimedOutChallenges(ctx)
+		if err != nil || arbTx != nil {
+			return arbTx, err
+		}
+		resolvingNode, err = s.resolveNextNode(ctx, rawInfo, &latestConfirmedNode)
+		if err != nil {
+			return nil, err
+		}
+		if resolvingNode && rawInfo == nil && latestConfirmedNode > info.LatestStakedNode {
+			// If we hit this condition, we've resolved what was previously the latest confirmed node,
+			// and we don't have a stake yet. That means we were planning to enter the rollup on
+			// the latest confirmed node, which has now changed. We fix this by updating our staker info
+			// to indicate that we're now entering the rollup on the newly confirmed node.
+			nodeInfo, err := s.rollup.GetNode(callOpts, latestConfirmedNode)
+			if err != nil {
+				return nil, err
+			}
+			info.LatestStakedNode = latestConfirmedNode
+			info.LatestStakedNodeHash = nodeInfo.NodeHash
+		}
+	}
+
 	// If we have an old stake, remove it
 	if rawInfo != nil && rawInfo.LatestStakedNode <= latestConfirmedNode {
-		// At this point it'd be better to just create a new stake on the latest confirmed node
 		stakeIsTooOutdated := rawInfo.LatestStakedNode < latestConfirmedNode
 		// We're not trying to stake anyways
 		stakeIsUnwanted := effectiveStrategy < StakeLatestStrategy
@@ -334,38 +363,12 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			if err != nil {
 				return nil, err
 			}
-			if stakeIsUnwanted {
-				_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx), s.withdrawDestination)
-				if err != nil {
-					return nil, err
-				}
-				log.Info("removing old stake and withdrawing funds")
-			} else {
-				log.Info("removing old stake to re-place stake on latest confirmed node")
+			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx))
+			if err != nil {
+				return nil, err
 			}
+			log.Info("removing old stake and withdrawing funds")
 			return s.wallet.ExecuteTransactions(ctx, s.builder)
-		}
-	}
-
-	// Resolve nodes if either we're on the make nodes strategy,
-	// or we're on the stake latest strategy but don't have a stake
-	// (attempt to reduce the current required stake).
-	shouldResolveNodes := effectiveStrategy >= MakeNodesStrategy
-	if !shouldResolveNodes && effectiveStrategy >= StakeLatestStrategy && rawInfo == nil {
-		shouldResolveNodes, err = s.isRequiredStakeElevated(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-	resolvingNode := false
-	if shouldResolveNodes {
-		arbTx, err := s.resolveTimedOutChallenges(ctx)
-		if err != nil || arbTx != nil {
-			return arbTx, err
-		}
-		resolvingNode, err = s.resolveNextNode(ctx, rawInfo)
-		if err != nil {
-			return nil, err
 		}
 	}
 
@@ -374,8 +377,8 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		if err != nil {
 			return nil, err
 		}
-		if withdrawable.Sign() > 0 && s.withdrawDestination != (common.Address{}) {
-			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx), s.withdrawDestination)
+		if withdrawable.Sign() > 0 {
+			_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx))
 			if err != nil {
 				return nil, err
 			}
@@ -388,9 +391,9 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	// Don't attempt to create a new stake if we're resolving a node,
+	// Don't attempt to create a new stake if we're resolving a node and the stake is elevated,
 	// as that might affect the current required stake.
-	if rawInfo != nil || !resolvingNode {
+	if rawInfo != nil || !resolvingNode || !requiredStakeElevated {
 		// Advance stake up to 20 times in one transaction
 		for i := 0; info.CanProgress && i < 20; i++ {
 			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
