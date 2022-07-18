@@ -123,8 +123,7 @@ func TestDASRekey(t *testing.T) {
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForArbBackend(t, nodeA.Backend)
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigB.BatchPoster.Enable = false
+	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigB.DataAvailability.Enable = true
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
@@ -316,7 +315,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForArbBackend(t, nodeA.Backend)
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	l1NodeConfigB.DataAvailability = das.DataAvailabilityConfig{
 		Enable: true,
 
@@ -337,7 +336,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 
-	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigA.DataAvailability.Enable = true
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
@@ -362,8 +360,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	restServer, err := das.NewRestfulDasServerOnListener(restLis, restServerDAS)
 	Require(t, err)
 
-	l1NodeConfigC := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigC.BatchPoster.Enable = false
+	l1NodeConfigC := arbnode.ConfigDefaultL1NonSequencerTest()
 	l1NodeConfigC.BlockValidator.Enable = false
 	l1NodeConfigC.DataAvailability = das.DataAvailabilityConfig{
 		Enable: true,

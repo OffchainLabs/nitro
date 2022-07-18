@@ -134,7 +134,7 @@ func (s *Sequencer) ForwardTarget() string {
 	return s.forwarder.target
 }
 
-func (s *Sequencer) ForwardTo(url string) {
+func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
 	s.forwarder = NewForwarder(url)
@@ -143,6 +143,7 @@ func (s *Sequencer) ForwardTo(url string) {
 		log.Error("failed to set forward agent", "err", err)
 		s.forwarder = nil
 	}
+	return err
 }
 
 func (s *Sequencer) DontForward() {

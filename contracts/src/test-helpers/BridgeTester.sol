@@ -7,6 +7,14 @@ pragma solidity ^0.8.4;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
+import {
+    NotContract,
+    NotRollupOrOwner,
+    NotDelayedInbox,
+    NotSequencerInbox,
+    NotOutbox,
+    InvalidOutboxSet
+} from "../libraries/Error.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/Messages.sol";
 import "../libraries/DelegateCallAware.sol";
@@ -220,4 +228,6 @@ contract BridgeTester is Initializable, DelegateCallAware, IBridge {
     }
 
     receive() external payable {}
+
+    function acceptFundsFromOldBridge() external payable {}
 }
