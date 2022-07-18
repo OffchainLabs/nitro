@@ -4,6 +4,7 @@
 package precompiles
 
 import (
+	"github.com/ethereum/go-ethereum/common/math"
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -16,7 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
-func TestAddressSet(t *testing.T) {
+func TestArbOwner(t *testing.T) {
 	evm := newMockEVMForTesting()
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 	tracer := util.NewTracingInfo(evm, testhelpers.RandomAddress(), types.ArbosAddress, util.TracingDuringEVM)
@@ -29,6 +30,7 @@ func TestAddressSet(t *testing.T) {
 	addr3 := common.BytesToAddress(crypto.Keccak256([]byte{3})[:20])
 
 	prec := &ArbOwner{}
+	gasInfo := &ArbGasInfo{}
 	callCtx := testContext(caller, evm)
 
 	// the zero address is an owner by default
@@ -84,6 +86,19 @@ func TestAddressSet(t *testing.T) {
 		t.Fatal()
 	}
 	if all[0] != caller && all[1] != caller && all[2] != caller {
+		t.Fatal()
+	}
+
+	costCap, err := gasInfo.GetAmortizedCostCapBips(callCtx, evm)
+	Require(t, err)
+	if costCap != math.MaxUint64 {
+		t.Fatal(costCap)
+	}
+	newCostCap := uint64(77734)
+	Require(t, prec.SetAmortizedCostCapBips(callCtx, evm, newCostCap))
+	costCap, err = gasInfo.GetAmortizedCostCapBips(callCtx, evm)
+	Require(t, err)
+	if costCap != newCostCap {
 		t.Fatal()
 	}
 }
