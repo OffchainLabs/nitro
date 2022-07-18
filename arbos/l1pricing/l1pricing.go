@@ -297,9 +297,13 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 			return err
 		}
 		if amortizedCostCapBP != 0 {
-			weiSpentCap := am.BigMulByBips(am.BigMulByUint(l1Basefee, unitsAllocated), am.SaturatingCastToBips(amortizedCostCapBP))
+			weiSpentCap := am.BigMulByBips(
+				am.BigMulByUint(l1Basefee, unitsAllocated),
+				am.SaturatingCastToBips(amortizedCostCapBP),
+			)
 			if am.BigLessThan(weiSpentCap, weiSpent) {
-				// apply the cap on assignment of amortized cost; the difference will be a loss for the batch poster
+				// apply the cap on assignment of amortized cost;
+				// the difference will be a loss for the batch poster
 				weiSpent = weiSpentCap
 			}
 		}

@@ -18,7 +18,7 @@ import (
 )
 
 func TestTxFixedCost(t *testing.T) {
-	maxChainId := new(big.Int).SetUint64(math.MaxUint64)
+	maxChainId := am.UintToBig(math.MaxUint64)
 	maxValue := big.NewInt(1_000_000)
 	maxValue.Mul(maxValue, big.NewInt(params.Ether))
 	var address common.Address

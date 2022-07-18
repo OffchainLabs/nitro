@@ -4,8 +4,9 @@
 package precompiles
 
 import (
-	"github.com/ethereum/go-ethereum/common/math"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common/math"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -43,62 +44,62 @@ func TestArbOwner(t *testing.T) {
 	member, err := prec.IsChainOwner(callCtx, evm, addr1)
 	Require(t, err)
 	if !member {
-		t.Fatal()
+		Fail(t)
 	}
 
 	member, err = prec.IsChainOwner(callCtx, evm, addr2)
 	Require(t, err)
 	if !member {
-		t.Fatal()
+		Fail(t)
 	}
 
 	member, err = prec.IsChainOwner(callCtx, evm, addr3)
 	Require(t, err)
 	if member {
-		t.Fatal()
+		Fail(t)
 	}
 
 	Require(t, prec.RemoveChainOwner(callCtx, evm, addr1))
 	member, err = prec.IsChainOwner(callCtx, evm, addr1)
 	Require(t, err)
 	if member {
-		t.Fatal()
+		Fail(t)
 	}
 	member, err = prec.IsChainOwner(callCtx, evm, addr2)
 	Require(t, err)
 	if !member {
-		t.Fatal()
+		Fail(t)
 	}
 
 	Require(t, prec.AddChainOwner(callCtx, evm, addr1))
 	all, err := prec.GetAllChainOwners(callCtx, evm)
 	Require(t, err)
 	if len(all) != 3 {
-		t.Fatal()
+		Fail(t)
 	}
 	if all[0] == all[1] || all[1] == all[2] || all[0] == all[2] {
-		t.Fatal()
+		Fail(t)
 	}
 	if all[0] != addr1 && all[1] != addr1 && all[2] != addr1 {
-		t.Fatal()
+		Fail(t)
 	}
 	if all[0] != addr2 && all[1] != addr2 && all[2] != addr2 {
-		t.Fatal()
+		Fail(t)
 	}
 	if all[0] != caller && all[1] != caller && all[2] != caller {
-		t.Fatal()
+		Fail(t)
 	}
 
 	costCap, err := gasInfo.GetAmortizedCostCapBips(callCtx, evm)
 	Require(t, err)
 	if costCap != math.MaxUint64 {
-		t.Fatal(costCap)
+		Fail(t, costCap)
 	}
 	newCostCap := uint64(77734)
 	Require(t, prec.SetAmortizedCostCapBips(callCtx, evm, newCostCap))
 	costCap, err = gasInfo.GetAmortizedCostCapBips(callCtx, evm)
 	Require(t, err)
 	if costCap != newCostCap {
-		t.Fatal()
+		Fail(t)
 	}
 }
