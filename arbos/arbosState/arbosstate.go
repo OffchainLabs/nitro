@@ -247,6 +247,8 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, chainConfig *para
 					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
 				}
 			}
+		case 2:
+			panic("TODO: Upgrade 3 is not finalized yet")
 		default:
 			panic("Unable to perform requested ArbOS upgrade")
 		}

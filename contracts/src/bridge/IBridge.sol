@@ -2,26 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.4;
+// solhint-disable-next-line compiler-version
+pragma solidity >=0.6.9 <0.9.0;
 
-import {NotContract, NotRollupOrOwner} from "../libraries/Error.sol";
 import "./IOwnable.sol";
-
-/// @dev Thrown when an un-authorized address tries to access an only-inbox function
-/// @param sender The un-authorized sender
-error NotDelayedInbox(address sender);
-
-/// @dev Thrown when an un-authorized address tries to access an only-sequencer-inbox function
-/// @param sender The un-authorized sender
-error NotSequencerInbox(address sender);
-
-/// @dev Thrown when an un-authorized address tries to access an only-outbox function
-/// @param sender The un-authorized sender
-error NotOutbox(address sender);
-
-/// @dev the provided outbox address isn't valid
-/// @param outbox address of outbox being set
-error InvalidOutboxSet(address outbox);
 
 interface IBridge {
     event MessageDelivered(
