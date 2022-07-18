@@ -75,7 +75,8 @@ func stringListIsPermutation(lis1, lis2 []string) bool {
 
 func newListHttpServerForTest(t *testing.T, contents string) (int, *http.Server) {
 	server := &http.Server{
-		Handler: &testHandler{contents},
+		Handler:           &testHandler{contents},
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 	listener, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)

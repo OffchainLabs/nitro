@@ -686,8 +686,9 @@ func (h seqCoordinatorChosenHealthcheck) ServeHTTP(response http.ResponseWriter,
 
 func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
 	server := &http.Server{
-		Addr:    c.config.ChosenHealthcheckAddr,
-		Handler: seqCoordinatorChosenHealthcheck{c},
+		Addr:              c.config.ChosenHealthcheckAddr,
+		Handler:           seqCoordinatorChosenHealthcheck{c},
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
