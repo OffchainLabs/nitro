@@ -100,6 +100,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			evm.Context.Time.Uint64(),
 			batchPosterAddress,
 			weiSpent,
+			l1BaseFeeWei,
 			util.TracingDuringEVM,
 		)
 		if err != nil {

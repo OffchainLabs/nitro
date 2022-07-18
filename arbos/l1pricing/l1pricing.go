@@ -37,10 +37,11 @@ type L1PricingState struct {
 	lastUpdateTime     storage.StorageBackedUint64 // timestamp of the last update from L1 that we processed
 	fundsDueForRewards storage.StorageBackedBigInt
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
-	unitsSinceUpdate storage.StorageBackedUint64 // calldata units collected for since last update
-	pricePerUnit     storage.StorageBackedBigInt // current price per calldata unit
-	lastSurplus      storage.StorageBackedBigInt // introduced in ArbOS version 2
-	perBatchGasCost  storage.StorageBackedBigInt // introduced in ArbOS version 2
+	unitsSinceUpdate     storage.StorageBackedUint64 // calldata units collected for since last update
+	pricePerUnit         storage.StorageBackedBigInt // current price per calldata unit
+	lastSurplus          storage.StorageBackedBigInt // introduced in ArbOS version 2
+	perBatchGasCost      storage.StorageBackedBigInt // introduced in ArbOS version 2
+	amortizedCostCapBips storage.StorageBackedUint64 // in basis points; introduced in ArbOS version 3
 }
 
 var (
@@ -63,6 +64,7 @@ const (
 	pricePerUnitOffset
 	lastSurplusOffset
 	perBatchGasCostOffset
+	amortizedCostCapBipsOffset
 )
 
 const (
@@ -106,7 +108,12 @@ func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64, initial
 	if err := pricePerUnit.SetByUint(InitialPricePerUnitWei); err != nil {
 		return err
 	}
-
+	if arbosVersion >= 3 {
+		amortizedCostCapBips := sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset)
+		if err := amortizedCostCapBips.Set(math.MaxUint64); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -124,6 +131,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedBigInt(pricePerUnitOffset),
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
 		sto.OpenStorageBackedBigInt(perBatchGasCostOffset),
+		sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
 	}
 }
 
@@ -219,6 +227,14 @@ func (ps *L1PricingState) SetPerBatchGasCost(cost *big.Int) error {
 	return ps.perBatchGasCost.Set(cost)
 }
 
+func (ps *L1PricingState) AmortizedCostCapBips() (uint64, error) {
+	return ps.amortizedCostCapBips.Get()
+}
+
+func (ps *L1PricingState) SetAmortizedCostCapBips(cap uint64) error {
+	return ps.amortizedCostCapBips.Set(cap)
+}
+
 // Update the pricing model based on a payment by a batch poster
 func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	statedb vm.StateDB,
@@ -227,6 +243,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	updateTime, currentTime uint64,
 	batchPoster common.Address,
 	weiSpent *big.Int,
+	l1Basefee *big.Int,
 	scenario util.TracingScenario,
 ) error {
 	if arbosVersion < 2 {
@@ -271,6 +288,25 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	unitsSinceUpdate -= unitsAllocated
 	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
 		return err
+	}
+
+	// impose cap on amortized cost, if there is one
+	if arbosVersion >= 3 {
+		amortizedCostCapBP, err := ps.AmortizedCostCapBips()
+		if err != nil {
+			return err
+		}
+		if amortizedCostCapBP != 0 {
+			weiSpentCap := am.BigMulByBips(
+				am.BigMulByUint(l1Basefee, unitsAllocated),
+				am.SaturatingCastToBips(amortizedCostCapBP),
+			)
+			if am.BigLessThan(weiSpentCap, weiSpent) {
+				// apply the cap on assignment of amortized cost;
+				// the difference will be a loss for the batch poster
+				weiSpent = weiSpentCap
+			}
+		}
 	}
 
 	dueToPoster, err := posterState.FundsDue()

@@ -72,6 +72,9 @@ interface ArbOwner {
     /// @notice Sets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
     function setPerBatchGasCharge(int256 cost) external;
 
+    /// @notice Sets the cost amortization cap in basis points
+    function setAmortizedCostCapBips(uint64 cap) external;
+
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
 }
