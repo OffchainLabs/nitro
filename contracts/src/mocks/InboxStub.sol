@@ -132,4 +132,6 @@ contract InboxStub is IInbox {
     function depositEth(uint256) external payable override returns (uint256) {
         revert("NOT_IMPLEMENTED");
     }
+
+    function postUpgradeInit(IBridge _bridge) external {}
 }

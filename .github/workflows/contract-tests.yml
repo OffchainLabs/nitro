@@ -39,6 +39,9 @@ jobs:
       - name: Run tests
         run: yarn hardhat --network hardhat test test/contract/*.spec.ts
 
+      - name: Interface compatibility
+        run: yarn run test:compatibility
+
       - name: Run coverage
         run: yarn hardhat coverage --testfiles "test/contract/*.spec.ts"
 
