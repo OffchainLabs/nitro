@@ -47,19 +47,22 @@ type BatchPoster struct {
 }
 
 type BatchPosterConfig struct {
-	Enable               bool          `koanf:"enable"`
-	MaxBatchSize         int           `koanf:"max-size"`
-	MaxBatchPostInterval time.Duration `koanf:"max-interval"`
-	BatchPollDelay       time.Duration `koanf:"poll-delay"`
-	PostingErrorDelay    time.Duration `koanf:"error-delay"`
-	CompressionLevel     int           `koanf:"compression-level"`
-	DASRetentionPeriod   time.Duration `koanf:"das-retention-period"`
-	HighGasThreshold     float32       `koanf:"high-gas-threshold"`
-	HighGasDelay         time.Duration `koanf:"high-gas-delay"`
+	Enable                             bool          `koanf:"enable"`
+	DisableDasFallbackStoreDataOnChain bool          `koanf:"disable-das-fallback-store-data-on-chain"`
+	MaxBatchSize                       int           `koanf:"max-size"`
+	MaxBatchPostInterval               time.Duration `koanf:"max-interval"`
+	BatchPollDelay                     time.Duration `koanf:"poll-delay"`
+	PostingErrorDelay                  time.Duration `koanf:"error-delay"`
+	CompressionLevel                   int           `koanf:"compression-level"`
+	DASRetentionPeriod                 time.Duration `koanf:"das-retention-period"`
+	HighGasThreshold                   float32       `koanf:"high-gas-threshold"`
+	HighGasDelay                       time.Duration `koanf:"high-gas-delay"`
+	GasRefunderAddress                 string        `koanf:"gas-refunder-address"`
 }
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
+	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
 	f.Duration(prefix+".max-interval", DefaultBatchPosterConfig.MaxBatchPostInterval, "maximum batch posting interval")
 	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
@@ -68,18 +71,21 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
 	f.Float32(prefix+".high-gas-threshold", DefaultBatchPosterConfig.HighGasThreshold, "If the gas price in gwei is above this amount, delay posting a batch")
 	f.Duration(prefix+".high-gas-delay", DefaultBatchPosterConfig.HighGasDelay, "The maximum delay while waiting for the gas price to go below the high gas threshold")
+	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	Enable:               false,
-	MaxBatchSize:         100000,
-	BatchPollDelay:       time.Second * 10,
-	PostingErrorDelay:    time.Second * 10,
-	MaxBatchPostInterval: time.Hour,
-	CompressionLevel:     brotli.DefaultCompression,
-	DASRetentionPeriod:   time.Hour * 24 * 15,
-	HighGasThreshold:     150.,
-	HighGasDelay:         14 * time.Hour,
+	Enable:                             false,
+	DisableDasFallbackStoreDataOnChain: false,
+	MaxBatchSize:                       100000,
+	BatchPollDelay:                     time.Second * 10,
+	PostingErrorDelay:                  time.Second * 10,
+	MaxBatchPostInterval:               time.Hour,
+	CompressionLevel:                   brotli.DefaultCompression,
+	DASRetentionPeriod:                 time.Hour * 24 * 15,
+	HighGasThreshold:                   150.,
+	HighGasDelay:                       14 * time.Hour,
+	GasRefunderAddress:                 "",
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -92,12 +98,16 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DASRetentionPeriod:   time.Hour * 24 * 15,
 	HighGasThreshold:     0.,
 	HighGasDelay:         0,
+	GasRefunderAddress:   "",
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
+	}
+	if len(config.GasRefunderAddress) > 0 && !common.IsHexAddress(config.GasRefunderAddress) {
+		return nil, fmt.Errorf("invalid gas refunder address \"%v\"", config.GasRefunderAddress)
 	}
 	return &BatchPoster{
 		l1Reader:      l1Reader,
@@ -106,7 +116,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		config:        config,
 		inboxContract: inboxContract,
 		transactOpts:  transactOpts,
-		gasRefunder:   refunder,
+		gasRefunder:   common.HexToAddress(config.GasRefunderAddress),
 		das:           das,
 	}, nil
 }
@@ -405,6 +415,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 		cert, err := b.das.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()), []byte{}) // b.das will append signature if enabled
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
+			if b.config.DisableDasFallbackStoreDataOnChain {
+				return nil, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
+			}
 		} else {
 			sequencerMsg = das.Serialize(cert)
 		}
