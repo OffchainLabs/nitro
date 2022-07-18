@@ -30,6 +30,9 @@ func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.Bl
 	if err != nil {
 		return false, err
 	}
+	if !a.blockchain.Config().IsArbitrumNitro(header.Number) {
+		return false, types.ErrUseFallback
+	}
 	var moduleRoot common.Hash
 	if moduleRootOptional != nil {
 		moduleRoot = *moduleRootOptional
@@ -210,6 +213,9 @@ func (api *ArbDebugAPI) TimeoutQueue(ctx context.Context, blockNum rpc.BlockNumb
 
 func stateAndHeader(blockchain *core.BlockChain, block uint64) (*arbosState.ArbosState, *types.Header, error) {
 	header := blockchain.GetHeaderByNumber(block)
+	if !blockchain.Config().IsArbitrumNitro(header.Number) {
+		return nil, nil, types.ErrUseFallback
+	}
 	statedb, err := blockchain.StateAt(header.Root)
 	if err != nil {
 		return nil, nil, err
