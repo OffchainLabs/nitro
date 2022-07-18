@@ -237,7 +237,7 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
 				}
 			case 2:
-				if err := state.l1PricingState.SetAmortizedCostCapBP(math.MaxUint64); err != nil {
+				if err := state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64); err != nil {
 					panic("Error encountered when trying to upgrade ArbOS version 2 to version 3")
 				}
 			default:

@@ -37,11 +37,11 @@ type L1PricingState struct {
 	lastUpdateTime     storage.StorageBackedUint64 // timestamp of the last update from L1 that we processed
 	fundsDueForRewards storage.StorageBackedBigInt
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
-	unitsSinceUpdate   storage.StorageBackedUint64 // calldata units collected for since last update
-	pricePerUnit       storage.StorageBackedBigInt // current price per calldata unit
-	lastSurplus        storage.StorageBackedBigInt // introduced in ArbOS version 2
-	perBatchGasCost    storage.StorageBackedBigInt // introduced in ArbOS version 2
-	amortizedCostCapBP storage.StorageBackedUint64 // in basis points; introduced in ArbOS version 3
+	unitsSinceUpdate     storage.StorageBackedUint64 // calldata units collected for since last update
+	pricePerUnit         storage.StorageBackedBigInt // current price per calldata unit
+	lastSurplus          storage.StorageBackedBigInt // introduced in ArbOS version 2
+	perBatchGasCost      storage.StorageBackedBigInt // introduced in ArbOS version 2
+	amortizedCostCapBips storage.StorageBackedUint64 // in basis points; introduced in ArbOS version 3
 }
 
 var (
@@ -64,7 +64,7 @@ const (
 	pricePerUnitOffset
 	lastSurplusOffset
 	perBatchGasCostOffset
-	amortizedCostCapBPOffset
+	amortizedCostCapBipsOffset
 )
 
 const (
@@ -109,7 +109,7 @@ func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64, initial
 		return err
 	}
 	if arbosVersion >= 3 {
-		amortizedCostCapBips := sto.OpenStorageBackedUint64(amortizedCostCapBPOffset)
+		amortizedCostCapBips := sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset)
 		if err := amortizedCostCapBips.Set(math.MaxUint64); err != nil {
 			return err
 		}
@@ -131,7 +131,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedBigInt(pricePerUnitOffset),
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
 		sto.OpenStorageBackedBigInt(perBatchGasCostOffset),
-		sto.OpenStorageBackedUint64(amortizedCostCapBPOffset),
+		sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
 	}
 }
 
@@ -227,12 +227,12 @@ func (ps *L1PricingState) SetPerBatchGasCost(cost *big.Int) error {
 	return ps.perBatchGasCost.Set(cost)
 }
 
-func (ps *L1PricingState) AmortizedCostCapBP() (uint64, error) {
-	return ps.amortizedCostCapBP.Get()
+func (ps *L1PricingState) AmortizedCostCapBips() (uint64, error) {
+	return ps.amortizedCostCapBips.Get()
 }
 
-func (ps *L1PricingState) SetAmortizedCostCapBP(cap uint64) error {
-	return ps.amortizedCostCapBP.Set(cap)
+func (ps *L1PricingState) SetAmortizedCostCapBips(cap uint64) error {
+	return ps.amortizedCostCapBips.Set(cap)
 }
 
 // Update the pricing model based on a payment by a batch poster
@@ -292,7 +292,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 
 	// impose cap on amortized cost, if there is one
 	if arbosVersion >= 3 {
-		amortizedCostCapBP, err := ps.AmortizedCostCapBP()
+		amortizedCostCapBP, err := ps.AmortizedCostCapBips()
 		if err != nil {
 			return err
 		}

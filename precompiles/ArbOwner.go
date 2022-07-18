@@ -123,5 +123,5 @@ func (con ArbOwner) SetPerBatchGasCharge(c ctx, evm mech, cost *big.Int) error {
 }
 
 func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
-	return c.State.L1PricingState().SetAmortizedCostCapBP(cap)
+	return c.State.L1PricingState().SetAmortizedCostCapBips(cap)
 }
