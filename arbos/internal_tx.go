@@ -50,7 +50,10 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			panic(err)
 		}
 		l1BlockNumber, _ := inputs[1].(uint64) // current block's
-		timePassed, _ := inputs[2].(uint64)    // since last block
+		timePassed, _ := inputs[2].(uint64)    // actually the L2 block number, fixed in upgrade 3
+		if state.FormatVersion() >= 3 {
+			timePassed, _ = inputs[3].(uint64) // time passed since last block
+		}
 
 		nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
 		state.Restrict(err)
