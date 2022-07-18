@@ -324,4 +324,26 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         inbox = newInbox;
         emit OwnerFunctionCalled(28);
     }
+
+    function createNitroMigrationGenesis(uint64 genesisBlockNumber, bytes32 genesisBlockHash)
+        external
+    {
+        require(latestNodeCreated() == 0, "NON_GENESIS_NODES_EXIST");
+        bytes32[2] memory newStateBytes32;
+        newStateBytes32[0] = genesisBlockHash;
+        uint64[2] memory newStateU64;
+        newStateU64[0] = 1;
+        RollupLib.ExecutionState memory emptyExecutionState;
+        RollupLib.Assertion memory assertion = RollupLib.Assertion({
+            beforeState: emptyExecutionState,
+            afterState: RollupLib.ExecutionState({
+                globalState: GlobalState({bytes32Vals: newStateBytes32, u64Vals: newStateU64}),
+                machineStatus: MachineStatus.RUNNING
+            }),
+            numBlocks: genesisBlockNumber + 1
+        });
+        this.forceCreateNode(0, 1, assertion, bytes32(0));
+        confirmNode(1, genesisBlockHash, bytes32(0));
+        emit OwnerFunctionCalled(29);
+    }
 }
