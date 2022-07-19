@@ -136,7 +136,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	}
 	newHeaders, unsubscribe := ir.l1Reader.Subscribe(false)
 	defer unsubscribe()
-	blocksToFetch := uint64(100)
+	blocksToFetch := uint64(1000)
 	for {
 
 		currentHeightRaw, err := ir.client.BlockNumber(ctx)

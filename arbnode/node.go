@@ -625,6 +625,34 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
+	for i := arbutil.MessageIndex(1); ; i++ {
+		msg, err := txStreamer.GetMessage(i)
+		if err != nil {
+			return nil, err
+		}
+		var batchErr error
+		batchFetcher := func(uint64) []byte {
+			batchErr = errors.New("cannot fetch batches")
+			return nil
+		}
+		txs, err := msg.Message.ParseL2Transactions(l2BlockChain.Config().ChainID, batchFetcher)
+		if batchErr != nil {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, tx := range txs {
+			if tx.Type() >= 100 {
+				continue
+			}
+			bytes, err := tx.MarshalJSON()
+			if err != nil {
+				return nil, err
+			}
+			println(string(bytes))
+		}
+	}
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
 	var sequencer *Sequencer
