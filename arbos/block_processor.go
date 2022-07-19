@@ -321,8 +321,7 @@ func ProduceBlockAdvanced(
 
 		computeUsed := gasUsed - dataGas
 		if gasUsed < dataGas {
-			delta := strconv.FormatUint(dataGas-gasUsed, 10)
-			log.Error("ApplyTransaction() used less gas than it should have", "delta", delta)
+			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-gasUsed)
 			computeUsed = 0
 		}
 
