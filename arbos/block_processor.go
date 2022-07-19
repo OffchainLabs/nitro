@@ -78,10 +78,10 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 }
 
 type SequencingHooks struct {
-	TxErrors       []error
-	RequireDataGas bool
-	PreTxFilter    func(*arbosState.ArbosState, *types.Transaction, common.Address) error
-	PostTxFilter   func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error
+	TxErrors               []error
+	DiscardInvalidTxsEarly bool
+	PreTxFilter            func(*arbosState.ArbosState, *types.Transaction, common.Address) error
+	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error
 }
 
 func noopSequencingHooks() *SequencingHooks {
@@ -163,7 +163,9 @@ func ProduceBlockAdvanced(
 
 	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
-	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
+	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
+	// but it's only used as block-local representation limiting the amount of work done in a block.
+	blockGasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
@@ -176,7 +178,7 @@ func ProduceBlockAdvanced(
 	time := header.Time
 	expectedBalanceDelta := new(big.Int)
 	redeems := types.Transactions{}
-	userTxsCompleted := 0
+	userTxsProcessed := 0
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
 	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
@@ -213,6 +215,11 @@ func ProduceBlockAdvanced(
 		var dataGas uint64 = 0
 		gasPool := gethGas
 		receipt, scheduled, err := (func() (*types.Receipt, types.Transactions, error) {
+			// If we've done too much work in this block, discard the tx as early as possible
+			if blockGasLeft < params.TxGas && isUserTx {
+				return nil, nil, core.ErrGasLimitReached
+			}
+
 			sender, err = signer.Sender(tx)
 			if err != nil {
 				return nil, nil, err
@@ -236,19 +243,19 @@ func ProduceBlockAdvanced(
 
 			if dataGas > tx.Gas() {
 				// this txn is going to be rejected later
-				if hooks.RequireDataGas {
-					return nil, nil, core.ErrIntrinsicGas
-				}
-				dataGas = 0
+				dataGas = tx.Gas()
 			}
 
 			computeGas := tx.Gas() - dataGas
 			if computeGas < params.TxGas {
+				if hooks.DiscardInvalidTxsEarly {
+					return nil, nil, core.ErrIntrinsicGas
+				}
 				// ensure at least TxGas is left in the pool before trying a state transition
 				computeGas = params.TxGas
 			}
 
-			if computeGas > gasLeft && isUserTx && userTxsCompleted > 0 {
+			if computeGas > blockGasLeft && isUserTx && userTxsProcessed > 0 {
 				return nil, nil, core.ErrGasLimitReached
 			}
 
@@ -279,12 +286,17 @@ func ProduceBlockAdvanced(
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
 		if err != nil {
-			// we'll still deduct a TxGas's worth from the block even if the tx was invalid
 			log.Debug("error applying transaction", "tx", tx, "err", err)
-			if gasLeft > params.TxGas && isUserTx {
-				gasLeft -= params.TxGas
-			} else {
-				gasLeft = 0
+			if !hooks.DiscardInvalidTxsEarly {
+				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
+				if blockGasLeft > params.TxGas {
+					blockGasLeft -= params.TxGas
+				} else {
+					blockGasLeft = 0
+				}
+				if isUserTx {
+					userTxsProcessed++
+				}
 			}
 			continue
 		}
@@ -307,9 +319,22 @@ func ProduceBlockAdvanced(
 		gasUsed := gethGas.Gas() - gasPool.Gas()
 		gethGas = gasPool
 
+		computeUsed := gasUsed - dataGas
 		if gasUsed < dataGas {
-			delta := strconv.FormatUint(dataGas-gasUsed, 10)
-			panic("ApplyTransaction() used " + delta + " less gas than it should have")
+			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-gasUsed)
+			computeUsed = params.TxGas
+		}
+
+		if computeUsed < params.TxGas {
+			if isUserTx {
+				log.Error(
+					"user tx used less compute than params.TxGas",
+					"computeUsed", computeUsed,
+					"totalGasUsed", gasUsed,
+					"dataGas", dataGas,
+				)
+			}
+			computeUsed = params.TxGas
 		}
 
 		if gasUsed > tx.Gas() {
@@ -347,20 +372,17 @@ func ProduceBlockAdvanced(
 			}
 		}
 
-		if isUserTx {
-			computeUsed := gasUsed - dataGas
-			if computeUsed < params.TxGas {
-				// a tx, even if invalid, must at least reduce the pool by TxGas
-				computeUsed = params.TxGas
-			}
-			gasLeft -= computeUsed
+		if blockGasLeft > computeUsed {
+			blockGasLeft -= computeUsed
+		} else {
+			blockGasLeft = 0
 		}
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
 
 		if isUserTx {
-			userTxsCompleted++
+			userTxsProcessed++
 		}
 	}
 
