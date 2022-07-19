@@ -108,7 +108,17 @@ func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64, initial
 	if err := pricePerUnit.SetByUint(InitialPricePerUnitWei); err != nil {
 		return err
 	}
+	if arbosVersion >= 2 {
+		lastSurplus := sto.OpenStorageBackedBigInt(lastSurplusOffset)
+		if err := lastSurplus.Set(common.Big0); err != nil {
+			return err
+		}
+	}
 	if arbosVersion >= 3 {
+		perBatchGasCost := sto.OpenStorageBackedInt64(perBatchGasCostOffset)
+		if err := perBatchGasCost.Set(0); err != nil {
+			return err
+		}
 		amortizedCostCapBips := sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset)
 		if err := amortizedCostCapBips.Set(math.MaxUint64); err != nil {
 			return err
