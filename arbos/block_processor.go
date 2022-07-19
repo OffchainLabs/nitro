@@ -323,17 +323,7 @@ func ProduceBlockAdvanced(
 		if gasUsed < dataGas {
 			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-gasUsed)
 			computeUsed = params.TxGas
-		}
-
-		if computeUsed < params.TxGas {
-			if isUserTx {
-				log.Error(
-					"user tx used less compute than params.TxGas",
-					"computeUsed", computeUsed,
-					"totalGasUsed", gasUsed,
-					"dataGas", dataGas,
-				)
-			}
+		} else if computeUsed < params.TxGas {
 			computeUsed = params.TxGas
 		}
 
