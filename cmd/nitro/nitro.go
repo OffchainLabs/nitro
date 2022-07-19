@@ -17,6 +17,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/graphql"
 
@@ -25,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -55,6 +55,169 @@ func printSampleUsage(name string) {
 	fmt.Printf("Sample usage:                  %s --help \n", name)
 }
 
+func initLog(logType string, logLevel log.Lvl) error {
+	logFormat, err := genericconf.ParseLogType(logType)
+	if err != nil {
+		flag.Usage()
+		return fmt.Errorf("Error parsing log type: %w", err)
+	}
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
+	glogger.Verbosity(logLevel)
+	log.Root().SetHandler(glogger)
+	return nil
+}
+
+func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.WalletConfig) (common.Address, error) {
+	var devAddr common.Address
+
+	var devPrivKey *ecdsa.PrivateKey
+	var err error
+	if walletConf.PrivateKey != "" {
+		devPrivKey, err = crypto.HexToECDSA(walletConf.PrivateKey)
+		if err != nil {
+			return common.Address{}, err
+		}
+
+		devAddr = crypto.PubkeyToAddress(devPrivKey.PublicKey)
+
+		log.Info("Dev node funded private key", "priv", walletConf.PrivateKey)
+		log.Info("Funded public address", "addr", devAddr)
+	}
+
+	if walletConf.Pathname != "" {
+		myKeystore := keystore.NewKeyStore(walletConf.Pathname, keystore.StandardScryptN, keystore.StandardScryptP)
+		accountManager.AddBackend(myKeystore)
+		var account accounts.Account
+		if myKeystore.HasAddress(devAddr) {
+			account.Address = devAddr
+			account, err = myKeystore.Find(account)
+		} else if walletConf.Account != "" && myKeystore.HasAddress(common.HexToAddress(walletConf.Account)) {
+			account.Address = common.HexToAddress(walletConf.Account)
+			account, err = myKeystore.Find(account)
+		} else {
+			if walletConf.Password() == nil {
+				return common.Address{}, errors.New("l2 password not set")
+			}
+			if devPrivKey == nil {
+				return common.Address{}, errors.New("l2 private key not set")
+			}
+			account, err = myKeystore.ImportECDSA(devPrivKey, *walletConf.Password())
+		}
+		if err != nil {
+			return common.Address{}, err
+		}
+		if walletConf.Password() == nil {
+			return common.Address{}, errors.New("l2 password not set")
+		}
+		err = myKeystore.Unlock(account, *walletConf.Password())
+		if err != nil {
+			return common.Address{}, err
+		}
+	}
+	return devAddr, nil
+}
+
+func openInitializeChainDb(stack *node.Node, initConfig *InitConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
+	if !initConfig.Force {
+		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
+			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
+				readOnlyDb.Close()
+				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+				if err != nil {
+					return chainDb, nil, err
+				}
+				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig)
+				return chainDb, l2BlockChain, err
+			}
+			readOnlyDb.Close()
+		}
+	}
+
+	var initDataReader statetransfer.InitDataReader = nil
+
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if initConfig.ImportFile != "" {
+		initDataReader, err = statetransfer.NewJsonInitDataReader(initConfig.ImportFile)
+		if err != nil {
+			panic(err)
+		}
+	} else if initConfig.DevInit {
+		initData := statetransfer.ArbosInitializationInfo{
+			PreinitBlocks: initConfig.DevInitBlockNum,
+			Accounts: []statetransfer.AccountInitializationInfo{
+				{
+					Addr:       initConfig.DevInitAddr,
+					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+					Nonce:      0,
+				},
+			},
+		}
+		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
+	}
+
+	var chainConfig *params.ChainConfig
+
+	var l2BlockChain *core.BlockChain
+	if initDataReader == nil {
+		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
+		if chainConfig == nil {
+			panic("No initialization mode supplied, chain data not in Db")
+		}
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		preinitBlocks, err := initDataReader.GetPreinitBlockCount()
+		if err != nil {
+			panic(err)
+		}
+		chainConfig, err = arbos.GetChainConfig(chainId, preinitBlocks)
+		if err != nil {
+			panic(err)
+		}
+		anchients, err := chainDb.Ancients()
+		if err != nil {
+			panic(err)
+		}
+		if anchients < preinitBlocks {
+			panic(fmt.Sprint(preinitBlocks, " pre-init blocks required, but only ", anchients, " found"))
+		}
+		log.Info("Initializing", "anchients", anchients, "preinitBlocks", preinitBlocks)
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, 100000)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Check that this ArbOS state has the correct chain ID
+	{
+		statedb, err := l2BlockChain.State()
+		if err != nil {
+			panic(err)
+		}
+		currentArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+		if err != nil {
+			panic(err)
+		}
+		chainId, err := currentArbosState.ChainId()
+		if err != nil {
+			panic(err)
+		}
+		if chainId.Cmp(chainConfig.ChainID) != 0 {
+			panic(fmt.Sprintf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", chainConfig.ChainID, chainId))
+		}
+	}
+
+	testUpdateTxIndex(chainDb, chainConfig)
+
+	return chainDb, l2BlockChain, nil
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -69,14 +232,10 @@ func main() {
 
 		return
 	}
-	logFormat, err := genericconf.ParseLogType(nodeConfig.LogType)
+	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel))
 	if err != nil {
-		flag.Usage()
-		panic(fmt.Sprintf("Error parsing log type: %v", err))
+		panic(err)
 	}
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
-	glogger.Verbosity(log.Lvl(nodeConfig.LogLevel))
-	log.Root().SetHandler(glogger)
 
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
@@ -166,56 +325,20 @@ func main() {
 		flag.Usage()
 		panic(err)
 	}
-
-	var devAddr common.Address
-	var devPrivKey *ecdsa.PrivateKey
-	if l2DevWallet.PrivateKey != "" {
-		devPrivKey, err = crypto.HexToECDSA(l2DevWallet.PrivateKey)
+	{
+		devAddr, err := addUnlockWallet(stack.AccountManager(), l2DevWallet)
 		if err != nil {
+			flag.Usage()
 			panic(err)
 		}
-
-		devAddr = crypto.PubkeyToAddress(devPrivKey.PublicKey)
-
-		log.Info("Dev node funded private key", "priv", l2DevWallet.PrivateKey)
-		log.Info("Funded public address", "addr", devAddr)
+		if devAddr != (common.Address{}) {
+			nodeConfig.Init.DevInitAddr = devAddr
+		}
 	}
 
-	if l2DevWallet.Pathname != "" {
-		myKeystore := keystore.NewKeyStore(l2DevWallet.Pathname, keystore.StandardScryptN, keystore.StandardScryptP)
-		stack.AccountManager().AddBackend(myKeystore)
-		var account accounts.Account
-		if myKeystore.HasAddress(devAddr) {
-			account.Address = devAddr
-			account, err = myKeystore.Find(account)
-		} else if l2DevWallet.Account != "" && myKeystore.HasAddress(common.HexToAddress(l2DevWallet.Account)) {
-			account.Address = common.HexToAddress(l2DevWallet.Account)
-			account, err = myKeystore.Find(account)
-		} else {
-			if l2DevWallet.Password() == nil {
-				panic("l2 password not set")
-			}
-			if devPrivKey == nil {
-				panic("l2 private key not set")
-			}
-			account, err = myKeystore.ImportECDSA(devPrivKey, *l2DevWallet.Password())
-		}
-		if err != nil {
-			panic(err)
-		}
-		if l2DevWallet.Password() == nil {
-			panic("l2 password not set")
-		}
-		err = myKeystore.Unlock(account, *l2DevWallet.Password())
-		if err != nil {
-			panic(err)
-		}
-	}
-	var initDataReader statetransfer.InitDataReader = nil
-
-	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+	chainDb, l2BlockChain, err := openInitializeChainDb(stack, &nodeConfig.Init, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
 	if err != nil {
-		panic(fmt.Sprintf("Failed to open database: %v", err))
+		panic(err)
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
@@ -223,81 +346,7 @@ func main() {
 		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
 
-	if nodeConfig.ImportFile != "" {
-		initDataReader, err = statetransfer.NewJsonInitDataReader(nodeConfig.ImportFile)
-		if err != nil {
-			panic(err)
-		}
-	} else if nodeConfig.DevInit {
-		initData := statetransfer.ArbosInitializationInfo{
-			PreinitBlocks: nodeConfig.DevInitBlockNum,
-			Accounts: []statetransfer.AccountInitializationInfo{
-				{
-					Addr:       devAddr,
-					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-					Nonce:      0,
-				},
-			},
-		}
-		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
-	}
-
-	var chainConfig *params.ChainConfig
-
-	var l2BlockChain *core.BlockChain
-	if initDataReader == nil {
-		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
-		if chainConfig == nil {
-			panic("No initialization mode supplied, chain data not in Db")
-		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), chainConfig)
-		if err != nil {
-			panic(err)
-		}
-	} else {
-		preinitBlocks, err := initDataReader.GetPreinitBlockCount()
-		if err != nil {
-			panic(err)
-		}
-		chainConfig, err = arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), preinitBlocks)
-		if err != nil {
-			panic(err)
-		}
-		anchients, err := chainDb.Ancients()
-		if err != nil {
-			panic(err)
-		}
-		if anchients < preinitBlocks {
-			panic(fmt.Sprint(preinitBlocks, " pre-init blocks required, but only ", anchients, " found"))
-		}
-		log.Info("Initializing", "anchients", anchients, "preinitBlocks", preinitBlocks)
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, chainConfig, 100000)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	// Check that this ArbOS state has the correct chain ID
-	{
-		statedb, err := l2BlockChain.State()
-		if err != nil {
-			panic(err)
-		}
-		currentArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
-		if err != nil {
-			panic(err)
-		}
-		chainId, err := currentArbosState.ChainId()
-		if err != nil {
-			panic(err)
-		}
-		if chainId.Cmp(chainConfig.ChainID) != 0 {
-			panic(fmt.Sprintf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", chainConfig.ChainID, chainId))
-		}
-	}
-
-	testUpdateTxIndex(chainDb, chainConfig)
-	if nodeConfig.QuitAfterInit {
+	if nodeConfig.Init.ThenQuit {
 		return
 	}
 
@@ -319,7 +368,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.DevInit {
+	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
 		count, err := currentNode.TxStreamer.GetMessageCount()
@@ -356,41 +405,59 @@ func main() {
 	}
 }
 
+type InitConfig struct {
+	Force           bool           `koanf:"force"`
+	DevInit         bool           `koanf:"dev-init"`
+	DevInitAddr     common.Address `koanf:"dev-init-address"`
+	DevInitBlockNum uint64         `koanf:"dev-init-blocknum"`
+	ImportFile      string         `koanf:"import-file"`
+	ThenQuit        bool           `koanf:"then-quit"`
+}
+
+var InitConfigDefault = InitConfig{
+	Force:           false,
+	DevInit:         false,
+	DevInitBlockNum: 0,
+	ThenQuit:        false,
+	ImportFile:      "",
+}
+
+func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".force", InitConfigDefault.Force, "if true: in case database exists init code will be reexecuted and genesis block compared to database")
+	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
+	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in anchient database.")
+	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
+	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
+}
+
 type NodeConfig struct {
-	Conf            genericconf.ConfConfig          `koanf:"conf"`
-	Node            arbnode.Config                  `koanf:"node"`
-	L1              conf.L1Config                   `koanf:"l1"`
-	L2              conf.L2Config                   `koanf:"l2"`
-	LogLevel        int                             `koanf:"log-level"`
-	LogType         string                          `koanf:"log-type"`
-	Persistent      conf.PersistentConfig           `koanf:"persistent"`
-	HTTP            genericconf.HTTPConfig          `koanf:"http"`
-	WS              genericconf.WSConfig            `koanf:"ws"`
-	GraphQL         genericconf.GraphQLConfig       `koanf:"graphql"`
-	DevInit         bool                            `koanf:"dev-init"`
-	DevInitBlockNum uint64                          `koanf:"dev-init-blocknum"`
-	QuitAfterInit   bool                            `koanf:"quit-after-init"`
-	ImportFile      string                          `koanf:"import-file"`
-	Metrics         bool                            `koanf:"metrics"`
-	MetricsServer   genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	Conf          genericconf.ConfConfig          `koanf:"conf"`
+	Node          arbnode.Config                  `koanf:"node"`
+	L1            conf.L1Config                   `koanf:"l1"`
+	L2            conf.L2Config                   `koanf:"l2"`
+	LogLevel      int                             `koanf:"log-level"`
+	LogType       string                          `koanf:"log-type"`
+	Persistent    conf.PersistentConfig           `koanf:"persistent"`
+	HTTP          genericconf.HTTPConfig          `koanf:"http"`
+	WS            genericconf.WSConfig            `koanf:"ws"`
+	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
+	Metrics       bool                            `koanf:"metrics"`
+	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	Init          InitConfig                      `koanf:"init"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:            genericconf.ConfConfigDefault,
-	Node:            arbnode.ConfigDefault,
-	L1:              conf.L1ConfigDefault,
-	L2:              conf.L2ConfigDefault,
-	LogLevel:        int(log.LvlInfo),
-	LogType:         "plaintext",
-	Persistent:      conf.PersistentConfigDefault,
-	HTTP:            genericconf.HTTPConfigDefault,
-	WS:              genericconf.WSConfigDefault,
-	DevInit:         false,
-	DevInitBlockNum: 0,
-	QuitAfterInit:   false,
-	ImportFile:      "",
-	Metrics:         false,
-	MetricsServer:   genericconf.MetricsServerConfigDefault,
+	Conf:          genericconf.ConfConfigDefault,
+	Node:          arbnode.ConfigDefault,
+	L1:            conf.L1ConfigDefault,
+	L2:            conf.L2ConfigDefault,
+	LogLevel:      int(log.LvlInfo),
+	LogType:       "plaintext",
+	Persistent:    conf.PersistentConfigDefault,
+	HTTP:          genericconf.HTTPConfigDefault,
+	WS:            genericconf.WSConfigDefault,
+	Metrics:       false,
+	MetricsServer: genericconf.MetricsServerConfigDefault,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -404,12 +471,9 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
-	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
-	f.Uint64("dev-init-blocknum", NodeConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in anchient database.")
-	f.Bool("quit-after-init", NodeConfigDefault.QuitAfterInit, "quit after init is done")
-	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
+	InitConfigAddOptions("init", f)
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
