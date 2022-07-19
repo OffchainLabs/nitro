@@ -139,14 +139,32 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Failed to deserialize DAS message", "err", err)
 		return nil, nil
 	}
+	version := cert.Version
 
+	checkPreimage := func(hash common.Hash, preimage []byte, message string) error {
+		switch {
+		case version == 0 && crypto.Keccak256Hash(preimage) != hash:
+			fallthrough
+		case version == 1 && dastree.Hash(preimage) != hash:
+			log.Error(message, "err", ErrHashMismatch, "version", version)
+			return ErrHashMismatch
+		case version >= 2:
+			log.Error(
+				"Committee signed unsuported certificate format",
+				"version", version, "hash", hash, "payload", preimage,
+			)
+			panic("node software out of date")
+		}
+		return nil
+	}
 	recordPreimage := func(key common.Hash, value []byte) {
 		preimages[key] = value
 	}
 
 	keysetPreimage, err := dasReader.GetByHash(ctx, cert.KeysetHash)
-	if err == nil && cert.KeysetHash != dastree.Hash(keysetPreimage) {
-		err = ErrHashMismatch
+	keysetHash := cert.KeysetHash
+	if err == nil {
+		err = checkPreimage(keysetHash, keysetPreimage, "Keyset hash mismatch")
 	}
 	if err != nil {
 		log.Error("Couldn't get keyset", "err", err)
@@ -175,31 +193,29 @@ func RecoverPayloadFromDasBatch(
 
 	dataHash := cert.DataHash
 	treeHash := dataHash
-	version := cert.Version
-	if version == 0 {
-		treeHash = dastree.FlatHashToTreeHash(dataHash)
-	}
+	//
+	//   TODO: add back after committee upgrade
+	//   if version == 0 {
+	//       treeHash = dastree.FlatHashToTreeHash(dataHash)
+	//   }
+	//
 
 	payload, err := dasReader.GetByHash(ctx, treeHash)
+	if err == nil {
+		err = checkPreimage(dataHash, payload, "batch hash mismatch")
+	}
 	if err != nil {
 		log.Error("Couldn't fetch DAS batch contents", "err", err)
 		return nil, err
 	}
-	switch {
-	case version == 0 && crypto.Keccak256Hash(payload) != dataHash:
-		fallthrough
-	case version == 1 && dastree.Hash(payload) != dataHash:
-		log.Error("Couldn't fetch DAS batch contents", "err", ErrHashMismatch, "version", version)
-		return nil, err
-	case version >= 2:
-		log.Error("Committee signed unsuported certificate format", "version", version, "payload", payload)
-		panic("node software out of date")
-	}
 
 	if preimages != nil {
-		if cert.Version == 0 {
+		if version == 0 {
 			preimages[dataHash] = payload
-			preimages[treeHash] = dataHash[:]
+			//
+			//   TODO: add back after committee upgrade
+			//   preimages[treeHash] = dataHash[:]
+			//
 		} else {
 			dastree.RecordHash(recordPreimage, payload)
 		}
