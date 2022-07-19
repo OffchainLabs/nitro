@@ -500,6 +500,19 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 				return nil, nil, nil, nil, nil, err
 			}
 		}
+	} else if l1ChainId.Uint64() == 5 {
+		switch k.Int64("l2.chain-id") {
+		case 0:
+			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
+		case 421613:
+			if err := applyArbitrumRollupGoerliTestnetParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+		case 421703:
+			if err := applyArbitrumAnytrustGoerliTestnetParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+		}
 	}
 
 	err = util.ApplyOverrides(f, k)
@@ -545,17 +558,42 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 func applyArbitrumNovaRollupParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
-		"persistent.chain":                   "nova",
-		"node.forwarding-target":             "https://a4ba.arbitrum.io/rpc",
-		"node.feed.input.url":                "wss://a4ba.arbitrum.io/feed",
-		"l1.rollup.bridge":                   "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
-		"l1.rollup.inbox":                    "0xc4448b71118c9071bcb9734a0eac55d18a153949",
-		"l1.rollup.rollup":                   "0xfb209827c58283535b744575e11953dcc4bead88",
-		"l1.rollup.sequencer-inbox":          "0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b",
-		"l1.rollup.validator-utils":          "0x2B081fbaB646D9013f2699BebEf62B7e7d7F0976",
-		"l1.rollup.validator-wallet-creator": "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
-		"l1.rollup.deployed-at":              15016829,
-		"l2.chain-id":                        42170,
+		"persistent.chain":                                       "nova",
+		"node.forwarding-target":                                 "https://nova.arbitrum.io/rpc",
+		"node.feed.input.url":                                    "wss://nova.arbitrum.io/feed",
+		"node.data-availability.enable":                          true,
+		"node.data-availability.rest-aggregator.enable":          true,
+		"node.data-availability.rest-aggregator.online-url-list": "https://nova.arbitrum.io/das-servers",
+		"l1.rollup.bridge":                                       "0xc1ebd02f738644983b6c4b2d440b8e77dde276bd",
+		"l1.rollup.inbox":                                        "0xc4448b71118c9071bcb9734a0eac55d18a153949",
+		"l1.rollup.rollup":                                       "0xfb209827c58283535b744575e11953dcc4bead88",
+		"l1.rollup.sequencer-inbox":                              "0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b",
+		"l1.rollup.validator-utils":                              "0x2B081fbaB646D9013f2699BebEf62B7e7d7F0976",
+		"l1.rollup.validator-wallet-creator":                     "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
+		"l1.rollup.deployed-at":                                  15016829,
+		"l2.chain-id":                                            42170,
+	}, "."), nil)
+}
+
+func applyArbitrumRollupGoerliTestnetParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain":                   "goerli-rollup",
+		"node.forwarding-target":             "https://goerli-rollup.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://goerli-rollup.arbitrum.io/feed",
+		"l1.rollup.bridge":                   "0xaf4159a80b6cc41ed517db1c453d1ef5c2e4db72",
+		"l1.rollup.inbox":                    "0x6bebc4925716945d46f0ec336d5c2564f419682c",
+		"l1.rollup.rollup":                   "0x45e5caea8768f42b385a366d3551ad1e0cbfab17",
+		"l1.rollup.sequencer-inbox":          "0x0484a87b144745a2e5b7c359552119b6ea2917a9",
+		"l1.rollup.validator-utils":          "0x344f651fe566a02db939c8657427deb5524ea78e",
+		"l1.rollup.validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
+		"l1.rollup.deployed-at":              7217526,
+		"l2.chain-id":                        421613,
+	}, "."), nil)
+}
+
+func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain": "goerli-anytrust",
 	}, "."), nil)
 }
 
