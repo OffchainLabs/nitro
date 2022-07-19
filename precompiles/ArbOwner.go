@@ -118,7 +118,7 @@ func (con ArbOwner) SetL1PricePerUnit(c ctx, evm mech, pricePerUnit *big.Int) er
 	return c.State.L1PricingState().SetPricePerUnit(pricePerUnit)
 }
 
-func (con ArbOwner) SetPerBatchGasCharge(c ctx, evm mech, cost *big.Int) error {
+func (con ArbOwner) SetPerBatchGasCharge(c ctx, evm mech, cost int64) error {
 	return c.State.L1PricingState().SetPerBatchGasCost(cost)
 }
 
