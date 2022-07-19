@@ -325,6 +325,18 @@ func ProduceBlockAdvanced(
 			computeUsed = params.TxGas
 		}
 
+		if computeUsed < params.TxGas {
+			if isUserTx {
+				log.Error(
+					"user tx used less compute than params.TxGas",
+					"computeUsed", computeUsed,
+					"totalGasUsed", gasUsed,
+					"dataGas", dataGas,
+				)
+			}
+			computeUsed = params.TxGas
+		}
+
 		if gasUsed > tx.Gas() {
 			delta := strconv.FormatUint(gasUsed-tx.Gas(), 10)
 			panic("ApplyTransaction() used " + delta + " more gas than it should have")
