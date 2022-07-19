@@ -134,8 +134,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
+		from := p.msg.From()
+		to := p.msg.To()
+		value := p.msg.Value()
+		if to == nil {
+			return true, 0, errors.New("eth deposit has no To address"), nil
+		}
+		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, "deposit")
 		defer (startTracer())()
-		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM, "deposit")
+		// We intentionally use the variant here that doesn't do tracing,
+		// because this transfer is represented as the outer eth transaction.
+		// This transfer is necessary because we don't actually invoke the EVM.
+		core.Transfer(evm.StateDB, from, *to, value)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
@@ -420,8 +430,8 @@ func (p *TxProcessor) ForceRefundGas() uint64 {
 func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
-	gasPrice := p.evm.Context.BaseFee
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
+	gasPrice := p.evm.Context.BaseFee
 	scenario := util.TracingAfterEVM
 
 	if gasLeft > p.msg.Gas() {
@@ -601,9 +611,17 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 	return hash, nil
 }
 
+func (p *TxProcessor) GetPaidGasPrice() *big.Int {
+	gasPrice := p.evm.Context.BaseFee
+	if p.msg.RunMode() != types.MessageCommitMode && p.msg.GasFeeCap().Sign() == 0 {
+		gasPrice.SetInt64(0) // gasprice zero behavior
+	}
+	return gasPrice
+}
+
 func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
 	if p.state.FormatVersion() >= 3 {
-		return evm.Context.BaseFee
+		return p.GetPaidGasPrice()
 	}
 	return evm.GasPrice
 }
