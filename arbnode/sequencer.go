@@ -248,10 +248,10 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	}
 
 	hooks := &arbos.SequencingHooks{
-		PreTxFilter:    s.preTxFilter,
-		PostTxFilter:   s.postTxFilter,
-		RequireDataGas: true,
-		TxErrors:       []error{},
+		PreTxFilter:            s.preTxFilter,
+		PostTxFilter:           s.postTxFilter,
+		DiscardInvalidTxsEarly: true,
+		TxErrors:               []error{},
 	}
 	err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	if err == nil && len(hooks.TxErrors) != len(txes) {

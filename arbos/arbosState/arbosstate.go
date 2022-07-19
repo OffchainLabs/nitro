@@ -5,8 +5,11 @@ package arbosState
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/common/math"
 
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -198,11 +201,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1) // initialize to version 1; upgrade at end of this func if needed
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-	if arbosVersion >= 2 {
-		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), util.AddressToHash(initialChainOwner))
-	} else {
-		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
-	}
+	_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), arbosVersion, initialChainOwner)
@@ -237,18 +236,25 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 
 func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, chainConfig *params.ChainConfig) {
 	for state.arbosVersion < upgradeTo {
+		ensure := func(err error) {
+			if err != nil {
+				message := fmt.Sprintf(
+					"Failed to upgrade ArbOS version %v to version %v: %v",
+					state.arbosVersion, state.arbosVersion+1, err,
+				)
+				panic(message)
+			}
+		}
+
 		switch state.arbosVersion {
 		case 1:
-			if err := state.l1PricingState.SetLastSurplus(common.Big0); err != nil {
-				panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
-			}
+			ensure(state.l1PricingState.SetLastSurplus(common.Big0))
 			if chainConfig != nil {
-				if err := state.SetNetworkFeeAccount(chainConfig.ArbitrumChainParams.InitialChainOwner); err != nil {
-					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
-				}
+				ensure(state.SetNetworkFeeAccount(chainConfig.ArbitrumChainParams.InitialChainOwner))
 			}
 		case 2:
-			panic("TODO: Upgrade 3 is not finalized yet")
+			ensure(state.l1PricingState.SetPerBatchGasCost(0))
+			ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
 		default:
 			panic("Unable to perform requested ArbOS upgrade")
 		}
