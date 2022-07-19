@@ -134,8 +134,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
+		from := p.msg.From()
+		util.MintBalance(&from, p.msg.Value(), evm, util.TracingBeforeEVM, "deposit")
 		defer (startTracer())()
-		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM, "deposit")
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
