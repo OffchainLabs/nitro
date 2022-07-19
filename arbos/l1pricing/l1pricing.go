@@ -302,14 +302,14 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 
 	// impose cap on amortized cost, if there is one
 	if arbosVersion >= 3 {
-		amortizedCostCapBP, err := ps.AmortizedCostCapBips()
+		amortizedCostCapBips, err := ps.AmortizedCostCapBips()
 		if err != nil {
 			return err
 		}
-		if amortizedCostCapBP != 0 {
+		if amortizedCostCapBips != 0 {
 			weiSpentCap := am.BigMulByBips(
 				am.BigMulByUint(l1Basefee, unitsAllocated),
-				am.SaturatingCastToBips(amortizedCostCapBP),
+				am.SaturatingCastToBips(amortizedCostCapBips),
 			)
 			if am.BigLessThan(weiSpentCap, weiSpent) {
 				// apply the cap on assignment of amortized cost;
