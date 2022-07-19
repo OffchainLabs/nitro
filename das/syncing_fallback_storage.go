@@ -126,7 +126,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 		return err
 	}
 	log.Info("BatchDelivered", "log", batchDeliveredLog, "event", deliveredEvent)
-	storeUntil := arbmath.SaturatingUAdd(deliveredEvent.TimeBounds.MaxTimestamp, uint64(s.config.RetentionPeriod.Seconds())) // TODO: support limited retention period
+	storeUntil := arbmath.SaturatingUAdd(deliveredEvent.TimeBounds.MaxTimestamp, uint64(s.config.RetentionPeriod.Seconds()))
 	if storeUntil < uint64(time.Now().Unix()) {
 		// old batch - no need to store
 		return nil
