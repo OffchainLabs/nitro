@@ -62,7 +62,8 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, loc
 	}
 
 	srv := &http.Server{
-		Handler: rpcServer,
+		Handler:           rpcServer,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {

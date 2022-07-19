@@ -24,6 +24,9 @@ func TransferBalance(
 	scenario TracingScenario,
 	purpose string,
 ) error {
+	if amount.Sign() < 0 {
+		panic(fmt.Sprintf("Tried to transfer negative amount %v from %v to %v", amount, from, to))
+	}
 	if from != nil {
 		balance := evm.StateDB.GetBalance(*from)
 		if arbmath.BigLessThan(balance, amount) {

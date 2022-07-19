@@ -158,4 +158,6 @@ contract BridgeStub is IBridge {
     function rollup() external pure override returns (IOwnable) {
         revert("NOT_IMPLEMENTED");
     }
+
+    function acceptFundsFromOldBridge() external payable {}
 }

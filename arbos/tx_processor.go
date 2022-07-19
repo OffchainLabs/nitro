@@ -47,21 +47,28 @@ type TxProcessor struct {
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
 	CurrentRefundTo  *common.Address
+
+	// Caches for the latest L1 block number and hash,
+	// for the NUMBER and BLOCKHASH opcodes.
+	cachedL1BlockNumber *uint64
+	cachedL1BlockHashes map[uint64]common.Hash
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	tracingInfo := util.NewTracingInfo(evm, msg.From(), arbosAddress, util.TracingBeforeEVM)
 	arbosState := arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 	return &TxProcessor{
-		msg:              msg,
-		state:            arbosState,
-		PosterFee:        new(big.Int),
-		posterGas:        0,
-		Callers:          []common.Address{},
-		TopTxType:        nil,
-		evm:              evm,
-		CurrentRetryable: nil,
-		CurrentRefundTo:  nil,
+		msg:                 msg,
+		state:               arbosState,
+		PosterFee:           new(big.Int),
+		posterGas:           0,
+		Callers:             []common.Address{},
+		TopTxType:           nil,
+		evm:                 evm,
+		CurrentRetryable:    nil,
+		CurrentRefundTo:     nil,
+		cachedL1BlockNumber: nil,
+		cachedL1BlockHashes: make(map[uint64]common.Hash),
 	}
 }
 
@@ -413,8 +420,8 @@ func (p *TxProcessor) ForceRefundGas() uint64 {
 func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
-	gasPrice := p.evm.Context.BaseFee
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
+	gasPrice := p.evm.Context.BaseFee
 	scenario := util.TracingAfterEVM
 
 	if gasLeft > p.msg.Gas() {
@@ -560,21 +567,53 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
+	if p.cachedL1BlockNumber != nil {
+		return *p.cachedL1BlockNumber, nil
+	}
 	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From(), arbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return 0, err
 	}
-	return state.Blockhashes().NextBlockNumber()
+	blockNum, err := state.Blockhashes().NextBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	p.cachedL1BlockNumber = &blockNum
+	return blockNum, nil
 }
 
 func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64) (common.Hash, error) {
+	hash, cached := p.cachedL1BlockHashes[l1BlockNumber]
+	if cached {
+		return hash, nil
+	}
 	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From(), arbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return state.Blockhashes().BlockHash(l1BlockNumber)
+	hash, err = state.Blockhashes().BlockHash(l1BlockNumber)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	p.cachedL1BlockHashes[l1BlockNumber] = hash
+	return hash, nil
+}
+
+func (p *TxProcessor) GetPaidGasPrice() *big.Int {
+	gasPrice := p.evm.Context.BaseFee
+	if p.msg.RunMode() != types.MessageCommitMode && p.msg.GasFeeCap().Sign() == 0 {
+		gasPrice.SetInt64(0) // gasprice zero behavior
+	}
+	return gasPrice
+}
+
+func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
+	if p.state.FormatVersion() >= 3 {
+		return p.GetPaidGasPrice()
+	}
+	return evm.GasPrice
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
