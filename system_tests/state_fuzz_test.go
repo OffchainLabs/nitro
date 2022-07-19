@@ -115,6 +115,7 @@ func FuzzStateTransition(f *testing.F) {
 			chainDb,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			params.ArbitrumRollupGoerliTestnetChainConfig(),
+			0,
 		)
 		if err != nil {
 			panic(err)

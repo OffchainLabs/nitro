@@ -47,11 +47,27 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig) (common.Hash, error) {
+func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, accountsPerSync uint) (common.Hash, error) {
 	stateDatabase := state.NewDatabase(db)
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
 		log.Fatal("failed to init empty statedb", err)
+	}
+
+	commit := func() (common.Hash, error) {
+		root, err := statedb.Commit(true)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		err = stateDatabase.TrieDB().Commit(root, true, nil)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		statedb, err = state.New(root, stateDatabase, nil)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		return root, nil
 	}
 
 	burner := burn.NewSystemBurner(nil, false)
@@ -89,6 +105,8 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		return common.Hash{}, err
 	}
 
+	log.Print("addresss table import complete")
+
 	retriableReader, err := initData.GetRetriableDataReader()
 	if err != nil {
 		return common.Hash{}, err
@@ -98,10 +116,20 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		return common.Hash{}, err
 	}
 
+	log.Print("retryables import complete")
+
+	if accountsPerSync > 0 {
+		_, err := commit()
+		if err != nil {
+			return common.Hash{}, err
+		}
+	}
+
 	accountDataReader, err := initData.GetAccountDataReader()
 	if err != nil {
 		return common.Hash{}, err
 	}
+	accountsRead := uint(0)
 	for accountDataReader.More() {
 		account, err := accountDataReader.GetNext()
 		if err != nil {
@@ -119,19 +147,19 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 				statedb.SetState(account.Addr, k, v)
 			}
 		}
+		accountsRead++
+		if accountsPerSync > 0 && (accountsRead%accountsPerSync == 0) {
+			log.Printf("imported %v accounts", accountsRead)
+			_, err := commit()
+			if err != nil {
+				return common.Hash{}, err
+			}
+		}
 	}
 	if err := accountDataReader.Close(); err != nil {
 		return common.Hash{}, err
 	}
-	root, err := statedb.Commit(true)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	err = stateDatabase.TrieDB().Commit(root, true, nil)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	return root, nil
+	return commit()
 }
 
 func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.RetriableDataReader, currentTimestampToUse uint64) error {
@@ -172,6 +200,5 @@ func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, acco
 			}
 		}
 	}
-
 	return nil
 }

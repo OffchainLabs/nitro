@@ -17,6 +17,10 @@ func NewMemoryInitDataReader(data *ArbosInitializationInfo) InitDataReader {
 	}
 }
 
+func (r *MemoryInitDataReader) GetPreinitBlockCount() (uint64, error) {
+	return r.d.PreinitBlocks, nil
+}
+
 type FieldReader struct {
 	m      *MemoryInitDataReader
 	count  int
@@ -30,27 +34,6 @@ func (f *FieldReader) More() bool {
 func (f *FieldReader) Close() error {
 	f.count = f.length
 	return nil
-}
-
-type MemoryStoredBlockReader struct {
-	FieldReader
-}
-
-func (r *MemoryStoredBlockReader) GetNext() (*StoredBlock, error) {
-	if !r.More() {
-		return nil, errNoMore
-	}
-	r.count++
-	return &r.m.d.Blocks[r.count-1], nil
-}
-
-func (m *MemoryInitDataReader) GetStoredBlockReader() (StoredBlockReader, error) {
-	return &MemoryStoredBlockReader{
-		FieldReader: FieldReader{
-			m:      m,
-			length: len(m.d.Blocks),
-		},
-	}, nil
 }
 
 type MemoryRetriableDataReader struct {

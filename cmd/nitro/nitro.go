@@ -15,6 +15,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/graphql"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -225,18 +228,16 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-	} else {
-		var initData statetransfer.ArbosInitializationInfo
-		if nodeConfig.DevInit {
-			initData = statetransfer.ArbosInitializationInfo{
-				Accounts: []statetransfer.AccountInitializationInfo{
-					{
-						Addr:       devAddr,
-						EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-						Nonce:      0,
-					},
+	} else if nodeConfig.DevInit {
+		initData := statetransfer.ArbosInitializationInfo{
+			PreinitBlocks: nodeConfig.DevInitBlockNum,
+			Accounts: []statetransfer.AccountInitializationInfo{
+				{
+					Addr:       devAddr,
+					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+					Nonce:      0,
 				},
-			}
+			},
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
@@ -244,7 +245,7 @@ func main() {
 	var chainConfig *params.ChainConfig
 
 	var l2BlockChain *core.BlockChain
-	if nodeConfig.NoInit {
+	if initDataReader == nil {
 		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
 			panic("No initialization mode supplied, chain data not in Db")
@@ -254,19 +255,23 @@ func main() {
 			panic(err)
 		}
 	} else {
-		blockReader, err := initDataReader.GetStoredBlockReader()
+		preinitBlocks, err := initDataReader.GetPreinitBlockCount()
 		if err != nil {
 			panic(err)
 		}
-		blockNum, err := arbnode.ImportBlocksToChainDb(chainDb, blockReader)
+		chainConfig, err = arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), preinitBlocks)
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err = arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID), blockNum)
+		anchients, err := chainDb.Ancients()
 		if err != nil {
 			panic(err)
 		}
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, blockNum, chainConfig)
+		if anchients < preinitBlocks {
+			panic(fmt.Sprint(preinitBlocks, " pre-init blocks required, but only ", anchients, " found"))
+		}
+		log.Info("Initializing", "anchients", anchients, "preinitBlocks", preinitBlocks)
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, chainConfig, 100000)
 		if err != nil {
 			panic(err)
 		}
@@ -289,6 +294,11 @@ func main() {
 		if chainId.Cmp(chainConfig.ChainID) != 0 {
 			panic(fmt.Sprintf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", chainConfig.ChainID, chainId))
 		}
+	}
+
+	testUpdateTxIndex(chainDb, chainConfig)
+	if nodeConfig.QuitAfterInit {
+		return
 	}
 
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
@@ -314,7 +324,8 @@ func main() {
 		// we should create our own fake init message.
 		count, err := currentNode.TxStreamer.GetMessageCount()
 		if err != nil {
-			panic(err)
+			log.Warn("Getmessagecount failed. Assuming new atabase", "err", err)
+			count = 0
 		}
 		if count == 0 {
 			err = currentNode.TxStreamer.AddFakeInitMessage()
@@ -346,37 +357,40 @@ func main() {
 }
 
 type NodeConfig struct {
-	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	Node          arbnode.Config                  `koanf:"node"`
-	L1            conf.L1Config                   `koanf:"l1"`
-	L2            conf.L2Config                   `koanf:"l2"`
-	LogLevel      int                             `koanf:"log-level"`
-	LogType       string                          `koanf:"log-type"`
-	Persistent    conf.PersistentConfig           `koanf:"persistent"`
-	HTTP          genericconf.HTTPConfig          `koanf:"http"`
-	WS            genericconf.WSConfig            `koanf:"ws"`
-	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
-	DevInit       bool                            `koanf:"dev-init"`
-	NoInit        bool                            `koanf:"no-init"`
-	ImportFile    string                          `koanf:"import-file"`
-	Metrics       bool                            `koanf:"metrics"`
-	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	Conf            genericconf.ConfConfig          `koanf:"conf"`
+	Node            arbnode.Config                  `koanf:"node"`
+	L1              conf.L1Config                   `koanf:"l1"`
+	L2              conf.L2Config                   `koanf:"l2"`
+	LogLevel        int                             `koanf:"log-level"`
+	LogType         string                          `koanf:"log-type"`
+	Persistent      conf.PersistentConfig           `koanf:"persistent"`
+	HTTP            genericconf.HTTPConfig          `koanf:"http"`
+	WS              genericconf.WSConfig            `koanf:"ws"`
+	GraphQL         genericconf.GraphQLConfig       `koanf:"graphql"`
+	DevInit         bool                            `koanf:"dev-init"`
+	DevInitBlockNum uint64                          `koanf:"dev-init-blocknum"`
+	QuitAfterInit   bool                            `koanf:"quit-after-init"`
+	ImportFile      string                          `koanf:"import-file"`
+	Metrics         bool                            `koanf:"metrics"`
+	MetricsServer   genericconf.MetricsServerConfig `koanf:"metrics-server"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:          genericconf.ConfConfigDefault,
-	Node:          arbnode.ConfigDefault,
-	L1:            conf.L1ConfigDefault,
-	L2:            conf.L2ConfigDefault,
-	LogLevel:      int(log.LvlInfo),
-	LogType:       "plaintext",
-	Persistent:    conf.PersistentConfigDefault,
-	HTTP:          genericconf.HTTPConfigDefault,
-	WS:            genericconf.WSConfigDefault,
-	DevInit:       false,
-	ImportFile:    "",
-	Metrics:       false,
-	MetricsServer: genericconf.MetricsServerConfigDefault,
+	Conf:            genericconf.ConfConfigDefault,
+	Node:            arbnode.ConfigDefault,
+	L1:              conf.L1ConfigDefault,
+	L2:              conf.L2ConfigDefault,
+	LogLevel:        int(log.LvlInfo),
+	LogType:         "plaintext",
+	Persistent:      conf.PersistentConfigDefault,
+	HTTP:            genericconf.HTTPConfigDefault,
+	WS:              genericconf.WSConfigDefault,
+	DevInit:         false,
+	DevInitBlockNum: 0,
+	QuitAfterInit:   false,
+	ImportFile:      "",
+	Metrics:         false,
+	MetricsServer:   genericconf.MetricsServerConfigDefault,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -391,7 +405,8 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
-	f.Bool("no-init", NodeConfigDefault.DevInit, "Do not init chain. Data must be valid in database.")
+	f.Uint64("dev-init-blocknum", NodeConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in anchient database.")
+	f.Bool("quit-after-init", NodeConfigDefault.QuitAfterInit, "quit after init is done")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
@@ -580,4 +595,60 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain": "goerli-anytrust",
 	}, "."), nil)
+}
+
+func testIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
+	var transactions types.Transactions
+	blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
+	reReadNumber := rawdb.ReadHeaderNumber(chainDb, blockHash)
+	if reReadNumber == nil {
+		return false
+	}
+	for ; ; lastBlock-- {
+		blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
+		block := rawdb.ReadBlock(chainDb, blockHash, lastBlock)
+		transactions = block.Transactions()
+		if len(transactions) == 0 {
+			if lastBlock == 0 {
+				return true
+			}
+			continue
+		}
+		entry := rawdb.ReadTxLookupEntry(chainDb, transactions[len(transactions)-1].Hash())
+		return (entry != nil)
+	}
+}
+
+func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig) {
+	lastBlock := chainConfig.ArbitrumChainParams.GenesisBlockNum
+	if lastBlock == 0 {
+		// no Tx, no need to update index
+		return
+	}
+
+	lastBlock -= 1
+	if testIndexUpdated(chainDb, lastBlock) {
+		return
+	}
+
+	log.Info("writing Tx lookup entries")
+	batch := chainDb.NewBatch()
+	for blockNum := uint64(0); blockNum <= lastBlock; blockNum++ {
+		blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
+		block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
+		rawdb.WriteTxLookupEntriesByBlock(batch, block)
+		rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
+		if (batch.ValueSize() >= ethdb.IdealBatchSize) || blockNum == lastBlock {
+			err := batch.Write()
+			if err != nil {
+				panic(err)
+			}
+			batch.Reset()
+		}
+	}
+	err := chainDb.Sync()
+	if err != nil {
+		panic(err)
+	}
+	log.Info("Tx lookup entries written")
 }
