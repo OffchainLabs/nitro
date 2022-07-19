@@ -70,7 +70,7 @@ interface ArbOwner {
     function setL1PricePerUnit(uint256 pricePerUnit) external;
 
     /// @notice Sets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
-    function setPerBatchGasCharge(int256 cost) external;
+    function setPerBatchGasCharge(int64 cost) external;
 
     /// @notice Sets the cost amortization cap in basis points
     function setAmortizedCostCapBips(uint64 cap) external;

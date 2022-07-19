@@ -40,7 +40,7 @@ type L1PricingState struct {
 	unitsSinceUpdate     storage.StorageBackedUint64 // calldata units collected for since last update
 	pricePerUnit         storage.StorageBackedBigInt // current price per calldata unit
 	lastSurplus          storage.StorageBackedBigInt // introduced in ArbOS version 2
-	perBatchGasCost      storage.StorageBackedBigInt // introduced in ArbOS version 2
+	perBatchGasCost      storage.StorageBackedInt64  // introduced in ArbOS version 3
 	amortizedCostCapBips storage.StorageBackedUint64 // in basis points; introduced in ArbOS version 3
 }
 
@@ -108,7 +108,17 @@ func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64, initial
 	if err := pricePerUnit.SetByUint(InitialPricePerUnitWei); err != nil {
 		return err
 	}
+	if arbosVersion >= 2 {
+		lastSurplus := sto.OpenStorageBackedBigInt(lastSurplusOffset)
+		if err := lastSurplus.Set(common.Big0); err != nil {
+			return err
+		}
+	}
 	if arbosVersion >= 3 {
+		perBatchGasCost := sto.OpenStorageBackedInt64(perBatchGasCostOffset)
+		if err := perBatchGasCost.Set(0); err != nil {
+			return err
+		}
 		amortizedCostCapBips := sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset)
 		if err := amortizedCostCapBips.Set(math.MaxUint64); err != nil {
 			return err
@@ -130,7 +140,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedUint64(unitsSinceOffset),
 		sto.OpenStorageBackedBigInt(pricePerUnitOffset),
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
-		sto.OpenStorageBackedBigInt(perBatchGasCostOffset),
+		sto.OpenStorageBackedInt64(perBatchGasCostOffset),
 		sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
 	}
 }
@@ -219,11 +229,11 @@ func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
 	return ps.pricePerUnit.Set(price)
 }
 
-func (ps *L1PricingState) PerBatchGasCost() (*big.Int, error) {
+func (ps *L1PricingState) PerBatchGasCost() (int64, error) {
 	return ps.perBatchGasCost.Get()
 }
 
-func (ps *L1PricingState) SetPerBatchGasCost(cost *big.Int) error {
+func (ps *L1PricingState) SetPerBatchGasCost(cost int64) error {
 	return ps.perBatchGasCost.Set(cost)
 }
 
