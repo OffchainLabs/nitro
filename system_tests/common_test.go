@@ -6,9 +6,19 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"math/big"
+	"os"
+	"path"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/das"
 
@@ -97,12 +107,7 @@ func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
 	return header.BaseFee
 }
 
-func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
-	if l1info == nil {
-		l1info = NewL1TestInfo(t)
-	}
-	l1info.GenerateAccount("Faucet")
-
+func CreateTestL1BlockChain(t *testing.T, l1info info) (*ethclient.Client, *eth.Ethereum, *node.Node) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
@@ -146,14 +151,10 @@ func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 
 	l1Client := ethclient.NewClient(rpcClient)
 
-	return l1info, l1Client, l1backend, stack
+	return l1Client, l1backend, stack
 }
 
 func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client client, chainId *big.Int) *arbnode.RollupAddresses {
-	l1info.GenerateAccount("RollupOwner")
-	l1info.GenerateAccount("Sequencer")
-	l1info.GenerateAccount("User")
-
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
@@ -173,9 +174,6 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 		validator.DefaultNitroMachineConfig,
 	)
 	Require(t, err)
-	l1info.SetContract("Bridge", addresses.Bridge)
-	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
-	l1info.SetContract("Inbox", addresses.Inbox)
 	return addresses
 }
 
@@ -212,10 +210,157 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (l2
 	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, conf, params.ArbitrumDevTestChainConfig())
 }
 
+func saveAccount(t *testing.T, info info, folder, label string) {
+	accountInfo := info.GetInfoWithPrivKey(label)
+	data, err := json.Marshal(struct {
+		Address    common.Address
+		PrivateKey []byte
+		Nonce      uint64
+	}{
+		Address:    accountInfo.Address,
+		PrivateKey: crypto.FromECDSA(accountInfo.PrivateKey),
+		Nonce:      accountInfo.Nonce,
+	})
+	Require(t, err)
+	Require(t, os.WriteFile(path.Join(folder, label+".json"), data, 0o644))
+}
+
+func restoreAccount(t *testing.T, info info, folder, label string) {
+	data, err := os.ReadFile(path.Join(folder, label+".json"))
+	Require(t, err)
+	var rawAccount struct {
+		Address    common.Address
+		PrivateKey []byte
+		Nonce      uint64
+	}
+	Require(t, json.Unmarshal(data, &rawAccount))
+	info.SetFullAccountInfo(label, &AccountInfo{
+		Address:    rawAccount.Address,
+		PrivateKey: crypto.ToECDSAUnsafe(rawAccount.PrivateKey),
+		Nonce:      rawAccount.Nonce,
+	})
+}
+
+type rollupCache struct {
+	sync.Mutex
+	tmpDir string
+	locks  map[string]*rollupInfo
+}
+
+type rollupInfo struct {
+	exist    sync.Mutex
+	creating sync.RWMutex
+}
+
+var rollupInit *rollupCache
+
+func TestMain(m *testing.M) {
+	rollupInit = &rollupCache{
+		tmpDir: path.Join(os.TempDir(), "rollup-test-cache"),
+		locks:  make(map[string]*rollupInfo),
+	}
+	defer os.RemoveAll(rollupInit.tmpDir)
+
+	os.Exit(m.Run())
+}
+
+func CreateL1Rollup(t *testing.T, ctx context.Context, l2ChainId *big.Int) (l1info info, l1client *ethclient.Client, l1backend *eth.Ethereum, l1stack *node.Node, addresses *arbnode.RollupAddresses) {
+	os.TempDir()
+	l1info = NewL1TestInfo(t)
+
+	rollupInit.Lock()
+	chainFolder := path.Join(rollupInit.tmpDir, "rollup-chain-cache-"+l2ChainId.String())
+	var muts *rollupInfo
+	var ok bool
+	if muts, ok = rollupInit.locks[l2ChainId.String()]; !ok {
+		muts = &rollupInfo{}
+		rollupInit.locks[l2ChainId.String()] = muts
+	}
+	rollupInit.Unlock()
+
+	addressesFile := path.Join(chainFolder, "addresses.json")
+	chainFile := path.Join(chainFolder, "chaindata")
+
+	muts.exist.Lock()
+	cacheExists := false
+	if _, err := os.Stat(addressesFile); err == nil {
+		cacheExists = true
+	}
+	if !cacheExists {
+		muts.creating.Lock()
+	} else {
+		muts.creating.RLock()
+	}
+	muts.exist.Unlock()
+	if cacheExists {
+		defer muts.creating.RUnlock()
+		restoreAccount(t, l1info, chainFolder, "RollupOwner")
+		restoreAccount(t, l1info, chainFolder, "Sequencer")
+		restoreAccount(t, l1info, chainFolder, "User")
+		restoreAccount(t, l1info, chainFolder, "Faucet")
+
+		addressesData, err := os.ReadFile(addressesFile)
+		Require(t, err)
+		addresses = &arbnode.RollupAddresses{}
+		Require(t, json.Unmarshal(addressesData, addresses))
+		chainData, err := os.Open(chainFile)
+		Require(t, err)
+		defer chainData.Close()
+		blockStream := rlp.NewStream(chainData, 0)
+
+		// Run actual the import.
+		blocks := make(types.Blocks, 0)
+		for {
+			var b types.Block
+			err := blockStream.Decode(&b)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			Require(t, err)
+			// skip genesis block
+			if b.NumberU64() == 0 {
+				continue
+			}
+			blocks = append(blocks, &b)
+		}
+
+		l1client, l1backend, l1stack = CreateTestL1BlockChain(t, l1info)
+		_, err = l1backend.BlockChain().InsertChain(blocks)
+		Require(t, err)
+	} else {
+		defer muts.creating.Unlock()
+		Require(t, os.MkdirAll(chainFolder, 0755))
+		l1info.GenerateAccount("RollupOwner")
+		l1info.GenerateAccount("Sequencer")
+		l1info.GenerateAccount("User")
+		l1info.GenerateAccount("Faucet")
+
+		l1client, l1backend, l1stack = CreateTestL1BlockChain(t, l1info)
+		addresses = DeployOnTestL1(t, ctx, l1info, l1client, l2ChainId)
+		addressData, err := json.Marshal(addresses)
+		Require(t, err)
+		Require(t, os.WriteFile(addressesFile, addressData, 0644))
+		fh, err := os.OpenFile(chainFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
+		Require(t, err)
+		defer fh.Close()
+		Require(t, l1backend.BlockChain().Export(fh))
+
+		saveAccount(t, l1info, chainFolder, "RollupOwner")
+		saveAccount(t, l1info, chainFolder, "Sequencer")
+		saveAccount(t, l1info, chainFolder, "User")
+		saveAccount(t, l1info, chainFolder, "Faucet")
+	}
+
+	l1info.SetContract("Bridge", addresses.Bridge)
+	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
+	l1info.SetContract("Inbox", addresses.Inbox)
+	return
+}
+
 func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.Config, chainConfig *params.ChainConfig) (l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
-	l1info, l1client, l1backend, l1stack = CreateTestL1BlockChain(t, nil)
+	var addresses *arbnode.RollupAddresses
+	l1info, l1client, l1backend, l1stack, addresses = CreateL1Rollup(t, ctx, chainConfig.ChainID)
 	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
