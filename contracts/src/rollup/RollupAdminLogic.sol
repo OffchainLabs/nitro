@@ -130,6 +130,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     /**
      * @notice Resume interaction with the rollup contract
      */
+    function unpause() external {
+        _unpause();
+        emit OwnerFunctionCalled(4);
+    }
+
+    /**
+     * @notice Resume interaction with the rollup contract
+     */
     function resume() external override {
         _unpause();
         emit OwnerFunctionCalled(4);
@@ -327,22 +335,30 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
 
     function createNitroMigrationGenesis(uint64 genesisBlockNumber, bytes32 genesisBlockHash)
         external
+        whenPaused
     {
         require(latestNodeCreated() == 0, "NON_GENESIS_NODES_EXIST");
         bytes32[2] memory newStateBytes32;
         newStateBytes32[0] = genesisBlockHash;
         uint64[2] memory newStateU64;
         newStateU64[0] = 1;
-        RollupLib.ExecutionState memory emptyExecutionState;
+        GlobalState memory emptyGlobalState;
         RollupLib.Assertion memory assertion = RollupLib.Assertion({
-            beforeState: emptyExecutionState,
+            beforeState: RollupLib.ExecutionState({
+                globalState: emptyGlobalState,
+                machineStatus: MachineStatus.FINISHED
+            }),
             afterState: RollupLib.ExecutionState({
                 globalState: GlobalState({bytes32Vals: newStateBytes32, u64Vals: newStateU64}),
-                machineStatus: MachineStatus.RUNNING
+                machineStatus: MachineStatus.FINISHED
             }),
             numBlocks: genesisBlockNumber + 1
         });
+        // TODO: hacky workaround for the createNewNode assertion argument being in calldata
+        address prevAdmin = _getAdmin();
+        _changeAdmin(address(this));
         this.forceCreateNode(0, 1, assertion, bytes32(0));
+        _changeAdmin(prevAdmin);
         confirmNode(1, genesisBlockHash, bytes32(0));
         emit OwnerFunctionCalled(29);
     }
