@@ -25,6 +25,8 @@ type l1PricingTest struct {
 	unitsPerSecond          uint64
 	fundsCollectedPerSecond uint64
 	fundsSpent              uint64
+	amortizationCapBips     uint64
+	l1BasefeeGwei           uint64
 }
 
 type l1TestExpectedResults struct {
@@ -41,18 +43,40 @@ func TestL1Pricing(t *testing.T) {
 			unitsPerSecond:          78,
 			fundsCollectedPerSecond: 7800,
 			fundsSpent:              3000,
+			amortizationCapBips:     math.MaxUint64,
+			l1BasefeeGwei:           10,
 		},
 		{
 			unitReward:              10,
 			unitsPerSecond:          78,
 			fundsCollectedPerSecond: 1313,
 			fundsSpent:              3000,
+			amortizationCapBips:     math.MaxUint64,
+			l1BasefeeGwei:           10,
 		},
 		{
 			unitReward:              10,
 			unitsPerSecond:          78,
 			fundsCollectedPerSecond: 31,
 			fundsSpent:              3000,
+			amortizationCapBips:     math.MaxUint64,
+			l1BasefeeGwei:           10,
+		},
+		{
+			unitReward:              10,
+			unitsPerSecond:          78,
+			fundsCollectedPerSecond: 7800,
+			fundsSpent:              3000,
+			amortizationCapBips:     100,
+			l1BasefeeGwei:           10,
+		},
+		{
+			unitReward:              0,
+			unitsPerSecond:          78,
+			fundsCollectedPerSecond: 7800 * params.GWei,
+			fundsSpent:              3000 * params.GWei,
+			amortizationCapBips:     100,
+			l1BasefeeGwei:           10,
 		},
 	}
 	for _, input := range inputs {
@@ -64,6 +88,17 @@ func TestL1Pricing(t *testing.T) {
 func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 	ret := &l1TestExpectedResults{}
 	availableFunds := arbmath.UintToBig(3 * input.fundsCollectedPerSecond)
+	uncappedAvailableFunds := availableFunds
+	if input.amortizationCapBips != 0 {
+		availableFundsCap := arbmath.BigMulByBips(arbmath.BigMulByUint(
+			arbmath.UintToBig(input.unitsPerSecond),
+			input.l1BasefeeGwei*params.GWei),
+			arbmath.SaturatingCastToBips(input.amortizationCapBips),
+		)
+		if arbmath.BigLessThan(availableFundsCap, availableFunds) {
+			availableFunds = availableFundsCap
+		}
+	}
 	fundsWantedForRewards := big.NewInt(int64(input.unitReward * input.unitsPerSecond))
 	unitsAllocated := arbmath.UintToBig(input.unitsPerSecond)
 	if arbmath.BigLessThan(availableFunds, fundsWantedForRewards) {
@@ -72,6 +107,7 @@ func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 		ret.rewardRecipientBalance = fundsWantedForRewards
 	}
 	availableFunds = arbmath.BigSub(availableFunds, ret.rewardRecipientBalance)
+	uncappedAvailableFunds = arbmath.BigSub(uncappedAvailableFunds, ret.rewardRecipientBalance)
 	ret.unitsRemaining = (3 * input.unitsPerSecond) - unitsAllocated.Uint64()
 
 	maxCollectable := big.NewInt(int64(input.fundsSpent))
@@ -79,8 +115,8 @@ func expectedResultsForL1Test(input *l1PricingTest) *l1TestExpectedResults {
 		maxCollectable = availableFunds
 	}
 	ret.fundsReceived = maxCollectable
-	availableFunds = arbmath.BigSub(availableFunds, maxCollectable)
-	ret.fundsStillHeld = availableFunds
+	uncappedAvailableFunds = arbmath.BigSub(uncappedAvailableFunds, maxCollectable)
+	ret.fundsStillHeld = uncappedAvailableFunds
 
 	return ret
 }
@@ -104,15 +140,15 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	rewardsDue, err := l1p.FundsDueForRewards()
 	Require(t, err)
 	if rewardsDue.Sign() != 0 {
-		t.Fatal()
+		Fail(t)
 	}
 	if evm.StateDB.GetBalance(rewardAddress).Sign() != 0 {
-		t.Fatal()
+		Fail(t)
 	}
 	posterAddrs, err := posterTable.AllPosters(math.MaxUint64)
 	Require(t, err)
 	if len(posterAddrs) != 1 {
-		t.Fatal()
+		Fail(t)
 	}
 	firstPoster := posterAddrs[0]
 	firstPayTo := common.Address{1, 2}
@@ -121,7 +157,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	due, err := poster.FundsDue()
 	Require(t, err)
 	if due.Sign() != 0 {
-		t.Fatal()
+		Fail(t)
 	}
 	err = poster.SetPayTo(firstPayTo)
 	Require(t, err)
@@ -140,28 +176,30 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	Require(t, err)
 
 	// submit a fake spending update, then check that balances are correct
+	err = l1p.SetAmortizedCostCapBips(testParams.amortizationCapBips)
+	Require(t, err)
 	version := arbosSt.FormatVersion()
 	scenario := util.TracingDuringEVM
 	err = l1p.UpdateForBatchPosterSpending(
-		evm.StateDB, evm, version, 1, 3, firstPoster, arbmath.UintToBig(testParams.fundsSpent), scenario,
+		evm.StateDB, evm, version, 1, 3, firstPoster, arbmath.UintToBig(testParams.fundsSpent), arbmath.UintToBig(testParams.l1BasefeeGwei*params.GWei), scenario,
 	)
 	Require(t, err)
 	rewardRecipientBalance := evm.StateDB.GetBalance(rewardAddress)
 	if !arbmath.BigEquals(rewardRecipientBalance, expectedResults.rewardRecipientBalance) {
-		t.Fatal(rewardRecipientBalance, expectedResults.rewardRecipientBalance)
+		Fail(t, rewardRecipientBalance, expectedResults.rewardRecipientBalance)
 	}
 	unitsRemaining, err := l1p.UnitsSinceUpdate()
 	Require(t, err)
 	if unitsRemaining != expectedResults.unitsRemaining {
-		t.Fatal(unitsRemaining, expectedResults.unitsRemaining)
+		Fail(t, unitsRemaining, expectedResults.unitsRemaining)
 	}
 	fundsReceived := evm.StateDB.GetBalance(firstPayTo)
 	if !arbmath.BigEquals(fundsReceived, expectedResults.fundsReceived) {
-		t.Fatal(fundsReceived, expectedResults.fundsReceived)
+		Fail(t, fundsReceived, expectedResults.fundsReceived)
 	}
 	fundsStillHeld := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
 	if !arbmath.BigEquals(fundsStillHeld, expectedResults.fundsStillHeld) {
-		t.Fatal()
+		Fail(t, fundsStillHeld, expectedResults.fundsStillHeld)
 	}
 }
 
@@ -175,12 +213,12 @@ func TestUpdateTimeUpgradeBehavior(t *testing.T) {
 
 	l1p := arbosSt.L1PricingState()
 
-	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 1, 1, 1, poster, common.Big1, util.TracingDuringEVM)
+	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 1, 1, 1, poster, common.Big1, arbmath.UintToBig(10*params.GWei), util.TracingDuringEVM)
 	if !errors.Is(err, l1pricing.ErrInvalidTime) {
-		t.Fatal()
+		Fail(t)
 	}
 
-	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 2, 1, 1, poster, common.Big1, util.TracingDuringEVM)
+	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 3, 1, 1, poster, common.Big1, arbmath.UintToBig(10*params.GWei), util.TracingDuringEVM)
 	Require(t, err)
 }
 
@@ -223,11 +261,12 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,
-			2,
+			3,
 			uint64(10*(i+1)),
 			uint64(10*(i+1)+5),
 			bpAddr,
 			arbmath.BigMulByUint(equilibriumL1BasefeeEstimate, unitsToAdd),
+			equilibriumL1BasefeeEstimate,
 			util.TracingBeforeEVM,
 		)
 		Require(t, err)
