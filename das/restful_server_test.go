@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
 
 const LocalServerAddressForTest = "localhost"
@@ -28,7 +29,7 @@ func NewRestfulDasServerOnRandomPort(address string, storageService arbstate.Dat
 	if !ok {
 		return nil, 0, errors.New("attempt to listen on TCP returned non-TCP address")
 	}
-	rds, err := NewRestfulDasServerOnListener(listener, storageService)
+	rds, err := NewRestfulDasServerOnListener(listener, genericconf.HTTPServerTimeoutConfigDefault, storageService)
 	if err != nil {
 		return nil, 0, err
 	}

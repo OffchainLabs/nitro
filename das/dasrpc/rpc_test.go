@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -48,7 +49,7 @@ func TestRPC(t *testing.T) {
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	localDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService)
 	testhelpers.RequireImpl(t, err)
-	dasServer, err := StartDASRPCServerOnListener(ctx, lis, localDas)
+	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, localDas)
 	defer func() {
 		if err := dasServer.Shutdown(ctx); err != nil {
 			panic(err)
