@@ -17,6 +17,15 @@ func FlipBit(data bytes32, bit byte) bytes32 {
 	return data
 }
 
+// unrolls a series of slices into a singular, concatenated slice
+func ConcatByteSlices(slices ...[]byte) []byte {
+	unrolled := []byte{}
+	for _, slice := range slices {
+		unrolled = append(unrolled, slice...)
+	}
+	return unrolled
+}
+
 // the number of eth-words needed to store n bytes
 func WordsForBytes(nbytes uint64) uint64 {
 	return (nbytes + 31) / 32

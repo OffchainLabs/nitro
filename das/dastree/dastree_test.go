@@ -51,6 +51,7 @@ func TestDASTree(t *testing.T) {
 	}
 
 	for key, value := range hashes {
+		colors.PrintMint("testing ", key)
 		preimage, err := Content(key, oracle)
 		Require(t, err, key)
 
