@@ -26,7 +26,7 @@ func TestDASTree(t *testing.T) {
 	}
 
 	record := func(key bytes32, value []byte) {
-		colors.PrintGrey("storing ", key, " ", pretty.FirstFewBytes(value))
+		colors.PrintGrey("storing ", key, " ", pretty.PrettyBytes(value))
 		store[key] = value
 		if crypto.Keccak256Hash(value) != key {
 			Fail(t, "key not the hash of value")
@@ -40,7 +40,7 @@ func TestDASTree(t *testing.T) {
 		if crypto.Keccak256Hash(preimage) != key {
 			Fail(t, "key not the hash of preimage")
 		}
-		colors.PrintBlue("loading ", key, " ", pretty.FirstFewBytes(preimage))
+		colors.PrintBlue("loading ", key, " ", pretty.PrettyBytes(preimage))
 		return preimage
 	}
 
