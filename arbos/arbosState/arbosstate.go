@@ -9,6 +9,8 @@ import (
 	"log"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common/math"
+
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 
@@ -226,13 +228,23 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 	flagday, _ := state.upgradeTimestamp.Get()
 	if upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
 		for upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
+
+			ensure := func(err error) {
+				if err != nil {
+					message := fmt.Sprintf(
+						"Failed to upgrade ArbOS version %v to version %v: %v",
+						state.arbosVersion, state.arbosVersion+1, err,
+					)
+					panic(message)
+				}
+			}
+
 			switch state.arbosVersion {
 			case 1:
-				if err := state.l1PricingState.SetLastSurplus(common.Big0); err != nil {
-					panic("Error encountered when trying to upgrade ArbOS version 1 to version 2")
-				}
+				ensure(state.l1PricingState.SetLastSurplus(common.Big0))
 			case 2:
-				panic("TODO: Upgrade 3 is not finalized yet")
+				ensure(state.l1PricingState.SetPerBatchGasCost(0))
+				ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
 			default:
 				panic("Unable to perform requested ArbOS upgrade")
 			}
