@@ -201,7 +201,11 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1) // initialize to version 1; upgrade at end of this func if needed
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-	_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
+	if desiredArbosVersion >= 2 {
+		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), util.AddressToHash(initialChainOwner))
+	} else {
+		_ = sto.SetByUint64(uint64(networkFeeAccountOffset), common.Hash{}) // the 0 address until an owner sets it
+	}
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), arbosVersion, initialChainOwner)
@@ -220,21 +224,21 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 	if desiredArbosVersion > 1 {
-		aState.UpgradeArbosVersion(desiredArbosVersion, chainConfig)
+		aState.UpgradeArbosVersion(desiredArbosVersion)
 	}
 	return aState, err
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, chainConfig *params.ChainConfig) {
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
-		state.UpgradeArbosVersion(upgradeTo, chainConfig)
+		state.UpgradeArbosVersion(upgradeTo)
 	}
 }
 
-func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, chainConfig *params.ChainConfig) {
+func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64) {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
 			if err != nil {
@@ -249,9 +253,6 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, chainConfig *para
 		switch state.arbosVersion {
 		case 1:
 			ensure(state.l1PricingState.SetLastSurplus(common.Big0))
-			if chainConfig != nil {
-				ensure(state.SetNetworkFeeAccount(chainConfig.ArbitrumChainParams.InitialChainOwner))
-			}
 		case 2:
 			ensure(state.l1PricingState.SetPerBatchGasCost(0))
 			ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
