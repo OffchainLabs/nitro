@@ -190,20 +190,20 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	l1Info.GenerateGenesysAccount("sequencer", initialBalance)
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	l1Info, l1Backend, _, _ := CreateTestL1BlockChain(t, l1Info)
+
+	_, l1client, _, _, rollupAddresses := CreateL1Rollup(t, ctx, chainConfig.ChainID)
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BlockValidator.Enable = false
 	conf.BatchPoster.Enable = false
 	conf.InboxReader.CheckDelay = time.Second
-	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig.ChainID)
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
 	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter", ctx)
 	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger", ctx)
-	delayedBridge, tx, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, l1Backend)
+	delayedBridge, tx, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, l1client)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(context.Background(), l1client, tx)
 	Require(t, err)
 
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
@@ -214,51 +214,51 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	}
 	asserterSeqInboxAddr, tx, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&deployerTxOpts,
-		l1Backend,
+		l1client,
 		delayedBridge,
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
 	)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(context.Background(), l1client, tx)
 	Require(t, err)
 	tx, err = asserterSeqInbox.AddInitMessage(&deployerTxOpts)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(context.Background(), l1client, tx)
 	Require(t, err)
 	challengerSeqInboxAddr, tx, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&deployerTxOpts,
-		l1Backend,
+		l1client,
 		delayedBridge,
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
 	)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(context.Background(), l1client, tx)
 	Require(t, err)
 	tx, err = challengerSeqInbox.AddInitMessage(&deployerTxOpts)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(context.Background(), l1client, tx)
 	Require(t, err)
 
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChain(t, nil, chainConfig)
 	rollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, rollupAddresses, nil, nil)
+	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1client, rollupAddresses, nil, nil)
 	Require(t, err)
 	err = asserterL2.Start(ctx)
 	Require(t, err)
 
 	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, challengerL2Blockchain := createL2BlockChain(t, nil, chainConfig)
 	rollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, rollupAddresses, nil, nil)
+	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1client, rollupAddresses, nil, nil)
 	Require(t, err)
 	err = challengerL2.Start(ctx)
 	Require(t, err)
 
 	asserterL2Info.GenerateAccount("Destination")
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))
-	makeBatch(t, asserterL2, asserterL2Info, l1Backend, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, false)
-	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, true)
+	makeBatch(t, asserterL2, asserterL2Info, l1client, &sequencerTxOpts, asserterSeqInbox, asserterSeqInboxAddr, false)
+	makeBatch(t, challengerL2, challengerL2Info, l1client, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, true)
 
 	trueSeqInboxAddr := challengerSeqInboxAddr
 	expectedWinner := l1Info.GetAddress("challenger")
@@ -266,7 +266,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		trueSeqInboxAddr = asserterSeqInboxAddr
 		expectedWinner = l1Info.GetAddress("asserter")
 	}
-	ospEntry := DeployOneStepProofEntry(t, &deployerTxOpts, l1Backend)
+	ospEntry := DeployOneStepProofEntry(t, &deployerTxOpts, l1client)
 
 	wasmModuleRoot, err := validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
 	if err != nil {
@@ -299,7 +299,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	resultReceiver, challengeManagerAddr := CreateChallenge(
 		t,
 		&deployerTxOpts,
-		l1Backend,
+		l1client,
 		ospEntry,
 		trueSeqInboxAddr,
 		delayedBridge,
@@ -311,14 +311,14 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		l1Info.GetAddress("challenger"),
 	)
 
-	confirmLatestBlock(ctx, t, l1Info, l1Backend)
+	confirmLatestBlock(ctx, t, l1Info, l1client)
 	machineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig)
-	asserterManager, err := validator.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterL2Blockchain, nil, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, machineLoader, 0, 4, 0)
+	asserterManager, err := validator.NewChallengeManager(ctx, l1client, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterL2Blockchain, nil, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, machineLoader, 0, 4, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	challengerManager, err := validator.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerL2Blockchain, nil, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, machineLoader, 0, 4, 0)
+	challengerManager, err := validator.NewChallengeManager(ctx, l1client, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerL2Blockchain, nil, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, machineLoader, 0, 4, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		// This might make gas estimation undersestimate next move.
 		// Invoke a new L1 block, with a new timestamp, before estimating.
 		time.Sleep(time.Second)
-		SendWaitTestTransactions(t, ctx, l1Backend, []*types.Transaction{
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 
@@ -353,7 +353,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		if tx == nil {
 			t.Fatal("no move")
 		}
-		_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
+		_, err = EnsureTxSucceeded(ctx, l1client, tx)
 		if err != nil {
 			if !currentCorrect && strings.Contains(err.Error(), "BAD_SEQINBOX_MESSAGE") {
 				t.Log("challenge complete! Tx failed as expected:", err)
@@ -362,7 +362,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 			t.Fatal(err)
 		}
 
-		confirmLatestBlock(ctx, t, l1Info, l1Backend)
+		confirmLatestBlock(ctx, t, l1Info, l1client)
 
 		winner, err := resultReceiver.Winner(&bind.CallOpts{})
 		if err != nil {
