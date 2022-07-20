@@ -183,10 +183,10 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	nodeB.StopAndWait()
 }
 
-func TestTwoNodesLong(t *testing.T) {
+func TestLongTwoNodes(t *testing.T) {
 	testTwoNodesLong(t, "onchain")
 }
 
-func TestTwoNodesLongLocalDAS(t *testing.T) {
+func TestLongTwoNodesLocalDAS(t *testing.T) {
 	testTwoNodesLong(t, "files")
 }

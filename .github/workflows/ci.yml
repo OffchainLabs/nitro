@@ -144,9 +144,9 @@ jobs:
         with:
           test-results: test-output-withrace.json
 
-      - name: run tests without race detection
+      - name: run slow tests without race detection
         if: always()
-        run: gotestsum --format short-verbose --jsonfile test-output.json -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
+        run: gotestsum --format short-verbose --jsonfile test-output.json -- ./... -run TestLong -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
 
       - name: Annotate tests without race detection
         if: always()

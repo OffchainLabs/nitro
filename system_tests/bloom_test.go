@@ -21,7 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 )
 
-func TestBloom(t *testing.T) {
+func TestLongBloom(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

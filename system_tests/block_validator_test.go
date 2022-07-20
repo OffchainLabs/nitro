@@ -116,10 +116,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	nodeB.StopAndWait()
 }
 
-func TestBlockValidatorSimple(t *testing.T) {
+func TestLongBlockValidatorSimple(t *testing.T) {
 	testBlockValidatorSimple(t, "onchain", false)
 }
 
-func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
+func TestLongBlockValidatorSimpleLocalDAS(t *testing.T) {
 	testBlockValidatorSimple(t, "files", false)
 }

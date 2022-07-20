@@ -296,6 +296,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 }
 
-func TestStakersCooperative(t *testing.T) {
+func TestLongStakersCooperative(t *testing.T) {
 	stakerTestImpl(t, false, false)
 }
