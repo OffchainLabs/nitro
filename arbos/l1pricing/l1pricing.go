@@ -74,7 +74,7 @@ const (
 	InitialPricePerUnitWei           = 50 * params.GWei
 )
 
-func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64, initialChainOwner common.Address) error {
+func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address) error {
 	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
@@ -82,10 +82,6 @@ func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64, initial
 	bpTable := OpenBatchPostersTable(bptStorage)
 	if _, err := bpTable.AddPoster(BatchPosterAddress, BatchPosterPayToAddress); err != nil {
 		return err
-	}
-	initialRewardsRecipient := BatchPosterAddress
-	if arbosVersion >= 2 {
-		initialRewardsRecipient = initialChainOwner
 	}
 	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(initialRewardsRecipient)); err != nil {
 		return err
@@ -107,22 +103,6 @@ func InitializeL1PricingState(sto *storage.Storage, arbosVersion uint64, initial
 	pricePerUnit := sto.OpenStorageBackedBigInt(pricePerUnitOffset)
 	if err := pricePerUnit.SetByUint(InitialPricePerUnitWei); err != nil {
 		return err
-	}
-	if arbosVersion >= 2 {
-		lastSurplus := sto.OpenStorageBackedBigInt(lastSurplusOffset)
-		if err := lastSurplus.Set(common.Big0); err != nil {
-			return err
-		}
-	}
-	if arbosVersion >= 3 {
-		perBatchGasCost := sto.OpenStorageBackedInt64(perBatchGasCostOffset)
-		if err := perBatchGasCost.Set(0); err != nil {
-			return err
-		}
-		amortizedCostCapBips := sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset)
-		if err := amortizedCostCapBips.Set(math.MaxUint64); err != nil {
-			return err
-		}
 	}
 	return nil
 }
