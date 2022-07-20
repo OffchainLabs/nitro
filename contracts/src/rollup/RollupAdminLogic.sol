@@ -130,14 +130,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     /**
      * @notice Resume interaction with the rollup contract
      */
-    function unpause() external {
-        _unpause();
-        emit OwnerFunctionCalled(4);
-    }
-
-    /**
-     * @notice Resume interaction with the rollup contract
-     */
     function resume() external override {
         _unpause();
         emit OwnerFunctionCalled(4);
