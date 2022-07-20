@@ -208,7 +208,12 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = sto.SetUint64ByUint64(uint64(genesisBlockNumOffset), chainConfig.ArbitrumChainParams.GenesisBlockNum)
-	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), arbosVersion, initialChainOwner)
+
+	initialRewardsRecipient := l1pricing.BatchPosterAddress
+	if desiredArbosVersion >= 2 {
+		initialRewardsRecipient = initialChainOwner
+	}
+	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), initialRewardsRecipient)
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
