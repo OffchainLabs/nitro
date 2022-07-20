@@ -222,7 +222,7 @@ func saveAccount(t *testing.T, info info, folder, label string) {
 		Nonce:      accountInfo.Nonce,
 	})
 	Require(t, err)
-	Require(t, os.WriteFile(path.Join(folder, label+".json"), data, 0o644))
+	Require(t, os.WriteFile(path.Join(folder, label+".json"), data, 0600))
 }
 
 func restoreAccount(t *testing.T, info info, folder, label string) {
@@ -339,7 +339,7 @@ func CreateL1Rollup(t *testing.T, ctx context.Context, l2ChainId *big.Int) (l1in
 		addresses = DeployOnTestL1(t, ctx, l1info, l1client, l2ChainId)
 		addressData, err := json.Marshal(addresses)
 		Require(t, err)
-		Require(t, os.WriteFile(addressesFile, addressData, 0644))
+		Require(t, os.WriteFile(addressesFile, addressData, 0600))
 		fh, err := os.OpenFile(chainFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 		Require(t, err)
 		defer fh.Close()

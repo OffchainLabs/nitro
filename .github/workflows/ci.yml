@@ -136,6 +136,7 @@ jobs:
           skip-pkg-cache: true
 
       - name: run tests with race detection
+        if: always()
         run: gotestsum --format short-verbose --jsonfile test-output-withrace.json -- ./... -race -parallel=1
 
       - name: Annotate tests with race detection
