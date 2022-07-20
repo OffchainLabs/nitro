@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/util/testhelpers"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 )
@@ -58,7 +60,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	aggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: 1}, L1NodeURL: "none"}, backends)
 	Require(t, err)
 
-	rawMsg := []byte("It's time for you to see the fnords.")
+	rawMsg := testhelpers.RandomizeSlice(make([]byte, 100))
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
@@ -243,9 +245,9 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest}, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
+	aggregator := TimeoutWrapper{time.Millisecond * 250, unwrappedAggregator}
 
-	rawMsg := []byte("It's time for you to see the fnords.")
+	rawMsg := testhelpers.RandomizeSlice(make([]byte, 100))
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	if !shouldFailAggregation {
 		Require(t, err, "Error storing message")
@@ -360,9 +362,9 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// it should get all successes.
 	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: numBackendDAS}, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
+	aggregator := TimeoutWrapper{time.Millisecond * 250, unwrappedAggregator}
 
-	rawMsg := []byte("It's time for you to see the fnords.")
+	rawMsg := testhelpers.RandomizeSlice(make([]byte, 100))
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
