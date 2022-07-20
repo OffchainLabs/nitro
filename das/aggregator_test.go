@@ -245,7 +245,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest}, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	aggregator := TimeoutWrapper{time.Millisecond * 500, unwrappedAggregator}
+	aggregator := TimeoutWrapper{time.Millisecond * 1000, unwrappedAggregator}
 
 	rawMsg := testhelpers.RandomizeSlice(make([]byte, 100))
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
@@ -363,7 +363,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: numBackendDAS}, L1NodeURL: "none"}, backends)
 	Require(t, err)
 
-	aggregator := TimeoutWrapper{time.Millisecond * 500, unwrappedAggregator}
+	aggregator := TimeoutWrapper{time.Millisecond * 1000, unwrappedAggregator}
 
 	rawMsg := testhelpers.RandomizeSlice(make([]byte, 100))
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
