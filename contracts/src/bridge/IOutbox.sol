@@ -28,4 +28,45 @@ interface IOutbox {
     function l2ToL1OutputId() external view returns (bytes32);
 
     function updateSendRoot(bytes32 sendRoot, bytes32 l2BlockHash) external;
+
+    function executeTransaction(
+        bytes32[] calldata proof,
+        uint256 index,
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) external;
+
+    function executeTransactionSimulation(
+        uint256 index,
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) external;
+
+    function isSpent(uint256) external view returns (bool);
+
+    function calculateItemHash(
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) external pure returns (bytes32);
+
+    function calculateMerkleRoot(
+        bytes32[] memory proof,
+        uint256 path,
+        bytes32 item
+    ) external pure returns (bytes32);
 }
