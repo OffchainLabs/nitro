@@ -200,7 +200,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	numBackendDAS := (rand.Int() % 20) + 1
+	numBackendDAS := (rand.Int() % 8) + 1
 	assumedHonest := (rand.Int() % numBackendDAS) + 1
 	var nFailures int
 	if shouldFailAggregation {
@@ -245,7 +245,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest}, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	aggregator := TimeoutWrapper{time.Millisecond * 250, unwrappedAggregator}
+	aggregator := TimeoutWrapper{time.Millisecond * 500, unwrappedAggregator}
 
 	rawMsg := testhelpers.RandomizeSlice(make([]byte, 100))
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
@@ -315,7 +315,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	numBackendDAS := (rand.Int() % 20) + 1
+	numBackendDAS := (rand.Int() % 8) + 1
 	var nSuccesses, nFailures int
 	if shouldFail {
 		nSuccesses = 0
@@ -362,7 +362,8 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// it should get all successes.
 	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: numBackendDAS}, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	aggregator := TimeoutWrapper{time.Millisecond * 250, unwrappedAggregator}
+
+	aggregator := TimeoutWrapper{time.Millisecond * 500, unwrappedAggregator}
 
 	rawMsg := testhelpers.RandomizeSlice(make([]byte, 100))
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
@@ -385,7 +386,9 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 func TestDAS_RetrieveFailureFromSomeDASes(t *testing.T) {
 	runs := initTest(t)
 	for i := 0; i < min(runs, 10); i++ {
+		start := time.Now()
 		testConfigurableRetrieveFailures(t, false)
+		fmt.Println("STEP", time.Since(start))
 	}
 }
 
