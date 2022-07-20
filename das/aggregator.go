@@ -177,7 +177,7 @@ func (a *Aggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, e
 				errorChan <- err
 				return
 			}
-			if dastree.Hash(blob) == hash {
+			if dastree.ValidHash(hash, blob) {
 				blobChan <- blob
 			} else {
 				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)

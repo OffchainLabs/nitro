@@ -80,7 +80,7 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key common.Hash)
 		if err != nil {
 			return nil, err
 		}
-		if key == dastree.Hash(data) {
+		if dastree.ValidHash(key, data) {
 			putErr := f.StorageService.Put(
 				ctx, data, arbmath.SaturatingUAdd(uint64(time.Now().Unix()), f.backupRetentionSeconds),
 			)

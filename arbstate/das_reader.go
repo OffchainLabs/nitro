@@ -150,7 +150,7 @@ func (cert *DataAvailabilityCertificate) RecoverKeyset(
 	if err != nil {
 		return nil, err
 	}
-	if dastree.Hash(keysetBytes) != cert.KeysetHash {
+	if !dastree.ValidHash(cert.KeysetHash, keysetBytes) {
 		return nil, errors.New("keyset hash does not match cert")
 	}
 	return DeserializeKeyset(bytes.NewReader(keysetBytes))

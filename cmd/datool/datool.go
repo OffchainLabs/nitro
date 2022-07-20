@@ -175,7 +175,7 @@ func startRPCClientGetByHash(args []string) error {
 	}
 
 	ctx := context.Background()
-	message, err := client.GetByHash(ctx, common.BytesToHash((decodedHash)))
+	message, err := client.GetByHash(ctx, common.BytesToHash(decodedHash))
 	if err != nil {
 		return err
 	}

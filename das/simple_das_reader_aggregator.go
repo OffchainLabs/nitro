@@ -251,7 +251,7 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(
 	start := time.Now()
 	result, err := reader.GetByHash(ctx, hash)
 	if err == nil {
-		if dastree.Hash(result) == hash {
+		if dastree.ValidHash(hash, result) {
 			stat.success = true
 		} else {
 			err = fmt.Errorf("SimpleDASReaderAggregator got result from reader(%v) not matching hash", reader)

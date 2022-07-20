@@ -10,11 +10,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 )
 
 const BinSize = 64 * 1024 // 64 kB
-const LeafByte = 0xfe
 const NodeByte = 0xff
 
 type bytes32 = common.Hash
@@ -38,25 +36,30 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 	//  Intermediate hashes like '*' from above may be recorded via the `record` closure
 	//
 
+	keccord := func(value []byte) bytes32 {
+		hash := crypto.Keccak256Hash(value)
+		record(hash, value)
+		return hash
+	}
+
 	unrolled := []byte{}
 	for _, slice := range preimage {
 		unrolled = append(unrolled, slice...)
 	}
 	if len(unrolled) == 0 {
-		single := []byte{LeafByte}
-		keccak := crypto.Keccak256Hash(single)
-		record(keccak, single)
-		return keccak
+		innerKeccak := keccord([]byte{})
+		outerKeccak := keccord(innerKeccak.Bytes())
+		return arbmath.FlipBit(outerKeccak, 0)
 	}
 
 	length := uint32(len(unrolled))
 	leaves := []node{}
 	for bin := uint32(0); bin < length; bin += BinSize {
 		end := arbmath.MinUint32(bin+BinSize, length)
-		single := append([]byte{LeafByte}, unrolled[bin:end]...)
-		keccak := crypto.Keccak256Hash(single)
-		record(keccak, single)
-		leaves = append(leaves, node{keccak, end - bin})
+		content := unrolled[bin:end]
+		innerKeccak := keccord(content)
+		outerKeccak := keccord(innerKeccak.Bytes())
+		leaves = append(leaves, node{outerKeccak, end - bin})
 	}
 
 	layer := leaves
@@ -68,14 +71,13 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 			firstHash := layer[i].hash.Bytes()
 			otherHash := layer[i+1].hash.Bytes()
 			sizeUnder := layer[i].size + layer[i+1].size
-			dataUnder := append([]byte{NodeByte}, firstHash...)
+			dataUnder := firstHash
 			dataUnder = append(dataUnder, otherHash...)
 			dataUnder = append(dataUnder, arbmath.Uint32ToBytes(sizeUnder)...)
 			parent := node{
-				crypto.Keccak256Hash(dataUnder),
+				keccord(dataUnder),
 				sizeUnder,
 			}
-			record(parent.hash, dataUnder)
 			paired[i/2] = parent
 		}
 		if prior%2 == 1 {
@@ -83,8 +85,7 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 		}
 		layer = paired
 	}
-
-	return layer[0].hash
+	return arbmath.FlipBit(layer[0].hash, 0)
 }
 
 func Hash(preimage ...[]byte) bytes32 {
@@ -99,7 +100,7 @@ func HashBytes(preimage ...[]byte) []byte {
 func FlatHashToTreeHash(flat bytes32) bytes32 {
 	// Forms a degenerate dastree that's just a single leaf
 	// note: the inner preimage may be larger than the 64 kB standard
-	return crypto.Keccak256Hash(flat[:])
+	return arbmath.FlipBit(crypto.Keccak256Hash(flat[:]), 0)
 }
 
 func ValidHash(hash bytes32, preimage []byte) bool {
@@ -117,43 +118,35 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 	//     3. Only the committee can produce trees unwrapped by this function
 	//
 
+	start := arbmath.FlipBit(root, 0)
 	total := uint32(0)
-	upper := oracle(root)
-	switch {
-	case len(upper) > 0 && upper[0] == LeafByte:
-		return upper[1:], nil
-	case len(upper) == 69 && upper[0] == NodeByte:
-		total = binary.BigEndian.Uint32(upper[65:])
+	upper := oracle(start)
+	switch len(upper) {
+	case 32:
+		return oracle(common.BytesToHash(upper)), nil
+	case 68:
+		total = binary.BigEndian.Uint32(upper[64:])
 	default:
 		return nil, fmt.Errorf("invalid root with preimage of size %v: %v %v", len(upper), root, upper)
 	}
 
-	stack := []node{{hash: root, size: total}}
-	preimage := []byte{}
+	leaves := []node{}
+	stack := []node{{hash: start, size: total}}
 
 	for len(stack) > 0 {
 		place := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-
-		colors.PrintYellow("here ", place.hash, place.size)
-
 		under := oracle(place.hash)
 
-		if len(under) == 0 || (under[0] == NodeByte && len(under) != 69) {
-			return nil, fmt.Errorf("invalid node for hash %v: %v", place.hash, under)
-		}
-
-		kind := under[0]
-		content := under[1:]
-
-		switch kind {
-		case LeafByte:
-			if len(content) != int(place.size) {
-				return nil, fmt.Errorf("leaf has a badly sized bin: %v vs %v", len(under), place.size)
+		switch len(under) {
+		case 32:
+			leaf := node{
+				hash: common.BytesToHash(under),
+				size: place.size,
 			}
-			preimage = append(preimage, content...)
-		case NodeByte:
-			count := binary.BigEndian.Uint32(content[64:])
+			leaves = append(leaves, leaf)
+		case 68:
+			count := binary.BigEndian.Uint32(under[64:])
 			power := uint32(arbmath.NextOrCurrentPowerOf2(uint64(count)))
 
 			if place.size != count {
@@ -161,11 +154,11 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 			}
 
 			prior := node{
-				hash: common.BytesToHash(content[:32]),
+				hash: common.BytesToHash(under[:32]),
 				size: power / 2,
 			}
 			after := node{
-				hash: common.BytesToHash(content[32:64]),
+				hash: common.BytesToHash(under[32:64]),
 				size: count - power/2,
 			}
 
@@ -174,6 +167,15 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 		default:
 			return nil, fmt.Errorf("failed to resolve preimage %v %v", place.hash, under)
 		}
+	}
+
+	preimage := []byte{}
+	for i, leaf := range leaves {
+		bin := oracle(leaf.hash)
+		if len(bin) != int(leaf.size) {
+			return nil, fmt.Errorf("leaf %v has an incorrectly sized bin: %v vs %v", i, len(bin), leaf.size)
+		}
+		preimage = append(preimage, bin...)
 	}
 
 	// Check the hash matches. Given the size data this should never fail but we'll check anyway

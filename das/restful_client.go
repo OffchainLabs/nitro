@@ -64,7 +64,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]b
 	if err != nil {
 		return nil, err
 	}
-	if hash != dastree.Hash(decodedBytes) {
+	if !dastree.ValidHash(hash, decodedBytes) {
 		return nil, arbstate.ErrHashMismatch
 	}
 

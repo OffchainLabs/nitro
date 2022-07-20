@@ -43,7 +43,7 @@ func (c *DASRPCClient) GetByHash(ctx context.Context, hash common.Hash) ([]byte,
 	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hexutil.Bytes(hash[:])); err != nil {
 		return nil, err
 	}
-	if hash != dastree.Hash(ret) { // check hash because RPC server might be untrusted
+	if !dastree.ValidHash(hash, ret) { // check hash because RPC server might be untrusted
 		return nil, arbstate.ErrHashMismatch
 	}
 	return ret, nil

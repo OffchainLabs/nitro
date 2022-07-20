@@ -17,6 +17,14 @@ func FirstFewBytes(b []byte) string {
 	}
 }
 
+func PrettyBytes(b []byte) string {
+	hex := common.Bytes2Hex(b)
+	if len(hex) > 24 {
+		return fmt.Sprintf("%v...", hex[:24])
+	}
+	return hex
+}
+
 func PrettyHash(hash common.Hash) string {
 	return FirstFewBytes(hash.Bytes())
 }

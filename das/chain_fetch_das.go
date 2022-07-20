@@ -112,7 +112,7 @@ func chainFetchGetByHash(
 
 	// try to fetch from the inner DAS
 	innerRes, err := daReader.GetByHash(ctx, hash)
-	if err == nil && hash == dastree.Hash(innerRes) {
+	if err == nil && dastree.ValidHash(hash, innerRes) {
 		return innerRes, nil
 	}
 
@@ -137,7 +137,7 @@ func chainFetchGetByHash(
 		return nil, err
 	}
 	for iter.Next() {
-		if hash == dastree.Hash(iter.Event.KeysetBytes) {
+		if dastree.ValidHash(hash, iter.Event.KeysetBytes) {
 			cache.put(hash, iter.Event.KeysetBytes)
 			return iter.Event.KeysetBytes, nil
 		}
