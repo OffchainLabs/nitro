@@ -325,7 +325,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
 		scenario := util.TracingBeforeEVM
-		if util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, "escrow") != nil {
+		if err := util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario, "escrow"); err != nil {
 			return true, 0, err, nil
 		}
 
