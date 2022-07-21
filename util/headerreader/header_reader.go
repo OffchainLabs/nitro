@@ -43,7 +43,7 @@ type Config struct {
 var DefaultConfig = Config{
 	Enable:               true,
 	PollOnly:             false,
-	PollInterval:         15 * time.Second,
+	PollInterval:         time.Second,
 	SubscribeErrInterval: 5 * time.Minute,
 	TxTimeout:            5 * time.Minute,
 }
