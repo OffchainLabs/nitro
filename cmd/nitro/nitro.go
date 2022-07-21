@@ -15,6 +15,9 @@ import (
 	"syscall"
 	"time"
 
+	grab "github.com/cavaliergopher/grab/v3"
+	extract "github.com/codeclysm/extract/v3"
+
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -117,6 +120,49 @@ func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.W
 	return devAddr, nil
 }
 
+func downloadInit(initConfig *InitConfig) string {
+	if initConfig.Url == "" {
+		return ""
+	}
+	if strings.HasPrefix(initConfig.Url, "file:") {
+		return initConfig.Url[5:]
+	}
+	grabclient := grab.NewClient()
+	log.Info("Downloading initial database", "url", initConfig.Url)
+	fmt.Println()
+	printTicker := time.NewTicker(time.Second * 10)
+	defer printTicker.Stop()
+	attempt := 0
+	for {
+		attempt++
+		req, err := grab.NewRequest(initConfig.DownloadPath, initConfig.Url)
+		if err != nil {
+			panic(err)
+		}
+		resp := grabclient.Do(req)
+		firstPrintTime := time.Now().Add(time.Second * 2)
+	updateLoop:
+		for {
+			select {
+			case <-printTicker.C:
+				if time.Now().After(firstPrintTime) {
+					fmt.Printf("\033[2K\r  transferred %v / %v bytes",
+						resp.BytesComplete(),
+						resp.Size())
+				}
+			case <-resp.Done:
+				if err := resp.Err(); err != nil {
+					fmt.Printf("\033[2K\r  attempt %d failed: %v", attempt, err)
+					break updateLoop
+				}
+				fmt.Println()
+				return resp.Filename
+			}
+		}
+		<-time.After(initConfig.DownloadPoll)
+	}
+}
+
 func openInitializeChainDb(stack *node.Node, initConfig *InitConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
 	if !initConfig.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
@@ -130,6 +176,19 @@ func openInitializeChainDb(stack *node.Node, initConfig *InitConfig, chainId *bi
 				return chainDb, l2BlockChain, err
 			}
 			readOnlyDb.Close()
+		}
+	}
+
+	initFile := downloadInit(initConfig)
+
+	if initFile != "" {
+		reader, err := os.Open(initFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("couln't open init '%v' archive: %w", initFile, err)
+		}
+		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
 		}
 	}
 
@@ -407,6 +466,9 @@ func main() {
 
 type InitConfig struct {
 	Force           bool           `koanf:"force"`
+	Url             string         `koanf:"url"`
+	DownloadPath    string         `koanf:"download-path"`
+	DownloadPoll    time.Duration  `koanf:"download-poll"`
 	DevInit         bool           `koanf:"dev-init"`
 	DevInitAddr     common.Address `koanf:"dev-init-address"`
 	DevInitBlockNum uint64         `koanf:"dev-init-blocknum"`
@@ -416,6 +478,9 @@ type InitConfig struct {
 
 var InitConfigDefault = InitConfig{
 	Force:           false,
+	Url:             "",
+	DownloadPath:    "/tmp/",
+	DownloadPoll:    time.Minute,
 	DevInit:         false,
 	DevInitBlockNum: 0,
 	ThenQuit:        false,
@@ -424,6 +489,9 @@ var InitConfigDefault = InitConfig{
 
 func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".force", InitConfigDefault.Force, "if true: in case database exists init code will be reexecuted and genesis block compared to database")
+	f.String(prefix+".url", InitConfigDefault.Url, "url to download initializtion data - will poll if download fails")
+	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")
+	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in anchient database.")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
