@@ -107,8 +107,14 @@ func FlatHashToTreeHash(flat bytes32) bytes32 {
 }
 
 func ValidHash(hash bytes32, preimage []byte) bool {
-	// TODO: remove keccak after committee upgrade
-	return hash == Hash(preimage) || hash == crypto.Keccak256Hash(preimage)
+	if hash == Hash(preimage) {
+		return true
+	}
+	if len(preimage) > 0 {
+		kind := preimage[0]
+		return kind != NodeByte && kind != LeafByte && hash == crypto.Keccak256Hash(preimage)
+	}
+	return false
 }
 
 func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
@@ -121,16 +127,32 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 	//     3. Only the committee can produce trees unwrapped by this function
 	//
 
+	unpeal := func(hash bytes32) (byte, []byte, error) {
+		data := oracle(hash)
+		size := len(data)
+		if size == 0 {
+			return 0, nil, fmt.Errorf("invalid node %v", hash)
+		}
+		kind := data[0]
+		if (kind == LeafByte && size != 33) || (kind == NodeByte && size != 69) {
+			return 0, nil, fmt.Errorf("invalid node for hash %v: %v", hash, data)
+		}
+		return kind, data[1:], nil
+	}
+
 	start := arbmath.FlipBit(root, 0)
 	total := uint32(0)
-	upper := oracle(start)
-	switch {
-	case len(upper) == 33 && upper[0] == LeafByte:
-		return oracle(common.BytesToHash(upper[1:])), nil
-	case len(upper) == 69 && upper[0] == NodeByte:
-		total = binary.BigEndian.Uint32(upper[65:])
+	kind, upper, err := unpeal(start)
+	if err != nil {
+		return nil, err
+	}
+	switch kind {
+	case LeafByte:
+		return oracle(common.BytesToHash(upper)), nil
+	case NodeByte:
+		total = binary.BigEndian.Uint32(upper[64:])
 	default:
-		return nil, fmt.Errorf("invalid root with preimage of size %v: %v %v", len(upper), root, upper)
+		return oracle(root), nil // accept old-style hashes
 	}
 
 	leaves := []node{}
@@ -139,47 +161,39 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 	for len(stack) > 0 {
 		place := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		under := oracle(place.hash)
-
-		if len(under) == 0 {
-			return nil, fmt.Errorf("invalid node for hash %v", place.hash)
-		}
-
-		kind := under[0]
-		content := under[1:]
-
-		if (kind == LeafByte && len(under) != 33) || (kind == NodeByte && len(under) != 69) {
-			return nil, fmt.Errorf("invalid node for hash %v: %v", place.hash, under)
+		kind, data, err := unpeal(place.hash)
+		if err != nil {
+			return nil, err
 		}
 
 		switch kind {
 		case LeafByte:
 			leaf := node{
-				hash: common.BytesToHash(content),
+				hash: common.BytesToHash(data),
 				size: place.size,
 			}
 			leaves = append(leaves, leaf)
 		case NodeByte:
-			count := binary.BigEndian.Uint32(content[64:])
+			count := binary.BigEndian.Uint32(data[64:])
 			power := uint32(arbmath.NextOrCurrentPowerOf2(uint64(count)))
 
 			if place.size != count {
-				return nil, fmt.Errorf("invalid size data: %v vs %v for %v", count, place.size, under)
+				return nil, fmt.Errorf("invalid size data: %v vs %v for %v", count, place.size, data)
 			}
 
 			prior := node{
-				hash: common.BytesToHash(content[:32]),
+				hash: common.BytesToHash(data[:32]),
 				size: power / 2,
 			}
 			after := node{
-				hash: common.BytesToHash(content[32:64]),
+				hash: common.BytesToHash(data[32:64]),
 				size: count - power/2,
 			}
 
 			// we want to expand leftward so we reverse their order
 			stack = append(stack, after, prior)
 		default:
-			return nil, fmt.Errorf("failed to resolve preimage %v %v", place.hash, under)
+			return nil, fmt.Errorf("failed to resolve preimage %v %v", place.hash, data)
 		}
 	}
 

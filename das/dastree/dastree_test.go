@@ -55,7 +55,7 @@ func TestDASTree(t *testing.T) {
 		preimage, err := Content(key, oracle)
 		Require(t, err, key)
 
-		if !bytes.Equal(preimage, value) {
+		if !bytes.Equal(preimage, value) || !ValidHash(key, preimage) {
 			Fail(t, "incorrect preimage", pretty.FirstFewBytes(preimage), pretty.FirstFewBytes(value))
 		}
 	}
