@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -203,6 +204,9 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
 	l1info, l1client, _, l1stack := CreateTestL1BlockChain(t, nil)
 	defer l1stack.Close()
+	l1Reader := headerreader.New(l1client, headerreader.TestConfig)
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 
 	lis, err := net.Listen("tcp", "localhost:0")
@@ -262,7 +266,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 	}
 
-	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, &serverConfig, l1client, addresses)
+	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, &serverConfig, l1Reader, addresses)
 	Require(t, err)
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
 	Require(t, err)
