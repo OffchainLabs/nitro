@@ -111,7 +111,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	if err != nil {
 		return common.Hash{}, err
 	}
-	err = initializeRetryables(arbosState.RetryableState(), retriableReader, 0)
+	err = initializeRetryables(statedb, arbosState.RetryableState(), retriableReader, 0)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -162,7 +162,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	return commit()
 }
 
-func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.RetriableDataReader, currentTimestampToUse uint64) error {
+func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState, initData statetransfer.RetriableDataReader, currentTimestampToUse uint64) error {
 	for initData.More() {
 		r, err := initData.GetNext()
 		if err != nil {
@@ -172,6 +172,7 @@ func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.
 		if r.To != (common.Address{}) {
 			to = &r.To
 		}
+		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), r.Callvalue)
 		_, err = rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
