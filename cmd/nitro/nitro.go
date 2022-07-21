@@ -130,7 +130,7 @@ func downloadInit(initConfig *InitConfig) string {
 	grabclient := grab.NewClient()
 	log.Info("Downloading initial database", "url", initConfig.Url)
 	fmt.Println()
-	printTicker := time.NewTicker(time.Second * 10)
+	printTicker := time.NewTicker(time.Second)
 	defer printTicker.Stop()
 	attempt := 0
 	for {
@@ -146,15 +146,24 @@ func downloadInit(initConfig *InitConfig) string {
 			select {
 			case <-printTicker.C:
 				if time.Now().After(firstPrintTime) {
-					fmt.Printf("\033[2K\r  transferred %v / %v bytes",
-						resp.BytesComplete(),
-						resp.Size())
+					bps := resp.BytesPerSecond()
+					done := resp.BytesComplete()
+					total := resp.Size()
+					timeRemaining := (time.Second * time.Duration(total-done)) / time.Duration(bps)
+					timeRemaining = timeRemaining.Truncate(time.Millisecond * 10)
+					fmt.Printf("\033[2K\r  transferred %v / %v bytes (%.2f%%) [%.2fMbps, %s remaining]",
+						done,
+						total,
+						resp.Progress()*100,
+						bps*8/1000000,
+						timeRemaining.String())
 				}
 			case <-resp.Done:
 				if err := resp.Err(); err != nil {
 					fmt.Printf("\033[2K\r  attempt %d failed: %v", attempt, err)
 					break updateLoop
 				}
+				log.Info("Download done", "filename", resp.Filename, "duration", resp.Duration())
 				fmt.Println()
 				return resp.Filename
 			}
