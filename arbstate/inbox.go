@@ -192,15 +192,7 @@ func RecoverPayloadFromDasBatch(
 	}
 
 	dataHash := cert.DataHash
-	treeHash := dataHash
-	//
-	//   TODO: add back after committee upgrade
-	//   if version == 0 {
-	//       treeHash = dastree.FlatHashToTreeHash(dataHash)
-	//   }
-	//
-
-	payload, err := dasReader.GetByHash(ctx, treeHash)
+	payload, err := dasReader.GetByHash(ctx, dataHash)
 	if err == nil {
 		err = checkPreimage(dataHash, payload, "batch hash mismatch")
 	}
@@ -212,10 +204,6 @@ func RecoverPayloadFromDasBatch(
 	if preimages != nil {
 		if version == 0 {
 			preimages[dataHash] = payload
-			//
-			//   TODO: add back after committee upgrade
-			//   preimages[treeHash] = dataHash[:]
-			//
 		} else {
 			dastree.RecordHash(recordPreimage, payload)
 		}
