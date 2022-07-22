@@ -101,7 +101,7 @@ func HashBytes(preimage ...[]byte) []byte {
 func FlatHashToTreeHash(flat bytes32) bytes32 {
 	// Forms a degenerate dastree that's just a single leaf
 	// note: the inner preimage may be larger than the 64 kB standard
-	return arbmath.FlipBit(crypto.Keccak256Hash(append([]byte{LeafByte}, flat[:]...)), 0)
+	return arbmath.FlipBit(crypto.Keccak256Hash(FlatHashToTreeLeaf(flat)), 0)
 }
 
 func FlatHashToTreeLeaf(flat bytes32) []byte {

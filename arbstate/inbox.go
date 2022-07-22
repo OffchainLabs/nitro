@@ -213,8 +213,9 @@ func RecoverPayloadFromDasBatch(
 
 	if preimages != nil {
 		if version == 0 {
+			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
 			preimages[dataHash] = payload
-			preimages[dastree.FlatHashToTreeHash(dataHash)] = dastree.FlatHashToTreeLeaf(dataHash)
+			preimages[crypto.Keccak256Hash(treeLeaf)] = treeLeaf
 		} else {
 			dastree.RecordHash(recordPreimage, payload)
 		}
