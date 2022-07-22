@@ -10,7 +10,7 @@ import (
 )
 
 type ArbosInitializationInfo struct {
-	PreinitBlocks        uint64
+	NextBlockNumber      uint64
 	AddressTableContents []common.Address
 	RetryableData        []InitializationDataForRetryable
 	Accounts             []AccountInitializationInfo

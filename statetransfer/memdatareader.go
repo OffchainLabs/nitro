@@ -17,8 +17,8 @@ func NewMemoryInitDataReader(data *ArbosInitializationInfo) InitDataReader {
 	}
 }
 
-func (r *MemoryInitDataReader) GetPreinitBlockCount() (uint64, error) {
-	return r.d.PreinitBlocks, nil
+func (r *MemoryInitDataReader) GetNextBlockNumber() (uint64, error) {
+	return r.d.NextBlockNumber, nil
 }
 
 type FieldReader struct {
