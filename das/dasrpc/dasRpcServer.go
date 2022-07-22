@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
@@ -47,15 +48,15 @@ type DASRPCServer struct {
 	localDAS das.DataAvailabilityService
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, localDAS das.DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS das.DataAvailabilityService) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
 	}
-	return StartDASRPCServerOnListener(ctx, listener, localDAS)
+	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, localDAS)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, localDAS das.DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS das.DataAvailabilityService) (*http.Server, error) {
 	rpcServer := rpc.NewServer()
 	err := rpcServer.RegisterName("das", &DASRPCServer{localDAS: localDAS})
 	if err != nil {
@@ -64,7 +65,10 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, loc
 
 	srv := &http.Server{
 		Handler:           rpcServer,
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       rpcServerTimeouts.ReadTimeout,
+		ReadHeaderTimeout: rpcServerTimeouts.ReadHeaderTimeout,
+		WriteTimeout:      rpcServerTimeouts.WriteTimeout,
+		IdleTimeout:       rpcServerTimeouts.IdleTimeout,
 	}
 
 	go func() {

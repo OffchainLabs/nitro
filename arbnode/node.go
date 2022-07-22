@@ -693,7 +693,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1client, deployInfo)
+	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -786,13 +786,42 @@ func createNodeImpl(
 	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dasLifecycleManager}, nil
 }
 
+type L1ReaderCloser struct {
+	l1Reader *headerreader.HeaderReader
+}
+
+func (c *L1ReaderCloser) Close(ctx context.Context) error {
+	c.l1Reader.StopOnly()
+	return nil
+}
+
+func (c *L1ReaderCloser) String() string {
+	return "l1 reader closer"
+}
+
 // Set up a das.DataAvailabilityService stack without relying on any
 // objects already created for setting up the Node.
 func SetUpDataAvailabilityWithoutNode(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
 ) (das.DataAvailabilityService, *das.LifecycleManager, error) {
-	return SetUpDataAvailability(ctx, config, nil, nil)
+	var l1Reader *headerreader.HeaderReader
+	if config.L1NodeURL != "" && config.L1NodeURL != "none" {
+		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
+		if err != nil {
+			return nil, nil, err
+		}
+		l1Reader = headerreader.New(l1Client, headerreader.DefaultConfig) // TODO: config
+	}
+	das, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if l1Reader != nil {
+		l1Reader.Start(ctx)
+		lifeCycle.Register(&L1ReaderCloser{l1Reader})
+	}
+	return das, lifeCycle, err
 }
 
 // Set up a das.DataAvailabilityService stack allowing some dependencies
@@ -800,7 +829,7 @@ func SetUpDataAvailabilityWithoutNode(
 func SetUpDataAvailability(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
-	l1Client arbutil.L1Interface,
+	l1Reader *headerreader.HeaderReader,
 	deployInfo *RollupAddresses,
 ) (das.DataAvailabilityService, *das.LifecycleManager, error) {
 	if !config.Enable {
@@ -812,18 +841,17 @@ func SetUpDataAvailability(
 	var seqInboxCaller *bridgegen.SequencerInboxCaller
 	var seqInboxAddress *common.Address
 
-	if l1Client != nil && deployInfo != nil {
+	if l1Reader != nil && deployInfo != nil {
 		seqInboxAddress = &deployInfo.SequencerInbox
-		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Client)
+		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
 		if err != nil {
 			return nil, nil, err
 		}
 		seqInboxCaller = &seqInbox.SequencerInboxCaller
-	} else if len(config.L1NodeURL) > 0 && len(config.SequencerInboxAddress) > 0 {
-		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
-		if err != nil {
-			return nil, nil, err
-		}
+	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
+		l1Reader = nil
+		seqInboxAddress = nil
+	} else if l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
 		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
 		if err != nil {
 			return nil, nil, err
@@ -831,7 +859,7 @@ func SetUpDataAvailability(
 		if seqInboxAddress == nil {
 			return nil, nil, errors.New("Must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
-		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Client)
+		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -882,22 +910,16 @@ func SetUpDataAvailability(
 				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
 			}
 			if syncConf.Eager {
-				if l1Client == nil || seqInboxAddress == nil {
+				if l1Reader == nil || seqInboxAddress == nil {
 					return nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
 				}
 				topLevelStorageService, err = das.NewSyncingFallbackStorageService(
 					ctx,
 					topLevelStorageService,
 					restAgg,
-					retentionPeriodSeconds,
-					syncConf.IgnoreWriteErrors,
-					true,
-					l1Client,
+					l1Reader,
 					*seqInboxAddress,
-					&syncConf.EagerLowerBoundBlock,
-					retentionPeriodSeconds,
-					syncConf.EagerStopsWhenCaughtUp,
-				)
+					syncConf)
 				if err != nil {
 					return nil, nil, err
 				}

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,11 +26,11 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 	data1 := []byte("Testing a restful server now.")
 	dataHash1 := dastree.Hash(data1)
 
-	server1, err := NewRestfulDasServer(LocalServerAddressForTest, 9888, storage1)
+	server1, port1, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage1)
 	Require(t, err)
-	server2, err := NewRestfulDasServer(LocalServerAddressForTest, 9889, storage2)
+	server2, port2, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage2)
 	Require(t, err)
-	server3, err := NewRestfulDasServer(LocalServerAddressForTest, 9890, storage3)
+	server3, port3, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage3)
 	Require(t, err)
 
 	err = storage1.Put(ctx, data1, uint64(time.Now().Add(time.Hour).Unix()))
@@ -42,7 +43,7 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 	time.Sleep(100 * time.Millisecond)
 
 	config := RestfulClientAggregatorConfig{
-		Urls:                   []string{"http://localhost:9888", "http://localhost:9889", "http://localhost:9890"},
+		Urls:                   []string{"http://localhost:" + strconv.Itoa(port1), "http://localhost:" + strconv.Itoa(port2), "http://localhost:" + strconv.Itoa(port3)},
 		Strategy:               "testing-sequential",
 		StrategyUpdateInterval: time.Second,
 		WaitBeforeTryNext:      500 * time.Millisecond,
