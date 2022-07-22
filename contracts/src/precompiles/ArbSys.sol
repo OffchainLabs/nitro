@@ -36,13 +36,13 @@ interface ArbSys {
 
     /**
      * @notice Returns 0 since Nitro has no concept of storage gas
-     * @return int 0
+     * @return uint 0
      */
     function getStorageGasAvailable() external view returns (uint256);
 
     /**
-     * @notice check if current call is coming from l1
-     * @return true if the caller of this was called directly from L1
+     * @notice check if current call is top level (meaning it was triggered by an EoA or a L1 contract)
+     * @return true if current execution frame is not a call by another L2 contract
      */
     function isTopLevelCall() external view returns (bool);
 
