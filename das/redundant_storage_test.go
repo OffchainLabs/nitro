@@ -7,9 +7,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/crypto"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 const NumServices = 3
@@ -25,8 +26,8 @@ func TestRedundantStorageService(t *testing.T) {
 	Require(t, err)
 
 	val1 := []byte("The first value")
-	key1 := crypto.Keccak256(val1)
-	key2 := crypto.Keccak256(append(val1, 0))
+	key1 := dastree.Hash(val1)
+	key2 := dastree.Hash(append(val1, 0))
 
 	_, err = redundantService.GetByHash(ctx, key1)
 	if !errors.Is(err, ErrNotFound) {

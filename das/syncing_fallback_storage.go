@@ -189,7 +189,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 		return err
 	}
 	for hash, contents := range preimages {
-		_, err := s.syncTo.GetByHash(ctx, hash.Bytes())
+		_, err := s.syncTo.GetByHash(ctx, hash)
 		if errors.Is(err, ErrNotFound) {
 			if err := s.syncTo.Put(ctx, contents, storeUntil); err != nil {
 				return err

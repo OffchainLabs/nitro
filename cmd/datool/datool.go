@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
@@ -174,7 +175,7 @@ func startRPCClientGetByHash(args []string) error {
 	}
 
 	ctx := context.Background()
-	message, err := client.GetByHash(ctx, decodedHash)
+	message, err := client.GetByHash(ctx, common.BytesToHash(decodedHash))
 	if err != nil {
 		return err
 	}
@@ -235,7 +236,7 @@ func startRESTClientGetByHash(args []string) error {
 	}
 
 	ctx := context.Background()
-	message, err := client.GetByHash(ctx, decodedHash)
+	message, err := client.GetByHash(ctx, common.BytesToHash(decodedHash))
 	if err != nil {
 		return err
 	}
