@@ -71,9 +71,7 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 			firstHash := layer[i].hash.Bytes()
 			otherHash := layer[i+1].hash.Bytes()
 			sizeUnder := layer[i].size + layer[i+1].size
-			dataUnder := firstHash
-			dataUnder = append(dataUnder, otherHash...)
-			dataUnder = append(dataUnder, arbmath.Uint32ToBytes(sizeUnder)...)
+			dataUnder := arbmath.ConcatByteSlices(firstHash, otherHash, arbmath.Uint32ToBytes(sizeUnder))
 			parent := node{
 				keccord(prepend(NodeByte, dataUnder)),
 				sizeUnder,
@@ -89,7 +87,7 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 }
 
 func Hash(preimage ...[]byte) bytes32 {
-	// Merkelizes without recording anything. All but the replay binary's DAS will call this
+	// Merkelizes without recording anything. All but the validator's DAS will call this
 	return RecordHash(func(bytes32, []byte) {}, preimage...)
 }
 
@@ -121,7 +119,9 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 	// Notes
 	//     1. Because we accept degenerate dastrees, we can't check that single-leaf trees are canonical.
 	//     2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
-	//     3. Only the committee can produce trees unwrapped by this function
+	//     3. We also accept old-style flat hashes
+	//     4. Only the committee can produce trees unwrapped by this function
+	//     5. Only the replay binary calls this
 	//
 
 	unpeal := func(hash bytes32) (byte, []byte, error) {
