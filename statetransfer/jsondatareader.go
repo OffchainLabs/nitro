@@ -15,7 +15,7 @@ import (
 )
 
 type ArbosInitFileContents struct {
-	NextBlockNumber          uint64 `json:"LastBlockNumber"`
+	NextBlockNumber          uint64 `json:"NextBlockNumber"`
 	AddressTableContentsPath string `json:"AddressTableContentsPath"`
 	RetryableDataPath        string `json:"RetryableDataPath"`
 	AccountsPath             string `json:"AccountsPath"`
