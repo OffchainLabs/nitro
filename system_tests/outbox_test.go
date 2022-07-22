@@ -43,7 +43,7 @@ func TestOutboxProofs(t *testing.T) {
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, client)
 	Require(t, err)
 
-	txnCount := int64(1 + rand.Intn(64))
+	txnCount := int64(1 + rand.Intn(16))
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
