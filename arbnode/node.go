@@ -1173,7 +1173,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 	EmptyHash := common.Hash{}
 	prevHash := EmptyHash
 	prevDifficulty := big.NewInt(0)
-	blockNumber, err := initData.GetPreinitBlockCount()
+	blockNumber, err := initData.GetNextBlockNumber()
 	if err != nil {
 		return err
 	}

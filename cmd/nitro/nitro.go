@@ -215,7 +215,7 @@ func openInitializeChainDb(stack *node.Node, initConfig *InitConfig, chainId *bi
 		}
 	} else if initConfig.DevInit {
 		initData := statetransfer.ArbosInitializationInfo{
-			PreinitBlocks: initConfig.DevInitBlockNum,
+			NextBlockNumber: initConfig.DevInitBlockNum,
 			Accounts: []statetransfer.AccountInitializationInfo{
 				{
 					Addr:       initConfig.DevInitAddr,
@@ -240,22 +240,30 @@ func openInitializeChainDb(stack *node.Node, initConfig *InitConfig, chainId *bi
 			panic(err)
 		}
 	} else {
-		preinitBlocks, err := initDataReader.GetPreinitBlockCount()
+		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
 			panic(err)
 		}
-		chainConfig, err = arbos.GetChainConfig(chainId, preinitBlocks)
+		chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNr)
 		if err != nil {
 			panic(err)
 		}
-		anchients, err := chainDb.Ancients()
+		ancients, err := chainDb.Ancients()
 		if err != nil {
 			panic(err)
 		}
-		if anchients < preinitBlocks {
-			panic(fmt.Sprint(preinitBlocks, " pre-init blocks required, but only ", anchients, " found"))
+		if ancients < genesisBlockNr {
+			panic(fmt.Sprint(genesisBlockNr, " pre-init blocks required, but only ", ancients, " found"))
 		}
-		log.Info("Initializing", "anchients", anchients, "preinitBlocks", preinitBlocks)
+		if ancients > genesisBlockNr {
+			storedGenHash := rawdb.ReadCanonicalHash(chainDb, genesisBlockNr)
+			storedGenBlock := rawdb.ReadBlock(chainDb, storedGenHash, genesisBlockNr)
+			if storedGenBlock.Header().Root == (common.Hash{}) {
+				panic(fmt.Errorf("Attempting to init genesis block %x, but this block is in database with no state root", genesisBlockNr))
+			}
+			log.Warn("Re-creating genesis though it seems to exist in database", "blockNr", genesisBlockNr)
+		}
+		log.Info("Initializing", "ancients", ancients, "genesisBlockNr", genesisBlockNr)
 		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, 100000)
 		if err != nil {
 			panic(err)
