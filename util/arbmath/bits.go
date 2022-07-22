@@ -5,17 +5,7 @@ package arbmath
 
 import (
 	"encoding/binary"
-
-	"github.com/ethereum/go-ethereum/common"
 )
-
-type bytes32 = common.Hash
-
-// flips the nth bit in an ethereum word, starting from the left
-func FlipBit(data bytes32, bit byte) bytes32 {
-	data[bit/8] ^= 1 << (7 - bit%8)
-	return data
-}
 
 // unrolls a series of slices into a singular, concatenated slice
 func ConcatByteSlices(slices ...[]byte) []byte {
