@@ -125,8 +125,9 @@ FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
 # Download WAVM machines
-RUN bash -c 'r=0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v1-rc1/machine.wavm.br'
+#RUN bash -c 'r=0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v1-rc1/machine.wavm.br'
 RUN bash -c 'r=0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v2.1/machine.wavm.br'
+RUN bash -c 'r=0x53c288a0ca7100c0f2db8ab19508763a51c7fd1be125d376d940a65378acaee7 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3/machine.wavm.br'
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
