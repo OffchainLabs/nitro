@@ -15,7 +15,7 @@ import (
 )
 
 type ArbosInitFileContents struct {
-	PreinitBlocks            uint64 `json:"PreinitBlocks"`
+	NextBlockNumber          uint64 `json:"LastBlockNumber"`
 	AddressTableContentsPath string `json:"AddressTableContentsPath"`
 	RetryableDataPath        string `json:"RetryableDataPath"`
 	AccountsPath             string `json:"AccountsPath"`
@@ -26,8 +26,8 @@ type JsonInitDataReader struct {
 	data     ArbosInitFileContents
 }
 
-func (r *JsonInitDataReader) GetPreinitBlockCount() (uint64, error) {
-	return r.data.PreinitBlocks, nil
+func (r *JsonInitDataReader) GetNextBlockNumber() (uint64, error) {
+	return r.data.NextBlockNumber, nil
 }
 
 type JsonListReader struct {

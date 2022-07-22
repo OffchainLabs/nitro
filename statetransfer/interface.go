@@ -14,7 +14,7 @@ var errNoMore = errors.New("no more elements")
 type InitDataReader interface {
 	Close() error
 	GetAddressTableReader() (AddressReader, error)
-	GetPreinitBlockCount() (uint64, error)
+	GetNextBlockNumber() (uint64, error)
 	GetRetriableDataReader() (RetriableDataReader, error)
 	GetAccountDataReader() (AccountDataReader, error)
 }
