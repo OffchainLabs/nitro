@@ -27,14 +27,17 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 	// Algorithm
 	//  1. split the preimage into 64kB bins and double hash them to produce the tree's leaves
 	//  2. repeatedly hash pairs and their combined length, bubbling up any odd-one's out, to form the root
+	//  3. invert the first bit of the root hash
 	//
-	//            r         <=>  H(0xff, H(0xff, 0, 1, L(0:1)), 2, L(0:2))     step 3
+	//            r'        <=>  invert(H(0xff, H(0xff, 0, 1, L(0:1)), 2, L(0:2)))    step 4
+	//            |
+	//            r         <=>  H(0xff, H(0xff, 0, 1, L(0:1)), 2, L(0:2))            step 3
 	//           / \
-	//          *   2       <=>  H(0xff, 0, 1, L(0:1)), 2                      step 2
+	//          *   2       <=>  H(0xff, 0, 1, L(0:1)), 2                             step 2
 	//         / \
-	//        0   1         <=>  0, 1, 2                                       step 1
+	//        0   1         <=>  0, 1, 2                                              step 1
 	//
-	//      0   1   2       <=>  leaf n = H(0xfe, H(bin n))                    step 0
+	//      0   1   2       <=>  leaf n = H(0xfe, H(bin n))                           step 0
 	//
 	//  Where H is keccak and L is the length
 	//  Intermediate hashes like '*' from above may be recorded via the `record` closure
@@ -51,7 +54,7 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 
 	unrolled := arbmath.ConcatByteSlices(preimage...)
 	if len(unrolled) == 0 {
-		return keccord(prepend(LeafByte, keccord([]byte{}).Bytes()))
+		return arbmath.FlipBit(keccord(prepend(LeafByte, keccord([]byte{}).Bytes())), 0)
 	}
 
 	length := uint32(len(unrolled))
@@ -83,7 +86,7 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 		}
 		layer = paired
 	}
-	return layer[0].hash
+	return arbmath.FlipBit(layer[0].hash, 0)
 }
 
 func Hash(preimage ...[]byte) bytes32 {
@@ -98,7 +101,12 @@ func HashBytes(preimage ...[]byte) []byte {
 func FlatHashToTreeHash(flat bytes32) bytes32 {
 	// Forms a degenerate dastree that's just a single leaf
 	// note: the inner preimage may be larger than the 64 kB standard
-	return crypto.Keccak256Hash(append([]byte{LeafByte}, flat[:]...))
+	return arbmath.FlipBit(crypto.Keccak256Hash(append([]byte{LeafByte}, flat[:]...)), 0)
+}
+
+func FlatPayloadToTreeLeaf(preimage []byte) []byte {
+	// Prepends a flat hash's preimage with a leaf byte to emulate a leaf's nesting
+	return append([]byte{LeafByte}, preimage...)
 }
 
 func ValidHash(hash bytes32, preimage []byte) bool {
@@ -137,8 +145,9 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 		return kind, data[1:], nil
 	}
 
+	start := arbmath.FlipBit(root, 0)
 	total := uint32(0)
-	kind, upper, err := unpeal(root)
+	kind, upper, err := unpeal(start)
 	if err != nil {
 		return nil, err
 	}
@@ -148,11 +157,11 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 	case NodeByte:
 		total = binary.BigEndian.Uint32(upper[64:])
 	default:
-		return oracle(root), nil // accept old-style hashes
+		return nil, fmt.Errorf("unexpected root preimage of kind %v: %v", kind, upper)
 	}
 
 	leaves := []node{}
-	stack := []node{{hash: root, size: total}}
+	stack := []node{{hash: start, size: total}}
 
 	for len(stack) > 0 {
 		place := stack[len(stack)-1]

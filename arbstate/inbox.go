@@ -140,14 +140,34 @@ func RecoverPayloadFromDasBatch(
 		return nil, nil
 	}
 	version := cert.Version
+	recordPreimage := func(key common.Hash, value []byte) {
+		preimages[key] = value
+	}
 
-	checkPreimage := func(hash common.Hash, preimage []byte, message string) error {
+	getByHash := func(ctx context.Context, hash common.Hash) ([]byte, error) {
+		newHash := hash
+		if version == 0 {
+			newHash = dastree.FlatHashToTreeHash(hash)
+		}
+
+		preimage, err := dasReader.GetByHash(ctx, newHash)
+		if err != nil && hash != newHash {
+			log.Debug("error fetching new style hash, trying old", "new", newHash, "old", hash, "err", err)
+			preimage, err = dasReader.GetByHash(ctx, hash)
+		}
+		if err != nil {
+			return nil, err
+		}
+
 		switch {
 		case version == 0 && crypto.Keccak256Hash(preimage) != hash:
 			fallthrough
 		case version == 1 && dastree.Hash(preimage) != hash:
-			log.Error(message, "err", ErrHashMismatch, "version", version)
-			return ErrHashMismatch
+			log.Error(
+				"preimage mismatch for hash",
+				"hash", hash, "err", ErrHashMismatch, "version", version,
+			)
+			return nil, ErrHashMismatch
 		case version >= 2:
 			log.Error(
 				"Committee signed unsuported certificate format",
@@ -155,17 +175,10 @@ func RecoverPayloadFromDasBatch(
 			)
 			panic("node software out of date")
 		}
-		return nil
-	}
-	recordPreimage := func(key common.Hash, value []byte) {
-		preimages[key] = value
+		return preimage, nil
 	}
 
-	keysetPreimage, err := dasReader.GetByHash(ctx, cert.KeysetHash)
-	keysetHash := cert.KeysetHash
-	if err == nil {
-		err = checkPreimage(keysetHash, keysetPreimage, "Keyset hash mismatch")
-	}
+	keysetPreimage, err := getByHash(ctx, cert.KeysetHash)
 	if err != nil {
 		log.Error("Couldn't get keyset", "err", err)
 		return nil, err
@@ -192,10 +205,7 @@ func RecoverPayloadFromDasBatch(
 	}
 
 	dataHash := cert.DataHash
-	payload, err := dasReader.GetByHash(ctx, dataHash)
-	if err == nil {
-		err = checkPreimage(dataHash, payload, "batch hash mismatch")
-	}
+	payload, err := getByHash(ctx, dataHash)
 	if err != nil {
 		log.Error("Couldn't fetch DAS batch contents", "err", err)
 		return nil, err
@@ -204,6 +214,7 @@ func RecoverPayloadFromDasBatch(
 	if preimages != nil {
 		if version == 0 {
 			preimages[dataHash] = payload
+			preimages[dastree.FlatHashToTreeHash(dataHash)] = dastree.FlatPayloadToTreeLeaf(payload)
 		} else {
 			dastree.RecordHash(recordPreimage, payload)
 		}
