@@ -564,22 +564,23 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type Node struct {
-	Backend             *arbitrum.Backend
-	ArbInterface        *ArbInterface
-	L1Reader            *headerreader.HeaderReader
-	TxStreamer          *TransactionStreamer
-	TxPublisher         TransactionPublisher
-	DeployInfo          *RollupAddresses
-	InboxReader         *InboxReader
-	InboxTracker        *InboxTracker
-	DelayedSequencer    *DelayedSequencer
-	BatchPoster         *BatchPoster
-	BlockValidator      *validator.BlockValidator
-	Staker              *validator.Staker
-	BroadcastServer     *broadcaster.Broadcaster
-	BroadcastClients    []*broadcastclient.BroadcastClient
-	SeqCoordinator      *SeqCoordinator
-	DASLifecycleManager *das.LifecycleManager
+	Backend                *arbitrum.Backend
+	ArbInterface           *ArbInterface
+	L1Reader               *headerreader.HeaderReader
+	TxStreamer             *TransactionStreamer
+	TxPublisher            TransactionPublisher
+	DeployInfo             *RollupAddresses
+	InboxReader            *InboxReader
+	InboxTracker           *InboxTracker
+	DelayedSequencer       *DelayedSequencer
+	BatchPoster            *BatchPoster
+	BlockValidator         *validator.BlockValidator
+	Staker                 *validator.Staker
+	BroadcastServer        *broadcaster.Broadcaster
+	BroadcastClients       []*broadcastclient.BroadcastClient
+	SeqCoordinator         *SeqCoordinator
+	DASLifecycleManager    *das.LifecycleManager
+	ClassicOutboxRetriever *ClassicOutboxRetriever
 }
 
 func createNodeImpl(
@@ -608,6 +609,15 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	var classicOutbox *ClassicOutboxRetriever
+	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
+	if err != nil {
+		log.Warn("Classic Msg Database not found", "err", err)
+		classicOutbox = nil
+	} else {
+		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 	}
 
 	var broadcastServer *broadcaster.Broadcaster
@@ -678,7 +688,7 @@ func createNodeImpl(
 		}
 	}
 	if !config.L1Reader.Enable {
-		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, nil}, nil
+		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, nil, classicOutbox}, nil
 	}
 
 	if deployInfo == nil {
@@ -782,7 +792,7 @@ func createNodeImpl(
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dasLifecycleManager}, nil
+	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dasLifecycleManager, classicOutbox}, nil
 }
 
 // Set up a das.DataAvailabilityService stack without relying on any
