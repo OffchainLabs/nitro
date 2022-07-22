@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
@@ -24,7 +24,7 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 	storage1, storage2, storage3 := NewMemoryBackedStorageService(ctx), NewMemoryBackedStorageService(ctx), NewMemoryBackedStorageService(ctx)
 
 	data1 := []byte("Testing a restful server now.")
-	dataHash1 := crypto.Keccak256(data1)
+	dataHash1 := dastree.Hash(data1)
 
 	server1, port1, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage1)
 	Require(t, err)
@@ -59,13 +59,13 @@ func TestSimpleDASReaderAggregator(t *testing.T) { //nolint
 		Fail(t, fmt.Sprintf("Returned data '%s' does not match expected '%s'", returnedData, data1))
 	}
 
-	_, err = agg.GetByHash(ctx, crypto.Keccak256([]byte("absent data")))
+	_, err = agg.GetByHash(ctx, dastree.Hash([]byte("absent data")))
 	if err == nil || !strings.Contains(err.Error(), "404") {
 		Fail(t, "Expected a 404 error")
 	}
 
 	data2 := []byte("Testing data that is only on the last REST endpoint.")
-	dataHash2 := crypto.Keccak256(data2)
+	dataHash2 := dastree.Hash(data2)
 
 	err = storage3.Put(ctx, data2, uint64(time.Now().Add(time.Hour).Unix()))
 	Require(t, err)

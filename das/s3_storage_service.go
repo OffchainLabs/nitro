@@ -15,9 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	flag "github.com/spf13/pflag"
@@ -64,9 +65,12 @@ type S3StorageService struct {
 }
 
 func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) {
+	credCache := aws.NewCredentialsCache(
+		credentials.NewStaticCredentialsProvider(config.AccessKey, config.SecretKey, ""),
+	)
 	client := s3.New(s3.Options{
 		Region:      config.Region,
-		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(config.AccessKey, config.SecretKey, "")),
+		Credentials: credCache,
 	})
 	return &S3StorageService{
 		client:              client,
@@ -78,8 +82,8 @@ func NewS3StorageService(config S3StorageServiceConfig) (StorageService, error) 
 	}, nil
 }
 
-func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	log.Trace("das.S3StorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", s3s)
+func (s3s *S3StorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
+	log.Trace("das.S3StorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s3s)
 
 	buf := manager.NewWriteAtBuffer([]byte{})
 	_, err := s3s.downloader.Download(ctx, buf, &s3.GetObjectInput{
@@ -90,11 +94,10 @@ func (s3s *S3StorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 }
 
 func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	log.Trace("das.S3StorageService.Store", "message", pretty.FirstFewBytes(value), "timeout", timeout, "this", s3s)
-
+	logPut("das.S3StorageService.Store", value, timeout, s3s)
 	putObjectInput := s3.PutObjectInput{
 		Bucket: aws.String(s3s.bucket),
-		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(crypto.Keccak256(value))),
+		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(dastree.Hash(value))),
 		Body:   bytes.NewReader(value)}
 	if !s3s.discardAfterTimeout {
 		expires := time.Unix(int64(timeout), 0)

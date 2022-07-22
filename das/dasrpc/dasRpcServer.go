@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -89,6 +90,7 @@ type StoreResult struct {
 	SignersMask hexutil.Uint64 `json:"signersMask,omitempty"`
 	KeysetHash  hexutil.Bytes  `json:"keysetHash,omitempty"`
 	Sig         hexutil.Bytes  `json:"sig,omitempty"`
+	Version     hexutil.Uint64 `json:"version,omitempty"`
 }
 
 func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
@@ -117,6 +119,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		Timeout:     hexutil.Uint64(cert.Timeout),
 		SignersMask: hexutil.Uint64(cert.SignersMask),
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
+		Version:     hexutil.Uint64(cert.Version),
 	}, nil
 }
 
@@ -133,7 +136,7 @@ func (serv *DASRPCServer) GetByHash(ctx context.Context, certBytes hexutil.Bytes
 		rpcGetByHashDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	bytes, err := serv.localDAS.GetByHash(ctx, certBytes)
+	bytes, err := serv.localDAS.GetByHash(ctx, common.BytesToHash(certBytes))
 	if err != nil {
 		return nil, err
 	}
