@@ -37,6 +37,16 @@ jobs:
           key: ${{ runner.os }}-buildx-c-${{ github.sha }}
           restore-keys: ${{ runner.os }}-buildx-c-
 
+      - name: Build nitro-node-slim docker
+        uses: docker/build-push-action@v2
+        with:
+          target: nitro-node-slim
+          push: true
+          context: .
+          tags: localhost:5000/nitro-node-slim:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
       - name: Build nitro-node docker
         uses: docker/build-push-action@v2
         with:
