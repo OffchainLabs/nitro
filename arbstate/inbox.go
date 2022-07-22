@@ -214,7 +214,7 @@ func RecoverPayloadFromDasBatch(
 	if preimages != nil {
 		if version == 0 {
 			preimages[dataHash] = payload
-			preimages[dastree.FlatHashToTreeHash(dataHash)] = dastree.FlatPayloadToTreeLeaf(payload)
+			preimages[dastree.FlatHashToTreeHash(dataHash)] = dastree.FlatHashToTreeLeaf(dataHash)
 		} else {
 			dastree.RecordHash(recordPreimage, payload)
 		}

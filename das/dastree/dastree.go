@@ -104,9 +104,9 @@ func FlatHashToTreeHash(flat bytes32) bytes32 {
 	return arbmath.FlipBit(crypto.Keccak256Hash(append([]byte{LeafByte}, flat[:]...)), 0)
 }
 
-func FlatPayloadToTreeLeaf(preimage []byte) []byte {
-	// Prepends a flat hash's preimage with a leaf byte to emulate a leaf's nesting
-	return append([]byte{LeafByte}, preimage...)
+func FlatHashToTreeLeaf(flat bytes32) []byte {
+	// Prepends a flat hash with a leaf byte to emulate a leaf's nesting
+	return append([]byte{LeafByte}, flat.Bytes()...)
 }
 
 func ValidHash(hash bytes32, preimage []byte) bool {
