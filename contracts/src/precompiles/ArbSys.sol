@@ -41,7 +41,7 @@ interface ArbSys {
     function getStorageGasAvailable() external view returns (uint256);
 
     /**
-     * @notice check if current call is coming top level (meaning it was triggered by an EoA or a L1 contract)
+     * @notice check if current call is top level (meaning it was triggered by an EoA or a L1 contract)
      * @return true if current execution frame is not a call by another L2 contract
      */
     function isTopLevelCall() external view returns (bool);
