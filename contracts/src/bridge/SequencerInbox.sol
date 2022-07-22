@@ -353,7 +353,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @param keysetBytes bytes of the serialized keyset
      */
     function setValidKeyset(bytes calldata keysetBytes) external override onlyRollupOwner {
-        bytes32 ksHash = keccak256(keysetBytes);
+        bytes32 ksHash = bytes32(keccak256(bytes.concat(hex"fe", keccak256(keysetBytes))));
+        require(keysetBytes.length < 64 * 1024, "keyset is too large");
+
         if (dasKeySetInfo[ksHash].isValidKeyset) revert AlreadyValidDASKeyset(ksHash);
         dasKeySetInfo[ksHash] = DasKeySetInfo({
             isValidKeyset: true,

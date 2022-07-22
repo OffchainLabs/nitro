@@ -4,7 +4,6 @@
 package das
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -14,9 +13,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
@@ -87,13 +86,13 @@ func NewChainFetchReaderWithSeqInbox(inner arbstate.DataAvailabilityReader, seqI
 	}, nil
 }
 
-func (this *ChainFetchDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	log.Trace("das.ChainFetchDAS.GetByHash", "hash", pretty.FirstFewBytes(hash))
+func (this *ChainFetchDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	log.Trace("das.ChainFetchDAS.GetByHash", "hash", pretty.PrettyHash(hash))
 	return chainFetchGetByHash(ctx, this.DataAvailabilityService, &this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
 }
 
-func (this *ChainFetchReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	log.Trace("das.ChainFetchReader.GetByHash", "hash", pretty.FirstFewBytes(hash))
+func (this *ChainFetchReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	log.Trace("das.ChainFetchReader.GetByHash", "hash", pretty.PrettyHash(hash))
 	return chainFetchGetByHash(ctx, this.DataAvailabilityReader, &this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
 }
 
@@ -103,24 +102,22 @@ func chainFetchGetByHash(
 	cache *syncedKeysetCache,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 	seqInboxFilterer *bridgegen.SequencerInboxFilterer,
-	hash []byte,
+	hash common.Hash,
 ) ([]byte, error) {
 	// try to fetch from the cache
-	var hash32 [32]byte
-	copy(hash32[:], hash)
-	res, ok := cache.get(hash32)
+	res, ok := cache.get(hash)
 	if ok {
 		return res, nil
 	}
 
 	// try to fetch from the inner DAS
 	innerRes, err := daReader.GetByHash(ctx, hash)
-	if err == nil && bytes.Equal(hash, crypto.Keccak256(innerRes)) {
+	if err == nil && dastree.ValidHash(hash, innerRes) {
 		return innerRes, nil
 	}
 
 	// try to fetch from the L1 chain
-	blockNumBig, err := seqInboxCaller.GetKeysetCreationBlock(&bind.CallOpts{Context: ctx}, hash32)
+	blockNumBig, err := seqInboxCaller.GetKeysetCreationBlock(&bind.CallOpts{Context: ctx}, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -135,13 +132,13 @@ func chainFetchGetByHash(
 		End:     &blockNumPlus1,
 		Context: ctx,
 	}
-	iter, err := seqInboxFilterer.FilterSetValidKeyset(filterOpts, [][32]byte{hash32})
+	iter, err := seqInboxFilterer.FilterSetValidKeyset(filterOpts, [][32]byte{hash})
 	if err != nil {
 		return nil, err
 	}
 	for iter.Next() {
-		if bytes.Equal(hash, crypto.Keccak256(iter.Event.KeysetBytes)) {
-			cache.put(hash32, iter.Event.KeysetBytes)
+		if dastree.ValidHash(hash, iter.Event.KeysetBytes) {
+			cache.put(hash, iter.Event.KeysetBytes)
 			return iter.Event.KeysetBytes, nil
 		}
 	}
