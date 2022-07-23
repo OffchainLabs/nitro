@@ -115,7 +115,7 @@ func (r *JsonRetriableDataReader) GetNext() (*InitializationDataForRetryable, er
 	}
 	var elem InitializationDataForRetryableJson
 	if err := r.input.Decode(&elem); err != nil {
-		panic(fmt.Errorf("decoding retryable: %w", err))
+		return nil, fmt.Errorf("decoding retryable: %w", err)
 	}
 	callValueBig, err := stringToBig(elem.Callvalue)
 	if err != nil {

@@ -299,7 +299,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 			log.Warn("Re-creating genesis though it seems to exist in database", "blockNr", genesisBlockNr)
 		}
 		log.Info("Initializing", "ancients", ancients, "genesisBlockNr", genesisBlockNr)
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, 100000)
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, initConfig.AccountsPerSync)
 		if err != nil {
 			panic(err)
 		}
@@ -470,7 +470,7 @@ func main() {
 		// we should create our own fake init message.
 		count, err := currentNode.TxStreamer.GetMessageCount()
 		if err != nil {
-			log.Warn("Getmessagecount failed. Assuming new atabase", "err", err)
+			log.Warn("Getmessagecount failed. Assuming new database", "err", err)
 			count = 0
 		}
 		if count == 0 {
@@ -510,6 +510,7 @@ type InitConfig struct {
 	DevInit         bool          `koanf:"dev-init"`
 	DevInitAddr     string        `koanf:"dev-init-address"`
 	DevInitBlockNum uint64        `koanf:"dev-init-blocknum"`
+	AccountsPerSync uint          `koanf:"accounts-per-sync"`
 	ImportFile      string        `koanf:"import-file"`
 	ThenQuit        bool          `koanf:"then-quit"`
 }
@@ -522,8 +523,9 @@ var InitConfigDefault = InitConfig{
 	DevInit:         false,
 	DevInitAddr:     "",
 	DevInitBlockNum: 0,
-	ThenQuit:        false,
 	ImportFile:      "",
+	AccountsPerSync: 100000,
+	ThenQuit:        false,
 }
 
 func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -533,9 +535,10 @@ func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddr, "Address of dev-account. Leave empty to use the dev-wallet.")
-	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in anchient database.")
+	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
+	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
 }
 
 type NodeConfig struct {
@@ -769,7 +772,7 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	}, "."), nil)
 }
 
-func testIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
+func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
 	var transactions types.Transactions
 	blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
 	reReadNumber := rawdb.ReadHeaderNumber(chainDb, blockHash)
@@ -799,7 +802,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig) 
 	}
 
 	lastBlock -= 1
-	if testIndexUpdated(chainDb, lastBlock) {
+	if testTxIndexUpdated(chainDb, lastBlock) {
 		return
 	}
 
