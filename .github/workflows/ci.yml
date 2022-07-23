@@ -28,7 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          submodules: recursive
+          submodules: true
 
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y wabt
