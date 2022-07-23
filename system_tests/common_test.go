@@ -200,14 +200,15 @@ func createL2BlockChain(
 	stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
 	dbDir := t.TempDir()
-	chainDb, err := rawdb.NewLevelDBDatabase(filepath.Join(dbDir, "chaindb"), 0, 0, "", false)
+	chainDb, err := stack.OpenDatabase(filepath.Join(dbDir, "chaindb"), 0, 0, "", false)
 	Require(t, err)
-	arbDb, err := rawdb.NewLevelDBDatabase(filepath.Join(dbDir, "arbdb"), 0, 0, "", false)
+	arbDb, err := stack.OpenDatabase(filepath.Join(dbDir, "arbdb"), 0, 0, "", false)
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
 	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, 0)
 	Require(t, err)
+
 	return l2info, stack, chainDb, arbDb, blockchain
 }
 
@@ -229,7 +230,7 @@ func CreateTestNodeOnL1(
 	ctx context.Context,
 	isSequencer bool,
 ) (
-	l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info,
+	l2info info, node *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
 	conf := arbnode.ConfigDefaultL1Test()
@@ -243,11 +244,14 @@ func CreateTestNodeOnL1WithConfig(
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
 ) (
-	l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info,
+	l2info info, node *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
 	l1info, l1client, l1backend, l1stack = CreateTestL1BlockChain(t, nil)
-	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
+	var l2chainDb ethdb.Database
+	var l2arbDb ethdb.Database
+	var l2blockchain *core.BlockChain
+	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, nil, chainConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
@@ -323,7 +327,7 @@ func Create2ndNode(
 	l1stack *node.Node,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	dasConfig *das.DataAvailabilityConfig,
-) (*ethclient.Client, *arbnode.Node) {
+) (*ethclient.Client, *arbnode.Node, *node.Node) {
 	nodeConf := arbnode.ConfigDefaultL1NonSequencerTest()
 	if dasConfig == nil {
 		nodeConf.DataAvailability.Enable = false
@@ -340,7 +344,7 @@ func Create2ndNodeWithConfig(
 	l1stack *node.Node,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
-) (*ethclient.Client, *arbnode.Node) {
+) (*ethclient.Client, *arbnode.Node, *node.Node) {
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		Fail(t, err)
@@ -361,7 +365,7 @@ func Create2ndNodeWithConfig(
 	err = node.Start(ctx)
 	Require(t, err)
 	l2client := ClientForArbBackend(t, node.Backend)
-	return l2client, node
+	return l2client, node, l2stack
 }
 
 func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, account common.Address) *big.Int {

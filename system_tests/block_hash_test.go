@@ -16,8 +16,9 @@ func TestBlockHash(t *testing.T) {
 	defer cancel()
 
 	// Even though we don't use the L1, we need to create this node on L1 to get accurate L1 block numbers
-	l2info, _, l2client, _, _, _, stack := CreateTestNodeOnL1(t, ctx, true)
-	defer stack.Close()
+	l2info, _, l2client, l2stack, _, _, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	defer l1stack.Close()
+	defer l2stack.Close()
 
 	auth := l2info.GetDefaultTransactOpts("Faucet", ctx)
 

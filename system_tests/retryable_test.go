@@ -38,7 +38,8 @@ func retryableSetup(t *testing.T) (
 	func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l2info, _, l2client, l1info, _, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("Beneficiary")
 	l2info.GenerateAccount("Burn")
@@ -92,7 +93,8 @@ func retryableSetup(t *testing.T) (
 		}
 
 		cancel()
-		stack.Close()
+		l2stack.Close()
+		l1stack.Close()
 	}
 	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
 }
