@@ -18,11 +18,11 @@ func TestBigCacheStorageService(t *testing.T) {
 	ctx := context.Background()
 	timeout := uint64(time.Now().Add(time.Hour).Unix())
 	baseStorageService := NewMemoryBackedStorageService(ctx)
-	bigCache, err := bigcache.NewBigCache(bigcache.DefaultConfig(DefaultBigCacheConfig.Expiration))
+	bigCache, err := bigcache.NewBigCache(bigcache.DefaultConfig(TestBigCacheConfig.Expiration))
 	Require(t, err)
 	bigCacheService := &BigCacheStorageService{
 		baseStorageService: baseStorageService,
-		bigCacheConfig:     DefaultBigCacheConfig,
+		bigCacheConfig:     TestBigCacheConfig,
 		bigCache:           bigCache,
 	}
 	Require(t, err)
@@ -71,7 +71,7 @@ func TestBigCacheStorageService(t *testing.T) {
 	emptyBaseStorageService := NewMemoryBackedStorageService(ctx)
 	bigCacheServiceWithEmptyBaseStorage := &BigCacheStorageService{
 		baseStorageService: emptyBaseStorageService,
-		bigCacheConfig:     DefaultBigCacheConfig,
+		bigCacheConfig:     TestBigCacheConfig,
 		bigCache:           bigCache,
 	}
 	val, err = bigCacheServiceWithEmptyBaseStorage.GetByHash(ctx, val1CorrectKey)
