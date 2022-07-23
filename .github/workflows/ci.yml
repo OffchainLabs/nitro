@@ -126,7 +126,12 @@ jobs:
         run: ./build-brotli.sh -w
 
       - name: Build
-        run: make build test-go-deps -j
+        run: |
+          echo 'arbitrator/target size:'
+          du -hd2 arbitrator/target
+          echo 'arbitrator/wasm-libraries/target size:'
+          du -hd2 arbitrator/wasm-libraries/target
+          make build test-go-deps -j
 
       - name: Build all lint dependencies
         run: make -j build-node-deps
