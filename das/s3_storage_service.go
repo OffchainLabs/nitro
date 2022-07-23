@@ -52,7 +52,6 @@ func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".region", DefaultS3StorageServiceConfig.Region, "S3 region")
 	f.String(prefix+".secret-key", DefaultS3StorageServiceConfig.SecretKey, "S3 secret key")
 	f.Bool(prefix+".discard-after-timeout", DefaultS3StorageServiceConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
-
 }
 
 type S3StorageService struct {
