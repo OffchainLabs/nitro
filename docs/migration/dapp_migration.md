@@ -5,7 +5,7 @@ The following is a summary of changes in the upcoming Arbitrum One chain's Nitro
 
 It reflects the current state of Nitro and should be considered a living document; things might change before launch.
 
-_Last Updated 13 Jul 2022_
+_Last Updated 23 Jul 2022_
 
 ## Cool New Stuff 
 
@@ -32,8 +32,9 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
     - The submission cost is now enforced in the L1 inbox and checked against the L1 transaction's `msg.value`; contracts shouldn't rely on funds pooled in the L2 destination to cover this cost.
     - For the redemption of retryable tickets, the calculation of the L2 transaction ID changed and differs between different redeem attempts (i.e. after failed attempts). See [arbitrum-sdk](https://github.com/offchainlabs/arbitrum-sdk/tree/c-nitro-stable) for a reference implementation on the new client-side flow. 
     - A retryable ticket now isn't redeemed in the same transaction as when the `redeem` function was called. The user's transaction causes the retryable to be scheduled to be executed after the current transaction is complete. More information on this available in [here](../arbos/ArbOS.md#redeeming-a-retryable).
-    - Auto-redeem will not be created if the user does not have enough balance to pay for `gasFeeCap * gasLimit` (meaning you can no longer set a max gas fee cap)
-    - Deposited gas will be refunded to `excessFeeRefundAddress` if it cannot create an auto-redeem
+    - Auto-redeem will not be created if the user does not have enough balance to pay for `gasFeeCap * gasLimit` (meaning you can no longer set a max gas fee cap).
+    - Deposited gas will be refunded to `excessFeeRefundAddress` if it cannot create an auto-redeem.
+    - The user will be refunded the submission cost of their retryable if it is auto-redeemed.
 
 #### Protocol Contracts 
 
