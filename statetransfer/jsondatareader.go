@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"path"
 
@@ -14,10 +15,10 @@ import (
 )
 
 type ArbosInitFileContents struct {
-	BlocksPath               string
-	AddressTableContentsPath string
-	RetryableDataPath        string
-	AccountsPath             string
+	NextBlockNumber          uint64 `json:"NextBlockNumber"`
+	AddressTableContentsPath string `json:"AddressTableContentsPath"`
+	RetryableDataPath        string `json:"RetryableDataPath"`
+	AccountsPath             string `json:"AccountsPath"`
 }
 
 type JsonInitDataReader struct {
@@ -25,32 +26,13 @@ type JsonInitDataReader struct {
 	data     ArbosInitFileContents
 }
 
+func (r *JsonInitDataReader) GetNextBlockNumber() (uint64, error) {
+	return r.data.NextBlockNumber, nil
+}
+
 type JsonListReader struct {
 	input *json.Decoder
 	file  *os.File
-}
-
-func (i *JsonListReader) eatInputDelim(expected json.Delim) error {
-	token, err := i.input.Token()
-	if err != nil {
-		return err
-	}
-	foundString := "<Not Delim>"
-	delim, match := token.(json.Delim)
-	if match {
-		foundString = delim.String()
-	}
-	if foundString != expected.String() {
-		return fmt.Errorf("expected %s, found: %s", expected, foundString)
-	}
-	return nil
-}
-
-func (l *JsonListReader) open() error {
-	if l.input == nil {
-		return nil
-	}
-	return l.eatInputDelim('[')
 }
 
 func (l *JsonListReader) More() bool {
@@ -84,9 +66,6 @@ func (m *JsonInitDataReader) getListReader(fileName string) (JsonListReader, err
 		file:  inboundFile,
 		input: json.NewDecoder(inboundFile),
 	}
-	if err := res.open(); err != nil {
-		return JsonListReader{}, err
-	}
 	return res, nil
 }
 
@@ -108,52 +87,57 @@ func (m *JsonInitDataReader) Close() error {
 	return nil
 }
 
-type JsonStoredBlockReader struct {
+type JsonRetryableDataReader struct {
 	JsonListReader
 }
 
-func (r *JsonStoredBlockReader) GetNext() (*StoredBlock, error) {
+type InitializationDataForRetryableJson struct {
+	Id          common.Hash
+	Timeout     uint64
+	From        common.Address
+	To          common.Address
+	Callvalue   string
+	Beneficiary common.Address
+	Calldata    []byte
+}
+
+func stringToBig(input string) (*big.Int, error) {
+	output, success := new(big.Int).SetString(input, 0)
+	if !success {
+		return nil, fmt.Errorf("%s cannot be parsed as big.Int", input)
+	}
+	return output, nil
+}
+
+func (r *JsonRetryableDataReader) GetNext() (*InitializationDataForRetryable, error) {
 	if !r.More() {
 		return nil, errNoMore
 	}
-	var elem StoredBlock
+	var elem InitializationDataForRetryableJson
 	if err := r.input.Decode(&elem); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding retryable: %w", err)
 	}
-	return &elem, nil
-}
-
-func (m *JsonInitDataReader) GetStoredBlockReader() (StoredBlockReader, error) {
-	listreader, err := m.getListReader(m.data.BlocksPath)
+	callValueBig, err := stringToBig(elem.Callvalue)
 	if err != nil {
 		return nil, err
 	}
-	return &JsonStoredBlockReader{
-		JsonListReader: listreader,
+	return &InitializationDataForRetryable{
+		Id:          elem.Id,
+		Timeout:     elem.Timeout,
+		From:        elem.From,
+		To:          elem.To,
+		Callvalue:   callValueBig,
+		Beneficiary: elem.Beneficiary,
+		Calldata:    elem.Calldata,
 	}, nil
 }
 
-type JsonRetriableDataReader struct {
-	JsonListReader
-}
-
-func (r *JsonRetriableDataReader) GetNext() (*InitializationDataForRetryable, error) {
-	if !r.More() {
-		return nil, errNoMore
-	}
-	var elem InitializationDataForRetryable
-	if err := r.input.Decode(&elem); err != nil {
-		return nil, err
-	}
-	return &elem, nil
-}
-
-func (m *JsonInitDataReader) GetRetriableDataReader() (RetriableDataReader, error) {
+func (m *JsonInitDataReader) GetRetryableDataReader() (RetryableDataReader, error) {
 	listreader, err := m.getListReader(m.data.RetryableDataPath)
 	if err != nil {
 		return nil, err
 	}
-	return &JsonRetriableDataReader{
+	return &JsonRetryableDataReader{
 		JsonListReader: listreader,
 	}, nil
 }
@@ -187,15 +171,35 @@ type JsonAccountDataReaderr struct {
 	JsonListReader
 }
 
+type AccountInitializationInfoJson struct {
+	Addr         common.Address
+	Nonce        uint64
+	Balance      string
+	ContractInfo *AccountInitContractInfo
+	ClassicHash  common.Hash
+}
+
 func (r *JsonAccountDataReaderr) GetNext() (*AccountInitializationInfo, error) {
 	if !r.More() {
 		return nil, errNoMore
 	}
-	var elem AccountInitializationInfo
+	var elem AccountInitializationInfoJson
 	if err := r.input.Decode(&elem); err != nil {
 		return nil, err
 	}
-	return &elem, nil
+	balanceBig, err := stringToBig(elem.Balance)
+	if err != nil {
+		return nil, err
+	}
+	return &AccountInitializationInfo{
+		Addr:            elem.Addr,
+		Nonce:           elem.Nonce,
+		EthBalance:      balanceBig,
+		ContractInfo:    elem.ContractInfo,
+		AggregatorInfo:  nil,
+		AggregatorToPay: nil,
+		ClassicHash:     elem.ClassicHash,
+	}, nil
 }
 
 func (m *JsonInitDataReader) GetAccountDataReader() (AccountDataReader, error) {

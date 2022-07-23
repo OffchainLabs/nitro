@@ -17,6 +17,10 @@ func NewMemoryInitDataReader(data *ArbosInitializationInfo) InitDataReader {
 	}
 }
 
+func (r *MemoryInitDataReader) GetNextBlockNumber() (uint64, error) {
+	return r.d.NextBlockNumber, nil
+}
+
 type FieldReader struct {
 	m      *MemoryInitDataReader
 	count  int
@@ -32,32 +36,11 @@ func (f *FieldReader) Close() error {
 	return nil
 }
 
-type MemoryStoredBlockReader struct {
+type MemoryRetryableDataReader struct {
 	FieldReader
 }
 
-func (r *MemoryStoredBlockReader) GetNext() (*StoredBlock, error) {
-	if !r.More() {
-		return nil, errNoMore
-	}
-	r.count++
-	return &r.m.d.Blocks[r.count-1], nil
-}
-
-func (m *MemoryInitDataReader) GetStoredBlockReader() (StoredBlockReader, error) {
-	return &MemoryStoredBlockReader{
-		FieldReader: FieldReader{
-			m:      m,
-			length: len(m.d.Blocks),
-		},
-	}, nil
-}
-
-type MemoryRetriableDataReader struct {
-	FieldReader
-}
-
-func (r *MemoryRetriableDataReader) GetNext() (*InitializationDataForRetryable, error) {
+func (r *MemoryRetryableDataReader) GetNext() (*InitializationDataForRetryable, error) {
 	if !r.More() {
 		return nil, errNoMore
 	}
@@ -65,8 +48,8 @@ func (r *MemoryRetriableDataReader) GetNext() (*InitializationDataForRetryable, 
 	return &r.m.d.RetryableData[r.count-1], nil
 }
 
-func (m *MemoryInitDataReader) GetRetriableDataReader() (RetriableDataReader, error) {
-	return &MemoryRetriableDataReader{
+func (m *MemoryInitDataReader) GetRetryableDataReader() (RetryableDataReader, error) {
+	return &MemoryRetryableDataReader{
 		FieldReader: FieldReader{
 			m:      m,
 			length: len(m.d.RetryableData),
