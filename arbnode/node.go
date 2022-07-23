@@ -595,17 +595,18 @@ func createNodeImpl(
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
 ) (*Node, error) {
+	var reorgingToBlock *types.Block
 	if config.Dangerous.ReorgToBlock >= 0 {
 		blockNum := uint64(config.Dangerous.ReorgToBlock)
 		genesis := l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum
 		if blockNum < genesis {
 			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, genesis)
 		}
-		block := l2BlockChain.GetBlockByNumber(blockNum)
-		if block == nil {
+		reorgingToBlock = l2BlockChain.GetBlockByNumber(blockNum)
+		if reorgingToBlock == nil {
 			return nil, fmt.Errorf("didn't find reorg target block number %v", blockNum)
 		}
-		err := l2BlockChain.ReorgToOldBlock(block)
+		err := l2BlockChain.ReorgToOldBlock(reorgingToBlock)
 		if err != nil {
 			return nil, err
 		}
@@ -744,7 +745,7 @@ func createNodeImpl(
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader, reorgingToBlock)
 		if err != nil {
 			return nil, err
 		}
