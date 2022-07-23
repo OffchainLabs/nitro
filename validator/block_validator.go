@@ -171,7 +171,11 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 		// The db contains no validation info; start from the beginning.
 		// TODO: this skips validating the genesis block.
 		v.lastBlockValidated = v.genesisBlockNum
-		v.lastBlockValidatedHash = v.blockchain.Genesis().Hash()
+		genesisBlock := v.blockchain.GetBlockByNumber(v.genesisBlockNum)
+		if genesisBlock == nil {
+			return fmt.Errorf("blockchain missing genesis block number %v", v.genesisBlockNum)
+		}
+		v.lastBlockValidatedHash = genesisBlock.Hash()
 		v.nextBlockToValidate = v.genesisBlockNum + 1
 		v.globalPosNextSend = GlobalStatePosition{
 			BatchNumber: 1,

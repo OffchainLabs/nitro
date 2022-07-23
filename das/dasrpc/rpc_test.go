@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -48,7 +49,7 @@ func TestRPC(t *testing.T) {
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	localDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService)
 	testhelpers.RequireImpl(t, err)
-	dasServer, err := StartDASRPCServerOnListener(ctx, lis, localDas)
+	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, localDas)
 	defer func() {
 		if err := dasServer.Shutdown(ctx); err != nil {
 			panic(err)
@@ -74,14 +75,14 @@ func TestRPC(t *testing.T) {
 	cert, err := rpcAgg.Store(ctx, msg, 0, nil)
 	testhelpers.RequireImpl(t, err)
 
-	retrievedMessage, err := rpcAgg.GetByHash(ctx, cert.DataHash[:])
+	retrievedMessage, err := rpcAgg.GetByHash(ctx, cert.DataHash)
 	testhelpers.RequireImpl(t, err)
 
 	if !bytes.Equal(msg, retrievedMessage) {
 		testhelpers.FailImpl(t, "failed to retrieve correct message")
 	}
 
-	retrievedMessage, err = rpcAgg.GetByHash(ctx, cert.DataHash[:])
+	retrievedMessage, err = rpcAgg.GetByHash(ctx, cert.DataHash)
 	testhelpers.RequireImpl(t, err)
 
 	if !bytes.Equal(msg, retrievedMessage) {

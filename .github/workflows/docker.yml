@@ -34,8 +34,8 @@ jobs:
         uses: actions/cache@v2
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-b-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-buildx-b-
+          key: ${{ runner.os }}-buildx-c-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-buildx-c-
 
       - name: Build nitro-node docker
         uses: docker/build-push-action@v2

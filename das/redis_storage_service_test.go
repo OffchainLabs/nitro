@@ -11,8 +11,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 func TestRedisStorageService(t *testing.T) {
@@ -32,8 +31,8 @@ func TestRedisStorageService(t *testing.T) {
 	Require(t, err)
 
 	val1 := []byte("The first value")
-	val1CorrectKey := crypto.Keccak256(val1)
-	val1IncorrectKey := crypto.Keccak256(append(val1, 0))
+	val1CorrectKey := dastree.Hash(val1)
+	val1IncorrectKey := dastree.Hash(append(val1, 0))
 
 	_, err = redisService.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrNotFound) {
@@ -55,8 +54,8 @@ func TestRedisStorageService(t *testing.T) {
 
 	// For Case where the value is present in the base storage but not present in the cache.
 	val2 := []byte("The Second value")
-	val2CorrectKey := crypto.Keccak256(val2)
-	val2IncorrectKey := crypto.Keccak256(append(val2, 0))
+	val2CorrectKey := dastree.Hash(val2)
+	val2IncorrectKey := dastree.Hash(append(val2, 0))
 
 	err = baseStorageService.Put(ctx, val2, timeout)
 	Require(t, err)

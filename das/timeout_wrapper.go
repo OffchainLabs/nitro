@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
@@ -23,7 +24,7 @@ func NewTimeoutWrapper(dataAvailabilityService DataAvailabilityService, t time.D
 	}
 }
 
-func (w *TimeoutWrapper) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (w *TimeoutWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(w.t))
 	// For Retrieve we want fast cancellation of all goroutines started by
 	// the aggregator as soon as one returns.
