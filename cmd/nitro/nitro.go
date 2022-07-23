@@ -120,12 +120,12 @@ func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.W
 	return devAddr, nil
 }
 
-func downloadInit(initConfig *InitConfig) string {
+func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 	if initConfig.Url == "" {
-		return ""
+		return "", nil
 	}
 	if strings.HasPrefix(initConfig.Url, "file:") {
-		return initConfig.Url[5:]
+		return initConfig.Url[5:], nil
 	}
 	grabclient := grab.NewClient()
 	log.Info("Downloading initial database", "url", initConfig.Url)
@@ -165,30 +165,65 @@ func downloadInit(initConfig *InitConfig) string {
 				}
 				log.Info("Download done", "filename", resp.Filename, "duration", resp.Duration())
 				fmt.Println()
-				return resp.Filename
+				return resp.Filename, nil
+			case <-ctx.Done():
+				return "", ctx.Err()
 			}
 		}
-		<-time.After(initConfig.DownloadPoll)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(initConfig.DownloadPoll):
+		}
 	}
 }
 
-func openInitializeChainDb(stack *node.Node, initConfig *InitConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
+func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) error {
+	statedb, err := blockChain.State()
+	if err != nil {
+		return err
+	}
+	currentArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return err
+	}
+	chainId, err := currentArbosState.ChainId()
+	if err != nil {
+		return err
+	}
+	if chainId.Cmp(expectedChainId) != 0 {
+		return fmt.Errorf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", expectedChainId, chainId)
+	}
+	return nil
+}
+
+func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *InitConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
 	if !initConfig.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
 				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 				if err != nil {
-					return chainDb, nil, err
+					return nil, nil, err
 				}
 				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig)
-				return chainDb, l2BlockChain, err
+				if err != nil {
+					return nil, nil, err
+				}
+				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
+				if err != nil {
+					return nil, nil, err
+				}
+				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()
 		}
 	}
 
-	initFile := downloadInit(initConfig)
+	initFile, err := downloadInit(ctx, initConfig)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	if initFile != "" {
 		reader, err := os.Open(initFile)
@@ -218,7 +253,7 @@ func openInitializeChainDb(stack *node.Node, initConfig *InitConfig, chainId *bi
 			NextBlockNumber: initConfig.DevInitBlockNum,
 			Accounts: []statetransfer.AccountInitializationInfo{
 				{
-					Addr:       initConfig.DevInitAddr,
+					Addr:       common.HexToAddress(initConfig.DevInitAddr),
 					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
 					Nonce:      0,
 				},
@@ -270,23 +305,9 @@ func openInitializeChainDb(stack *node.Node, initConfig *InitConfig, chainId *bi
 		}
 	}
 
-	// Check that this ArbOS state has the correct chain ID
-	{
-		statedb, err := l2BlockChain.State()
-		if err != nil {
-			panic(err)
-		}
-		currentArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
-		if err != nil {
-			panic(err)
-		}
-		chainId, err := currentArbosState.ChainId()
-		if err != nil {
-			panic(err)
-		}
-		if chainId.Cmp(chainConfig.ChainID) != 0 {
-			panic(fmt.Sprintf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", chainConfig.ChainID, chainId))
-		}
+	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	testUpdateTxIndex(chainDb, chainConfig)
@@ -408,11 +429,11 @@ func main() {
 			panic(err)
 		}
 		if devAddr != (common.Address{}) {
-			nodeConfig.Init.DevInitAddr = devAddr
+			nodeConfig.Init.DevInitAddr = devAddr.String()
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(stack, &nodeConfig.Init, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, &nodeConfig.Init, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
 	if err != nil {
 		panic(err)
 	}
@@ -482,15 +503,15 @@ func main() {
 }
 
 type InitConfig struct {
-	Force           bool           `koanf:"force"`
-	Url             string         `koanf:"url"`
-	DownloadPath    string         `koanf:"download-path"`
-	DownloadPoll    time.Duration  `koanf:"download-poll"`
-	DevInit         bool           `koanf:"dev-init"`
-	DevInitAddr     common.Address `koanf:"dev-init-address"`
-	DevInitBlockNum uint64         `koanf:"dev-init-blocknum"`
-	ImportFile      string         `koanf:"import-file"`
-	ThenQuit        bool           `koanf:"then-quit"`
+	Force           bool          `koanf:"force"`
+	Url             string        `koanf:"url"`
+	DownloadPath    string        `koanf:"download-path"`
+	DownloadPoll    time.Duration `koanf:"download-poll"`
+	DevInit         bool          `koanf:"dev-init"`
+	DevInitAddr     string        `koanf:"dev-init-address"`
+	DevInitBlockNum uint64        `koanf:"dev-init-blocknum"`
+	ImportFile      string        `koanf:"import-file"`
+	ThenQuit        bool          `koanf:"then-quit"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -499,6 +520,7 @@ var InitConfigDefault = InitConfig{
 	DownloadPath:    "/tmp/",
 	DownloadPoll:    time.Minute,
 	DevInit:         false,
+	DevInitAddr:     "",
 	DevInitBlockNum: 0,
 	ThenQuit:        false,
 	ImportFile:      "",
@@ -510,6 +532,7 @@ func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")
 	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
+	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddr, "Address of dev-account. Leave empty to use the dev-wallet.")
 	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in anchient database.")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
