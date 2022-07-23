@@ -15,8 +15,8 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 - **Safer Retryable tickets 🥳**: Retryable tickets' submission cost is collected in the L1 Inbox contract; if the submission cost is too low, the transaction will simply revert on the L1 side, eliminating the [failure mode](https://developer.offchainlabs.com/docs/l1_l2_messages#important-note-about-base-submission-fee) in which a retryable ticket fails to get created. 
 - **Calldata compression 🥳**: Compression takes place protocol level; dapps don't need to change anything, data will just get cheaper! (You are charged even less if your calldata is highly compressible with brotli.)
 - **Support for All Ethereum L1 precompiles 🥳**: (`blake2f`, `ripemd160`, etc)
-- **Tighter Syncronization with L1 Block Numbers / Timestamps 🥳**:  L1 block number and timestamps (accessed via `block.number` and `block.timestamp` on L2) are updated more frequently in Nitro than in Arbitrum classic; expect them to be nearly real-time/ in sync with L1. 
-
+- **Tighter Syncronization with L1 Block Numbers 🥳**:  L1 block number (accessed via `block.number` on L2) are updated more frequently in Nitro than in Arbitrum classic; expect them to be nearly real-time/ in sync with L1. 
+- **Frequent Timestamps 🥳**:  Timestamps (accessed via `block.timestamp` on L2) are updated every block based on the sequencer’s clock, it is no longer linked to the timestamp of the last L1 block.
 - **L2 Block hash EVM Consistency 🥳**: L2 block hashes take the same format as on Ethereum (if you query it from the ArbSys precompile, not the one in `block.hash(uin256)`).
 
 
