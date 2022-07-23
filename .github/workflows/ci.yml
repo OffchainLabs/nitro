@@ -91,8 +91,8 @@ jobs:
             arbitrator/target/
             arbitrator/wasm-libraries/target/
             target/etc/initial-machine-cache/
-          key: ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v2

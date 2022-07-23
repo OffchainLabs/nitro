@@ -67,10 +67,10 @@ jobs:
             ~/.cargo/git/db/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
-          key: ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-full-${{ hashFiles('arbitrator/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-full-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-full-
-            ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-
+            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-full-
+            ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
       - name: Cache wabt build
         id: cache-wabt
