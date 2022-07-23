@@ -90,6 +90,7 @@ jobs:
             ~/.cargo/git/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
+            arbitrator/wasm-libraries/soft-float/SoftFloat/build
             target/etc/initial-machine-cache/
           key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
