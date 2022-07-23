@@ -20,12 +20,18 @@ import (
 
 type BigCacheConfig struct {
 	// TODO add other config information like HardMaxCacheSize
-	Enable     bool          `koanf:"enable"`
-	Expiration time.Duration `koanf:"expiration"`
+	Enable             bool          `koanf:"enable"`
+	Expiration         time.Duration `koanf:"expiration"`
+	MaxEntriesInWindow int
 }
 
 var DefaultBigCacheConfig = BigCacheConfig{
 	Expiration: time.Hour,
+}
+
+var TestBigCacheConfig = BigCacheConfig{
+	Expiration:         time.Hour,
+	MaxEntriesInWindow: 1000,
 }
 
 func BigCacheConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -40,7 +46,11 @@ type BigCacheStorageService struct {
 }
 
 func NewBigCacheStorageService(bigCacheConfig BigCacheConfig, baseStorageService StorageService) (StorageService, error) {
-	bigCache, err := bigcache.NewBigCache(bigcache.DefaultConfig(bigCacheConfig.Expiration))
+	conf := bigcache.DefaultConfig(bigCacheConfig.Expiration)
+	if bigCacheConfig.MaxEntriesInWindow > 0 {
+		conf.MaxEntriesInWindow = bigCacheConfig.MaxEntriesInWindow
+	}
+	bigCache, err := bigcache.NewBigCache(conf)
 	if err != nil {
 		return nil, err
 	}
