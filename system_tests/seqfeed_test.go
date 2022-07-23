@@ -144,7 +144,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	l2clientB, nodeB, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
 	defer l2stackB.Close()
-	
+
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")
 
