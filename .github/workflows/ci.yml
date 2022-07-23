@@ -138,6 +138,11 @@ jobs:
           skip-go-installation: true
           skip-pkg-cache: true
 
+      - name: Set TMPDIR
+        run: |
+          mkdir target/tmp
+          echo "TMPDIR=$(pwd)/target/tmp" >> "$GITHUB_ENV"
+
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
         run: go test ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
