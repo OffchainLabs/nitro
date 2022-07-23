@@ -140,7 +140,7 @@ jobs:
 
       - name: Set TMPDIR
         run: |
-          mkdir target/tmp
+          mkdir -p target/tmp
           echo "TMPDIR=$(pwd)/target/tmp" >> "$GITHUB_ENV"
 
       - name: run tests without race detection
