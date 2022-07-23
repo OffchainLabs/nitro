@@ -34,8 +34,8 @@ jobs:
         uses: actions/cache@v2
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-c-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-buildx-c-
+          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
+          restore-keys: ${{ runner.os }}-buildx-
 
       - name: Build nitro-node docker
         uses: docker/build-push-action@v2
@@ -72,7 +72,7 @@ jobs:
       - name: Clear cache on failure
         if: failure()
         run: |
-          keys=(${{ runner.os }}-buildx-c- ${{ runner.os }}-buildx-c-${{ github.sha }})
+          keys=(${{ runner.os }}-buildx- ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }})
           for key in "${keys[@]}"; do
             curl -X DELETE -H "Accept: application/vnd.github.v3+json" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${{ github.repository }}/actions/caches/$key"
           done
