@@ -198,8 +198,11 @@ func createL2BlockChain(
 	}
 	stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
-	chainDb := rawdb.NewMemoryDatabase()
-	arbDb := rawdb.NewMemoryDatabase()
+	dbDir := t.TempDir()
+	chainDb, err := rawdb.NewLevelDBDatabase(filepath.Join(dbDir, "chaindb"), 0, 0, "", false)
+	Require(t, err)
+	arbDb, err := rawdb.NewLevelDBDatabase(filepath.Join(dbDir, "arbdb"), 0, 0, "", false)
+	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
 	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, 0)
