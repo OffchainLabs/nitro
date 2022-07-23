@@ -22,7 +22,7 @@ jobs:
 
     strategy:
       matrix:
-        race: [false, true]
+        test-mode: [defaults, race]
 
     steps:
       - name: Checkout
@@ -139,13 +139,13 @@ jobs:
           skip-go-installation: true
           skip-pkg-cache: true
 
-      - name: run tests with race detection
-        if: matrix.race == 'true'
-        run: go test ./... -race -parallel=1
-
       - name: run tests without race detection
-        if: matrix.race == 'false'
+        if: matrix.test-mode == 'defaults'
         run: go test ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
+
+      - name: run tests with race detection
+        if: matrix.test-mode == 'race'
+        run: go test ./... -race -parallel=1
 
       - name: run redis tests
         run: go test ./... -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
