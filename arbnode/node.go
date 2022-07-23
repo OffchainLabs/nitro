@@ -1158,10 +1158,10 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func CreateDefaultStack() (*node.Node, error) {
+func CreateDefaultStack(dataDir string) (*node.Node, error) {
 	stackConf := node.DefaultConfig
 	var err error
-	stackConf.DataDir = ""
+	stackConf.DataDir = dataDir
 	stackConf.HTTPHost = "localhost"
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
 	stack, err := node.New(&stackConf)

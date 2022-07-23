@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"math/big"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
@@ -192,17 +190,16 @@ func DeployOnTestL1(
 }
 
 func createL2BlockChain(
-	t *testing.T, l2info *BlockchainTestInfo, chainConfig *params.ChainConfig,
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	stack, err := arbnode.CreateDefaultStack()
+	stack, err := arbnode.CreateDefaultStack(dataDir)
 	Require(t, err)
-	dbDir := t.TempDir()
-	chainDb, err := stack.OpenDatabase(filepath.Join(dbDir, "chaindb"), 0, 0, "", false)
+	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
-	arbDb, err := stack.OpenDatabase(filepath.Join(dbDir, "arbdb"), 0, 0, "", false)
+	arbDb, err := stack.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
@@ -251,7 +248,7 @@ func CreateTestNodeOnL1WithConfig(
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
-	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, nil, chainConfig)
+	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, nil, "", chainConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
@@ -282,7 +279,7 @@ func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbn
 func CreateTestL2WithConfig(
 	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, params.ArbitrumDevTestChainConfig())
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
 	node, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil)
 	Require(t, err)
 
@@ -350,10 +347,13 @@ func Create2ndNodeWithConfig(
 		Fail(t, err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
-	l2stack, err := arbnode.CreateDefaultStack()
+	l2stack, err := arbnode.CreateDefaultStack("")
 	Require(t, err)
-	l2chainDb := rawdb.NewMemoryDatabase()
-	l2arbDb := rawdb.NewMemoryDatabase()
+
+	l2chainDb, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
+	Require(t, err)
+	l2arbDb, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
+	Require(t, err)
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), 0)

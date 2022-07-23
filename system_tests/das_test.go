@@ -106,35 +106,41 @@ func TestDASRekey(t *testing.T) {
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
+	nodeDir := t.TempDir()
 	dasServerA, pubkeyA, backendConfigA := startLocalDASServer(t, ctx, dasDataDir, l1client, addresses.SequencerInbox)
-	authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
-
-	// Setup L2 chain
-	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
-	l2info.GenerateAccount("User2")
-
-	// Setup DAS config
+	l2info := NewArbTestInfo(t, chainConfig.ChainID)
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigA.DataAvailability.Enable = true
-	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
-
+	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
-	Require(t, err)
-	Require(t, l2stackA.Start())
-	l2clientA := ClientForArbBackend(t, nodeA.Backend)
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
-	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigB.DataAvailability.Enable = true
-	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
-	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
-	l2stackA.Close()
-	l2stackB.Close()
+	{
+		authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
 
-	err = dasServerA.Shutdown(ctx)
+		// Setup L2 chain
+		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, l2info, nodeDir, chainConfig)
+		l2info.GenerateAccount("User2")
+
+		// Setup DAS config
+
+		l1NodeConfigA.DataAvailability.Enable = true
+		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
+
+		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
+		Require(t, err)
+		Require(t, l2stackA.Start())
+		l2clientA := ClientForArbBackend(t, nodeA.Backend)
+
+		l1NodeConfigB.BlockValidator.Enable = false
+		l1NodeConfigB.DataAvailability.Enable = true
+		l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
+		l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
+		l2stackA.Close()
+		l2stackB.Close()
+	}
+
+	err := dasServerA.Shutdown(ctx)
 	Require(t, err)
 	dasServerB, pubkeyB, backendConfigB := startLocalDASServer(t, ctx, dasDataDir, l1client, addresses.SequencerInbox)
 	defer func() {
@@ -145,18 +151,25 @@ func TestDASRekey(t *testing.T) {
 
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
 
-	l2stackA, err = arbnode.CreateDefaultStack()
+	l2stackA, err := arbnode.CreateDefaultStack(nodeDir)
 	Require(t, err)
-	l2blockchain, err = arbnode.GetBlockChain(l2chainDb, nil, chainConfig)
+
+	l2chainDb, err := l2stackA.OpenDatabase("chaindb", 0, 0, "", false)
+	Require(t, err)
+
+	l2arbDb, err := l2stackA.OpenDatabase("arbdb", 0, 0, "", false)
+	Require(t, err)
+
+	l2blockchain, err := arbnode.GetBlockChain(l2chainDb, nil, chainConfig)
 	Require(t, err)
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	nodeA, err = arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
-	l2clientA = ClientForArbBackend(t, nodeA.Backend)
+	l2clientA := ClientForArbBackend(t, nodeA.Backend)
 
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	l2clientB, _, l2stackB = Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(2e12), l2clientB)
 
 	Require(t, l2stackA.Close())
@@ -304,7 +317,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, err)
 
 	// Setup L2 chain
-	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
+	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	l2info.GenerateAccount("User2")
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
