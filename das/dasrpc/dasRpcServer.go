@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -17,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
@@ -46,15 +48,15 @@ type DASRPCServer struct {
 	localDAS das.DataAvailabilityService
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, localDAS das.DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS das.DataAvailabilityService) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
 	}
-	return StartDASRPCServerOnListener(ctx, listener, localDAS)
+	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, localDAS)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, localDAS das.DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS das.DataAvailabilityService) (*http.Server, error) {
 	rpcServer := rpc.NewServer()
 	err := rpcServer.RegisterName("das", &DASRPCServer{localDAS: localDAS})
 	if err != nil {
@@ -63,7 +65,10 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, loc
 
 	srv := &http.Server{
 		Handler:           rpcServer,
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       rpcServerTimeouts.ReadTimeout,
+		ReadHeaderTimeout: rpcServerTimeouts.ReadHeaderTimeout,
+		WriteTimeout:      rpcServerTimeouts.WriteTimeout,
+		IdleTimeout:       rpcServerTimeouts.IdleTimeout,
 	}
 
 	go func() {
@@ -85,6 +90,7 @@ type StoreResult struct {
 	SignersMask hexutil.Uint64 `json:"signersMask,omitempty"`
 	KeysetHash  hexutil.Bytes  `json:"keysetHash,omitempty"`
 	Sig         hexutil.Bytes  `json:"sig,omitempty"`
+	Version     hexutil.Uint64 `json:"version,omitempty"`
 }
 
 func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
@@ -113,6 +119,7 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		Timeout:     hexutil.Uint64(cert.Timeout),
 		SignersMask: hexutil.Uint64(cert.SignersMask),
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
+		Version:     hexutil.Uint64(cert.Version),
 	}, nil
 }
 
@@ -129,7 +136,7 @@ func (serv *DASRPCServer) GetByHash(ctx context.Context, certBytes hexutil.Bytes
 		rpcGetByHashDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	bytes, err := serv.localDAS.GetByHash(ctx, certBytes)
+	bytes, err := serv.localDAS.GetByHash(ctx, common.BytesToHash(certBytes))
 	if err != nil {
 		return nil, err
 	}

@@ -14,9 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -40,15 +42,15 @@ type RestfulDasServer struct {
 	httpServerError      error
 }
 
-func NewRestfulDasServer(address string, port uint64, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
+func NewRestfulDasServer(address string, port uint64, restServerTimeouts genericconf.HTTPServerTimeoutConfig, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", address, port))
 	if err != nil {
 		return nil, err
 	}
-	return NewRestfulDasServerOnListener(listener, storageService)
+	return NewRestfulDasServerOnListener(listener, restServerTimeouts, storageService)
 }
 
-func NewRestfulDasServerOnListener(listener net.Listener, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
+func NewRestfulDasServerOnListener(listener net.Listener, restServerTimeouts genericconf.HTTPServerTimeoutConfig, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
 
 	ret := &RestfulDasServer{
 		storage:              storageService,
@@ -57,7 +59,10 @@ func NewRestfulDasServerOnListener(listener net.Listener, storageService arbstat
 
 	ret.server = &http.Server{
 		Handler:           ret,
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       restServerTimeouts.ReadTimeout,
+		ReadHeaderTimeout: restServerTimeouts.ReadHeaderTimeout,
+		WriteTimeout:      restServerTimeouts.WriteTimeout,
+		IdleTimeout:       restServerTimeouts.IdleTimeout,
 	}
 
 	go func() {
@@ -159,7 +164,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	responseData, err := rds.storage.GetByHash(r.Context(), hashBytes[:32])
+	responseData, err := rds.storage.GetByHash(r.Context(), common.BytesToHash(hashBytes[:32]))
 	if err != nil {
 		log.Warn("Unable to find data", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusNotFound)

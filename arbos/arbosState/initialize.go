@@ -107,11 +107,11 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 
 	log.Print("addresss table import complete")
 
-	retriableReader, err := initData.GetRetriableDataReader()
+	retryableReader, err := initData.GetRetryableDataReader()
 	if err != nil {
 		return common.Hash{}, err
 	}
-	err = initializeRetryables(arbosState.RetryableState(), retriableReader, 0)
+	err = initializeRetryables(arbosState.RetryableState(), retryableReader, 0)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -162,7 +162,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	return commit()
 }
 
-func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.RetriableDataReader, currentTimestampToUse uint64) error {
+func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.RetryableDataReader, currentTimestampToUse uint64) error {
 	for initData.More() {
 		r, err := initData.GetNext()
 		if err != nil {
