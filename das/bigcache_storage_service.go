@@ -30,6 +30,7 @@ var DefaultBigCacheConfig = BigCacheConfig{
 }
 
 var TestBigCacheConfig = BigCacheConfig{
+	Enable:             true,
 	Expiration:         time.Hour,
 	MaxEntriesInWindow: 1000,
 }

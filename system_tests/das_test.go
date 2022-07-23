@@ -218,10 +218,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	serverConfig := das.DataAvailabilityConfig{
 		Enable: true,
 
-		LocalCacheConfig: das.BigCacheConfig{
-			Enable:     true,
-			Expiration: time.Hour,
-		},
+		LocalCacheConfig: das.TestBigCacheConfig,
 		RedisCacheConfig: das.RedisConfig{
 			Enable:     false,
 			RedisUrl:   "",
@@ -280,10 +277,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigA.DataAvailability = das.DataAvailabilityConfig{
 		Enable: true,
 
-		LocalCacheConfig: das.BigCacheConfig{
-			Enable:     true,
-			Expiration: time.Hour,
-		},
+		LocalCacheConfig: das.TestBigCacheConfig,
 		RedisCacheConfig: das.RedisConfig{
 			Enable:     false,
 			RedisUrl:   "",
@@ -324,10 +318,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB.DataAvailability = das.DataAvailabilityConfig{
 		Enable: true,
 
-		LocalCacheConfig: das.BigCacheConfig{
-			Enable:     true,
-			Expiration: time.Hour,
-		},
+		LocalCacheConfig: das.TestBigCacheConfig,
 		RedisCacheConfig: das.RedisConfig{
 			Enable:     false,
 			RedisUrl:   "",
@@ -370,10 +361,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigC.DataAvailability = das.DataAvailabilityConfig{
 		Enable: true,
 
-		LocalCacheConfig: das.BigCacheConfig{
-			Enable:     true,
-			Expiration: time.Hour,
-		},
+		LocalCacheConfig: das.TestBigCacheConfig,
 
 		RestfulClientAggregatorConfig: das.RestfulClientAggregatorConfig{
 			Enable:                 true,
