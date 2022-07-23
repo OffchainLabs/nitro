@@ -21,6 +21,7 @@ jobs:
             - 6379:6379
 
     strategy:
+      fail-fast: false
       matrix:
         test-mode: [defaults, race]
 
@@ -84,10 +85,8 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
+            ~/.cargo/registry/
+            ~/.cargo/git/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
             target/etc/initial-machine-cache/
@@ -148,10 +147,12 @@ jobs:
         run: go test ./... -race -parallel=1
 
       - name: run redis tests
+        if: matrix.test-mode == 'defaults'
         run: go test ./... -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
+        if: matrix.test-mode == 'defaults'
         with:
           fail_ci_if_error: true
           files: ./coverage.txt,coverage-redis.txt
