@@ -67,6 +67,7 @@ jobs:
 
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
+        id: install-rust
         with:
           profile: minimal
           toolchain: stable
@@ -90,8 +91,8 @@ jobs:
             arbitrator/target/
             arbitrator/wasm-libraries/target/
             target/etc/initial-machine-cache/
-          key: ${{ runner.os }}-cargo-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v2

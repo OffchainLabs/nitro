@@ -40,6 +40,7 @@ jobs:
 
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
+        id: install-rust
         with:
           profile: minimal
           toolchain: stable
@@ -66,9 +67,10 @@ jobs:
             ~/.cargo/git/db/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('arbitrator/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-full-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-full-
+            ${{ runner.os }}-cargo-${{ steps.install-rust.rustc_hash }}-
 
       - name: Cache wabt build
         id: cache-wabt
