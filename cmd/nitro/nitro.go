@@ -139,7 +139,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 		if err != nil {
 			panic(err)
 		}
-		resp := grabclient.Do(req)
+		resp := grabclient.Do(req.WithContext(ctx))
 		firstPrintTime := time.Now().Add(time.Second * 2)
 	updateLoop:
 		for {
@@ -147,6 +147,9 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 			case <-printTicker.C:
 				if time.Now().After(firstPrintTime) {
 					bps := resp.BytesPerSecond()
+					if bps == 0 {
+						bps = 1 // avoid division by zero
+					}
 					done := resp.BytesComplete()
 					total := resp.Size()
 					timeRemaining := (time.Second * time.Duration(total-done)) / time.Duration(bps)

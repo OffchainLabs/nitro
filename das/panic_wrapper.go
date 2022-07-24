@@ -5,9 +5,11 @@ package das
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
@@ -24,6 +26,10 @@ func NewPanicWrapper(dataAvailabilityService DataAvailabilityService) DataAvaila
 func (w *PanicWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	data, err := w.DataAvailabilityService.GetByHash(ctx, hash)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			log.Error("DAS hash lookup failed from cancelled context")
+			return nil, err
+		}
 		panic(fmt.Sprintf("panic wrapper GetByHash: %v", err))
 	}
 	return data, nil
