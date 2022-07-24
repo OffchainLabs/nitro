@@ -13,8 +13,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 // Implements DataAvailabilityReader
@@ -38,10 +39,7 @@ func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
 	}, nil
 }
 
-func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	if len(hash) != 32 {
-		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
-	}
+func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	res, err := http.Get(c.url + getByHashRequestPath + EncodeStorageServiceKey(hash))
 	if err != nil {
 		return nil, err
@@ -66,7 +64,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash []byte) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(hash, crypto.Keccak256(decodedBytes)) {
+	if !dastree.ValidHash(hash, decodedBytes) {
 		return nil, arbstate.ErrHashMismatch
 	}
 

@@ -40,12 +40,13 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 
-	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
-	defer l1stack.Close()
+	l2info, nodeA, l2client, l2stackA, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	defer requireClose(t, l1stack)
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability)
+	l2clientB, nodeB, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability)
+	defer requireClose(t, l2stackB)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -163,7 +164,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		Fail(t, "Unexpected balance")
 	}
 
-	nodeA.StopAndWait()
+	requireClose(t, l2stackA)
 
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
@@ -179,8 +180,6 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
-
-	nodeB.StopAndWait()
 }
 
 func TestTwoNodesLong(t *testing.T) {

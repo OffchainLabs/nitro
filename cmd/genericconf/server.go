@@ -12,21 +12,38 @@ import (
 )
 
 type HTTPConfig struct {
-	Addr       string   `koanf:"addr"`
-	Port       int      `koanf:"port"`
-	API        []string `koanf:"api"`
-	RPCPrefix  string   `koanf:"rpcprefix"`
-	CORSDomain []string `koanf:"corsdomain"`
-	VHosts     []string `koanf:"vhosts"`
+	Addr           string                  `koanf:"addr"`
+	Port           int                     `koanf:"port"`
+	API            []string                `koanf:"api"`
+	RPCPrefix      string                  `koanf:"rpcprefix"`
+	CORSDomain     []string                `koanf:"corsdomain"`
+	VHosts         []string                `koanf:"vhosts"`
+	ServerTimeouts HTTPServerTimeoutConfig `koanf:"server-timeouts"`
 }
 
 var HTTPConfigDefault = HTTPConfig{
-	Addr:       node.DefaultConfig.HTTPHost,
-	Port:       8547,
-	API:        append(node.DefaultConfig.HTTPModules, "eth"),
-	RPCPrefix:  node.DefaultConfig.HTTPPathPrefix,
-	CORSDomain: node.DefaultConfig.HTTPCors,
-	VHosts:     node.DefaultConfig.HTTPVirtualHosts,
+	Addr:           node.DefaultConfig.HTTPHost,
+	Port:           8547,
+	API:            append(node.DefaultConfig.HTTPModules, "eth"),
+	RPCPrefix:      node.DefaultConfig.HTTPPathPrefix,
+	CORSDomain:     node.DefaultConfig.HTTPCors,
+	VHosts:         node.DefaultConfig.HTTPVirtualHosts,
+	ServerTimeouts: HTTPServerTimeoutConfigDefault,
+}
+
+type HTTPServerTimeoutConfig struct {
+	ReadTimeout       time.Duration `koanf:"read-timeout"`
+	ReadHeaderTimeout time.Duration `koanf:"read-header-timeout"`
+	WriteTimeout      time.Duration `koanf:"write-timeout"`
+	IdleTimeout       time.Duration `koanf:"idle-timeout"`
+}
+
+// Use geth defaults
+var HTTPServerTimeoutConfigDefault = HTTPServerTimeoutConfig{
+	ReadTimeout:       30 * time.Second,
+	ReadHeaderTimeout: 30 * time.Second,
+	WriteTimeout:      30 * time.Second,
+	IdleTimeout:       120 * time.Second,
 }
 
 func (c HTTPConfig) Apply(stackConf *node.Config) {
@@ -36,6 +53,11 @@ func (c HTTPConfig) Apply(stackConf *node.Config) {
 	stackConf.HTTPPathPrefix = c.RPCPrefix
 	stackConf.HTTPCors = c.CORSDomain
 	stackConf.HTTPVirtualHosts = c.VHosts
+	stackConf.HTTPTimeouts.ReadTimeout = c.ServerTimeouts.ReadTimeout
+	// TODO ReadHeaderTimeout pending on https://github.com/ethereum/go-ethereum/pull/25338
+	// stackConf.HTTPTimeouts.ReadHeaderTimeout = c.ServerTimeouts.ReadHeaderTimeout
+	stackConf.HTTPTimeouts.WriteTimeout = c.ServerTimeouts.WriteTimeout
+	stackConf.HTTPTimeouts.IdleTimeout = c.ServerTimeouts.IdleTimeout
 }
 
 func HTTPConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -45,6 +67,14 @@ func HTTPConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".rpcprefix", HTTPConfigDefault.RPCPrefix, "HTTP path path prefix on which JSON-RPC is served. Use '/' to serve on all paths")
 	f.StringSlice(prefix+".corsdomain", HTTPConfigDefault.CORSDomain, "Comma separated list of domains from which to accept cross origin requests (browser enforced)")
 	f.StringSlice(prefix+".vhosts", HTTPConfigDefault.VHosts, "Comma separated list of virtual hostnames from which to accept requests (server enforced). Accepts '*' wildcard")
+	HTTPServerTimeoutConfigAddOptions(prefix+".server-timeouts", f)
+}
+
+func HTTPServerTimeoutConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Duration(prefix+".read-timeout", HTTPServerTimeoutConfigDefault.ReadTimeout, "the maximum duration for reading the entire request (http.Server.ReadTimeout)")
+	f.Duration(prefix+".read-header-timeout", HTTPServerTimeoutConfigDefault.ReadHeaderTimeout, "the amount of time allowed to read the request headers (http.Server.ReadHeaderTimeout)")
+	f.Duration(prefix+".write-timeout", HTTPServerTimeoutConfigDefault.WriteTimeout, "the maximum duration before timing out writes of the response (http.Server.WriteTimeout)")
+	f.Duration(prefix+".idle-timeout", HTTPServerTimeoutConfigDefault.IdleTimeout, "the maximum amount of time to wait for the next request when keep-alives are enabled (http.Server.IdleTimeout)")
 }
 
 type WSConfig struct {

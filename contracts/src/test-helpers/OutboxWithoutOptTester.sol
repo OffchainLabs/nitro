@@ -102,7 +102,7 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) external virtual {
+    ) external virtual override {
         bytes32 outputId;
         {
             bytes32 userTx = calculateItemHash(
@@ -135,6 +135,23 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         executeBridgeCall(to, value, data);
 
         context = prevContext;
+    }
+
+    function executeTransactionSimulation(
+        uint256 index,
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) external override {
+        revert("Not implemented");
+    }
+
+    function isSpent(uint256) external view override returns (bool) {
+        revert("Not implemented");
     }
 
     function recordOutputAsSpent(
@@ -182,7 +199,7 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) public pure returns (bytes32) {
+    ) public pure override returns (bytes32) {
         return
             keccak256(abi.encodePacked(l2Sender, to, l2Block, l1Block, l2Timestamp, value, data));
     }
@@ -191,7 +208,7 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         bytes32[] memory proof,
         uint256 path,
         bytes32 item
-    ) public pure returns (bytes32) {
+    ) public pure override returns (bytes32) {
         return MerkleLib.calculateRoot(proof, path, keccak256(abi.encodePacked(item)));
     }
 }

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 )
@@ -62,7 +63,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash[:])
+	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -132,7 +133,7 @@ type WrapGetByHash struct {
 	DataAvailabilityService
 }
 
-func (w *WrapGetByHash) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (w *WrapGetByHash) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	switch w.injector.shouldFail() {
 	case success:
 		return w.DataAvailabilityService.GetByHash(ctx, hash)
@@ -256,7 +257,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		return
 	}
 
-	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash[:])
+	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -366,7 +367,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash[:])
+	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash)
 	if !shouldFail {
 		Require(t, err, "Error retrieving message")
 	} else {

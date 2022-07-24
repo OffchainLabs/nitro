@@ -12,9 +12,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/sys/unix"
@@ -45,13 +46,13 @@ func NewLocalFileStorageService(dataDir string) (StorageService, error) {
 	return &LocalFileStorageService{dataDir: dataDir}, nil
 }
 
-func (s *LocalFileStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", s)
+func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
+	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s)
 	pathname := s.dataDir + "/" + EncodeStorageServiceKey(key)
 	data, err := os.ReadFile(pathname)
 	if err != nil {
 		// Just for backward compatability.
-		pathname = s.dataDir + "/" + base32.StdEncoding.EncodeToString(key)
+		pathname = s.dataDir + "/" + base32.StdEncoding.EncodeToString(key.Bytes())
 		data, err = os.ReadFile(pathname)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -65,8 +66,8 @@ func (s *LocalFileStorageService) GetByHash(ctx context.Context, key []byte) ([]
 }
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
-	log.Trace("das.LocalFileStorageService.Store", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", s)
-	fileName := EncodeStorageServiceKey(crypto.Keccak256(data))
+	logPut("das.LocalFileStorageService.Store", data, timeout, s)
+	fileName := EncodeStorageServiceKey(dastree.Hash(data))
 	finalPath := s.dataDir + "/" + fileName
 
 	// Use a temp file and rename to achieve atomic writes.
@@ -113,7 +114,7 @@ func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	res, err := s.GetByHash(ctx, crypto.Keccak256(testData))
+	res, err := s.GetByHash(ctx, dastree.Hash(testData))
 	if err != nil {
 		return err
 	}

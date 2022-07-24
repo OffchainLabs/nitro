@@ -15,7 +15,7 @@ import (
 )
 
 type ArbosInitFileContents struct {
-	PreinitBlocks            uint64 `json:"PreinitBlocks"`
+	NextBlockNumber          uint64 `json:"NextBlockNumber"`
 	AddressTableContentsPath string `json:"AddressTableContentsPath"`
 	RetryableDataPath        string `json:"RetryableDataPath"`
 	AccountsPath             string `json:"AccountsPath"`
@@ -26,8 +26,8 @@ type JsonInitDataReader struct {
 	data     ArbosInitFileContents
 }
 
-func (r *JsonInitDataReader) GetPreinitBlockCount() (uint64, error) {
-	return r.data.PreinitBlocks, nil
+func (r *JsonInitDataReader) GetNextBlockNumber() (uint64, error) {
+	return r.data.NextBlockNumber, nil
 }
 
 type JsonListReader struct {
@@ -87,7 +87,7 @@ func (m *JsonInitDataReader) Close() error {
 	return nil
 }
 
-type JsonRetriableDataReader struct {
+type JsonRetryableDataReader struct {
 	JsonListReader
 }
 
@@ -109,13 +109,13 @@ func stringToBig(input string) (*big.Int, error) {
 	return output, nil
 }
 
-func (r *JsonRetriableDataReader) GetNext() (*InitializationDataForRetryable, error) {
+func (r *JsonRetryableDataReader) GetNext() (*InitializationDataForRetryable, error) {
 	if !r.More() {
 		return nil, errNoMore
 	}
 	var elem InitializationDataForRetryableJson
 	if err := r.input.Decode(&elem); err != nil {
-		panic(fmt.Errorf("decoding retryable: %w", err))
+		return nil, fmt.Errorf("decoding retryable: %w", err)
 	}
 	callValueBig, err := stringToBig(elem.Callvalue)
 	if err != nil {
@@ -132,12 +132,12 @@ func (r *JsonRetriableDataReader) GetNext() (*InitializationDataForRetryable, er
 	}, nil
 }
 
-func (m *JsonInitDataReader) GetRetriableDataReader() (RetriableDataReader, error) {
+func (m *JsonInitDataReader) GetRetryableDataReader() (RetryableDataReader, error) {
 	listreader, err := m.getListReader(m.data.RetryableDataPath)
 	if err != nil {
 		return nil, err
 	}
-	return &JsonRetriableDataReader{
+	return &JsonRetryableDataReader{
 		JsonListReader: listreader,
 	}, nil
 }

@@ -13,12 +13,12 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -71,8 +71,7 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 		return nil, errors.New("data is too short to contain message signature")
 	}
 	message := data[:len(data)-32]
-	var haveHmac common.Hash
-	copy(haveHmac[:], data[len(data)-32:])
+	haveHmac := common.BytesToHash(data[len(data)-32:])
 	mac := hmac.New(sha3.NewLegacyKeccak256, rs.signingKey[:])
 	mac.Write(message)
 	expectHmac := mac.Sum(nil)
@@ -82,8 +81,8 @@ func (rs *RedisStorageService) verifyMessageSignature(data []byte) ([]byte, erro
 	return message, nil
 }
 
-func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key []byte) ([]byte, error) {
-	data, err := rs.client.Get(ctx, string(key)).Bytes()
+func (rs *RedisStorageService) getVerifiedData(ctx context.Context, key common.Hash) ([]byte, error) {
+	data, err := rs.client.Get(ctx, string(key.Bytes())).Bytes()
 	if err != nil {
 		log.Error("das.RedisStorageService.getVerifiedData", "err", err)
 		return nil, err
@@ -101,8 +100,8 @@ func (rs *RedisStorageService) signMessage(message []byte) []byte {
 	return mac.Sum(message)
 }
 
-func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	log.Trace("das.RedisStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", rs)
+func (rs *RedisStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
+	log.Trace("das.RedisStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", rs)
 	ret, err := rs.getVerifiedData(ctx, key)
 	if err != nil {
 		ret, err = rs.baseStorageService.GetByHash(ctx, key)
@@ -110,7 +109,7 @@ func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byt
 			return nil, err
 		}
 
-		err = rs.client.Set(ctx, string(key), rs.signMessage(ret), rs.redisConfig.Expiration).Err()
+		err = rs.client.Set(ctx, string(key.Bytes()), rs.signMessage(ret), rs.redisConfig.Expiration).Err()
 		if err != nil {
 			return nil, err
 		}
@@ -121,12 +120,14 @@ func (rs *RedisStorageService) GetByHash(ctx context.Context, key []byte) ([]byt
 }
 
 func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	log.Trace("das.RedisStorageService.Store", "message", pretty.FirstFewBytes(value), "timeout", timeout, "this", rs)
+	logPut("das.RedisStorageService.Store", value, timeout, rs)
 	err := rs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
 	}
-	err = rs.client.Set(ctx, string(crypto.Keccak256(value)), rs.signMessage(value), rs.redisConfig.Expiration).Err()
+	err = rs.client.Set(
+		ctx, string(dastree.Hash(value).Bytes()), rs.signMessage(value), rs.redisConfig.Expiration,
+	).Err()
 	if err != nil {
 		log.Error("das.RedisStorageService.Store", "err", err)
 	}

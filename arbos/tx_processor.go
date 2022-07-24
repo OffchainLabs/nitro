@@ -134,8 +134,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
+		from := p.msg.From()
+		to := p.msg.To()
+		value := p.msg.Value()
+		if to == nil {
+			return true, 0, errors.New("eth deposit has no To address"), nil
+		}
+		util.MintBalance(&from, value, evm, util.TracingBeforeEVM, "deposit")
 		defer (startTracer())()
-		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM, "deposit")
+		// We intentionally use the variant here that doesn't do tracing,
+		// because this transfer is represented as the outer eth transaction.
+		// This transfer is necessary because we don't actually invoke the EVM.
+		core.Transfer(evm.StateDB, from, *to, value)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
