@@ -60,13 +60,10 @@ jobs:
       - name: Print WAVM module root
         id: module-root
         run: |
-          docker run --rm -d --name wavm-export --entrypoint sleep localhost:5000/nitro-node-dev:latest infinity
-          # TODO: docker seems to be acting as a different user, so we need to let it create the output directory
-          target="/tmp/wavm-export-target"
-          docker cp wavm-export:/home/user/target "$target"
-          docker container rm -f wavm-export
-          module_root="0x$(cat "$target/machines/latest/module-root.txt")"
-          echo "::set-output name=target-dir::$target"
+          # Unfortunately, `docker cp` seems to always result in a "permission denied"
+          # We work around this by piping a tarball through stdout
+          docker run --rm --entrypoint tar localhost:5000/nitro-node-dev:latest -cO target/machines/latest | tar xf
+          module_root="0x$(cat "target/machines/latest/module-root.txt")"
           echo "::set-output name=module-root::$module_root"
           echo "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
 
@@ -74,7 +71,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: wavm-machine-${{ steps.module-root.outputs.module-root }}
-          path: ${{ steps.module-root.outputs.target-dir }}/machines/latest/*
+          path: target/machines/latest/*
           if-no-files-found: error
 
       - name: Move cache
