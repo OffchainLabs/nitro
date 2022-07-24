@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -41,7 +42,7 @@ func DasRecoverSigner(data []byte, timeout uint64, sig []byte) (common.Address, 
 func dasStoreHash(data []byte, timeout uint64) []byte {
 	var buf8 [8]byte
 	binary.BigEndian.PutUint64(buf8[:], timeout)
-	return crypto.Keccak256(uniquifyingPrefix, buf8[:], data)
+	return dastree.HashBytes(uniquifyingPrefix, buf8[:], data)
 }
 
 type StoreSigningDAS struct {

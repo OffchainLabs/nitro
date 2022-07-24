@@ -6,10 +6,11 @@ package das
 import (
 	"bytes"
 	"context"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbstate"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 func TestArchivingStorageService(t *testing.T) {
@@ -18,9 +19,9 @@ func TestArchivingStorageService(t *testing.T) {
 
 	futureTime := uint64(time.Now().Add(time.Hour).Unix())
 	val1 := []byte("First value")
-	hash1 := crypto.Keccak256(val1)
+	hash1 := dastree.Hash(val1)
 	val2 := []byte("Second value")
-	hash2 := crypto.Keccak256(val2)
+	hash2 := dastree.Hash(val2)
 
 	firstStorage := NewMemoryBackedStorageService(ctx)
 	archiveTo := NewMemoryBackedStorageService(ctx)

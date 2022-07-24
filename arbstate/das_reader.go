@@ -12,14 +12,15 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 type DataAvailabilityReader interface {
-	GetByHash(ctx context.Context, hash []byte) ([]byte, error)
+	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
 	HealthCheck(ctx context.Context) error
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
 }
@@ -29,6 +30,10 @@ var ErrHashMismatch = errors.New("Result does not match expected hash")
 // Indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.
 const DASMessageHeaderFlag byte = 0x80
+
+// Indicates that this DAS certificate data employs the new merkelization strategy.
+// Ignored when DASMessageHeaderFlag is not set.
+const TreeDASMessageHeaderFlag byte = 0x08
 
 // Indicates that this message was authenticated by L1. Currently unused.
 const L1AuthenticatedMessageHeaderFlag byte = 0x40
@@ -41,6 +46,10 @@ const BrotliMessageHeaderByte byte = 0
 
 func IsDASMessageHeaderByte(header byte) bool {
 	return (DASMessageHeaderFlag & header) > 0
+}
+
+func IsTreeDASMessageHeaderByte(header byte) bool {
+	return (TreeDASMessageHeaderFlag & header) > 0
 }
 
 func IsZeroheavyEncodedHeaderByte(header byte) bool {
@@ -57,6 +66,7 @@ type DataAvailabilityCertificate struct {
 	Timeout     uint64
 	SignersMask uint64
 	Sig         blsSignatures.Signature
+	Version     uint8
 }
 
 func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err error) {
@@ -88,6 +98,15 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 	}
 	c.Timeout = binary.BigEndian.Uint64(timeoutBuf[:])
 
+	if IsTreeDASMessageHeaderByte(header) {
+		var versionBuf [1]byte
+		_, err = io.ReadFull(r, versionBuf[:])
+		if err != nil {
+			return nil, err
+		}
+		c.Version = versionBuf[0]
+	}
+
 	var signersMaskBuf [8]byte
 	_, err = io.ReadFull(r, signersMaskBuf[:])
 	if err != nil {
@@ -109,12 +128,16 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 }
 
 func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
-	buf := make([]byte, 0, 32+8)
+	buf := make([]byte, 0, 32+9)
 	buf = append(buf, c.DataHash[:]...)
 
 	var intData [8]byte
 	binary.BigEndian.PutUint64(intData[:], c.Timeout)
 	buf = append(buf, intData[:]...)
+
+	if c.Version != 0 {
+		buf = append(buf, c.Version)
+	}
 
 	return buf
 }
@@ -123,11 +146,11 @@ func (cert *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
 	da DataAvailabilityReader,
 ) (*DataAvailabilityKeyset, error) {
-	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash[:])
+	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash)
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(crypto.Keccak256(keysetBytes), cert.KeysetHash[:]) {
+	if !dastree.ValidHash(cert.KeysetHash, keysetBytes) {
 		return nil, errors.New("keyset hash does not match cert")
 	}
 	return DeserializeKeyset(bytes.NewReader(keysetBytes))
@@ -168,12 +191,15 @@ func (keyset *DataAvailabilityKeyset) Serialize(wr io.Writer) error {
 	return nil
 }
 
-func (keyset *DataAvailabilityKeyset) Hash() ([]byte, error) {
+func (keyset *DataAvailabilityKeyset) Hash() (common.Hash, error) {
 	wr := bytes.NewBuffer([]byte{})
 	if err := keyset.Serialize(wr); err != nil {
-		return nil, err
+		return common.Hash{}, err
 	}
-	return crypto.Keccak256(wr.Bytes()), nil
+	if wr.Len() > dastree.BinSize {
+		return common.Hash{}, errors.New("keyset too large")
+	}
+	return dastree.Hash(wr.Bytes()), nil
 }
 
 func DeserializeKeyset(rd io.Reader) (*DataAvailabilityKeyset, error) {
