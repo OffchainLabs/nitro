@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -239,9 +240,30 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 			return nil, nil, err
 		}
 		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
-		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
+		tmpdir := filepath.Join(stack.DataDir(), ".extract-tmp")
+		err = os.RemoveAll(tmpdir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to remove previous extraction results: %w", err)
+		}
+		prevInitStat, err := os.Stat(stack.InstanceDir())
+		if err == nil {
+			if !prevInitStat.IsDir() {
+				return nil, nil, errors.New("instance dir already exists and isn't a directory")
+			}
+			err = os.Remove(stack.InstanceDir())
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to remove existing instance directory (maybe it's not empty): %w", err)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, nil, err
+		}
+		err = extract.Archive(ctx, reader, tmpdir, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
+		}
+		err = os.Rename(tmpdir, stack.InstanceDir())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to rename temporary extraction results: %w", err)
 		}
 	}
 
