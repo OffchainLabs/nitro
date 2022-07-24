@@ -220,7 +220,7 @@ func createL2BlockChain(
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	stack, err := arbnode.CreateDefaultStack(dataDir)
+	stack, err := arbnode.CreateDefaultStackForTest(dataDir)
 	Require(t, err)
 	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
@@ -372,7 +372,7 @@ func Create2ndNodeWithConfig(
 		Fail(t, err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
-	l2stack, err := arbnode.CreateDefaultStack("")
+	l2stack, err := arbnode.CreateDefaultStackForTest("")
 	Require(t, err)
 
 	l2chainDb, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)

@@ -1158,12 +1158,15 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func CreateDefaultStack(dataDir string) (*node.Node, error) {
+func CreateDefaultStackForTest(dataDir string) (*node.Node, error) {
 	stackConf := node.DefaultConfig
 	var err error
 	stackConf.DataDir = dataDir
-	stackConf.HTTPHost = "localhost"
+	stackConf.HTTPHost = ""
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.ListenAddr = ""
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		return nil, fmt.Errorf("error creating protocol stack: %w", err)
