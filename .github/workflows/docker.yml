@@ -60,7 +60,7 @@ jobs:
       - name: Print WAVM module root
         id: module-root
         run: |
-          docker run --rm --name wavm-export --entrypoint sleep localhost:5000/nitro-node-dev:latest infinity
+          docker run --rm -d --name wavm-export --entrypoint sleep localhost:5000/nitro-node-dev:latest infinity
           docker cp wavm-export:/workspace/target .
           docker container rm -f wavm-export
           module_root="0x$(cat target/machines/latest/module-root.txt)"
