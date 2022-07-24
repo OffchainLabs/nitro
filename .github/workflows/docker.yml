@@ -61,7 +61,8 @@ jobs:
         id: module-root
         run: |
           docker run --rm -d --name wavm-export --entrypoint sleep localhost:5000/nitro-node-dev:latest infinity
-          target="$(mktemp -d)/target"
+          # TODO: docker seems to be acting as a different user, so we need to let it create the output directory
+          target="/tmp/wavm-export-target"
           docker cp wavm-export:/home/user/target "$target"
           docker container rm -f wavm-export
           module_root="0x$(cat "$target/machines/latest/module-root.txt")"
