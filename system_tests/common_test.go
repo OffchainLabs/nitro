@@ -289,7 +289,7 @@ func CreateTestNodeOnL1WithConfig(
 	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 
 	Require(t, err)
-	Require(t, node.Start(ctx))
+	Require(t, l2stack.Start())
 
 	l2client = ClientForArbBackend(t, node.Backend)
 	return
@@ -312,7 +312,7 @@ func CreateTestL2WithConfig(
 	err = node.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
 
-	Require(t, node.Start(ctx))
+	Require(t, stack.Start())
 	client := ClientForArbBackend(t, node.Backend)
 
 	if takeOwnership {
@@ -387,7 +387,7 @@ func Create2ndNodeWithConfig(
 	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil)
 	Require(t, err)
 
-	err = node.Start(ctx)
+	err = l2stack.Start()
 	Require(t, err)
 	l2client := ClientForArbBackend(t, node.Backend)
 	return l2client, node, l2stack
