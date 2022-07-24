@@ -25,7 +25,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
-	l2clientB, nodeB, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability)
+	l2clientB, _, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability)
 	defer requireClose(t, l2stackB)
 
 	l2info.GenerateAccount("User2")
@@ -57,9 +57,6 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
-
-	nodeA.StopAndWait()
-	nodeB.StopAndWait()
 }
 
 func TestTwoNodesSimple(t *testing.T) {

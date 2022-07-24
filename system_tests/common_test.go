@@ -105,6 +105,25 @@ func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
 	return header.BaseFee
 }
 
+type lifecycle struct {
+	start func() error
+	stop  func() error
+}
+
+func (l *lifecycle) Start() error {
+	if l.start != nil {
+		return l.start()
+	}
+	return nil
+}
+
+func (l *lifecycle) Stop() error {
+	if l.start != nil {
+		return l.stop()
+	}
+	return nil
+}
+
 func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
@@ -146,6 +165,12 @@ func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	Require(t, tempKeyStore.Unlock(faucetAccount, "passphrase"))
 	l1backend.AccountManager().AddBackend(tempKeyStore)
 	l1backend.SetEtherbase(l1info.GetAddress("Faucet"))
+
+	stack.RegisterLifecycle(&lifecycle{stop: func() error {
+		l1backend.StopMining()
+		return nil
+	}})
+
 	Require(t, stack.Start())
 	Require(t, l1backend.StartMining(1))
 
