@@ -26,7 +26,9 @@ func TestDeploy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, _, client := CreateTestL2(t, ctx)
+	l2info, _, client, l2stack := CreateTestL2(t, ctx)
+	defer requireClose(t, l2stack)
+
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
@@ -52,7 +54,9 @@ func TestEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, _, client := CreateTestL2(t, ctx)
+	l2info, _, client, l2stack := CreateTestL2(t, ctx)
+	defer requireClose(t, l2stack)
+
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
@@ -130,7 +134,9 @@ func TestComponentEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client := CreateTestL2(t, ctx)
+	l2info, node, client, l2stack := CreateTestL2(t, ctx)
+	defer requireClose(t, l2stack)
+
 	l1BaseFee := big.NewInt(l1pricing.InitialPricePerUnitWei)
 	l2BaseFee := GetBaseFee(t, client, ctx)
 

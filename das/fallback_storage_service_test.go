@@ -7,9 +7,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/crypto"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 func TestFallbackStorageService(t *testing.T) {
@@ -17,9 +18,9 @@ func TestFallbackStorageService(t *testing.T) {
 	defer cancel()
 
 	val1 := []byte("First value")
-	hash1 := crypto.Keccak256(val1)
+	hash1 := dastree.Hash(val1)
 	val2 := []byte("Second value")
-	hash2 := crypto.Keccak256(val2)
+	hash2 := dastree.Hash(val2)
 
 	primary := NewMemoryBackedStorageService(ctx)
 	err := primary.Put(ctx, val1, math.MaxUint64)
@@ -53,7 +54,7 @@ func TestFallbackStorageServiceRecursive(t *testing.T) {
 	defer cancel()
 
 	val1 := []byte("First value")
-	hash1 := crypto.Keccak256(val1)
+	hash1 := dastree.Hash(val1)
 
 	ss := NewMemoryBackedStorageService(ctx)
 	fss := NewFallbackStorageService(ss, ss, 60*60, true, true)

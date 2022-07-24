@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/arbstate"
 )
@@ -27,7 +28,7 @@ func NewRetryWrapper(dataAvailabilityService DataAvailabilityService) DataAvaila
 	}
 }
 
-func (w *RetryWrapper) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (w *RetryWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	var res []byte
 	err := backoff.Retry(func() error {
 		if ctx.Err() != nil {

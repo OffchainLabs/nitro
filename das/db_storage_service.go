@@ -10,9 +10,10 @@ import (
 	"time"
 
 	badger "github.com/dgraph-io/badger/v3"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
@@ -81,12 +82,12 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 	return ret, nil
 }
 
-func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	log.Trace("das.DBStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", dbs)
+func (dbs *DBStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
+	log.Trace("das.DBStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", dbs)
 
 	var ret []byte
 	err := dbs.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
+		item, err := txn.Get(key.Bytes())
 		if err != nil {
 			return err
 		}
@@ -102,10 +103,10 @@ func (dbs *DBStorageService) GetByHash(ctx context.Context, key []byte) ([]byte,
 }
 
 func (dbs *DBStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
-	log.Trace("das.DBStorageService.Put", "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0), "this", dbs)
+	logPut("das.DBStorageService.Put", data, timeout, dbs)
 
 	return dbs.db.Update(func(txn *badger.Txn) error {
-		e := badger.NewEntry(crypto.Keccak256(data), data)
+		e := badger.NewEntry(dastree.HashBytes(data), data)
 		if dbs.discardAfterTimeout {
 			e = e.WithTTL(time.Until(time.Unix(int64(timeout), 0)))
 		}
@@ -140,7 +141,7 @@ func (dbs *DBStorageService) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	res, err := dbs.GetByHash(ctx, crypto.Keccak256(testData))
+	res, err := dbs.GetByHash(ctx, dastree.Hash(testData))
 	if err != nil {
 		return err
 	}

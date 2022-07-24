@@ -107,7 +107,17 @@ type validationStatus struct {
 	ModuleRoots []common.Hash    // non-atomic: present from the start
 }
 
-func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das arbstate.DataAvailabilityReader) (*BlockValidator, error) {
+func NewBlockValidator(
+	inboxReader InboxReaderInterface,
+	inbox InboxTrackerInterface,
+	streamer TransactionStreamerInterface,
+	blockchain *core.BlockChain,
+	db ethdb.Database,
+	config *BlockValidatorConfig,
+	machineLoader *NitroMachineLoader,
+	das arbstate.DataAvailabilityReader,
+	reorgingToBlock *types.Block,
+) (*BlockValidator, error) {
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
@@ -132,7 +142,7 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
 	}
-	err = validator.readLastBlockValidatedDbInfo()
+	err = validator.readLastBlockValidatedDbInfo(reorgingToBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +168,7 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 	return validator, nil
 }
 
-func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
+func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Block) error {
 	v.lastBlockValidatedMutex.Lock()
 	defer v.lastBlockValidatedMutex.Unlock()
 
@@ -171,7 +181,11 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 		// The db contains no validation info; start from the beginning.
 		// TODO: this skips validating the genesis block.
 		v.lastBlockValidated = v.genesisBlockNum
-		v.lastBlockValidatedHash = v.blockchain.Genesis().Hash()
+		genesisBlock := v.blockchain.GetBlockByNumber(v.genesisBlockNum)
+		if genesisBlock == nil {
+			return fmt.Errorf("blockchain missing genesis block number %v", v.genesisBlockNum)
+		}
+		v.lastBlockValidatedHash = genesisBlock.Hash()
 		v.nextBlockToValidate = v.genesisBlockNum + 1
 		v.globalPosNextSend = GlobalStatePosition{
 			BatchNumber: 1,
@@ -191,15 +205,29 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 		return err
 	}
 
-	expectedHash := v.blockchain.GetCanonicalHash(info.BlockNumber)
-	if expectedHash != info.BlockHash {
-		return fmt.Errorf("last validated block %v stored with hash %v, but blockchain has hash %v", info.BlockNumber, info.BlockHash, expectedHash)
+	if reorgingToBlock != nil && reorgingToBlock.NumberU64() >= info.BlockNumber {
+		// Disregard this reorg as it doesn't affect the last validated block
+		reorgingToBlock = nil
+	}
+
+	if reorgingToBlock == nil {
+		expectedHash := v.blockchain.GetCanonicalHash(info.BlockNumber)
+		if expectedHash != info.BlockHash {
+			return fmt.Errorf("last validated block %v stored with hash %v, but blockchain has hash %v", info.BlockNumber, info.BlockHash, expectedHash)
+		}
 	}
 
 	v.lastBlockValidated = info.BlockNumber
 	v.lastBlockValidatedHash = info.BlockHash
 	v.nextBlockToValidate = v.lastBlockValidated + 1
 	v.globalPosNextSend = info.AfterPosition
+
+	if reorgingToBlock != nil {
+		err = v.reorgToBlockImpl(reorgingToBlock.NumberU64(), reorgingToBlock.Hash(), true)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -514,8 +542,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 		validationStatus.Entry.StartPosition = startPos
 		validationStatus.Entry.EndPosition = endPos
-		validationCtx, cancel := context.WithCancel(ctx)
-		validationStatus.Cancel = cancel
 
 		batchNum := validationStatus.Entry.StartPosition.BatchNumber
 		seqMsg, ok := seqBatchEntry.([]byte)
@@ -524,8 +550,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 
-		// validation can take long time. Don't wait for it when shutting down
-		v.LaunchUntrackedThread(func() {
+		v.LaunchThread(func(ctx context.Context) {
+			validationCtx, cancel := context.WithCancel(ctx)
+			validationStatus.Cancel = cancel
 			v.validate(validationCtx, validationStatus, seqMsg)
 			cancel()
 		})
@@ -673,7 +700,7 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) er
 
 	if blockNum+1 < v.nextValidationEntryBlock {
 		log.Warn("block validator processing reorg", "blockNum", blockNum)
-		err := v.reorgToBlockImpl(blockNum, blockHash)
+		err := v.reorgToBlockImpl(blockNum, blockHash, false)
 		if err != nil {
 			return fmt.Errorf("block validator reorg failed: %w", err)
 		}
@@ -682,7 +709,7 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) er
 	return nil
 }
 
-func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash) error {
+func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash, hasLastValidatedMutex bool) error {
 	for b := blockNum + 1; b < v.nextValidationEntryBlock; b++ {
 		entry, found := v.validationEntries.Load(b)
 		if !found {
@@ -746,10 +773,14 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 	}
 
 	if v.lastBlockValidated > blockNum {
-		v.lastBlockValidatedMutex.Lock()
+		if !hasLastValidatedMutex {
+			v.lastBlockValidatedMutex.Lock()
+		}
 		atomic.StoreUint64(&v.lastBlockValidated, blockNum)
 		v.lastBlockValidatedHash = blockHash
-		v.lastBlockValidatedMutex.Unlock()
+		if !hasLastValidatedMutex {
+			v.lastBlockValidatedMutex.Unlock()
+		}
 
 		err = v.writeLastValidatedToDb(blockNum, blockHash, v.globalPosNextSend)
 		if err != nil {

@@ -14,9 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 type mockS3Uploader struct {
@@ -70,8 +69,8 @@ func TestS3StorageService(t *testing.T) {
 	Require(t, err)
 
 	val1 := []byte("The first value")
-	val1CorrectKey := crypto.Keccak256(val1)
-	val2IncorrectKey := crypto.Keccak256(append(val1, 0))
+	val1CorrectKey := dastree.Hash(val1)
+	val2IncorrectKey := dastree.Hash(append(val1, 0))
 
 	_, err = s3Service.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrNotFound) {
