@@ -61,9 +61,11 @@ jobs:
         id: module-root
         run: |
           docker run --rm -d --name wavm-export --entrypoint sleep localhost:5000/nitro-node-dev:latest infinity
-          docker cp wavm-export:/home/user/target .
+          target="$(mktemp -d)/target"
+          docker cp wavm-export:/home/user/target "$target"
           docker container rm -f wavm-export
-          module_root="0x$(cat target/machines/latest/module-root.txt)"
+          module_root="0x$(cat "$target/machines/latest/module-root.txt")"
+          echo "::set-output name=target-dir::$target"
           echo "::set-output name=module-root::$module_root"
           echo "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
 
@@ -71,7 +73,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: wavm-machine-${{ steps.module-root.outputs.module-root }}
-          path: target/machines/latest/*
+          path: ${{ steps.module-root.outputs.target-dir }}/machines/latest/*
           if-no-files-found: error
 
       - name: Move cache
