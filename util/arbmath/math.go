@@ -4,7 +4,6 @@
 package arbmath
 
 import (
-	"encoding/binary"
 	"math"
 	"math/big"
 	"math/bits"
@@ -13,6 +12,15 @@ import (
 // the smallest power of two greater than the input
 func NextPowerOf2(value uint64) uint64 {
 	return 1 << Log2ceil(value)
+}
+
+// the smallest power of no less than the input
+func NextOrCurrentPowerOf2(value uint64) uint64 {
+	power := NextPowerOf2(value)
+	if power == 2*value {
+		power /= 2
+	}
+	return power
 }
 
 // the log2 of the int, rounded up
@@ -30,6 +38,14 @@ func MinInt(value, ceiling int64) int64 {
 
 // the minimum of two uints
 func MinUint(value, ceiling uint64) uint64 {
+	if value > ceiling {
+		return ceiling
+	}
+	return value
+}
+
+// the minimum of two 32-bit uints
+func MinUint32(value, ceiling uint32) uint32 {
 	if value > ceiling {
 		return ceiling
 	}
@@ -277,18 +293,6 @@ func SaturatingCastToUint(value *big.Int) uint64 {
 		return math.MaxUint64
 	}
 	return value.Uint64()
-}
-
-// the number of eth-words needed to store n bytes
-func WordsForBytes(nbytes uint64) uint64 {
-	return (nbytes + 31) / 32
-}
-
-// casts a uint64 to its big-endian representation
-func UintToBytes(value uint64) []byte {
-	result := make([]byte, 8)
-	binary.BigEndian.PutUint64(result, value)
-	return result
 }
 
 // Return the Maclaurin series approximation of e^x, where x is denominated in basis points.

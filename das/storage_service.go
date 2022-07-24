@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/offchainlabs/nitro/arbstate"
 )
@@ -24,13 +25,17 @@ type StorageService interface {
 	HealthCheck(ctx context.Context) error
 }
 
-func EncodeStorageServiceKey(b []byte) string {
-	return hexutil.Encode(b)[2:]
+func EncodeStorageServiceKey(key common.Hash) string {
+	return key.Hex()[2:]
 }
 
-func DecodeStorageServiceKey(input string) ([]byte, error) {
-	if strings.HasPrefix(input, "0x") {
-		return hexutil.Decode(input)
+func DecodeStorageServiceKey(input string) (common.Hash, error) {
+	if !strings.HasPrefix(input, "0x") {
+		input = "0x" + input
 	}
-	return hexutil.Decode("0x" + input)
+	key, err := hexutil.Decode(input)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return common.BytesToHash(key), nil
 }
