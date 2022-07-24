@@ -38,7 +38,8 @@ func retryableSetup(t *testing.T) (
 	func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l2info, _, l2client, l1info, _, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("Beneficiary")
 	l2info.GenerateAccount("Burn")
@@ -92,7 +93,9 @@ func retryableSetup(t *testing.T) (
 		}
 
 		cancel()
-		stack.Close()
+
+		requireClose(t, l2stack)
+		requireClose(t, l1stack)
 	}
 	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
 }
@@ -100,7 +103,8 @@ func retryableSetup(t *testing.T) (
 func TestRetryableNoExist(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, _, l2client := CreateTestL2(t, ctx)
+	_, _, l2client, l2stack := CreateTestL2(t, ctx)
+	defer requireClose(t, l2stack)
 
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
 	Require(t, err)

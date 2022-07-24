@@ -37,8 +37,9 @@ func WrapL2ForDelayed(t *testing.T, l2Tx *types.Transaction, l1info *BlockchainT
 func TestDelayInboxSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _, l2client, l1info, _, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
-	defer stack.Close()
+	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stack)
 
 	l2info.GenerateAccount("User2")
 
