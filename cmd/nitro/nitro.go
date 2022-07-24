@@ -240,24 +240,44 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 			return nil, nil, err
 		}
 		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
+		if !initConfig.Force {
+			_, err := os.Stat(filepath.Join(stack.InstanceDir(), "l2chaindata"))
+			if err == nil {
+				return nil, nil, errors.New("refusing to replace existing l2chaindata")
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, nil, err
+			}
+		}
 		tmpdir := filepath.Join(stack.DataDir(), ".extract-tmp")
 		err = os.RemoveAll(tmpdir)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to remove previous extraction results: %w", err)
 		}
-		prevInitStat, err := os.Stat(stack.InstanceDir())
-		if err == nil {
-			if !prevInitStat.IsDir() {
-				return nil, nil, errors.New("instance dir already exists and isn't a directory")
-			}
-			err = os.Remove(stack.InstanceDir())
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to remove existing instance directory (maybe it's not empty): %w", err)
-			}
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return nil, nil, err
+		err = os.Rename(stack.InstanceDir(), tmpdir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to rename temporary extraction results: %w", err)
 		}
-		err = extract.Archive(ctx, reader, tmpdir, nil)
+		var resetBaseDirs map[string]struct{}
+		err = extract.Archive(ctx, reader, tmpdir, func(path string) string {
+			if path == "LOCK" || path == "nodekey" || path == "nodes" || strings.HasPrefix(path, "nodes/") {
+				// ignore these files
+				return ""
+			}
+			// If we're extracting e.g. l2chaindata, remove the old l2chaindata first
+			baseDir := strings.Split(path, "/")[0]
+			if baseDir != "." && baseDir != ".." {
+				_, alreadyReset := resetBaseDirs[baseDir]
+				if !alreadyReset {
+					err = os.RemoveAll(filepath.Join(tmpdir, baseDir))
+					if err == nil {
+						resetBaseDirs[baseDir] = struct{}{}
+					} else {
+						log.Warn("failed to remove old db", "dir", baseDir, "err", err)
+					}
+				}
+			}
+			return path
+		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
 		}
