@@ -47,7 +47,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, accountsPerSync uint) (common.Hash, error) {
+func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, timestamp uint64, accountsPerSync uint) (common.Hash, error) {
 	stateDatabase := state.NewDatabase(db)
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
@@ -111,7 +111,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	if err != nil {
 		return common.Hash{}, err
 	}
-	err = initializeRetryables(arbosState.RetryableState(), retryableReader, 0)
+	err = initializeRetryables(statedb, arbosState.RetryableState(), retryableReader, timestamp)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -162,16 +162,20 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	return commit()
 }
 
-func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.RetryableDataReader, currentTimestampToUse uint64) error {
+func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState, initData statetransfer.RetryableDataReader, currentTimestamp uint64) error {
 	for initData.More() {
 		r, err := initData.GetNext()
 		if err != nil {
 			return err
 		}
+		if r.Timeout <= currentTimestamp {
+			continue
+		}
 		var to *common.Address
 		if r.To != (common.Address{}) {
 			to = &r.To
 		}
+		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), r.Callvalue)
 		_, err = rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
