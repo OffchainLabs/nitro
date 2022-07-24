@@ -48,9 +48,10 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		conf.BlockValidator.Enable = true
 		conf.BlockValidator.ConcurrentRunsLimit = 16
 	}
-	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1WithConfig(t, ctx, false, conf, params.ArbitrumDevTestChainConfig())
+	l2Info, arbNode, _, l2stack, l1Info, l1backend, l1Client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, false, conf, params.ArbitrumDevTestChainConfig())
 	l2Backend := arbNode.Backend
-	defer stack.Close()
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stack)
 
 	l1BlockChain := l1backend.BlockChain()
 

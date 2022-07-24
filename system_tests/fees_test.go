@@ -1,6 +1,10 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+// these tests seems to consume too much memory with race detection
+//go:build !race
+// +build !race
+
 package arbtest
 
 import (
@@ -29,8 +33,9 @@ func TestSequencerFeePaid(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _, l2client, _, _, _, stack := CreateTestNodeOnL1(t, ctx, true)
-	defer stack.Close()
+	l2info, _, l2client, l2stack, _, _, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stack)
 
 	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
@@ -86,8 +91,9 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.DelayedSequencer.FinalizeDistance = 1
 
-	l2info, node, l2client, _, _, l1client, stack := CreateTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig)
-	defer stack.Close()
+	l2info, node, l2client, l2stack, _, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig)
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stack)
 
 	ownerAuth := l2info.GetDefaultTransactOpts("Owner", ctx)
 

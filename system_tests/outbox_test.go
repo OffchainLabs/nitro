@@ -35,7 +35,9 @@ func TestOutboxProofs(t *testing.T) {
 	withdrawTopic := arbSysAbi.Events["L2ToL1Tx"].ID
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
 
-	l2info, _, client := CreateTestL2(t, ctx)
+	l2info, _, client, l2stack := CreateTestL2(t, ctx)
+	defer requireClose(t, l2stack)
+
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 
 	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, client)
