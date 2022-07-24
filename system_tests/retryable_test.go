@@ -93,8 +93,9 @@ func retryableSetup(t *testing.T) (
 		}
 
 		cancel()
-		l2stack.Close()
-		l1stack.Close()
+
+		requireClose(t, l2stack)
+		requireClose(t, l1stack)
 	}
 	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
 }

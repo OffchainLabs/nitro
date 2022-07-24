@@ -375,6 +375,10 @@ func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, acc
 	return balance
 }
 
+func requireClose(t *testing.T, s *node.Node) {
+	Require(t, s.Close())
+}
+
 func authorizeDASKeyset(
 	t *testing.T,
 	ctx context.Context,

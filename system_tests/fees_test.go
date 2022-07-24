@@ -34,8 +34,8 @@ func TestSequencerFeePaid(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, _, l2client, l2stack, _, _, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
-	defer l1stack.Close()
-	defer l2stack.Close()
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stack)
 
 	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
@@ -92,8 +92,8 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	conf.DelayedSequencer.FinalizeDistance = 1
 
 	l2info, node, l2client, l2stack, _, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig)
-	defer l1stack.Close()
-	defer l2stack.Close()
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stack)
 
 	ownerAuth := l2info.GetDefaultTransactOpts("Owner", ctx)
 

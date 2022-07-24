@@ -50,8 +50,8 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	}
 	l2Info, arbNode, _, l2stack, l1Info, l1backend, l1Client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, false, conf, params.ArbitrumDevTestChainConfig())
 	l2Backend := arbNode.Backend
-	defer l1stack.Close()
-	defer l2stack.Close()
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stack)
 
 	l1BlockChain := l1backend.BlockChain()
 

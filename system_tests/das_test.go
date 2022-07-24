@@ -101,7 +101,7 @@ func TestDASRekey(t *testing.T) {
 	// Setup L1 chain and contracts
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
 	l1info, l1client, _, l1stack := CreateTestL1BlockChain(t, nil)
-	defer l1stack.Close()
+	defer requireClose(t, l1stack)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 
 	// Setup DAS servers
@@ -136,8 +136,8 @@ func TestDASRekey(t *testing.T) {
 		l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
 		l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
-		l2stackA.Close()
-		l2stackB.Close()
+		requireClose(t, l2stackA)
+		requireClose(t, l2stackB)
 	}
 
 	err := dasServerA.Shutdown(ctx)
@@ -216,7 +216,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	// Setup L1 chain and contracts
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
 	l1info, l1client, _, l1stack := CreateTestL1BlockChain(t, nil)
-	defer l1stack.Close()
+	defer requireClose(t, l1stack)
 	l1Reader := headerreader.New(l1client, headerreader.TestConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -396,9 +396,9 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB, l2clientC)
 
-	l2stackA.Close()
-	l2stackB.Close()
-	l2stackC.Close()
+	requireClose(t, l2stackA)
+	requireClose(t, l2stackB)
+	requireClose(t, l2stackC)
 
 	err = restServer.Shutdown()
 	Require(t, err)
