@@ -60,7 +60,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
 	}
 
-	messageRetrieved, err := das.GetByHash(firstCtx, cert.DataHash[:])
+	messageRetrieved, err := das.GetByHash(firstCtx, cert.DataHash)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -79,13 +79,13 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	das2, err := NewSignAfterStoreDAS(secondCtx, config, storageService2)
 	Require(t, err, "no das")
 
-	messageRetrieved2, err := das2.GetByHash(secondCtx, cert.DataHash[:])
+	messageRetrieved2, err := das2.GetByHash(secondCtx, cert.DataHash)
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved2) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
 
-	messageRetrieved2, err = das2.GetByHash(secondCtx, cert.DataHash[:])
+	messageRetrieved2, err = das2.GetByHash(secondCtx, cert.DataHash)
 	Require(t, err, "Failed to getByHash message")
 	if !bytes.Equal(messageSaved, messageRetrieved2) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -151,12 +151,12 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 	// Change the hash to look up
 	cert.DataHash[0] += 1
 
-	_, err = das.GetByHash(ctx, cert.DataHash[:])
+	_, err = das.GetByHash(ctx, cert.DataHash)
 	if err == nil {
 		Fail(t, "Expected an error when retrieving message that is not in the store.")
 	}
 
-	_, err = das.GetByHash(ctx, cert.DataHash[:])
+	_, err = das.GetByHash(ctx, cert.DataHash)
 	if err == nil {
 		Fail(t, "Expected an error when getting by hash a message that is not in the store.")
 	}

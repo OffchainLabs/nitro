@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
@@ -85,8 +86,8 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 type PreimageDASReader struct {
 }
 
-func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	return wavmio.ResolvePreImage(common.BytesToHash(hash)), nil
+func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	return dastree.Content(hash, wavmio.ResolvePreImage)
 }
 
 func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
@@ -96,6 +97,7 @@ func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
 func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
 	return arbstate.DiscardImmediately, nil
 }
+
 func main() {
 	wavmio.StubInit()
 

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -80,8 +81,8 @@ func NewArchivingStorageService(
 	return ret, nil
 }
 
-func (serv *ArchivingStorageService) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	log.Trace("das.ArchivingStorageService.GetByHash", "key", pretty.FirstFewBytes(hash), "this", serv)
+func (serv *ArchivingStorageService) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	log.Trace("das.ArchivingStorageService.GetByHash", "key", pretty.PrettyHash(hash), "this", serv)
 
 	data, err := serv.inner.GetByHash(ctx, hash)
 	if err != nil {
@@ -174,7 +175,7 @@ func NewArchivingSimpleDASReader(
 	return &ArchivingSimpleDASReader{arch}, nil
 }
 
-func (asdr *ArchivingSimpleDASReader) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (asdr *ArchivingSimpleDASReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	return asdr.wrapped.GetByHash(ctx, hash)
 }
 

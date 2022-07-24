@@ -36,10 +36,15 @@ type ArbRetryableTx struct {
 	NotCallableError    func() error
 }
 
-var (
-	ErrNotFound               = errors.New("ticketId not found")
-	ErrSelfModifyingRetryable = errors.New("retryable cannot modify itself")
-)
+var ErrSelfModifyingRetryable = errors.New("retryable cannot modify itself")
+
+func (con ArbRetryableTx) oldNotFoundError(c ctx) error {
+	if c.State.FormatVersion() >= 3 {
+		return con.NoTicketWithIDError()
+	} else {
+		return errors.New("ticketId not found")
+	}
+}
 
 // Schedule an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
@@ -61,7 +66,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		return hash{}, err
 	}
 	if retryable == nil {
-		return hash{}, ErrNotFound
+		return hash{}, con.oldNotFoundError(c)
 	}
 	nextNonce, err := retryable.IncrementNumTries()
 	if err != nil {
@@ -158,7 +163,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 		return nil, err
 	}
 	if nbytes == 0 {
-		return nil, ErrNotFound
+		return nil, con.oldNotFoundError(c)
 	}
 	updateCost := arbmath.WordsForBytes(nbytes) * params.SstoreSetGas / 100
 	if err := c.Burn(updateCost); err != nil {
@@ -184,7 +189,7 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (add
 		return addr{}, err
 	}
 	if retryable == nil {
-		return addr{}, ErrNotFound
+		return addr{}, con.oldNotFoundError(c)
 	}
 	return retryable.Beneficiary()
 }
@@ -200,7 +205,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 		return err
 	}
 	if retryable == nil {
-		return ErrNotFound
+		return con.oldNotFoundError(c)
 	}
 	beneficiary, err := retryable.Beneficiary()
 	if err != nil {

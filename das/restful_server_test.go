@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/das/dastree"
 )
 
 const LocalServerAddressForTest = "localhost"
@@ -44,7 +44,7 @@ func TestRestfulClientServer(t *testing.T) {
 
 	storage := NewMemoryBackedStorageService(ctx)
 	data := []byte("Testing a restful server now.")
-	dataHash := crypto.Keccak256(data)
+	dataHash := dastree.Hash(data)
 
 	server, port, err := NewRestfulDasServerOnRandomPort(LocalServerAddressForTest, storage)
 	Require(t, err)
@@ -61,7 +61,7 @@ func TestRestfulClientServer(t *testing.T) {
 		Fail(t, fmt.Sprintf("Returned data '%s' does not match expected '%s'", returnedData, data))
 	}
 
-	_, err = client.GetByHash(ctx, crypto.Keccak256([]byte("absent data")))
+	_, err = client.GetByHash(ctx, dastree.Hash([]byte("absent data")))
 	if err == nil || !strings.Contains(err.Error(), "404") {
 		Fail(t, "Expected a 404 error")
 	}
