@@ -129,7 +129,7 @@ func TestDASRekey(t *testing.T) {
 		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 		Require(t, err)
 		Require(t, l2stackA.Start())
-		l2clientA := ClientForArbBackend(t, nodeA.Backend)
+		l2clientA := ClientForStack(t, l2stackA)
 
 		l1NodeConfigB.BlockValidator.Enable = false
 		l1NodeConfigB.DataAvailability.Enable = true
@@ -166,7 +166,7 @@ func TestDASRekey(t *testing.T) {
 	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 	Require(t, err)
 	Require(t, l2stackA.Start())
-	l2clientA := ClientForArbBackend(t, nodeA.Backend)
+	l2clientA := ClientForStack(t, l2stackA)
 
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
 	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
@@ -325,7 +325,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, daSigner)
 	Require(t, err)
 	Require(t, l2stackA.Start())
-	l2clientA := ClientForArbBackend(t, nodeA.Backend)
+	l2clientA := ClientForStack(t, l2stackA)
 
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	l1NodeConfigB.DataAvailability = das.DataAvailabilityConfig{

@@ -110,11 +110,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		Require(t, err)
 	}
 	testDeadLine, _ := t.Deadline()
-	nodeA.StopAndWait()
 	if !nodeB.BlockValidator.WaitForBlock(lastBlock.NumberU64(), time.Until(testDeadLine)-time.Second*10) {
 		Fail(t, "did not validate all blocks")
 	}
-	nodeB.StopAndWait()
 }
 
 func TestBlockValidatorSimple(t *testing.T) {

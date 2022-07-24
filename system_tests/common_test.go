@@ -20,7 +20,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -30,7 +29,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -234,16 +232,10 @@ func createL2BlockChain(
 	return l2info, stack, chainDb, arbDb, blockchain
 }
 
-func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Client {
-	apis := backend.APIBackend().GetAPIs()
-
-	inproc := rpc.NewServer()
-	for _, api := range apis {
-		err := inproc.RegisterName(api.Namespace, api.Service)
-		Require(t, err)
-	}
-
-	return ethclient.NewClient(rpc.DialInProc(inproc))
+func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
+	rpcClient, err := backend.Attach()
+	Require(t, err)
+	return ethclient.NewClient(rpcClient)
 }
 
 // Create and deploy L1 and arbnode for L2
@@ -291,19 +283,19 @@ func CreateTestNodeOnL1WithConfig(
 	Require(t, err)
 	Require(t, l2stack.Start())
 
-	l2client = ClientForArbBackend(t, node.Backend)
+	l2client = ClientForStack(t, l2stack)
 	return
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *node.Node) {
 	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true)
 }
 
 func CreateTestL2WithConfig(
 	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool,
-) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *node.Node) {
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
 	node, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil)
 	Require(t, err)
@@ -313,7 +305,7 @@ func CreateTestL2WithConfig(
 	Require(t, err)
 
 	Require(t, stack.Start())
-	client := ClientForArbBackend(t, node.Backend)
+	client := ClientForStack(t, stack)
 
 	if takeOwnership {
 		debugAuth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -329,7 +321,7 @@ func CreateTestL2WithConfig(
 		Require(t, err)
 	}
 
-	return l2info, node, client
+	return l2info, node, client, stack
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {
@@ -389,7 +381,7 @@ func Create2ndNodeWithConfig(
 
 	err = l2stack.Start()
 	Require(t, err)
-	l2client := ClientForArbBackend(t, node.Backend)
+	l2client := ClientForStack(t, l2stack)
 	return l2client, node, l2stack
 }
 

@@ -42,7 +42,6 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	l2info, nodeA, l2client, l2stackA, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stackA)
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
@@ -165,7 +164,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		Fail(t, "Unexpected balance")
 	}
 
-	nodeA.StopAndWait()
+	requireClose(t, l2stackA)
 
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
@@ -181,8 +180,6 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
-
-	nodeB.StopAndWait()
 }
 
 func TestTwoNodesLong(t *testing.T) {
