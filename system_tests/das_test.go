@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -202,6 +203,10 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
 	l1info, l1client, _, l1stack, addresses := CreateL1Rollup(t, ctx, chainConfig.ChainID)
 	defer l1stack.Close()
+
+	l1Reader := headerreader.New(l1client, headerreader.TestConfig)
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
