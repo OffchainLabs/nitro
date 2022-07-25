@@ -239,7 +239,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 			return nil, nil, err
 		}
 		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
-		err = extract.Archive(ctx, reader, stack.InstanceDir(), nil)
+		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
 		}
