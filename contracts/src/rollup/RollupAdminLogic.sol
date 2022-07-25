@@ -272,7 +272,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         uint256 prevNodeInboxMaxCount,
         RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash
-    ) external override whenPaused {
+    ) public override whenPaused {
         require(prevNode == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
         createNewNode(assertion, prevNode, prevNodeInboxMaxCount, expectedNodeHash);
@@ -325,33 +325,36 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         emit OwnerFunctionCalled(28);
     }
 
-    function createNitroMigrationGenesis(uint64 genesisBlockNumber, bytes32 genesisBlockHash)
+    function createNitroMigrationGenesis(RollupLib.Assertion calldata assertion)
         external
         whenPaused
     {
+        bytes32 expectedSendRoot = bytes32(0);
+        uint64 expectedInboxCount = 1;
+
         require(latestNodeCreated() == 0, "NON_GENESIS_NODES_EXIST");
-        bytes32[2] memory newStateBytes32;
-        newStateBytes32[0] = genesisBlockHash;
-        uint64[2] memory newStateU64;
-        newStateU64[0] = 1;
-        GlobalState memory emptyGlobalState;
-        RollupLib.Assertion memory assertion = RollupLib.Assertion({
-            beforeState: RollupLib.ExecutionState({
-                globalState: emptyGlobalState,
-                machineStatus: MachineStatus.FINISHED
-            }),
-            afterState: RollupLib.ExecutionState({
-                globalState: GlobalState({bytes32Vals: newStateBytes32, u64Vals: newStateU64}),
-                machineStatus: MachineStatus.FINISHED
-            }),
-            numBlocks: genesisBlockNumber + 1
-        });
-        // TODO: hacky workaround for the createNewNode assertion argument being in calldata
-        address prevAdmin = _getAdmin();
-        _changeAdmin(address(this));
-        this.forceCreateNode(0, 1, assertion, bytes32(0));
-        _changeAdmin(prevAdmin);
-        confirmNode(1, genesisBlockHash, bytes32(0));
+        require(GlobalStateLib.isEmpty(assertion.beforeState.globalState), "NOT_EMPTY_BEFORE");
+        require(
+            assertion.beforeState.machineStatus == MachineStatus.FINISHED,
+            "BEFORE_MACHINE_NOT_FINISHED"
+        );
+        // accessors such as state.getSendRoot not available for calldata structs, only memory
+        require(
+            assertion.afterState.globalState.bytes32Vals[1] == expectedSendRoot,
+            "NOT_ZERO_SENDROOT"
+        );
+        require(
+            assertion.afterState.globalState.u64Vals[0] == expectedInboxCount,
+            "INBOX_NOT_AT_ONE"
+        );
+        require(assertion.afterState.globalState.u64Vals[1] == 0, "POSITION_IN_MESSAGE_NOT_ZERO");
+        require(
+            assertion.afterState.machineStatus == MachineStatus.FINISHED,
+            "AFTER_MACHINE_NOT_FINISHED"
+        );
+        bytes32 genesisBlockHash = assertion.afterState.globalState.bytes32Vals[0];
+        forceCreateNode(0, expectedInboxCount, assertion, bytes32(0));
+        confirmNode(1, genesisBlockHash, expectedSendRoot);
         emit OwnerFunctionCalled(29);
     }
 }
