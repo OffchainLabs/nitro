@@ -73,4 +73,6 @@ interface IInbox is IDelayedMessageProvider {
     function depositEth(uint256 maxSubmissionCost) external payable returns (uint256);
 
     function bridge() external view returns (IBridge);
+
+    function postUpgradeInit(IBridge _bridge) external;
 }

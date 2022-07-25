@@ -324,4 +324,37 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         inbox = newInbox;
         emit OwnerFunctionCalled(28);
     }
+
+    function createNitroMigrationGenesis(RollupLib.Assertion calldata assertion)
+        external
+        whenPaused
+    {
+        bytes32 expectedSendRoot = bytes32(0);
+        uint64 expectedInboxCount = 1;
+
+        require(latestNodeCreated() == 0, "NON_GENESIS_NODES_EXIST");
+        require(GlobalStateLib.isEmpty(assertion.beforeState.globalState), "NOT_EMPTY_BEFORE");
+        require(
+            assertion.beforeState.machineStatus == MachineStatus.FINISHED,
+            "BEFORE_MACHINE_NOT_FINISHED"
+        );
+        // accessors such as state.getSendRoot not available for calldata structs, only memory
+        require(
+            assertion.afterState.globalState.bytes32Vals[1] == expectedSendRoot,
+            "NOT_ZERO_SENDROOT"
+        );
+        require(
+            assertion.afterState.globalState.u64Vals[0] == expectedInboxCount,
+            "INBOX_NOT_AT_ONE"
+        );
+        require(assertion.afterState.globalState.u64Vals[1] == 0, "POSITION_IN_MESSAGE_NOT_ZERO");
+        require(
+            assertion.afterState.machineStatus == MachineStatus.FINISHED,
+            "AFTER_MACHINE_NOT_FINISHED"
+        );
+        bytes32 genesisBlockHash = assertion.afterState.globalState.bytes32Vals[0];
+        createNewNode(assertion, 0, expectedInboxCount, bytes32(0));
+        confirmNode(1, genesisBlockHash, expectedSendRoot);
+        emit OwnerFunctionCalled(29);
+    }
 }
