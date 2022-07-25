@@ -272,7 +272,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         uint256 prevNodeInboxMaxCount,
         RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash
-    ) public override whenPaused {
+    ) external override whenPaused {
         require(prevNode == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
         createNewNode(assertion, prevNode, prevNodeInboxMaxCount, expectedNodeHash);
@@ -353,7 +353,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
             "AFTER_MACHINE_NOT_FINISHED"
         );
         bytes32 genesisBlockHash = assertion.afterState.globalState.bytes32Vals[0];
-        forceCreateNode(0, expectedInboxCount, assertion, bytes32(0));
+        createNewNode(assertion, 0, expectedInboxCount, bytes32(0));
         confirmNode(1, genesisBlockHash, expectedSendRoot);
         emit OwnerFunctionCalled(29);
     }
