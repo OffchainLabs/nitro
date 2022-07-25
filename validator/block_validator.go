@@ -542,8 +542,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 		validationStatus.Entry.StartPosition = startPos
 		validationStatus.Entry.EndPosition = endPos
-		validationCtx, cancel := context.WithCancel(ctx)
-		validationStatus.Cancel = cancel
 
 		batchNum := validationStatus.Entry.StartPosition.BatchNumber
 		seqMsg, ok := seqBatchEntry.([]byte)
@@ -552,8 +550,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 
-		// validation can take long time. Don't wait for it when shutting down
-		v.LaunchUntrackedThread(func() {
+		v.LaunchThread(func(ctx context.Context) {
+			validationCtx, cancel := context.WithCancel(ctx)
+			validationStatus.Cancel = cancel
 			v.validate(validationCtx, validationStatus, seqMsg)
 			cancel()
 		})
