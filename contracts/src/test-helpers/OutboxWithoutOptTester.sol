@@ -146,7 +146,7 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         uint256,
         uint256,
         bytes calldata
-    ) external override pure {
+    ) external pure override {
         revert("Not implemented");
     }
 
