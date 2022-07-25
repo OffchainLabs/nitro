@@ -257,7 +257,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to rename temporary extraction results: %w", err)
 		}
-		var resetBaseDirs map[string]struct{}
+		resetBaseDirs := make(map[string]struct{})
 		err = extract.Archive(ctx, reader, tmpdir, func(path string) string {
 			if path == "LOCK" || path == "nodekey" || path == "nodes" || strings.HasPrefix(path, "nodes/") {
 				// ignore these files
@@ -268,6 +268,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 			if baseDir != "." && baseDir != ".." {
 				_, alreadyReset := resetBaseDirs[baseDir]
 				if !alreadyReset {
+					log.Info(fmt.Sprintf("extracting %v", baseDir))
 					err = os.RemoveAll(filepath.Join(tmpdir, baseDir))
 					if err == nil {
 						resetBaseDirs[baseDir] = struct{}{}
