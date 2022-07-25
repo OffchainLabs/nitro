@@ -17,7 +17,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 - **Support for All Ethereum L1 precompiles 🥳**: (`blake2f`, `ripemd160`, etc)
 - **Tighter Syncronization with L1 Block Numbers 🥳**:  L1 block number (accessed via `block.number` on L2) are updated more frequently in Nitro than in Arbitrum classic; expect them to be nearly real-time/ in sync with L1. 
 - **Frequent Timestamps 🥳**:  Timestamps (accessed via `block.timestamp` on L2) are updated every block based on the sequencer’s clock, it is no longer linked to the timestamp of the last L1 block.
-- **L2 Block hash EVM Consistency 🥳**: L2 block hashes take the same format as on Ethereum (if you query it from the ArbSys precompile, not the one in `block.hash(uin256)`).
+- **L2 Block hash EVM Consistency 🥳**: L2 block hashes take the same format as on Ethereum (if you query it from the ArbSys precompile, not the one in `blockhash(uint256)`).
 
 
 - **Geth tracing 🥳**: `debug_traceTransaction` RPC endpoint is supported; this includes tracing of ArbOS internal bookkeeping actions.
@@ -35,6 +35,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
     - Auto-redeem will not be created if the user does not have enough balance to pay for `gasFeeCap * gasLimit` (meaning you can no longer set a max gas fee cap).
     - Deposited gas will be refunded to `excessFeeRefundAddress` if it cannot create an auto-redeem.
     - The user will be refunded the submission cost of their retryable if it is auto-redeemed.
+- **Arbitrum blockhash**: `blockhash(x)` returns Arbitrum blockhash of a specific L1 block `x` if `block.number - 256 <= x < block.number`, otherwise `0`. Arbitrum blockhash is a value deterministically generated from the L1 block number and state of the inbox. `blockhash(block.number)` will always return `0` in nitro.
 
 #### Protocol Contracts 
 
