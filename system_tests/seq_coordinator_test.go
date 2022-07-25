@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/node"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
@@ -63,21 +65,26 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 
 	// stdio protocol makes sure forwarder initialization doesn't fail
 	nodeNames := []string{"stdio://A", "stdio://B", "stdio://C", "stdio://D", "stdio://E"}
-	nodes := make([]*arbnode.Node, len(nodeNames))
+
+	type nodeInfo struct {
+		n *arbnode.Node
+		s *node.Node
+	}
+	nodes := make([]*nodeInfo, len(nodeNames))
 
 	// init DB to known state
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	createStartNode := func(nodeNum int) {
 		nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
-		_, node, _ := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
+		_, node, _, l2stack := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 		node.TxStreamer.StopAndWait() // prevent blocks from building
-		nodes[nodeNum] = node
+		nodes[nodeNum] = &nodeInfo{n: node, s: l2stack}
 	}
 
 	trySequencing := func(nodeNum int) bool {
 		node := nodes[nodeNum]
-		curMsgs, err := node.TxStreamer.GetMessageCountSync()
+		curMsgs, err := node.n.TxStreamer.GetMessageCountSync()
 		Require(t, err)
 		emptyMessage := arbstate.MessageWithMetadata{
 			Message: &arbos.L1IncomingMessage{
@@ -93,12 +100,12 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 			},
 			DelayedMessagesRead: 1,
 		}
-		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
+		err = node.n.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
 		if errors.Is(err, arbnode.ErrRetrySequencer) {
 			return false
 		}
 		Require(t, err)
-		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbstate.MessageWithMetadata{emptyMessage}))
+		Require(t, node.n.TxStreamer.AddMessages(curMsgs, false, []arbstate.MessageWithMetadata{emptyMessage}))
 		return true
 	}
 
@@ -112,8 +119,8 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 			if trySequencing(nodeNum) {
 				if succeeded >= 0 {
 					t.Fatal("sequnced succeeded in parallel",
-						"index1:", succeeded, "debug", nodes[succeeded].SeqCoordinator.DebugPrint(),
-						"index2:", nodeNum, "debug", node.SeqCoordinator.DebugPrint(),
+						"index1:", succeeded, "debug", nodes[succeeded].n.SeqCoordinator.DebugPrint(),
+						"index2:", nodeNum, "debug", node.n.SeqCoordinator.DebugPrint(),
 						"now", time.Now().UnixMilli())
 				}
 				succeeded = nodeNum
@@ -128,13 +135,13 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 				continue
 			}
 			for attempts := 1; ; attempts++ {
-				msgCount, err := node.TxStreamer.GetMessageCountSync()
+				msgCount, err := node.n.TxStreamer.GetMessageCountSync()
 				Require(t, err)
 				if msgCount >= msgNum {
 					break
 				}
 				if attempts > 10 {
-					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", node.SeqCoordinator.DebugPrint())
+					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", node.n.SeqCoordinator.DebugPrint())
 				}
 				time.Sleep(nodeConfig.SeqCoordinator.UpdateInterval / 3)
 			}
@@ -142,12 +149,12 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 	}
 
 	killNode := func(nodeNum int) {
-		nodes[nodeNum].StopAndWait()
+		requireClose(t, nodes[nodeNum].s)
 		nodes[nodeNum] = nil
 	}
 
 	nodeForwardTarget := func(nodeNum int) int {
-		fwTarget := nodes[nodeNum].TxPublisher.(*arbnode.Sequencer).ForwardTarget()
+		fwTarget := nodes[nodeNum].n.TxPublisher.(*arbnode.Sequencer).ForwardTarget()
 		if fwTarget == "" {
 			return -1
 		}
@@ -276,7 +283,8 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
-	l2Info, nodeA, clientA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
+	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
+	defer requireClose(t, l2stackA)
 
 	redisOptions, err := redis.ParseURL(nodeConfig.SeqCoordinator.RedisUrl)
 	Require(t, err)
@@ -295,7 +303,8 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	}
 
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
-	_, nodeB, clientB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
+	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
+	defer requireClose(t, l2stackB)
 
 	l2Info.GenerateAccount("User2")
 
@@ -314,8 +323,6 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
-	nodeA.StopAndWait()
-	nodeB.StopAndWait()
 }
 
 func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
@@ -330,7 +337,8 @@ func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
-	l2Info, nodeA, clientA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
+	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
+	defer requireClose(t, l2stackA)
 
 	redisOptions, err := redis.ParseURL(nodeConfig.SeqCoordinator.RedisUrl)
 	Require(t, err)
@@ -352,7 +360,8 @@ func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	nodeConfig = &nodeConfigCopy
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
 	nodeConfig.SeqCoordinator.SigningKey = "629b39225c813bf1975fb49bcb6ca2622f2c62509f138ac609f0c048764a95ee"
-	_, nodeB, clientB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
+	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
+	defer requireClose(t, l2stackB)
 
 	l2Info.GenerateAccount("User2")
 
@@ -368,7 +377,4 @@ func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	if err == nil {
 		Fail(t, "tx received by node with different seq coordinator signing key")
 	}
-
-	nodeA.StopAndWait()
-	nodeB.StopAndWait()
 }
