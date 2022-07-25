@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -64,7 +65,7 @@ func (cr *chainedReader) add(r io.Reader) *chainedReader {
 }
 
 func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State) ([]byte, ws.OpCode, error) {
-
+	startTime := time.Now()
 	controlHandler := wsutil.ControlFrameHandler(conn, state)
 	reader := wsutil.Reader{
 		Source:          (&chainedReader{}).add(earlyFrameData).add(conn),
@@ -81,15 +82,21 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 	}(conn)
 
 	for {
-		select {
-		case <-ctx.Done():
-			return nil, 0, nil
-		default:
+		if ctx.Err() != nil {
+			return nil, 0, ctx.Err()
+		}
+		if time.Since(startTime) >= idleTimeout {
+			return nil, 0, context.Canceled
 		}
 
-		err := conn.SetReadDeadline(time.Now().Add(idleTimeout))
+		err := conn.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
 		if err != nil {
-			return nil, 0, err
+			// If the error isn't hitting the timeout, fail
+			if !errors.Is(err, os.ErrDeadlineExceeded) {
+				return nil, 0, err
+			}
+			// Otherwise go back to reading
+			continue
 		}
 
 		// Control packet may be returned even if err set

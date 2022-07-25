@@ -51,7 +51,7 @@ var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:           true,
-	FinalizeDistance: 12,
+	FinalizeDistance: 4,
 	TimeAggregate:    time.Second,
 }
 

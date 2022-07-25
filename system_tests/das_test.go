@@ -100,9 +100,9 @@ func TestDASRekey(t *testing.T) {
 
 	// Setup L1 chain and contracts
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
-	l1info, l1client, _, l1stack := CreateTestL1BlockChain(t, nil)
+
+	l1info, l1client, _, l1stack, addresses := CreateL1Rollup(t, ctx, chainConfig.ChainID)
 	defer requireClose(t, l1stack)
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
@@ -215,12 +215,12 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	// Setup L1 chain and contracts
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
-	l1info, l1client, _, l1stack := CreateTestL1BlockChain(t, nil)
+	l1info, l1client, _, l1stack, addresses := CreateL1Rollup(t, ctx, chainConfig.ChainID)
 	defer requireClose(t, l1stack)
+
 	l1Reader := headerreader.New(l1client, headerreader.TestConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
-	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)

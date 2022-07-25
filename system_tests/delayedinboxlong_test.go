@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-func TestDelayInboxLong(t *testing.T) {
+func TestLongDelayInbox(t *testing.T) {
 	t.Parallel()
 	addLocalLoops := 3
 	messagesPerAddLocal := 1000
