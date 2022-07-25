@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -139,7 +140,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 		if err != nil {
 			panic(err)
 		}
-		resp := grabclient.Do(req)
+		resp := grabclient.Do(req.WithContext(ctx))
 		firstPrintTime := time.Now().Add(time.Second * 2)
 	updateLoop:
 		for {
@@ -147,6 +148,9 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 			case <-printTicker.C:
 				if time.Now().After(firstPrintTime) {
 					bps := resp.BytesPerSecond()
+					if bps == 0 {
+						bps = 1 // avoid division by zero
+					}
 					done := resp.BytesComplete()
 					total := resp.Size()
 					timeRemaining := (time.Second * time.Duration(total-done)) / time.Duration(bps)
@@ -163,6 +167,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 					fmt.Printf("\033[2K\r  attempt %d failed: %v", attempt, err)
 					break updateLoop
 				}
+				fmt.Printf("\n")
 				log.Info("Download done", "filename", resp.Filename, "duration", resp.Duration())
 				fmt.Println()
 				return resp.Filename, nil
@@ -230,9 +235,56 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't open init '%v' archive: %w", initFile, err)
 		}
-		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
+		stat, err := reader.Stat()
+		if err != nil {
+			return nil, nil, err
+		}
+		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
+		if !initConfig.Force {
+			_, err := os.Stat(filepath.Join(stack.InstanceDir(), "l2chaindata"))
+			if err == nil {
+				return nil, nil, errors.New("refusing to replace existing l2chaindata")
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, nil, err
+			}
+		}
+		tmpdir := filepath.Join(stack.DataDir(), ".extract-tmp")
+		err = os.RemoveAll(tmpdir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to remove previous extraction results: %w", err)
+		}
+		err = os.Rename(stack.InstanceDir(), tmpdir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to rename temporary extraction results: %w", err)
+		}
+		resetBaseDirs := make(map[string]struct{})
+		err = extract.Archive(ctx, reader, tmpdir, func(path string) string {
+			if path == "LOCK" || path == "nodekey" || path == "nodes" || strings.HasPrefix(path, "nodes/") {
+				// ignore these files
+				return ""
+			}
+			// If we're extracting e.g. l2chaindata, remove the old l2chaindata first
+			baseDir := strings.Split(path, "/")[0]
+			if baseDir != "." && baseDir != ".." {
+				_, alreadyReset := resetBaseDirs[baseDir]
+				if !alreadyReset {
+					log.Info(fmt.Sprintf("extracting %v", baseDir))
+					err = os.RemoveAll(filepath.Join(tmpdir, baseDir))
+					if err == nil {
+						resetBaseDirs[baseDir] = struct{}{}
+					} else {
+						log.Warn("failed to remove old db", "dir", baseDir, "err", err)
+					}
+				}
+			}
+			return path
+		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
+		}
+		err = os.Rename(tmpdir, stack.InstanceDir())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to rename temporary extraction results: %w", err)
 		}
 	}
 
