@@ -255,9 +255,22 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 	if initConfig.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(initConfig.ImportFile)
 		if err != nil {
-			panic(err)
+			return nil, nil, fmt.Errorf("error reading import file: %w", err)
 		}
-	} else if initConfig.DevInit {
+	}
+	if initConfig.Empty {
+		if initDataReader != nil {
+			return nil, nil, errors.New("multiple init methods supplied")
+		}
+		initData := statetransfer.ArbosInitializationInfo{
+			NextBlockNumber: 0,
+		}
+		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
+	}
+	if initConfig.DevInit {
+		if initDataReader != nil {
+			return nil, nil, errors.New("multiple init methods supplied")
+		}
 		initData := statetransfer.ArbosInitializationInfo{
 			NextBlockNumber: initConfig.DevInitBlockNum,
 			Accounts: []statetransfer.AccountInitializationInfo{
@@ -519,6 +532,7 @@ type InitConfig struct {
 	DevInit         bool          `koanf:"dev-init"`
 	DevInitAddr     string        `koanf:"dev-init-address"`
 	DevInitBlockNum uint64        `koanf:"dev-init-blocknum"`
+	Empty           bool          `koanf:"empty"`
 	AccountsPerSync uint          `koanf:"accounts-per-sync"`
 	ImportFile      string        `koanf:"import-file"`
 	ThenQuit        bool          `koanf:"then-quit"`
@@ -545,6 +559,7 @@ func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddr, "Address of dev-account. Leave empty to use the dev-wallet.")
 	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
+	f.Bool(prefix+".empty", InitConfigDefault.DevInit, "init with empty state")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
