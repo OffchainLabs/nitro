@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -238,10 +239,55 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		if err != nil {
 			return nil, nil, err
 		}
+		instanceDir := stack.InstanceDir()
+		if !initConfig.Force {
+			_, err := os.Stat(filepath.Join(instanceDir, "l2chaindata"))
+			if err == nil {
+				return nil, nil, errors.New("refusing to replace existing l2chaindata")
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, nil, err
+			}
+		}
+		tmpdir := filepath.Join(stack.DataDir(), ".extract-tmp")
+		err = os.RemoveAll(tmpdir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to remove previous extraction results: %w", err)
+		}
+		err = os.Mkdir(tmpdir, 0o755)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to remove previous extraction results: %w", err)
+		}
 		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
-		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
+		err = extract.Archive(ctx, reader, tmpdir, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
+		}
+		contents, err := os.ReadDir(tmpdir)
+		if err != nil {
+			return nil, nil, err
+		}
+		var toRename []string
+		for _, entry := range contents {
+			name := entry.Name()
+			if name == "LOCK" || name == "nodekey" || name == "nodes" {
+				continue
+			}
+			err = os.RemoveAll(filepath.Join(instanceDir, name))
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to cleanup old data: %w", err)
+			}
+			toRename = append(toRename, name)
+		}
+		// We do this after removing all the old directories to minimize the chance of an incomplete copy
+		for _, name := range toRename {
+			err = os.Rename(filepath.Join(tmpdir, name), filepath.Join(instanceDir, name))
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		err = os.RemoveAll(tmpdir)
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 
