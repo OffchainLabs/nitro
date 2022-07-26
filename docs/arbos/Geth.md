@@ -201,7 +201,7 @@ A message [derived from a transaction][AsMessage_link] will carry that transacti
 Nitro's geth may be configured with the following [l2-specific chain parameters][chain_params_link]. These allow the rollup creator to customize their rollup at genesis.
 
 ### `EnableArbos`
-Introduces [ArbOS](#ArbOS.md), converting what would otherwise be a vanilla L1 chain into an L2 Arbitrum rollup.
+Introduces [ArbOS](ArbOS.md), converting what would otherwise be a vanilla L1 chain into an L2 Arbitrum rollup.
 
 ### `AllowDebugPrecompiles`
 Allows access to debug precompiles. Not enabled for Arbitrum One. When false, calls to debug precompiles will always revert.
