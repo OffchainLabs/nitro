@@ -139,7 +139,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 		if err != nil {
 			panic(err)
 		}
-		resp := grabclient.Do(req)
+		resp := grabclient.Do(req.WithContext(ctx))
 		firstPrintTime := time.Now().Add(time.Second * 2)
 	updateLoop:
 		for {
@@ -147,6 +147,9 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 			case <-printTicker.C:
 				if time.Now().After(firstPrintTime) {
 					bps := resp.BytesPerSecond()
+					if bps == 0 {
+						bps = 1 // avoid division by zero
+					}
 					done := resp.BytesComplete()
 					total := resp.Size()
 					timeRemaining := (time.Second * time.Duration(total-done)) / time.Duration(bps)
@@ -163,6 +166,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 					fmt.Printf("\033[2K\r  attempt %d failed: %v", attempt, err)
 					break updateLoop
 				}
+				fmt.Printf("\n")
 				log.Info("Download done", "filename", resp.Filename, "duration", resp.Duration())
 				fmt.Println()
 				return resp.Filename, nil
@@ -230,6 +234,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't open init '%v' archive: %w", initFile, err)
 		}
+		stat, err := reader.Stat()
+		if err != nil {
+			return nil, nil, err
+		}
+		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
 		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
