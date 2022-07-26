@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -249,11 +251,13 @@ func startRESTClientGetByHash(args []string) error {
 type KeyGenConfig struct {
 	Dir        string
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+	ECDSAMode  bool                   `koanf:"ecdsa"`
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f := flag.NewFlagSet("datool keygen", flag.ContinueOnError)
-	f.String("dir", "", "The directory to generate the keys in")
+	f.String("dir", "", "the directory to generate the keys in")
+	f.Bool("ecdsa", false, "generate an ECDSA keypair instead of BLS")
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
@@ -274,9 +278,23 @@ func startKeyGen(args []string) error {
 		return err
 	}
 
-	_, _, err = das.GenerateAndStoreKeys(config.Dir)
+	if !config.ECDSAMode {
+		_, _, err = das.GenerateAndStoreKeys(config.Dir)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	privateKey, err := crypto.GenerateKey()
 	if err != nil {
 		return err
 	}
-	return nil
+
+	err = crypto.SaveECDSA(config.Dir+"/ecdsa", privateKey)
+	if err != nil {
+		return err
+	}
+	encodedPubKey := hex.EncodeToString(crypto.FromECDSAPub(&privateKey.PublicKey))
+	return os.WriteFile(config.Dir+"/ecdsa.pub", []byte(encodedPubKey), 0644)
 }
