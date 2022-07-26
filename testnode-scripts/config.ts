@@ -57,6 +57,9 @@ function writeConfigs(argv: any) {
                 "max-interval": "30s",
             }
         },
+        "init": {
+            "dev-init": "true"
+        },
         "persistent": {
 	        "chain": "local"
         },
