@@ -139,7 +139,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 		if err != nil {
 			panic(err)
 		}
-		resp := grabclient.Do(req)
+		resp := grabclient.Do(req.WithContext(ctx))
 		firstPrintTime := time.Now().Add(time.Second * 2)
 	updateLoop:
 		for {
@@ -147,6 +147,9 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 			case <-printTicker.C:
 				if time.Now().After(firstPrintTime) {
 					bps := resp.BytesPerSecond()
+					if bps == 0 {
+						bps = 1 // avoid division by zero
+					}
 					done := resp.BytesComplete()
 					total := resp.Size()
 					timeRemaining := (time.Second * time.Duration(total-done)) / time.Duration(bps)
@@ -163,6 +166,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 					fmt.Printf("\033[2K\r  attempt %d failed: %v", attempt, err)
 					break updateLoop
 				}
+				fmt.Printf("\n")
 				log.Info("Download done", "filename", resp.Filename, "duration", resp.Duration())
 				fmt.Println()
 				return resp.Filename, nil
@@ -230,6 +234,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't open init '%v' archive: %w", initFile, err)
 		}
+		stat, err := reader.Stat()
+		if err != nil {
+			return nil, nil, err
+		}
+		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
 		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
@@ -675,6 +684,15 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 				return nil, nil, nil, nil, nil, err
 			}
 		}
+	} else if l1ChainId.Uint64() == 4 {
+		switch k.Int64("l2.chain-id") {
+		case 0:
+			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
+		case 421611:
+			if err := applyArbitrumRollupRinkebyTestnetParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+		}
 	} else if l1ChainId.Uint64() == 5 {
 		switch k.Int64("l2.chain-id") {
 		case 0:
@@ -763,6 +781,22 @@ func applyArbitrumRollupGoerliTestnetParameters(k *koanf.Koanf) error {
 		"l1.rollup.validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
 		"l1.rollup.deployed-at":              7217526,
 		"l2.chain-id":                        421613,
+	}, "."), nil)
+}
+
+func applyArbitrumRollupRinkebyTestnetParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain":                   "rinkeby-nitro",
+		"node.forwarding-target":             "https://rinkeby.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://rinkeby.arbitrum.io/feed",
+		"l1.rollup.bridge":                   "0x85c720444e436e1f9407e0c3895d3fe149f41168",
+		"l1.rollup.inbox":                    "0xd394acec33ca1c7fc14212b41892bd82deddda94",
+		"l1.rollup.rollup":                   "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
+		"l1.rollup.sequencer-inbox":          "0x957c9c64f7c2ce091e56af3f33ab20259096355f",
+		"l1.rollup.validator-utils":          "0x0ea7372338a589e7f0b00e463a53aa464ef04e17",
+		"l1.rollup.validator-wallet-creator": "0x237b8965cebe27108bc1d6b71575c3b070050f7a",
+		"l1.rollup.deployed-at":              11088567,
+		"l2.chain-id":                        421611,
 	}, "."), nil)
 }
 

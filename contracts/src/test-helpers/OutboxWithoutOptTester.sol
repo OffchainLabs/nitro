@@ -138,19 +138,19 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
     }
 
     function executeTransactionSimulation(
-        uint256 index,
-        address l2Sender,
-        address to,
-        uint256 l2Block,
-        uint256 l1Block,
-        uint256 l2Timestamp,
-        uint256 value,
-        bytes calldata data
-    ) external override {
+        uint256,
+        address,
+        address,
+        uint256,
+        uint256,
+        uint256,
+        uint256,
+        bytes calldata
+    ) external pure override {
         revert("Not implemented");
     }
 
-    function isSpent(uint256) external view override returns (bool) {
+    function isSpent(uint256) external pure override returns (bool) {
         revert("Not implemented");
     }
 
