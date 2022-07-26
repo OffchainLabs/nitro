@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -240,51 +239,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 			return nil, nil, err
 		}
 		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
-		if !initConfig.Force {
-			_, err := os.Stat(filepath.Join(stack.InstanceDir(), "l2chaindata"))
-			if err == nil {
-				return nil, nil, errors.New("refusing to replace existing l2chaindata")
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return nil, nil, err
-			}
-		}
-		tmpdir := filepath.Join(stack.DataDir(), ".extract-tmp")
-		err = os.RemoveAll(tmpdir)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to remove previous extraction results: %w", err)
-		}
-		err = os.Rename(stack.InstanceDir(), tmpdir)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to rename temporary extraction results: %w", err)
-		}
-		resetBaseDirs := make(map[string]struct{})
-		err = extract.Archive(ctx, reader, tmpdir, func(path string) string {
-			if path == "LOCK" || path == "nodekey" || path == "nodes" || strings.HasPrefix(path, "nodes/") {
-				// ignore these files
-				return ""
-			}
-			// If we're extracting e.g. l2chaindata, remove the old l2chaindata first
-			baseDir := strings.Split(path, "/")[0]
-			if baseDir != "." && baseDir != ".." {
-				_, alreadyReset := resetBaseDirs[baseDir]
-				if !alreadyReset {
-					log.Info(fmt.Sprintf("extracting %v", baseDir))
-					err = os.RemoveAll(filepath.Join(tmpdir, baseDir))
-					if err == nil {
-						resetBaseDirs[baseDir] = struct{}{}
-					} else {
-						log.Warn("failed to remove old db", "dir", baseDir, "err", err)
-					}
-				}
-			}
-			return path
-		})
+		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
-		}
-		err = os.Rename(tmpdir, stack.InstanceDir())
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to rename temporary extraction results: %w", err)
 		}
 	}
 
@@ -727,6 +684,15 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 				return nil, nil, nil, nil, nil, err
 			}
 		}
+	} else if l1ChainId.Uint64() == 4 {
+		switch k.Int64("l2.chain-id") {
+		case 0:
+			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
+		case 421611:
+			if err := applyArbitrumRollupRinkebyTestnetParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+		}
 	} else if l1ChainId.Uint64() == 5 {
 		switch k.Int64("l2.chain-id") {
 		case 0:
@@ -815,6 +781,22 @@ func applyArbitrumRollupGoerliTestnetParameters(k *koanf.Koanf) error {
 		"l1.rollup.validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
 		"l1.rollup.deployed-at":              7217526,
 		"l2.chain-id":                        421613,
+	}, "."), nil)
+}
+
+func applyArbitrumRollupRinkebyTestnetParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain":                   "rinkeby-nitro",
+		"node.forwarding-target":             "https://rinkeby.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://rinkeby.arbitrum.io/feed",
+		"l1.rollup.bridge":                   "0x85c720444e436e1f9407e0c3895d3fe149f41168",
+		"l1.rollup.inbox":                    "0xd394acec33ca1c7fc14212b41892bd82deddda94",
+		"l1.rollup.rollup":                   "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
+		"l1.rollup.sequencer-inbox":          "0x957c9c64f7c2ce091e56af3f33ab20259096355f",
+		"l1.rollup.validator-utils":          "0x0ea7372338a589e7f0b00e463a53aa464ef04e17",
+		"l1.rollup.validator-wallet-creator": "0x237b8965cebe27108bc1d6b71575c3b070050f7a",
+		"l1.rollup.deployed-at":              11088567,
+		"l2.chain-id":                        421611,
 	}, "."), nil)
 }
 
