@@ -71,7 +71,7 @@ interface IInbox is IDelayedMessageProvider {
      * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
      * @dev This formula may change in the future, to future proof your code query this method instead of inlining!!
      * @param dataLength The length of the retryable's calldata, in bytes
-     * @param baseFee The block basefee when the retryable is included in the chain
+     * @param baseFee The block basefee when the retryable is included in the chain, if 0 current block.basefee will be used
      */
     function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
         external
