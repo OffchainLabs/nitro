@@ -780,6 +780,7 @@ func applyArbitrumNovaRollupParameters(k *koanf.Koanf) error {
 		"l1.rollup.validator-wallet-creator":                     "0xe05465Aab36ba1277dAE36aa27a7B74830e74DE4",
 		"l1.rollup.deployed-at":                                  15016829,
 		"l2.chain-id":                                            42170,
+		"init.empty":                                             true,
 	}, "."), nil)
 }
 
@@ -796,6 +797,7 @@ func applyArbitrumRollupGoerliTestnetParameters(k *koanf.Koanf) error {
 		"l1.rollup.validator-wallet-creator": "0x53eb4f4524b3b9646d41743054230d3f425397b3",
 		"l1.rollup.deployed-at":              7217526,
 		"l2.chain-id":                        421613,
+		"init.empty":                         true,
 	}, "."), nil)
 }
 
