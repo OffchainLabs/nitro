@@ -18,9 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"golang.org/x/term"
-
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"golang.org/x/term"
 
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -565,22 +564,23 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type Node struct {
-	Backend             *arbitrum.Backend
-	ArbInterface        *ArbInterface
-	L1Reader            *headerreader.HeaderReader
-	TxStreamer          *TransactionStreamer
-	TxPublisher         TransactionPublisher
-	DeployInfo          *RollupAddresses
-	InboxReader         *InboxReader
-	InboxTracker        *InboxTracker
-	DelayedSequencer    *DelayedSequencer
-	BatchPoster         *BatchPoster
-	BlockValidator      *validator.BlockValidator
-	Staker              *validator.Staker
-	BroadcastServer     *broadcaster.Broadcaster
-	BroadcastClients    []*broadcastclient.BroadcastClient
-	SeqCoordinator      *SeqCoordinator
-	DASLifecycleManager *das.LifecycleManager
+	Backend                *arbitrum.Backend
+	ArbInterface           *ArbInterface
+	L1Reader               *headerreader.HeaderReader
+	TxStreamer             *TransactionStreamer
+	TxPublisher            TransactionPublisher
+	DeployInfo             *RollupAddresses
+	InboxReader            *InboxReader
+	InboxTracker           *InboxTracker
+	DelayedSequencer       *DelayedSequencer
+	BatchPoster            *BatchPoster
+	BlockValidator         *validator.BlockValidator
+	Staker                 *validator.Staker
+	BroadcastServer        *broadcaster.Broadcaster
+	BroadcastClients       []*broadcastclient.BroadcastClient
+	SeqCoordinator         *SeqCoordinator
+	DASLifecycleManager    *das.LifecycleManager
+	ClassicOutboxRetriever *ClassicOutboxRetriever
 }
 
 func createNodeImpl(
@@ -595,20 +595,30 @@ func createNodeImpl(
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
 ) (*Node, error) {
+	var reorgingToBlock *types.Block
 	if config.Dangerous.ReorgToBlock >= 0 {
 		blockNum := uint64(config.Dangerous.ReorgToBlock)
 		genesis := l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum
 		if blockNum < genesis {
 			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, genesis)
 		}
-		block := l2BlockChain.GetBlockByNumber(blockNum)
-		if block == nil {
+		reorgingToBlock = l2BlockChain.GetBlockByNumber(blockNum)
+		if reorgingToBlock == nil {
 			return nil, fmt.Errorf("didn't find reorg target block number %v", blockNum)
 		}
-		err := l2BlockChain.ReorgToOldBlock(block)
+		err := l2BlockChain.ReorgToOldBlock(reorgingToBlock)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	var classicOutbox *ClassicOutboxRetriever
+	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
+	if err != nil {
+		log.Warn("Classic Msg Database not found", "err", err)
+		classicOutbox = nil
+	} else {
+		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 	}
 
 	var broadcastServer *broadcaster.Broadcaster
@@ -679,7 +689,7 @@ func createNodeImpl(
 		}
 	}
 	if !config.L1Reader.Enable {
-		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, nil}, nil
+		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, nil, classicOutbox}, nil
 	}
 
 	if deployInfo == nil {
@@ -693,7 +703,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1client, deployInfo)
+	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -744,7 +754,7 @@ func createNodeImpl(
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader, reorgingToBlock)
 		if err != nil {
 			return nil, err
 		}
@@ -783,7 +793,20 @@ func createNodeImpl(
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dasLifecycleManager}, nil
+	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dasLifecycleManager, classicOutbox}, nil
+}
+
+type L1ReaderCloser struct {
+	l1Reader *headerreader.HeaderReader
+}
+
+func (c *L1ReaderCloser) Close(ctx context.Context) error {
+	c.l1Reader.StopOnly()
+	return nil
+}
+
+func (c *L1ReaderCloser) String() string {
+	return "l1 reader closer"
 }
 
 // Set up a das.DataAvailabilityService stack without relying on any
@@ -792,7 +815,23 @@ func SetUpDataAvailabilityWithoutNode(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
 ) (das.DataAvailabilityService, *das.LifecycleManager, error) {
-	return SetUpDataAvailability(ctx, config, nil, nil)
+	var l1Reader *headerreader.HeaderReader
+	if config.L1NodeURL != "" && config.L1NodeURL != "none" {
+		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
+		if err != nil {
+			return nil, nil, err
+		}
+		l1Reader = headerreader.New(l1Client, headerreader.DefaultConfig) // TODO: config
+	}
+	das, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if l1Reader != nil {
+		l1Reader.Start(ctx)
+		lifeCycle.Register(&L1ReaderCloser{l1Reader})
+	}
+	return das, lifeCycle, err
 }
 
 // Set up a das.DataAvailabilityService stack allowing some dependencies
@@ -800,7 +839,7 @@ func SetUpDataAvailabilityWithoutNode(
 func SetUpDataAvailability(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
-	l1Client arbutil.L1Interface,
+	l1Reader *headerreader.HeaderReader,
 	deployInfo *RollupAddresses,
 ) (das.DataAvailabilityService, *das.LifecycleManager, error) {
 	if !config.Enable {
@@ -812,18 +851,17 @@ func SetUpDataAvailability(
 	var seqInboxCaller *bridgegen.SequencerInboxCaller
 	var seqInboxAddress *common.Address
 
-	if l1Client != nil && deployInfo != nil {
+	if l1Reader != nil && deployInfo != nil {
 		seqInboxAddress = &deployInfo.SequencerInbox
-		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Client)
+		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
 		if err != nil {
 			return nil, nil, err
 		}
 		seqInboxCaller = &seqInbox.SequencerInboxCaller
-	} else if len(config.L1NodeURL) > 0 && len(config.SequencerInboxAddress) > 0 {
-		l1Client, err := das.GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
-		if err != nil {
-			return nil, nil, err
-		}
+	} else if config.L1NodeURL == "none" && config.SequencerInboxAddress == "none" {
+		l1Reader = nil
+		seqInboxAddress = nil
+	} else if l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
 		seqInboxAddress, err = das.OptionalAddressFromString(config.SequencerInboxAddress)
 		if err != nil {
 			return nil, nil, err
@@ -831,7 +869,7 @@ func SetUpDataAvailability(
 		if seqInboxAddress == nil {
 			return nil, nil, errors.New("Must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
-		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Client)
+		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -882,22 +920,16 @@ func SetUpDataAvailability(
 				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
 			}
 			if syncConf.Eager {
-				if l1Client == nil || seqInboxAddress == nil {
+				if l1Reader == nil || seqInboxAddress == nil {
 					return nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
 				}
 				topLevelStorageService, err = das.NewSyncingFallbackStorageService(
 					ctx,
 					topLevelStorageService,
 					restAgg,
-					retentionPeriodSeconds,
-					syncConf.IgnoreWriteErrors,
-					true,
-					l1Client,
+					l1Reader,
 					*seqInboxAddress,
-					&syncConf.EagerLowerBoundBlock,
-					retentionPeriodSeconds,
-					syncConf.EagerStopsWhenCaughtUp,
-				)
+					syncConf)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -1136,12 +1168,15 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func CreateDefaultStack() (*node.Node, error) {
+func CreateDefaultStackForTest(dataDir string) (*node.Node, error) {
 	stackConf := node.DefaultConfig
 	var err error
-	stackConf.DataDir = ""
-	stackConf.HTTPHost = "localhost"
+	stackConf.DataDir = dataDir
+	stackConf.HTTPHost = ""
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.ListenAddr = ""
+
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		return nil, fmt.Errorf("error creating protocol stack: %w", err)
@@ -1168,77 +1203,16 @@ func DefaultCacheConfigFor(stack *node.Node, archiveMode bool) *core.CacheConfig
 	}
 }
 
-func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.StoredBlockReader) (uint64, error) {
-	var prevHash common.Hash
-	td := big.NewInt(0)
-	var blocksInDb uint64
-	if initDataReader.More() {
-		var err error
-		blocksInDb, err = chainDb.Ancients()
-		if err != nil {
-			return 0, err
-		}
-	}
-	blockNum := uint64(0)
-	for ; initDataReader.More(); blockNum++ {
-		log.Debug("importing", "blockNum", blockNum)
-		storedBlock, err := initDataReader.GetNext()
-		if err != nil {
-			return blockNum, err
-		}
-		if blockNum+1 < blocksInDb && initDataReader.More() {
-			continue // skip already-imported blocks. Only validate the last.
-		}
-		storedBlockHash := storedBlock.Header.Hash()
-		if blockNum < blocksInDb {
-			// validate db and import match
-			hashInDb := rawdb.ReadCanonicalHash(chainDb, blockNum)
-			if storedBlockHash != hashInDb {
-				panic(fmt.Sprintf("Import and Database disagree on hashes import: %v, Db: %v", storedBlockHash, hashInDb))
-			}
-		}
-		if blockNum+1 == blocksInDb && blockNum > 0 {
-			// we skipped blocks common to DB an import
-			prevHash = rawdb.ReadCanonicalHash(chainDb, blockNum-1)
-			td = rawdb.ReadTd(chainDb, prevHash, blockNum-1)
-		}
-		if storedBlock.Header.ParentHash != prevHash {
-			panic(fmt.Sprintf("Import Block %d, parent hash %v, expected %v", blockNum, storedBlock.Header.ParentHash, prevHash))
-		}
-		if storedBlock.Header.Number.Cmp(new(big.Int).SetUint64(blockNum)) != 0 {
-			panic("unexpected block number in import")
-		}
-		txs := types.Transactions{}
-		for _, txData := range storedBlock.Transactions {
-			tx := types.ArbitrumLegacyFromTransactionResult(txData)
-			if tx.Hash() != txData.Hash {
-				return blockNum, errors.New("bad txHash")
-			}
-			txs = append(txs, tx)
-		}
-		receipts := storedBlock.Reciepts
-		block := types.NewBlockWithHeader(&storedBlock.Header).WithBody(txs, nil) // don't recalculate hashes
-		blockHash := block.Hash()
-		if blockHash != storedBlock.Header.Hash() {
-			return blockNum, errors.New("bad blockHash")
-		}
-		_, err = rawdb.WriteAncientBlocks(chainDb, []*types.Block{block}, []types.Receipts{receipts}, td)
-		if err != nil {
-			return blockNum, err
-		}
-		prevHash = blockHash
-		td.Add(td, storedBlock.Header.Difficulty)
-	}
-	return blockNum, initDataReader.Close()
-}
-
-func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, blockNumber uint64, chainConfig *params.ChainConfig) error {
+func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, accountsPerSync uint) error {
 	arbstate.RequireHookedGeth()
 
 	EmptyHash := common.Hash{}
-
 	prevHash := EmptyHash
 	prevDifficulty := big.NewInt(0)
+	blockNumber, err := initData.GetNextBlockNumber()
+	if err != nil {
+		return err
+	}
 	storedGenHash := rawdb.ReadCanonicalHash(chainDb, blockNumber)
 	timestamp := uint64(0)
 	if blockNumber > 0 {
@@ -1252,7 +1226,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		}
 		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig, timestamp, accountsPerSync)
 	if err != nil {
 		return err
 	}
@@ -1318,8 +1292,8 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, config
 	return core.NewBlockChain(chainDb, cacheConfig, config, engine, vmConfig, shouldPreserveFalse, &defaultConf.TxLookupLimit)
 }
 
-func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, blockNumber uint64, config *params.ChainConfig) (*core.BlockChain, error) {
-	err := WriteOrTestGenblock(chainDb, initData, blockNumber, config)
+func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, config *params.ChainConfig, accountsPerSync uint) (*core.BlockChain, error) {
+	err := WriteOrTestGenblock(chainDb, initData, config, accountsPerSync)
 	if err != nil {
 		return nil, err
 	}

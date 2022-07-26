@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/pkg/errors"
 )
@@ -212,11 +213,12 @@ func CreateValidatorWallet(
 	if len(logs) > 1 {
 		return common.Address{}, errors.New("more than one validator wallet created for address")
 	} else if len(logs) == 1 {
-		log := logs[0]
-		parsed, err := walletCreator.ParseWalletCreated(log)
+		rawLog := logs[0]
+		parsed, err := walletCreator.ParseWalletCreated(rawLog)
 		if err != nil {
 			return common.Address{}, err
 		}
+		log.Info("found validator smart contract wallet", "address", parsed.WalletAddress)
 		return parsed.WalletAddress, err
 	}
 
@@ -234,5 +236,6 @@ func CreateValidatorWallet(
 	if err != nil {
 		return common.Address{}, errors.WithStack(err)
 	}
+	log.Info("created validator smart contract wallet", "address", ev.WalletAddress)
 	return ev.WalletAddress, nil
 }

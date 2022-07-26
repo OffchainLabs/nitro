@@ -34,8 +34,8 @@ jobs:
         uses: actions/cache@v2
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-b-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-buildx-b-
+          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
+          restore-keys: ${{ runner.os }}-buildx-
 
       - name: Build nitro-node docker
         uses: docker/build-push-action@v2
@@ -57,9 +57,22 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
-      - name: print module root
+      - name: Print WAVM module root
+        id: module-root
         run: |
-          docker run --entrypoint cat localhost:5000/nitro-node-dev:latest target/machines/latest/module-root.txt
+          # Unfortunately, `docker cp` seems to always result in a "permission denied"
+          # We work around this by piping a tarball through stdout
+          docker run --rm --entrypoint tar localhost:5000/nitro-node-dev:latest -cf - target/machines/latest | tar xf -
+          module_root="$(cat "target/machines/latest/module-root.txt")"
+          echo "::set-output name=module-root::$module_root"
+          echo -e "\x1b[1;34mWAVM module root:\x1b[0m $module_root"
+
+      - name: Upload WAVM machine as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: wavm-machine-${{ steps.module-root.outputs.module-root }}
+          path: target/machines/latest/*
+          if-no-files-found: error
 
       - name: Move cache
         # Temp fix
@@ -68,3 +81,11 @@ jobs:
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Clear cache on failure
+        if: failure()
+        run: |
+          keys=(${{ runner.os }}-buildx- ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }})
+          for key in "${keys[@]}"; do
+            curl -X DELETE -H "Accept: application/vnd.github.v3+json" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/${{ github.repository }}/actions/caches/$key"
+          done

@@ -20,14 +20,19 @@ jobs:
         ports:
             - 6379:6379
 
+    strategy:
+      fail-fast: false
+      matrix:
+        test-mode: [defaults, race]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          submodules: recursive
+          submodules: true
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y gotestsum wabt
+        run: sudo apt update && sudo apt install -y wabt
 
       - name: Setup nodejs
         uses: actions/setup-node@v2
@@ -62,6 +67,7 @@ jobs:
 
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
+        id: install-rust
         with:
           profile: minimal
           toolchain: stable
@@ -80,15 +86,14 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
+            ~/.cargo/registry/
+            ~/.cargo/git/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
+            arbitrator/wasm-libraries/soft-float/SoftFloat/build
             target/etc/initial-machine-cache/
-          key: ${{ runner.os }}-cargo-min-${{ hashFiles('arbitrator/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v2
@@ -135,37 +140,26 @@ jobs:
           skip-go-installation: true
           skip-pkg-cache: true
 
-      - name: run tests with race detection
-        run: gotestsum --format short-verbose --jsonfile test-output-withrace.json -- ./... -race -parallel=1
-
-      - name: Annotate tests with race detection
-        if: always()
-        uses: guyarb/golang-test-annotations@v0.5.0
-        with:
-          test-results: test-output-withrace.json
+      - name: Set TMPDIR
+        run: |
+          mkdir -p target/tmp
+          echo "TMPDIR=$(pwd)/target/tmp" >> "$GITHUB_ENV"
 
       - name: run tests without race detection
-        if: always()
-        run: gotestsum --format short-verbose --jsonfile test-output.json -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
+        if: matrix.test-mode == 'defaults'
+        run: go test ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
 
-      - name: Annotate tests without race detection
-        if: always()
-        uses: guyarb/golang-test-annotations@v0.5.0
-        with:
-          test-results: test-output.json
+      - name: run tests with race detection
+        if: matrix.test-mode == 'race'
+        run: go test ./... -race -parallel=1
 
       - name: run redis tests
-        if: always()
-        run: gotestsum --format short-verbose --jsonfile test-output-redis.json -- -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
-
-      - name: Annotate redis tests
-        if: always()
-        uses: guyarb/golang-test-annotations@v0.5.0
-        with:
-          test-results: test-output-redis.json
+        if: matrix.test-mode == 'defaults'
+        run: go test ./... -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
+        if: matrix.test-mode == 'defaults'
         with:
           fail_ci_if_error: true
           files: ./coverage.txt,coverage-redis.txt

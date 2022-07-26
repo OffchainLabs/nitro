@@ -14,8 +14,8 @@ var errNoMore = errors.New("no more elements")
 type InitDataReader interface {
 	Close() error
 	GetAddressTableReader() (AddressReader, error)
-	GetStoredBlockReader() (StoredBlockReader, error)
-	GetRetriableDataReader() (RetriableDataReader, error)
+	GetNextBlockNumber() (uint64, error)
+	GetRetryableDataReader() (RetryableDataReader, error)
 	GetAccountDataReader() (AccountDataReader, error)
 }
 
@@ -24,17 +24,12 @@ type ListReader interface {
 	Close() error
 }
 
-type StoredBlockReader interface {
-	ListReader
-	GetNext() (*StoredBlock, error)
-}
-
 type AddressReader interface {
 	ListReader
 	GetNext() (*common.Address, error)
 }
 
-type RetriableDataReader interface {
+type RetryableDataReader interface {
 	ListReader
 	GetNext() (*InitializationDataForRetryable, error)
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
@@ -17,7 +18,7 @@ type dummyReader struct {
 	int
 }
 
-func (*dummyReader) GetByHash(context.Context, []byte) ([]byte, error) {
+func (*dummyReader) GetByHash(context.Context, common.Hash) ([]byte, error) {
 	return nil, errors.New("not implemented")
 }
 
