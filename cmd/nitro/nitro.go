@@ -296,6 +296,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		if err != nil {
 			panic(err)
 		}
+		genesisBlockNr := chainConfig.ArbitrumChainParams.GenesisBlockNum
+		genesisBlock := l2BlockChain.GetBlockByNumber(genesisBlockNr)
+		if genesisBlock != nil {
+			log.Info("loaded genesis block from database", "number", genesisBlockNr, "hash", genesisBlock.Hash())
+		} else {
+			log.Warn("database missing genesis block", "number", genesisBlockNr)
+		}
 	} else {
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
