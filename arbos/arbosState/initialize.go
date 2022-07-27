@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"math/big"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -163,6 +164,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 }
 
 func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState, initData statetransfer.RetryableDataReader, currentTimestamp uint64) error {
+	var retryablesList []*statetransfer.InitializationDataForRetryable
 	for initData.More() {
 		r, err := initData.GetNext()
 		if err != nil {
@@ -171,12 +173,23 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 		if r.Timeout <= currentTimestamp {
 			continue
 		}
+		retryablesList = append(retryablesList, r)
+	}
+	sort.Slice(retryablesList, func(i, j int) bool {
+		a := retryablesList[i]
+		b := retryablesList[j]
+		if a.Timeout == b.Timeout {
+			return a.Id.Big().Cmp(b.Id.Big()) < 0
+		}
+		return a.Timeout < b.Timeout
+	})
+	for _, r := range retryablesList {
 		var to *common.Address
 		if r.To != (common.Address{}) {
 			to = &r.To
 		}
 		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), r.Callvalue)
-		_, err = rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
+		_, err := rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
 		}
