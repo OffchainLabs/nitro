@@ -1233,6 +1233,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 
 	genBlock := arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot, chainConfig)
 	blockHash := genBlock.Hash()
+	log.Info("created genesis block", "number", blockNumber, "hash", blockHash)
 
 	if storedGenHash == EmptyHash {
 		// chainDb did not have genesis block. Initialize it.
