@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint64, stateRoot common.Hash, chainConfig *params.ChainConfig) *types.Block {
@@ -179,7 +180,7 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 		a := retryablesList[i]
 		b := retryablesList[j]
 		if a.Timeout == b.Timeout {
-			return a.Id.Big().Cmp(b.Id.Big()) < 0
+			return arbmath.BigLessThan(a.Id.Big(), b.Id.Big())
 		}
 		return a.Timeout < b.Timeout
 	})
