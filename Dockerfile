@@ -157,7 +157,9 @@ USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
+    ca-certificates \
     wabt && \
+    /usr/sbin/update-ca-certificates && \
     useradd -ms /bin/bash user && \
     mkdir -p /home/user/l1keystore && \
     mkdir -p /home/user/.arbitrum/local/nitro && \
