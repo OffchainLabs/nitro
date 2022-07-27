@@ -301,7 +301,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		if genesisBlock != nil {
 			log.Info("loaded genesis block from database", "number", genesisBlockNr, "hash", genesisBlock.Hash())
 		} else {
-			log.Warn("database missing genesis block", "number", genesisBlockNr)
+			// The node will probably die later, but might as well not kill it here?
+			log.Error("database missing genesis block", "number", genesisBlockNr)
 		}
 	} else {
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
