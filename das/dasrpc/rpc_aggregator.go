@@ -60,7 +60,7 @@ func setUpServices(config das.AggregatorConfig) ([]das.ServiceDetails, error) {
 			return nil, err
 		}
 
-		serviceWithRetryWrapper := das.NewRetryWrapper(service)
+		serviceWithRetryWrapper := das.NewRetryWrapper(das.NewWriteLimitedDataAvailabilityService(service))
 
 		pubKey, err := das.DecodeBase64BLSPublicKey([]byte(b.PubKeyBase64Encoded))
 		if err != nil {

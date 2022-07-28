@@ -25,6 +25,12 @@ type DataAvailabilityServiceWriter interface {
 	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error)
 }
 
+type DataAvailabilityWriter interface {
+	DataAvailabilityServiceWriter
+	arbstate.DataAvailabilityHelper
+	fmt.Stringer
+}
+
 type DataAvailabilityService interface {
 	arbstate.DataAvailabilityReader
 	DataAvailabilityServiceWriter

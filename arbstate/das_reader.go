@@ -19,10 +19,13 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
-type DataAvailabilityReader interface {
-	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
+type DataAvailabilityHelper interface {
 	HealthCheck(ctx context.Context) error
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
+}
+type DataAvailabilityReader interface {
+	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
+	DataAvailabilityHelper
 }
 
 var ErrHashMismatch = errors.New("Result does not match expected hash")

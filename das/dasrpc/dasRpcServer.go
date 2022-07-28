@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -24,21 +23,10 @@ import (
 )
 
 var (
-	rpcGetByHashRequestGauge       = metrics.NewRegisteredGauge("arb/das/rpc/getbyhash/requests", nil)
-	rpcGetByHashSuccessGauge       = metrics.NewRegisteredGauge("arb/das/rpc/getbyhash/success", nil)
-	rpcGetByHashFailureGauge       = metrics.NewRegisteredGauge("arb/das/rpc/getbyhash/failure", nil)
-	rpcGetByHashReturnedBytesGauge = metrics.NewRegisteredGauge("arb/das/rpc/getbyhash/bytes", nil)
-
 	rpcStoreRequestGauge     = metrics.NewRegisteredGauge("arb/das/rpc/store/requests", nil)
 	rpcStoreSuccessGauge     = metrics.NewRegisteredGauge("arb/das/rpc/store/success", nil)
 	rpcStoreFailureGauge     = metrics.NewRegisteredGauge("arb/das/rpc/store/failure", nil)
 	rpcStoreStoredBytesGauge = metrics.NewRegisteredGauge("arb/das/rpc/store/bytes", nil)
-
-	// This histogram is set with the default parameters of go-ethereum/metrics/Timer.
-	// If requests are infrequent, then the reservoir size parameter can be adjusted
-	// downwards to make a smaller window of samples that are included. The alpha parameter
-	// can be adjusted to downweight the importance of older samples.
-	rpcGetByHashDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/getbyhash/duration", nil, metrics.NewExpDecaySample(1028, 0.015))
 
 	// Lower reservoir size for stores since we guess stores will be ~1 per minute.
 	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewExpDecaySample(32, 0.015))
@@ -121,28 +109,6 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
 		Version:     hexutil.Uint64(cert.Version),
 	}, nil
-}
-
-func (serv *DASRPCServer) GetByHash(ctx context.Context, certBytes hexutil.Bytes) (hexutil.Bytes, error) {
-	rpcGetByHashRequestGauge.Inc(1)
-	start := time.Now()
-	success := false
-	defer func() {
-		if success {
-			rpcGetByHashSuccessGauge.Inc(1)
-		} else {
-			rpcGetByHashFailureGauge.Inc(1)
-		}
-		rpcGetByHashDurationHistogram.Update(time.Since(start).Nanoseconds())
-	}()
-
-	bytes, err := serv.localDAS.GetByHash(ctx, common.BytesToHash(certBytes))
-	if err != nil {
-		return nil, err
-	}
-	rpcGetByHashReturnedBytesGauge.Inc(int64(len(bytes)))
-	success = true
-	return bytes, nil
 }
 
 func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
