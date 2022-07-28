@@ -4,7 +4,7 @@ ArbOS provides L2-specific precompiles with methods smart contracts can call the
 From the perspective of user applications, precompiles live as contracts at the following addresses. Click on any to jump to their section.
 
 | Precompile                                 | Address &nbsp; | Purpose                             |
-|:-------------------------------------------|:---------------|:------------------------------------|
+| :----------------------------------------- | :------------- | :---------------------------------- |
 | [`ArbAggregator`](#ArbAggregator)          | `0x6d`         | Configuring transaction aggregation |
 | [`ArbGasInfo`](#ArbGasInfo)                | `0x6c`         | Info about gas pricing              |
 | [`ArbRetryableTx`](#ArbRetryableTx) &nbsp; | `0x6e`         | Managing retryables                 |
@@ -18,11 +18,11 @@ From the perspective of user applications, precompiles live as contracts at the 
 # [ArbAggregator][ArbAggregator_link]
 Provides aggregators and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
-| Methods                                                                       |                                                         |
-|:------------------------------------------------------------------------------|:--------------------------------------------------------|
-| [][As0] [`GetPreferredAggregator`][A0]`(account)`    | Gets an account's preferred aggregator                  |
-| [][As1] [`SetPreferredAggregator`][A1]`(aggregator)` | Sets the caller's preferred aggregator to that provided |
-| [][As2] [`GetDefaultAggregator`][A2]`()`             | Gets the chain's default aggregator                     |
+| Methods                                                        |                                                         |
+| :------------------------------------------------------------- | :------------------------------------------------------ |
+| [![](e.png)][As0] [`GetPreferredAggregator`][A0]`(account)`    | Gets an account's preferred aggregator                  |
+| [![](e.png)][As1] [`SetPreferredAggregator`][A1]`(aggregator)` | Sets the caller's preferred aggregator to that provided |
+| [![](e.png)][As2] [`GetDefaultAggregator`][A2]`()`             | Gets the chain's default aggregator                     |
 
 [A0]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbAggregator.go#L22
 [A1]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbAggregator.go#L39
@@ -36,12 +36,12 @@ Provides aggregators and their users methods for configuring how they participat
 # [ArbGasInfo][ArbGasInfo_link]
 Provides insight into the cost of using the chain. These methods have been adjusted to account for Nitro's heavy use of calldata compression. Of note to end-users, we no longer make a distinction between non-zero and zero-valued calldata bytes.
 
-| Methods                                                               |                                                                   |
-|:----------------------------------------------------------------------|:------------------------------------------------------------------|
-| [][GIs1] [`GetPricesInWei`][GI1]`()`         | Get prices in wei when using the caller's preferred aggregator    |
-| [][GIs3] [`GetPricesInArbGas`][GI3]`()`      | Get prices in ArbGas when using the caller's preferred aggregator |
-| [][GIs4] [`GetGasAccountingParams`][GI4]`()` | Get the chain speed limit, pool size, and tx gas limit            |
-| [][GIs11] [`GetL1BaseFeeEstimate`][GI11]`()` | Get ArbOS's estimate of the L1 basefee in wei                     |
+| Methods                                                |                                                                   |
+| :----------------------------------------------------- | :---------------------------------------------------------------- |
+| [![](e.png)][GIs1] [`GetPricesInWei`][GI1]`()`         | Get prices in wei when using the caller's preferred aggregator    |
+| [![](e.png)][GIs3] [`GetPricesInArbGas`][GI3]`()`      | Get prices in ArbGas when using the caller's preferred aggregator |
+| [![](e.png)][GIs4] [`GetGasAccountingParams`][GI4]`()` | Get the chain speed limit, pool size, and tx gas limit            |
+| [![](e.png)][GIs11] [`GetL1BaseFeeEstimate`][GI11]`()` | Get ArbOS's estimate of the L1 basefee in wei                     |
 
 [GI1]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L63
 [GI3]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L99
@@ -57,13 +57,13 @@ Provides insight into the cost of using the chain. These methods have been adjus
 Provides methods for managing retryables. The model has been adjusted for Nitro, most notably in terms of how retry transactions are scheduled. For more information on retryables, please see [the retryable documentation](ArbOS.md#Retryables).
 
 
-| Methods                                                                    |                                                                                    | Nitro changes          |
-|:---------------------------------------------------------------------------|:-----------------------------------------------------------------------------------|:-----------------------|
-| [][RTs0] [`Cancel`][RT0]`(ticket)`                | Cancel the ticket and refund its callvalue to its beneficiary                      |                        |
-| [][RTs1] [`GetBeneficiary`][RT1]`(ticket)` &nbsp; | Gets the beneficiary of the ticket                                                 |                        |
-| [][RTs3] [`GetTimeout`][RT3]`(ticket)`            | Gets the timestamp for when ticket will expire                                     |                        |
-| [][RTs4] [`Keepalive`][RT4]`(ticket)`             | Adds one lifetime period to the ticket's expiry                                    | Doesn't add callvalue  |
-| [][RTs5] [`Redeem`][RT5]`(ticket)`                | Schedule an attempt to redeem the retryable, donating all of the call's gas &nbsp; | Happens in a future tx |
+| Methods                                                     |                                                                                    | Nitro changes          |
+| :---------------------------------------------------------- | :--------------------------------------------------------------------------------- | :--------------------- |
+| [![](e.png)][RTs0] [`Cancel`][RT0]`(ticket)`                | Cancel the ticket and refund its callvalue to its beneficiary                      |                        |
+| [![](e.png)][RTs1] [`GetBeneficiary`][RT1]`(ticket)` &nbsp; | Gets the beneficiary of the ticket                                                 |                        |
+| [![](e.png)][RTs3] [`GetTimeout`][RT3]`(ticket)`            | Gets the timestamp for when ticket will expire                                     |                        |
+| [![](e.png)][RTs4] [`Keepalive`][RT4]`(ticket)`             | Adds one lifetime period to the ticket's expiry                                    | Doesn't add callvalue  |
+| [![](e.png)][RTs5] [`Redeem`][RT5]`(ticket)`                | Schedule an attempt to redeem the retryable, donating all of the call's gas &nbsp; | Happens in a future tx |
 
 [RT0]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbRetryableTx.go#L184
 [RT1]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbRetryableTx.go#L171
@@ -81,13 +81,13 @@ Provides methods for managing retryables. The model has been adjusted for Nitro,
 # [ArbSys][ArbSys_link]
 Provides system-level functionality for interacting with L1 and understanding the call stack.
 
-| Methods                                                                           |                                                             |
-|:----------------------------------------------------------------------------------|:------------------------------------------------------------|
-| [][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                            |
-| [][Ss1] [`ArbBlockHash`][S1]`()`                         | Gets the L2 block hash, if the block is sufficiently recent |
-| [][Ss5] [`IsTopLevelCall`][S5]`()`                       | Checks if the call is top-level                             |
-| [][Ss9] [`SendTxToL1`][S9]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox          |
-| [][Ss11] [`WithdrawEth`][S11]`(destination)`             | Send paid eth to the destination on L1                      |
+| Methods                                                            |                                                             |
+| :----------------------------------------------------------------- | :---------------------------------------------------------- |
+| [![](e.png)][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                            |
+| [![](e.png)][Ss1] [`ArbBlockHash`][S1]`()`                         | Gets the L2 block hash, if the block is sufficiently recent |
+| [![](e.png)][Ss5] [`IsTopLevelCall`][S5]`()`                       | Checks if the call is top-level                             |
+| [![](e.png)][Ss9] [`SendTxToL1`][S9]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox          |
+| [![](e.png)][Ss11] [`WithdrawEth`][S11]`(destination)`             | Send paid eth to the destination on L1                      |
 
 [S0]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbSys.go#L30
 [S1]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbSys.go#L35
