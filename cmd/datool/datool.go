@@ -75,17 +75,18 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	URL                string        `koanf:"url"`
-	Message            string        `koanf:"message"`
-	DASRetentionPeriod time.Duration `koanf:"das-retention-period"`
-	// TODO ECDSA private key to sign message with
-	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+	URL                string                 `koanf:"url"`
+	Message            string                 `koanf:"message"`
+	DASRetentionPeriod time.Duration          `koanf:"das-retention-period"`
+	SigningKeyFile     string                 `koanf:"signing-key-file"`
+	ConfConfig         genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f := flag.NewFlagSet("datool client store", flag.ContinueOnError)
-	f.String("url", "", "URL of DAS server to connect to.")
-	f.String("message", "", "Message to send.")
+	f.String("url", "", "URL of DAS server to connect to")
+	f.String("message", "", "message to send")
+	f.String("signing-key-file", "", "file containing the ecdsa key to sign the message with, if not specified the message is not signed")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -112,8 +113,23 @@ func startClientStore(args []string) error {
 		return err
 	}
 
+	//	var privateKey *ecdsa.PrivateKey
+	var dasClient das.DataAvailabilityService = client
+	if config.SigningKeyFile != "" {
+		privateKey, err := crypto.LoadECDSA(config.SigningKeyFile)
+		if err != nil {
+			return err
+		}
+		signer := das.DasSignerFromPrivateKey(privateKey)
+
+		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
+		if err != nil {
+			return err
+		}
+	}
+
 	ctx := context.Background()
-	cert, err := client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+	cert, err := dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	if err != nil {
 		return err
 	}
