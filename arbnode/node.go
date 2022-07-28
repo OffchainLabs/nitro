@@ -1237,8 +1237,11 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 	if storedGenHash == EmptyHash {
 		// chainDb did not have genesis block. Initialize it.
 		core.WriteHeadBlock(chainDb, genBlock, prevDifficulty)
+		log.Info("wrote genesis block", "number", blockNumber, "hash", blockHash)
 	} else if storedGenHash != blockHash {
-		return errors.New("database contains data inconsistent with initialization")
+		return fmt.Errorf("database contains data inconsistent with initialization: database has genesis hash %v but we built genesis hash %v", storedGenHash, blockHash)
+	} else {
+		log.Info("recreated existing genesis block", "number", blockNumber, "hash", blockHash)
 	}
 
 	return nil
