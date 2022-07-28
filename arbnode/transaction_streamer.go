@@ -44,7 +44,7 @@ type TransactionStreamer struct {
 	newMessageNotifier chan struct{}
 
 	broadcasterQueuedMessages    []arbstate.MessageWithMetadata
-	broadcasterQueuedMessagesPos arbutil.MessageIndex
+	broadcasterQueuedMessagesPos uint64
 
 	latestBlockAndMessageMutex sync.Mutex
 	latestBlock                *types.Block
@@ -247,21 +247,24 @@ func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, mes
 
 	if currentMessageCount >= pos {
 		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-		s.broadcasterQueuedMessagesPos = 0
+		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
 		return s.addMessagesAndEndBatchImpl(pos, false, messages, nil)
-	} else if len(s.broadcasterQueuedMessages) > 0 && s.broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == pos {
-		s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 	} else {
-		if len(s.broadcasterQueuedMessages) > 0 {
-			log.Warn(
-				"broadcaster queue jumped positions",
-				"queuedMessages", len(s.broadcasterQueuedMessages),
-				"expectedNextPos", s.broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
-				"gotPos", pos,
-			)
+		broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
+		if len(s.broadcasterQueuedMessages) > 0 && broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == pos {
+			s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
+		} else {
+			if len(s.broadcasterQueuedMessages) > 0 {
+				log.Warn(
+					"broadcaster queue jumped positions",
+					"queuedMessages", len(s.broadcasterQueuedMessages),
+					"expectedNextPos", broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
+					"gotPos", pos,
+				)
+			}
+			s.broadcasterQueuedMessages = messages
+			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(pos))
 		}
-		s.broadcasterQueuedMessages = messages
-		s.broadcasterQueuedMessagesPos = pos
 	}
 
 	return nil
@@ -307,12 +310,13 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 
 	dontReorgAfter := len(messages)
 	afterCount := pos + arbutil.MessageIndex(len(messages))
-	if afterCount >= s.broadcasterQueuedMessagesPos {
-		if int(afterCount-s.broadcasterQueuedMessagesPos) < len(messages) {
-			messages = append(messages, s.broadcasterQueuedMessages[afterCount-s.broadcasterQueuedMessagesPos:]...)
+	broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
+	if afterCount >= broadcasterQueuedMessagesPos {
+		if int(afterCount-broadcasterQueuedMessagesPos) < len(messages) {
+			messages = append(messages, s.broadcasterQueuedMessages[afterCount-broadcasterQueuedMessagesPos:]...)
 		}
 		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-		s.broadcasterQueuedMessagesPos = 0
+		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
 	}
 
 	reorg := false
@@ -771,6 +775,29 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *TransactionStreamer) SyncProgressMap() map[string]interface{} {
+	batchSeen := s.inboxReader.GetLastSeenBatchCount()
+	_, batchProcessed := s.inboxReader.GetLastReadBlockAndBatchCount()
+	broadcasterQueuedMessagesPos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+
+	res := make(map[string]interface{})
+
+	if batchProcessed >= batchSeen && (broadcasterQueuedMessagesPos == 0) && (batchSeen > 0) {
+		return res
+	}
+
+	res["batchSeen"] = batchSeen
+	res["batchProcessed"] = batchProcessed
+	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		res["msgCountError"] = err.Error()
+	} else {
+		res["msgCount"] = msgCount
+	}
+	return res
 }
 
 func (s *TransactionStreamer) Initialize() error {

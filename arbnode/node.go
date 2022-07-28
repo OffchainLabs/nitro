@@ -677,7 +677,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface)
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, txStreamer)
 	if err != nil {
 		return nil, err
 	}
