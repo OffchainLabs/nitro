@@ -47,6 +47,9 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
+	if arbmath.BigLessThan(l2GasPrice, perArbGasBase) {
+		perArbGasBase = l2GasPrice
+	}
 	perArbGasCongestion := arbmath.BigSub(l2GasPrice, perArbGasBase)
 	perArbGasTotal := l2GasPrice
 
