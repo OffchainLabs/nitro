@@ -261,6 +261,8 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64) {
 		case 2:
 			ensure(state.l1PricingState.SetPerBatchGasCost(0))
 			ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
+		case 3:
+			// no state changes needed
 		default:
 			panic("Unable to perform requested ArbOS upgrade")
 		}
