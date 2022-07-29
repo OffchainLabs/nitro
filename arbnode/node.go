@@ -968,6 +968,7 @@ func SetUpDataAvailability(
 			config.KeyConfig,
 			_seqInboxCaller,
 			topLevelStorageService,
+			config.ExtraSignatureCheckingPublicKey,
 		)
 		if err != nil {
 			return nil, nil, err

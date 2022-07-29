@@ -6,12 +6,15 @@ package das
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -55,11 +58,15 @@ type SignAfterStoreDAS struct {
 	keysetBytes    []byte
 	storageService StorageService
 	bpVerifier     *BatchPosterVerifier
+
+	// Extra batch poster verifier, for local installations to have their
+	// own way of testing Stores.
+	extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool
 }
 
 func NewSignAfterStoreDAS(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreDAS, error) {
 	if config.L1NodeURL == "none" {
-		return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService)
+		return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService, config.ExtraSignatureCheckingPublicKey)
 	}
 	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 	if err != nil {
@@ -70,14 +77,14 @@ func NewSignAfterStoreDAS(ctx context.Context, config DataAvailabilityConfig, st
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService)
+		return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService, config.ExtraSignatureCheckingPublicKey)
 	}
 
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(*seqInboxAddress, l1client)
 	if err != nil {
 		return nil, err
 	}
-	return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, seqInboxCaller, storageService)
+	return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, seqInboxCaller, storageService, config.ExtraSignatureCheckingPublicKey)
 }
 
 func NewSignAfterStoreDASWithSeqInboxCaller(
@@ -85,6 +92,7 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 	config KeyConfig,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 	storageService StorageService,
+	extraSignatureCheckingPublicKey string,
 ) (*SignAfterStoreDAS, error) {
 	var privKey *blsSignatures.PrivateKey
 	var err error
@@ -127,13 +135,37 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 		bpVerifier = NewBatchPosterVerifier(seqInboxCaller)
 	}
 
+	var extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool
+	if extraSignatureCheckingPublicKey != "" {
+		var pubkey []byte
+		if extraSignatureCheckingPublicKey[:2] == "0x" {
+			pubkey, err = hex.DecodeString(extraSignatureCheckingPublicKey[2:])
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			pubkeyEncoded, err := ioutil.ReadFile(extraSignatureCheckingPublicKey)
+			if err != nil {
+				return nil, err
+			}
+			pubkey, err = hex.DecodeString(string(pubkeyEncoded))
+			if err != nil {
+				return nil, err
+			}
+		}
+		extraBpVerifier = func(message []byte, timeout uint64, sig []byte) bool {
+			return crypto.VerifySignature(pubkey, dasStoreHash(message, timeout), sig)
+		}
+	}
+
 	return &SignAfterStoreDAS{
-		config:         config,
-		privKey:        privKey,
-		keysetHash:     ksHash,
-		keysetBytes:    ksBuf.Bytes(),
-		storageService: storageService,
-		bpVerifier:     bpVerifier,
+		config:          config,
+		privKey:         privKey,
+		keysetHash:      ksHash,
+		keysetBytes:     ksBuf.Bytes(),
+		storageService:  storageService,
+		bpVerifier:      bpVerifier,
+		extraBpVerifier: extraBpVerifier,
 	}, nil
 }
 
@@ -141,7 +173,12 @@ func (d *SignAfterStoreDAS) Store(
 	ctx context.Context, message []byte, timeout uint64, sig []byte,
 ) (c *arbstate.DataAvailabilityCertificate, err error) {
 	log.Trace("das.SignAfterStoreDAS.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", d)
-	if d.bpVerifier != nil {
+	var verified bool
+	if d.extraBpVerifier != nil {
+		verified = d.extraBpVerifier(message, timeout, sig)
+	}
+
+	if !verified && d.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
 			return nil, err
