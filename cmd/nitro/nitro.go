@@ -201,8 +201,8 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 	return nil
 }
 
-func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *InitConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
-	if !initConfig.Force {
+func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
+	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
@@ -210,7 +210,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 				if err != nil {
 					return nil, nil, err
 				}
-				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig)
+				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -224,7 +224,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		}
 	}
 
-	initFile, err := downloadInit(ctx, initConfig)
+	initFile, err := downloadInit(ctx, &config.Init)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -252,13 +252,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		return nil, nil, err
 	}
 
-	if initConfig.ImportFile != "" {
-		initDataReader, err = statetransfer.NewJsonInitDataReader(initConfig.ImportFile)
+	if config.Init.ImportFile != "" {
+		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error reading import file: %w", err)
 		}
 	}
-	if initConfig.Empty {
+	if config.Init.Empty {
 		if initDataReader != nil {
 			return nil, nil, errors.New("multiple init methods supplied")
 		}
@@ -267,15 +267,15 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 	}
-	if initConfig.DevInit {
+	if config.Init.DevInit {
 		if initDataReader != nil {
 			return nil, nil, errors.New("multiple init methods supplied")
 		}
 		initData := statetransfer.ArbosInitializationInfo{
-			NextBlockNumber: initConfig.DevInitBlockNum,
+			NextBlockNumber: config.Init.DevInitBlockNum,
 			Accounts: []statetransfer.AccountInitializationInfo{
 				{
-					Addr:       common.HexToAddress(initConfig.DevInitAddr),
+					Addr:       common.HexToAddress(config.Init.DevInitAddr),
 					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
 					Nonce:      0,
 				},
@@ -292,7 +292,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 		if chainConfig == nil {
 			panic("No initialization mode supplied, chain data not in Db")
 		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig)
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
 		if err != nil {
 			panic(err)
 		}
@@ -329,7 +329,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, initConfig *In
 			log.Warn("Re-creating genesis though it seems to exist in database", "blockNr", genesisBlockNr)
 		}
 		log.Info("Initializing", "ancients", ancients, "genesisBlockNr", genesisBlockNr)
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, initConfig.AccountsPerSync)
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, &config.Node, config.Init.AccountsPerSync)
 		if err != nil {
 			panic(err)
 		}
@@ -368,7 +368,6 @@ func main() {
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
 		nodeConfig.Node.L1Reader.Enable = false
-		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
 		nodeConfig.Node.BatchPoster.Enable = false
 		nodeConfig.Node.DelayedSequencer.Enable = false
 	} else {
@@ -436,6 +435,11 @@ func main() {
 		}
 	}
 
+	if nodeConfig.Node.Archive && nodeConfig.Node.TxLookupLimit != 0 {
+		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
+		nodeConfig.Node.TxLookupLimit = 0
+	}
+
 	stackConf := node.DefaultConfig
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	nodeConfig.HTTP.Apply(&stackConf)
@@ -463,7 +467,7 @@ func main() {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, &nodeConfig.Init, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
 	if err != nil {
 		panic(err)
 	}
