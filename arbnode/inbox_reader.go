@@ -379,14 +379,14 @@ func (ir *InboxReader) run(ctx context.Context) error {
 					reorgingDelayed = true
 				}
 				if len(sequencerBatches) > 0 {
-					if !readAnyBatches {
-						atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
-					}
-					readAnyBatches = true
 					ir.lastReadMutex.Lock()
 					ir.lastReadBlock = to.Uint64()
 					ir.lastReadBatchCount = sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1
 					ir.lastReadMutex.Unlock()
+					if !readAnyBatches {
+						atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
+					}
+					readAnyBatches = true
 				}
 			}
 			if reorgingDelayed || reorgingSequencer {
@@ -400,11 +400,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		}
 
 		if !readAnyBatches {
-			atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
 			ir.lastReadMutex.Lock()
 			ir.lastReadBlock = currentHeight.Uint64()
 			ir.lastReadBatchCount = checkingBatchCount
 			ir.lastReadMutex.Unlock()
+			atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
 		}
 	}
 }
