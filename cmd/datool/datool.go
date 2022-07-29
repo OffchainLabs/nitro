@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -78,7 +79,7 @@ type ClientStoreConfig struct {
 	URL                string                 `koanf:"url"`
 	Message            string                 `koanf:"message"`
 	DASRetentionPeriod time.Duration          `koanf:"das-retention-period"`
-	SigningKeyFile     string                 `koanf:"signing-key-file"`
+	SigningKey         string                 `koanf:"signing-key"`
 	ConfConfig         genericconf.ConfConfig `koanf:"conf"`
 }
 
@@ -86,7 +87,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f := flag.NewFlagSet("datool client store", flag.ContinueOnError)
 	f.String("url", "", "URL of DAS server to connect to")
 	f.String("message", "", "message to send")
-	f.String("signing-key-file", "", "file containing the ecdsa key to sign the message with, if not specified the message is not signed")
+	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherise treated as a file; if not specified the message is not signed")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -115,10 +116,18 @@ func startClientStore(args []string) error {
 
 	//	var privateKey *ecdsa.PrivateKey
 	var dasClient das.DataAvailabilityService = client
-	if config.SigningKeyFile != "" {
-		privateKey, err := crypto.LoadECDSA(config.SigningKeyFile)
-		if err != nil {
-			return err
+	if config.SigningKey != "" {
+		var privateKey *ecdsa.PrivateKey
+		if config.SigningKey[:2] == "0x" {
+			privateKey, err = crypto.HexToECDSA(config.SigningKey[2:])
+			if err != nil {
+				return err
+			}
+		} else {
+			privateKey, err = crypto.LoadECDSA(config.SigningKey)
+			if err != nil {
+				return err
+			}
 		}
 		signer := das.DasSignerFromPrivateKey(privateKey)
 
@@ -312,5 +321,5 @@ func startKeyGen(args []string) error {
 		return err
 	}
 	encodedPubKey := hex.EncodeToString(crypto.FromECDSAPub(&privateKey.PublicKey))
-	return os.WriteFile(config.Dir+"/ecdsa.pub", []byte(encodedPubKey), 0644)
+	return os.WriteFile(config.Dir+"/ecdsa.pub", []byte(encodedPubKey), 0600)
 }
