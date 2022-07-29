@@ -4,6 +4,7 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -101,6 +102,11 @@ func TestEvenSimplerSignatureCheck(t *testing.T) {
 	dataHash := crypto.Keccak256(data)
 	sig, err := crypto.Sign(dataHash, privateKey)
 	Require(t, err)
+
+	pubkey, err := crypto.SigToPub(dataHash, sig)
+	if bytes.Compare(crypto.FromECDSAPub(pubkey), crypto.FromECDSAPub(&privateKey.PublicKey)) != 0 {
+		Fail(t, "Derived pubkey doesn't match pubkey")
+	}
 
 	verified := crypto.VerifySignature(crypto.FromECDSAPub(&privateKey.PublicKey), dataHash, sig)
 	if !verified {
