@@ -274,7 +274,7 @@ func parseTimeOrPanic(format string, value string) time.Time {
 	return t
 }
 
-var HeartbeatsDisabledAt = uint64(parseTimeOrPanic(time.RFC1123, "Thu, 04 Aug 2022 16:00:00 GMT").Unix())
+var HeartbeatsDisabledAt = uint64(parseTimeOrPanic(time.RFC1123, "Mon, 08 Aug 2022 16:00:00 GMT").Unix())
 
 func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, requestId *common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
 	var l2KindBuf [1]byte
