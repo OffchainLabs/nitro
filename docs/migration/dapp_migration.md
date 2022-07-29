@@ -37,6 +37,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
     - Deposited gas will be refunded to `excessFeeRefundAddress` if it cannot create an auto-redeem.
     - The user will be refunded the submission cost of their retryable if it is auto-redeemed.
 - **Arbitrum blockhash**: `blockhash(x)` returns Arbitrum blockhash of a specific L1 block `x` if `block.number - 256 <= x < block.number`, otherwise `0`. Arbitrum blockhash is **NOT** the L1 block hash but a value deterministically generated from the L1 block hash and state of the inbox. `blockhash(block.number)` will always return `0` in nitro in-line with ethereum.
+- **ArbSys precompile**: `ArbSys.getTransactionCount` and `ArbSys.getStorageAt` are removed in nitro
 
 #### Protocol Contracts 
 
