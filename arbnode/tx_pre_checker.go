@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"sync"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/core"
@@ -28,7 +27,6 @@ type txPreCheckerState struct {
 }
 
 type TxPreChecker struct {
-	mutex        sync.RWMutex
 	publisher    TransactionPublisher
 	bc           *core.BlockChain
 	latestState  atomic.Value // contains a txPreCheckerState
