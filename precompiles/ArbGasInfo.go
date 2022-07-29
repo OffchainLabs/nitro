@@ -36,7 +36,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
 
 	// the cost of a simple tx without calldata
-	perL2Tx := arbmath.BigMulByUint(weiForL1Calldata, l1pricing.TxFixedCost)
+	perL2Tx := arbmath.BigMulByUint(weiForL1Calldata, l1pricing.TxFixedCostEstimate)
 
 	// nitro's compute-centric l2 gas pricing has no special compute component that rises independently
 	perArbGasBase, err := c.State.L2PricingState().MinBaseFeeWei()
@@ -66,7 +66,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	weiPerL2Tx := arbmath.BigMulByUint(weiForL1Calldata, l1pricing.TxFixedCost)
+	weiPerL2Tx := arbmath.BigMulByUint(weiForL1Calldata, l1pricing.TxFixedCostEstimate)
 	gasForL1Calldata := common.Big0
 	gasPerL2Tx := common.Big0
 	if l2GasPrice.Sign() > 0 {
