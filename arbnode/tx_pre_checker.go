@@ -136,7 +136,8 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	_, dataGas := state.l1PricingState.GetPosterInfo(tx, l1pricing.BatchPosterAddress)
+	// We can't cache here because the state the tx is executed in might not the our latestState
+	_, dataGas := state.l1PricingState.GetPosterInfoWithoutCache(tx, l1pricing.BatchPosterAddress)
 	if tx.Gas() < intrinsic+dataGas {
 		return core.ErrIntrinsicGas
 	}

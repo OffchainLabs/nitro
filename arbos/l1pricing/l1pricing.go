@@ -606,7 +606,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	return nil
 }
 
-func (ps *L1PricingState) getPosterInfoWithoutCache(tx *types.Transaction, posterAddr common.Address) (*big.Int, uint64) {
+func (ps *L1PricingState) GetPosterInfoWithoutCache(tx *types.Transaction, posterAddr common.Address) (*big.Int, uint64) {
 
 	if posterAddr != BatchPosterAddress {
 		return common.Big0, 0
@@ -634,7 +634,7 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 	if cost != nil {
 		return cost, atomic.LoadUint64(&tx.CalldataUnits)
 	}
-	cost, units := ps.getPosterInfoWithoutCache(tx, poster)
+	cost, units := ps.GetPosterInfoWithoutCache(tx, poster)
 	atomic.StoreUint64(&tx.CalldataUnits, units)
 	tx.PosterCost.Store(cost)
 	return cost, units
