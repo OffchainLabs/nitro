@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"sync"
@@ -142,9 +143,14 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	defer unsubscribe()
 	blocksToFetch := uint64(100)
 	seenBatchCount := uint64(0)
-	defer func() {
-		atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
-	}()
+	seenBatchCountStored := uint64(math.MaxUint64)
+	storeSeenBatchCount := func() {
+		if seenBatchCountStored != seenBatchCount {
+			atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
+			seenBatchCountStored = seenBatchCount
+		}
+	}
+	defer storeSeenBatchCount() //in case of error
 	for {
 
 		currentHeightRaw, err := ir.client.BlockNumber(ctx)
@@ -262,6 +268,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			ir.lastReadBlock = currentHeight.Uint64()
 			ir.lastReadBatchCount = checkingBatchCount
 			ir.lastReadMutex.Unlock()
+			storeSeenBatchCount()
 			continue
 		}
 
@@ -379,14 +386,13 @@ func (ir *InboxReader) run(ctx context.Context) error {
 					reorgingDelayed = true
 				}
 				if len(sequencerBatches) > 0 {
+					readAnyBatches = true
 					ir.lastReadMutex.Lock()
 					ir.lastReadBlock = to.Uint64()
 					ir.lastReadBatchCount = sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1
 					ir.lastReadMutex.Unlock()
-					if !readAnyBatches {
-						atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
-					}
-					readAnyBatches = true
+					storeSeenBatchCount()
+					atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
 				}
 			}
 			if reorgingDelayed || reorgingSequencer {
@@ -404,7 +410,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			ir.lastReadBlock = currentHeight.Uint64()
 			ir.lastReadBatchCount = checkingBatchCount
 			ir.lastReadMutex.Unlock()
-			atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
+			storeSeenBatchCount()
 		}
 	}
 }
