@@ -259,7 +259,7 @@ const (
 	L2MessageKind_Batch           = 3
 	L2MessageKind_SignedTx        = 4
 	// 5 is reserved
-	// 6 was previously heartbeat
+	L2MessageKind_Heartbeat          = 6
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
 )
@@ -322,11 +322,14 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash,
 			return nil, err
 		}
 		return types.Transactions{newTx}, nil
+	case L2MessageKind_Heartbeat:
+		// do nothing
+		return nil, nil
 	case L2MessageKind_SignedCompressedTx:
 		return nil, errors.New("L2 message kind SignedCompressedTx is unimplemented")
 	default:
 		// ignore invalid message kind
-		return nil, fmt.Errorf("unknown L2 message kind %v", l2KindBuf[0])
+		return nil, fmt.Errorf("unkown L2 message kind %v", l2KindBuf[0])
 	}
 }
 
