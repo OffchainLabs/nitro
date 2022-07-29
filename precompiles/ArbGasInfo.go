@@ -18,7 +18,6 @@ type ArbGasInfo struct {
 	Address addr // 0x6c
 }
 
-var zero = big.NewInt(0)
 var storageArbGas = big.NewInt(int64(storage.StorageWriteCost))
 
 // Get prices in wei when using the provided aggregator
@@ -40,8 +39,11 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	perL2Tx := arbmath.BigMulByUint(weiForL1Calldata, l1pricing.TxFixedCost)
 
 	// nitro's compute-centric l2 gas pricing has no special compute component that rises independently
-	perArbGasBase := l2GasPrice
-	perArbGasCongestion := zero
+	perArbGasBase, err := c.State.L2PricingState().MinBaseFeeWei()
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, err
+	}
+	perArbGasCongestion := arbmath.BigSub(l2GasPrice, perArbGasBase)
 	perArbGasTotal := l2GasPrice
 
 	weiForL2Storage := arbmath.BigMul(l2GasPrice, storageArbGas)
@@ -64,13 +66,15 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	weiPerL2Tx := arbmath.BigMulByUint(weiForL1Calldata, l1pricing.TxFixedCost)
 	gasForL1Calldata := common.Big0
+	gasPerL2Tx := common.Big0
 	if l2GasPrice.Sign() > 0 {
 		gasForL1Calldata = arbmath.BigDiv(weiForL1Calldata, l2GasPrice)
+		gasPerL2Tx = arbmath.BigDiv(weiPerL2Tx, l2GasPrice)
 	}
 
-	perL2Tx := big.NewInt(l1pricing.TxFixedCost)
-	return perL2Tx, gasForL1Calldata, storageArbGas, nil
+	return gasPerL2Tx, gasForL1Calldata, storageArbGas, nil
 }
 
 // Get prices in ArbGas when using the caller's preferred aggregator
