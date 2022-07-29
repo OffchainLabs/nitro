@@ -150,7 +150,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			seenBatchCountStored = seenBatchCount
 		}
 	}
-	defer storeSeenBatchCount() //in case of error
+	defer storeSeenBatchCount() // in case of error
 	for {
 
 		currentHeightRaw, err := ir.client.BlockNumber(ctx)
