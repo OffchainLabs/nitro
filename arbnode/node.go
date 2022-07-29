@@ -1049,11 +1049,16 @@ func CreateNode(
 			Public:    false,
 		})
 	}
+
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
-		Service:   &ArbDebugAPI{blockchain: l2BlockChain},
-		Public:    false,
+		Service: &ArbDebugAPI{
+			blockchain:        l2BlockChain,
+			blockRangeBound:   config.RPC.ArbDebug.BlockRangeBound,
+			timeoutQueueBound: config.RPC.ArbDebug.TimeoutQueueBound,
+		},
+		Public: false,
 	})
 	stack.RegisterAPIs(apis)
 
