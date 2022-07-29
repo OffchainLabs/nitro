@@ -392,7 +392,6 @@ func (ir *InboxReader) run(ctx context.Context) error {
 					ir.lastReadBatchCount = sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1
 					ir.lastReadMutex.Unlock()
 					storeSeenBatchCount()
-					atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
 				}
 			}
 			if reorgingDelayed || reorgingSequencer {
