@@ -92,3 +92,18 @@ func TestSimpleSignatureCheck(t *testing.T) {
 		Fail(t, "Signature not verified")
 	}
 }
+
+func TestEvenSimplerSignatureCheck(t *testing.T) {
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+
+	data := []byte("Hello World")
+	dataHash := crypto.Keccak256(data)
+	sig, err := crypto.Sign(dataHash, privateKey)
+	Require(t, err)
+
+	verified := crypto.VerifySignature(crypto.FromECDSAPub(&privateKey.PublicKey), dataHash, sig)
+	if !verified {
+		Fail(t, "Signature not verified")
+	}
+}
