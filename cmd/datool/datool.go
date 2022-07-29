@@ -311,15 +311,5 @@ func startKeyGen(args []string) error {
 		return nil
 	}
 
-	privateKey, err := crypto.GenerateKey()
-	if err != nil {
-		return err
-	}
-
-	err = crypto.SaveECDSA(config.Dir+"/ecdsa", privateKey)
-	if err != nil {
-		return err
-	}
-	encodedPubKey := hex.EncodeToString(crypto.FromECDSAPub(&privateKey.PublicKey))
-	return os.WriteFile(config.Dir+"/ecdsa.pub", []byte(encodedPubKey), 0600)
+	return das.GenerateAndStoreECDSAKeys(config.Dir)
 }
