@@ -68,3 +68,27 @@ func TestExtraSignatureCheck(t *testing.T) {
 	_, err = da.Store(context.Background(), []byte("Hello world"), 1234, []byte{})
 	Require(t, err)
 }
+
+func TestSimpleSignatureCheck(t *testing.T) {
+	keyDir := t.TempDir()
+	err := GenerateAndStoreECDSAKeys(keyDir)
+	Require(t, err)
+	privateKey, err := crypto.LoadECDSA(keyDir + "/ecdsa")
+	Require(t, err)
+
+	data := []byte("Hello World")
+	dataHash := crypto.Keccak256(data)
+	sig, err := crypto.Sign(dataHash, privateKey)
+	Require(t, err)
+
+	pubkeyEncoded, err := ioutil.ReadFile(keyDir + "/ecdsa.pub")
+	Require(t, err)
+
+	pubkey, err := hex.DecodeString(string(pubkeyEncoded))
+	Require(t, err)
+
+	verified := crypto.VerifySignature(pubkey, dataHash, sig)
+	if !verified {
+		Fail(t, "Signature not verified")
+	}
+}
