@@ -44,7 +44,7 @@ type TransactionStreamer struct {
 	newMessageNotifier chan struct{}
 
 	broadcasterQueuedMessages    []arbstate.MessageWithMetadata
-	broadcasterQueuedMessagesPos arbutil.MessageIndex
+	broadcasterQueuedMessagesPos uint64
 
 	latestBlockAndMessageMutex sync.Mutex
 	latestBlock                *types.Block
@@ -237,6 +237,13 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, 
 }
 
 func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
+	for i, message := range messages {
+		msgPos := pos + arbutil.MessageIndex(i)
+		if message.Message == nil || message.Message.Header == nil {
+			return fmt.Errorf("invalid feed message at sequence number %v", msgPos)
+		}
+	}
+
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -247,21 +254,24 @@ func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, mes
 
 	if currentMessageCount >= pos {
 		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-		s.broadcasterQueuedMessagesPos = 0
+		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
 		return s.addMessagesAndEndBatchImpl(pos, false, messages, nil)
-	} else if len(s.broadcasterQueuedMessages) > 0 && s.broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == pos {
-		s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 	} else {
-		if len(s.broadcasterQueuedMessages) > 0 {
-			log.Warn(
-				"broadcaster queue jumped positions",
-				"queuedMessages", len(s.broadcasterQueuedMessages),
-				"expectedNextPos", s.broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
-				"gotPos", pos,
-			)
+		broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
+		if len(s.broadcasterQueuedMessages) > 0 && broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == pos {
+			s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
+		} else {
+			if len(s.broadcasterQueuedMessages) > 0 {
+				log.Warn(
+					"broadcaster queue jumped positions",
+					"queuedMessages", len(s.broadcasterQueuedMessages),
+					"expectedNextPos", broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
+					"gotPos", pos,
+				)
+			}
+			s.broadcasterQueuedMessages = messages
+			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(pos))
 		}
-		s.broadcasterQueuedMessages = messages
-		s.broadcasterQueuedMessagesPos = pos
 	}
 
 	return nil
@@ -307,12 +317,13 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 
 	dontReorgAfter := len(messages)
 	afterCount := pos + arbutil.MessageIndex(len(messages))
-	if afterCount >= s.broadcasterQueuedMessagesPos {
-		if int(afterCount-s.broadcasterQueuedMessagesPos) < len(messages) {
-			messages = append(messages, s.broadcasterQueuedMessages[afterCount-s.broadcasterQueuedMessagesPos:]...)
+	broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
+	if afterCount >= broadcasterQueuedMessagesPos {
+		if int(afterCount-broadcasterQueuedMessagesPos) < len(messages) {
+			messages = append(messages, s.broadcasterQueuedMessages[afterCount-broadcasterQueuedMessagesPos:]...)
 		}
 		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-		s.broadcasterQueuedMessagesPos = 0
+		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
 	}
 
 	reorg := false
@@ -333,13 +344,14 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 		if err != nil {
 			return err
 		}
-		wantMessage, err := rlp.EncodeToBytes(messages[0])
+		nextMessage := messages[0]
+		wantMessage, err := rlp.EncodeToBytes(nextMessage)
 		if err != nil {
 			return err
 		}
 		if bytes.Equal(haveMessage, wantMessage) {
 			// This message is a duplicate, skip it
-			prevDelayedRead = messages[0].DelayedMessagesRead
+			prevDelayedRead = nextMessage.DelayedMessagesRead
 			messages = messages[1:]
 			pos++
 			dontReorgAfter--
@@ -349,7 +361,11 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 			if err != nil {
 				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)", "pos", pos, "err", err)
 			} else {
-				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-delayed", messages[0].DelayedMessagesRead, "got-header", messages[0].Message.Header, "db-delayed", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
+				var gotHeader *arbos.L1IncomingMessageHeader
+				if nextMessage.Message != nil {
+					gotHeader = nextMessage.Message.Header
+				}
+				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-delayed", nextMessage.DelayedMessagesRead, "got-header", gotHeader, "db-delayed", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
 			}
 			if dontReorgAfter > 0 {
 				reorg = true
@@ -361,12 +377,16 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 	}
 
 	// Validate delayed message counts of remaining messages
-	for _, msg := range messages {
+	for i, msg := range messages {
+		msgPos := pos + arbutil.MessageIndex(i)
 		diff := msg.DelayedMessagesRead - prevDelayedRead
 		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, pos)
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, msgPos)
 		}
 		prevDelayedRead = msg.DelayedMessagesRead
+		if msg.Message == nil {
+			return fmt.Errorf("attempted to insert nil message at position %v", msgPos)
+		}
 	}
 
 	if reorg {
@@ -771,6 +791,51 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *TransactionStreamer) SyncProgressMap() map[string]interface{} {
+	res := make(map[string]interface{})
+
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		res["msgCountError"] = err.Error()
+		return res
+	}
+
+	batchSeen := s.inboxReader.GetLastSeenBatchCount()
+	_, batchProcessed := s.inboxReader.GetLastReadBlockAndBatchCount()
+	broadcasterQueuedMessagesPos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+
+	lastBlockNum := s.bc.CurrentHeader().Number.Uint64()
+	lastBuiltMessage, err := s.BlockNumberToMessageCount(lastBlockNum)
+	if err != nil {
+		res["blockMessageToMessageCountError"] = err.Error()
+		return res
+	}
+
+	processedMetadata, err := s.inboxReader.Tracker().GetBatchMetadata(batchProcessed - 1)
+
+	if err != nil {
+		res["batchMetadataError"] = err.Error()
+		return res
+	}
+
+	if (batchSeen > 0) && // read inbox without error
+		(batchProcessed >= batchSeen) && // up to date in inbox messages
+		(broadcasterQueuedMessagesPos == 0) && // no unprocessed feed
+		(processedMetadata.MessageCount <= lastBuiltMessage) && // built blocks for entire inbox
+		(msgCount <= lastBuiltMessage+20) { // TODO: configurable gap
+		return res
+	}
+
+	res["msgCount"] = msgCount
+	res["batchSeen"] = batchSeen
+	res["batchProcessed"] = batchProcessed
+	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
+	res["blockNum"] = lastBlockNum
+	res["messageOfLastBlock"] = lastBuiltMessage
+	res["messageOfProcessedBatch"] = processedMetadata.MessageCount
+	return res
 }
 
 func (s *TransactionStreamer) Initialize() error {

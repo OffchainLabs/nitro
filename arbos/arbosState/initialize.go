@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"math/big"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -18,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint64, stateRoot common.Hash, chainConfig *params.ChainConfig) *types.Block {
@@ -163,6 +165,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 }
 
 func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState, initData statetransfer.RetryableDataReader, currentTimestamp uint64) error {
+	var retryablesList []*statetransfer.InitializationDataForRetryable
 	for initData.More() {
 		r, err := initData.GetNext()
 		if err != nil {
@@ -171,12 +174,23 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 		if r.Timeout <= currentTimestamp {
 			continue
 		}
+		retryablesList = append(retryablesList, r)
+	}
+	sort.Slice(retryablesList, func(i, j int) bool {
+		a := retryablesList[i]
+		b := retryablesList[j]
+		if a.Timeout == b.Timeout {
+			return arbmath.BigLessThan(a.Id.Big(), b.Id.Big())
+		}
+		return a.Timeout < b.Timeout
+	})
+	for _, r := range retryablesList {
 		var to *common.Address
 		if r.To != (common.Address{}) {
 			to = &r.To
 		}
 		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), r.Callvalue)
-		_, err = rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
+		_, err := rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
 		}

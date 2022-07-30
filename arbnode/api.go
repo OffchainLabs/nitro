@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
@@ -57,7 +58,9 @@ func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (commo
 }
 
 type ArbDebugAPI struct {
-	blockchain *core.BlockChain
+	blockchain        *core.BlockChain
+	blockRangeBound   uint64
+	timeoutQueueBound uint64
 }
 
 type PricingModelHistory struct {
@@ -89,6 +92,10 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
 	blocks := end.Int64() - start.Int64() + 1
+	if blocks > int64(api.blockRangeBound) {
+		log.Warn("Sanitizing pricing model # of blocks", "requested", blocks, "truncated", api.blockRangeBound)
+		blocks = int64(api.blockRangeBound)
+	}
 	if blocks <= 0 {
 		return PricingModelHistory{}, fmt.Errorf("invalid block range: %v to %v", start.Int64(), end.Int64())
 	}
@@ -172,6 +179,10 @@ func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.
 	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
 	blocks := end.Int64() - start.Int64() + 1
+	if blocks > int64(api.blockRangeBound) {
+		log.Warn("Sanitizing timeout history # of blocks", "requested", blocks, "truncated", api.blockRangeBound)
+		blocks = int64(api.blockRangeBound)
+	}
 	if blocks <= 0 {
 		return []uint64{}, fmt.Errorf("invalid block range: %v to %v", start.Int64(), end.Int64())
 	}
@@ -214,31 +225,31 @@ func (api *ArbDebugAPI) TimeoutQueue(ctx context.Context, blockNum rpc.BlockNumb
 		return queue, err
 	}
 
-	closure := func(index uint64, ticket common.Hash) error {
+	closure := func(index uint64, ticket common.Hash) (bool, error) {
 
 		// we don't care if the retryable has expired
 		retryable, err := state.RetryableState().OpenRetryable(ticket, 0)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if retryable == nil {
 			queue.Tickets = append(queue.Tickets, ticket)
 			queue.Timeouts = append(queue.Timeouts, 0)
-			return nil
+			return false, nil
 		}
 		timeout, err := retryable.CalculateTimeout()
 		if err != nil {
-			return err
+			return false, err
 		}
 		windows, err := retryable.TimeoutWindowsLeft()
 		if err != nil {
-			return err
+			return false, err
 		}
 		timeout -= windows * retryables.RetryableLifetimeSeconds
 
 		queue.Tickets = append(queue.Tickets, ticket)
 		queue.Timeouts = append(queue.Timeouts, timeout)
-		return nil
+		return index == api.timeoutQueueBound, nil
 	}
 
 	err = state.RetryableState().TimeoutQueue.ForEach(closure)

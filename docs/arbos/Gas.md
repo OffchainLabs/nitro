@@ -23,7 +23,7 @@ Gas estimation for Retryable submissions is possible via [`NodeInterface.sol`][n
 [estimation_inclusion_link]: https://github.com/OffchainLabs/go-ethereum/blob/edf6a19157606070b6a6660c8decc513e2408cb7/internal/ethapi/api.go#L955
 [node_interface_link]: https://github.com/OffchainLabs/nitro/blob/master/solgen/src/node-interface/NodeInterface.sol
 
-## NodeInterface.sol<a name=NodeInterface.sol></a>
+## NodeInterface.sol
 To avoid creating new RPC methods for client-side tooling, nitro geth's [`InterceptRPCMessage`][InterceptRPCMessage_link] hook provides an opportunity to swap out the message its handling before deriving a transaction from it. The node [uses this hook][use_hook_link] to detect messages sent to the address `0xc8`, the location of the fictional `NodeInterface` contract specified in [`NodeInterface.sol`][node_interface_link].
 
 `NodeInterface` isn't deployed on L2 and only exists in the RPC, but it contains methods callable via `0xc8`. Doing so requires setting the `To` field to `0xc8` and supplying calldata for the method. Below is the list of methods.

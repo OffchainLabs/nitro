@@ -640,7 +640,7 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 	return cost, units
 }
 
-const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
+const TxFixedCostEstimate = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
 func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64) {
 	if tx := message.UnderlyingTransaction(); tx != nil {
@@ -657,7 +657,7 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Add
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
-	l1Bytes := byteCount + TxFixedCost
+	l1Bytes := byteCount + TxFixedCostEstimate
 	pricePerUnit, _ := ps.PricePerUnit()
 
 	units := l1Bytes * params.TxDataNonZeroGasEIP2028
