@@ -237,6 +237,13 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, 
 }
 
 func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
+	for i, message := range messages {
+		msgPos := pos + arbutil.MessageIndex(i)
+		if message.Message == nil || message.Message.Header == nil {
+			return fmt.Errorf("invalid feed message at sequence number %v", msgPos)
+		}
+	}
+
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -337,13 +344,14 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 		if err != nil {
 			return err
 		}
-		wantMessage, err := rlp.EncodeToBytes(messages[0])
+		nextMessage := messages[0]
+		wantMessage, err := rlp.EncodeToBytes(nextMessage)
 		if err != nil {
 			return err
 		}
 		if bytes.Equal(haveMessage, wantMessage) {
 			// This message is a duplicate, skip it
-			prevDelayedRead = messages[0].DelayedMessagesRead
+			prevDelayedRead = nextMessage.DelayedMessagesRead
 			messages = messages[1:]
 			pos++
 			dontReorgAfter--
@@ -353,7 +361,11 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 			if err != nil {
 				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)", "pos", pos, "err", err)
 			} else {
-				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-delayed", messages[0].DelayedMessagesRead, "got-header", messages[0].Message.Header, "db-delayed", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
+				var gotHeader *arbos.L1IncomingMessageHeader
+				if nextMessage.Message != nil {
+					gotHeader = nextMessage.Message.Header
+				}
+				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-delayed", nextMessage.DelayedMessagesRead, "got-header", gotHeader, "db-delayed", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
 			}
 			if dontReorgAfter > 0 {
 				reorg = true
@@ -365,12 +377,16 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 	}
 
 	// Validate delayed message counts of remaining messages
-	for _, msg := range messages {
+	for i, msg := range messages {
+		msgPos := pos + arbutil.MessageIndex(i)
 		diff := msg.DelayedMessagesRead - prevDelayedRead
 		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, pos)
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, msgPos)
 		}
 		prevDelayedRead = msg.DelayedMessagesRead
+		if msg.Message == nil {
+			return fmt.Errorf("attempted to insert nil message at position %v", msgPos)
+		}
 	}
 
 	if reorg {
