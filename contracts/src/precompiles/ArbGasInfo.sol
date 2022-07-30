@@ -109,4 +109,13 @@ interface ArbGasInfo {
 
     /// @notice Get the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
     function getGasBacklogTolerance() external view returns (uint64);
+
+    /// @notice Returns the surplus of funds for L1 batch posting payments (may be negative).
+    function getL1PricingSurplus() external view returns (int256);
+
+    /// @notice Returns the base charge (in L1 gas) attributed to each data batch in the calldata pricer
+    function getPerBatchGasCharge() external view returns (int64);
+
+    /// @notice Returns the cost amortization cap in basis points
+    function getAmortizedCostCapBips() external view returns (uint64);
 }

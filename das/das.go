@@ -8,9 +8,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -46,45 +49,20 @@ type DataAvailabilityConfig struct {
 	RestfulClientAggregatorConfig RestfulClientAggregatorConfig `koanf:"rest-aggregator"`
 
 	L1NodeURL             string `koanf:"l1-node-url"`
+	L1ConnectionAttempts  int    `koanf:"l1-connection-attempts"`
 	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+
+	PanicOnError             bool `koanf:"panic-on-error"`
+	DisableSignatureChecking bool `koanf:"disable-signature-checking"`
 }
 
 var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	RequestTimeout:                5 * time.Second,
 	Enable:                        false,
 	RestfulClientAggregatorConfig: DefaultRestfulClientAggregatorConfig,
+	L1ConnectionAttempts:          15,
+	PanicOnError:                  false,
 }
-
-/* TODO put these checks somewhere
-func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
-	if c.ModeImpl == "" {
-		return 0, errors.New("--data-availability.mode missing")
-	}
-
-	if c.ModeImpl == OnchainDataAvailabilityString {
-		return OnchainDataAvailability, nil
-	}
-
-	if c.ModeImpl == DASDataAvailabilityString {
-		if c.DASConfig.LocalConfig.DataDir == "" || (c.DASConfig.KeyDir == "" && c.DASConfig.PrivKey == "") {
-			flag.Usage()
-			return 0, errors.New("--data-availability.das.local.data-dir and --data-availability.das.key-dir must be specified if mode is set to das")
-		}
-		return DASDataAvailability, nil
-	}
-
-	if c.ModeImpl == AggregatorDataAvailabilityString {
-		if reflect.DeepEqual(c.AggregatorConfig, DefaultAggregatorConfig) {
-			flag.Usage()
-			return 0, errors.New("--data-availability.aggregator.X config options must be specified if mode is set to aggregator")
-		}
-		return AggregatorDataAvailability, nil
-	}
-
-	flag.Usage()
-	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
-}
-*/
 
 func OptionalAddressFromString(s string) (*common.Address, error) {
 	if s == "none" {
@@ -102,6 +80,8 @@ func OptionalAddressFromString(s string) (*common.Address, error) {
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultDataAvailabilityConfig.Enable, "enable Anytrust Data Availability mode")
+	f.Bool(prefix+".panic-on-error", DefaultDataAvailabilityConfig.PanicOnError, "whether the Data Availability Service should fail immediately on errors (not recommended)")
+	f.Bool(prefix+".disable-signature-checking", DefaultDataAvailabilityConfig.DisableSignatureChecking, "disables signature checking on Data Availability Store requests (DANGEROUS, FOR TESTING ONLY)")
 
 	f.Duration(prefix+".request-timeout", DefaultDataAvailabilityConfig.RequestTimeout, "Data Availability Service request timeout duration")
 
@@ -122,32 +102,49 @@ func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
 
 	f.String(prefix+".l1-node-url", DefaultDataAvailabilityConfig.L1NodeURL, "URL for L1 node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
+	f.Int(prefix+".l1-connection-attempts", DefaultDataAvailabilityConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
 	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 }
 
-func serializeSignableFields(c *arbstate.DataAvailabilityCertificate) []byte {
-	buf := make([]byte, 0, 32+8)
-	buf = append(buf, c.DataHash[:]...)
-
-	var intData [8]byte
-	binary.BigEndian.PutUint64(intData[:], c.Timeout)
-	buf = append(buf, intData[:]...)
-
-	return buf
-}
-
 func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {
+
+	flags := arbstate.DASMessageHeaderFlag
+	if c.Version != 0 {
+		flags |= arbstate.TreeDASMessageHeaderFlag
+	}
+
 	buf := make([]byte, 0)
-
-	buf = append(buf, arbstate.DASMessageHeaderFlag)
-
+	buf = append(buf, flags)
 	buf = append(buf, c.KeysetHash[:]...)
-
-	buf = append(buf, serializeSignableFields(c)...)
+	buf = append(buf, c.SerializeSignableFields()...)
 
 	var intData [8]byte
 	binary.BigEndian.PutUint64(intData[:], c.SignersMask)
 	buf = append(buf, intData[:]...)
 
 	return append(buf, blsSignatures.SignatureToBytes(c.Sig)...)
+}
+
+func GetL1Client(ctx context.Context, maxConnectionAttempts int, l1URL string) (*ethclient.Client, error) {
+	if maxConnectionAttempts <= 0 {
+		maxConnectionAttempts = math.MaxInt
+	}
+	var l1Client *ethclient.Client
+	var err error
+	for i := 1; i <= maxConnectionAttempts; i++ {
+		l1Client, err = ethclient.DialContext(ctx, l1URL)
+		if err == nil {
+			return l1Client, nil
+		}
+		log.Warn("error connecting to L1", "err", err)
+
+		timer := time.NewTimer(time.Second * 1)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, errors.New("aborting startup")
+		case <-timer.C:
+		}
+	}
+	return nil, err
 }

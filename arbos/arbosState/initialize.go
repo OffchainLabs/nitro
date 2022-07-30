@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"math/big"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -18,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint64, stateRoot common.Hash, chainConfig *params.ChainConfig) *types.Block {
@@ -47,11 +49,27 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig) (common.Hash, error) {
+func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, timestamp uint64, accountsPerSync uint) (common.Hash, error) {
 	stateDatabase := state.NewDatabase(db)
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
 		log.Fatal("failed to init empty statedb", err)
+	}
+
+	commit := func() (common.Hash, error) {
+		root, err := statedb.Commit(true)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		err = stateDatabase.TrieDB().Commit(root, true, nil)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		statedb, err = state.New(root, stateDatabase, nil)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		return root, nil
 	}
 
 	burner := burn.NewSystemBurner(nil, false)
@@ -89,19 +107,31 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		return common.Hash{}, err
 	}
 
-	retriableReader, err := initData.GetRetriableDataReader()
+	log.Print("addresss table import complete")
+
+	retryableReader, err := initData.GetRetryableDataReader()
 	if err != nil {
 		return common.Hash{}, err
 	}
-	err = initializeRetryables(arbosState.RetryableState(), retriableReader, 0)
+	err = initializeRetryables(statedb, arbosState.RetryableState(), retryableReader, timestamp)
 	if err != nil {
 		return common.Hash{}, err
+	}
+
+	log.Print("retryables import complete")
+
+	if accountsPerSync > 0 {
+		_, err := commit()
+		if err != nil {
+			return common.Hash{}, err
+		}
 	}
 
 	accountDataReader, err := initData.GetAccountDataReader()
 	if err != nil {
 		return common.Hash{}, err
 	}
+	accountsRead := uint(0)
 	for accountDataReader.More() {
 		account, err := accountDataReader.GetNext()
 		if err != nil {
@@ -119,32 +149,48 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 				statedb.SetState(account.Addr, k, v)
 			}
 		}
+		accountsRead++
+		if accountsPerSync > 0 && (accountsRead%accountsPerSync == 0) {
+			log.Printf("imported %v accounts", accountsRead)
+			_, err := commit()
+			if err != nil {
+				return common.Hash{}, err
+			}
+		}
 	}
 	if err := accountDataReader.Close(); err != nil {
 		return common.Hash{}, err
 	}
-	root, err := statedb.Commit(true)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	err = stateDatabase.TrieDB().Commit(root, true, nil)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	return root, nil
+	return commit()
 }
 
-func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.RetriableDataReader, currentTimestampToUse uint64) error {
+func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState, initData statetransfer.RetryableDataReader, currentTimestamp uint64) error {
+	var retryablesList []*statetransfer.InitializationDataForRetryable
 	for initData.More() {
 		r, err := initData.GetNext()
 		if err != nil {
 			return err
 		}
+		if r.Timeout <= currentTimestamp {
+			continue
+		}
+		retryablesList = append(retryablesList, r)
+	}
+	sort.Slice(retryablesList, func(i, j int) bool {
+		a := retryablesList[i]
+		b := retryablesList[j]
+		if a.Timeout == b.Timeout {
+			return arbmath.BigLessThan(a.Id.Big(), b.Id.Big())
+		}
+		return a.Timeout < b.Timeout
+	})
+	for _, r := range retryablesList {
 		var to *common.Address
 		if r.To != (common.Address{}) {
 			to = &r.To
 		}
-		_, err = rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
+		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), r.Callvalue)
+		_, err := rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
 		}
@@ -172,6 +218,5 @@ func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, acco
 			}
 		}
 	}
-
 	return nil
 }

@@ -50,7 +50,10 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			panic(err)
 		}
 		l1BlockNumber, _ := inputs[1].(uint64) // current block's
-		timePassed, _ := inputs[2].(uint64)    // since last block
+		timePassed, _ := inputs[2].(uint64)    // actually the L2 block number, fixed in upgrade 3
+		if state.FormatVersion() >= 3 {
+			timePassed, _ = inputs[3].(uint64) // time passed since last block
+		}
 
 		nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
 		state.Restrict(err)
@@ -74,7 +77,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
 
-		state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
+		state.UpgradeArbosVersionIfNecessary(currentTime)
 	case InternalTxBatchPostingReportMethodID:
 		inputs, err := util.UnpackInternalTxDataBatchPostingReport(tx.Data)
 		if err != nil {
@@ -86,8 +89,24 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		batchDataGas, _ := inputs[3].(uint64)
 		l1BaseFeeWei, _ := inputs[4].(*big.Int)
 
-		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, batchDataGas)
-		err = state.L1PricingState().UpdateForBatchPosterSpending(evm.StateDB, evm, state.FormatVersion(), batchTimestamp.Uint64(), evm.Context.Time.Uint64(), batchPosterAddress, weiSpent)
+		l1p := state.L1PricingState()
+		perBatchGas, err := l1p.PerBatchGasCost()
+		if err != nil {
+			log.Warn("L1Pricing PerBatchGas failed", "err", err)
+		}
+		gasSpent := arbmath.SaturatingAdd(perBatchGas, arbmath.SaturatingCast(batchDataGas))
+		weiSpent := arbmath.BigMulByUint(l1BaseFeeWei, arbmath.SaturatingUCast(gasSpent))
+		err = l1p.UpdateForBatchPosterSpending(
+			evm.StateDB,
+			evm,
+			state.FormatVersion(),
+			batchTimestamp.Uint64(),
+			evm.Context.Time.Uint64(),
+			batchPosterAddress,
+			weiSpent,
+			l1BaseFeeWei,
+			util.TracingDuringEVM,
+		)
 		if err != nil {
 			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
 		}

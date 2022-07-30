@@ -10,21 +10,29 @@ import (
 
 	"github.com/allegro/bigcache"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
 
 type BigCacheConfig struct {
 	// TODO add other config information like HardMaxCacheSize
-	Enable     bool          `koanf:"enable"`
-	Expiration time.Duration `koanf:"expiration"`
+	Enable             bool          `koanf:"enable"`
+	Expiration         time.Duration `koanf:"expiration"`
+	MaxEntriesInWindow int
 }
 
 var DefaultBigCacheConfig = BigCacheConfig{
 	Expiration: time.Hour,
+}
+
+var TestBigCacheConfig = BigCacheConfig{
+	Enable:             true,
+	Expiration:         time.Hour,
+	MaxEntriesInWindow: 1000,
 }
 
 func BigCacheConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -39,7 +47,11 @@ type BigCacheStorageService struct {
 }
 
 func NewBigCacheStorageService(bigCacheConfig BigCacheConfig, baseStorageService StorageService) (StorageService, error) {
-	bigCache, err := bigcache.NewBigCache(bigcache.DefaultConfig(bigCacheConfig.Expiration))
+	conf := bigcache.DefaultConfig(bigCacheConfig.Expiration)
+	if bigCacheConfig.MaxEntriesInWindow > 0 {
+		conf.MaxEntriesInWindow = bigCacheConfig.MaxEntriesInWindow
+	}
+	bigCache, err := bigcache.NewBigCache(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -50,17 +62,17 @@ func NewBigCacheStorageService(bigCacheConfig BigCacheConfig, baseStorageService
 	}, nil
 }
 
-func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	log.Trace("das.BigCacheStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", bcs)
+func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
+	log.Trace("das.BigCacheStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", bcs)
 
-	ret, err := bcs.bigCache.Get(string(key))
+	ret, err := bcs.bigCache.Get(string(key.Bytes()))
 	if err != nil {
 		ret, err = bcs.baseStorageService.GetByHash(ctx, key)
 		if err != nil {
 			return nil, err
 		}
 
-		err = bcs.bigCache.Set(string(key), ret)
+		err = bcs.bigCache.Set(string(key.Bytes()), ret)
 		if err != nil {
 			return nil, err
 		}
@@ -71,14 +83,12 @@ func (bcs *BigCacheStorageService) GetByHash(ctx context.Context, key []byte) ([
 }
 
 func (bcs *BigCacheStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	log.Trace("das.BigCacheStorageService.Put", "message", pretty.FirstFewBytes(value), "timeout", time.Unix(int64(timeout), 0), "this", bcs)
-
+	logPut("das.BigCacheStorageService.Put", value, timeout, bcs)
 	err := bcs.baseStorageService.Put(ctx, value, timeout)
 	if err != nil {
 		return err
 	}
-	err = bcs.bigCache.Set(string(crypto.Keccak256(value)), value)
-	return err
+	return bcs.bigCache.Set(string(dastree.HashBytes(value)), value)
 }
 
 func (bcs *BigCacheStorageService) Sync(ctx context.Context) error {

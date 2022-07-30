@@ -38,8 +38,8 @@ RUN apt-get update && apt-get install -y curl build-essential=12.9
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
 RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
-    # pinned rust 1.60.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.60.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+    # pinned rust 1.61.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.61.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
@@ -54,6 +54,7 @@ COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
 COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/replay ./cmd/replay
+COPY ./das/dastree ./das/dastree
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
@@ -69,7 +70,7 @@ COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompile
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.57-slim-bullseye as prover-header-builder
+FROM rust:1.61-slim-bullseye as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -84,7 +85,7 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch as prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.57-slim-bullseye as prover-builder
+FROM rust:1.61-slim-bullseye as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -123,8 +124,13 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
-# Download WASM machines
-RUN bash -c 'r=0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v1-rc1/machine.wavm.br'
+# Download WAVM machines
+#RUN bash -c 'r=0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v1-rc1/machine.wavm.br'
+RUN bash -c 'r=0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v2.1/machine.wavm.br'
+#RUN bash -c 'r=0x53c288a0ca7100c0f2db8ab19508763a51c7fd1be125d376d940a65378acaee7 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3/machine.wavm.br'
+RUN bash -c 'r=0x588762be2f364be15d323df2aa60ffff60f2b14103b34823b6f7319acd1ae7a3 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3.1/machine.wavm.br'
+RUN bash -c 'r=0xcfba6a883c50a1b4475ab909600fa88fc9cceed9e3ff6f43dccd2d27f6bd57cf && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3.2/machine.wavm.br'
+RUN bash -c 'r=0xa24ccdb052d92c5847e8ea3ce722442358db4b00985a9ee737c4e601b6ed9876 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v4/machine.wavm.br'
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
@@ -153,7 +159,9 @@ USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
+    ca-certificates \
     wabt && \
+    /usr/sbin/update-ca-certificates && \
     useradd -ms /bin/bash user && \
     mkdir -p /home/user/l1keystore && \
     mkdir -p /home/user/.arbitrum/local/nitro && \

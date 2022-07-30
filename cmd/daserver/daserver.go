@@ -17,6 +17,8 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/metrics/exp"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -26,30 +28,39 @@ import (
 )
 
 type DAServerConfig struct {
-	EnableRPC bool   `koanf:"enable-rpc"`
-	RPCAddr   string `koanf:"rpc-addr"`
-	RPCPort   uint64 `koanf:"rpc-port"`
+	EnableRPC         bool                                `koanf:"enable-rpc"`
+	RPCAddr           string                              `koanf:"rpc-addr"`
+	RPCPort           uint64                              `koanf:"rpc-port"`
+	RPCServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rpc-server-timeouts"`
 
-	EnableREST bool   `koanf:"enable-rest"`
-	RESTAddr   string `koanf:"rest-addr"`
-	RESTPort   uint64 `koanf:"rest-port"`
+	EnableREST         bool                                `koanf:"enable-rest"`
+	RESTAddr           string                              `koanf:"rest-addr"`
+	RESTPort           uint64                              `koanf:"rest-port"`
+	RESTServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rest-server-timeouts"`
 
 	DAConf das.DataAvailabilityConfig `koanf:"data-availability"`
 
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 	LogLevel   int                    `koanf:"log-level"`
+
+	Metrics       bool                            `koanf:"metrics"`
+	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 }
 
 var DefaultDAServerConfig = DAServerConfig{
-	EnableRPC:  false,
-	RPCAddr:    "localhost",
-	RPCPort:    9876,
-	EnableREST: false,
-	RESTAddr:   "localhost",
-	RESTPort:   9877,
-	DAConf:     das.DefaultDataAvailabilityConfig,
-	ConfConfig: genericconf.ConfConfigDefault,
-	LogLevel:   3,
+	EnableRPC:          false,
+	RPCAddr:            "localhost",
+	RPCPort:            9876,
+	RPCServerTimeouts:  genericconf.HTTPServerTimeoutConfigDefault,
+	EnableREST:         false,
+	RESTAddr:           "localhost",
+	RESTPort:           9877,
+	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
+	DAConf:             das.DefaultDataAvailabilityConfig,
+	ConfConfig:         genericconf.ConfConfigDefault,
+	Metrics:            false,
+	MetricsServer:      genericconf.MetricsServerConfigDefault,
+	LogLevel:           3,
 }
 
 func main() {
@@ -69,10 +80,15 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Bool("enable-rpc", DefaultDAServerConfig.EnableRPC, "enable the HTTP-RPC server listening on rpc-addr and rpc-port")
 	f.String("rpc-addr", DefaultDAServerConfig.RPCAddr, "HTTP-RPC server listening interface")
 	f.Uint64("rpc-port", DefaultDAServerConfig.RPCPort, "HTTP-RPC server listening port")
+	genericconf.HTTPServerTimeoutConfigAddOptions("rpc-server-timeouts", f)
 
 	f.Bool("enable-rest", DefaultDAServerConfig.EnableREST, "enable the REST server listening on rest-addr and rest-port")
 	f.String("rest-addr", DefaultDAServerConfig.RESTAddr, "REST server listening interface")
 	f.Uint64("rest-port", DefaultDAServerConfig.RESTPort, "REST server listening port")
+	genericconf.HTTPServerTimeoutConfigAddOptions("rest-server-timeouts", f)
+
+	f.Bool("metrics", DefaultDAServerConfig.Metrics, "enable metrics")
+	genericconf.MetricsServerAddOptions("metrics-server", f)
 
 	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
 	das.DataAvailabilityConfigAddOptions("data-availability", f)
@@ -132,6 +148,15 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
+	if serverConfig.Metrics {
+		go metrics.CollectProcessMetrics(serverConfig.MetricsServer.UpdateInterval)
+
+		if serverConfig.MetricsServer.Addr != "" {
+			address := fmt.Sprintf("%v:%v", serverConfig.MetricsServer.Addr, serverConfig.MetricsServer.Port)
+			exp.Setup(address)
+		}
+	}
+
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
@@ -147,7 +172,7 @@ func startup() error {
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort)
 
-		rpcServer, err = dasrpc.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, dasImpl)
+		rpcServer, err = dasrpc.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, dasImpl)
 		if err != nil {
 			return err
 		}
@@ -157,7 +182,7 @@ func startup() error {
 	if serverConfig.EnableREST {
 		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort)
 
-		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, dasImpl)
+		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, dasImpl)
 		if err != nil {
 			return err
 		}

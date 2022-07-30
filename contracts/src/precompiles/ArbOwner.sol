@@ -66,6 +66,15 @@ interface ArbOwner {
     /// @notice Sets reward amount for L1 price adjustment algorithm, in wei per unit
     function setL1PricingRewardRate(uint64 weiPerUnit) external;
 
+    /// @notice Set how much ArbOS charges per L1 gas spent on transaction data.
+    function setL1PricePerUnit(uint256 pricePerUnit) external;
+
+    /// @notice Sets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
+    function setPerBatchGasCharge(int64 cost) external;
+
+    /// @notice Sets the cost amortization cap in basis points
+    function setAmortizedCostCapBips(uint64 cap) external;
+
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
 }

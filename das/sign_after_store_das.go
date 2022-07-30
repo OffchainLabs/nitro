@@ -11,12 +11,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/pretty"
 
@@ -61,7 +61,7 @@ func NewSignAfterStoreDAS(ctx context.Context, config DataAvailabilityConfig, st
 	if config.L1NodeURL == "none" {
 		return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService)
 	}
-	l1client, err := ethclient.Dial(config.L1NodeURL)
+	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 	if err != nil {
 		return nil, err
 	}
@@ -117,12 +117,10 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 	if err := keyset.Serialize(ksBuf); err != nil {
 		return nil, err
 	}
-	ksHashBuf, err := keyset.Hash()
+	ksHash, err := keyset.Hash()
 	if err != nil {
 		return nil, err
 	}
-	var ksHash [32]byte
-	copy(ksHash[:], ksHashBuf)
 
 	var bpVerifier *BatchPosterVerifier
 	if seqInboxCaller != nil {
@@ -139,7 +137,9 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 	}, nil
 }
 
-func (d *SignAfterStoreDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (d *SignAfterStoreDAS) Store(
+	ctx context.Context, message []byte, timeout uint64, sig []byte,
+) (c *arbstate.DataAvailabilityCertificate, err error) {
 	log.Trace("das.SignAfterStoreDAS.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", d)
 	if d.bpVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
@@ -155,11 +155,12 @@ func (d *SignAfterStoreDAS) Store(ctx context.Context, message []byte, timeout u
 		}
 	}
 
-	c = &arbstate.DataAvailabilityCertificate{}
-	copy(c.DataHash[:], crypto.Keccak256(message))
-
-	c.Timeout = timeout
-	c.SignersMask = 1 // The aggregator will override this if we're part of a committee.
+	c = &arbstate.DataAvailabilityCertificate{
+		Timeout:     timeout,
+		DataHash:    dastree.Hash(message),
+		Version:     1,
+		SignersMask: 1, // The aggregator will override this if we're part of a committee.
+	}
 
 	fields := c.SerializeSignableFields()
 	c.Sig, err = blsSignatures.SignMessage(*d.privKey, fields)
@@ -181,7 +182,7 @@ func (d *SignAfterStoreDAS) Store(ctx context.Context, message []byte, timeout u
 	return c, nil
 }
 
-func (d *SignAfterStoreDAS) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (d *SignAfterStoreDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	return d.storageService.GetByHash(ctx, hash)
 }
 

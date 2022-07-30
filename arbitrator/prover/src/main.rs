@@ -4,6 +4,7 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
+    console::Color,
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
     utils::{Bytes32, CBytes},
     wavm::Opcode,
@@ -189,7 +190,7 @@ fn main() -> Result<()> {
     )?;
     if let Some(output_path) = opts.generate_binaries {
         let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
-        writeln!(module_root_file, "{}", mach.get_modules_root())?;
+        writeln!(module_root_file, "0x{}", mach.get_modules_root())?;
         module_root_file.flush()?;
 
         mach.serialize_binary(output_path.join("machine.wavm.br"))?;
@@ -350,10 +351,7 @@ fn main() -> Result<()> {
     println!("End machine backtrace:");
     for (module, func, pc) in mach.get_backtrace() {
         let func = rustc_demangle::demangle(&func);
-        println!(
-            "  {} \x1b[32m{}\x1b[0m @ \x1b[36m{}\x1b[0m",
-            module, func, pc
-        );
+        println!("  {} {} @ {}", module, Color::mint(func), Color::blue(pc));
     }
 
     if let Some(out) = opts.output {

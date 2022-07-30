@@ -4,6 +4,19 @@
 
 pragma solidity ^0.8.4;
 
+import {
+    AlreadyInit,
+    NotOrigin,
+    DataTooLarge,
+    AlreadyPaused,
+    AlreadyUnpaused,
+    Paused,
+    InsufficientValue,
+    InsufficientSubmissionCost,
+    NotAllowedOrigin,
+    RetryableData,
+    NotRollupOrOwner
+} from "../libraries/Error.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
 import "./IBridge.sol";
@@ -61,6 +74,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /// this modifier is not intended to use to be used for security (since this opens the allowList to
     /// a smart contract phishing risk).
     modifier onlyAllowed() {
+        // solhint-disable-next-line avoid-tx-origin
         if (allowListEnabled && !isAllowed[tx.origin]) revert NotAllowedOrigin(tx.origin);
         _;
     }
@@ -243,14 +257,15 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
      * @dev This formula may change in the future, to future proof your code query this method instead of inlining!!
      * @param dataLength The length of the retryable's calldata, in bytes
-     * @param baseFee The block basefee when the retryable is included in the chain
+     * @param baseFee The block basefee when the retryable is included in the chain, if 0 current block.basefee will be used
      */
     function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
         public
-        pure
+        view
         returns (uint256)
     {
-        return (1400 + 6 * dataLength) * baseFee;
+        // Use current block basefee if baseFee parameter is 0
+        return (1400 + 6 * dataLength) * (baseFee == 0 ? block.basefee : baseFee);
     }
 
     /// @notice deposit eth from L1 to L2
@@ -372,7 +387,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         }
 
         return
-            unsafeCreateRetryableTicketInternal(
+            unsafeCreateRetryableTicket(
                 to,
                 l2CallValue,
                 maxSubmissionCost,
@@ -401,7 +416,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @param data ABI encoded data of L2 message
      * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
      */
-    function unsafeCreateRetryableTicketInternal(
+    function unsafeCreateRetryableTicket(
         address to,
         uint256 l2CallValue,
         uint256 maxSubmissionCost,
@@ -410,7 +425,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) internal virtual whenNotPaused onlyAllowed returns (uint256) {
+    ) public payable virtual override whenNotPaused onlyAllowed returns (uint256) {
         // gas price and limit of 1 should never be a valid input, so instead they are used as
         // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
         if (gasLimit == 1 || maxFeePerGas == 1)
@@ -448,19 +463,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     data
                 )
             );
-    }
-
-    function unsafeCreateRetryableTicket(
-        address,
-        uint256,
-        uint256,
-        address,
-        address,
-        uint256,
-        uint256,
-        bytes calldata
-    ) public payable override returns (uint256) {
-        revert("UNSAFE_RETRYABLES_TEMPORARILY_DISABLED");
     }
 
     function _deliverMessage(

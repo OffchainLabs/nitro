@@ -12,10 +12,27 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/util/pretty"
+)
+
+var (
+	restGetByHashRequestGauge       = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/requests", nil)
+	restGetByHashSuccessGauge       = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/success", nil)
+	restGetByHashFailureGauge       = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/failure", nil)
+	restGetByHashReturnedBytesGauge = metrics.NewRegisteredGauge("arb/das/rest/getbyhash/bytes", nil)
+
+	// This histogram is set with the default parameters of go-ethereum/metrics/Timer.
+	// If requests are infrequent, then the reservoir size parameter can be adjusted
+	// downwards to make a smaller window of samples that are included. The alpha parameter
+	// can be adjusted to downweight the importance of older samples.
+	restGetByHashDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rest/getbyhash/duration", nil, metrics.NewExpDecaySample(1028, 0.015))
 )
 
 type RestfulDasServer struct {
@@ -25,15 +42,15 @@ type RestfulDasServer struct {
 	httpServerError      error
 }
 
-func NewRestfulDasServer(address string, port uint64, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
+func NewRestfulDasServer(address string, port uint64, restServerTimeouts genericconf.HTTPServerTimeoutConfig, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", address, port))
 	if err != nil {
 		return nil, err
 	}
-	return NewRestfulDasServerOnListener(listener, storageService)
+	return NewRestfulDasServerOnListener(listener, restServerTimeouts, storageService)
 }
 
-func NewRestfulDasServerOnListener(listener net.Listener, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
+func NewRestfulDasServerOnListener(listener net.Listener, restServerTimeouts genericconf.HTTPServerTimeoutConfig, storageService arbstate.DataAvailabilityReader) (*RestfulDasServer, error) {
 
 	ret := &RestfulDasServer{
 		storage:              storageService,
@@ -41,7 +58,11 @@ func NewRestfulDasServerOnListener(listener net.Listener, storageService arbstat
 	}
 
 	ret.server = &http.Server{
-		Handler: ret,
+		Handler:           ret,
+		ReadTimeout:       restServerTimeouts.ReadTimeout,
+		ReadHeaderTimeout: restServerTimeouts.ReadHeaderTimeout,
+		WriteTimeout:      restServerTimeouts.WriteTimeout,
+		IdleTimeout:       restServerTimeouts.IdleTimeout,
 	}
 
 	go func() {
@@ -119,6 +140,17 @@ func (rds *RestfulDasServer) ExpirationPolicyHandler(w http.ResponseWriter, r *h
 
 func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
 	log.Debug("Got request", "requestPath", requestPath)
+	restGetByHashRequestGauge.Inc(1)
+	start := time.Now()
+	success := false
+	defer func() {
+		if success {
+			restGetByHashSuccessGauge.Inc(1)
+		} else {
+			restGetByHashFailureGauge.Inc(1)
+		}
+		restGetByHashDurationHistogram.Update(time.Since(start).Nanoseconds())
+	}()
 
 	hashBytes, err := DecodeStorageServiceKey(strings.TrimPrefix(requestPath, "/get-by-hash/"))
 	if err != nil {
@@ -132,7 +164,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	responseData, err := rds.storage.GetByHash(r.Context(), hashBytes[:32])
+	responseData, err := rds.storage.GetByHash(r.Context(), common.BytesToHash(hashBytes[:32]))
 	if err != nil {
 		log.Warn("Unable to find data", "path", requestPath, "err", err)
 		w.WriteHeader(http.StatusNotFound)
@@ -144,6 +176,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 	base64.StdEncoding.Encode(encodedResponseData, responseData)
 	var response RestfulDasServerResponse
 	response.Data = string(encodedResponseData)
+	restGetByHashReturnedBytesGauge.Inc(int64(len(response.Data)))
 
 	err = json.NewEncoder(w).Encode(response)
 	if err != nil {
@@ -152,6 +185,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	w.Header()[cacheControlKey] = []string{cacheControlValue}
+	success = true
 }
 
 func (rds *RestfulDasServer) GetServerExitedChan() <-chan interface{} { // channel will close when server terminates

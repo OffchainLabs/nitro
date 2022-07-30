@@ -4,10 +4,11 @@
 package l1pricing
 
 import (
-	am "github.com/offchainlabs/nitro/util/arbmath"
 	"math"
 	"math/big"
 	"testing"
+
+	am "github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestTxFixedCost(t *testing.T) {
-	maxChainId := new(big.Int).SetUint64(math.MaxUint64)
+	maxChainId := am.UintToBig(math.MaxUint64)
 	maxValue := big.NewInt(1_000_000)
 	maxValue.Mul(maxValue, big.NewInt(params.Ether))
 	var address common.Address
@@ -45,14 +46,14 @@ func TestTxFixedCost(t *testing.T) {
 	largeTxEncoded, err := largeTx.MarshalBinary()
 	Require(t, err)
 
-	if len(largeTxEncoded) > TxFixedCost {
-		Fail(t, "large tx is", len(largeTxEncoded), "bytes but tx fixed cost is", TxFixedCost)
+	if len(largeTxEncoded) > TxFixedCostEstimate {
+		Fail(t, "large tx is", len(largeTxEncoded), "bytes but tx fixed cost is", TxFixedCostEstimate)
 	}
 }
 
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
-	err := InitializeL1PricingState(sto)
+	err := InitializeL1PricingState(sto, common.Address{})
 	Require(t, err)
 	ps := OpenL1PricingState(sto)
 

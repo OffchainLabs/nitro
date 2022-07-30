@@ -10,8 +10,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
@@ -29,6 +31,9 @@ func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.Bl
 	if err != nil {
 		return false, err
 	}
+	if !a.blockchain.Config().IsArbitrumNitro(header.Number) {
+		return false, types.ErrUseFallback
+	}
 	var moduleRoot common.Hash
 	if moduleRootOptional != nil {
 		moduleRoot = *moduleRootOptional
@@ -42,9 +47,9 @@ func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.Bl
 	return a.val.ValidateBlock(ctx, header, moduleRoot)
 }
 
-func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (uint64, error) {
+func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (hexutil.Uint64, error) {
 	block := a.val.LastBlockValidated()
-	return block, nil
+	return hexutil.Uint64(block), nil
 }
 
 func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (common.Hash, error) {
@@ -53,40 +58,60 @@ func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (commo
 }
 
 type ArbDebugAPI struct {
-	blockchain *core.BlockChain
+	blockchain        *core.BlockChain
+	blockRangeBound   uint64
+	timeoutQueueBound uint64
 }
 
 type PricingModelHistory struct {
-	First                    uint64     `json:"first"`
-	Timestamp                []uint64   `json:"timestamp"`
-	BaseFee                  []*big.Int `json:"baseFee"`
-	GasBacklog               []uint64   `json:"gasBacklog"`
-	GasUsed                  []uint64   `json:"gasUsed"`
-	L1BaseFeeEstimate        []*big.Int `json:"l1BaseFeeEstimate"`
-	MinBaseFee               *big.Int   `json:"minBaseFee"`
-	SpeedLimit               uint64     `json:"speedLimit"`
-	MaxPerBlockGasLimit      uint64     `json:"maxPerBlockGasLimit"`
-	L1BaseFeeEstimateInertia uint64     `json:"l1BaseFeeEstimateInertia"`
-	PricingInertia           uint64     `json:"pricingInertia"`
-	BacklogTolerance         uint64     `json:"backlogTolerance"`
+	First            uint64     `json:"first"`
+	Timestamp        []uint64   `json:"timestamp"`
+	BaseFee          []*big.Int `json:"baseFee"`
+	GasBacklog       []uint64   `json:"gasBacklog"`
+	GasUsed          []uint64   `json:"gasUsed"`
+	MinBaseFee       *big.Int   `json:"minBaseFee"`
+	SpeedLimit       uint64     `json:"speedLimit"`
+	PerBlockGasLimit uint64     `json:"perBlockGasLimit"`
+	PricingInertia   uint64     `json:"pricingInertia"`
+	BacklogTolerance uint64     `json:"backlogTolerance"`
+
+	L1BaseFeeEstimate    []*big.Int `json:"l1BaseFeeEstimate"`
+	L1LastSurplus        []*big.Int `json:"l1LastSurplus"`
+	L1FundsDue           []*big.Int `json:"l1FundsDue"`
+	L1FundsDueForRewards []*big.Int `json:"l1FundsDueForRewards"`
+	L1UnitsSinceUpdate   []uint64   `json:"l1UnitsSinceUpdate"`
+	L1LastUpdateTime     []uint64   `json:"l1LastUpdateTime"`
+	L1EquilibrationUnits *big.Int   `json:"l1EquilibrationUnits"`
+	L1PricingInertia     uint64     `json:"l1PricingInertia"`
+	L1PerUnitReward      uint64     `json:"l1PerUnitReward"`
+	L1PayRewardTo        string     `json:"l1PayRewardTo"`
 }
 
 func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNumber) (PricingModelHistory, error) {
 	start, _ = api.blockchain.ClipToPostNitroGenesis(start)
 	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
-	blocks := end.Int64() - start.Int64()
+	blocks := end.Int64() - start.Int64() + 1
+	if blocks > int64(api.blockRangeBound) {
+		log.Warn("Sanitizing pricing model # of blocks", "requested", blocks, "truncated", api.blockRangeBound)
+		blocks = int64(api.blockRangeBound)
+	}
 	if blocks <= 0 {
 		return PricingModelHistory{}, fmt.Errorf("invalid block range: %v to %v", start.Int64(), end.Int64())
 	}
 
 	history := PricingModelHistory{
-		First:             uint64(start),
-		Timestamp:         make([]uint64, blocks),
-		BaseFee:           make([]*big.Int, blocks),
-		GasBacklog:        make([]uint64, blocks),
-		GasUsed:           make([]uint64, blocks),
-		L1BaseFeeEstimate: make([]*big.Int, blocks),
+		First:                uint64(start),
+		Timestamp:            make([]uint64, blocks),
+		BaseFee:              make([]*big.Int, blocks),
+		GasBacklog:           make([]uint64, blocks),
+		GasUsed:              make([]uint64, blocks),
+		L1BaseFeeEstimate:    make([]*big.Int, blocks),
+		L1LastSurplus:        make([]*big.Int, blocks),
+		L1FundsDue:           make([]*big.Int, blocks),
+		L1FundsDueForRewards: make([]*big.Int, blocks),
+		L1UnitsSinceUpdate:   make([]uint64, blocks),
+		L1LastUpdateTime:     make([]uint64, blocks),
 	}
 
 	for i := uint64(0); i < uint64(blocks); i++ {
@@ -102,27 +127,47 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 
 		gasBacklog, _ := l2Pricing.GasBacklog()
 		l1BaseFeeEstimate, _ := l1Pricing.PricePerUnit()
+		l1FundsDue, _ := l1Pricing.BatchPosterTable().TotalFundsDue()
+		l1FundsDueForRewards, _ := l1Pricing.FundsDueForRewards()
+		l1UnitsSinceUpdate, _ := l1Pricing.UnitsSinceUpdate()
+		l1LastUpdateTime, _ := l1Pricing.LastUpdateTime()
+		l1LastSurplus, _ := l1Pricing.LastSurplus()
 
 		history.GasBacklog[i] = gasBacklog
 		history.GasUsed[i] = header.GasUsed
+
 		history.L1BaseFeeEstimate[i] = l1BaseFeeEstimate
+		history.L1FundsDue[i] = l1FundsDue
+		history.L1FundsDueForRewards[i] = l1FundsDueForRewards
+		history.L1UnitsSinceUpdate[i] = l1UnitsSinceUpdate
+		history.L1LastUpdateTime[i] = l1LastUpdateTime
+		history.L1LastSurplus[i] = l1LastSurplus
 
 		if i == uint64(blocks)-1 {
 			speedLimit, _ := l2Pricing.SpeedLimitPerSecond()
-			maxPerBlockGasLimit, _ := l2Pricing.PerBlockGasLimit()
-			l1BaseFeeEstimateInertia, err := l1Pricing.Inertia()
+			perBlockGasLimit, _ := l2Pricing.PerBlockGasLimit()
 			minBaseFee, _ := l2Pricing.MinBaseFeeWei()
 			pricingInertia, _ := l2Pricing.PricingInertia()
 			backlogTolerance, _ := l2Pricing.BacklogTolerance()
+
+			l1PricingInertia, _ := l1Pricing.Inertia()
+			l1EquilibrationUnits, _ := l1Pricing.EquilibrationUnits()
+			l1PerUnitReward, _ := l1Pricing.PerUnitReward()
+			l1PayRewardsTo, err := l1Pricing.PayRewardsTo()
+
 			if err != nil {
 				return history, err
 			}
 			history.MinBaseFee = minBaseFee
 			history.SpeedLimit = speedLimit
-			history.MaxPerBlockGasLimit = maxPerBlockGasLimit
-			history.L1BaseFeeEstimateInertia = l1BaseFeeEstimateInertia
+			history.PerBlockGasLimit = perBlockGasLimit
 			history.PricingInertia = pricingInertia
 			history.BacklogTolerance = backlogTolerance
+
+			history.L1PricingInertia = l1PricingInertia
+			history.L1EquilibrationUnits = l1EquilibrationUnits
+			history.L1PerUnitReward = l1PerUnitReward
+			history.L1PayRewardTo = l1PayRewardsTo.Hex()
 		}
 	}
 
@@ -133,7 +178,11 @@ func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.
 	start, _ = api.blockchain.ClipToPostNitroGenesis(start)
 	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
-	blocks := end.Int64() - start.Int64()
+	blocks := end.Int64() - start.Int64() + 1
+	if blocks > int64(api.blockRangeBound) {
+		log.Warn("Sanitizing timeout history # of blocks", "requested", blocks, "truncated", api.blockRangeBound)
+		blocks = int64(api.blockRangeBound)
+	}
 	if blocks <= 0 {
 		return []uint64{}, fmt.Errorf("invalid block range: %v to %v", start.Int64(), end.Int64())
 	}
@@ -176,31 +225,31 @@ func (api *ArbDebugAPI) TimeoutQueue(ctx context.Context, blockNum rpc.BlockNumb
 		return queue, err
 	}
 
-	closure := func(index uint64, ticket common.Hash) error {
+	closure := func(index uint64, ticket common.Hash) (bool, error) {
 
 		// we don't care if the retryable has expired
 		retryable, err := state.RetryableState().OpenRetryable(ticket, 0)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if retryable == nil {
 			queue.Tickets = append(queue.Tickets, ticket)
 			queue.Timeouts = append(queue.Timeouts, 0)
-			return nil
+			return false, nil
 		}
 		timeout, err := retryable.CalculateTimeout()
 		if err != nil {
-			return err
+			return false, err
 		}
 		windows, err := retryable.TimeoutWindowsLeft()
 		if err != nil {
-			return err
+			return false, err
 		}
 		timeout -= windows * retryables.RetryableLifetimeSeconds
 
 		queue.Tickets = append(queue.Tickets, ticket)
 		queue.Timeouts = append(queue.Timeouts, timeout)
-		return nil
+		return index == api.timeoutQueueBound, nil
 	}
 
 	err = state.RetryableState().TimeoutQueue.ForEach(closure)
@@ -209,6 +258,9 @@ func (api *ArbDebugAPI) TimeoutQueue(ctx context.Context, blockNum rpc.BlockNumb
 
 func stateAndHeader(blockchain *core.BlockChain, block uint64) (*arbosState.ArbosState, *types.Header, error) {
 	header := blockchain.GetHeaderByNumber(block)
+	if !blockchain.Config().IsArbitrumNitro(header.Number) {
+		return nil, nil, types.ErrUseFallback
+	}
 	statedb, err := blockchain.StateAt(header.Root)
 	if err != nil {
 		return nil, nil, err

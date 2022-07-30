@@ -2,29 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.4;
-
-import {AlreadyInit, NotRollup} from "../libraries/Error.sol";
-
-/// @dev The provided proof was too long
-/// @param proofLength The length of the too-long proof
-error ProofTooLong(uint256 proofLength);
-
-/// @dev The output index was greater than the maximum
-/// @param index The output index
-/// @param maxIndex The max the index could be
-error PathNotMinimal(uint256 index, uint256 maxIndex);
-
-/// @dev The calculated root does not exist
-/// @param root The calculated root
-error UnknownRoot(bytes32 root);
-
-/// @dev The record has already been spent
-/// @param index The index of the spent record
-error AlreadySpent(uint256 index);
-
-/// @dev A call to the bridge failed with no return data
-error BridgeCallFailed();
+// solhint-disable-next-line compiler-version
+pragma solidity >=0.6.9 <0.9.0;
 
 interface IOutbox {
     event SendRootUpdated(bytes32 indexed blockHash, bytes32 indexed outputRoot);
@@ -49,4 +28,45 @@ interface IOutbox {
     function l2ToL1OutputId() external view returns (bytes32);
 
     function updateSendRoot(bytes32 sendRoot, bytes32 l2BlockHash) external;
+
+    function executeTransaction(
+        bytes32[] calldata proof,
+        uint256 index,
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) external;
+
+    function executeTransactionSimulation(
+        uint256 index,
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) external;
+
+    function isSpent(uint256) external view returns (bool);
+
+    function calculateItemHash(
+        address l2Sender,
+        address to,
+        uint256 l2Block,
+        uint256 l1Block,
+        uint256 l2Timestamp,
+        uint256 value,
+        bytes calldata data
+    ) external pure returns (bytes32);
+
+    function calculateMerkleRoot(
+        bytes32[] memory proof,
+        uint256 path,
+        bytes32 item
+    ) external pure returns (bytes32);
 }

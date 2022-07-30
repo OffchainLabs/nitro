@@ -4,7 +4,6 @@
 package das
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,9 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
@@ -28,6 +28,7 @@ type RestfulClientAggregatorConfig struct {
 	Enable                             bool                               `koanf:"enable"`
 	Urls                               []string                           `koanf:"urls"`
 	OnlineUrlList                      string                             `koanf:"online-url-list"`
+	OnlineUrlListFetchInterval         time.Duration                      `koanf:"online-url-list-fetch-interval"`
 	Strategy                           string                             `koanf:"strategy"`
 	StrategyUpdateInterval             time.Duration                      `koanf:"strategy-update-interval"`
 	WaitBeforeTryNext                  time.Duration                      `koanf:"wait-before-try-next"`
@@ -39,6 +40,7 @@ type RestfulClientAggregatorConfig struct {
 var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
 	Urls:                               []string{},
 	OnlineUrlList:                      "",
+	OnlineUrlListFetchInterval:         1 * time.Hour,
 	Strategy:                           "simple-explore-exploit",
 	StrategyUpdateInterval:             10 * time.Second,
 	WaitBeforeTryNext:                  2 * time.Second,
@@ -61,6 +63,7 @@ func RestfulClientAggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultRestfulClientAggregatorConfig.Enable, "enable retrieval of sequencer batch data from a list of remote REST endpoints; if other DAS storage types are enabled, this mode is used as a fallback")
 	f.StringSlice(prefix+".urls", DefaultRestfulClientAggregatorConfig.Urls, "list of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints; additive with the online-url-list option")
 	f.String(prefix+".online-url-list", DefaultRestfulClientAggregatorConfig.OnlineUrlList, "a URL to a list of URLs of REST das endpoints that is checked at startup; additive with the url option")
+	f.Duration(prefix+".online-url-list-fetch-interval", DefaultRestfulClientAggregatorConfig.OnlineUrlListFetchInterval, "time interval to periodically fetch url list from online-url-list")
 	f.String(prefix+".strategy", DefaultRestfulClientAggregatorConfig.Strategy, "strategy to use to determine order and parallelism of calling REST endpoint URLs; valid options are 'simple-explore-exploit'")
 	f.Duration(prefix+".strategy-update-interval", DefaultRestfulClientAggregatorConfig.StrategyUpdateInterval, "how frequently to update the strategy with endpoint latency and error rate data")
 	f.Duration(prefix+".wait-before-try-next", DefaultRestfulClientAggregatorConfig.WaitBeforeTryNext, "time to wait until trying the next set of REST endpoints while waiting for a response; the next set of REST endpoints is determined by the strategy selected")
@@ -165,6 +168,7 @@ type SimpleDASReaderAggregator struct {
 
 	config *RestfulClientAggregatorConfig
 
+	readersMutex sync.RWMutex
 	// readers and stats are only to be updated by the stats goroutine
 	readers []arbstate.DataAvailabilityReader
 	stats   map[arbstate.DataAvailabilityReader]readerStats
@@ -174,8 +178,10 @@ type SimpleDASReaderAggregator struct {
 	statMessages chan readerStatMessage
 }
 
-func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
-	log.Trace("das.SimpleDASReaderAggregator.GetByHash", "key", pretty.FirstFewBytes(hash), "this", a)
+func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	a.readersMutex.RLock()
+	defer a.readersMutex.RUnlock()
+	log.Trace("das.SimpleDASReaderAggregator.GetByHash", "key", pretty.PrettyHash(hash), "this", a)
 
 	type dataErrorPair struct {
 		data []byte
@@ -236,14 +242,16 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash []byte) 
 	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS Reader: %v", errorCollection)
 }
 
-func (a *SimpleDASReaderAggregator) tryGetByHash(ctx context.Context, hash []byte, reader arbstate.DataAvailabilityReader) ([]byte, error) {
+func (a *SimpleDASReaderAggregator) tryGetByHash(
+	ctx context.Context, hash common.Hash, reader arbstate.DataAvailabilityReader,
+) ([]byte, error) {
 	stat := readerStatMessage{reader: reader}
 	stat.success = false
 
 	start := time.Now()
 	result, err := reader.GetByHash(ctx, hash)
 	if err == nil {
-		if bytes.Equal(crypto.Keccak256(result), hash) {
+		if dastree.ValidHash(hash, result) {
 			stat.success = true
 		} else {
 			err = fmt.Errorf("SimpleDASReaderAggregator got result from reader(%v) not matching hash", reader)
@@ -263,6 +271,38 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(ctx context.Context, hash []byt
 
 func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 	a.StopWaiter.Start(ctx)
+	onlineUrlsChan := StartRestfulServerListFetchDaemon(a.StopWaiter.GetContext(), a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
+
+	updateRestfulDasClients := func(urls []string) {
+		a.readersMutex.Lock()
+		defer a.readersMutex.Unlock()
+		combinedUrls := a.config.Urls
+		combinedUrls = append(combinedUrls, urls...)
+		combinedReaders := make(map[arbstate.DataAvailabilityReader]bool)
+		for _, url := range combinedUrls {
+			reader, err := NewRestfulDasClientFromURL(url)
+			if err != nil {
+				return
+			}
+			combinedReaders[reader] = true
+		}
+		a.readers = make([]arbstate.DataAvailabilityReader, 0, len(combinedUrls))
+		// Update reader and add newly added stats
+		for reader := range combinedReaders {
+			a.readers = append(a.readers, reader)
+			if _, ok := a.stats[reader]; ok {
+				continue
+			}
+			a.stats[reader] = make([]readerStat, 0, a.config.MaxPerEndpointStats)
+		}
+		// Delete stats for removed reader
+		for reader := range a.stats {
+			if combinedReaders[reader] {
+				continue
+			}
+			delete(a.stats, reader)
+		}
+	}
 
 	a.StopWaiter.LaunchThread(func(innerCtx context.Context) {
 		updateStrategyTicker := time.NewTicker(a.config.StrategyUpdateInterval)
@@ -281,6 +321,8 @@ func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
 				// Strategy update happens in same goroutine as updates to the stats
 				// to avoid needing extra synchronization.
 				a.strategy.update(a.readers, a.stats)
+			case onlineUrls := <-onlineUrlsChan:
+				updateRestfulDasClients(onlineUrls)
 			}
 		}
 	})
@@ -309,6 +351,8 @@ func (a *SimpleDASReaderAggregator) HealthCheck(ctx context.Context) error {
 }
 
 func (a *SimpleDASReaderAggregator) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+	a.readersMutex.RLock()
+	defer a.readersMutex.RUnlock()
 	if len(a.readers) == 0 {
 		return -1, errors.New("no DataAvailabilityService present")
 	}

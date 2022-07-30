@@ -4,14 +4,14 @@
 package das
 
 import (
-	"bytes"
 	"context"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
@@ -47,13 +47,11 @@ func NewFallbackStorageService(
 	}
 }
 
-func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]byte, error) {
-	log.Trace("das.FallbackStorageService.GetByHash", "key", pretty.FirstFewBytes(key), "this", f)
-	var key32 [32]byte
+func (f *FallbackStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
+	log.Trace("das.FallbackStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", f)
 	if f.preventRecursiveGets {
 		f.currentlyFetchingMutex.RLock()
-		copy(key32[:], key)
-		if f.currentlyFetching[key32] {
+		if f.currentlyFetching[key] {
 			// This is a recursive call, so return not-found
 			f.currentlyFetchingMutex.RUnlock()
 			return nil, ErrNotFound
@@ -66,8 +64,8 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]b
 		doDelete := false
 		if f.preventRecursiveGets {
 			f.currentlyFetchingMutex.Lock()
-			if !f.currentlyFetching[key32] {
-				f.currentlyFetching[key32] = true
+			if !f.currentlyFetching[key] {
+				f.currentlyFetching[key] = true
 				doDelete = true
 			}
 			f.currentlyFetchingMutex.Unlock()
@@ -76,14 +74,16 @@ func (f *FallbackStorageService) GetByHash(ctx context.Context, key []byte) ([]b
 		data, err = f.backup.GetByHash(ctx, key)
 		if doDelete {
 			f.currentlyFetchingMutex.Lock()
-			delete(f.currentlyFetching, key32)
+			delete(f.currentlyFetching, key)
 			f.currentlyFetchingMutex.Unlock()
 		}
 		if err != nil {
 			return nil, err
 		}
-		if bytes.Equal(key, crypto.Keccak256(data)) {
-			putErr := f.StorageService.Put(ctx, data, arbmath.SaturatingUAdd(uint64(time.Now().Unix()), f.backupRetentionSeconds))
+		if dastree.ValidHash(key, data) {
+			putErr := f.StorageService.Put(
+				ctx, data, arbmath.SaturatingUAdd(uint64(time.Now().Unix()), f.backupRetentionSeconds),
+			)
 			if putErr != nil && !f.ignoreRetentionWriteErrors {
 				return nil, err
 			}

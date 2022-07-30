@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -181,7 +182,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher
 	}
 	switch msg.Header.Kind {
 	case L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.RequestId, chainId, 0)
+		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.Timestamp, msg.Header.RequestId, chainId, 0)
 	case L1MessageType_Initialize:
 		return nil, errors.New("ParseL2Transactions encounted initialize message (should've been handled explicitly at genesis)")
 	case L1MessageType_EndOfBlock:
@@ -259,12 +260,23 @@ const (
 	L2MessageKind_Batch           = 3
 	L2MessageKind_SignedTx        = 4
 	// 5 is reserved
-	L2MessageKind_Heartbeat          = 6
+	L2MessageKind_Heartbeat          = 6 // deprecated
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
 )
 
-func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
+// Warning: this does not validate the day of the week or if DST is being observed
+func parseTimeOrPanic(format string, value string) time.Time {
+	t, err := time.Parse(format, value)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+var HeartbeatsDisabledAt = uint64(parseTimeOrPanic(time.RFC1123, "Mon, 08 Aug 2022 16:00:00 GMT").Unix())
+
+func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, requestId *common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, err
@@ -304,7 +316,7 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash,
 				subRequestId := crypto.Keccak256Hash(requestId[:], math.U256Bytes(index))
 				nextRequestId = &subRequestId
 			}
-			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, nextRequestId, chainId, depth+1)
+			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -323,6 +335,9 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash,
 		}
 		return types.Transactions{newTx}, nil
 	case L2MessageKind_Heartbeat:
+		if timestamp >= HeartbeatsDisabledAt {
+			return nil, errors.New("heartbeat messages have been disabled")
+		}
 		// do nothing
 		return nil, nil
 	case L2MessageKind_SignedCompressedTx:
@@ -334,10 +349,15 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash,
 }
 
 func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash, chainId *big.Int, txKind byte) (*types.Transaction, error) {
-	gasLimit, err := util.HashFromReader(rd)
+	gasLimitHash, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
+	gasLimitBig := gasLimitHash.Big()
+	if !gasLimitBig.IsUint64() {
+		return nil, errors.New("unsigned user tx gas limit >= 2^64")
+	}
+	gasLimit := gasLimitBig.Uint64()
 
 	maxFeePerGas, err := util.HashFromReader(rd)
 	if err != nil {
@@ -385,7 +405,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 			From:      poster,
 			Nonce:     nonce,
 			GasFeeCap: maxFeePerGas.Big(),
-			Gas:       gasLimit.Big().Uint64(),
+			Gas:       gasLimit,
 			To:        destination,
 			Value:     value.Big(),
 			Data:      calldata,
@@ -399,7 +419,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId *common.Hash
 			RequestId: *requestId,
 			From:      poster,
 			GasFeeCap: maxFeePerGas.Big(),
-			Gas:       gasLimit.Big().Uint64(),
+			Gas:       gasLimit,
 			To:        destination,
 			Value:     value.Big(),
 			Data:      calldata,
@@ -504,7 +524,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		GasFeeCap:        maxFeePerGas.Big(),
 		Gas:              gasLimitBig.Uint64(),
 		RetryTo:          pRetryTo,
-		Value:            callvalue.Big(),
+		RetryValue:       callvalue.Big(),
 		Beneficiary:      callvalueRefundAddress,
 		MaxSubmissionFee: maxSubmissionFee.Big(),
 		FeeRefundAddr:    feeRefundAddress,

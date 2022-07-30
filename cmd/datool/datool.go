@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
@@ -116,13 +117,8 @@ func startClientStore(args []string) error {
 	}
 
 	serializedCert := das.Serialize(cert)
-	encodedCert := make([]byte, base64.StdEncoding.EncodedLen(len(serializedCert)))
-	base64.StdEncoding.Encode(encodedCert, serializedCert)
-	fmt.Printf("Base64 Encoded Cert: %s\n", string(encodedCert))
-
-	encodedDataHash := make([]byte, base64.StdEncoding.EncodedLen(len(cert.DataHash)))
-	base64.StdEncoding.Encode(encodedDataHash, cert.DataHash[:])
-	fmt.Printf("Base64 Encoded Data Hash: %s\n", string(encodedDataHash))
+	fmt.Printf("Hex Encoded Cert: %s\n", string(hexutil.Encode(serializedCert)))
+	fmt.Printf("Hex Encoded Data Hash: %s\n", string(hexutil.Encode(cert.DataHash[:])))
 
 	return nil
 }
@@ -179,7 +175,7 @@ func startRPCClientGetByHash(args []string) error {
 	}
 
 	ctx := context.Background()
-	message, err := client.GetByHash(ctx, decodedHash)
+	message, err := client.GetByHash(ctx, common.BytesToHash(decodedHash))
 	if err != nil {
 		return err
 	}
@@ -240,7 +236,7 @@ func startRESTClientGetByHash(args []string) error {
 	}
 
 	ctx := context.Background()
-	message, err := client.GetByHash(ctx, decodedHash)
+	message, err := client.GetByHash(ctx, common.BytesToHash(decodedHash))
 	if err != nil {
 		return err
 	}

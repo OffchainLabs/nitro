@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbnode"
 )
 
 func testTwoNodesSimple(t *testing.T, dasModeStr string) {
@@ -20,16 +19,14 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 
 	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
-	defer l1stack.Close()
+	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stackA)
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
-	l1NodeConfigB.BatchPoster.Enable = false
-	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigB.DataAvailability = l1NodeConfigA.DataAvailability
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	l2clientB, _, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability)
+	defer requireClose(t, l2stackB)
 
 	l2info.GenerateAccount("User2")
 
@@ -60,9 +57,6 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
-
-	nodeA.StopAndWait()
-	nodeB.StopAndWait()
 }
 
 func TestTwoNodesSimple(t *testing.T) {

@@ -38,13 +38,14 @@ func TestSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
-
+	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	defer requireClose(t, l2stackA)
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	_, _, client2, l2stackB := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	defer requireClose(t, l2stackB)
 
 	l2info1.GenerateAccount("User2")
 
@@ -63,8 +64,6 @@ func TestSequencerFeed(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
-	nodeA.StopAndWait()
-	nodeB.StopAndWait()
 }
 
 func TestRelayedSequencerFeed(t *testing.T) {
@@ -74,7 +73,8 @@ func TestRelayedSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	defer requireClose(t, l2stackA)
 
 	relayServerConf := *newBroadcasterConfigTest("0")
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -83,11 +83,13 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	relay := relay.NewRelay(relayServerConf, relayClientConf)
 	err := relay.Start(ctx)
 	Require(t, err)
+	defer relay.StopAndWait()
 
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port = relay.GetListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
-	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	_, _, client3, l2stackC := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	defer requireClose(t, l2stackC)
 
 	l2info1.GenerateAccount("User2")
 
@@ -106,10 +108,6 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
-
-	nodeA.StopAndWait()
-	relay.StopAndWait()
-	nodeC.StopAndWait()
 }
 
 func testLyingSequencer(t *testing.T, dasModeStr string) {
@@ -121,8 +119,9 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	chainConfig, nodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
-	defer l1stack.Close()
+	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stackA)
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
@@ -131,17 +130,18 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest("0")
-	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
+	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
+	defer requireClose(t, l2stackC)
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
 	// The client node, connects to lying sequencer's feed
-	nodeConfigB := arbnode.ConfigDefaultL1Test()
+	nodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	nodeConfigB.Feed.Output.Enable = false
-	nodeConfigB.BatchPoster.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
+	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
+	defer requireClose(t, l2stackB)
 
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")
@@ -204,10 +204,6 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balanceRealAcct)
 	}
-
-	nodeA.StopAndWait()
-	nodeB.StopAndWait()
-	nodeC.StopAndWait()
 }
 
 func TestLyingSequencer(t *testing.T) {

@@ -12,7 +12,7 @@ pragma solidity >=0.4.21 <0.9.0;
 interface NodeInterface {
     /**
      * @notice Estimate the cost of putting a message in the L2 inbox that is reexecuted.
-     * Use eth_estimateGas to call.
+     * @dev Use eth_estimateGas to call.
      * @param sender sender of the L1 and L2 transaction
      * @param deposit amount to deposit to sender in L2
      * @param to destination L2 contract address
@@ -33,7 +33,7 @@ interface NodeInterface {
 
     /**
      * @notice Constructs an outbox proof of an l2->l1 send's existence in the outbox accumulator.
-     * Use eth_call to call.
+     * @dev Use eth_call to call.
      * @param size the number of elements in the accumulator
      * @param leaf the position of the send in the accumulator
      * @return send the l2->l1 send's hash
@@ -62,14 +62,16 @@ interface NodeInterface {
      * @notice Gets the number of L1 confirmations of the sequencer batch producing the requested L2 block
      * This gets the number of L1 confirmations for the input message producing the L2 block,
      * which happens well before the L1 rollup contract confirms the L2 block.
-     * Throws if block doesnt exist in the L2 chain. Use eth_call to call.
+     * Throws if block doesnt exist in the L2 chain.
+     * @dev Use eth_call to call.
      * @param blockHash The hash of the L2 block being queried
      * @return confirmations The number of L1 confirmations the sequencer batch has. Returns 0 if block not yet included in an L1 batch.
      */
     function getL1Confirmations(bytes32 blockHash) external view returns (uint64 confirmations);
 
     /**
-     * @notice Same as native gas estimation, but with additional info on the l1 costs. Use eth_call to call.
+     * @notice Same as native gas estimation, but with additional info on the l1 costs.
+     * @dev Use eth_call to call.
      * @param data the tx's calldata. Everything else like "From" and "Gas" are copied over
      * @param to the tx's "To" (ignored when contractCreation is true)
      * @param contractCreation whether "To" is omitted
@@ -90,5 +92,34 @@ interface NodeInterface {
             uint64 gasEstimateForL1,
             uint256 baseFee,
             uint256 l1BaseFeeEstimate
+        );
+
+    /**
+     * @notice Returns the proof necessary to redeem a message
+     * @param batchNum index of outbox entry (i.e., outgoing messages Merkle root) in array of outbox entries
+     * @param index index of outgoing message in outbox entry
+     * @return proof Merkle proof of message inclusion in outbox entry
+     * @return path Merkle path to message
+     * @return l2Sender sender if original message (i.e., caller of ArbSys.sendTxToL1)
+     * @return l1Dest destination address for L1 contract call
+     * @return l2Block l2 block number at which sendTxToL1 call was made
+     * @return l1Block l1 block number at which sendTxToL1 call was made
+     * @return timestamp l2 Timestamp at which sendTxToL1 call was made
+     * @return amount value in L1 message in wei
+     * @return calldataForL1 abi-encoded L1 message data
+     */
+    function legacyLookupMessageBatchProof(uint256 batchNum, uint64 index)
+        external
+        view
+        returns (
+            bytes32[] memory proof,
+            uint256 path,
+            address l2Sender,
+            address l1Dest,
+            uint256 l2Block,
+            uint256 l1Block,
+            uint256 timestamp,
+            uint256 amount,
+            bytes memory calldataForL1
         );
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/zeroheavy"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -138,17 +139,54 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Failed to deserialize DAS message", "err", err)
 		return nil, nil
 	}
-	keysetPreimage, err := dasReader.GetByHash(ctx, cert.KeysetHash[:])
-	if err == nil && !bytes.Equal(cert.KeysetHash[:], crypto.Keccak256(keysetPreimage)) {
-		err = ErrHashMismatch
+	version := cert.Version
+	recordPreimage := func(key common.Hash, value []byte) {
+		preimages[key] = value
 	}
+
+	getByHash := func(ctx context.Context, hash common.Hash) ([]byte, error) {
+		newHash := hash
+		if version == 0 {
+			newHash = dastree.FlatHashToTreeHash(hash)
+		}
+
+		preimage, err := dasReader.GetByHash(ctx, newHash)
+		if err != nil && hash != newHash {
+			log.Debug("error fetching new style hash, trying old", "new", newHash, "old", hash, "err", err)
+			preimage, err = dasReader.GetByHash(ctx, hash)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		switch {
+		case version == 0 && crypto.Keccak256Hash(preimage) != hash:
+			fallthrough
+		case version == 1 && dastree.Hash(preimage) != hash:
+			log.Error(
+				"preimage mismatch for hash",
+				"hash", hash, "err", ErrHashMismatch, "version", version,
+			)
+			return nil, ErrHashMismatch
+		case version >= 2:
+			log.Error(
+				"Committee signed unsuported certificate format",
+				"version", version, "hash", hash, "payload", preimage,
+			)
+			panic("node software out of date")
+		}
+		return preimage, nil
+	}
+
+	keysetPreimage, err := getByHash(ctx, cert.KeysetHash)
 	if err != nil {
 		log.Error("Couldn't get keyset", "err", err)
 		return nil, err
 	}
 	if preimages != nil {
-		preimages[common.BytesToHash(cert.KeysetHash[:])] = keysetPreimage
+		dastree.RecordHash(recordPreimage, keysetPreimage)
 	}
+
 	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage))
 	if err != nil {
 		log.Error("Couldn't deserialize keyset", "err", err)
@@ -159,21 +197,28 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Bad signature on DAS batch", "err", err)
 		return nil, nil
 	}
+
 	maxTimestamp := binary.BigEndian.Uint64(sequencerMsg[8:16])
 	if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
 		log.Error("Data availability cert expires too soon", "err", "")
 		return nil, nil
 	}
-	payload, err := dasReader.GetByHash(ctx, cert.DataHash[:])
-	if err == nil && !bytes.Equal(crypto.Keccak256(payload), cert.DataHash[:]) {
-		err = ErrHashMismatch
-	}
+
+	dataHash := cert.DataHash
+	payload, err := getByHash(ctx, dataHash)
 	if err != nil {
 		log.Error("Couldn't fetch DAS batch contents", "err", err)
 		return nil, err
 	}
+
 	if preimages != nil {
-		preimages[common.BytesToHash(cert.DataHash[:])] = payload
+		if version == 0 {
+			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
+			preimages[dataHash] = payload
+			preimages[crypto.Keccak256Hash(treeLeaf)] = treeLeaf
+		} else {
+			dastree.RecordHash(recordPreimage, payload)
+		}
 	}
 
 	return payload, nil
@@ -355,7 +400,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 	if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
 
 		if kind == BatchSegmentKindL2MessageBrotli {
-			decompressed, err := arbcompress.Decompress(segment[1:], arbos.MaxL2MessageSize)
+			decompressed, err := arbcompress.Decompress(segment, arbos.MaxL2MessageSize)
 			if err != nil {
 				log.Info("dropping compressed message", "err", err, "delayedMsg", r.delayedMessagesRead)
 				return nil, nil

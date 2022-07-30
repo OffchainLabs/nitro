@@ -13,14 +13,13 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -84,7 +83,7 @@ func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services 
 	if config.L1NodeURL == "none" {
 		return NewAggregatorWithSeqInboxCaller(config.AggregatorConfig, services, nil)
 	}
-	l1client, err := ethclient.DialContext(ctx, config.L1NodeURL)
+	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 	if err != nil {
 		return nil, err
 	}
@@ -137,12 +136,10 @@ func NewAggregatorWithSeqInboxCaller(
 	if err := keyset.Serialize(ksBuf); err != nil {
 		return nil, err
 	}
-	keysetHashBuf, err := keyset.Hash()
+	keysetHash, err := keyset.Hash()
 	if err != nil {
 		return nil, err
 	}
-	var keysetHash [32]byte
-	copy(keysetHash[:], keysetHashBuf)
 	if config.DumpKeyset {
 		fmt.Printf("Keyset: %s\n", hexutil.Encode(ksBuf.Bytes()))
 		fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))
@@ -165,7 +162,7 @@ func NewAggregatorWithSeqInboxCaller(
 	}, nil
 }
 
-func (a *Aggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error) {
+func (a *Aggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	// Query all services, even those that didn't sign.
 	// They may have been late in returning a response after storing the data,
 	// or got the data by some other means.
@@ -180,7 +177,7 @@ func (a *Aggregator) GetByHash(ctx context.Context, hash []byte) ([]byte, error)
 				errorChan <- err
 				return
 			}
-			if bytes.Equal(crypto.Keccak256(blob), hash) {
+			if dastree.ValidHash(hash, blob) {
 				blobChan <- blob
 			} else {
 				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
@@ -248,7 +245,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 	responses := make(chan storeResponse, len(a.services))
 
-	expectedHash := crypto.Keccak256(message)
+	expectedHash := dastree.Hash(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
 			cert, err := d.service.Store(ctx, message, timeout, sig)
@@ -257,7 +254,9 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 				return
 			}
 
-			verified, err := blsSignatures.VerifySignature(cert.Sig, serializeSignableFields(cert), d.pubKey)
+			verified, err := blsSignatures.VerifySignature(
+				cert.Sig, cert.SerializeSignableFields(), d.pubKey,
+			)
 			if err != nil {
 				responses <- storeResponse{d, nil, err}
 				return
@@ -269,7 +268,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 			// SignersMask from backend DAS is ignored.
 
-			if !bytes.Equal(cert.DataHash[:], expectedHash) {
+			if cert.DataHash != expectedHash {
 				responses <- storeResponse{d, nil, errors.New("Hash verification failed.")}
 				return
 			}
@@ -313,11 +312,12 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	aggCert.Sig = blsSignatures.AggregateSignatures(sigs)
 	aggPubKey := blsSignatures.AggregatePublicKeys(pubKeys)
 	aggCert.SignersMask = aggSignersMask
-	copy(aggCert.DataHash[:], expectedHash)
+	aggCert.DataHash = expectedHash
 	aggCert.Timeout = timeout
 	aggCert.KeysetHash = a.keysetHash
+	aggCert.Version = 1
 
-	verified, err := blsSignatures.VerifySignature(aggCert.Sig, serializeSignableFields(&aggCert), aggPubKey)
+	verified, err := blsSignatures.VerifySignature(aggCert.Sig, aggCert.SerializeSignableFields(), aggPubKey)
 	if err != nil {
 		return nil, err
 	}

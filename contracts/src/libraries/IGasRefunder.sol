@@ -2,7 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity >=0.6.11 <0.9.0;
+// solhint-disable-next-line compiler-version
+pragma solidity >=0.6.9 <0.9.0;
 
 interface IGasRefunder {
     function onGasSpent(
@@ -23,6 +24,7 @@ abstract contract GasRefundEnabled {
             uint256 calldataSize = 0;
             // if triggered in a contract call, the spender may be overrefunded by appending dummy data to the call
             // so we check if it is a top level call, which would mean the sender paid calldata as part of tx.input
+            // solhint-disable-next-line avoid-tx-origin
             if (msg.sender == tx.origin) {
                 assembly {
                     calldataSize := calldatasize()

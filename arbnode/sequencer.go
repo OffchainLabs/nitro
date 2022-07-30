@@ -80,6 +80,8 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 	}, nil
 }
 
+var ErrRetrySequencer = errors.New("please retry transaction")
+
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
 	if len(s.senderWhitelist) > 0 {
 		signer := types.LatestSigner(s.txStreamer.bc.Config())
@@ -132,7 +134,7 @@ func (s *Sequencer) ForwardTarget() string {
 	return s.forwarder.target
 }
 
-func (s *Sequencer) ForwardTo(url string) {
+func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
 	s.forwarder = NewForwarder(url)
@@ -141,6 +143,7 @@ func (s *Sequencer) ForwardTo(url string) {
 		log.Error("failed to set forward agent", "err", err)
 		s.forwarder = nil
 	}
+	return err
 }
 
 func (s *Sequencer) DontForward() {
@@ -245,16 +248,16 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	}
 
 	hooks := &arbos.SequencingHooks{
-		PreTxFilter:    s.preTxFilter,
-		PostTxFilter:   s.postTxFilter,
-		RequireDataGas: true,
-		TxErrors:       []error{},
+		PreTxFilter:            s.preTxFilter,
+		PostTxFilter:           s.postTxFilter,
+		DiscardInvalidTxsEarly: true,
+		TxErrors:               []error{},
 	}
 	err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
-	if errors.Is(err, ErrNotMainSequencer) {
+	if errors.Is(err, ErrRetrySequencer) {
 		// we changed roles
 		// forward if we have where to
 		if s.forwardIfSet(queueItems) {
@@ -271,7 +274,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		return
 	}
 	if err != nil {
-		log.Error("error sequencing transactions", "err", err)
+		log.Warn("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
 		}

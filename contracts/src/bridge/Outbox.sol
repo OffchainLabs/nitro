@@ -4,6 +4,15 @@
 
 pragma solidity ^0.8.4;
 
+import {
+    AlreadyInit,
+    NotRollup,
+    ProofTooLong,
+    PathNotMinimal,
+    UnknownRoot,
+    AlreadySpent,
+    BridgeCallFailed
+} from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./IOutbox.sol";
 import "../libraries/MerkleLib.sol";
@@ -138,7 +147,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) external {
+    ) external override {
         bytes32 userTx = calculateItemHash(
             l2Sender,
             to,
@@ -172,7 +181,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) external {
+    ) external override {
         if (msg.sender != address(0)) revert SimulationOnlyEntrypoint();
         executeTransactionImpl(index, l2Sender, to, l2Block, l1Block, l2Timestamp, value, data);
     }
@@ -226,7 +235,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         return ((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0);
     }
 
-    function isSpent(uint256 index) external view returns (bool) {
+    function isSpent(uint256 index) external view override returns (bool) {
         (, uint256 bitOffset, bytes32 replay) = _calcSpentIndexOffset(index);
         return _isSpent(bitOffset, replay);
     }
@@ -276,7 +285,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) public pure returns (bytes32) {
+    ) public pure override returns (bytes32) {
         return
             keccak256(abi.encodePacked(l2Sender, to, l2Block, l1Block, l2Timestamp, value, data));
     }
@@ -285,7 +294,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32[] memory proof,
         uint256 path,
         bytes32 item
-    ) public pure returns (bytes32) {
+    ) public pure override returns (bytes32) {
         return MerkleLib.calculateRoot(proof, path, keccak256(abi.encodePacked(item)));
     }
 }

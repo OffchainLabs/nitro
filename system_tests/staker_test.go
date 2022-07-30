@@ -58,13 +58,15 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
-	defer l1stack.Close()
+	l2info, l2nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	defer requireClose(t, l1stack)
+	defer requireClose(t, l2stackA)
 
 	if faultyStaker {
 		l2info.GenerateGenesysAccount("FaultyAddr", common.Big1)
 	}
-	l2clientB, l2nodeB := Create2ndNode(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, false)
+	l2clientB, l2nodeB, l2stackB := Create2ndNode(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, nil)
+	defer requireClose(t, l2stackB)
 
 	nodeAGenesis := l2nodeA.Backend.APIBackend().CurrentHeader().Hash()
 	nodeBGenesis := l2nodeB.Backend.APIBackend().CurrentHeader().Hash()

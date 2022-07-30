@@ -552,7 +552,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             if (afterInboxCount == prevInboxPosition) {
                 require(
                     assertion.afterState.globalState.getPositionInMessage() >=
-                        assertion.afterState.globalState.getPositionInMessage(),
+                        assertion.beforeState.globalState.getPositionInMessage(),
                     "INBOX_POS_IN_MSG_BACKWARDS"
                 );
             }
@@ -592,7 +592,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
                 memoryFrame.sequencerBatchAcc,
                 wasmModuleRoot
             );
-            require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
+            require(
+                newNodeHash == expectedNodeHash || expectedNodeHash == bytes32(0),
+                "UNEXPECTED_NODE_HASH"
+            );
 
             memoryFrame.node = NodeLib.createNode(
                 RollupLib.stateHash(assertion.afterState, memoryFrame.currentInboxSize),

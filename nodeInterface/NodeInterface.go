@@ -142,7 +142,7 @@ func (n NodeInterface) EstimateRetryableTicket(
 		GasFeeCap:        n.sourceMessage.GasPrice(),
 		Gas:              n.sourceMessage.Gas(),
 		RetryTo:          pRetryTo,
-		Value:            l2CallValue,
+		RetryValue:       l2CallValue,
 		Beneficiary:      callValueRefundAddress,
 		MaxSubmissionFee: maxSubmissionFee,
 		FeeRefundAddr:    excessFeeRefundAddress,
@@ -476,7 +476,7 @@ func (n NodeInterface) GasEstimateComponents(
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
-	l1BaseFeeEstimate, err := pricing.L1BaseFeeEstimate()
+	l1BaseFeeEstimate, err := pricing.PricePerUnit()
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
@@ -512,4 +512,47 @@ func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) 
 		)
 	}
 	return validator.FindBatchContainingMessageIndex(node.InboxTracker, pos, high)
+}
+
+func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum huge, index uint64) (
+	proof []bytes32, path huge, l2Sender addr, l1Dest addr, l2Block huge, l1Block huge, timestamp huge, amount huge, calldataForL1 []byte, err error) {
+
+	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return
+	}
+	if node.ClassicOutboxRetriever == nil {
+		err = errors.New("this node doesnt support classicLookupMessageBatchProof")
+		return
+	}
+	msg, err := node.ClassicOutboxRetriever.GetMsg(batchNum, index)
+	if err != nil {
+		return
+	}
+	proof = msg.ProofNodes
+	path = msg.PathInt
+	data := msg.Data
+	if len(data) < 1+6*32 {
+		err = errors.New("unexpected L2 to L1 tx result length")
+		return
+	}
+	if data[0] != 0x3 {
+		err = errors.New("unexpected type code")
+		return
+	}
+	data = data[1:]
+	l2Sender = common.BytesToAddress(data[:32])
+	data = data[32:]
+	l1Dest = common.BytesToAddress(data[:32])
+	data = data[32:]
+	l2Block = new(big.Int).SetBytes(data[:32])
+	data = data[32:]
+	l1Block = new(big.Int).SetBytes(data[:32])
+	data = data[32:]
+	timestamp = new(big.Int).SetBytes(data[:32])
+	data = data[32:]
+	amount = new(big.Int).SetBytes(data[:32])
+	data = data[32:]
+	calldataForL1 = data
+	return
 }
