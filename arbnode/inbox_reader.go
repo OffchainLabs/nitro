@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -60,6 +62,9 @@ type InboxReader struct {
 	caughtUpChan   chan bool
 	client         arbutil.L1Interface
 	l1Reader       *headerreader.HeaderReader
+
+	// Atomic
+	lastSeenBatchCount uint64
 
 	// Behind the mutex
 	lastReadMutex      sync.RWMutex
@@ -137,6 +142,15 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	newHeaders, unsubscribe := ir.l1Reader.Subscribe(false)
 	defer unsubscribe()
 	blocksToFetch := uint64(100)
+	seenBatchCount := uint64(0)
+	seenBatchCountStored := uint64(math.MaxUint64)
+	storeSeenBatchCount := func() {
+		if seenBatchCountStored != seenBatchCount {
+			atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
+			seenBatchCountStored = seenBatchCount
+		}
+	}
+	defer storeSeenBatchCount() // in case of error
 	for {
 
 		currentHeightRaw, err := ir.client.BlockNumber(ctx)
@@ -211,10 +225,12 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 		}
 
-		checkingBatchCount, err := ir.sequencerInbox.GetBatchCount(ctx, currentHeight)
+		seenBatchCount, err = ir.sequencerInbox.GetBatchCount(ctx, currentHeight)
 		if err != nil {
+			seenBatchCount = 0
 			return err
 		}
+		checkingBatchCount := seenBatchCount
 		{
 			ourLatestBatchCount, err := ir.tracker.GetBatchCount()
 			if err != nil {
@@ -252,6 +268,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			ir.lastReadBlock = currentHeight.Uint64()
 			ir.lastReadBatchCount = checkingBatchCount
 			ir.lastReadMutex.Unlock()
+			storeSeenBatchCount()
 			continue
 		}
 
@@ -374,6 +391,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 					ir.lastReadBlock = to.Uint64()
 					ir.lastReadBatchCount = sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1
 					ir.lastReadMutex.Unlock()
+					storeSeenBatchCount()
 				}
 			}
 			if reorgingDelayed || reorgingSequencer {
@@ -391,6 +409,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			ir.lastReadBlock = currentHeight.Uint64()
 			ir.lastReadBatchCount = checkingBatchCount
 			ir.lastReadMutex.Unlock()
+			storeSeenBatchCount()
 		}
 	}
 }
@@ -461,6 +480,12 @@ func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {
 	r.lastReadMutex.RLock()
 	defer r.lastReadMutex.RUnlock()
 	return r.lastReadBlock, r.lastReadBatchCount
+}
+
+// >0 - last batchcount seen in run() - only written after lastReadBatchCount updated
+// 0 - no batch seen, error
+func (r *InboxReader) GetLastSeenBatchCount() uint64 {
+	return atomic.LoadUint64(&r.lastSeenBatchCount)
 }
 
 func (r *InboxReader) GetDelayBlocks() uint64 {

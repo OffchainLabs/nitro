@@ -46,8 +46,8 @@ func TestTxFixedCost(t *testing.T) {
 	largeTxEncoded, err := largeTx.MarshalBinary()
 	Require(t, err)
 
-	if len(largeTxEncoded) > TxFixedCost {
-		Fail(t, "large tx is", len(largeTxEncoded), "bytes but tx fixed cost is", TxFixedCost)
+	if len(largeTxEncoded) > TxFixedCostEstimate {
+		Fail(t, "large tx is", len(largeTxEncoded), "bytes but tx fixed cost is", TxFixedCostEstimate)
 	}
 }
 
