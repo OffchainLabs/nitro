@@ -686,7 +686,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface)
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, txStreamer)
 	if err != nil {
 		return nil, err
 	}
@@ -1055,11 +1055,16 @@ func CreateNode(
 			Public:    false,
 		})
 	}
+
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
-		Service:   &ArbDebugAPI{blockchain: l2BlockChain},
-		Public:    false,
+		Service: &ArbDebugAPI{
+			blockchain:        l2BlockChain,
+			blockRangeBound:   config.RPC.ArbDebug.BlockRangeBound,
+			timeoutQueueBound: config.RPC.ArbDebug.TimeoutQueueBound,
+		},
+		Public: false,
 	})
 	stack.RegisterAPIs(apis)
 
