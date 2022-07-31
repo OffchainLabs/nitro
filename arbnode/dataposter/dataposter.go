@@ -33,18 +33,22 @@ type queuedTransaction[Meta any] struct {
 
 type DataPosterConfig struct {
 	ReplacementInterval time.Duration `koanf:"replacement-interval"`
+	L1LookBehind        uint64        `koanf:"l1-look-behind"`
 }
 
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".replacement-interval", DefaultDataPosterConfig.ReplacementInterval, "transaction replace-by-fee interval")
+	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementInterval: 30 * time.Minute,
+	L1LookBehind:        2,
 }
 
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementInterval: time.Second,
+	L1LookBehind:        0,
 }
 
 // Meta must be RLP serializable and deserializable
@@ -215,15 +219,13 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, idx int) error {
 	return p.sendTx(ctx, idx, &newTx)
 }
 
-var l1BlockLookBehind = big.NewInt(2)
-
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 	header, err := p.client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return err
 	}
-	p.lastBlock = arbmath.BigSub(header.Number, l1BlockLookBehind)
+	p.lastBlock = arbmath.BigSub(header.Number, new(big.Int).SetUint64(p.config.L1LookBehind))
 	nonce, err := p.client.NonceAt(ctx, p.auth.From, p.lastBlock)
 	if err != nil {
 		return err

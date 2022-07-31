@@ -380,14 +380,17 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		To:   &b.seqInboxAddr,
 		Data: data,
 	})
-	return gas + extraBatchGas, err
+	if err != nil {
+		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
+	}
+	return gas + extraBatchGas, nil
 }
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx, func(blockNum *big.Int) (batchPosterPosition, error) {
 		bigInboxBatchCount, err := b.seqInbox.BatchCount(&bind.CallOpts{Context: ctx, BlockNumber: blockNum})
 		if err != nil {
-			return batchPosterPosition{}, err
+			return batchPosterPosition{}, fmt.Errorf("error getting latest batch count: %w", err)
 		}
 		inboxBatchCount := bigInboxBatchCount.Uint64()
 		var prevBatchMeta BatchMetadata
@@ -395,7 +398,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 			var err error
 			prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
 			if err != nil {
-				return batchPosterPosition{}, err
+				return batchPosterPosition{}, fmt.Errorf("error getting latest batch metadata: %w", err)
 			}
 		}
 		return batchPosterPosition{
