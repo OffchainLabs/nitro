@@ -61,7 +61,6 @@ type BatchPosterConfig struct {
 	PostingErrorDelay                  time.Duration               `koanf:"error-delay"`
 	CompressionLevel                   int                         `koanf:"compression-level"`
 	DASRetentionPeriod                 time.Duration               `koanf:"das-retention-period"`
-	HighGasThreshold                   float32                     `koanf:"high-gas-threshold"`
 	HighGasDelay                       time.Duration               `koanf:"high-gas-delay"`
 	GasRefunderAddress                 string                      `koanf:"gas-refunder-address"`
 	DataPoster                         dataposter.DataPosterConfig `koanf:"data-poster"`
@@ -76,7 +75,6 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
-	f.Float32(prefix+".high-gas-threshold", DefaultBatchPosterConfig.HighGasThreshold, "If the gas price in gwei is above this amount, delay posting a batch")
 	f.Duration(prefix+".high-gas-delay", DefaultBatchPosterConfig.HighGasDelay, "The maximum delay while waiting for the gas price to go below the high gas threshold")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
@@ -91,7 +89,6 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	MaxBatchPostInterval:               time.Hour,
 	CompressionLevel:                   brotli.DefaultCompression,
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
-	HighGasThreshold:                   150.,
 	HighGasDelay:                       14 * time.Hour,
 	GasRefunderAddress:                 "",
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
@@ -105,7 +102,6 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	MaxBatchPostInterval: 0,
 	CompressionLevel:     2,
 	DASRetentionPeriod:   time.Hour * 24 * 15,
-	HighGasThreshold:     0.,
 	HighGasDelay:         0,
 	GasRefunderAddress:   "",
 	DataPoster:           dataposter.TestDataPosterConfig,

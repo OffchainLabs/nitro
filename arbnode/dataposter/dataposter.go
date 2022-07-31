@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -34,23 +35,31 @@ type queuedTransaction[Meta any] struct {
 }
 
 type DataPosterConfig struct {
-	ReplacementTimes string `koanf:"replacement-times"`
-	L1LookBehind     uint64 `koanf:"l1-look-behind"`
+	ReplacementTimes  string        `koanf:"replacement-times"`
+	L1LookBehind      uint64        `koanf:"l1-look-behind"`
+	MaxFeeCapGwei     float64       `koanf:"max-fee-cap-gwei"`
+	MaxFeeCapDoubling time.Duration `koanf:"max-fee-cap-doubling"`
 }
 
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
+	f.Float64(prefix+".max-fee-cap-gwei", DefaultDataPosterConfig.MaxFeeCapGwei, "the maximum fee cap to use, doubled every max-fee-cap-doubling")
+	f.Duration(prefix+".max-fee-cap-doubling", DefaultDataPosterConfig.MaxFeeCapDoubling, "after this duration, double the fee cap (repeats)")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
-	ReplacementTimes: "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
-	L1LookBehind:     2,
+	ReplacementTimes:  "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
+	L1LookBehind:      2,
+	MaxFeeCapGwei:     100.,
+	MaxFeeCapDoubling: 2 * time.Hour,
 }
 
 var TestDataPosterConfig = DataPosterConfig{
-	ReplacementTimes: "1s,2s,5s,10s,20s,30s,1m,5m",
-	L1LookBehind:     0,
+	ReplacementTimes:  "1s,2s,5s,10s,20s,30s,1m,5m",
+	L1LookBehind:      0,
+	MaxFeeCapGwei:     100.,
+	MaxFeeCapDoubling: 5 * time.Second,
 }
 
 // Meta must be RLP serializable and deserializable
@@ -131,23 +140,58 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context, getMetaAtBlo
 	return p.nonce, meta, err
 }
 
+const minRbfIncrease arbmath.Bips = arbmath.OneInBips * 11 / 10
+
+func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big.Int, dataCreatedAt time.Time) (*big.Int, *big.Int, error) {
+	latestHeader, err := p.headerReader.LastHeader(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	newTipCap, err := p.client.SuggestGasTipCap(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if lastTipCap != nil {
+		newTipCap = arbmath.BigMax(newTipCap, arbmath.BigMulByBips(lastTipCap, minRbfIncrease))
+	}
+	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
+	newFeeCap.Add(newFeeCap, newTipCap)
+
+	elapsed := time.Since(dataCreatedAt)
+	maxFeeCap := new(big.Int).SetUint64(uint64(p.config.MaxFeeCapGwei * params.GWei))
+	maxFeeCapDoublings := int64(elapsed / p.config.MaxFeeCapDoubling)
+	multiplier := new(big.Int).Exp(big.NewInt(2), big.NewInt(maxFeeCapDoublings), nil)
+	maxFeeCap.Mul(maxFeeCap, multiplier)
+	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
+		logLevel := log.Info
+		if maxFeeCapDoublings >= 3 {
+			logLevel = log.Error
+		} else if maxFeeCapDoublings >= 1 {
+			logLevel = log.Warn
+		}
+		logLevel(
+			"reducing proposed fee cap to current maximum",
+			"proposedFeeCap", newFeeCap,
+			"maxFeeCap", maxFeeCap,
+			"elapsed", elapsed,
+		)
+		newFeeCap = maxFeeCap
+	}
+
+	return newFeeCap, newTipCap, nil
+}
+
 func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	latestHeader, err := p.headerReader.LastHeader(ctx)
-	if err != nil {
-		return err
-	}
-	tipCap, err := p.client.SuggestGasTipCap(ctx)
-	if err != nil {
-		return err
-	}
 	expectedNonce := p.nonce + uint64(len(p.queue))
 	if nonce != expectedNonce {
 		return fmt.Errorf("invalid nonce passed to data poster: expected %v but got %v", expectedNonce, nonce)
 	}
-	// TODO: cap initial feeCap by config
-	feeCap := arbmath.BigAdd(arbmath.BigMulByUint(latestHeader.BaseFee, 2), tipCap)
+	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, nil, dataCreatedAt)
+	if err != nil {
+		return err
+	}
 	inner := types.DynamicFeeTx{
 		Nonce:     nonce,
 		GasTipCap: tipCap,
@@ -192,23 +236,13 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, idx int, newTx *queuedTra
 	return err
 }
 
-const minRbfIncrease arbmath.Bips = arbmath.OneInBips * 11 / 10
-
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, idx int) error {
-	latestHeader, err := p.headerReader.LastHeader(ctx)
-	if err != nil {
-		return err
-	}
-	recommendedTip, err := p.client.SuggestGasTipCap(ctx)
-	if err != nil {
-		return err
-	}
 	tx := p.queue[idx]
-	newTipCap := arbmath.BigMulByBips(tx.data.GasTipCap, minRbfIncrease)
-	newTipCap = arbmath.BigMax(newTipCap, recommendedTip)
-	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
-	newFeeCap.Add(newFeeCap, newTipCap)
+	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, tx.data.GasTipCap, tx.created)
+	if err != nil {
+		return err
+	}
 
 	desiredFeeCap := newFeeCap
 	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(tx.data.Gas))
