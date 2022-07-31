@@ -91,7 +91,11 @@ func (p *DataPoster[Meta]) From() common.Address {
 func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context, getMetaAtBlock func(blockNum *big.Int) (Meta, error)) (uint64, Meta, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	p.updateState(ctx)
+	err := p.updateState(ctx)
+	if err != nil {
+		var empty Meta
+		return 0, empty, err
+	}
 	if len(p.queue) > 0 {
 		return p.nonce + uint64(len(p.queue)), p.queue[len(p.queue)-1].meta, nil
 	}
@@ -276,7 +280,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 				}
 			}
 		}
-		wait := nextCheck.Sub(time.Now())
+		wait := time.Until(nextCheck)
 		if wait < minWait {
 			wait = minWait
 		}

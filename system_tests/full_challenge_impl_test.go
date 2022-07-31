@@ -148,7 +148,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	Require(t, err)
 	message := append([]byte{0}, compressed...)
 
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(1), message, big.NewInt(0), common.Address{})
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(0), big.NewInt(0), big.NewInt(1), message, big.NewInt(0), common.Address{})
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)

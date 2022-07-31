@@ -219,9 +219,9 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			seqOpts.Nonce = big.NewInt(int64(seqNonce))
 			var tx *types.Transaction
 			if i%5 == 0 {
-				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
+				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), big.NewInt(0), big.NewInt(0), batchData, big.NewInt(1), common.Address{})
 			} else {
-				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
+				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), big.NewInt(0), big.NewInt(0), batchData, big.NewInt(1), common.Address{})
 			}
 			Require(t, err)
 			txRes, err := EnsureTxSucceeded(ctx, l1Client, tx)

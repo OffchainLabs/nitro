@@ -165,6 +165,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         );
     }
 
+    /// @dev Deprecated in favor of the variant specifying message counts for consistency
     function addSequencerL2BatchFromOrigin(
         uint256 sequenceNumber,
         bytes calldata data,
@@ -232,10 +233,10 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
                 prevMessageCount_,
                 newMessageCount_
             );
-        if (seqMessageIndex != sequenceNumber_)
+        if (seqMessageIndex != sequenceNumber_ && sequenceNumber_ != ~uint256(0))
             revert BadSequencerNumber(seqMessageIndex, sequenceNumber_);
         emit SequencerBatchDelivered(
-            sequenceNumber_,
+            seqMessageIndex,
             beforeAcc,
             afterAcc,
             delayedAcc,
@@ -258,6 +259,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             data,
             afterDelayedMessagesRead
         );
+        uint256 seqMessageIndex;
         {
             // Reformat the stack to prevent "Stack too deep"
             uint256 sequenceNumber_ = sequenceNumber;
@@ -268,22 +270,20 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             uint256 newMessageCount_ = newMessageCount;
             // we set the calldata length posted to 0 here since the caller isn't the origin
             // of the tx, so they might have not paid tx input cost for the calldata
-            (
-                uint256 seqMessageIndex,
-                bytes32 beforeAcc,
-                bytes32 delayedAcc,
-                bytes32 afterAcc
-            ) = addSequencerL2BatchImpl(
-                    dataHash_,
-                    afterDelayedMessagesRead_,
-                    0,
-                    prevMessageCount_,
-                    newMessageCount_
-                );
-            if (seqMessageIndex != sequenceNumber_)
+            bytes32 beforeAcc;
+            bytes32 delayedAcc;
+            bytes32 afterAcc;
+            (seqMessageIndex, beforeAcc, delayedAcc, afterAcc) = addSequencerL2BatchImpl(
+                dataHash_,
+                afterDelayedMessagesRead_,
+                0,
+                prevMessageCount_,
+                newMessageCount_
+            );
+            if (seqMessageIndex != sequenceNumber_ && sequenceNumber_ != ~uint256(0))
                 revert BadSequencerNumber(seqMessageIndex, sequenceNumber_);
             emit SequencerBatchDelivered(
-                sequenceNumber_,
+                seqMessageIndex,
                 beforeAcc,
                 afterAcc,
                 delayedAcc,
@@ -292,7 +292,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
                 BatchDataLocation.SeparateBatchEvent
             );
         }
-        emit SequencerBatchData(sequenceNumber, data);
+        emit SequencerBatchData(seqMessageIndex, data);
     }
 
     modifier validateBatchData(bytes calldata data) {

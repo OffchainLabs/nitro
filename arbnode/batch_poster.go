@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -31,23 +32,24 @@ import (
 )
 
 type batchPosterPosition struct {
-	BatchMetadata
-	NextSeqNum uint64
+	MessageCount        arbutil.MessageIndex
+	DelayedMessageCount uint64
+	NextSeqNum          uint64
 }
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader       *headerreader.HeaderReader
-	inbox          *InboxTracker
-	streamer       *TransactionStreamer
-	config         *BatchPosterConfig
-	seqInbox       *bridgegen.SequencerInbox
-	seqInboxABI    *abi.ABI
-	gasRefunder    common.Address
-	building       *buildingBatch
-	lastBatchCount uint64
-	das            das.DataAvailabilityService
-	dataPoster     dataposter.DataPoster[batchPosterPosition]
+	l1Reader     *headerreader.HeaderReader
+	inbox        *InboxTracker
+	streamer     *TransactionStreamer
+	config       *BatchPosterConfig
+	seqInbox     *bridgegen.SequencerInbox
+	seqInboxABI  *abi.ABI
+	seqInboxAddr common.Address
+	gasRefunder  common.Address
+	building     *buildingBatch
+	das          das.DataAvailabilityService
+	dataPoster   dataposter.DataPoster[batchPosterPosition]
 }
 
 type BatchPosterConfig struct {
@@ -122,15 +124,16 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		return nil, err
 	}
 	return &BatchPoster{
-		l1Reader:    l1Reader,
-		inbox:       inbox,
-		streamer:    streamer,
-		config:      config,
-		seqInbox:    seqInbox,
-		seqInboxABI: seqInboxABI,
-		gasRefunder: common.HexToAddress(config.GasRefunderAddress),
-		das:         das,
-		dataPoster:  *dataposter.NewDataPoster[batchPosterPosition](l1Reader.Client(), transactOpts, &config.DataPoster, nil),
+		l1Reader:     l1Reader,
+		inbox:        inbox,
+		streamer:     streamer,
+		config:       config,
+		seqInbox:     seqInbox,
+		seqInboxABI:  seqInboxABI,
+		seqInboxAddr: contractAddress,
+		gasRefunder:  common.HexToAddress(config.GasRefunderAddress),
+		das:          das,
+		dataPoster:   *dataposter.NewDataPoster[batchPosterPosition](l1Reader.Client(), transactOpts, &config.DataPoster, nil),
 	}, nil
 }
 
@@ -344,13 +347,13 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) encodeAddBatch(seqNum uint64, prevMsgNum arbutil.MessageIndex, newMsgNum arbutil.MessageIndex, message []byte, delayedMsg uint64) ([]byte, error) {
-	method, ok := b.seqInboxABI.Methods["AddSequencerL2BatchFromOrigin0"]
+func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.MessageIndex, newMsgNum arbutil.MessageIndex, message []byte, delayedMsg uint64) ([]byte, error) {
+	method, ok := b.seqInboxABI.Methods["AddSequencerL2BatchFromOrigin"]
 	if !ok {
 		return nil, errors.New("failed to find add batch method")
 	}
 	inputData, err := method.Inputs.Pack(
-		new(big.Int).SetUint64(seqNum),
+		seqNum,
 		new(big.Int).SetUint64(uint64(prevMsgNum)),
 		new(big.Int).SetUint64(uint64(newMsgNum)),
 		message,
@@ -363,6 +366,21 @@ func (b *BatchPoster) encodeAddBatch(seqNum uint64, prevMsgNum arbutil.MessageIn
 	fullData := append([]byte{}, method.ID...)
 	fullData = append(fullData, inputData...)
 	return fullData, nil
+}
+
+const extraBatchGas uint64 = 10_000
+
+func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
+	data, err := b.encodeAddBatch(abi.MaxUint256, 0, 0, sequencerMessage, b.building.segments.delayedMsg)
+	if err != nil {
+		return 0, err
+	}
+	gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
+		From: b.dataPoster.From(),
+		To:   &b.seqInboxAddr,
+		Data: data,
+	})
+	return gas + extraBatchGas, err
 }
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
@@ -380,8 +398,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 				return batchPosterPosition{}, err
 			}
 		}
-		return batchPosterPosition{prevBatchMeta, inboxBatchCount}, nil
+		return batchPosterPosition{
+			MessageCount:        prevBatchMeta.MessageCount,
+			DelayedMessageCount: prevBatchMeta.DelayedMessageCount,
+			NextSeqNum:          inboxBatchCount,
+		}, nil
 	})
+	if err != nil {
+		return err
+	}
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		b.building = &buildingBatch{
@@ -402,9 +427,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	timeSinceNextMessage := time.Since(time.Unix(int64(firstMsg.Message.Header.Timestamp), 0))
+	nextMessageTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
-	forcePostBatch := timeSinceNextMessage >= b.config.MaxBatchPostInterval
+	forcePostBatch := time.Since(nextMessageTime) >= b.config.MaxBatchPostInterval
 	haveUsefulMessage := false
 
 	for b.building.msgCount < msgCount {
@@ -461,7 +486,20 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 		}
 	}
 
-	data, err := b.encodeAddBatch(batchPosition.NextSeqNum, batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg)
+	gasLimit, err := b.estimateGas(ctx, sequencerMsg, b.building.segments.delayedMsg)
+	if err != nil {
+		return err
+	}
+	data, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg)
+	if err != nil {
+		return err
+	}
+	newMeta := batchPosterPosition{
+		MessageCount:        b.building.msgCount,
+		DelayedMessageCount: b.building.segments.delayedMsg,
+		NextSeqNum:          batchPosition.NextSeqNum + 1,
+	}
+	err = b.dataPoster.PostTransaction(ctx, nextMessageTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
 	if err != nil {
 		return err
 	}

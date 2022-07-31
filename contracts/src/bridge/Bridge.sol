@@ -277,6 +277,10 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         }
     }
 
+    function setSequencerReportedSubMessageCount(uint256 newMsgCount) external onlyRollupOrOwner {
+        sequencerReportedSubMessageCount = newMsgCount;
+    }
+
     function delayedMessageCount() external view override returns (uint256) {
         return delayedInboxAccs.length;
     }
