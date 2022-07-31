@@ -274,7 +274,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	unitsAllocated := unitsSinceUpdate * allocationNumerator / allocationDenominator
+	unitsAllocated := am.SaturatingUMul(unitsSinceUpdate, allocationNumerator) / allocationDenominator
 	unitsSinceUpdate -= unitsAllocated
 	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
 		return err
