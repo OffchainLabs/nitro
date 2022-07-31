@@ -47,9 +47,10 @@ var TestDataPosterConfig = DataPosterConfig{
 	ReplacementInterval: time.Second,
 }
 
+// Meta must be RLP serializable and deserializable
 type DataPoster[Meta any] struct {
 	stopwaiter.StopWaiter
-	headerReader headerreader.HeaderReader
+	headerReader *headerreader.HeaderReader
 	client       arbutil.L1Interface
 	auth         *bind.TransactOpts
 	config       *DataPosterConfig
@@ -63,12 +64,13 @@ type DataPoster[Meta any] struct {
 	queue     []*queuedTransaction[Meta]
 }
 
-func NewDataPoster[Meta any](client arbutil.L1Interface, auth *bind.TransactOpts, config *DataPosterConfig, redis redis.UniversalClient) *DataPoster[Meta] {
+func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, config *DataPosterConfig, redis redis.UniversalClient) *DataPoster[Meta] {
 	return &DataPoster[Meta]{
-		client: client,
-		auth:   auth,
-		config: config,
-		redis:  redis,
+		headerReader: headerReader,
+		client:       headerReader.Client(),
+		auth:         auth,
+		config:       config,
+		redis:        redis,
 	}
 }
 

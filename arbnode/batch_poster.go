@@ -49,7 +49,7 @@ type BatchPoster struct {
 	gasRefunder  common.Address
 	building     *buildingBatch
 	das          das.DataAvailabilityService
-	dataPoster   dataposter.DataPoster[batchPosterPosition]
+	dataPoster   *dataposter.DataPoster[batchPosterPosition]
 }
 
 type BatchPosterConfig struct {
@@ -133,7 +133,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		seqInboxAddr: contractAddress,
 		gasRefunder:  common.HexToAddress(config.GasRefunderAddress),
 		das:          das,
-		dataPoster:   *dataposter.NewDataPoster[batchPosterPosition](l1Reader.Client(), transactOpts, &config.DataPoster, nil),
+		dataPoster:   dataposter.NewDataPoster[batchPosterPosition](l1Reader, transactOpts, &config.DataPoster, nil),
 	}, nil
 }
 
@@ -348,7 +348,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 }
 
 func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.MessageIndex, newMsgNum arbutil.MessageIndex, message []byte, delayedMsg uint64) ([]byte, error) {
-	method, ok := b.seqInboxABI.Methods["AddSequencerL2BatchFromOrigin"]
+	method, ok := b.seqInboxABI.Methods["addSequencerL2BatchFromOrigin"]
 	if !ok {
 		return nil, errors.New("failed to find add batch method")
 	}
@@ -421,7 +421,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	}
 	if msgCount <= batchPosition.MessageCount {
 		// There's nothing after the newest batch, therefore batch posting was not required
-		return err
+		return nil
 	}
 	firstMsg, err := b.streamer.GetMessage(batchPosition.MessageCount)
 	if err != nil {
