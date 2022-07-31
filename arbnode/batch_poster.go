@@ -50,6 +50,7 @@ type BatchPoster struct {
 	building     *buildingBatch
 	das          das.DataAvailabilityService
 	dataPoster   *dataposter.DataPoster[batchPosterPosition]
+	firstAccErr  time.Time // first time a continuous missing accumulator occurred
 }
 
 type BatchPosterConfig struct {
@@ -525,7 +526,20 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
 			b.building = nil
-			log.Error("error posting batch", "err", err)
+			logLevel := log.Error
+			if errors.Is(err, AccumulatorNotFound) {
+				// Likely the inbox tracker just isn't caught up.
+				// Let's see if this error disappears naturally.
+				if b.firstAccErr == (time.Time{}) {
+					b.firstAccErr = time.Now()
+					logLevel = log.Debug
+				} else if time.Since(b.firstAccErr) < time.Minute {
+					logLevel = log.Debug
+				}
+			} else {
+				b.firstAccErr = time.Time{}
+			}
+			logLevel("error posting batch", "err", err)
 			return b.config.PostingErrorDelay
 		}
 		return b.config.BatchPollDelay
