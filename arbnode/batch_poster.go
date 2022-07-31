@@ -123,6 +123,10 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	if err != nil {
 		return nil, err
 	}
+	dataPoster, err := dataposter.NewDataPoster[batchPosterPosition](l1Reader, transactOpts, &config.DataPoster, nil)
+	if err != nil {
+		return nil, err
+	}
 	return &BatchPoster{
 		l1Reader:     l1Reader,
 		inbox:        inbox,
@@ -133,7 +137,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		seqInboxAddr: contractAddress,
 		gasRefunder:  common.HexToAddress(config.GasRefunderAddress),
 		das:          das,
-		dataPoster:   dataposter.NewDataPoster[batchPosterPosition](l1Reader, transactOpts, &config.DataPoster, nil),
+		dataPoster:   dataPoster,
 	}, nil
 }
 

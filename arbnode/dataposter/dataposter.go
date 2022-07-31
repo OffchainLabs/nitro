@@ -5,8 +5,10 @@ package dataposter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,33 +34,34 @@ type queuedTransaction[Meta any] struct {
 }
 
 type DataPosterConfig struct {
-	ReplacementInterval time.Duration `koanf:"replacement-interval"`
-	L1LookBehind        uint64        `koanf:"l1-look-behind"`
+	ReplacementTimes string `koanf:"replacement-times"`
+	L1LookBehind     uint64 `koanf:"l1-look-behind"`
 }
 
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Duration(prefix+".replacement-interval", DefaultDataPosterConfig.ReplacementInterval, "transaction replace-by-fee interval")
+	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
-	ReplacementInterval: 30 * time.Minute,
-	L1LookBehind:        2,
+	ReplacementTimes: "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
+	L1LookBehind:     2,
 }
 
 var TestDataPosterConfig = DataPosterConfig{
-	ReplacementInterval: time.Second,
-	L1LookBehind:        0,
+	ReplacementTimes: "1s,2s,5s,10s,20s,30s,1m,5m",
+	L1LookBehind:     0,
 }
 
 // Meta must be RLP serializable and deserializable
 type DataPoster[Meta any] struct {
 	stopwaiter.StopWaiter
-	headerReader *headerreader.HeaderReader
-	client       arbutil.L1Interface
-	auth         *bind.TransactOpts
-	config       *DataPosterConfig
-	redis        redis.UniversalClient // may be nil
+	headerReader     *headerreader.HeaderReader
+	client           arbutil.L1Interface
+	auth             *bind.TransactOpts
+	config           *DataPosterConfig
+	redis            redis.UniversalClient // may be nil
+	replacementTimes []time.Duration
 
 	// these fields are protected by the mutex
 	mutex     sync.Mutex
@@ -68,14 +71,33 @@ type DataPoster[Meta any] struct {
 	queue     []*queuedTransaction[Meta]
 }
 
-func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, config *DataPosterConfig, redis redis.UniversalClient) *DataPoster[Meta] {
-	return &DataPoster[Meta]{
-		headerReader: headerReader,
-		client:       headerReader.Client(),
-		auth:         auth,
-		config:       config,
-		redis:        redis,
+func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, config *DataPosterConfig, redis redis.UniversalClient) (*DataPoster[Meta], error) {
+	var replacementTimes []time.Duration
+	var lastReplacementTime time.Duration
+	for _, s := range strings.Split(config.ReplacementTimes, ",") {
+		t, err := time.ParseDuration(s)
+		if err != nil {
+			return nil, err
+		}
+		if t <= lastReplacementTime {
+			return nil, errors.New("replacement times must be increasing")
+		}
+		replacementTimes = append(replacementTimes, t)
+		lastReplacementTime = t
 	}
+	if len(replacementTimes) == 0 {
+		log.Warn("disabling replace-by-fee for data poster")
+	}
+	// To avoid special casing "don't replace again", replace in 10 years
+	replacementTimes = append(replacementTimes, time.Hour*24*365*10)
+	return &DataPoster[Meta]{
+		headerReader:     headerReader,
+		client:           headerReader.Client(),
+		auth:             auth,
+		config:           config,
+		redis:            redis,
+		replacementTimes: replacementTimes,
+	}, nil
 }
 
 func (p *DataPoster[Meta]) Initialize(ctx context.Context) error {
@@ -145,7 +167,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 		meta:            meta,
 		sent:            false,
 		created:         dataCreatedAt,
-		nextReplacement: time.Now().Add(p.config.ReplacementInterval),
+		nextReplacement: time.Now().Add(p.replacementTimes[0]),
 	}
 	return p.sendTx(ctx, len(p.queue), &queuedTx)
 }
@@ -207,7 +229,14 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, idx int) error {
 	}
 
 	newTx := *tx
-	newTx.nextReplacement = time.Now().Add(p.config.ReplacementInterval)
+	elapsed := time.Since(tx.created)
+	for _, replacement := range p.replacementTimes {
+		if elapsed >= replacement {
+			continue
+		}
+		newTx.nextReplacement = tx.created.Add(replacement)
+		break
+	}
 	newTx.sent = false
 	newTx.data.GasFeeCap = newFeeCap
 	newTx.data.GasTipCap = newTipCap
@@ -260,7 +289,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 			return minWait
 		}
 		now := time.Now()
-		nextCheck := now.Add(p.config.ReplacementInterval)
+		nextCheck := now.Add(p.replacementTimes[0])
 		for i, tx := range p.queue {
 			if now.After(tx.nextReplacement) {
 				err := p.replaceTx(ctx, i)
