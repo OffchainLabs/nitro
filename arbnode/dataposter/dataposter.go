@@ -5,7 +5,7 @@ package dataposter
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -17,13 +17,15 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	flag "github.com/spf13/pflag"
 )
 
-type queuedTransaction struct {
+type queuedTransaction[Meta any] struct {
 	fullTx          *types.Transaction
 	data            types.DynamicFeeTx
-	endDataPosition uint64
+	meta            Meta
 	sent            bool
 	created         time.Time // may be earlier than the tx was given to the tx poster
 	nextReplacement time.Time
@@ -38,30 +40,31 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
-	ReplacementInterval: time.Hour,
+	ReplacementInterval: 30 * time.Minute,
 }
 
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementInterval: time.Second,
 }
 
-type DataPoster struct {
+type DataPoster[Meta any] struct {
 	stopwaiter.StopWaiter
-	client arbutil.L1Interface
-	auth   bind.TransactOpts
-	config *DataPosterConfig
-	redis  redis.UniversalClient // may be nil
+	headerReader headerreader.HeaderReader
+	client       arbutil.L1Interface
+	auth         *bind.TransactOpts
+	config       *DataPosterConfig
+	redis        redis.UniversalClient // may be nil
 
 	// these fields are protected by the mutex
 	mutex     sync.Mutex
 	lastBlock *big.Int
 	balance   *big.Int
 	nonce     uint64
-	queue     []*queuedTransaction
+	queue     []*queuedTransaction[Meta]
 }
 
-func NewDataPoster(client arbutil.L1Interface, auth bind.TransactOpts, config *DataPosterConfig, redis redis.UniversalClient) *DataPoster {
-	return &DataPoster{
+func NewDataPoster[Meta any](client arbutil.L1Interface, auth *bind.TransactOpts, config *DataPosterConfig, redis redis.UniversalClient) *DataPoster[Meta] {
+	return &DataPoster[Meta]{
 		client: client,
 		auth:   auth,
 		config: config,
@@ -69,7 +72,7 @@ func NewDataPoster(client arbutil.L1Interface, auth bind.TransactOpts, config *D
 	}
 }
 
-func (p *DataPoster) Initialize(ctx context.Context) error {
+func (p *DataPoster[Meta]) Initialize(ctx context.Context) error {
 	nonce, err := p.client.NonceAt(ctx, p.auth.From, nil)
 	if err != nil {
 		return err
@@ -81,27 +84,42 @@ func (p *DataPoster) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// Returns the end data position of the queue and true, or 0 and false if the queue is empty
-func (p *DataPoster) GetNextNonceAndEndDataPosition(ctx context.Context, getEndDataPosition func(blockNum *big.Int) (uint64, error)) (uint64, uint64, error) {
+func (p *DataPoster[Meta]) From() common.Address {
+	return p.auth.From
+}
+
+func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context, getMetaAtBlock func(blockNum *big.Int) (Meta, error)) (uint64, Meta, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	p.updateState(ctx)
 	if len(p.queue) > 0 {
-		return p.nonce + uint64(len(p.queue)), p.queue[len(p.queue)-1].endDataPosition, nil
+		return p.nonce + uint64(len(p.queue)), p.queue[len(p.queue)-1].meta, nil
 	}
-	endDataPos, err := getEndDataPosition(p.lastBlock)
-	return p.nonce, endDataPos, err
+	meta, err := getMetaAtBlock(p.lastBlock)
+	return p.nonce, meta, err
 }
 
-const extraGas uint64 = 50_000
-
-func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, endDataPosition uint64, to common.Address, calldata []byte, gasLimit uint64) error {
+func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+	latestHeader, err := p.headerReader.LastHeader(ctx)
+	if err != nil {
+		return err
+	}
+	tipCap, err := p.client.SuggestGasTipCap(ctx)
+	if err != nil {
+		return err
+	}
+	expectedNonce := p.nonce + uint64(len(p.queue))
+	if nonce != expectedNonce {
+		return fmt.Errorf("invalid nonce passed to data poster: expected %v but got %v", expectedNonce, nonce)
+	}
+	// TODO: cap initial feeCap by config
+	feeCap := arbmath.BigAdd(arbmath.BigMulByUint(latestHeader.BaseFee, 2), tipCap)
 	inner := types.DynamicFeeTx{
-		Nonce:     p.nonce + uint64(len(p.queue)),
-		GasTipCap: TODO,
-		GasFeeCap: TODO,
+		Nonce:     nonce,
+		GasTipCap: tipCap,
+		GasFeeCap: feeCap,
 		Gas:       gasLimit,
 		To:        &to,
 		Value:     new(big.Int),
@@ -111,10 +129,10 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	if err != nil {
 		return err
 	}
-	queuedTx := queuedTransaction{
+	queuedTx := queuedTransaction[Meta]{
 		data:            inner,
 		fullTx:          fullTx,
-		endDataPosition: endDataPosition,
+		meta:            meta,
 		sent:            false,
 		created:         dataCreatedAt,
 		nextReplacement: time.Now().Add(p.config.ReplacementInterval),
@@ -123,7 +141,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 }
 
 // the mutex must be held by the caller
-func (p *DataPoster) sendTx(ctx context.Context, idx int, newTx *queuedTransaction) error {
+func (p *DataPoster[Meta]) sendTx(ctx context.Context, idx int, newTx *queuedTransaction[Meta]) error {
 	if p.redis != nil {
 		panic("TODO: store tx in redis")
 	}
@@ -133,6 +151,11 @@ func (p *DataPoster) sendTx(ctx context.Context, idx int, newTx *queuedTransacti
 		p.queue[idx] = newTx
 	}
 	err := p.client.SendTransaction(ctx, newTx.fullTx)
+	if err == nil {
+		log.Info("DataPoster sent transaction", "nonce", newTx.fullTx.Nonce(), "hash", newTx.fullTx.Hash(), "feeCap", newTx.fullTx.GasFeeCap())
+	} else {
+		log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.fullTx.Nonce(), "feeCap", newTx.fullTx.GasFeeCap())
+	}
 	newTx.sent = err == nil
 	return err
 }
@@ -140,14 +163,18 @@ func (p *DataPoster) sendTx(ctx context.Context, idx int, newTx *queuedTransacti
 const minRbfIncrease arbmath.Bips = arbmath.OneInBips * 11 / 10
 
 // the mutex must be held by the caller
-func (p *DataPoster) replaceTx(ctx context.Context, idx int) error {
-	latestHeader, err := p.client.HeaderByNumber(ctx, nil)
+func (p *DataPoster[Meta]) replaceTx(ctx context.Context, idx int) error {
+	latestHeader, err := p.headerReader.LastHeader(ctx)
+	if err != nil {
+		return err
+	}
+	recommendedTip, err := p.client.SuggestGasTipCap(ctx)
 	if err != nil {
 		return err
 	}
 	tx := p.queue[idx]
-	newTipCap := new(big.Int).Mul(tx.data.GasTipCap, big.NewInt(11))
-	newTipCap.Div(newTipCap, big.NewInt(10))
+	newTipCap := arbmath.BigMulByBips(tx.data.GasTipCap, minRbfIncrease)
+	newTipCap = arbmath.BigMax(newTipCap, recommendedTip)
 	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
 	newFeeCap.Add(newFeeCap, newTipCap)
 
@@ -185,7 +212,7 @@ func (p *DataPoster) replaceTx(ctx context.Context, idx int) error {
 var l1BlockLookBehind = big.NewInt(2)
 
 // the mutex must be held by the caller
-func (p *DataPoster) updateState(ctx context.Context) error {
+func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 	header, err := p.client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return err
@@ -214,7 +241,7 @@ func (p *DataPoster) updateState(ctx context.Context) error {
 
 const minWait = time.Second * 10
 
-func (p *DataPoster) Start(ctxIn context.Context) {
+func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 	p.StopWaiter.Start(ctxIn)
 	p.CallIteratively(func(ctx context.Context) time.Duration {
 		p.mutex.Lock()
@@ -225,7 +252,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			return minWait
 		}
 		now := time.Now()
-		nextCheck := now.Add(time.Hour)
+		nextCheck := now.Add(p.config.ReplacementInterval)
 		for i, tx := range p.queue {
 			if now.After(tx.nextReplacement) {
 				err := p.replaceTx(ctx, i)

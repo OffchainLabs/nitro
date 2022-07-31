@@ -37,7 +37,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         );
 
         connectedContracts.rollupEventInbox.rollupInitialized(config.chainId);
-        connectedContracts.sequencerInbox.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
+        connectedContracts.sequencerInbox.addSequencerL2Batch(
+            0,
+            0,
+            1,
+            "",
+            1,
+            IGasRefunder(address(0))
+        );
 
         validatorUtils = connectedContracts.validatorUtils;
         validatorWalletCreator = connectedContracts.validatorWalletCreator;

@@ -38,7 +38,12 @@ interface IBridge {
         bytes32 messageDataHash
     ) external payable returns (uint256);
 
-    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+    function enqueueSequencerMessage(
+        bytes32 dataHash,
+        uint256 afterDelayedMessagesRead,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
+    )
         external
         returns (
             uint256 seqMessageIndex,
@@ -81,6 +86,8 @@ interface IBridge {
     function delayedMessageCount() external view returns (uint256);
 
     function sequencerMessageCount() external view returns (uint256);
+
+    function sequencerReportedSubMessageCount() external view returns (uint256);
 
     function rollup() external view returns (IOwnable);
 
