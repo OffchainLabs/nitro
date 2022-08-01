@@ -24,27 +24,31 @@ import (
 )
 
 type InboxReaderConfig struct {
-	DelayBlocks uint64        `koanf:"delay-blocks"`
-	CheckDelay  time.Duration `koanf:"check-delay"`
-	HardReorg   bool          `koanf:"hard-reorg"`
+	DelayBlocks     uint64        `koanf:"delay-blocks"`
+	CheckDelay      time.Duration `koanf:"check-delay"`
+	HardReorg       bool          `koanf:"hard-reorg"`
+	MinBlocksToRead uint64        `koanf:"min-blocks-to-read"`
 }
 
 func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
-	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "how long to wait between inbox checks")
+	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "the maximum time to wait between inbox checks (if not enough new blocks are found)")
 	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
+	f.Uint64(prefix+".min-blocks-to-read", DefaultInboxReaderConfig.MinBlocksToRead, "the minimum number of blocks to read at once (when caught up lowers load on L1)")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
-	DelayBlocks: 0,
-	CheckDelay:  20 * time.Second,
-	HardReorg:   false,
+	DelayBlocks:     0,
+	CheckDelay:      time.Minute,
+	HardReorg:       false,
+	MinBlocksToRead: 1,
 }
 
 var TestInboxReaderConfig = InboxReaderConfig{
-	DelayBlocks: 0,
-	CheckDelay:  time.Millisecond * 10,
-	HardReorg:   false,
+	DelayBlocks:     0,
+	CheckDelay:      time.Millisecond * 10,
+	HardReorg:       false,
+	MinBlocksToRead: 1,
 }
 
 type InboxReader struct {
@@ -153,23 +157,23 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	defer storeSeenBatchCount() // in case of error
 	for {
 
-		currentHeightRaw, err := ir.client.BlockNumber(ctx)
+		latestHeader, err := ir.l1Reader.LastHeader(ctx)
 		if err != nil {
 			return err
 		}
-		currentHeight := new(big.Int).SetUint64(currentHeightRaw)
+		currentHeight := latestHeader.Number
 
-		neededBlockHeight := new(big.Int).Add(from, new(big.Int).SetUint64(ir.config.DelayBlocks))
+		neededBlockHeight := new(big.Int).Add(from, new(big.Int).SetUint64(ir.config.DelayBlocks+arbmath.SaturatingUSub(ir.config.MinBlocksToRead, 1)))
 		checkDelayTimer := time.NewTimer(ir.config.CheckDelay)
 	WaitForHeight:
 		for arbmath.BigLessThan(currentHeight, neededBlockHeight) {
 			select {
-			case header := <-newHeaders:
-				if header == nil {
+			case latestHeader = <-newHeaders:
+				if latestHeader == nil {
 					// shutting down
 					return nil
 				}
-				currentHeight = new(big.Int).Set(header.Number)
+				currentHeight = new(big.Int).Set(latestHeader.Number)
 			case <-ctx.Done():
 				return nil
 			case <-checkDelayTimer.C:
@@ -279,7 +283,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				// nolint:nilerr
 				return nil
 			}
-			if from.Cmp(currentHeight) >= 0 {
+			if from.Cmp(currentHeight) > 0 {
 				if missingDelayed {
 					reorgingDelayed = true
 				}
