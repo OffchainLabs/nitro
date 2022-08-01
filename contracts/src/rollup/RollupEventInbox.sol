@@ -9,6 +9,7 @@ import "../bridge/IBridge.sol";
 import "../bridge/IDelayedMessageProvider.sol";
 import "../libraries/DelegateCallAware.sol";
 import {INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
+import {AlreadyInit, HadZeroInit} from "../libraries/Error.sol";
 
 /**
  * @title The inbox for rollup protocol events
@@ -28,7 +29,8 @@ contract RollupEventInbox is IRollupEventInbox, IDelayedMessageProvider, Delegat
     }
 
     function initialize(IBridge _bridge) external override onlyDelegated {
-        require(address(bridge) == address(0), "ALREADY_INIT");
+        if (address(bridge) != address(0)) revert AlreadyInit();
+        if (address(_bridge) == address(0)) revert HadZeroInit();
         bridge = _bridge;
         rollup = address(_bridge.rollup());
     }

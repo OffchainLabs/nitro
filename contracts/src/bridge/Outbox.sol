@@ -11,7 +11,8 @@ import {
     PathNotMinimal,
     UnknownRoot,
     AlreadySpent,
-    BridgeCallFailed
+    BridgeCallFailed,
+    HadZeroInit
 } from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./IOutbox.sol";
@@ -51,6 +52,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     uint128 public constant OUTBOX_VERSION = 2;
 
     function initialize(IBridge _bridge) external onlyDelegated {
+        if (address(_bridge) == address(0)) revert HadZeroInit();
         if (address(bridge) != address(0)) revert AlreadyInit();
         // address zero is returned if no context is set, but the values used in storage
         // are non-zero to save users some gas (as storage refunds are usually maxed out)

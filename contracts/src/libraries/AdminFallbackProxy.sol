@@ -95,10 +95,6 @@ abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
             _upgradeSecondaryToAndCall(newImplementation, data, forceCall);
         }
     }
-
-    function proxyableSecondaryUUID() external view override notDelegated returns (bytes32) {
-        return _IMPLEMENTATION_SECONDARY_SLOT;
-    }
 }
 
 /// @notice similar to TransparentUpgradeableProxy but allows the admin to fallback to a separate logic contract using DoubleLogicERC1967Upgrade
