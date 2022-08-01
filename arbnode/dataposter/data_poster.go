@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -26,12 +25,12 @@ import (
 )
 
 type queuedTransaction[Meta any] struct {
-	fullTx          *types.Transaction
-	data            types.DynamicFeeTx
-	meta            Meta
-	sent            bool
-	created         time.Time // may be earlier than the tx was given to the tx poster
-	nextReplacement time.Time
+	FullTx          *types.Transaction
+	Data            types.DynamicFeeTx
+	Meta            Meta
+	Sent            bool
+	Created         time.Time // may be earlier than the tx was given to the tx poster
+	NextReplacement time.Time
 }
 
 type QueueStorage[Item any] interface {
@@ -42,6 +41,7 @@ type QueueStorage[Item any] interface {
 }
 
 type DataPosterConfig struct {
+	RedisUrl          string        `koanf:"redis-url"`
 	ReplacementTimes  string        `koanf:"replacement-times"`
 	L1LookBehind      uint64        `koanf:"l1-look-behind"`
 	MaxFeeCapGwei     float64       `koanf:"max-fee-cap-gwei"`
@@ -49,6 +49,7 @@ type DataPosterConfig struct {
 }
 
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".redis-url", DefaultDataPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
 	f.Float64(prefix+".max-fee-cap-gwei", DefaultDataPosterConfig.MaxFeeCapGwei, "the maximum fee cap to use, doubled every max-fee-cap-doubling")
@@ -57,6 +58,7 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:  "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
+	RedisUrl:          "",
 	L1LookBehind:      2,
 	MaxFeeCapGwei:     100.,
 	MaxFeeCapDoubling: 2 * time.Hour,
@@ -64,6 +66,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:  "1s,2s,5s,10s,20s,30s,1m,5m",
+	RedisUrl:          "",
 	L1LookBehind:      0,
 	MaxFeeCapGwei:     100.,
 	MaxFeeCapDoubling: 5 * time.Second,
@@ -86,7 +89,7 @@ type DataPoster[Meta any] struct {
 	queue     QueueStorage[queuedTransaction[Meta]]
 }
 
-func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, config *DataPosterConfig, redis redis.UniversalClient) (*DataPoster[Meta], error) {
+func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, config *DataPosterConfig) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
 	for _, s := range strings.Split(config.ReplacementTimes, ",") {
@@ -106,10 +109,14 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 	// To avoid special casing "don't replace again", replace in 10 years
 	replacementTimes = append(replacementTimes, time.Hour*24*365*10)
 	var queue QueueStorage[queuedTransaction[Meta]]
-	if redis == nil {
+	if config.RedisUrl == "" {
 		queue = NewSliceStorage[queuedTransaction[Meta]]()
 	} else {
-		queue = NewRedisStorage[queuedTransaction[Meta]](redis, "data-poster.queue")
+		var err error
+		queue, err = NewRedisStorage[queuedTransaction[Meta]](config.RedisUrl, "data-poster.queue")
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &DataPoster[Meta]{
 		headerReader:     headerReader,
@@ -147,7 +154,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context, getMetaAtBlo
 		return 0, emptyMeta, err
 	}
 	if lastQueueItem != nil {
-		return lastQueueItem.data.Nonce, lastQueueItem.meta, nil
+		return lastQueueItem.Data.Nonce + 1, lastQueueItem.Meta, nil
 	}
 	meta, err := getMetaAtBlock(p.lastBlock)
 	return p.nonce, meta, err
@@ -215,74 +222,80 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 		return err
 	}
 	queuedTx := queuedTransaction[Meta]{
-		data:            inner,
-		fullTx:          fullTx,
-		meta:            meta,
-		sent:            false,
-		created:         dataCreatedAt,
-		nextReplacement: time.Now().Add(p.replacementTimes[0]),
+		Data:            inner,
+		FullTx:          fullTx,
+		Meta:            meta,
+		Sent:            false,
+		Created:         dataCreatedAt,
+		NextReplacement: time.Now().Add(p.replacementTimes[0]),
 	}
+	fmt.Printf("sending nonce: %v\n", inner.Nonce)
 	return p.sendTx(ctx, nil, &queuedTx)
 }
 
 // the mutex must be held by the caller
-func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
-	if prevTx != nil && prevTx.data.Nonce != newTx.data.Nonce {
-		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.data.Nonce, newTx.data.Nonce)
+func (p *DataPoster[Meta]) saveTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
+	if prevTx != nil && prevTx.Data.Nonce != newTx.Data.Nonce {
+		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
 	}
-	err := p.queue.Put(ctx, newTx.data.Nonce, prevTx, newTx)
+	return p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx)
+}
+
+func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
+	err := p.saveTx(ctx, prevTx, newTx)
 	if err != nil {
 		return err
 	}
-	err = p.client.SendTransaction(ctx, newTx.fullTx)
+	err = p.client.SendTransaction(ctx, newTx.FullTx)
 	if err == nil {
-		log.Info("DataPoster sent transaction", "nonce", newTx.fullTx.Nonce(), "hash", newTx.fullTx.Hash(), "feeCap", newTx.fullTx.GasFeeCap())
-		newTx.sent = true
-		err = p.queue.Put(ctx, newTx.data.Nonce, prevTx, newTx)
+		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap())
+		newerTx := *newTx
+		newerTx.Sent = true
+		err = p.saveTx(ctx, newTx, &newerTx)
 	} else {
-		log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.fullTx.Nonce(), "feeCap", newTx.fullTx.GasFeeCap())
+		log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap())
 	}
 	return err
 }
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, tx *queuedTransaction[Meta]) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, tx.data.GasTipCap, tx.created)
+	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, tx.Data.GasTipCap, tx.Created)
 	if err != nil {
 		return err
 	}
 
 	desiredFeeCap := newFeeCap
-	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(tx.data.Gas))
+	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(tx.Data.Gas))
 	newFeeCap = arbmath.BigMin(newFeeCap, maxFeeCap)
-	minNewFeeCap := arbmath.BigMulByBips(tx.data.GasFeeCap, minRbfIncrease)
+	minNewFeeCap := arbmath.BigMulByBips(tx.Data.GasFeeCap, minRbfIncrease)
+	newTx := *tx
 	if newFeeCap.Cmp(minNewFeeCap) < 0 {
 		if desiredFeeCap.Cmp(minNewFeeCap) >= 0 {
 			log.Error(
 				"lack of L1 balance prevents posting transaction with a higher fee cap",
 				"balance", p.balance,
-				"gasLimit", tx.data.Gas,
+				"gasLimit", tx.Data.Gas,
 				"desiredFeeCap", desiredFeeCap,
 				"maxFeeCap", maxFeeCap,
 			)
 		}
-		tx.nextReplacement = time.Now().Add(time.Minute)
-		return nil
+		newTx.NextReplacement = time.Now().Add(time.Minute)
+		return p.saveTx(ctx, tx, &newTx)
 	}
 
-	newTx := *tx
-	elapsed := time.Since(tx.created)
+	elapsed := time.Since(tx.Created)
 	for _, replacement := range p.replacementTimes {
 		if elapsed >= replacement {
 			continue
 		}
-		newTx.nextReplacement = tx.created.Add(replacement)
+		newTx.NextReplacement = tx.Created.Add(replacement)
 		break
 	}
-	newTx.sent = false
-	newTx.data.GasFeeCap = newFeeCap
-	newTx.data.GasTipCap = newTipCap
-	newTx.fullTx, err = p.auth.Signer(p.auth.From, types.NewTx(&newTx.data))
+	newTx.Sent = false
+	newTx.Data.GasFeeCap = newFeeCap
+	newTx.Data.GasTipCap = newTipCap
+	newTx.FullTx, err = p.auth.Signer(p.auth.From, types.NewTx(&newTx.Data))
 	if err != nil {
 		return err
 	}
@@ -337,17 +350,17 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 			return minWait
 		}
 		for _, tx := range queueContents {
-			if now.After(tx.nextReplacement) {
+			if now.After(tx.NextReplacement) {
 				err := p.replaceTx(ctx, tx)
 				if err != nil {
 					log.Error("failed to replace-by-fee transaction", "err", err)
 				}
 			}
-			if nextCheck.After(tx.nextReplacement) {
-				nextCheck = tx.nextReplacement
+			if nextCheck.After(tx.NextReplacement) {
+				nextCheck = tx.NextReplacement
 			}
-			if !tx.sent {
-				err := p.client.SendTransaction(ctx, tx.fullTx)
+			if !tx.Sent {
+				err := p.client.SendTransaction(ctx, tx.FullTx)
 				if err != nil {
 					log.Warn("failed to re-send transaction", "err", err)
 					nextSend := time.Now().Add(time.Minute)
@@ -355,7 +368,12 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 						nextCheck = nextSend
 					}
 				} else {
-					tx.sent = true
+					newTx := *tx
+					newTx.Sent = true
+					err = p.saveTx(ctx, tx, &newTx)
+					if err != nil {
+						log.Warn("failed to update tx to indicate it being sent", "err", err)
+					}
 				}
 			}
 		}

@@ -18,15 +18,21 @@ type RedisStorage[Item any] struct {
 	key    string
 }
 
-func NewRedisStorage[Item any](client redis.UniversalClient, key string) *RedisStorage[Item] {
-	return &RedisStorage[Item]{client, key}
+func NewRedisStorage[Item any](redisUrl string, key string) (*RedisStorage[Item], error) {
+	redisOptions, err := redis.ParseURL(redisUrl)
+	if err != nil {
+		return nil, err
+	}
+	client := redis.NewClient(redisOptions)
+	return &RedisStorage[Item]{client, key}, nil
 }
 
 func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	query := redis.ZRangeArgs{
-		Key:   s.key,
-		Start: int64(startingIndex),
-		Count: int64(maxResults),
+		Key:     s.key,
+		ByScore: true,
+		Start:   int64(startingIndex),
+		Count:   int64(maxResults),
 	}
 	itemStrings, err := s.client.ZRangeArgs(ctx, query).Result()
 	if err != nil {
@@ -47,7 +53,8 @@ func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	query := redis.ZRangeArgs{
 		Key:   s.key,
-		Count: 1,
+		Start: 0,
+		Stop:  0,
 		Rev:   true,
 	}
 	itemStrings, err := s.client.ZRangeArgs(ctx, query).Result()
@@ -82,9 +89,10 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 	}
 	action := func(tx *redis.Tx) error {
 		query := redis.ZRangeArgs{
-			Key:   s.key,
-			Start: int64(index),
-			Stop:  int64(index),
+			Key:     s.key,
+			ByScore: true,
+			Start:   int64(index),
+			Stop:    int64(index),
 		}
 		haveItems, err := s.client.ZRangeArgs(ctx, query).Result()
 		if err != nil {
@@ -95,6 +103,9 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 				return fmt.Errorf("tried to replace item at index %v but no item exists there", index)
 			}
 		} else if len(haveItems) == 1 {
+			if prevItem == nil {
+				return fmt.Errorf("tried to insert new item at index %v but an item exists there", index)
+			}
 			prevItemEncoded, err := rlp.EncodeToBytes(prevItem)
 			if err != nil {
 				return err
@@ -102,10 +113,14 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 			if !bytes.Equal([]byte(haveItems[0]), prevItemEncoded) {
 				return fmt.Errorf("replacing different item than expected at index %v", index)
 			}
+			err = tx.ZRem(ctx, s.key, haveItems[0]).Err()
+			if err != nil {
+				return err
+			}
 		} else {
 			return fmt.Errorf("expected only one return value for Put but got %v", len(haveItems))
 		}
-		newItemEncoded, err := rlp.EncodeToBytes(newItem)
+		newItemEncoded, err := rlp.EncodeToBytes(*newItem)
 		if err != nil {
 			return err
 		}

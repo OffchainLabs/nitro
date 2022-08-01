@@ -46,7 +46,7 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 	redisClient.Del(ctx, arbnode.CHOSENSEQ_KEY, arbnode.MSG_COUNT_KEY)
 }
 
-func getTestRediUrl() string {
+func getTestRedisUrl() string {
 	redisUrl := os.Getenv("TEST_REDIS")
 	if redisUrl == "" {
 		redisUrl = arbnode.TestSeqCoordinatorConfig.RedisUrl
@@ -60,6 +60,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 
 	nodeConfig := arbnode.ConfigDefaultL2Test()
 	nodeConfig.SeqCoordinator.Enable = true
+	nodeConfig.SeqCoordinator.RedisUrl = getTestRedisUrl()
 
 	l2Info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 
@@ -277,6 +278,7 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 
 	nodeConfig := arbnode.ConfigDefaultL2Test()
 	nodeConfig.SeqCoordinator.Enable = true
+	nodeConfig.SeqCoordinator.RedisUrl = getTestRedisUrl()
 
 	nodeNames := []string{"stdio://A", "stdio://B"}
 
@@ -331,6 +333,7 @@ func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 
 	nodeConfig := arbnode.ConfigDefaultL2Test()
 	nodeConfig.SeqCoordinator.Enable = true
+	nodeConfig.SeqCoordinator.RedisUrl = getTestRedisUrl()
 
 	nodeNames := []string{"stdio://A", "stdio://B"}
 

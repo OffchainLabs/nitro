@@ -120,7 +120,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	if err != nil {
 		return nil, err
 	}
-	dataPoster, err := dataposter.NewDataPoster[batchPosterPosition](l1Reader, transactOpts, &config.DataPoster, nil)
+	dataPoster, err := dataposter.NewDataPoster[batchPosterPosition](l1Reader, transactOpts, &config.DataPoster)
 	if err != nil {
 		return nil, err
 	}

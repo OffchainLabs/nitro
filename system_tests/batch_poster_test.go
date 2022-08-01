@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode"
 )
 
@@ -20,8 +21,18 @@ func TestBatchPosterParallel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	redisUrl := getTestRedisUrl()
+	if redisUrl != "" {
+		opts, err := redis.ParseURL(redisUrl)
+		Require(t, err)
+		client := redis.NewClient(opts)
+		err = client.Del(ctx, "data-poster.queue").Err()
+		Require(t, err)
+	}
+
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.Enable = false
+	conf.BatchPoster.DataPoster.RedisUrl = redisUrl
 	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, conf, params.ArbitrumDevTestChainConfig())
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
