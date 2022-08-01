@@ -36,9 +36,11 @@ func retryableSetup(t *testing.T) (
 	func(*types.Receipt) common.Hash,
 	context.Context,
 	func(),
+	chan error,
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	feedErrChan := make(chan error, 10)
+	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true, feedErrChan)
 
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("Beneficiary")
@@ -77,7 +79,7 @@ func retryableSetup(t *testing.T) (
 
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
 	discard := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-	TransferBalance(t, "Faucet", "Burn", discard, l2info, l2client, ctx)
+	TransferBalance(t, "Faucet", "Burn", discard, l2info, l2client, ctx, feedErrChan)
 
 	teardown := func() {
 
@@ -97,13 +99,14 @@ func retryableSetup(t *testing.T) (
 		requireClose(t, l2stack)
 		requireClose(t, l1stack)
 	}
-	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
+	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown, feedErrChan
 }
 
 func TestRetryableNoExist(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, _, l2client, l2stack := CreateTestL2(t, ctx)
+	feedErrChan := make(chan error, 10)
+	_, _, l2client, l2stack := CreateTestL2(t, ctx, feedErrChan)
 	defer requireClose(t, l2stack)
 
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
@@ -116,7 +119,7 @@ func TestRetryableNoExist(t *testing.T) {
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown, feedErrChan := retryableSetup(t)
 	defer teardown()
 
 	user2Address := l2info.GetAddress("User2")
@@ -162,15 +165,15 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx, feedErrChan)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	waitForL1DelayBlocks(t, ctx, l1client, l1info, feedErrChan)
 
-	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
+	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), feedErrChan, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
@@ -186,7 +189,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown, feedErrChan := retryableSetup(t)
 	defer teardown()
 
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -213,15 +216,15 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx, feedErrChan)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	waitForL1DelayBlocks(t, ctx, l1client, l1info, feedErrChan)
 
-	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
+	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), feedErrChan, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
@@ -233,7 +236,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	firstRetryTxId := receipt.Logs[1].Topics[2]
 
 	// get receipt for the auto-redeem, make sure it failed
-	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, feedErrChan, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
 		Fail(t, receipt.GasUsed)
@@ -243,13 +246,13 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	Require(t, err)
 	tx, err := arbRetryableTx.Redeem(&ownerTxOpts, ticketId)
 	Require(t, err)
-	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
+	receipt, err = EnsureTxSucceeded(ctx, l2client, tx, feedErrChan)
 	Require(t, err)
 
 	retryTxId := receipt.Logs[0].Topics[2]
 
 	// check the receipt for the retry
-	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	receipt, err = WaitForTx(ctx, l2client, retryTxId, feedErrChan, time.Second*1)
 	Require(t, err)
 	if receipt.Status != 1 {
 		Fail(t, receipt.Status)
@@ -279,7 +282,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 func TestSubmissionGasCosts(t *testing.T) {
 	t.Parallel()
-	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown, feedErrChan := retryableSetup(t)
 	defer teardown()
 
 	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
@@ -321,13 +324,13 @@ func TestSubmissionGasCosts(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx, feedErrChan)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	waitForL1DelayBlocks(t, ctx, l1client, l1info, feedErrChan)
 	l2BaseFee := GetBaseFee(t, l2client, ctx)
 	excessGasPrice := arbmath.BigSub(gasFeeCap, l2BaseFee)
 	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGasLimit)
@@ -387,11 +390,11 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 }
 
-func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient.Client, l1info *BlockchainTestInfo) {
+func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient.Client, l1info *BlockchainTestInfo, errChan chan error) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
+		}, errChan)
 	}
 }

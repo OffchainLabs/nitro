@@ -34,7 +34,7 @@ func GetPendingBlockNumber(ctx context.Context, client arbutil.L1Interface) (*bi
 }
 
 // Will wait until txhash is in the blockchain and return its receipt
-func WaitForTx(ctxinput context.Context, client arbutil.L1Interface, txhash common.Hash, timeout time.Duration) (*types.Receipt, error) {
+func WaitForTx(ctxinput context.Context, client arbutil.L1Interface, txhash common.Hash, errChan chan error, timeout time.Duration) (*types.Receipt, error) {
 	ctx, cancel := context.WithTimeout(ctxinput, timeout)
 	defer cancel()
 
@@ -66,18 +66,20 @@ func WaitForTx(ctxinput context.Context, client arbutil.L1Interface, txhash comm
 		select {
 		case <-chanHead:
 		case <-time.After(checkInterval):
+		case err := <-errChan:
+			return nil, err
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
 }
 
-func EnsureTxSucceeded(ctx context.Context, client arbutil.L1Interface, tx *types.Transaction) (*types.Receipt, error) {
-	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second*5)
+func EnsureTxSucceeded(ctx context.Context, client arbutil.L1Interface, tx *types.Transaction, errChan chan error) (*types.Receipt, error) {
+	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second*5, errChan)
 }
 
-func EnsureTxSucceededWithTimeout(ctx context.Context, client arbutil.L1Interface, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
-	txRes, err := WaitForTx(ctx, client, tx.Hash(), timeout)
+func EnsureTxSucceededWithTimeout(ctx context.Context, client arbutil.L1Interface, tx *types.Transaction, timeout time.Duration, errChan chan error) (*types.Receipt, error) {
+	txRes, err := WaitForTx(ctx, client, tx.Hash(), errChan, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("waitFoxTx got: %w", err)
 	}

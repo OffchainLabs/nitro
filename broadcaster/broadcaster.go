@@ -5,10 +5,11 @@ package broadcaster
 
 import (
 	"context"
+	"net"
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
-	"net"
 )
 
 type Broadcaster struct {
@@ -48,10 +49,10 @@ type ConfirmedSequenceNumberMessage struct {
 	SequenceNumber arbutil.MessageIndex `json:"sequenceNumber"`
 }
 
-func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig) *Broadcaster {
+func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64, broadcasterErrChan chan error) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer()
 	return &Broadcaster{
-		server:        wsbroadcastserver.NewWSBroadcastServer(settings, catchupBuffer),
+		server:        wsbroadcastserver.NewWSBroadcastServer(settings, catchupBuffer, chainId, broadcasterErrChan),
 		catchupBuffer: catchupBuffer,
 	}
 }

@@ -35,7 +35,7 @@ func main() {
 func printSampleUsage() {
 	progname := os.Args[0]
 	fmt.Printf("\n")
-	fmt.Printf("Sample usage:                  %s --help \n", progname)
+	fmt.Printf("Sample usage:                  %s --node.feed.input.url=<L1 RPC> --l2.chain-id=<L2 chain id> \n", progname)
 }
 
 func startup() error {
@@ -43,7 +43,7 @@ func startup() error {
 
 	vcsRevision, vcsTime := genericconf.GetVersion()
 	relayConfig, err := ParseRelay(ctx, os.Args[1:])
-	if err != nil {
+	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
 		printSampleUsage()
 		if !strings.Contains(err.Error(), "help requested") {
@@ -86,18 +86,29 @@ func startup() error {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	// Start up an arbitrum sequencer relay
-	newRelay := relay.NewRelay(serverConf, clientConf)
+	feedErrChan := make(chan error, 10)
+	newRelay := relay.NewRelay(serverConf, clientConf, relayConfig.L2.ChainId, feedErrChan)
 	err = newRelay.Start(ctx)
 	if err != nil {
 		return err
 	}
-	<-sigint
+	select {
+	case <-sigint:
+		log.Info("shutting down because of sigint")
+	case err := <-feedErrChan:
+		log.Error("error connecting, exiting", "err", err)
+	}
+
+	// cause future ctrl+c's to panic
+	close(sigint)
+
 	newRelay.StopAndWait()
 	return nil
 }
 
 type RelayConfig struct {
 	Conf     genericconf.ConfConfig `koanf:"conf"`
+	L2       L2Config               `koanf:"l2"`
 	LogLevel int                    `koanf:"log-level"`
 	LogType  string                 `koanf:"log-type"`
 	Node     RelayNodeConfig        `koanf:"node"`
@@ -105,6 +116,7 @@ type RelayConfig struct {
 
 var RelayConfigDefault = RelayConfig{
 	Conf:     genericconf.ConfConfigDefault,
+	L2:       L2ConfigDefault,
 	LogLevel: int(log.LvlInfo),
 	LogType:  "plaintext",
 	Node:     RelayNodeConfigDefault,
@@ -112,6 +124,7 @@ var RelayConfigDefault = RelayConfig{
 
 func RelayConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
+	L2ConfigAddOptions("l2", f)
 	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
 	f.String("log-type", RelayConfigDefault.LogType, "log type")
 	RelayNodeConfigAddOptions("node", f)
@@ -127,6 +140,18 @@ var RelayNodeConfigDefault = RelayNodeConfig{
 
 func RelayNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, true, true)
+}
+
+type L2Config struct {
+	ChainId uint64 `koanf:"chain-id"`
+}
+
+var L2ConfigDefault = L2Config{
+	ChainId: 0,
+}
+
+func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainId, "L2 chain ID")
 }
 
 func ParseRelay(_ context.Context, args []string) (*RelayConfig, error) {

@@ -17,7 +17,8 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, _, client, l2stack := CreateTestL2(t, ctx)
+	feedErrChan := make(chan error, 10)
+	_, _, client, l2stack := CreateTestL2(t, ctx, feedErrChan)
 	defer requireClose(t, l2stack)
 
 	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x64"), client)
@@ -33,7 +34,8 @@ func TestCustomSolidityErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, _, client, l2stack := CreateTestL2(t, ctx)
+	feedErrChan := make(chan error, 10)
+	_, _, client, l2stack := CreateTestL2(t, ctx, feedErrChan)
 	defer requireClose(t, l2stack)
 
 	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)

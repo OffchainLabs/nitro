@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -19,14 +20,60 @@ func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
 	return &SequenceNumberCatchupBuffer{}
 }
 
-func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) error {
-	start := time.Now()
-	if len(b.messages) > 0 {
-		// send the newly connected client all the messages we've got...
+func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
+	if b.messageCount == 0 {
+		return nil
+	}
+	var startingIndex int32
+	// Ignore messages older than requested sequence number
+	if requestedSeqNum > 0 {
+		if b.messages[0].SequenceNumber < requestedSeqNum {
+			startingIndex = int32(requestedSeqNum - b.messages[0].SequenceNumber)
+			if startingIndex >= b.messageCount {
+				startingIndex = b.messageCount - 1
+			}
+			if b.messages[startingIndex].SequenceNumber > requestedSeqNum {
+				for startingIndex > 1 {
+					if b.messages[startingIndex-1].SequenceNumber < requestedSeqNum {
+						// Found messages to broadcast
+						break
+					}
+					startingIndex--
+				}
+			} else if b.messages[startingIndex].SequenceNumber < requestedSeqNum {
+				for {
+					startingIndex++
+					if startingIndex >= b.messageCount {
+						// End of array with nothing found
+						return nil
+					}
+					if b.messages[startingIndex].SequenceNumber >= requestedSeqNum {
+						// Found messages to broadcast
+						break
+					}
+				}
+			}
+		}
+	}
+
+	messagesToSend := b.messages[startingIndex:]
+	if len(messagesToSend) > 0 {
 		bm := BroadcastMessage{
 			Version:  1,
-			Messages: b.messages,
+			Messages: messagesToSend,
 		}
+
+		return &bm
+	}
+
+	return nil
+}
+
+func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) error {
+	start := time.Now()
+	bm := b.getCacheMessages(clientConnection.RequestedSeqNum())
+	if bm != nil {
+		// send the newly connected client all the messages we've got...
 
 		err := clientConnection.Write(bm)
 		if err != nil {

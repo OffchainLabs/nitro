@@ -180,7 +180,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 	if !exists {
 		// The db contains no validation info; start from the beginning.
 		// TODO: this skips validating the genesis block.
-		v.lastBlockValidated = v.genesisBlockNum
+		atomic.StoreUint64(&v.lastBlockValidated, v.genesisBlockNum)
 		genesisBlock := v.blockchain.GetBlockByNumber(v.genesisBlockNum)
 		if genesisBlock == nil {
 			return fmt.Errorf("blockchain missing genesis block number %v", v.genesisBlockNum)
@@ -217,7 +217,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 		}
 	}
 
-	v.lastBlockValidated = info.BlockNumber
+	atomic.StoreUint64(&v.lastBlockValidated, info.BlockNumber)
 	v.lastBlockValidatedHash = info.BlockHash
 	v.nextBlockToValidate = v.lastBlockValidated + 1
 	v.globalPosNextSend = info.AfterPosition
@@ -845,7 +845,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 }
 
 // can only be used from One thread
-func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration) bool {
+func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration, errChan chan error) bool {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
@@ -865,6 +865,9 @@ func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration)
 			if !ok {
 				return false
 			}
+		case err := <-errChan:
+			log.Error("error received from channel while waiting for block", err)
+			return false
 		}
 	}
 }

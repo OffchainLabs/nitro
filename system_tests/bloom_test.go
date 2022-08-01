@@ -28,7 +28,8 @@ func TestBloom(t *testing.T) {
 	nodeconfig := arbnode.ConfigDefaultL2Test()
 	nodeconfig.RPC.BloomBitsBlocks = 256
 	nodeconfig.RPC.BloomConfirms = 1
-	l2info, node, client, stack := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false)
+	feedErrChan := make(chan error, 10)
+	l2info, node, client, stack := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false, feedErrChan)
 	defer requireClose(t, stack)
 
 	l2info.GenerateAccount("User2")
@@ -37,7 +38,7 @@ func TestBloom(t *testing.T) {
 	ownerTxOpts.Context = ctx
 	_, tx, simple, err := mocksgen.DeploySimple(&ownerTxOpts, client)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 	Require(t, err)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
@@ -66,7 +67,7 @@ func TestBloom(t *testing.T) {
 		if sendNullEvent {
 			tx, err = simple.EmitNullEvent(&ownerTxOpts)
 			Require(t, err)
-			_, err = EnsureTxSucceeded(ctx, client, tx)
+			_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 			Require(t, err)
 		}
 
@@ -77,7 +78,7 @@ func TestBloom(t *testing.T) {
 			tx, err = simple.Increment(&ownerTxOpts)
 		}
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, client, tx)
+		_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 		Require(t, err)
 		if i%100 == 0 {
 			t.Log("counts: ", i, "/", countsNum)

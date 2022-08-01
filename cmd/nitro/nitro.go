@@ -495,7 +495,20 @@ func main() {
 		}
 	}
 
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
+	feedErrChan := make(chan error, 10)
+	currentNode, err := arbnode.CreateNode(
+		ctx,
+		stack,
+		chainDb,
+		arbDb,
+		&nodeConfig.Node,
+		l2BlockChain,
+		l1Client,
+		&rollupAddrs,
+		l1TransactionOpts,
+		daSigner,
+		feedErrChan,
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -527,7 +540,13 @@ func main() {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	<-sigint
+	select {
+	case err := <-feedErrChan:
+		log.Error("shutting down because broadcaster stopped", "err", err)
+	case <-sigint:
+		log.Info("shutting down because of sigint")
+	}
+
 	// cause future ctrl+c's to panic
 	close(sigint)
 

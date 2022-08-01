@@ -33,7 +33,8 @@ func TestSequencerFeePaid(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _, l2client, l2stack, _, _, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	feedErrChan := make(chan error, 10)
+	l2info, _, l2client, l2stack, _, _, _, l1stack := CreateTestNodeOnL1(t, ctx, true, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
@@ -52,7 +53,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
 
 	l2info.GasPrice = GetBaseFee(t, l2client, ctx)
-	tx, receipt := TransferBalance(t, "Faucet", "Faucet", big.NewInt(0), l2info, l2client, ctx)
+	tx, receipt := TransferBalance(t, "Faucet", "Faucet", big.NewInt(0), l2info, l2client, ctx, feedErrChan)
 	txSize := compressedTxSize(t, tx)
 
 	networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
@@ -91,7 +92,8 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.DelayedSequencer.FinalizeDistance = 1
 
-	l2info, node, l2client, l2stack, _, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig)
+	feedErrChan := make(chan error, 10)
+	l2info, node, l2client, l2stack, _, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
@@ -102,7 +104,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	tx, err := arbdebug.BecomeChainOwner(&ownerAuth)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx, feedErrChan)
 
 	// use ownerAuth to set the L1 price per unit
 	Require(t, err)
@@ -110,7 +112,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	tx, err = arbOwner.SetL1PricePerUnit(&ownerAuth, new(big.Int).SetUint64(initialEstimate))
 	Require(t, err)
-	_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2client, tx.Hash(), feedErrChan, time.Second*5)
 	Require(t, err)
 
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
@@ -131,7 +133,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 
 	numRetrogradeMoves := 0
 	for i := 0; i < 256; i++ {
-		tx, receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2info, l2client, ctx)
+		tx, receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2info, l2client, ctx, feedErrChan)
 		header, err := l2client.HeaderByHash(ctx, receipt.BlockHash)
 		Require(t, err)
 

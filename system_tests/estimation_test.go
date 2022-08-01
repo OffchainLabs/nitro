@@ -26,7 +26,8 @@ func TestDeploy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, _, client, l2stack := CreateTestL2(t, ctx)
+	feedErrChan := make(chan error, 10)
+	l2info, _, client, l2stack := CreateTestL2(t, ctx, feedErrChan)
 	defer requireClose(t, l2stack)
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -34,12 +35,12 @@ func TestDeploy(t *testing.T) {
 
 	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy contract")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 	Require(t, err)
 
 	tx, err = simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 	Require(t, err)
 
 	counter, err := simple.Counter(&bind.CallOpts{})
@@ -54,7 +55,8 @@ func TestEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, _, client, l2stack := CreateTestL2(t, ctx)
+	feedErrChan := make(chan error, 10)
+	l2info, _, client, l2stack := CreateTestL2(t, ctx, feedErrChan)
 	defer requireClose(t, l2stack)
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -67,7 +69,7 @@ func TestEstimate(t *testing.T) {
 	Require(t, err, "could not deploy ArbOwner contract")
 	tx, err := arbOwner.SetMinimumL2BaseFee(&auth, gasPrice)
 	Require(t, err, "could not set L2 gas price")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 	Require(t, err)
 
 	// connect to arbGasInfo precompile
@@ -80,7 +82,7 @@ func TestEstimate(t *testing.T) {
 	for !equilibrated && numTriesLeft > 0 {
 		// make an empty block to let the gas price update
 		l2info.GasPrice = new(big.Int).Mul(l2info.GasPrice, big.NewInt(2))
-		TransferBalance(t, "Owner", "Owner", common.Big0, l2info, client, ctx)
+		TransferBalance(t, "Owner", "Owner", common.Big0, l2info, client, ctx, feedErrChan)
 
 		// check if the price has equilibrated
 		_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{})
@@ -100,7 +102,7 @@ func TestEstimate(t *testing.T) {
 	// deploy a test contract
 	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy contract")
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 	Require(t, err)
 
 	header, err := client.HeaderByNumber(ctx, receipt.BlockNumber)
@@ -119,7 +121,7 @@ func TestEstimate(t *testing.T) {
 
 	tx, err = simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 	Require(t, err)
 
 	counter, err := simple.Counter(&bind.CallOpts{})
@@ -134,7 +136,8 @@ func TestComponentEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, node, client, l2stack := CreateTestL2(t, ctx)
+	feedErrChan := make(chan error, 10)
+	l2info, node, client, l2stack := CreateTestL2(t, ctx, feedErrChan)
 	defer requireClose(t, l2stack)
 
 	l1BaseFee := big.NewInt(l1pricing.InitialPricePerUnitWei)
@@ -148,7 +151,7 @@ func TestComponentEstimate(t *testing.T) {
 	maxFeePerGas := arbmath.BigMulByUfrac(l2BaseFee, 3, 2)
 
 	l2info.GenerateAccount("User")
-	TransferBalance(t, "Owner", "User", userBalance, l2info, client, ctx)
+	TransferBalance(t, "Owner", "User", userBalance, l2info, client, ctx, feedErrChan)
 
 	from := l2info.GetAddress("User")
 	to := testhelpers.RandomAddress()
@@ -211,7 +214,7 @@ func TestComponentEstimate(t *testing.T) {
 	}
 
 	Require(t, client.SendTransaction(ctx, tx))
-	receipt, err := EnsureTxSucceeded(ctx, client, tx)
+	receipt, err := EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 	Require(t, err)
 
 	l2Used := receipt.GasUsed - receipt.GasUsedForL1

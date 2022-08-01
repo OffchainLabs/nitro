@@ -26,16 +26,17 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 
 	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeString)
 
-	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	feedErrChan := make(chan error, 10)
+	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client, feedErrChan)
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
-	l2clientB, nodeB, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, validatorConfig)
+	l2clientB, nodeB, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, validatorConfig, feedErrChan)
 	defer requireClose(t, l2stackB)
 	l2info.GenerateAccount("User2")
 
@@ -44,7 +45,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx, feedErrChan)
 	Require(t, err)
 
 	if expensiveTx {
@@ -65,14 +66,14 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		ownerInfo.Nonce++
 		err = l2client.SendTransaction(ctx, tx)
 		Require(t, err)
-		_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+		_, err = WaitForTx(ctx, l2client, tx.Hash(), feedErrChan, time.Second*5)
 		Require(t, err)
 	}
 
 	delayedTx := l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil)
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 		WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000),
-	})
+	}, feedErrChan)
 
 	// give the inbox reader a bit of time to pick up the delayed message
 	time.Sleep(time.Millisecond * 500)
@@ -81,10 +82,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
+		}, feedErrChan)
 	}
 
-	_, err = WaitForTx(ctx, l2clientB, delayedTx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, delayedTx.Hash(), feedErrChan, time.Second*5)
 	Require(t, err)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
@@ -108,9 +109,15 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		}
 		lastBlock, err = l2clientB.BlockByHash(ctx, lastBlock.ParentHash())
 		Require(t, err)
+
+		select {
+		case err := <-feedErrChan:
+			Fail(t, "feed error:", err)
+		default:
+		}
 	}
-	testDeadLine, _ := t.Deadline()
-	if !nodeB.BlockValidator.WaitForBlock(lastBlock.NumberU64(), time.Until(testDeadLine)-time.Second*10) {
+	timeout := getDeadlineTimeout(t, time.Minute*10)
+	if !nodeB.BlockValidator.WaitForBlock(lastBlock.NumberU64(), timeout, feedErrChan) {
 		Fail(t, "did not validate all blocks")
 	}
 }

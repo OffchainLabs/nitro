@@ -600,6 +600,7 @@ func createNodeImpl(
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
+	feedErrChan chan error,
 ) (*Node, error) {
 	var reorgingToBlock *types.Block
 	if config.Dangerous.ReorgToBlock >= 0 {
@@ -629,7 +630,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2BlockChain.Config().ChainID.Uint64(), feedErrChan)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -691,14 +692,49 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	currentMessageCount, err := txStreamer.GetMessageCount()
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			currentMessageCount = 0
+		} else {
+			return nil, err
+		}
+	}
 	var broadcastClients []*broadcastclient.BroadcastClient
+	var clientErrChan chan error
 	if config.Feed.Input.Enable() {
 		for _, address := range config.Feed.Input.URLs {
-			broadcastClients = append(broadcastClients, broadcastclient.NewBroadcastClient(address, nil, config.Feed.Input.Timeout, txStreamer))
+			client := broadcastclient.NewBroadcastClient(
+				address,
+				l2BlockChain.Config().ChainID.Uint64(),
+				currentMessageCount,
+				config.Feed.Input.Timeout,
+				txStreamer,
+				clientErrChan,
+			)
+			broadcastClients = append(broadcastClients, client)
 		}
 	}
 	if !config.L1Reader.Enable {
-		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, nil, classicOutbox}, nil
+		return &Node{
+			backend,
+			arbInterface,
+			nil,
+			txStreamer,
+			txPublisher,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			broadcastServer,
+			broadcastClients,
+			coordinator,
+			nil,
+			classicOutbox,
+		}, nil
 	}
 
 	if deployInfo == nil {
@@ -802,7 +838,25 @@ func createNodeImpl(
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dasLifecycleManager, classicOutbox}, nil
+	return &Node{
+		backend,
+		arbInterface,
+		l1Reader,
+		txStreamer,
+		txPublisher,
+		deployInfo,
+		inboxReader,
+		inboxTracker,
+		delayedSequencer,
+		batchPoster,
+		blockValidator,
+		staker,
+		broadcastServer,
+		broadcastClients,
+		coordinator,
+		dasLifecycleManager,
+		classicOutbox,
+	}, nil
 }
 
 type L1ReaderCloser struct {
@@ -1041,8 +1095,9 @@ func CreateNode(
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
-) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
+	feedErrChan chan error,
+) (*Node, error) {
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
 	if err != nil {
 		return nil, err
 	}

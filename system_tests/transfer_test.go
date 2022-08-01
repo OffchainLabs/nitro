@@ -13,7 +13,8 @@ import (
 func TestTransfer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _, client, l2stack := CreateTestL2(t, ctx)
+	feedErrChan := make(chan error, 10)
+	l2info, _, client, l2stack := CreateTestL2(t, ctx, feedErrChan)
 	defer requireClose(t, l2stack)
 
 	l2info.GenerateAccount("User2")
@@ -23,7 +24,7 @@ func TestTransfer(t *testing.T) {
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
 	Require(t, err)
 
 	bal, err := client.BalanceAt(ctx, l2info.GetAddress("Owner"), nil)

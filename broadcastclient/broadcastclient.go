@@ -8,8 +8,9 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"io"
-	"math/big"
 	"net"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -47,8 +48,9 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type BroadcastClientConfig struct {
-	Timeout time.Duration `koanf:"timeout"`
-	URLs    []string      `koanf:"url"`
+	RequireChainId bool          `koanf:"require-chain-id"`
+	Timeout        time.Duration `koanf:"timeout"`
+	URLs           []string      `koanf:"url"`
 }
 
 func (c *BroadcastClientConfig) Enable() bool {
@@ -72,8 +74,10 @@ type TransactionStreamerInterface interface {
 type BroadcastClient struct {
 	stopwaiter.StopWaiter
 
-	websocketUrl    string
-	lastInboxSeqNum *big.Int
+	websocketUrl     string
+	mostRecentSeqNum arbutil.MessageIndex
+
+	chainId uint64
 
 	// Protects conn and shuttingDown
 	connMutex sync.Mutex
@@ -86,29 +90,45 @@ type BroadcastClient struct {
 	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
 	idleTimeout                     time.Duration
 	txStreamer                      TransactionStreamerInterface
+	clientErrChan                   chan error
 }
 
-func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeout time.Duration, txStreamer TransactionStreamerInterface) *BroadcastClient {
-	var seqNum *big.Int
-	if lastInboxSeqNum == nil {
-		seqNum = big.NewInt(0)
+var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
+var ErrIncorrectChainId = errors.New("incorrect chain id")
+
+func NewBroadcastClient(
+	websocketUrl string,
+	chainId uint64,
+	currentMessageCount arbutil.MessageIndex,
+	idleTimeout time.Duration,
+	txStreamer TransactionStreamerInterface,
+	clientErrChan chan error,
+) *BroadcastClient {
+	var mostRecentSeqNum arbutil.MessageIndex
+	if currentMessageCount <= 0 {
+		mostRecentSeqNum = 0
 	} else {
-		seqNum = lastInboxSeqNum
+		mostRecentSeqNum = currentMessageCount - 1
 	}
 
 	return &BroadcastClient{
-		websocketUrl:    websocketUrl,
-		lastInboxSeqNum: seqNum,
-		idleTimeout:     idleTimeout,
-		txStreamer:      txStreamer,
-	}
+		websocketUrl:     websocketUrl,
+		chainId:          chainId,
+		mostRecentSeqNum: mostRecentSeqNum,
+		idleTimeout:      idleTimeout,
+		txStreamer:       txStreamer,
+		clientErrChan:    clientErrChan}
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn)
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
-			earlyFrameData, err := bc.connect(ctx)
+			earlyFrameData, err := bc.connect(ctx, bc.mostRecentSeqNum)
+			if errors.Is(err, ErrIncorrectChainId) || errors.Is(err, ErrIncorrectFeedServerVersion) {
+				bc.clientErrChan <- err
+				return
+			}
 			if err == nil {
 				bc.startBackgroundReader(earlyFrameData)
 				break
@@ -125,14 +145,67 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	})
 }
 
-func (bc *BroadcastClient) connect(ctx context.Context) (earlyFrameData io.Reader, err error) {
+func (bc *BroadcastClient) connect(ctx context.Context, currentSeqNum arbutil.MessageIndex) (io.Reader, error) {
 	if len(bc.websocketUrl) == 0 {
 		// Nothing to do
-		return
+		return nil, nil
 	}
 
+	var requestedSequenceNumber string
+	if currentSeqNum > 0 {
+		requestedSequenceNumber = strconv.FormatUint(uint64(currentSeqNum+1), 10)
+	} else {
+		requestedSequenceNumber = "0"
+	}
+	header := ws.HandshakeHeaderHTTP(http.Header{
+		wsbroadcastserver.HTTPHeaderFeedClientVersion:       []string{strconv.Itoa(wsbroadcastserver.FeedClientVersion)},
+		wsbroadcastserver.HTTPHeaderRequestedSequenceNumber: []string{requestedSequenceNumber},
+	})
+
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
+	var chainId uint64
+	var feedServerVersion uint64
+	var headerErr error
 	timeoutDialer := ws.Dialer{
+		Header: header,
+		OnHeader: func(key, value []byte) (err error) {
+			headerName := string(key)
+			headerValue := string(value)
+			if headerName == wsbroadcastserver.HTTPHeaderFeedServerVersion {
+				feedServerVersion, err = strconv.ParseUint(headerValue, 0, 64)
+				if err != nil {
+					return err
+				}
+				if feedServerVersion != wsbroadcastserver.FeedServerVersion {
+					log.Error(
+						"incorrect feed server version",
+						"expectedFeedServerVersion",
+						wsbroadcastserver.FeedServerVersion,
+						"actualFeedServerVersion",
+						feedServerVersion,
+					)
+					headerErr = ErrIncorrectFeedServerVersion
+					return ErrIncorrectFeedServerVersion
+				}
+			} else if headerName == wsbroadcastserver.HTTPHeaderChainId {
+				chainId, err = strconv.ParseUint(headerValue, 0, 64)
+				if err != nil {
+					return err
+				}
+				if chainId != bc.chainId {
+					log.Error(
+						"incorrect chain id when connecting to server feed",
+						"expectedChainId",
+						bc.chainId,
+						"actualChainId",
+						chainId,
+					)
+					headerErr = ErrIncorrectChainId
+					return ErrIncorrectChainId
+				}
+			}
+			return nil
+		},
 		Timeout: 10 * time.Second,
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
@@ -140,7 +213,7 @@ func (bc *BroadcastClient) connect(ctx context.Context) (earlyFrameData io.Reade
 	}
 
 	if bc.isShuttingDown() {
-		return
+		return nil, nil
 	}
 
 	conn, br, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
@@ -148,6 +221,11 @@ func (bc *BroadcastClient) connect(ctx context.Context) (earlyFrameData io.Reade
 		return nil, errors.Wrap(err, "broadcast client unable to connect")
 	}
 
+	if headerErr != nil {
+		return nil, headerErr
+	}
+
+	var earlyFrameData io.Reader
 	if br != nil {
 		// Depending on how long the client takes to read the response, there may be
 		// data after the WebSocket upgrade response in a single read from the socket,
@@ -163,9 +241,9 @@ func (bc *BroadcastClient) connect(ctx context.Context) (earlyFrameData io.Reade
 	bc.conn = conn
 	bc.connMutex.Unlock()
 
-	log.Info("Connected")
+	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", requestedSequenceNumber)
 
-	return
+	return earlyFrameData, nil
 }
 
 func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
@@ -212,7 +290,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
-						messages := []arbstate.MessageWithMetadata{}
+						var messages []arbstate.MessageWithMetadata
 						for _, message := range res.Messages {
 							if message == nil {
 								log.Warn("ignoring nil feed message")
@@ -220,6 +298,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							}
 							messages = append(messages, message.Message)
 						}
+						bc.mostRecentSeqNum = res.Messages[len(res.Messages)-1].SequenceNumber
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages[0].SequenceNumber, messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
@@ -258,7 +337,7 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 		}
 
 		atomic.AddInt64(&bc.retryCount, 1)
-		earlyFrameData, err := bc.connect(ctx)
+		earlyFrameData, err := bc.connect(ctx, bc.mostRecentSeqNum)
 		if err == nil {
 			bc.retrying = false
 			return earlyFrameData

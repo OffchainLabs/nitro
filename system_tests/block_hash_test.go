@@ -16,7 +16,8 @@ func TestBlockHash(t *testing.T) {
 	defer cancel()
 
 	// Even though we don't use the L1, we need to create this node on L1 to get accurate L1 block numbers
-	l2info, _, l2client, l2stack, _, _, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	feedErrChan := make(chan error, 10)
+	l2info, _, l2client, l2stack, _, _, _, l1stack := CreateTestNodeOnL1(t, ctx, true, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 

@@ -38,13 +38,14 @@ func TestSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
-	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	feedErrChan := make(chan error, 10)
+	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true, feedErrChan)
 	defer requireClose(t, l2stackA)
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, _, client2, l2stackB := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	_, _, client2, l2stackB := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false, feedErrChan)
 	defer requireClose(t, l2stackB)
 
 	l2info1.GenerateAccount("User2")
@@ -54,10 +55,10 @@ func TestSequencerFeed(t *testing.T) {
 	err := client1.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client1, tx)
+	_, err = EnsureTxSucceeded(ctx, client1, tx, feedErrChan)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, client2, tx.Hash(), feedErrChan, time.Second*5)
 	Require(t, err)
 	l2balance, err := client2.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
 	Require(t, err)
@@ -73,22 +74,27 @@ func TestRelayedSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
-	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	feedErrChan := make(chan error, 10)
+	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true, feedErrChan)
 	defer requireClose(t, l2stackA)
+
+	bigChainId, err := client1.ChainID(ctx)
+	Require(t, err)
+	chainId := bigChainId.Uint64()
 
 	relayServerConf := *newBroadcasterConfigTest("0")
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	relayClientConf := *newBroadcastClientConfigTest(port)
 
-	relay := relay.NewRelay(relayServerConf, relayClientConf)
-	err := relay.Start(ctx)
+	currentRelay := relay.NewRelay(relayServerConf, relayClientConf, chainId, feedErrChan)
+	err = currentRelay.Start(ctx)
 	Require(t, err)
-	defer relay.StopAndWait()
+	defer currentRelay.StopAndWait()
 
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
-	port = relay.GetListenerAddr().(*net.TCPAddr).Port
+	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
-	_, _, client3, l2stackC := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	_, _, client3, l2stackC := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false, feedErrChan)
 	defer requireClose(t, l2stackC)
 
 	l2info1.GenerateAccount("User2")
@@ -98,10 +104,10 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	err = client1.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client1, tx)
+	_, err = EnsureTxSucceeded(ctx, client1, tx, feedErrChan)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, client3, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, client3, tx.Hash(), feedErrChan, time.Second*30)
 	Require(t, err)
 	l2balance, err := client3.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
 	Require(t, err)
@@ -119,18 +125,19 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	chainConfig, nodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
+	feedErrChan := make(chan error, 10)
+	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client, feedErrChan)
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest("0")
-	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
+	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC, feedErrChan)
 	defer requireClose(t, l2stackC)
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -140,7 +147,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
+	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB, feedErrChan)
 	defer requireClose(t, l2stackB)
 
 	l2infoA.GenerateAccount("FraudUser")
@@ -155,13 +162,13 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal(err)
 	}
 
-	_, err = EnsureTxSucceeded(ctx, l2clientC, fraudTx)
+	_, err = EnsureTxSucceeded(ctx, l2clientC, fraudTx, feedErrChan)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Node B should get the transaction immediately from the sequencer feed
-	_, err = WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*15)
+	_, err = WaitForTx(ctx, l2clientB, fraudTx.Hash(), feedErrChan, time.Second*15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,13 +186,13 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal(err)
 	}
 
-	_, err = EnsureTxSucceeded(ctx, l2clientA, realTx)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, realTx, feedErrChan)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Node B should get the transaction after NodeC posts a batch.
-	_, err = WaitForTx(ctx, l2clientB, realTx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, realTx.Hash(), feedErrChan, time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}

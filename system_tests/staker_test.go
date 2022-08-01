@@ -25,7 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
-func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface, l2clientB arbutil.L1Interface, faultyStaker bool) error {
+func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface, l2clientB arbutil.L1Interface, faultyStaker bool, errChan chan error) error {
 	for i := uint64(0); ctx.Err() == nil; i++ {
 		l2info.Accounts["BackgroundUser"].Nonce = i
 		tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
@@ -33,7 +33,7 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 		if err != nil {
 			return err
 		}
-		_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+		_, err = EnsureTxSucceeded(ctx, l2clientA, tx, errChan)
 		if err != nil {
 			return err
 		}
@@ -45,7 +45,7 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 			if err != nil {
 				return err
 			}
-			_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
+			_, err = EnsureTxSucceeded(ctx, l2clientB, tx, errChan)
 			if err != nil {
 				return err
 			}
@@ -58,14 +58,15 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2info, l2nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	feedErrChan := make(chan error, 10)
+	l2info, l2nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
 	if faultyStaker {
 		l2info.GenerateGenesysAccount("FaultyAddr", common.Big1)
 	}
-	l2clientB, l2nodeB, l2stackB := Create2ndNode(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, nil)
+	l2clientB, l2nodeB, l2stackB := Create2ndNode(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, nil, feedErrChan)
 	defer requireClose(t, l2stackB)
 
 	nodeAGenesis := l2nodeA.Backend.APIBackend().CurrentHeader().Hash()
@@ -85,11 +86,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
 	l1info.GenerateAccount("ValidatorA")
-	TransferBalance(t, "Faucet", "ValidatorA", balance, l1info, l1client, ctx)
+	TransferBalance(t, "Faucet", "ValidatorA", balance, l1info, l1client, ctx, feedErrChan)
 	l1authA := l1info.GetDefaultTransactOpts("ValidatorA", ctx)
 
 	l1info.GenerateAccount("ValidatorB")
-	TransferBalance(t, "Faucet", "ValidatorB", balance, l1info, l1client, ctx)
+	TransferBalance(t, "Faucet", "ValidatorB", balance, l1info, l1client, ctx, feedErrChan)
 	l1authB := l1info.GetDefaultTransactOpts("ValidatorB", ctx)
 
 	valWalletAddrA, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader)
@@ -107,12 +108,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	tx, err := rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, valWalletAddrB}, []bool{true, true})
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx, feedErrChan)
 	Require(t, err)
 
 	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx, feedErrChan)
 	Require(t, err)
 
 	valConfig := validator.L1ValidatorConfig{
@@ -170,12 +171,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, balance, nil)
 	err = l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, tx, feedErrChan)
 	Require(t, err)
 	if faultyStaker {
 		err = l2clientB.SendTransaction(ctx, tx)
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
+		_, err = EnsureTxSucceeded(ctx, l2clientB, tx, feedErrChan)
 		Require(t, err)
 	}
 
@@ -188,7 +189,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	})()
 	go (func() {
 		defer close(backgroundTxsShutdownChan)
-		err := makeBackgroundTxs(backgroundTxsCtx, l2info, l2clientA, l2clientB, faultyStaker)
+		err := makeBackgroundTxs(backgroundTxsCtx, l2info, l2clientA, l2clientB, faultyStaker, feedErrChan)
 		if !errors.Is(err, context.Canceled) {
 			Fail(t, "error making background txs", err)
 		}
@@ -227,7 +228,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			if strings.Contains(err.Error(), "agreed with entire challenge") {
 				// Expected error upon realizing you're losing the challenge. Get ready for a timeout.
 				for j := 0; j < 200; j++ {
-					TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
+					TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx, feedErrChan)
 				}
 			} else if strings.Contains(err.Error(), "insufficient funds") && sawStakerZombie {
 				// Expected error when trying to re-stake after losing initial stake.
@@ -242,7 +243,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 		Require(t, err, "Staker", stakerName, "failed to act")
 		if tx != nil {
-			_, err = EnsureTxSucceeded(ctx, l1client, tx)
+			_, err = EnsureTxSucceeded(ctx, l1client, tx, feedErrChan)
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
 		}
 		if faultyStaker {
@@ -262,7 +263,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Fail(t, "staker A became a zombie")
 		}
 		for j := 0; j < 5; j++ {
-			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
+			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx, feedErrChan)
 		}
 	}
 

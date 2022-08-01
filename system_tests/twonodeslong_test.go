@@ -40,12 +40,13 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 
-	l2info, nodeA, l2client, l2stackA, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	feedErrChan := make(chan error, 10)
+	l2info, nodeA, l2client, l2stackA, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, feedErrChan)
 	defer requireClose(t, l1stack)
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client, feedErrChan)
 
-	l2clientB, nodeB, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability)
+	l2clientB, nodeB, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability, feedErrChan)
 	defer requireClose(t, l2stackB)
 
 	l2info.GenerateAccount("DelayedFaucet")
@@ -56,13 +57,13 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
 		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(l2pricing.InitialBaseFeeWei*int64(l2info.TransferGas)), nil),
-	})
+	}, feedErrChan)
 
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
 	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei*100000)), delayedMsgsToSendMax)
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
 		l2info.PrepareTx("Faucet", "DelayedFaucet", l2info.TransferGas, delayedFaucetNeeds, nil),
-	})
+	}, feedErrChan)
 	delayedFaucetBalance, err := l2client.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
 	Require(t, err)
 
@@ -102,10 +103,10 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		for len(l2Txs) < l2TxsThisTime {
 			l2Txs = append(l2Txs, l2info.PrepareTx("Faucet", "DirectReceiver", l2info.TransferGas, fundsPerDirect, nil))
 		}
-		SendWaitTestTransactions(t, ctx, l2client, l2Txs)
+		SendWaitTestTransactions(t, ctx, l2client, l2Txs, feedErrChan)
 		directTransfers += int64(l2TxsThisTime)
 		if len(l1Txs) > 0 {
-			_, err := EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
+			_, err := EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1], feedErrChan)
 			if err != nil {
 				Fail(t, err)
 			}
@@ -114,13 +115,13 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		l2info.GetInfoWithPrivKey("ErrorTxSender").Nonce = 10
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			WrapL2ForDelayed(t, l2info.PrepareTx("ErrorTxSender", "DelayedReceiver", 30002, delayedFaucetNeeds, nil), l1info, "User", 100000),
-		})
+		}, feedErrChan)
 
 		extrBlocksThisTime := rand.Int() % (avgExtraBlocksPerLoop * 2)
 		for i := 0; i < extrBlocksThisTime; i++ {
 			SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 				l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-			})
+			}, feedErrChan)
 		}
 	}
 
@@ -139,15 +140,15 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 				Fail(t, err)
 			}
 		}
-		_, err := EnsureTxSucceeded(ctx, l1client, tx)
+		_, err := EnsureTxSucceeded(ctx, l1client, tx, feedErrChan)
 		if err != nil {
 			Fail(t, err)
 		}
 	}
 
-	_, err = EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10, feedErrChan)
 	Require(t, err, "Failed waiting for Tx on main node")
-	_, err = EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10, feedErrChan)
 	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
@@ -169,14 +170,8 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
-		testDeadLine, deadlineExist := t.Deadline()
-		var timeout time.Duration
-		if deadlineExist {
-			timeout = time.Until(testDeadLine) - (time.Second * 10)
-		} else {
-			timeout = time.Hour * 12
-		}
-		if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), timeout) {
+		timeout := getDeadlineTimeout(t, time.Minute*30)
+		if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), timeout, feedErrChan) {
 			Fail(t, "did not validate all blocks")
 		}
 	}

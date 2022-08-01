@@ -18,18 +18,19 @@ func TestSequencerWhitelist(t *testing.T) {
 
 	config := arbnode.ConfigDefaultL2Test()
 	config.Sequencer.SenderWhitelist = GetTestAddressForAccountName(t, "Owner").String() + "," + GetTestAddressForAccountName(t, "User").String()
-	l2info, _, client, l2stack := CreateTestL2WithConfig(t, ctx, nil, config, true)
+	feedErrChan := make(chan error, 10)
+	l2info, _, client, l2stack := CreateTestL2WithConfig(t, ctx, nil, config, true, feedErrChan)
 	defer requireClose(t, l2stack)
 
 	l2info.GenerateAccount("User")
 	l2info.GenerateAccount("User2")
 
 	// Owner is on the whitelist
-	TransferBalance(t, "Owner", "User", big.NewInt(params.Ether), l2info, client, ctx)
-	TransferBalance(t, "Owner", "User2", big.NewInt(params.Ether), l2info, client, ctx)
+	TransferBalance(t, "Owner", "User", big.NewInt(params.Ether), l2info, client, ctx, feedErrChan)
+	TransferBalance(t, "Owner", "User2", big.NewInt(params.Ether), l2info, client, ctx, feedErrChan)
 
 	// User is on the whitelist
-	TransferBalance(t, "User", "User2", big.NewInt(params.Ether/10), l2info, client, ctx)
+	TransferBalance(t, "User", "User2", big.NewInt(params.Ether/10), l2info, client, ctx, feedErrChan)
 
 	// User2 is *not* on the whitelist, therefore this should fail
 	tx := l2info.PrepareTx("User2", "User", l2info.TransferGas, big.NewInt(params.Ether/10), nil)
