@@ -30,7 +30,7 @@ func (s *StubSignatureCheckDAS) Store(ctx context.Context, message []byte, timeo
 		return nil, err
 	}
 
-	verified := crypto.VerifySignature(pubkey, dasStoreHash(message, timeout), sig)
+	verified := crypto.VerifySignature(pubkey, dasStoreHash(message, timeout), sig[:64])
 	if !verified {
 		return nil, errors.New("signature verification failed")
 	}
@@ -88,7 +88,7 @@ func TestSimpleSignatureCheck(t *testing.T) {
 	pubkey, err := hex.DecodeString(string(pubkeyEncoded))
 	Require(t, err)
 
-	verified := crypto.VerifySignature(pubkey, dataHash, sig)
+	verified := crypto.VerifySignature(pubkey, dataHash, sig[:64])
 	if !verified {
 		Fail(t, "Signature not verified")
 	}
@@ -104,6 +104,7 @@ func TestEvenSimplerSignatureCheck(t *testing.T) {
 	Require(t, err)
 
 	pubkey, err := crypto.SigToPub(dataHash, sig)
+	Require(t, err)
 	if bytes.Compare(crypto.FromECDSAPub(pubkey), crypto.FromECDSAPub(&privateKey.PublicKey)) != 0 {
 		Fail(t, "Derived pubkey doesn't match pubkey")
 	}
