@@ -188,6 +188,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * @param newConfirmPeriod new number of blocks
      */
     function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external override {
+        require(newConfirmPeriod > 0, "INVALID_CONFIRM_PERIOD");
         confirmPeriodBlocks = newConfirmPeriod;
         emit OwnerFunctionCalled(9);
     }
