@@ -380,11 +380,46 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	// Now create a REST DAS server using the local disk storage
 	// and connect a node to it, and make sure it syncs.
+	restServerConfig := das.DataAvailabilityConfig{
+		Enable: true,
+
+		LocalFileStorageConfig: das.LocalFileStorageConfig{
+			Enable:  true,
+			DataDir: fileDataDir,
+		},
+		RequestTimeout: 5 * time.Second,
+	}
+
+	restServerDAS, rpcServerLifecycleManager, err := das.CreatePersistentStorageService(ctx, &restServerConfig)
+	Require(t, err)
+	restLis, err := net.Listen("tcp", "localhost:0")
+	Require(t, err)
+	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, restServerDAS)
+	Require(t, err)
+
 	l1NodeConfigC := arbnode.ConfigDefaultL1NonSequencerTest()
 	l1NodeConfigC.BlockValidator.Enable = false
+	l1NodeConfigC.DataAvailability = das.DataAvailabilityConfig{
+		Enable: true,
 
-	rpcServerLifecycleManager, restServer, restFulDataAvailabilityConfig := startLocalRestfulDasServer(t, ctx, fileDataDir)
-	l1NodeConfigC.DataAvailability = restFulDataAvailabilityConfig
+		LocalCacheConfig: das.TestBigCacheConfig,
+
+		RestfulClientAggregatorConfig: das.RestfulClientAggregatorConfig{
+			Enable:                 true,
+			Urls:                   []string{"http://" + restLis.Addr().String()},
+			Strategy:               "simple-explore-exploit",
+			StrategyUpdateInterval: time.Second,
+			WaitBeforeTryNext:      time.Second,
+			MaxPerEndpointStats:    20,
+			SimpleExploreExploitStrategyConfig: das.SimpleExploreExploitStrategyConfig{
+				ExploreIterations: 1,
+				ExploitIterations: 5,
+			},
+		},
+
+		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
+		RequestTimeout: 5 * time.Second,
+	}
 	l2clientC, _, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigC)
 
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientC)
