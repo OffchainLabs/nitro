@@ -296,6 +296,10 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 	if nonce > p.nonce {
 		confirmed := int(nonce - p.nonce)
 		if len(p.queue) > confirmed {
+			// Unfortunately, the Go GC can't figure this out on its own
+			for i := 0; i < confirmed; i++ {
+				p.queue[i] = nil
+			}
 			p.queue = p.queue[confirmed:]
 		} else {
 			p.queue = p.queue[:0]
