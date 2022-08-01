@@ -132,7 +132,7 @@ RUN bash -c 'r=0x588762be2f364be15d323df2aa60ffff60f2b14103b34823b6f7319acd1ae7a
 RUN bash -c 'r=0xcfba6a883c50a1b4475ab909600fa88fc9cceed9e3ff6f43dccd2d27f6bd57cf && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3.2/machine.wavm.br'
 RUN bash -c 'r=0xa24ccdb052d92c5847e8ea3ce722442358db4b00985a9ee737c4e601b6ed9876 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v4/machine.wavm.br'
 
-FROM golang:1.17-bullseye as node-builder
+FROM golang:1.18-bullseye as node-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
