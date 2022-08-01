@@ -107,7 +107,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         initializer
         onlyDelegated
     {
-        if (address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
         sequencerInbox = _sequencerInbox;
         allowListEnabled = false;
