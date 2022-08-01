@@ -501,8 +501,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      * @param stakerAddress Address of the staker to remove
      */
     function deleteStaker(address stakerAddress) private {
-        require(staker.currentChallenge == NO_CHAL_INDEX, "STAKER_IN_CHALL");
         Staker storage staker = _stakerMap[stakerAddress];
+        require(staker.currentChallenge == NO_CHAL_INDEX, "STAKER_IN_CHALL");
         uint64 stakerIndex = staker.index;
         _stakerList[stakerIndex] = _stakerList[_stakerList.length - 1];
         _stakerMap[_stakerList[stakerIndex]].index = stakerIndex;
