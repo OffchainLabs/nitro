@@ -445,7 +445,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	}
 	l2clientC, _, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigC)
 
-	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB, l2clientC)
+	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientC)
 
 	requireClose(t, l2stackA)
 	requireClose(t, l2stackB)
