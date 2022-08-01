@@ -214,6 +214,10 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					if len(res.Messages) > 0 {
 						messages := []arbstate.MessageWithMetadata{}
 						for _, message := range res.Messages {
+							if message == nil {
+								log.Warn("ignoring nil feed message")
+								continue
+							}
 							messages = append(messages, message.Message)
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages[0].SequenceNumber, messages); err != nil {

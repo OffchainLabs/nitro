@@ -606,7 +606,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	return nil
 }
 
-func (ps *L1PricingState) getPosterInfoWithoutCache(tx *types.Transaction, posterAddr common.Address) (*big.Int, uint64) {
+func (ps *L1PricingState) GetPosterInfoWithoutCache(tx *types.Transaction, posterAddr common.Address) (*big.Int, uint64) {
 
 	if posterAddr != BatchPosterAddress {
 		return common.Big0, 0
@@ -634,13 +634,13 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 	if cost != nil {
 		return cost, atomic.LoadUint64(&tx.CalldataUnits)
 	}
-	cost, units := ps.getPosterInfoWithoutCache(tx, poster)
+	cost, units := ps.GetPosterInfoWithoutCache(tx, poster)
 	atomic.StoreUint64(&tx.CalldataUnits, units)
 	tx.PosterCost.Store(cost)
 	return cost, units
 }
 
-const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
+const TxFixedCostEstimate = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
 func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64) {
 	if tx := message.UnderlyingTransaction(); tx != nil {
@@ -657,7 +657,7 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Add
 	}
 
 	// Approximate the l1 fee charged for posting this tx's calldata
-	l1Bytes := byteCount + TxFixedCost
+	l1Bytes := byteCount + TxFixedCostEstimate
 	pricePerUnit, _ := ps.PricePerUnit()
 
 	units := l1Bytes * params.TxDataNonZeroGasEIP2028
