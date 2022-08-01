@@ -53,7 +53,7 @@ func startLocalDASServer(
 		},
 		LocalFileStorageConfig: das.LocalFileStorageConfig{
 			Enable:  true,
-			DataDir: keyDir,
+			DataDir: dataDir,
 		},
 		L1NodeURL:      "none",
 		RequestTimeout: 5 * time.Second,
@@ -94,6 +94,46 @@ func aggConfigForBackend(t *testing.T, backendConfig dasrpc.BackendConfig) das.A
 	}
 }
 
+func startLocalRestfulDasServer(t *testing.T, ctx context.Context, dataDir string) (*das.LifecycleManager, *das.RestfulDasServer, das.DataAvailabilityConfig) {
+	restServerConfig := das.DataAvailabilityConfig{
+		Enable: true,
+
+		LocalFileStorageConfig: das.LocalFileStorageConfig{
+			Enable:  true,
+			DataDir: dataDir,
+		},
+		RequestTimeout: 5 * time.Second,
+	}
+	restServerDAS, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &restServerConfig)
+	Require(t, err)
+	restLis, err := net.Listen("tcp", "localhost:0")
+	Require(t, err)
+	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, restServerDAS)
+	Require(t, err)
+	dataAvailabilityConfig := das.DataAvailabilityConfig{
+		Enable: true,
+
+		LocalCacheConfig: das.TestBigCacheConfig,
+
+		RestfulClientAggregatorConfig: das.RestfulClientAggregatorConfig{
+			Enable:                 true,
+			Urls:                   []string{"http://" + restLis.Addr().String()},
+			Strategy:               "simple-explore-exploit",
+			StrategyUpdateInterval: time.Second,
+			WaitBeforeTryNext:      time.Second,
+			MaxPerEndpointStats:    20,
+			SimpleExploreExploitStrategyConfig: das.SimpleExploreExploitStrategyConfig{
+				ExploreIterations: 1,
+				ExploitIterations: 5,
+			},
+		},
+
+		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
+		RequestTimeout: 5 * time.Second,
+	}
+	return lifecycleManager, restServer, dataAvailabilityConfig
+}
+
 func TestDASRekey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -132,12 +172,17 @@ func TestDASRekey(t *testing.T) {
 		l2clientA := ClientForStack(t, l2stackA)
 
 		l1NodeConfigB.BlockValidator.Enable = false
-		l1NodeConfigB.DataAvailability.Enable = true
-		l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
+		lifecycleManager, restServer, restFulDataAvailabilityConfig := startLocalRestfulDasServer(t, ctx, dasDataDir)
+		l1NodeConfigB.DataAvailability = restFulDataAvailabilityConfig
 		l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 		requireClose(t, l2stackA)
 		requireClose(t, l2stackB)
+
+		err = restServer.Shutdown()
+		Require(t, err)
+
+		lifecycleManager.StopAndWaitUntil(time.Second)
 	}
 
 	err := dasServerA.Shutdown(ctx)
@@ -168,12 +213,18 @@ func TestDASRekey(t *testing.T) {
 	Require(t, l2stackA.Start())
 	l2clientA := ClientForStack(t, l2stackA)
 
-	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
+	lifecycleManager, restServer, restFulDataAvailabilityConfig := startLocalRestfulDasServer(t, ctx, dasDataDir)
+	l1NodeConfigB.DataAvailability = restFulDataAvailabilityConfig
 	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(2e12), l2clientB)
 
 	Require(t, l2stackA.Close())
 	Require(t, l2stackB.Close())
+
+	err = restServer.Shutdown()
+	Require(t, err)
+
+	lifecycleManager.StopAndWaitUntil(time.Second)
 }
 
 func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
@@ -327,77 +378,18 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, l2stackA.Start())
 	l2clientA := ClientForStack(t, l2stackA)
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
-	l1NodeConfigB.DataAvailability = das.DataAvailabilityConfig{
-		Enable: true,
-
-		LocalCacheConfig: das.TestBigCacheConfig,
-		RedisCacheConfig: das.RedisConfig{
-			Enable:     false,
-			RedisUrl:   "",
-			Expiration: time.Hour,
-			KeyConfig:  "",
-		},
-
-		// AggregatorConfig set up below
-
-		L1NodeURL:      "none",
-		RequestTimeout: 5 * time.Second,
-	}
-
-	l1NodeConfigB.BlockValidator.Enable = false
-	l1NodeConfigA.DataAvailability.Enable = true
-	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
-
-	// Now create a separate REST DAS server using the same local disk storage
+	// Now create a REST DAS server using the local disk storage
 	// and connect a node to it, and make sure it syncs.
-	restServerConfig := das.DataAvailabilityConfig{
-		Enable: true,
-
-		LocalFileStorageConfig: das.LocalFileStorageConfig{
-			Enable:  true,
-			DataDir: fileDataDir,
-		},
-		RequestTimeout: 5 * time.Second,
-	}
-
-	restServerDAS, rpcServerLifecycleManager, err := das.CreatePersistentStorageService(ctx, &restServerConfig)
-	Require(t, err)
-	restLis, err := net.Listen("tcp", "localhost:0")
-	Require(t, err)
-	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, restServerDAS)
-	Require(t, err)
-
 	l1NodeConfigC := arbnode.ConfigDefaultL1NonSequencerTest()
 	l1NodeConfigC.BlockValidator.Enable = false
-	l1NodeConfigC.DataAvailability = das.DataAvailabilityConfig{
-		Enable: true,
 
-		LocalCacheConfig: das.TestBigCacheConfig,
-
-		RestfulClientAggregatorConfig: das.RestfulClientAggregatorConfig{
-			Enable:                 true,
-			Urls:                   []string{"http://" + restLis.Addr().String()},
-			Strategy:               "simple-explore-exploit",
-			StrategyUpdateInterval: time.Second,
-			WaitBeforeTryNext:      time.Second,
-			MaxPerEndpointStats:    20,
-			SimpleExploreExploitStrategyConfig: das.SimpleExploreExploitStrategyConfig{
-				ExploreIterations: 1,
-				ExploitIterations: 5,
-			},
-		},
-
-		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
-		RequestTimeout: 5 * time.Second,
-	}
+	rpcServerLifecycleManager, restServer, restFulDataAvailabilityConfig := startLocalRestfulDasServer(t, ctx, fileDataDir)
+	l1NodeConfigC.DataAvailability = restFulDataAvailabilityConfig
 	l2clientC, _, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigC)
 
-	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB, l2clientC)
+	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientC)
 
 	requireClose(t, l2stackA)
-	requireClose(t, l2stackB)
 	requireClose(t, l2stackC)
 
 	err = restServer.Shutdown()
