@@ -105,7 +105,7 @@ func TestEvenSimplerSignatureCheck(t *testing.T) {
 
 	pubkey, err := crypto.SigToPub(dataHash, sig)
 	Require(t, err)
-	if bytes.Compare(crypto.FromECDSAPub(pubkey), crypto.FromECDSAPub(&privateKey.PublicKey)) != 0 {
+	if !bytes.Equal(crypto.FromECDSAPub(pubkey), crypto.FromECDSAPub(&privateKey.PublicKey)) {
 		Fail(t, "Derived pubkey doesn't match pubkey")
 	}
 
