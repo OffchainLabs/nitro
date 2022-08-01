@@ -95,6 +95,10 @@ abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
             _upgradeSecondaryToAndCall(newImplementation, data, forceCall);
         }
     }
+
+    function proxyableSecondaryUUID() external view override notDelegated returns (bytes32) {
+        return _IMPLEMENTATION_SECONDARY_SLOT;
+    }
 }
 
 /// @notice similar to TransparentUpgradeableProxy but allows the admin to fallback to a separate logic contract using DoubleLogicERC1967Upgrade
@@ -132,8 +136,8 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
         require(msg.data.length >= 4, "NO_FUNC_SIG");
         // if the sender is the proxy's admin, delegate to admin logic
         // if the admin is disabled, all calls will be forwarded to user logic
-        // admin affordances can be disabled by setting to address(1) since
-        // `ERC1697._setAdmin()` doesn't allow address(0) to be set
+        // admin affordances can be disabled by setting to a no-op smart contract
+        // since there is a check for contract code before updating the value
         address target = _getAdmin() != msg.sender
             ? DoubleLogicERC1967Upgrade._getSecondaryImplementation()
             : ERC1967Upgrade._getImplementation();
@@ -144,7 +148,7 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
 
     /**
      * @dev unlike transparent upgradeable proxies, this does allow the admin to fallback to a logic contract
-     * the admin is expected to interact only with the secondary logic contract, which handles contract
+     * the admin is expected to interact only with the primary logic contract, which handles contract
      * upgrades using the UUPS approach
      */
     function _beforeFallback() internal override {
