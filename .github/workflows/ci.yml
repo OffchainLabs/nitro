@@ -147,15 +147,15 @@ jobs:
 
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
-        run: gotestsum -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
+        run: gotestsum ./... -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
-        run: gotestsum -- -race -parallel=1
+        run: gotestsum ./... -- -race -parallel=1
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: gotestsum -- -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: gotestsum ./... -- -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
