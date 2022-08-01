@@ -146,6 +146,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	newHeaders, unsubscribe := ir.l1Reader.Subscribe(false)
 	defer unsubscribe()
 	blocksToFetch := uint64(100)
+	neededBlockAdvance := ir.config.DelayBlocks + arbmath.SaturatingUSub(ir.config.MinBlocksToRead, 1)
 	seenBatchCount := uint64(0)
 	seenBatchCountStored := uint64(math.MaxUint64)
 	storeSeenBatchCount := func() {
@@ -163,7 +164,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		}
 		currentHeight := latestHeader.Number
 
-		neededBlockHeight := new(big.Int).Add(from, new(big.Int).SetUint64(ir.config.DelayBlocks+arbmath.SaturatingUSub(ir.config.MinBlocksToRead, 1)))
+		neededBlockHeight := arbmath.BigAddByUint(from, neededBlockAdvance)
 		checkDelayTimer := time.NewTimer(ir.config.CheckDelay)
 	WaitForHeight:
 		for arbmath.BigLessThan(currentHeight, neededBlockHeight) {
