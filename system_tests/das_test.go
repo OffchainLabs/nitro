@@ -399,7 +399,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigA.DataAvailability.Enable = true
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	_, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	// Now create a separate REST DAS server using the same local disk storage
 	// and connect a node to it, and make sure it syncs.
