@@ -267,7 +267,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 
 		if !missingDelayed && !reorgingDelayed && !missingSequencer && !reorgingSequencer {
 			// There's nothing to do
-			from = currentHeight
+			from = arbmath.BigAddByUint(currentHeight, 1)
 			ir.lastReadMutex.Lock()
 			ir.lastReadBlock = currentHeight.Uint64()
 			ir.lastReadBatchCount = checkingBatchCount
