@@ -290,7 +290,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if initDataReader == nil {
 		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
-			panic("No initialization mode supplied, chain data not in Db")
+			return nil, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
 		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
 		if err != nil {
@@ -469,7 +469,8 @@ func main() {
 
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
 	if err != nil {
-		panic(err)
+		printSampleUsage(os.Args[0])
+		fmt.Printf("%s\n", err.Error())
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
