@@ -35,9 +35,8 @@ type queuedTransaction[Meta any] struct {
 }
 
 type QueueStorage[Item any] interface {
-	Initialize(ctx context.Context) error
-	GetContents(ctx context.Context) ([]*Item, error)
-	GetLast(ctx context.Context) (uint64, *Item, error)
+	GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error)
+	GetLast(ctx context.Context) (*Item, error)
 	Prune(ctx context.Context, keepStartingAt uint64) error
 	Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error
 }
@@ -110,7 +109,7 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 	if redis == nil {
 		queue = NewSliceStorage[queuedTransaction[Meta]]()
 	} else {
-		panic("TODO: redis queue storage")
+		queue = NewRedisStorage[queuedTransaction[Meta]](redis, "data-poster.queue")
 	}
 	return &DataPoster[Meta]{
 		headerReader:     headerReader,
@@ -128,10 +127,6 @@ func (p *DataPoster[Meta]) Initialize(ctx context.Context) error {
 		return err
 	}
 	p.nonce = nonce
-	err = p.queue.Initialize(ctx)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -147,12 +142,12 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context, getMetaAtBlo
 	if err != nil {
 		return 0, emptyMeta, err
 	}
-	lastQueueIdx, lastQueueItem, err := p.queue.GetLast(ctx)
+	lastQueueItem, err := p.queue.GetLast(ctx)
 	if err != nil {
 		return 0, emptyMeta, err
 	}
 	if lastQueueItem != nil {
-		return lastQueueIdx + 1, lastQueueItem.meta, nil
+		return lastQueueItem.data.Nonce, lastQueueItem.meta, nil
 	}
 	meta, err := getMetaAtBlock(p.lastBlock)
 	return p.nonce, meta, err
@@ -322,6 +317,7 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 }
 
 const minWait = time.Second * 10
+const maxTxsToRbf = 256
 
 func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 	p.StopWaiter.Start(ctxIn)
@@ -335,7 +331,7 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		}
 		now := time.Now()
 		nextCheck := now.Add(p.replacementTimes[0])
-		queueContents, err := p.queue.GetContents(ctx)
+		queueContents, err := p.queue.GetContents(ctx, p.nonce, maxTxsToRbf)
 		if err != nil {
 			log.Warn("failed to get tx queue contents", "err", err)
 			return minWait

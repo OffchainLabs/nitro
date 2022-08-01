@@ -18,23 +18,28 @@ func NewSliceStorage[Item any]() *SliceStorage[Item] {
 	return &SliceStorage[Item]{}
 }
 
-func (s *SliceStorage[Item]) Initialize(_ context.Context) error {
-	return nil
+func (s *SliceStorage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
+	ret := s.queue
+	if startingIndex >= s.firstNonce+uint64(len(s.queue)) {
+		ret = nil
+	} else if startingIndex > s.firstNonce {
+		ret = ret[startingIndex-s.firstNonce:]
+	}
+	if uint64(len(ret)) > maxResults {
+		ret = ret[:maxResults]
+	}
+	return ret, nil
 }
 
-func (s *SliceStorage[Item]) GetContents(_ context.Context) ([]*Item, error) {
-	return s.queue, nil
-}
-
-func (s *SliceStorage[Item]) GetLast(_ context.Context) (uint64, *Item, error) {
+func (s *SliceStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	if len(s.queue) > 0 {
-		return s.firstNonce + uint64(len(s.queue)) - 1, s.queue[len(s.queue)-1], nil
+		return s.queue[len(s.queue)-1], nil
 	} else {
-		return 0, nil, nil
+		return nil, nil
 	}
 }
 
-func (s *SliceStorage[Item]) Prune(_ context.Context, keepStartingAt uint64) error {
+func (s *SliceStorage[Item]) Prune(ctx context.Context, keepStartingAt uint64) error {
 	if keepStartingAt >= s.firstNonce+uint64(len(s.queue)) {
 		s.queue = nil
 	} else if keepStartingAt >= s.firstNonce {
@@ -44,7 +49,10 @@ func (s *SliceStorage[Item]) Prune(_ context.Context, keepStartingAt uint64) err
 	return nil
 }
 
-func (s *SliceStorage[Item]) Put(_ context.Context, index uint64, prevItem *Item, newItem *Item) error {
+func (s *SliceStorage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
+	if newItem == nil {
+		return fmt.Errorf("tried to insert nil item at index %v", index)
+	}
 	if len(s.queue) == 0 {
 		if prevItem != nil {
 			return errors.New("prevItem isn't nil but queue is empty")
