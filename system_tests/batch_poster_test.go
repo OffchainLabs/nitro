@@ -57,11 +57,20 @@ func TestBatchPosterParallel(t *testing.T) {
 	Require(t, err)
 	batchPoster.Start(ctx)
 
-	// give the inbox reader a bit of time to pick up the sequencer batch
-	time.Sleep(time.Millisecond * 100)
-
-	_, err = WaitForTx(ctx, l2clientB, txs[len(txs)-1].Hash(), time.Second*30)
-	Require(t, err)
+	lastTxHash := txs[len(txs)-1].Hash()
+	for i := 90; i > 0; i-- {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+		})
+		time.Sleep(500 * time.Millisecond)
+		_, err := l2clientB.TransactionReceipt(ctx, lastTxHash)
+		if err == nil {
+			break
+		}
+		if i == 0 {
+			Require(t, err)
+		}
+	}
 
 	// I've locally confirmed that this passes when the clique period is set to 1.
 	// However, setting the clique period to 1 slows everything else (including the L1 deployment for this test) down to a crawl.
