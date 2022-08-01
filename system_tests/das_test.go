@@ -378,28 +378,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, l2stackA.Start())
 	l2clientA := ClientForStack(t, l2stackA)
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
-	l1NodeConfigB.DataAvailability = das.DataAvailabilityConfig{
-		Enable: true,
-
-		LocalCacheConfig: das.TestBigCacheConfig,
-		RedisCacheConfig: das.RedisConfig{
-			Enable:     false,
-			RedisUrl:   "",
-			Expiration: time.Hour,
-			KeyConfig:  "",
-		},
-
-		// AggregatorConfig set up below
-
-		L1NodeURL:      "none",
-		RequestTimeout: 5 * time.Second,
-	}
-
-	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigA.DataAvailability.Enable = true
-	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
-	_, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	// Now create a separate REST DAS server using the same local disk storage
 	// and connect a node to it, and make sure it syncs.
@@ -448,7 +427,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientC)
 
 	requireClose(t, l2stackA)
-	requireClose(t, l2stackB)
 	requireClose(t, l2stackC)
 
 	err = restServer.Shutdown()
