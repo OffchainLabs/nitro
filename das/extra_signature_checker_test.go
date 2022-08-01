@@ -108,7 +108,7 @@ func TestEvenSimplerSignatureCheck(t *testing.T) {
 		Fail(t, "Derived pubkey doesn't match pubkey")
 	}
 
-	verified := crypto.VerifySignature(crypto.FromECDSAPub(&privateKey.PublicKey), dataHash, sig)
+	verified := crypto.VerifySignature(crypto.FromECDSAPub(&privateKey.PublicKey), dataHash, sig[:64])
 	if !verified {
 		Fail(t, "Signature not verified")
 	}
