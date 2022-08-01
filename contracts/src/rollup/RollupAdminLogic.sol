@@ -121,6 +121,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     /**
      * @notice Pause interaction with the rollup contract.
      * The time spent paused is not incremented in the rollup's timing for node validation.
+     * @dev this function may be frontrun by a validator (ie to create a node before the system is paused).
+     * The pause should be called atomically with required checks to be sure the system is paused in a consistent state.
+     * The RollupAdmin may execute a check against the Rollup's latest node num or the ChallengeManager, then execute this function atomically with it.
      */
     function pause() external override {
         _pause();

@@ -79,6 +79,8 @@ interface ArbSys {
 
     /**
      * @notice Send a transaction to L1
+     * @dev it is not possible to execute on the L1 any L2-to-L1 transaction which contains data
+     * to a contract address without any code (as enforced by the Bridge contract).
      * @param destination recipient address on L1
      * @param data (optional) calldata for L1 contract call
      * @return a unique identifier for this L2-to-L1 transaction.
