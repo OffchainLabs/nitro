@@ -152,6 +152,17 @@ func (s *Sequencer) DontForward() {
 	s.forwarder = nil
 }
 
+var ErrQueueFull error = errors.New("queue full")
+var ErrNoSequencer error = errors.New("sequencer temporarily not available")
+
+func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
+	select {
+	case s.txQueue <- queueItem:
+	default:
+		queueItem.returnResult(err)
+	}
+}
+
 func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
@@ -159,7 +170,12 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 		return false
 	}
 	for _, item := range queueItems {
-		item.resultChan <- s.forwarder.PublishTransaction(item.ctx, item.tx)
+		res := s.forwarder.PublishTransaction(item.ctx, item.tx)
+		if errors.Is(res, ErrNoSequencer) {
+			s.requeueOrFail(item, ErrNoSequencer)
+		} else {
+			item.resultChan <- res
+		}
 	}
 	return true
 }
@@ -206,11 +222,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 			// This tx would be too large to add to this batch.
 			// Attempt to put it back in the queue, but error if the queue is full.
 			// Then, end the batch here.
-			select {
-			case s.txQueue <- queueItem:
-			default:
-				queueItem.returnResult(core.ErrOversizedData)
-			}
+			s.requeueOrFail(queueItem, ErrQueueFull)
 			break
 		}
 		totalBatchSize += len(txBytes)
@@ -265,11 +277,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		}
 		// try to add back to queue otherwise
 		for _, item := range queueItems {
-			select {
-			case s.txQueue <- item:
-			default:
-				item.resultChan <- errors.New("queue full")
-			}
+			s.requeueOrFail(item, ErrNoSequencer)
 		}
 		return
 	}
@@ -286,12 +294,8 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		if errors.Is(err, core.ErrGasLimit) {
 			// There's not enough gas left in the block for this tx.
 			// Attempt to re-queue the transaction.
-			// If the queue is full, fall through to returning an error.
-			select {
-			case s.txQueue <- queueItem:
-				continue
-			default:
-			}
+			s.requeueOrFail(queueItem, core.ErrGasLimit)
+			continue
 		}
 		queueItem.returnResult(err)
 	}

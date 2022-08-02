@@ -24,7 +24,7 @@ func NewForwarder(target string) *TxForwarder {
 
 func (f *TxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
 	if f.client == nil {
-		return errors.New("sequencer temporarily unavailable")
+		return ErrNoSequencer
 	}
 	return f.client.SendTransaction(ctx, tx)
 }
