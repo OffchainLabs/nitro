@@ -60,6 +60,9 @@ const ZERO_ADDR = ethers.constants.AddressZero;
 const extraChallengeTimeBlocks = 20;
 const wasmModuleRoot = "0x9900000000000000000000000000000000000000000000000000000000000010";
 
+const _IMPLEMENTATION_PRIMARY_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+const _IMPLEMENTATION_SECONDARY_SLOT = "0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d"
+
 // let rollup: RollupContract
 let rollup: RollupContract;
 let rollupUser: RollupUserLogic;
@@ -872,4 +875,119 @@ describe("ArbRollup", () => {
     );
     updatePrevNode(node);
   });
+
+  it("should only allow admin to upgrade primary logic", async function () {
+    const user = rollupUser.signer
+
+    // store the current implementation addresses
+    const proxyPrimaryImplSlot0 = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_PRIMARY_SLOT)).substring(26).toLowerCase()}`
+    const proxySecondaryImplSlot0 = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
+
+    // deploy a new admin logic
+    const rollupAdminLogicFac = (await ethers.getContractFactory(
+      "RollupAdminLogic"
+    )) as RollupAdminLogic__factory;
+    const newAdminLogicImpl = await rollupAdminLogicFac.deploy()
+
+    // attempt to upgrade as user, should revert
+    await expect(rollupAdmin.connect(user).upgradeTo(newAdminLogicImpl.address)).to.be.reverted
+    // upgrade as admin
+    await expect(rollupAdmin.upgradeTo(newAdminLogicImpl.address)).to.emit(
+      rollupAdmin,
+      "Upgraded"
+    );
+
+    // check the new implementation address is set
+    const proxyPrimaryImplSlot = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_PRIMARY_SLOT)).substring(26).toLowerCase()}`
+    await expect(proxyPrimaryImplSlot).to.not.eq(proxyPrimaryImplSlot0)
+    await expect(proxyPrimaryImplSlot).to.eq(newAdminLogicImpl.address.toLowerCase())
+
+    // check the other implementation address is unchanged
+    const proxySecondaryImplSlot = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
+    await expect(proxySecondaryImplSlot).to.eq(proxySecondaryImplSlot0)
+  });
+
+  it("should only allow admin to upgrade secondary logic", async function () {
+    const user = rollupUser.signer
+
+    // store the current implementation addresses
+    const proxyPrimaryImplSlot0 = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_PRIMARY_SLOT)).substring(26).toLowerCase()}`
+    const proxySecondaryImplSlot0 = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
+
+    // deploy a new user logic
+    const rollupUserLogicFac = (await ethers.getContractFactory(
+      "RollupUserLogic"
+    )) as RollupUserLogic__factory;
+    const newUserLogicImpl = await rollupUserLogicFac.deploy()
+
+    // attempt to upgrade as user, should revert
+    await expect(rollupAdmin.connect(user).upgradeSecondaryTo(newUserLogicImpl.address)).to.be.reverted
+    // upgrade as admin
+    await expect(rollupAdmin.upgradeSecondaryTo(newUserLogicImpl.address)).to.emit(
+      rollupAdmin,
+      "UpgradedSecondary"
+    );
+
+    // check the new implementation address is set
+    const proxySecondaryImplSlot = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
+    await expect(proxySecondaryImplSlot).to.not.eq(proxySecondaryImplSlot0)
+    await expect(proxySecondaryImplSlot).to.eq(newUserLogicImpl.address.toLowerCase())
+
+    // check the other implementation address is unchanged
+    const proxyPrimaryImplSlot = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_PRIMARY_SLOT)).substring(26).toLowerCase()}`
+    await expect(proxyPrimaryImplSlot).to.eq(proxyPrimaryImplSlot0)
+  });
+
+  it("should allow admin to upgrade primary logic and call", async function () {
+    const rollupAdminLogicFac = (await ethers.getContractFactory(
+      "RollupAdminLogic"
+    )) as RollupAdminLogic__factory;
+    const newAdminLogicImpl = await rollupAdminLogicFac.deploy()
+    // first pause the contract so we can unpause after upgrade
+    await rollupAdmin.pause()
+    // 0x046f7da2 - pause()
+    await expect(rollupAdmin.upgradeToAndCall(newAdminLogicImpl.address, "0x046f7da2")).to.emit(
+      rollupAdmin,
+      "Unpaused"
+    );
+  });
+
+  it("should allow admin to upgrade secondary logic and call", async function () {
+    const rollupUserLogicFac = (await ethers.getContractFactory(
+      "RollupUserLogic"
+    )) as RollupUserLogic__factory;
+    const newUserLogicImpl = await rollupUserLogicFac.deploy()
+    // this call should revert since the user logic don't have a fallback
+    await expect(rollupAdmin.upgradeSecondaryToAndCall(newUserLogicImpl.address, "0x")).to.revertedWith('Address: low-level delegate call failed')
+    // 0x8da5cb5b - owner() (some random function that will not revert)
+    await expect(rollupAdmin.upgradeSecondaryToAndCall(newUserLogicImpl.address, "0x8da5cb5b")).to.emit(
+      rollupAdmin,
+      "UpgradedSecondary"
+    );
+  });
+
+  it("should fail upgrade to unsafe primary logic", async function () {
+    const rollupUserLogicFac = (await ethers.getContractFactory(
+      "RollupUserLogic"
+    )) as RollupUserLogic__factory;
+    const newUserLogicImpl = await rollupUserLogicFac.deploy()
+    await expect(rollupAdmin.upgradeTo(newUserLogicImpl.address)).to.revertedWith('ERC1967Upgrade: unsupported proxiableUUID')
+  });
+
+  it("should fail upgrade to unsafe secondary logic", async function () {
+    const rollupAdminLogicFac = (await ethers.getContractFactory(
+      "RollupAdminLogic"
+    )) as RollupAdminLogic__factory;
+    const newAdminLogicImpl = await rollupAdminLogicFac.deploy()
+    await expect(rollupAdmin.upgradeSecondaryTo(newAdminLogicImpl.address)).to.revertedWith('ERC1967Upgrade: unsupported proxiableUUID')
+  });
+
+  it("should fail upgrade to proxy primary logic", async function () {
+    await expect(rollupAdmin.upgradeTo(rollupAdmin.address)).to.revertedWith('ERC1967Upgrade: new implementation is not UUPS')
+  });
+
+  it("should fail upgrade to proxy secondary logic", async function () {
+    await expect(rollupAdmin.upgradeSecondaryTo(rollupAdmin.address)).to.revertedWith('ERC1967Upgrade: new secondary implementation is not UUPS')
+  });
+
 });
