@@ -6,7 +6,6 @@ package arbnode
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/core"
@@ -21,7 +20,7 @@ import (
 )
 
 type txPreCheckerState struct {
-	blockNum       *big.Int
+	header         *types.Header
 	stateDb        *state.StateDB
 	l1PricingState *l1pricing.L1PricingState
 }
@@ -81,7 +80,7 @@ func (c *TxPreChecker) updateLatestState(block *types.Block) error {
 		return err
 	}
 	fullState := txPreCheckerState{
-		blockNum:       block.Number(),
+		header:         block.Header(),
 		stateDb:        stateDb,
 		l1PricingState: arbos.L1PricingState(),
 	}
@@ -132,13 +131,14 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if tx.Nonce() < state.stateDb.GetNonce(sender) {
 		return core.ErrNonceTooLow
 	}
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, c.bc.Config().IsHomestead(state.blockNum), true)
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, c.bc.Config().IsHomestead(state.header.Number), true)
 	if err != nil {
 		return err
 	}
 	// We can't cache here because the state the tx is executed in might not the our latestState
-	_, dataGas := state.l1PricingState.GetPosterInfoWithoutCache(tx, l1pricing.BatchPosterAddress)
-	if tx.Gas() < intrinsic+dataGas {
+	dataCost, _ := state.l1PricingState.GetPosterInfo(tx, l1pricing.BatchPosterAddress)
+	dataGas := arbmath.BigDiv(dataCost, state.header.BaseFee)
+	if tx.Gas() < intrinsic+dataGas.Uint64() {
 		return core.ErrIntrinsicGas
 	}
 	return c.publisher.PublishTransaction(ctx, tx)
