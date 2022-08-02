@@ -217,7 +217,7 @@ func ProduceBlockAdvanced(
 
 		var sender common.Address
 		var dataGas uint64 = 0
-		var txGasUsed uint64 = 0
+		preTxHeaderGasUsed := header.GasUsed
 		receipt, scheduled, err := (func() (*types.Receipt, types.Transactions, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
@@ -275,7 +275,7 @@ func ProduceBlockAdvanced(
 				statedb,
 				header,
 				tx,
-				&txGasUsed,
+				&header.GasUsed,
 				vm.Config{},
 			)
 			if err == nil {
@@ -309,7 +309,10 @@ func ProduceBlockAdvanced(
 			continue
 		}
 
-		header.GasUsed += txGasUsed
+		if preTxHeaderGasUsed > header.GasUsed {
+			return nil, nil, fmt.Errorf("ApplyTransaction() used -%v gas", preTxHeaderGasUsed-header.GasUsed)
+		}
+		txGasUsed := header.GasUsed - preTxHeaderGasUsed
 
 		// Update expectedTotalBalanceDelta (also done in logs loop)
 		switch txInner := tx.GetInner().(type) {
