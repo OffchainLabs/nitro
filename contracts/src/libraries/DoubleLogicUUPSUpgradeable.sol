@@ -8,6 +8,7 @@ import {DoubleLogicERC1967Upgrade} from "./AdminFallbackProxy.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 /// @notice An extension to OZ's UUPSUpgradeable contract to be used for handling UUPS upgrades with a DoubleLogicERC1967Upgrade proxy
+///         The should be used in the primary implementation slot of the DoubleLogicUUPS proxy
 /// @dev upgrades should be handles by the primary logic contract in order to pass the `onlyProxy` check
 abstract contract DoubleLogicUUPSUpgradeable is UUPSUpgradeable, DoubleLogicERC1967Upgrade {
     /// @inheritdoc UUPSUpgradeable
