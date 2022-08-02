@@ -945,7 +945,7 @@ describe("ArbRollup", () => {
     const newAdminLogicImpl = await rollupAdminLogicFac.deploy()
     // first pause the contract so we can unpause after upgrade
     await rollupAdmin.pause()
-    // 0x046f7da2 - pause()
+    // 0x046f7da2 - resume()
     await expect(rollupAdmin.upgradeToAndCall(newAdminLogicImpl.address, "0x046f7da2")).to.emit(
       rollupAdmin,
       "Unpaused"
