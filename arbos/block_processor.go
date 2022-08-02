@@ -309,6 +309,8 @@ func ProduceBlockAdvanced(
 			continue
 		}
 
+		header.GasUsed += txGasUsed
+
 		// Update expectedTotalBalanceDelta (also done in logs loop)
 		switch txInner := tx.GetInner().(type) {
 		case *types.ArbitrumDepositTx:
