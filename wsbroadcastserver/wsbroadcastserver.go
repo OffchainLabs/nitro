@@ -174,7 +174,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 				if s.settings.RequireVersion && !feedClientVersionSeen {
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusBadRequest),
-						ws.RejectionReason(fmt.Sprintf("Feed-Client-Version HTTP header missing")),
+						ws.RejectionReason("Feed-Client-Version HTTP header missing"),
 					)
 				}
 				return header, nil
