@@ -995,4 +995,37 @@ describe("ArbRollup", () => {
     await expect(rollupAdmin.upgradeSecondaryTo(rollupAdmin.address)).to.revertedWith('ERC1967Upgrade: new secondary implementation is not UUPS')
   });
 
+  it("should fail to init rollupAdminLogic without proxy", async function () {
+    const user = rollupUser.signer
+    const rollupAdminLogicFac = (await ethers.getContractFactory(
+      "RollupAdminLogic"
+    )) as RollupAdminLogic__factory;
+    const proxyPrimaryTarget = await getDoubleLogicUUPSTarget("admin", user.provider!)
+    const proxyPrimaryImpl = rollupAdminLogicFac.attach(proxyPrimaryTarget)
+    await expect(
+      proxyPrimaryImpl.initialize(await getDefaultConfig(), {
+        challengeManager: constants.AddressZero,
+        bridge: constants.AddressZero,
+        inbox: constants.AddressZero,
+        outbox: constants.AddressZero,
+        rollupAdminLogic: constants.AddressZero,
+        rollupEventInbox: constants.AddressZero,
+        rollupUserLogic: constants.AddressZero,
+        sequencerInbox: constants.AddressZero,
+        validatorUtils: constants.AddressZero,
+        validatorWalletCreator: constants.AddressZero,
+      })
+    ).to.be.revertedWith("Function must be called through delegatecall");
+  });
+
+  it("should fail to init rollupUserLogic without proxy", async function () {
+    const user = rollupUser.signer
+    const rollupUserLogicFac = (await ethers.getContractFactory(
+      "RollupUserLogic"
+    )) as RollupUserLogic__factory;
+    const proxySecondaryTarget = await getDoubleLogicUUPSTarget("user", user.provider!)
+    const proxySecondaryImpl = rollupUserLogicFac.attach(proxySecondaryTarget)
+    await expect(proxySecondaryImpl.interface.functions["initialize(address)"].stateMutability).to.eq('view')
+  });
+
 });
