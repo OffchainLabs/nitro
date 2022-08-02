@@ -76,11 +76,13 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	URL                string                 `koanf:"url"`
-	Message            string                 `koanf:"message"`
-	DASRetentionPeriod time.Duration          `koanf:"das-retention-period"`
-	SigningKey         string                 `koanf:"signing-key"`
-	ConfConfig         genericconf.ConfConfig `koanf:"conf"`
+	URL                   string                 `koanf:"url"`
+	Message               string                 `koanf:"message"`
+	DASRetentionPeriod    time.Duration          `koanf:"das-retention-period"`
+	SigningKey            string                 `koanf:"signing-key"`
+	SigningWallet         string                 `koanf:"signing-wallet"`
+	SigningWalletPassword string                 `koanf:"signing-wallet-password"`
+	ConfConfig            genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -88,6 +90,8 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("url", "", "URL of DAS server to connect to")
 	f.String("message", "", "message to send")
 	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherise treated as a file; if not specified the message is not signed")
+	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
+	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -114,7 +118,6 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	//	var privateKey *ecdsa.PrivateKey
 	var dasClient das.DataAvailabilityService = client
 	if config.SigningKey != "" {
 		var privateKey *ecdsa.PrivateKey
@@ -131,6 +134,22 @@ func startClientStore(args []string) error {
 		}
 		signer := das.DasSignerFromPrivateKey(privateKey)
 
+		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
+		if err != nil {
+			return err
+		}
+	} else if config.SigningWallet != "" {
+		walletConf := &genericconf.WalletConfig{
+			Pathname:      config.SigningWallet,
+			PasswordImpl:  config.SigningWalletPassword,
+			PrivateKey:    "",
+			Account:       "",
+			OnlyCreateKey: false,
+		}
+		signer, err := arbnode.GetSignerFromWallet(walletConf)
+		if err != nil {
+			return err
+		}
 		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
 		if err != nil {
 			return err
