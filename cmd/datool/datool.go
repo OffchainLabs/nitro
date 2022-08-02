@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -276,12 +277,14 @@ type KeyGenConfig struct {
 	Dir        string
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 	ECDSAMode  bool                   `koanf:"ecdsa"`
+	WalletMode bool                   `koanf:"wallet"`
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f := flag.NewFlagSet("datool keygen", flag.ContinueOnError)
 	f.String("dir", "", "the directory to generate the keys in")
 	f.Bool("ecdsa", false, "generate an ECDSA keypair instead of BLS")
+	f.Bool("wallet", false, "generate the ECDSA keypair in a wallet file")
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
@@ -308,7 +311,20 @@ func startKeyGen(args []string) error {
 			return err
 		}
 		return nil
+	} else if !config.WalletMode {
+		return das.GenerateAndStoreECDSAKeys(config.Dir)
+	} else {
+		walletConf := &genericconf.WalletConfig{
+			Pathname:      config.Dir,
+			PasswordImpl:  genericconf.PASSWORD_NOT_SET,
+			PrivateKey:    "",
+			Account:       "",
+			OnlyCreateKey: true,
+		}
+		_, err = arbnode.GetSignerFromWallet(walletConf)
+		if err != nil && strings.Contains(fmt.Sprint(err), "wallet key created") {
+			return nil
+		}
+		return err
 	}
-
-	return das.GenerateAndStoreECDSAKeys(config.Dir)
 }
