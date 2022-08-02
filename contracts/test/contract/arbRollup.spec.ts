@@ -60,9 +60,6 @@ const ZERO_ADDR = ethers.constants.AddressZero;
 const extraChallengeTimeBlocks = 20;
 const wasmModuleRoot = "0x9900000000000000000000000000000000000000000000000000000000000010";
 
-const _IMPLEMENTATION_PRIMARY_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
-const _IMPLEMENTATION_SECONDARY_SLOT = "0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d"
-
 // let rollup: RollupContract
 let rollup: RollupContract;
 let rollupUser: RollupUserLogic;
@@ -330,7 +327,10 @@ function updatePrevNode(node: Node) {
   prevNodes.push(node);
 }
 
-const getDoubleLogicUUPSTarget = async (slot: "user" | "admin", provider: providers.Provider) => {
+const _IMPLEMENTATION_PRIMARY_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+const _IMPLEMENTATION_SECONDARY_SLOT = "0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d"
+
+const getDoubleLogicUUPSTarget = async (slot: "user" | "admin", provider: providers.Provider) : Promise<string> => {
   return `0x${(await provider.getStorageAt(rollupAdmin.address, slot === "admin" ? 
                 _IMPLEMENTATION_PRIMARY_SLOT : _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
 }
@@ -885,8 +885,8 @@ describe("ArbRollup", () => {
     const user = rollupUser.signer
 
     // store the current implementation addresses
-    const proxyPrimaryImplSlot0 = await getDoubleLogicUUPSTarget("admin", user.provider!)
-    const proxySecondaryImplSlot0 = await getDoubleLogicUUPSTarget("user", user.provider!)
+    const proxyPrimaryTarget0 = await getDoubleLogicUUPSTarget("admin", user.provider!)
+    const proxySecondaryTarget0 = await getDoubleLogicUUPSTarget("user", user.provider!)
 
     // deploy a new admin logic
     const rollupAdminLogicFac = (await ethers.getContractFactory(
@@ -903,21 +903,21 @@ describe("ArbRollup", () => {
     );
 
     // check the new implementation address is set
-    const proxyPrimaryImplSlot = await getDoubleLogicUUPSTarget("admin", user.provider!)
-    await expect(proxyPrimaryImplSlot).to.not.eq(proxyPrimaryImplSlot0)
-    await expect(proxyPrimaryImplSlot).to.eq(newAdminLogicImpl.address.toLowerCase())
+    const proxyPrimaryTarget = await getDoubleLogicUUPSTarget("admin", user.provider!)
+    await expect(proxyPrimaryTarget).to.not.eq(proxyPrimaryTarget0)
+    await expect(proxyPrimaryTarget).to.eq(newAdminLogicImpl.address.toLowerCase())
 
     // check the other implementation address is unchanged
-    const proxySecondaryImplSlot = await getDoubleLogicUUPSTarget("user", user.provider!)
-    await expect(proxySecondaryImplSlot).to.eq(proxySecondaryImplSlot0)
+    const proxySecondaryTarget = await getDoubleLogicUUPSTarget("user", user.provider!)
+    await expect(proxySecondaryTarget).to.eq(proxySecondaryTarget0)
   });
 
   it("should only allow admin to upgrade secondary logic", async function () {
     const user = rollupUser.signer
 
     // store the current implementation addresses
-    const proxyPrimaryImplSlot0 = await getDoubleLogicUUPSTarget("admin", user.provider!)
-    const proxySecondaryImplSlot0 = await getDoubleLogicUUPSTarget("user", user.provider!)
+    const proxyPrimaryTarget0 = await getDoubleLogicUUPSTarget("admin", user.provider!)
+    const proxySecondaryTarget0 = await getDoubleLogicUUPSTarget("user", user.provider!)
 
     // deploy a new user logic
     const rollupUserLogicFac = (await ethers.getContractFactory(
@@ -934,13 +934,13 @@ describe("ArbRollup", () => {
     );
 
     // check the new implementation address is set
-    const proxySecondaryImplSlot = await getDoubleLogicUUPSTarget("user", user.provider!)
-    await expect(proxySecondaryImplSlot).to.not.eq(proxySecondaryImplSlot0)
-    await expect(proxySecondaryImplSlot).to.eq(newUserLogicImpl.address.toLowerCase())
+    const proxySecondaryTarget = await getDoubleLogicUUPSTarget("user", user.provider!)
+    await expect(proxySecondaryTarget).to.not.eq(proxySecondaryTarget0)
+    await expect(proxySecondaryTarget).to.eq(newUserLogicImpl.address.toLowerCase())
 
     // check the other implementation address is unchanged
-    const proxyPrimaryImplSlot = await getDoubleLogicUUPSTarget("admin", user.provider!)
-    await expect(proxyPrimaryImplSlot).to.eq(proxyPrimaryImplSlot0)
+    const proxyPrimaryTarget = await getDoubleLogicUUPSTarget("admin", user.provider!)
+    await expect(proxyPrimaryTarget).to.eq(proxyPrimaryTarget0)
   });
 
   it("should allow admin to upgrade primary logic and call", async function () {
