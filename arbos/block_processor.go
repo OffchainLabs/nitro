@@ -217,7 +217,7 @@ func ProduceBlockAdvanced(
 
 		var sender common.Address
 		var dataGas uint64 = 0
-		gasPool := gethGas
+		var txGasUsed uint64 = 0
 		receipt, scheduled, err := (func() (*types.Receipt, types.Transactions, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
@@ -266,6 +266,7 @@ func ProduceBlockAdvanced(
 			snap := statedb.Snapshot()
 			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
 
+			gasPool := gethGas
 			receipt, result, err := core.ApplyTransaction(
 				chainConfig,
 				chainContext,
@@ -274,16 +275,19 @@ func ProduceBlockAdvanced(
 				statedb,
 				header,
 				tx,
-				&header.GasUsed,
+				&txGasUsed,
 				vm.Config{},
 			)
+			if err == nil {
+				err = hooks.PostTxFilter(state, tx, sender, dataGas, receipt)
+			}
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
 				statedb.RevertToSnapshot(snap)
 				return nil, nil, err
 			}
 
-			return receipt, result.ScheduledTxes, hooks.PostTxFilter(state, tx, sender, dataGas, receipt)
+			return receipt, result.ScheduledTxes, nil
 		})()
 
 		// append the err, even if it is nil
@@ -315,23 +319,16 @@ func ProduceBlockAdvanced(
 			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.DepositValue)
 		}
 
-		if gasPool > gethGas {
-			return nil, nil, fmt.Errorf("ApplyTransaction() gave back %v gas", gasPool.Gas()-gethGas.Gas())
-		}
-
-		gasUsed := gethGas.Gas() - gasPool.Gas()
-		gethGas = gasPool
-
-		computeUsed := gasUsed - dataGas
-		if gasUsed < dataGas {
-			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-gasUsed)
+		computeUsed := txGasUsed - dataGas
+		if txGasUsed < dataGas {
+			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-txGasUsed)
 			computeUsed = params.TxGas
 		} else if computeUsed < params.TxGas {
 			computeUsed = params.TxGas
 		}
 
-		if gasUsed > tx.Gas() {
-			return nil, nil, fmt.Errorf("ApplyTransaction() used %v more gas than it should have", gasUsed-tx.Gas())
+		if txGasUsed > tx.Gas() {
+			return nil, nil, fmt.Errorf("ApplyTransaction() used %v more gas than it should have", txGasUsed-tx.Gas())
 		}
 
 		// append any scheduled redeems
