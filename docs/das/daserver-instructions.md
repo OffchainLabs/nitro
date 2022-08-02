@@ -77,6 +77,14 @@ Options generating/using JSON config:
       --conf.file strings                                                                          name of configuration file
 ```
 
+Options for producing Prometheus metrics:
+```
+      --metrics                                                                                    enable metrics
+      --metrics-server.addr string                                                                 metrics server address (default "127.0.0.1")
+      --metrics-server.port int                                                                    metrics server port (default 6070)
+      --metrics-server.update-interval duration                                                    metrics server update interval (default 3s)
+```
+
 Some options are not shown because they are only used by nodes, or they are experimental/advanced. A complete list of options can be found by running `daserver --help`
 
 ## Sample Deployments
@@ -350,4 +358,25 @@ $ curl  https://anytrust-devnet.arbitrum.io/da-mirror-0/get-by-hash/dac8a9f2bbcc
 ### Deployment recommendations
 The REST interface is cacheable, consider using a CDN or caching proxy in front of your REST endpoint.
 
-If you are running a mirrors, the REST interface on your committee member does not have to be exposed publicly. Your mirrors can sync on your private network from the REST interface of your committee member and other public mirrors.
+If you are running a mirror, the REST interface on your committee member does not have to be exposed publicly. Your mirrors can sync on your private network from the REST interface of your committee member and other public mirrors.
+
+### Metrics
+If metrics are enabled in configuration, then several useful metrics are available at the configured port (default 6070), at path `debug/metrics` or `debug/metrics/prometheus`.
+
+| Metric | Description
+| - | - |
+| arb_das_rest_getbyhash_requests | Count of REST GetByHash calls |
+| arb_das_rest_getbyhash_success | Successful REST GetByHash calls |
+| arb_das_rest_getbyhash_failure | Failed REST GetByHash calls |
+| arb_das_rest_getbyhash_bytes | Bytes retrieved with REST GetByHash calls |
+| arb_das_rest_getbyhash_duration (p50, p75, p95, p99, p999, p9999) | Duration of REST GetByHash calls |
+| arb_das_rpc_getbyhash_requests | Count of RPC GetByHash calls |
+| arb_das_rpc_getbyhash_success | Successful RPC GetByHash calls |
+| arb_das_rpc_getbyhash_failure | Failed RPC GetByHash calls |
+| arb_das_rpc_getbyhash_bytes | Bytes retrieved with RPC GetByHash calls |
+| arb_das_rpc_getbyhash_duration (p50, p75, p95, p99, p999, p9999) | Duration of RPC GetByHash calls |
+| arb_das_rpc_store_requests | Count of RPC Store calls |
+| arb_das_rpc_store_success | Successful RPC Store calls |
+| arb_das_rpc_store_failure | Failed RPC Store calls |
+| arb_das_rpc_store_bytes | Bytes retrieved with RPC Store calls |
+| arb_das_rpc_store_duration (p50, p75, p95, p99, p999, p9999) | Duration of RPC Store calls |
