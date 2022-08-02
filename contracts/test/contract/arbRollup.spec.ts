@@ -979,7 +979,7 @@ describe("ArbRollup", () => {
       "RollupAdminLogic"
     )) as RollupAdminLogic__factory;
     const newAdminLogicImpl = await rollupAdminLogicFac.deploy()
-    await expect(rollupAdmin.upgradeSecondaryTo(newAdminLogicImpl.address)).to.revertedWith('ERC1967Upgrade: unsupported proxiableUUID')
+    await expect(rollupAdmin.upgradeSecondaryTo(newAdminLogicImpl.address)).to.revertedWith('ERC1967Upgrade: unsupported secondary proxiableUUID')
   });
 
   it("should fail upgrade to proxy primary logic", async function () {
