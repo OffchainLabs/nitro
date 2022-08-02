@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -73,17 +75,18 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	URL                string        `koanf:"url"`
-	Message            string        `koanf:"message"`
-	DASRetentionPeriod time.Duration `koanf:"das-retention-period"`
-	// TODO ECDSA private key to sign message with
-	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+	URL                string                 `koanf:"url"`
+	Message            string                 `koanf:"message"`
+	DASRetentionPeriod time.Duration          `koanf:"das-retention-period"`
+	SigningKey         string                 `koanf:"signing-key"`
+	ConfConfig         genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f := flag.NewFlagSet("datool client store", flag.ContinueOnError)
-	f.String("url", "", "URL of DAS server to connect to.")
-	f.String("message", "", "Message to send.")
+	f.String("url", "", "URL of DAS server to connect to")
+	f.String("message", "", "message to send")
+	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherise treated as a file; if not specified the message is not signed")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -110,8 +113,31 @@ func startClientStore(args []string) error {
 		return err
 	}
 
+	//	var privateKey *ecdsa.PrivateKey
+	var dasClient das.DataAvailabilityService = client
+	if config.SigningKey != "" {
+		var privateKey *ecdsa.PrivateKey
+		if config.SigningKey[:2] == "0x" {
+			privateKey, err = crypto.HexToECDSA(config.SigningKey[2:])
+			if err != nil {
+				return err
+			}
+		} else {
+			privateKey, err = crypto.LoadECDSA(config.SigningKey)
+			if err != nil {
+				return err
+			}
+		}
+		signer := das.DasSignerFromPrivateKey(privateKey)
+
+		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
+		if err != nil {
+			return err
+		}
+	}
+
 	ctx := context.Background()
-	cert, err := client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+	cert, err := dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	if err != nil {
 		return err
 	}
@@ -249,11 +275,13 @@ func startRESTClientGetByHash(args []string) error {
 type KeyGenConfig struct {
 	Dir        string
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+	ECDSAMode  bool                   `koanf:"ecdsa"`
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f := flag.NewFlagSet("datool keygen", flag.ContinueOnError)
-	f.String("dir", "", "The directory to generate the keys in")
+	f.String("dir", "", "the directory to generate the keys in")
+	f.Bool("ecdsa", false, "generate an ECDSA keypair instead of BLS")
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
@@ -274,9 +302,13 @@ func startKeyGen(args []string) error {
 		return err
 	}
 
-	_, _, err = das.GenerateAndStoreKeys(config.Dir)
-	if err != nil {
-		return err
+	if !config.ECDSAMode {
+		_, _, err = das.GenerateAndStoreKeys(config.Dir)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
-	return nil
+
+	return das.GenerateAndStoreECDSAKeys(config.Dir)
 }

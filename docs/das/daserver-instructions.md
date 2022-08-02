@@ -18,7 +18,7 @@ An in-memory cache can be enabled to avoid needing to access underlying storage 
 `daserver` also has an optional REST aggregator which, in the case that a data batch is not found in cache or storage, queries for that batch from a list other of REST servers, and then stores that batch locally. This is how committee members that miss storing a batch (not all committee members are required by the AnyTrust protocol to report success in order to post the batch's certificate to L1) can automatically repair gaps in data they store, and how mirrors can sync (a sync mode that eagerly syncs all batches is planned for a future release). A public list of REST endpoints is published online, which  `daserver` can be configured to download and use, and addititional endpoints can be specified in configuration.
 
 ## Image:
-`offchainlabs/nitro-node:v2.0.0-alpha.5`
+`offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72`
 
 ## Usage of daserver
 
@@ -58,6 +58,8 @@ Options for both committee members and mirrors:
       --data-availability.rest-aggregator.enable                                                   enable retrieval of sequencer batch data from a list of remote REST endpoints; if other DAS storage types are enabled, this mode is used as a fallback
       --data-availability.rest-aggregator.online-url-list string                                   a URL to a list of URLs of REST das endpoints that is checked at startup; additive with the url option
       --data-availability.rest-aggregator.urls strings                                             list of URLs including 'http://' or 'https://' prefixes and port numbers to REST DAS endpoints; additive with the online-url-list option
+      --data-availability.rest-aggregator.sync-to-storage.eager                                    eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily
+      --data-availability.rest-aggregator.sync-to-storage.eager-lower-bound-block uint             when eagerly syncing, start indexing forward from this L1 block
 ```
 ```
 Options only for committee members:
@@ -73,6 +75,14 @@ Options generating/using JSON config:
 ```
       --conf.dump                                                                                  print out currently active configuration file
       --conf.file strings                                                                          name of configuration file
+```
+
+Options for producing Prometheus metrics:
+```
+      --metrics                                                                                    enable metrics
+      --metrics-server.addr string                                                                 metrics server address (default "127.0.0.1")
+      --metrics-server.port int                                                                    metrics server port (default 6070)
+      --metrics-server.update-interval duration                                                    metrics server update interval (default 3s)
 ```
 
 Some options are not shown because they are only used by nodes, or they are experimental/advanced. A complete list of options can be found by running `daserver --help`
@@ -136,7 +146,7 @@ spec:
           mkdir -p /home/user/data/keys
           /usr/local/bin/datool keygen --dir /home/user/data/keys
           sleep infinity
-        image: offchainlabs/nitro-node:v2.0.0-alpha.5
+        image: offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72
         imagePullPolicy: Always
         resources:
           limits:
@@ -159,7 +169,7 @@ spec:
 
 #### Create DAS deployment
 
-This deployment sets up a DAS server using the Anytrust Goerli Devnet. It uses the devnet L1 inbox contract at 0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf. For the Anytrust Goerli Devnet you must specify a Goerli L1 RPC endpoint.
+This deployment sets up a DAS server using the Arbitrum Nova Mainnet. It uses the L1 inbox contract at 0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b. For the Arbitrum Nova Mainnet you must specify a Mainnet Ethereum L1 RPC endpoint.
 
 This configuration sets up all three storage types. To disable any of them, remove the --data-availability.(local-file-storage|local-disk-storage|s3-storage).enable option, and the other options for that storage type can also be removed. If updating an existing deployment from `offchainlabs/nitro-node:v2.0.0-alpha.4` that is using the local files on disk storage type, you should use at least `local-file-storage`.
 
@@ -191,8 +201,8 @@ spec:
           mkdir -p /home/user/data/db
 		  mkdir -p /home/user/data/badgerdb
           /usr/local/bin/daserver --data-availability.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT>
---enable-rpc --rpc-addr '0.0.0.0' --enable-rest --rest-addr '0.0.0.0' --log-level 5 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.key.key-dir /home/user/data/keys --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.online-url-list "https://anytrust-das-mirror.s3.us-west-2.amazonaws.com/das-mirror-list" --data-availability.sequencer-inbox-address '0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf'
-        image: offchainlabs/nitro-node:v2.0.0-alpha.5
+--enable-rpc --rpc-addr '0.0.0.0' --enable-rest --rest-addr '0.0.0.0' --log-level 3 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.key.key-dir /home/user/data/keys --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.online-url-list "https://arbitrum-mainnet-uw2-anytrust-chaindata.s3.us-west-2.amazonaws.com/das-data-servers" --data-availability.sequencer-inbox-address '0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b'
+        image: offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72
         imagePullPolicy: Always
         resources:
           limits:
@@ -260,7 +270,7 @@ spec:
 
 #### Create DAS deployment
 
-This deployment sets up a DAS server using the Anytrust Goerli Devnet. It uses the devnet L1 inbox contract at 0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf. For the Anytrust Goerli Devnet you must specify a Goerli L1 RPC endpoint.
+This deployment sets up a DAS server using the Arbitrum Nova Mainnet. It uses the L1 inbox contract at 0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b. For the Arbitrum Nova Mainnet you must specify a Mainnet Ethereum L1 RPC endpoint.
 
 This configuration sets up all three storage types. To disable any of them, remove the --data-availability.(local-file-storage|local-disk-storage|s3-storage).enable option, and the other options for that storage type can also be removed.
 
@@ -292,8 +302,8 @@ spec:
           mkdir -p /home/user/data/db
 		  mkdir -p /home/user/data/badgerdb
           /usr/local/bin/daserver --data-availability.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT>
---enable-rest --rest-addr '0.0.0.0' --log-level 5 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.urls "http://your-committee-member.svc.cluster.local:9877" --data-availability.rest-aggregator.online-url-list "https://anytrust-das-mirror.s3.us-west-2.amazonaws.com/das-mirror-list" --data-availability.sequencer-inbox-address '0xd5cbd94954d2a694c7ab797d87bf0fb1d49192bf'
-        image: offchainlabs/nitro-node:v2.0.0-alpha.5
+--enable-rest --rest-addr '0.0.0.0' --log-level 3 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.urls "http://your-committee-member.svc.cluster.local:9877" --data-availability.rest-aggregator.online-url-list "https://arbitrum-mainnet-uw2-anytrust-chaindata.s3.us-west-2.amazonaws.com/das-data-servers" --data-availability.rest-aggregator.sync-to-storage.eager --data-availability.rest-aggregator.sync-to-storage.eager-lower-bound-block 15025611 --data-availability.sequencer-inbox-address '0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b'
+        image: offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72
         imagePullPolicy: Always
         resources:
           limits:
@@ -348,4 +358,25 @@ $ curl  https://anytrust-devnet.arbitrum.io/da-mirror-0/get-by-hash/dac8a9f2bbcc
 ### Deployment recommendations
 The REST interface is cacheable, consider using a CDN or caching proxy in front of your REST endpoint.
 
-If you are running a mirrors, the REST interface on your committee member does not have to be exposed publicly. Your mirrors can sync on your private network from the REST interface of your committee member and other public mirrors.
+If you are running a mirror, the REST interface on your committee member does not have to be exposed publicly. Your mirrors can sync on your private network from the REST interface of your committee member and other public mirrors.
+
+### Metrics
+If metrics are enabled in configuration, then several useful metrics are available at the configured port (default 6070), at path `debug/metrics` or `debug/metrics/prometheus`.
+
+| Metric | Description
+| - | - |
+| arb_das_rest_getbyhash_requests | Count of REST GetByHash calls |
+| arb_das_rest_getbyhash_success | Successful REST GetByHash calls |
+| arb_das_rest_getbyhash_failure | Failed REST GetByHash calls |
+| arb_das_rest_getbyhash_bytes | Bytes retrieved with REST GetByHash calls |
+| arb_das_rest_getbyhash_duration (p50, p75, p95, p99, p999, p9999) | Duration of REST GetByHash calls |
+| arb_das_rpc_getbyhash_requests | Count of RPC GetByHash calls |
+| arb_das_rpc_getbyhash_success | Successful RPC GetByHash calls |
+| arb_das_rpc_getbyhash_failure | Failed RPC GetByHash calls |
+| arb_das_rpc_getbyhash_bytes | Bytes retrieved with RPC GetByHash calls |
+| arb_das_rpc_getbyhash_duration (p50, p75, p95, p99, p999, p9999) | Duration of RPC GetByHash calls |
+| arb_das_rpc_store_requests | Count of RPC Store calls |
+| arb_das_rpc_store_success | Successful RPC Store calls |
+| arb_das_rpc_store_failure | Failed RPC Store calls |
+| arb_das_rpc_store_bytes | Bytes retrieved with RPC Store calls |
+| arb_das_rpc_store_duration (p50, p75, p95, p99, p999, p9999) | Duration of RPC Store calls |

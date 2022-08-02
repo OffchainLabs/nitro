@@ -65,7 +65,7 @@ func startLocalDASServer(
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	Require(t, err)
-	das, err := das.NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, seqInboxCaller, storageService)
+	das, err := das.NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, seqInboxCaller, storageService, "")
 	Require(t, err)
 	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, das)
 	Require(t, err)
