@@ -367,6 +367,7 @@ abstract contract AbsRollupUserLogic is
         increaseStakeBy(winningStaker, amountWon);
         remainingLoserStake -= amountWon;
         clearChallenge(winningStaker);
+        clearChallenge(losingStaker);
         // Credit the other half to the loserStakeEscrow address
         increaseWithdrawableFunds(loserStakeEscrow, remainingLoserStake);
         // Turning loser into zombie renders the loser's remaining stake inaccessible
