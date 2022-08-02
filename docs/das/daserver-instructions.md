@@ -337,22 +337,68 @@ spec:
 
 
 
-### Validating deployments
-In the docker image there is the `datool` utility that can be used to Store and Retrieve messages from a DAS. We will take advantage of a data hash that will always be present for the health check.
+### Testing
+#### Basic validation: health check data is present
+In the docker image there is the `datool` utility that can be used to Store and Retrieve messages from a DAS. We will take advantage of a data hash that will always be present if the the health check is enabled.
 
 From the pod:
 ```
-$ /usr/local/bin/datool client rest getbyhash --url http://localhost:9877   --data-hash 0xdac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
+$ /usr/local/bin/datool client rest getbyhash --url http://localhost:9877   --data-hash 0x8b248e2bd8f75bf1334fe7f0da75cc7c1a34e00e00a22a96b7a43d580d250f3d
 Message: Test-Data
 
-$ /usr/local/bin/datool client rpc getbyhash --url http://localhost:9876   --data-hash 0xdac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
+$ /usr/local/bin/datool client rpc getbyhash --url http://localhost:9876   --data-hash 0x8b248e2bd8f75bf1334fe7f0da75cc7c1a34e00e00a22a96b7a43d580d250f3d
 Message: Test-Data
+```
+
+If you do not have the health check configured yet, you can trigger one manually as follows:
+```
+$ curl http://localhost:9877/health
 ```
 
 Using curl to check the REST endpoint
 ```
-$ curl  https://anytrust-devnet.arbitrum.io/da-mirror-0/get-by-hash/dac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
+$ curl  https://<HOST>/<PATH>/get-by-hash/8b248e2bd8f75bf1334fe7f0da75cc7c1a34e00e00a22a96b7a43d580d250f3d
 {"data":"VGVzdC1EYXRh"}
+```
+
+#### Further validation: using Store interface directly
+
+The Store interface of `daserver` validates that requests to store data are signed by the the Batch Poster's ECDSA key, identified via a call to the Sequencer Inbox contract on L1. It can also be configured to accept Store requests signed with another ECDSA key of your chosing. This could be useful for running load tests, canaries, or troubleshooting your own infrastructure. Using this facility, a load test could be constructed by writing a script to store arbitrary amounts of data at an arbitrary rate; a canary could be constructed to store and retrieve data on some interval.
+
+Generate an ECDSA keypair:
+```
+$ /usr/local/bin/datool keygen --dir /dir-of-your-choice/ --ecdsa
+```
+
+Then add the following configuration option to `daserver`:
+```
+--data-availability.extra-signature-checking-public-key /dir-of-your-choice/ecdsa.pub
+
+OR
+
+--data-availability.extra-signature-checking-public-key 0x<contents of ecdsa.pub>
+```
+
+Now you can use the `datool` utility to send Store requests signed with the ecdsa private key:
+```
+$ /usr/local/bin/datool rpc store  --url http://localhost:9876 --message "Hello world" --signing-key /tmp/ecdsatest/ecdsa
+
+OR
+
+$ /usr/local/bin/datool client rpc store  --url http://localhost:9876 --message "Hello world" --signing-key "0x<contents of ecdsa>"
+```
+
+The above command outputs the `Hex Encoded Data Hash: ` which can be used to retrieve the data:
+```
+$ /usr/local/bin/datool client rpc getbyhash --url  http://localhost:9876 --data-hash 0x052cca0e379137c975c966bcc69ac8237ac38dc1fcf21ac9a6524c87a2aab423
+Message: Hello world
+$ /usr/local/bin/datool client rest getbyhash --url  http://localhost:9877 --data-hash 0x052cca0e379137c975c966bcc69ac8237ac38dc1fcf21ac9a6524c87a2aab423
+Message: Hello world
+```
+
+The retention period defaults to 24h but can be configured for `datool client rpc store` with the option:
+```
+--das-retention-period
 ```
 
 ### Deployment recommendations
