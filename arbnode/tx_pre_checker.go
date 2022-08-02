@@ -135,7 +135,6 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	// We can't cache here because the state the tx is executed in might not the our latestState
 	dataCost, _ := state.l1PricingState.GetPosterInfo(tx, l1pricing.BatchPosterAddress)
 	dataGas := arbmath.BigDiv(dataCost, state.header.BaseFee)
 	if tx.Gas() < intrinsic+dataGas.Uint64() {
