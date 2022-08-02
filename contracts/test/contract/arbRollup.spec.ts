@@ -46,7 +46,7 @@ type AssertionStruct = RollupLib.AssertionStruct;
 type ExecutionStateStruct = RollupLib.ExecutionStateStruct;
 import { keccak256 } from "ethers/lib/utils";
 import { ConfigStruct, RollupCreatedEvent } from "../../build/types/src/rollup/RollupCreator";
-import { constants } from "ethers";
+import { constants, providers } from "ethers";
 import { blockStateHash, MachineStatus } from "./common/challengeLib";
 import * as globalStateLib from "./common/globalStateLib";
 import { RollupChallengeStartedEvent } from "../../build/types/src/rollup/IRollupCore";
@@ -328,6 +328,11 @@ const prevNodes: Node[] = [];
 function updatePrevNode(node: Node) {
   prevNode = node;
   prevNodes.push(node);
+}
+
+const getDoubleLogicUUPSTarget = async (slot: "user" | "admin", provider: providers.Provider) => {
+  return `0x${(await provider.getStorageAt(rollupAdmin.address, slot === "admin" ? 
+                _IMPLEMENTATION_PRIMARY_SLOT : _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
 }
 
 describe("ArbRollup", () => {
@@ -880,8 +885,8 @@ describe("ArbRollup", () => {
     const user = rollupUser.signer
 
     // store the current implementation addresses
-    const proxyPrimaryImplSlot0 = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_PRIMARY_SLOT)).substring(26).toLowerCase()}`
-    const proxySecondaryImplSlot0 = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
+    const proxyPrimaryImplSlot0 = await getDoubleLogicUUPSTarget("admin", user.provider!)
+    const proxySecondaryImplSlot0 = await getDoubleLogicUUPSTarget("user", user.provider!)
 
     // deploy a new admin logic
     const rollupAdminLogicFac = (await ethers.getContractFactory(
@@ -898,12 +903,12 @@ describe("ArbRollup", () => {
     );
 
     // check the new implementation address is set
-    const proxyPrimaryImplSlot = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_PRIMARY_SLOT)).substring(26).toLowerCase()}`
+    const proxyPrimaryImplSlot = await getDoubleLogicUUPSTarget("admin", user.provider!)
     await expect(proxyPrimaryImplSlot).to.not.eq(proxyPrimaryImplSlot0)
     await expect(proxyPrimaryImplSlot).to.eq(newAdminLogicImpl.address.toLowerCase())
 
     // check the other implementation address is unchanged
-    const proxySecondaryImplSlot = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
+    const proxySecondaryImplSlot = await getDoubleLogicUUPSTarget("user", user.provider!)
     await expect(proxySecondaryImplSlot).to.eq(proxySecondaryImplSlot0)
   });
 
@@ -911,8 +916,8 @@ describe("ArbRollup", () => {
     const user = rollupUser.signer
 
     // store the current implementation addresses
-    const proxyPrimaryImplSlot0 = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_PRIMARY_SLOT)).substring(26).toLowerCase()}`
-    const proxySecondaryImplSlot0 = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
+    const proxyPrimaryImplSlot0 = await getDoubleLogicUUPSTarget("admin", user.provider!)
+    const proxySecondaryImplSlot0 = await getDoubleLogicUUPSTarget("user", user.provider!)
 
     // deploy a new user logic
     const rollupUserLogicFac = (await ethers.getContractFactory(
@@ -929,12 +934,12 @@ describe("ArbRollup", () => {
     );
 
     // check the new implementation address is set
-    const proxySecondaryImplSlot = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
+    const proxySecondaryImplSlot = await getDoubleLogicUUPSTarget("user", user.provider!)
     await expect(proxySecondaryImplSlot).to.not.eq(proxySecondaryImplSlot0)
     await expect(proxySecondaryImplSlot).to.eq(newUserLogicImpl.address.toLowerCase())
 
     // check the other implementation address is unchanged
-    const proxyPrimaryImplSlot = `0x${(await user.provider!.getStorageAt(rollupAdmin.address, _IMPLEMENTATION_PRIMARY_SLOT)).substring(26).toLowerCase()}`
+    const proxyPrimaryImplSlot = await getDoubleLogicUUPSTarget("admin", user.provider!)
     await expect(proxyPrimaryImplSlot).to.eq(proxyPrimaryImplSlot0)
   });
 
