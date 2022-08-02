@@ -487,7 +487,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
 
-	block, receipts := arbos.ProduceBlockAdvanced(
+	block, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
 		txes,
 		delayedMessagesRead,
@@ -497,6 +497,9 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		s.bc.Config(),
 		hooks,
 	)
+	if err != nil {
+		return err
+	}
 
 	if len(receipts) == 0 {
 		return nil
