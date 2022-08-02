@@ -87,7 +87,7 @@ abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
             try IERC1822Proxiable(newImplementation).proxiableUUID() returns (bytes32 slot) {
                 require(
                     slot == _IMPLEMENTATION_SECONDARY_SLOT,
-                    "ERC1967Upgrade: unsupported proxiableUUID"
+                    "ERC1967Upgrade: unsupported secondary proxiableUUID"
                 );
             } catch {
                 revert("ERC1967Upgrade: new secondary implementation is not UUPS");
