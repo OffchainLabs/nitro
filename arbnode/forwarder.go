@@ -50,7 +50,7 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 	return f.ethClient.SendTransaction(ctx, tx)
 }
 
-const cacheUpstreamHealth = 5 * time.Second
+const cacheUpstreamHealth = 2 * time.Second
 const maxHealthTimeout = 10 * time.Second
 
 func (f *TxForwarder) CheckHealth(inctx context.Context) error {
