@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -120,7 +119,7 @@ func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transact
 
 func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config.MaxRevertGasReject {
-		return vm.ErrExecutionReverted
+		return result.Err
 	}
 	return nil
 }
