@@ -118,8 +118,8 @@ func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transact
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, receipt *types.Receipt) error {
-	if receipt.Status == types.ReceiptStatusFailed && receipt.GasUsed > dataGas && receipt.GasUsed-dataGas <= s.config.MaxRevertGasReject {
+func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config.MaxRevertGasReject {
 		return vm.ErrExecutionReverted
 	}
 	return nil
