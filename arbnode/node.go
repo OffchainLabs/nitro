@@ -398,7 +398,7 @@ type Config struct {
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
-	PreCheckTxs          bool                           `koanf:"pre-check-txs"`
+	TxPreCheckerMode     string                         `koanf:"tx-pre-checker-mode"`
 	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
 	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
 	Validator            validator.L1ValidatorConfig    `koanf:"validator"`
@@ -426,7 +426,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
-	f.Bool(prefix+".pre-check-txs", ConfigDefault.PreCheckTxs, "if true, verify basic state transition requirements of incoming RPC transactions before processing them")
+	f.String(prefix+".tx-pre-checker-mode", ConfigDefault.TxPreCheckerMode, "how strict to be when checking txs before forwarding them. \"disabled\" to allow everything, \"loose\" to allow nonce too high, or \"strict\" to deny anything failing locally")
 	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
@@ -446,7 +446,7 @@ var ConfigDefault = Config{
 	DelayedSequencer:     DefaultDelayedSequencerConfig,
 	BatchPoster:          DefaultBatchPosterConfig,
 	ForwardingTargetImpl: "",
-	PreCheckTxs:          false,
+	TxPreCheckerMode:     "disabled",
 	BlockValidator:       validator.DefaultBlockValidatorConfig,
 	Feed:                 broadcastclient.FeedConfigDefault,
 	Validator:            validator.DefaultL1ValidatorConfig,
@@ -679,8 +679,14 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
-	if config.PreCheckTxs {
-		txPublisher = NewTxPreChecker(txPublisher, l2BlockChain)
+	if !strings.EqualFold(config.TxPreCheckerMode, "disabled") {
+		strict := false
+		if strings.EqualFold(config.TxPreCheckerMode, "strict") {
+			strict = true
+		} else if !strings.EqualFold(config.TxPreCheckerMode, "loose") {
+			return nil, fmt.Errorf("unknown tx pre checker mode: %v", config.TxPreCheckerMode)
+		}
+		txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, strict)
 	}
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {

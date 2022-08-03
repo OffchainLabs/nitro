@@ -28,17 +28,19 @@ type txPreCheckerState struct {
 type TxPreChecker struct {
 	publisher    TransactionPublisher
 	bc           *core.BlockChain
+	strict       bool
 	latestState  atomic.Value // contains a txPreCheckerState
 	subscription event.Subscription
 	headChan     chan core.ChainHeadEvent
 }
 
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain) *TxPreChecker {
+func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, strict bool) *TxPreChecker {
 	headChan := make(chan core.ChainHeadEvent, 64)
 	subscription := bc.SubscribeChainHeadEvent(headChan)
 	c := &TxPreChecker{
 		publisher:    publisher,
 		bc:           bc,
+		strict:       strict,
 		latestState:  atomic.Value{}, // filled in in Initialize
 		subscription: subscription,
 		headChan:     headChan,
@@ -134,6 +136,9 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	stateNonce := state.stateDb.GetNonce(sender)
 	if tx.Nonce() < stateNonce {
 		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooLow, sender, tx.Nonce(), stateNonce)
+	}
+	if c.strict && tx.Nonce() > stateNonce {
+		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooHigh, sender, tx.Nonce(), stateNonce)
 	}
 	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, c.bc.Config().IsHomestead(state.header.Number), true)
 	if err != nil {
