@@ -528,6 +528,7 @@ type SequencerConfig struct {
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
+	ForwardTimeout              time.Duration            `koanf:"forward-timeout"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -536,6 +537,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxBlockSpeed:               time.Millisecond * 100,
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
+	ForwardTimeout:              time.Second * 30,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
@@ -545,6 +547,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
 	SenderWhitelist:             "",
+	ForwardTimeout:              time.Second * 2,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -554,6 +557,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
+	f.Duration(prefix+".forward-timeout", DefaultSequencerConfig.ForwardTimeout, "timeout when forwarding to a different sequencer")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -670,7 +674,7 @@ func createNodeImpl(
 		if config.ForwardingTarget() == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.ForwardingTarget())
+			txPublisher = NewForwarder(config.ForwardingTarget(), time.Duration(0))
 		}
 	}
 	if config.SeqCoordinator.Enable {
