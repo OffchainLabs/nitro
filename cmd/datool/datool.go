@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -75,11 +76,13 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	URL                string                 `koanf:"url"`
-	Message            string                 `koanf:"message"`
-	DASRetentionPeriod time.Duration          `koanf:"das-retention-period"`
-	SigningKey         string                 `koanf:"signing-key"`
-	ConfConfig         genericconf.ConfConfig `koanf:"conf"`
+	URL                   string                 `koanf:"url"`
+	Message               string                 `koanf:"message"`
+	DASRetentionPeriod    time.Duration          `koanf:"das-retention-period"`
+	SigningKey            string                 `koanf:"signing-key"`
+	SigningWallet         string                 `koanf:"signing-wallet"`
+	SigningWalletPassword string                 `koanf:"signing-wallet-password"`
+	ConfConfig            genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -87,6 +90,8 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("url", "", "URL of DAS server to connect to")
 	f.String("message", "", "message to send")
 	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherise treated as a file; if not specified the message is not signed")
+	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
+	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -113,7 +118,6 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	//	var privateKey *ecdsa.PrivateKey
 	var dasClient das.DataAvailabilityService = client
 	if config.SigningKey != "" {
 		var privateKey *ecdsa.PrivateKey
@@ -130,6 +134,22 @@ func startClientStore(args []string) error {
 		}
 		signer := das.DasSignerFromPrivateKey(privateKey)
 
+		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
+		if err != nil {
+			return err
+		}
+	} else if config.SigningWallet != "" {
+		walletConf := &genericconf.WalletConfig{
+			Pathname:      config.SigningWallet,
+			PasswordImpl:  config.SigningWalletPassword,
+			PrivateKey:    "",
+			Account:       "",
+			OnlyCreateKey: false,
+		}
+		signer, err := arbnode.GetSignerFromWallet(walletConf)
+		if err != nil {
+			return err
+		}
 		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
 		if err != nil {
 			return err
@@ -276,12 +296,14 @@ type KeyGenConfig struct {
 	Dir        string
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
 	ECDSAMode  bool                   `koanf:"ecdsa"`
+	WalletMode bool                   `koanf:"wallet"`
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f := flag.NewFlagSet("datool keygen", flag.ContinueOnError)
 	f.String("dir", "", "the directory to generate the keys in")
 	f.Bool("ecdsa", false, "generate an ECDSA keypair instead of BLS")
+	f.Bool("wallet", false, "generate the ECDSA keypair in a wallet file")
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
@@ -308,7 +330,20 @@ func startKeyGen(args []string) error {
 			return err
 		}
 		return nil
+	} else if !config.WalletMode {
+		return das.GenerateAndStoreECDSAKeys(config.Dir)
+	} else {
+		walletConf := &genericconf.WalletConfig{
+			Pathname:      config.Dir,
+			PasswordImpl:  genericconf.PASSWORD_NOT_SET, // This causes a prompt for the password
+			PrivateKey:    "",
+			Account:       "",
+			OnlyCreateKey: true,
+		}
+		_, err = arbnode.GetSignerFromWallet(walletConf)
+		if err != nil && strings.Contains(fmt.Sprint(err), "wallet key created") {
+			return nil
+		}
+		return err
 	}
-
-	return das.GenerateAndStoreECDSAKeys(config.Dir)
 }
