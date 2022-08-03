@@ -5,19 +5,26 @@ package arbnode
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/pkg/errors"
 )
 
 type TxForwarder struct {
-	enabled int32
-	target  string
-	timeout time.Duration
-	client  *ethclient.Client
+	enabled   int32
+	target    string
+	timeout   time.Duration
+	rpcClient *rpc.Client
+	ethClient *ethclient.Client
+
+	healthMutex   sync.Mutex
+	healthErr     error
+	healthChecked time.Time
 }
 
 func NewForwarder(target string, timeout time.Duration) *TxForwarder {
@@ -40,22 +47,46 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 	}
 	ctx, cancelFunc := f.ctxWithTimeout(inctx)
 	defer cancelFunc()
-	return f.client.SendTransaction(ctx, tx)
+	return f.ethClient.SendTransaction(ctx, tx)
+}
+
+const cacheUpstreamHealth = 5 * time.Second
+const maxHealthTimeout = 10 * time.Second
+
+func (f *TxForwarder) CheckHealth(inctx context.Context) error {
+	if atomic.LoadInt32(&f.enabled) == 0 {
+		return ErrNoSequencer
+	}
+	f.healthMutex.Lock()
+	defer f.healthMutex.Unlock()
+	if time.Since(f.healthChecked) > cacheUpstreamHealth {
+		timeout := f.timeout
+		if timeout == time.Duration(0) || timeout >= maxHealthTimeout {
+			timeout = maxHealthTimeout
+		}
+		ctx, cancelFunc := context.WithTimeout(context.Background(), timeout)
+		defer cancelFunc()
+		f.healthErr = f.rpcClient.CallContext(ctx, nil, "arb_checkPublisherHealth")
+		f.healthChecked = time.Now()
+	}
+	return f.healthErr
 }
 
 func (f *TxForwarder) Initialize(inctx context.Context) error {
 	if f.target == "" {
-		f.client = nil
+		f.rpcClient = nil
+		f.ethClient = nil
 		f.enabled = 0
 		return nil
 	}
 	ctx, cancelFunc := f.ctxWithTimeout(inctx)
 	defer cancelFunc()
-	client, err := ethclient.DialContext(ctx, f.target)
+	rpcClient, err := rpc.DialContext(ctx, f.target)
 	if err != nil {
 		return err
 	}
-	f.client = client
+	f.rpcClient = rpcClient
+	f.ethClient = ethclient.NewClient(rpcClient)
 	f.enabled = 1
 	return nil
 }
@@ -77,8 +108,14 @@ func NewTxDropper() *TxDropper {
 	return &TxDropper{}
 }
 
+var txDropperErr = errors.New("publishing transactions not supported by this endpoint")
+
 func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
-	return errors.New("transactions not supported by this endpoint")
+	return txDropperErr
+}
+
+func (f *TxDropper) CheckHealth(ctx context.Context) error {
+	return txDropperErr
 }
 
 func (f *TxDropper) Initialize(ctx context.Context) error { return nil }
