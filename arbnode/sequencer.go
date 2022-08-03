@@ -137,7 +137,10 @@ func (s *Sequencer) ForwardTarget() string {
 func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
-	s.forwarder = NewForwarder(url)
+	if s.forwarder != nil {
+		s.forwarder.Disable()
+	}
+	s.forwarder = NewForwarder(url, s.config.ForwardTimeout)
 	err := s.forwarder.Initialize(s.GetContext())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)
@@ -149,6 +152,9 @@ func (s *Sequencer) ForwardTo(url string) error {
 func (s *Sequencer) DontForward() {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
+	if s.forwarder != nil {
+		s.forwarder.Disable()
+	}
 	s.forwarder = nil
 }
 
@@ -165,12 +171,13 @@ func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
 
 func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	s.forwarderMutex.Lock()
-	defer s.forwarderMutex.Unlock()
-	if s.forwarder == nil {
+	forwarder := s.forwarder
+	s.forwarderMutex.Unlock()
+	if forwarder == nil {
 		return false
 	}
 	for _, item := range queueItems {
-		res := s.forwarder.PublishTransaction(item.ctx, item.tx)
+		res := forwarder.PublishTransaction(item.ctx, item.tx)
 		if errors.Is(res, ErrNoSequencer) {
 			s.requeueOrFail(item, ErrNoSequencer)
 		} else {
