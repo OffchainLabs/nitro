@@ -523,7 +523,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			if arbmath.BigLessThan(gasPrice, infraFee) {
 				infraFee = gasPrice
 			}
-			infraComputeCost := arbmath.BigSub(arbmath.BigMul(infraFee, arbmath.UintToBig(gasUsed)), p.PosterFee)
+			computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
+			infraComputeCost := arbmath.BigMulByUint(infraFee, computeGas)
 			util.MintBalance(&infraFeeAccount, infraComputeCost, p.evm, scenario, purpose)
 			computeCost = arbmath.BigSub(computeCost, infraComputeCost)
 		}
