@@ -352,6 +352,6 @@ func startKeyGen(args []string) error {
 }
 
 func generateHash(message string) error {
-	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(dastree.Hash([]byte(message)).Bytes()))
+	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(dastree.HashBytes([]byte(message))))
 	return nil
 }
