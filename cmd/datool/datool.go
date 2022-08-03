@@ -335,7 +335,7 @@ func startKeyGen(args []string) error {
 	} else {
 		walletConf := &genericconf.WalletConfig{
 			Pathname:      config.Dir,
-			PasswordImpl:  genericconf.PASSWORD_NOT_SET,
+			PasswordImpl:  genericconf.PASSWORD_NOT_SET, // This causes a prompt for the password
 			PrivateKey:    "",
 			Account:       "",
 			OnlyCreateKey: true,
