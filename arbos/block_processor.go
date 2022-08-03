@@ -81,7 +81,7 @@ type SequencingHooks struct {
 	TxErrors               []error
 	DiscardInvalidTxsEarly bool
 	PreTxFilter            func(*arbosState.ArbosState, *types.Transaction, common.Address) error
-	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error
+	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
 func noopSequencingHooks() *SequencingHooks {
@@ -91,7 +91,7 @@ func noopSequencingHooks() *SequencingHooks {
 		func(*arbosState.ArbosState, *types.Transaction, common.Address) error {
 			return nil
 		},
-		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error {
+		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
 	}
@@ -267,7 +267,7 @@ func ProduceBlockAdvanced(
 			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
-			receipt, result, err := core.ApplyTransaction(
+			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				chainConfig,
 				chainContext,
 				&header.Coinbase,
@@ -277,10 +277,10 @@ func ProduceBlockAdvanced(
 				tx,
 				&header.GasUsed,
 				vm.Config{},
+				func(result *core.ExecutionResult) error {
+					return hooks.PostTxFilter(state, tx, sender, dataGas, result)
+				},
 			)
-			if err == nil {
-				err = hooks.PostTxFilter(state, tx, sender, dataGas, receipt)
-			}
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
 				statedb.RevertToSnapshot(snap)
