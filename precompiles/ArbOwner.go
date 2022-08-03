@@ -93,7 +93,7 @@ func (con ArbOwner) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
 	if c.State.FormatVersion() < 5 {
 		return common.Address{}, errors.New("")
 	}
-	return c.State.NetworkFeeAccount()
+	return c.State.InfraFeeAccount()
 }
 
 // Sets the network fee collector
