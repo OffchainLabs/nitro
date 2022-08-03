@@ -35,4 +35,10 @@ contract Simple {
         require(blockhash(block.number - 1) != blockhash(block.number - 2), "SAME_BLOCK_HASH");
         return block.number;
     }
+
+    function noop() external pure {}
+
+    function pleaseRevert() external pure {
+        revert();
+    }
 }

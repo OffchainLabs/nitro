@@ -606,38 +606,38 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	return nil
 }
 
-func (ps *L1PricingState) GetPosterInfoWithoutCache(tx *types.Transaction, posterAddr common.Address) (*big.Int, uint64) {
+func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, posterAddr common.Address) uint64 {
 
 	if posterAddr != BatchPosterAddress {
-		return common.Big0, 0
+		return 0
 	}
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
 	if !util.TxTypeHasPosterCosts(txType) || merr != nil {
-		return common.Big0, 0
+		return 0
 	}
 
 	l1Bytes, err := byteCountAfterBrotli0(txBytes)
 	if err != nil {
 		panic(fmt.Sprintf("failed to compress tx: %v", err))
 	}
-
-	// Approximate the l1 fee charged for posting this tx's calldata
-	pricePerUnit, _ := ps.PricePerUnit()
-	numUnits := l1Bytes * params.TxDataNonZeroGasEIP2028
-	return am.BigMulByUint(pricePerUnit, numUnits), numUnits
+	return l1Bytes * params.TxDataNonZeroGasEIP2028
 }
 
 // Returns the poster cost and the calldata units for a transaction
 func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address) (*big.Int, uint64) {
-	cost, _ := tx.PosterCost.Load().(*big.Int)
-	if cost != nil {
-		return cost, atomic.LoadUint64(&tx.CalldataUnits)
+	if poster != BatchPosterAddress {
+		return common.Big0, 0
 	}
-	cost, units := ps.GetPosterInfoWithoutCache(tx, poster)
-	atomic.StoreUint64(&tx.CalldataUnits, units)
-	tx.PosterCost.Store(cost)
-	return cost, units
+	units := atomic.LoadUint64(&tx.CalldataUnits)
+	if units == 0 {
+		units = ps.getPosterUnitsWithoutCache(tx, poster)
+		atomic.StoreUint64(&tx.CalldataUnits, units)
+	}
+
+	// Approximate the l1 fee charged for posting this tx's calldata
+	pricePerUnit, _ := ps.PricePerUnit()
+	return am.BigMulByUint(pricePerUnit, units), units
 }
 
 const TxFixedCostEstimate = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
