@@ -4,6 +4,7 @@
 package precompiles
 
 import (
+	"errors"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -26,5 +27,13 @@ func (con ArbOwnerPublic) IsChainOwner(c ctx, evm mech, addr addr) (bool, error)
 
 // Gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
+	return c.State.NetworkFeeAccount()
+}
+
+// Gets the infrastructure fee collector
+func (con ArbOwnerPublic) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
+	if c.State.FormatVersion() < 5 {
+		return common.Address{}, errors.New("")
+	}
 	return c.State.NetworkFeeAccount()
 }
