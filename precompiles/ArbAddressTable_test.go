@@ -150,7 +150,14 @@ func TestAddressTableCompressInTable(t *testing.T) {
 }
 
 func newMockEVMForTesting() *vm.EVM {
+	return newMockEVMForTestingWithVersion(nil)
+}
+
+func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
 	chainConfig := params.ArbitrumDevTestChainConfig()
+	if version != nil {
+		chainConfig.ArbitrumChainParams.InitialArbOSVersion = *version
+	}
 	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	context := vm.BlockContext{
 		BlockNumber: big.NewInt(0),

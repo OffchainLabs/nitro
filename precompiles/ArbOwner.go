@@ -90,9 +90,6 @@ func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 
 // Gets the infrastructure fee collector
 func (con ArbOwner) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
-	if c.State.FormatVersion() < 5 {
-		return common.Address{}, errors.New("")
-	}
 	return c.State.InfraFeeAccount()
 }
 
@@ -103,9 +100,6 @@ func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount a
 
 // Sets the network fee collector
 func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
-	if c.State.FormatVersion() < 5 {
-		return errors.New("")
-	}
 	return c.State.SetInfraFeeAccount(newNetworkFeeAccount)
 }
 

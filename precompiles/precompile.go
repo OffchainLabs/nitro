@@ -521,7 +521,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(MakePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
 	insert(MakePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
 	insert(MakePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
-	insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
 	insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
@@ -535,6 +534,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 			gasLeft:     gasLimit,
 		}
 	}
+
+	ArbOwnerPublic := insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
+	getter := ArbOwnerPublic.methodsByName["GetInfraFeeAccount"]
+	getter.arbosVersion = 5
+	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"] = getter
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
@@ -561,6 +565,12 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
 	_, ArbOwner := MakePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
+	getter = ArbOwner.methodsByName["GetInfraFeeAccount"]
+	setter := ArbOwner.methodsByName["SetInfraFeeAccount"]
+	getter.arbosVersion = 5
+	setter.arbosVersion = 5
+	ArbOwner.methodsByName["GetInfraFeeAccount"] = getter
+	ArbOwner.methodsByName["SetInfraFeeAccount"] = setter
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
