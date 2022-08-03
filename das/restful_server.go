@@ -83,12 +83,14 @@ type RestfulDasServerResponse struct {
 
 var cacheControlKey = http.CanonicalHeaderKey("cache-control")
 
-const cacheControlValue = "public, max-age=2419200, immutable" // cache for up to 28 days
+const cacheControlValueDefault = "public, max-age=1"                                 // cache for up to 1 second (Used to avoid DOS attack)
+const cacheControlValueForSuccessfulGetByHash = "public, max-age=2419200, immutable" // cache for up to 28 days
 const healthRequestPath = "/health"
 const expirationPolicyRequestPath = "/expiration-policy/"
 const getByHashRequestPath = "/get-by-hash/"
 
 func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header()[cacheControlKey] = []string{cacheControlValueDefault}
 	requestPath := path.Clean(r.URL.Path)
 	log.Debug("Got request", "requestPath", requestPath)
 	switch {
@@ -184,7 +186,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.Header()[cacheControlKey] = []string{cacheControlValue}
+	w.Header()[cacheControlKey] = []string{cacheControlValueForSuccessfulGetByHash}
 	success = true
 }
 
