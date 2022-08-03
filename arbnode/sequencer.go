@@ -124,6 +124,13 @@ func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transac
 	return nil
 }
 
+func (s *Sequencer) CheckHealth(ctx context.Context) error {
+	if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
+		return ErrNoSequencer
+	}
+	return nil
+}
+
 func (s *Sequencer) ForwardTarget() string {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
