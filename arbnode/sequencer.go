@@ -180,7 +180,7 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 		if errors.Is(res, ErrNoSequencer) {
 			s.requeueOrFail(item, ErrNoSequencer)
 		} else {
-			item.resultChan <- res
+			item.returnResult(res)
 		}
 	}
 	return true
@@ -297,10 +297,10 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 
 	for i, err := range hooks.TxErrors {
 		queueItem := queueItems[i]
-		if errors.Is(err, core.ErrGasLimit) {
+		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
 			// Attempt to re-queue the transaction.
-			s.requeueOrFail(queueItem, core.ErrGasLimit)
+			s.requeueOrFail(queueItem, core.ErrGasLimitReached)
 			continue
 		}
 		queueItem.returnResult(err)
