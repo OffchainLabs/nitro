@@ -121,15 +121,19 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	state := c.getLatestState()
 	sender, err := types.Sender(types.LatestSigner(c.bc.Config()), tx)
 	if err != nil {
-		return core.ErrInvalidSender
+		return err
+	}
+	if arbmath.BigLessThan(tx.GasFeeCap(), state.header.BaseFee) {
+		return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, sender, tx.GasFeeCap(), state.header.BaseFee)
 	}
 	balance := state.stateDb.GetBalance(sender)
 	cost := tx.Cost()
 	if arbmath.BigLessThan(balance, cost) {
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
-	if tx.Nonce() < state.stateDb.GetNonce(sender) {
-		return core.ErrNonceTooLow
+	stateNonce := state.stateDb.GetNonce(sender)
+	if tx.Nonce() < stateNonce {
+		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooLow, sender, tx.Nonce(), stateNonce)
 	}
 	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, c.bc.Config().IsHomestead(state.header.Number), true)
 	if err != nil {
