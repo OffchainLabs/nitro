@@ -23,13 +23,14 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dasrpc"
+	"github.com/offchainlabs/nitro/das/dastree"
 	flag "github.com/spf13/pflag"
 )
 
 func main() {
 	args := os.Args
 	if len(args) < 2 {
-		panic("Usage: datool [client|keygen] ...")
+		panic("Usage: datool [client|keygen|generatehash] ...")
 	}
 
 	var err error
@@ -38,8 +39,10 @@ func main() {
 		err = startClient(args[2:])
 	case "keygen":
 		err = startKeyGen(args[2:])
+	case "generatehash":
+		err = generateHash(args[2])
 	default:
-		panic(fmt.Sprintf("Unknown tool '%s' specified, valid tools are 'client', 'keygen'", args[1]))
+		panic(fmt.Sprintf("Unknown tool '%s' specified, valid tools are 'client', 'keygen', 'generatehash'", args[1]))
 	}
 	if err != nil {
 		panic(err)
@@ -346,4 +349,9 @@ func startKeyGen(args []string) error {
 		}
 		return err
 	}
+}
+
+func generateHash(message string) error {
+	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(dastree.HashBytes([]byte(message))))
+	return nil
 }
