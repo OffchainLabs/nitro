@@ -136,7 +136,10 @@ func (s *Sequencer) ForwardTarget() string {
 func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
-	s.forwarder = NewForwarder(url)
+	if s.forwarder != nil {
+		s.forwarder.Disable()
+	}
+	s.forwarder = NewForwarder(url, s.config.ForwardTimeout)
 	err := s.forwarder.Initialize(s.GetContext())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)
@@ -148,17 +151,37 @@ func (s *Sequencer) ForwardTo(url string) error {
 func (s *Sequencer) DontForward() {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
+	if s.forwarder != nil {
+		s.forwarder.Disable()
+	}
 	s.forwarder = nil
+}
+
+var ErrQueueFull error = errors.New("queue full")
+var ErrNoSequencer error = errors.New("sequencer temporarily not available")
+
+func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
+	select {
+	case s.txQueue <- queueItem:
+	default:
+		queueItem.returnResult(err)
+	}
 }
 
 func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	s.forwarderMutex.Lock()
-	defer s.forwarderMutex.Unlock()
-	if s.forwarder == nil {
+	forwarder := s.forwarder
+	s.forwarderMutex.Unlock()
+	if forwarder == nil {
 		return false
 	}
 	for _, item := range queueItems {
-		item.resultChan <- s.forwarder.PublishTransaction(item.ctx, item.tx)
+		res := forwarder.PublishTransaction(item.ctx, item.tx)
+		if errors.Is(res, ErrNoSequencer) {
+			s.requeueOrFail(item, ErrNoSequencer)
+		} else {
+			item.returnResult(res)
+		}
 	}
 	return true
 }
@@ -205,11 +228,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 			// This tx would be too large to add to this batch.
 			// Attempt to put it back in the queue, but error if the queue is full.
 			// Then, end the batch here.
-			select {
-			case s.txQueue <- queueItem:
-			default:
-				queueItem.returnResult(core.ErrOversizedData)
-			}
+			s.requeueOrFail(queueItem, ErrQueueFull)
 			break
 		}
 		totalBatchSize += len(txBytes)
@@ -264,11 +283,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		}
 		// try to add back to queue otherwise
 		for _, item := range queueItems {
-			select {
-			case s.txQueue <- item:
-			default:
-				item.resultChan <- errors.New("queue full")
-			}
+			s.requeueOrFail(item, ErrNoSequencer)
 		}
 		return
 	}
@@ -282,15 +297,11 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 
 	for i, err := range hooks.TxErrors {
 		queueItem := queueItems[i]
-		if errors.Is(err, core.ErrGasLimit) {
+		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
 			// Attempt to re-queue the transaction.
-			// If the queue is full, fall through to returning an error.
-			select {
-			case s.txQueue <- queueItem:
-				continue
-			default:
-			}
+			s.requeueOrFail(queueItem, core.ErrGasLimitReached)
+			continue
 		}
 		queueItem.returnResult(err)
 	}
