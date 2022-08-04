@@ -110,7 +110,11 @@ func TestSequencerRejection(t *testing.T) {
 		if i == 0 {
 			Fail(t, "failed to reach block 200, only reached block", block)
 		}
-		time.Sleep(time.Millisecond * 100)
+		select {
+		case err := <-feedErrChan:
+			Fail(t, "error: ", err)
+		case <-time.After(time.Millisecond * 100):
+		}
 	}
 
 	atomic.StoreInt32(&stopBackground, 1)
@@ -122,7 +126,11 @@ func TestSequencerRejection(t *testing.T) {
 	for i := 100; i >= 0; i-- {
 		header2, err := client2.HeaderByNumber(ctx, header1.Number)
 		if err != nil {
-			time.Sleep(time.Millisecond * 100)
+			select {
+			case err := <-feedErrChan:
+				Fail(t, "error: ", err)
+			case <-time.After(time.Millisecond * 100):
+			}
 			if i == 0 {
 				client2Block, _ := client2.BlockNumber(ctx)
 				Fail(t, "client2 failed to reach client1 block ", header1.Number, ", only reached block", client2Block)
