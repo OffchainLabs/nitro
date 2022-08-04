@@ -120,11 +120,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	if err != nil {
 		return nil, err
 	}
-	dataPoster, err := dataposter.NewDataPoster[batchPosterPosition](l1Reader, transactOpts, &config.DataPoster)
-	if err != nil {
-		return nil, err
-	}
-	return &BatchPoster{
+	b := &BatchPoster{
 		l1Reader:     l1Reader,
 		inbox:        inbox,
 		streamer:     streamer,
@@ -134,7 +130,32 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		seqInboxAddr: contractAddress,
 		gasRefunder:  common.HexToAddress(config.GasRefunderAddress),
 		das:          das,
-		dataPoster:   dataPoster,
+	}
+	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, &config.DataPoster, b.getBatchPosterPosition)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
+	bigInboxBatchCount, err := b.seqInbox.BatchCount(&bind.CallOpts{Context: ctx, BlockNumber: blockNum})
+	if err != nil {
+		return batchPosterPosition{}, fmt.Errorf("error getting latest batch count: %w", err)
+	}
+	inboxBatchCount := bigInboxBatchCount.Uint64()
+	var prevBatchMeta BatchMetadata
+	if inboxBatchCount > 0 {
+		var err error
+		prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
+		if err != nil {
+			return batchPosterPosition{}, fmt.Errorf("error getting latest batch metadata: %w", err)
+		}
+	}
+	return batchPosterPosition{
+		MessageCount:        prevBatchMeta.MessageCount,
+		DelayedMessageCount: prevBatchMeta.DelayedMessageCount,
+		NextSeqNum:          inboxBatchCount,
 	}, nil
 }
 
@@ -388,26 +409,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 }
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
-	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx, func(blockNum *big.Int) (batchPosterPosition, error) {
-		bigInboxBatchCount, err := b.seqInbox.BatchCount(&bind.CallOpts{Context: ctx, BlockNumber: blockNum})
-		if err != nil {
-			return batchPosterPosition{}, fmt.Errorf("error getting latest batch count: %w", err)
-		}
-		inboxBatchCount := bigInboxBatchCount.Uint64()
-		var prevBatchMeta BatchMetadata
-		if inboxBatchCount > 0 {
-			var err error
-			prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
-			if err != nil {
-				return batchPosterPosition{}, fmt.Errorf("error getting latest batch metadata: %w", err)
-			}
-		}
-		return batchPosterPosition{
-			MessageCount:        prevBatchMeta.MessageCount,
-			DelayedMessageCount: prevBatchMeta.DelayedMessageCount,
-			NextSeqNum:          inboxBatchCount,
-		}, nil
-	})
+	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
 		return err
 	}

@@ -75,11 +75,12 @@ var TestDataPosterConfig = DataPosterConfig{
 // Meta must be RLP serializable and deserializable
 type DataPoster[Meta any] struct {
 	stopwaiter.StopWaiter
-	headerReader     *headerreader.HeaderReader
-	client           arbutil.L1Interface
-	auth             *bind.TransactOpts
-	config           *DataPosterConfig
-	replacementTimes []time.Duration
+	headerReader      *headerreader.HeaderReader
+	client            arbutil.L1Interface
+	auth              *bind.TransactOpts
+	config            *DataPosterConfig
+	replacementTimes  []time.Duration
+	metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)
 
 	// these fields are protected by the mutex
 	mutex      sync.Mutex
@@ -90,7 +91,7 @@ type DataPoster[Meta any] struct {
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
 }
 
-func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, config *DataPosterConfig) (*DataPoster[Meta], error) {
+func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, config *DataPosterConfig, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
 	for _, s := range strings.Split(config.ReplacementTimes, ",") {
@@ -120,12 +121,13 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 		}
 	}
 	return &DataPoster[Meta]{
-		headerReader:     headerReader,
-		client:           headerReader.Client(),
-		auth:             auth,
-		config:           config,
-		replacementTimes: replacementTimes,
-		queue:            queue,
+		headerReader:      headerReader,
+		client:            headerReader.Client(),
+		auth:              auth,
+		config:            config,
+		replacementTimes:  replacementTimes,
+		metadataRetriever: metadataRetriever,
+		queue:             queue,
 	}, nil
 }
 
@@ -142,7 +144,7 @@ func (p *DataPoster[Meta]) From() common.Address {
 	return p.auth.From
 }
 
-func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context, getMetaAtBlock func(blockNum *big.Int) (Meta, error)) (uint64, Meta, error) {
+func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Meta, error) {
 	var emptyMeta Meta
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
@@ -157,7 +159,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context, getMetaAtBlo
 	if lastQueueItem != nil {
 		return lastQueueItem.Data.Nonce + 1, lastQueueItem.Meta, nil
 	}
-	meta, err := getMetaAtBlock(p.lastBlock)
+	meta, err := p.metadataRetriever(ctx, p.lastBlock)
 	return p.nonce, meta, err
 }
 
