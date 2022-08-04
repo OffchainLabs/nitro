@@ -32,8 +32,8 @@ func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 	query := redis.ZRangeArgs{
 		Key:     s.key,
 		ByScore: true,
-		Start:   int64(startingIndex),
-		Count:   int64(maxResults),
+		Start:   startingIndex,
+		Stop:    startingIndex + maxResults - 1,
 	}
 	itemStrings, err := s.client.ZRangeArgs(ctx, query).Result()
 	if err != nil {
@@ -94,8 +94,8 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		query := redis.ZRangeArgs{
 			Key:     s.key,
 			ByScore: true,
-			Start:   int64(index),
-			Stop:    int64(index),
+			Start:   index,
+			Stop:    index,
 		}
 		haveItems, err := s.client.ZRangeArgs(ctx, query).Result()
 		if err != nil {
@@ -142,5 +142,6 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		}
 		return err
 	}
+	// WATCH works with sorted sets: https://redis.io/docs/manual/transactions/#using-watch-to-implement-zpop
 	return s.client.Watch(ctx, action, s.key)
 }

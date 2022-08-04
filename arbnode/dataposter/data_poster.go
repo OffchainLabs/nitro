@@ -269,37 +269,37 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 }
 
 // the mutex must be held by the caller
-func (p *DataPoster[Meta]) replaceTx(ctx context.Context, tx *queuedTransaction[Meta]) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, tx.Data.GasTipCap, tx.Created)
+func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta]) error {
+	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.GasTipCap, prevTx.Created)
 	if err != nil {
 		return err
 	}
 
 	desiredFeeCap := newFeeCap
-	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(tx.Data.Gas))
+	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(prevTx.Data.Gas))
 	newFeeCap = arbmath.BigMin(newFeeCap, maxFeeCap)
-	minNewFeeCap := arbmath.BigMulByBips(tx.Data.GasFeeCap, minRbfIncrease)
-	newTx := *tx
+	minNewFeeCap := arbmath.BigMulByBips(prevTx.Data.GasFeeCap, minRbfIncrease)
+	newTx := *prevTx
 	if newFeeCap.Cmp(minNewFeeCap) < 0 {
 		if desiredFeeCap.Cmp(minNewFeeCap) >= 0 {
 			log.Error(
 				"lack of L1 balance prevents posting transaction with a higher fee cap",
 				"balance", p.balance,
-				"gasLimit", tx.Data.Gas,
+				"gasLimit", prevTx.Data.Gas,
 				"desiredFeeCap", desiredFeeCap,
 				"maxFeeCap", maxFeeCap,
 			)
 		}
 		newTx.NextReplacement = time.Now().Add(time.Minute)
-		return p.sendTx(ctx, tx, &newTx)
+		return p.sendTx(ctx, prevTx, &newTx)
 	}
 
-	elapsed := time.Since(tx.Created)
+	elapsed := time.Since(prevTx.Created)
 	for _, replacement := range p.replacementTimes {
 		if elapsed >= replacement {
 			continue
 		}
-		newTx.NextReplacement = tx.Created.Add(replacement)
+		newTx.NextReplacement = prevTx.Created.Add(replacement)
 		break
 	}
 	newTx.Sent = false
@@ -310,7 +310,7 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, tx *queuedTransaction[
 		return err
 	}
 
-	return p.sendTx(ctx, tx, &newTx)
+	return p.sendTx(ctx, prevTx, &newTx)
 }
 
 // the mutex must be held by the caller
