@@ -76,8 +76,8 @@ type TransactionStreamerInterface interface {
 type BroadcastClient struct {
 	stopwaiter.StopWaiter
 
-	websocketUrl     string
-	mostRecentSeqNum arbutil.MessageIndex
+	websocketUrl string
+	nextSeqNum   arbutil.MessageIndex
 
 	chainId uint64
 
@@ -106,27 +106,20 @@ func NewBroadcastClient(
 	txStreamer TransactionStreamerInterface,
 	feedErrChan chan error,
 ) *BroadcastClient {
-	var mostRecentSeqNum arbutil.MessageIndex
-	if currentMessageCount <= 0 {
-		mostRecentSeqNum = 0
-	} else {
-		mostRecentSeqNum = currentMessageCount - 1
-	}
-
 	return &BroadcastClient{
-		websocketUrl:     websocketUrl,
-		chainId:          chainId,
-		mostRecentSeqNum: mostRecentSeqNum,
-		idleTimeout:      idleTimeout,
-		txStreamer:       txStreamer,
-		feedErrChan:      feedErrChan}
+		websocketUrl: websocketUrl,
+		chainId:      chainId,
+		nextSeqNum:   currentMessageCount,
+		idleTimeout:  idleTimeout,
+		txStreamer:   txStreamer,
+		feedErrChan:  feedErrChan}
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn)
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
-			earlyFrameData, err := bc.connect(ctx, bc.mostRecentSeqNum)
+			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 			if errors.Is(err, ErrIncorrectChainId) || errors.Is(err, ErrIncorrectFeedServerVersion) {
 				bc.feedErrChan <- err
 				return
@@ -147,21 +140,15 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	})
 }
 
-func (bc *BroadcastClient) connect(ctx context.Context, currentSeqNum arbutil.MessageIndex) (io.Reader, error) {
+func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.MessageIndex) (io.Reader, error) {
 	if len(bc.websocketUrl) == 0 {
 		// Nothing to do
 		return nil, nil
 	}
 
-	var requestedSequenceNumber string
-	if currentSeqNum > 0 {
-		requestedSequenceNumber = strconv.FormatUint(uint64(currentSeqNum+1), 10)
-	} else {
-		requestedSequenceNumber = "0"
-	}
 	header := ws.HandshakeHeaderHTTP(http.Header{
 		wsbroadcastserver.HTTPHeaderFeedClientVersion:       []string{strconv.Itoa(wsbroadcastserver.FeedClientVersion)},
-		wsbroadcastserver.HTTPHeaderRequestedSequenceNumber: []string{requestedSequenceNumber},
+		wsbroadcastserver.HTTPHeaderRequestedSequenceNumber: []string{strconv.FormatUint(uint64(nextSeqNum), 10)},
 	})
 
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
@@ -243,7 +230,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, currentSeqNum arbutil.Me
 	bc.conn = conn
 	bc.connMutex.Unlock()
 
-	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", requestedSequenceNumber)
+	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum)
 
 	return earlyFrameData, nil
 }
@@ -300,7 +287,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							}
 							messages = append(messages, message.Message)
 						}
-						bc.mostRecentSeqNum = res.Messages[len(res.Messages)-1].SequenceNumber
+						bc.nextSeqNum = res.Messages[len(res.Messages)-1].SequenceNumber + 1
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages[0].SequenceNumber, messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
@@ -339,7 +326,7 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 		}
 
 		atomic.AddInt64(&bc.retryCount, 1)
-		earlyFrameData, err := bc.connect(ctx, bc.mostRecentSeqNum)
+		earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 		if err == nil {
 			bc.retrying = false
 			return earlyFrameData
