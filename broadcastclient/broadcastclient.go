@@ -154,7 +154,6 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
 	var chainId uint64
 	var feedServerVersion uint64
-	var headerErr error
 	timeoutDialer := ws.Dialer{
 		Header: header,
 		OnHeader: func(key, value []byte) (err error) {
@@ -173,7 +172,6 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 						"actualFeedServerVersion",
 						feedServerVersion,
 					)
-					headerErr = ErrIncorrectFeedServerVersion
 					return ErrIncorrectFeedServerVersion
 				}
 			} else if headerName == wsbroadcastserver.HTTPHeaderChainId {
@@ -189,7 +187,6 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 						"actualChainId",
 						chainId,
 					)
-					headerErr = ErrIncorrectChainId
 					return ErrIncorrectChainId
 				}
 			}
@@ -208,10 +205,6 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	conn, br, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if err != nil {
 		return nil, errors.Wrap(err, "broadcast client unable to connect")
-	}
-
-	if headerErr != nil {
-		return nil, headerErr
 	}
 
 	var earlyFrameData io.Reader
@@ -285,9 +278,9 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 								log.Warn("ignoring nil feed message")
 								continue
 							}
+							bc.nextSeqNum = message.SequenceNumber
 							messages = append(messages, message.Message)
 						}
-						bc.nextSeqNum = res.Messages[len(res.Messages)-1].SequenceNumber + 1
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages[0].SequenceNumber, messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}

@@ -24,10 +24,10 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-const HTTPHeaderFeedServerVersion = "Feed-Server-Version"
-const HTTPHeaderFeedClientVersion = "Feed-Client-Version"
-const HTTPHeaderRequestedSequenceNumber = "Requested-Sequence-Number"
-const HTTPHeaderChainId = "Chain-Id"
+const HTTPHeaderFeedServerVersion = "Arbitrum-Feed-Server-Version"
+const HTTPHeaderFeedClientVersion = "Arbitrum-Feed-Client-Version"
+const HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
+const HTTPHeaderChainId = "Arbitrum-Chain-Id"
 const FeedServerVersion = 2
 const FeedClientVersion = 2
 
@@ -174,7 +174,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 				if s.settings.RequireVersion && !feedClientVersionSeen {
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusBadRequest),
-						ws.RejectionReason("Feed-Client-Version HTTP header missing"),
+						ws.RejectionReason(HTTPHeaderFeedClientVersion+" HTTP header missing"),
 					)
 				}
 				return header, nil

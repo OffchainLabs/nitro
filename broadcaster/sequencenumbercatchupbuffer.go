@@ -26,31 +26,29 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	}
 	var startingIndex int32
 	// Ignore messages older than requested sequence number
-	if requestedSeqNum > 0 {
-		if b.messages[0].SequenceNumber < requestedSeqNum {
-			startingIndex = int32(requestedSeqNum - b.messages[0].SequenceNumber)
-			if startingIndex >= b.messageCount {
-				startingIndex = b.messageCount - 1
-			}
-			if b.messages[startingIndex].SequenceNumber > requestedSeqNum {
-				for startingIndex > 1 {
-					if b.messages[startingIndex-1].SequenceNumber < requestedSeqNum {
-						// Found messages to broadcast
-						break
-					}
-					startingIndex--
+	if b.messages[0].SequenceNumber < requestedSeqNum {
+		startingIndex = int32(requestedSeqNum - b.messages[0].SequenceNumber)
+		if startingIndex >= b.messageCount {
+			startingIndex = b.messageCount - 1
+		}
+		if b.messages[startingIndex].SequenceNumber > requestedSeqNum {
+			for startingIndex > 1 {
+				if b.messages[startingIndex-1].SequenceNumber < requestedSeqNum {
+					// Found messages to broadcast
+					break
 				}
-			} else if b.messages[startingIndex].SequenceNumber < requestedSeqNum {
-				for {
-					startingIndex++
-					if startingIndex >= b.messageCount {
-						// End of array with nothing found
-						return nil
-					}
-					if b.messages[startingIndex].SequenceNumber >= requestedSeqNum {
-						// Found messages to broadcast
-						break
-					}
+				startingIndex--
+			}
+		} else if b.messages[startingIndex].SequenceNumber < requestedSeqNum {
+			for {
+				startingIndex++
+				if startingIndex >= b.messageCount {
+					// End of array with nothing found
+					return nil
+				}
+				if b.messages[startingIndex].SequenceNumber >= requestedSeqNum {
+					// Found messages to broadcast
+					break
 				}
 			}
 		}
@@ -121,6 +119,10 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 		}
 
 		b.messages = b.messages[confirmedIndex+1:]
+		if len(b.messages) > 10 && cap(b.messages) > len(b.messages)*10 {
+			// Too much spare capacity, copy to fresh slice to reset memory usage
+			b.messages = append([]*BroadcastFeedMessage(nil), b.messages[:len(b.messages)]...)
+		}
 		return nil
 	}
 

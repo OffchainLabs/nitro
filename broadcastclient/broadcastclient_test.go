@@ -72,14 +72,14 @@ func (ts *dummyTransactionStreamer) AddBroadcastMessages(pos arbutil.MessageInde
 	return nil
 }
 
-func newTestBroadcastClient(port int, chainId uint64, currentMessageCount arbutil.MessageIndex, idleTimeout time.Duration, txStreamer TransactionStreamerInterface, feedErrChan chan error) *BroadcastClient {
+func newTestBroadcastClient(listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, idleTimeout time.Duration, txStreamer TransactionStreamerInterface, feedErrChan chan error) *BroadcastClient {
+	port := listenerAddress.(*net.TCPAddr).Port
 	return NewBroadcastClient(fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, idleTimeout, txStreamer, feedErrChan)
 }
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, feedErrChan chan error) {
 	ts := NewDummyTransactionStreamer()
-	port := addr.(*net.TCPAddr).Port
-	broadcastClient := newTestBroadcastClient(port, chainId, 0, 20*time.Second, ts, feedErrChan)
+	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 20*time.Second, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 	messageCount := 0
 
@@ -130,10 +130,9 @@ func TestServerClientDisconnect(t *testing.T) {
 	defer b.StopAndWait()
 
 	ts := NewDummyTransactionStreamer()
-	port := b.ListenerAddr().(*net.TCPAddr).Port
 
 	badFeedErrChan := make(chan error, 10)
-	badBroadcastClient := newTestBroadcastClient(port, chainId+1, 0, 20*time.Second, ts, badFeedErrChan)
+	badBroadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId+1, 0, 20*time.Second, ts, badFeedErrChan)
 	badBroadcastClient.Start(ctx)
 	badTimer := time.NewTimer(5 * time.Second)
 	select {
@@ -144,7 +143,7 @@ func TestServerClientDisconnect(t *testing.T) {
 		t.Fatal("Client channel did not send error as expected")
 	}
 
-	broadcastClient := newTestBroadcastClient(port, chainId, 0, 20*time.Second, ts, feedErrChan)
+	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId, 0, 20*time.Second, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
@@ -198,8 +197,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	}
 	defer b1.StopAndWait()
 
-	port := b1.ListenerAddr().(*net.TCPAddr).Port
-	broadcastClient := newTestBroadcastClient(port, chainId, 0, 2*time.Second, nil, feedErrChan)
+	broadcastClient := newTestBroadcastClient(b1.ListenerAddr(), chainId, 0, 2*time.Second, nil, feedErrChan)
 
 	broadcastClient.Start(ctx)
 
@@ -286,9 +284,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 
 func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uint64, t *testing.T, clientIndex int, wg *sync.WaitGroup) {
 	ts := NewDummyTransactionStreamer()
-	port := addr.(*net.TCPAddr).Port
 	feedErrChan := make(chan error, 10)
-	broadcastClient := newTestBroadcastClient(port, chainId, 0, 60*time.Second, ts, feedErrChan)
+	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 60*time.Second, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 
 	go func() {
