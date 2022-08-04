@@ -49,7 +49,7 @@ func createDummyBroadcastMessages(seqNums []arbutil.MessageIndex) []*BroadcastFe
 }
 
 func TestGetCacheMessages(t *testing.T) {
-	indexes := []arbutil.MessageIndex{40, 40, 41, 45, 46, 47, 48}
+	indexes := []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46}
 	buffer := SequenceNumberCatchupBuffer{
 		messages:     createDummyBroadcastMessages(indexes),
 		messageCount: int32(len(indexes)),
@@ -80,39 +80,14 @@ func TestGetCacheMessages(t *testing.T) {
 	}
 
 	// Test single
-	bm = buffer.getCacheMessages(48)
+	bm = buffer.getCacheMessages(46)
 	if bm == nil {
 		t.Fatal("nothing returned")
 	}
 	if len(bm.Messages) != 1 {
 		t.Errorf("expected 1 message, got %d messages", len(bm.Messages))
 	}
-	if bm.Messages[0].SequenceNumber != 48 {
-		t.Errorf("expected sequence number 48, got %d", bm.Messages[0].SequenceNumber)
+	if bm.Messages[0].SequenceNumber != 46 {
+		t.Errorf("expected sequence number 46, got %d", bm.Messages[0].SequenceNumber)
 	}
-
-	// Test when messages missing
-	bm = buffer.getCacheMessages(45)
-	if bm == nil {
-		t.Fatal("nothing returned")
-	}
-	if len(bm.Messages) != 4 {
-		t.Errorf("expected 4 messages, got %d messages", len(bm.Messages))
-	}
-	if bm.Messages[0].SequenceNumber != 45 {
-		t.Errorf("expected sequence number 45, got %d", bm.Messages[0].SequenceNumber)
-	}
-
-	// Test when duplicate message
-	bm = buffer.getCacheMessages(41)
-	if bm == nil {
-		t.Fatal("nothing returned")
-	}
-	if len(bm.Messages) != 5 {
-		t.Errorf("expected only 5 messages, got %d messages", len(bm.Messages))
-	}
-	if bm.Messages[0].SequenceNumber != 41 {
-		t.Errorf("expected sequence number 41, got %d", bm.Messages[0].SequenceNumber)
-	}
-
 }

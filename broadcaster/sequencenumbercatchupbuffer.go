@@ -29,28 +29,12 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	if b.messages[0].SequenceNumber < requestedSeqNum {
 		startingIndex = int32(requestedSeqNum - b.messages[0].SequenceNumber)
 		if startingIndex >= b.messageCount {
-			startingIndex = b.messageCount - 1
+			// Past end, nothing to return
+			return nil
 		}
-		if b.messages[startingIndex].SequenceNumber > requestedSeqNum {
-			for startingIndex > 1 {
-				if b.messages[startingIndex-1].SequenceNumber < requestedSeqNum {
-					// Found messages to broadcast
-					break
-				}
-				startingIndex--
-			}
-		} else if b.messages[startingIndex].SequenceNumber < requestedSeqNum {
-			for {
-				startingIndex++
-				if startingIndex >= b.messageCount {
-					// End of array with nothing found
-					return nil
-				}
-				if b.messages[startingIndex].SequenceNumber >= requestedSeqNum {
-					// Found messages to broadcast
-					break
-				}
-			}
+		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
+			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "seqNumZero", b.messages[0].SequenceNumber, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
+			return nil
 		}
 	}
 
