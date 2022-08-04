@@ -398,6 +398,7 @@ type Config struct {
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
+	PreCheckTxs          bool                           `koanf:"pre-check-txs"`
 	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
 	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
 	Validator            validator.L1ValidatorConfig    `koanf:"validator"`
@@ -406,6 +407,7 @@ type Config struct {
 	Wasm                 WasmConfig                     `koanf:"wasm"`
 	Dangerous            DangerousConfig                `koanf:"dangerous"`
 	Archive              bool                           `koanf:"archive"`
+	TxLookupLimit        uint64                         `koanf:"tx-lookup-limit"`
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -424,6 +426,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	f.Bool(prefix+".pre-check-txs", ConfigDefault.PreCheckTxs, "if true, verify basic state transition requirements of incoming RPC transactions before processing them")
 	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
@@ -432,6 +435,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	WasmConfigAddOptions(prefix+".wasm", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, "retain past block state")
+	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 }
 
 var ConfigDefault = Config{
@@ -442,6 +446,7 @@ var ConfigDefault = Config{
 	DelayedSequencer:     DefaultDelayedSequencerConfig,
 	BatchPoster:          DefaultBatchPosterConfig,
 	ForwardingTargetImpl: "",
+	PreCheckTxs:          false,
 	BlockValidator:       validator.DefaultBlockValidatorConfig,
 	Feed:                 broadcastclient.FeedConfigDefault,
 	Validator:            validator.DefaultL1ValidatorConfig,
@@ -450,6 +455,7 @@ var ConfigDefault = Config{
 	Wasm:                 DefaultWasmConfig,
 	Dangerous:            DefaultDangerousConfig,
 	Archive:              false,
+	TxLookupLimit:        40_000_000,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -522,6 +528,7 @@ type SequencerConfig struct {
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
+	ForwardTimeout              time.Duration            `koanf:"forward-timeout"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -530,6 +537,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxBlockSpeed:               time.Millisecond * 100,
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
+	ForwardTimeout:              time.Second * 30,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
@@ -539,6 +547,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
 	SenderWhitelist:             "",
+	ForwardTimeout:              time.Second * 2,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -548,6 +557,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
+	f.Duration(prefix+".forward-timeout", DefaultSequencerConfig.ForwardTimeout, "timeout when forwarding to a different sequencer")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -664,7 +674,7 @@ func createNodeImpl(
 		if config.ForwardingTarget() == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.ForwardingTarget())
+			txPublisher = NewForwarder(config.ForwardingTarget(), time.Duration(0))
 		}
 	}
 	if config.SeqCoordinator.Enable {
@@ -673,11 +683,14 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
+	if config.PreCheckTxs {
+		txPublisher = NewTxPreChecker(txPublisher, l2BlockChain)
+	}
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {
 		return nil, err
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface)
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, txStreamer)
 	if err != nil {
 		return nil, err
 	}
@@ -968,6 +981,7 @@ func SetUpDataAvailability(
 			config.KeyConfig,
 			_seqInboxCaller,
 			topLevelStorageService,
+			config.ExtraSignatureCheckingPublicKey,
 		)
 		if err != nil {
 			return nil, nil, err
@@ -1046,11 +1060,16 @@ func CreateNode(
 			Public:    false,
 		})
 	}
+
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
-		Service:   &ArbDebugAPI{blockchain: l2BlockChain},
-		Public:    false,
+		Service: &ArbDebugAPI{
+			blockchain:        l2BlockChain,
+			blockRangeBound:   config.RPC.ArbDebug.BlockRangeBound,
+			timeoutQueueBound: config.RPC.ArbDebug.TimeoutQueueBound,
+		},
+		Public: false,
 	})
 	stack.RegisterAPIs(apis)
 
@@ -1237,8 +1256,11 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 	if storedGenHash == EmptyHash {
 		// chainDb did not have genesis block. Initialize it.
 		core.WriteHeadBlock(chainDb, genBlock, prevDifficulty)
+		log.Info("wrote genesis block", "number", blockNumber, "hash", blockHash)
 	} else if storedGenHash != blockHash {
-		return errors.New("database contains data inconsistent with initialization")
+		return fmt.Errorf("database contains data inconsistent with initialization: database has genesis hash %v but we built genesis hash %v", storedGenHash, blockHash)
+	} else {
+		log.Info("recreated existing genesis block", "number", blockNumber, "hash", blockHash)
 	}
 
 	return nil
@@ -1278,30 +1300,28 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	return nil
 }
 
-func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, config *params.ChainConfig) (*core.BlockChain, error) {
-	defaultConf := ethconfig.Defaults
-
+func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, nodeConfig *Config) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
 	}
 
 	vmConfig := vm.Config{
-		EnablePreimageRecording: defaultConf.EnablePreimageRecording,
+		EnablePreimageRecording: false,
 	}
 
-	return core.NewBlockChain(chainDb, cacheConfig, config, engine, vmConfig, shouldPreserveFalse, &defaultConf.TxLookupLimit)
+	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConfig.TxLookupLimit)
 }
 
-func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, config *params.ChainConfig, accountsPerSync uint) (*core.BlockChain, error) {
-	err := WriteOrTestGenblock(chainDb, initData, config, accountsPerSync)
+func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, nodeConfig *Config, accountsPerSync uint) (*core.BlockChain, error) {
+	err := WriteOrTestGenblock(chainDb, initData, chainConfig, accountsPerSync)
 	if err != nil {
 		return nil, err
 	}
-	err = WriteOrTestChainConfig(chainDb, config)
+	err = WriteOrTestChainConfig(chainDb, chainConfig)
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, config)
+	return GetBlockChain(chainDb, cacheConfig, chainConfig, nodeConfig)
 }
 
 // Don't preserve reorg'd out blocks

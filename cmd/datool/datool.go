@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
@@ -15,18 +16,21 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dasrpc"
+	"github.com/offchainlabs/nitro/das/dastree"
 	flag "github.com/spf13/pflag"
 )
 
 func main() {
 	args := os.Args
 	if len(args) < 2 {
-		panic("Usage: datool [client|keygen] ...")
+		panic("Usage: datool [client|keygen|generatehash] ...")
 	}
 
 	var err error
@@ -35,8 +39,10 @@ func main() {
 		err = startClient(args[2:])
 	case "keygen":
 		err = startKeyGen(args[2:])
+	case "generatehash":
+		err = generateHash(args[2])
 	default:
-		panic(fmt.Sprintf("Unknown tool '%s' specified, valid tools are 'client', 'keygen'", args[1]))
+		panic(fmt.Sprintf("Unknown tool '%s' specified, valid tools are 'client', 'keygen', 'generatehash'", args[1]))
 	}
 	if err != nil {
 		panic(err)
@@ -73,17 +79,22 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	URL                string        `koanf:"url"`
-	Message            string        `koanf:"message"`
-	DASRetentionPeriod time.Duration `koanf:"das-retention-period"`
-	// TODO ECDSA private key to sign message with
-	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+	URL                   string                 `koanf:"url"`
+	Message               string                 `koanf:"message"`
+	DASRetentionPeriod    time.Duration          `koanf:"das-retention-period"`
+	SigningKey            string                 `koanf:"signing-key"`
+	SigningWallet         string                 `koanf:"signing-wallet"`
+	SigningWalletPassword string                 `koanf:"signing-wallet-password"`
+	ConfConfig            genericconf.ConfConfig `koanf:"conf"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f := flag.NewFlagSet("datool client store", flag.ContinueOnError)
-	f.String("url", "", "URL of DAS server to connect to.")
-	f.String("message", "", "Message to send.")
+	f.String("url", "", "URL of DAS server to connect to")
+	f.String("message", "", "message to send")
+	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherise treated as a file; if not specified the message is not signed")
+	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
+	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -110,8 +121,46 @@ func startClientStore(args []string) error {
 		return err
 	}
 
+	var dasClient das.DataAvailabilityService = client
+	if config.SigningKey != "" {
+		var privateKey *ecdsa.PrivateKey
+		if config.SigningKey[:2] == "0x" {
+			privateKey, err = crypto.HexToECDSA(config.SigningKey[2:])
+			if err != nil {
+				return err
+			}
+		} else {
+			privateKey, err = crypto.LoadECDSA(config.SigningKey)
+			if err != nil {
+				return err
+			}
+		}
+		signer := das.DasSignerFromPrivateKey(privateKey)
+
+		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
+		if err != nil {
+			return err
+		}
+	} else if config.SigningWallet != "" {
+		walletConf := &genericconf.WalletConfig{
+			Pathname:      config.SigningWallet,
+			PasswordImpl:  config.SigningWalletPassword,
+			PrivateKey:    "",
+			Account:       "",
+			OnlyCreateKey: false,
+		}
+		signer, err := arbnode.GetSignerFromWallet(walletConf)
+		if err != nil {
+			return err
+		}
+		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
+		if err != nil {
+			return err
+		}
+	}
+
 	ctx := context.Background()
-	cert, err := client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+	cert, err := dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	if err != nil {
 		return err
 	}
@@ -249,11 +298,15 @@ func startRESTClientGetByHash(args []string) error {
 type KeyGenConfig struct {
 	Dir        string
 	ConfConfig genericconf.ConfConfig `koanf:"conf"`
+	ECDSAMode  bool                   `koanf:"ecdsa"`
+	WalletMode bool                   `koanf:"wallet"`
 }
 
 func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f := flag.NewFlagSet("datool keygen", flag.ContinueOnError)
-	f.String("dir", "", "The directory to generate the keys in")
+	f.String("dir", "", "the directory to generate the keys in")
+	f.Bool("ecdsa", false, "generate an ECDSA keypair instead of BLS")
+	f.Bool("wallet", false, "generate the ECDSA keypair in a wallet file")
 	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := util.BeginCommonParse(f, args)
@@ -274,9 +327,31 @@ func startKeyGen(args []string) error {
 		return err
 	}
 
-	_, _, err = das.GenerateAndStoreKeys(config.Dir)
-	if err != nil {
+	if !config.ECDSAMode {
+		_, _, err = das.GenerateAndStoreKeys(config.Dir)
+		if err != nil {
+			return err
+		}
+		return nil
+	} else if !config.WalletMode {
+		return das.GenerateAndStoreECDSAKeys(config.Dir)
+	} else {
+		walletConf := &genericconf.WalletConfig{
+			Pathname:      config.Dir,
+			PasswordImpl:  genericconf.PASSWORD_NOT_SET, // This causes a prompt for the password
+			PrivateKey:    "",
+			Account:       "",
+			OnlyCreateKey: true,
+		}
+		_, err = arbnode.GetSignerFromWallet(walletConf)
+		if err != nil && strings.Contains(fmt.Sprint(err), "wallet key created") {
+			return nil
+		}
 		return err
 	}
+}
+
+func generateHash(message string) error {
+	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(dastree.HashBytes([]byte(message))))
 	return nil
 }
