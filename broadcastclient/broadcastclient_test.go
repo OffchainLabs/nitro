@@ -28,8 +28,8 @@ func TestReceiveMessages(t *testing.T) {
 	clientCount := 10
 	chainId := uint64(9742)
 
-	broadcasterErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, broadcasterErrChan)
+	feedErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
 
 	err := b.Start(ctx)
 	if err != nil {
@@ -39,7 +39,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < clientCount; i++ {
-		startMakeBroadcastClient(ctx, t, b.ListenerAddr(), i, messageCount, chainId, &wg)
+		startMakeBroadcastClient(ctx, t, b.ListenerAddr(), i, messageCount, chainId, &wg, feedErrChan)
 	}
 
 	go func() {
@@ -72,15 +72,14 @@ func (ts *dummyTransactionStreamer) AddBroadcastMessages(pos arbutil.MessageInde
 	return nil
 }
 
-func newTestBroadcastClient(port int, chainId uint64, currentMessageCount arbutil.MessageIndex, idleTimeout time.Duration, txStreamer TransactionStreamerInterface, broadcasterErrChan chan error) *BroadcastClient {
-	return NewBroadcastClient(fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, idleTimeout, txStreamer, broadcasterErrChan)
+func newTestBroadcastClient(port int, chainId uint64, currentMessageCount arbutil.MessageIndex, idleTimeout time.Duration, txStreamer TransactionStreamerInterface, feedErrChan chan error) *BroadcastClient {
+	return NewBroadcastClient(fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, idleTimeout, txStreamer, feedErrChan)
 }
 
-func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup) {
+func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, feedErrChan chan error) {
 	ts := NewDummyTransactionStreamer()
 	port := addr.(*net.TCPAddr).Port
-	broadcasterErrChan := make(chan error, 10)
-	broadcastClient := newTestBroadcastClient(port, chainId, 0, 20*time.Second, ts, broadcasterErrChan)
+	broadcastClient := newTestBroadcastClient(port, chainId, 0, 20*time.Second, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 	messageCount := 0
 
@@ -189,9 +188,9 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	settings.Ping = 50 * time.Second
 	settings.ClientTimeout = 150 * time.Second
 
-	broadcasterErrChan := make(chan error, 10)
+	feedErrChan := make(chan error, 10)
 	chainId := uint64(8742)
-	b1 := broadcaster.NewBroadcaster(settings, chainId, broadcasterErrChan)
+	b1 := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
 
 	err := b1.Start(ctx)
 	if err != nil {
@@ -200,7 +199,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	defer b1.StopAndWait()
 
 	port := b1.ListenerAddr().(*net.TCPAddr).Port
-	broadcastClient := newTestBroadcastClient(port, chainId, 0, 2*time.Second, nil, broadcasterErrChan)
+	broadcastClient := newTestBroadcastClient(port, chainId, 0, 2*time.Second, nil, feedErrChan)
 
 	broadcastClient.Start(ctx)
 
@@ -224,9 +223,9 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	defer cancel()
 	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
 
-	broadcasterErrChan := make(chan error, 10)
+	feedErrChan := make(chan error, 10)
 	chainId := uint64(8744)
-	b := broadcaster.NewBroadcaster(settings, chainId, broadcasterErrChan)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
 
 	err := b.Start(ctx)
 	if err != nil {
@@ -288,8 +287,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uint64, t *testing.T, clientIndex int, wg *sync.WaitGroup) {
 	ts := NewDummyTransactionStreamer()
 	port := addr.(*net.TCPAddr).Port
-	broadcasterErrChan := make(chan error, 10)
-	broadcastClient := newTestBroadcastClient(port, chainId, 0, 60*time.Second, ts, broadcasterErrChan)
+	feedErrChan := make(chan error, 10)
+	broadcastClient := newTestBroadcastClient(port, chainId, 0, 60*time.Second, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 
 	go func() {

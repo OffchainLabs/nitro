@@ -697,7 +697,6 @@ func createNodeImpl(
 		return nil, err
 	}
 	var broadcastClients []*broadcastclient.BroadcastClient
-	var clientErrChan chan error
 	if config.Feed.Input.Enable() {
 		for _, address := range config.Feed.Input.URLs {
 			client := broadcastclient.NewBroadcastClient(
@@ -706,7 +705,7 @@ func createNodeImpl(
 				currentMessageCount,
 				config.Feed.Input.Timeout,
 				txStreamer,
-				clientErrChan,
+				feedErrChan,
 			)
 			broadcastClients = append(broadcastClients, client)
 		}

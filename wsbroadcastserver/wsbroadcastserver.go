@@ -84,26 +84,26 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 }
 
 type WSBroadcastServer struct {
-	startMutex         *sync.Mutex
-	poller             netpoll.Poller
-	acceptDesc         *netpoll.Desc
-	listener           net.Listener
-	settings           BroadcasterConfig
-	started            bool
-	clientManager      *ClientManager
-	catchupBuffer      CatchupBuffer
-	chainId            uint64
-	broadcasterErrChan chan error
+	startMutex    *sync.Mutex
+	poller        netpoll.Poller
+	acceptDesc    *netpoll.Desc
+	listener      net.Listener
+	settings      BroadcasterConfig
+	started       bool
+	clientManager *ClientManager
+	catchupBuffer CatchupBuffer
+	chainId       uint64
+	feedErrChan   chan error
 }
 
-func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer, chainId uint64, broadcasterErrChan chan error) *WSBroadcastServer {
+func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer, chainId uint64, feedErrChan chan error) *WSBroadcastServer {
 	return &WSBroadcastServer{
-		startMutex:         &sync.Mutex{},
-		settings:           settings,
-		started:            false,
-		catchupBuffer:      catchupBuffer,
-		chainId:            chainId,
-		broadcasterErrChan: broadcasterErrChan,
+		startMutex:    &sync.Mutex{},
+		settings:      settings,
+		started:       false,
+		catchupBuffer: catchupBuffer,
+		chainId:       chainId,
+		feedErrChan:   feedErrChan,
 	}
 }
 
@@ -300,7 +300,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		err = s.poller.Resume(acceptDesc)
 		if err != nil {
 			log.Warn("error in poller.Resume", "err", err)
-			s.broadcasterErrChan <- errors.Wrap(err, "error in poller.Resume")
+			s.feedErrChan <- errors.Wrap(err, "error in poller.Resume")
 			return
 		}
 	})
