@@ -694,11 +694,7 @@ func createNodeImpl(
 
 	currentMessageCount, err := txStreamer.GetMessageCount()
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			currentMessageCount = 0
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
 	var broadcastClients []*broadcastclient.BroadcastClient
 	var clientErrChan chan error
@@ -1134,10 +1130,6 @@ func (n *Node) Start(ctx context.Context) error {
 		return err
 	}
 	err = n.TxPublisher.Initialize(ctx)
-	if err != nil {
-		return err
-	}
-	err = n.TxStreamer.Initialize()
 	if err != nil {
 		return err
 	}
