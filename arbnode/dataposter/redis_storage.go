@@ -6,6 +6,7 @@ package dataposter
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/rlp"
@@ -83,6 +84,8 @@ func (s *RedisStorage[Item]) Prune(ctx context.Context, keepStartingAt uint64) e
 	return nil
 }
 
+var StorageRaceErr = errors.New("storage race error")
+
 func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *Item, newItem *Item) error {
 	if newItem == nil {
 		return fmt.Errorf("tried to insert nil item at index %v", index)
@@ -98,22 +101,23 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		if err != nil {
 			return err
 		}
+		pipe := tx.TxPipeline()
 		if len(haveItems) == 0 {
 			if prevItem != nil {
-				return fmt.Errorf("tried to replace item at index %v but no item exists there", index)
+				return fmt.Errorf("%w: tried to replace item at index %v but no item exists there", StorageRaceErr, index)
 			}
 		} else if len(haveItems) == 1 {
 			if prevItem == nil {
-				return fmt.Errorf("tried to insert new item at index %v but an item exists there", index)
+				return fmt.Errorf("%w: tried to insert new item at index %v but an item exists there", StorageRaceErr, index)
 			}
 			prevItemEncoded, err := rlp.EncodeToBytes(prevItem)
 			if err != nil {
 				return err
 			}
 			if !bytes.Equal([]byte(haveItems[0]), prevItemEncoded) {
-				return fmt.Errorf("replacing different item than expected at index %v", index)
+				return fmt.Errorf("%w: replacing different item than expected at index %v", StorageRaceErr, index)
 			}
-			err = tx.ZRem(ctx, s.key, haveItems[0]).Err()
+			err = pipe.ZRem(ctx, s.key, haveItems[0]).Err()
 			if err != nil {
 				return err
 			}
@@ -124,10 +128,19 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		if err != nil {
 			return err
 		}
-		return tx.ZAdd(ctx, s.key, &redis.Z{
+		err = pipe.ZAdd(ctx, s.key, &redis.Z{
 			Score:  float64(index),
 			Member: string(newItemEncoded),
 		}).Err()
+		if err != nil {
+			return err
+		}
+		_, err = pipe.Exec(ctx)
+		if errors.Is(err, redis.TxFailedErr) {
+			// Unfortunately, we can't wrap two errors.
+			err = fmt.Errorf("%w: %v", StorageRaceErr, err.Error())
+		}
+		return err
 	}
 	return s.client.Watch(ctx, action, s.key)
 }

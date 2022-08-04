@@ -82,11 +82,12 @@ type DataPoster[Meta any] struct {
 	replacementTimes []time.Duration
 
 	// these fields are protected by the mutex
-	mutex     sync.Mutex
-	lastBlock *big.Int
-	balance   *big.Int
-	nonce     uint64
-	queue     QueueStorage[queuedTransaction[Meta]]
+	mutex      sync.Mutex
+	lastBlock  *big.Int
+	balance    *big.Int
+	nonce      uint64
+	queue      QueueStorage[queuedTransaction[Meta]]
+	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
 }
 
 func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, config *DataPosterConfig) (*DataPoster[Meta], error) {
@@ -242,20 +243,27 @@ func (p *DataPoster[Meta]) saveTx(ctx context.Context, prevTx *queuedTransaction
 }
 
 func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
-	err := p.saveTx(ctx, prevTx, newTx)
+	if prevTx != newTx {
+		err := p.saveTx(ctx, prevTx, newTx)
+		if err != nil {
+			return err
+		}
+	}
+	err := p.client.SendTransaction(ctx, newTx.FullTx)
 	if err != nil {
-		return err
-	}
-	err = p.client.SendTransaction(ctx, newTx.FullTx)
-	if err == nil {
-		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap())
-		newerTx := *newTx
-		newerTx.Sent = true
-		err = p.saveTx(ctx, newTx, &newerTx)
+		if strings.Contains(err.Error(), "already known") {
+			log.Info("DataPoster transaction already known", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
+			err = nil
+		} else {
+			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap())
+			return err
+		}
 	} else {
-		log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap())
+		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap())
 	}
-	return err
+	newerTx := *newTx
+	newerTx.Sent = true
+	return p.saveTx(ctx, newTx, &newerTx)
 }
 
 // the mutex must be held by the caller
@@ -281,7 +289,7 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, tx *queuedTransaction[
 			)
 		}
 		newTx.NextReplacement = time.Now().Add(time.Minute)
-		return p.saveTx(ctx, tx, &newTx)
+		return p.sendTx(ctx, tx, &newTx)
 	}
 
 	elapsed := time.Since(tx.Created)
@@ -315,6 +323,11 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 		return err
 	}
 	if nonce > p.nonce {
+		if len(p.errorCount) > 0 {
+			for x := p.nonce; x < nonce; x++ {
+				delete(p.errorCount, x)
+			}
+		}
 		err := p.queue.Prune(ctx, nonce)
 		if err != nil {
 			return err
@@ -327,6 +340,26 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 	}
 	p.balance = balance
 	return nil
+}
+
+const maxConsecutiveIntermittentErrors = 10
+
+func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta], msg string) {
+	nonce := tx.Data.Nonce
+	if err == nil {
+		delete(p.errorCount, nonce)
+		return
+	}
+	if errors.Is(err, StorageRaceErr) {
+		p.errorCount[nonce]++
+		if p.errorCount[nonce] <= maxConsecutiveIntermittentErrors {
+			log.Debug(msg, "err", err, "nonce", nonce)
+			return
+		}
+	} else {
+		delete(p.errorCount, nonce)
+	}
+	log.Error(msg, "err", err, "nonce", nonce)
 }
 
 const minWait = time.Second * 10
@@ -350,29 +383,22 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 			return minWait
 		}
 		for _, tx := range queueContents {
+			replacing := false
 			if now.After(tx.NextReplacement) {
+				replacing = true
 				err := p.replaceTx(ctx, tx)
-				if err != nil {
-					log.Error("failed to replace-by-fee transaction", "err", err)
-				}
+				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
 			}
 			if nextCheck.After(tx.NextReplacement) {
 				nextCheck = tx.NextReplacement
 			}
-			if !tx.Sent {
-				err := p.client.SendTransaction(ctx, tx.FullTx)
+			if !replacing && !tx.Sent {
+				err := p.sendTx(ctx, tx, tx)
+				p.maybeLogError(err, tx, "failed to re-send transaction")
 				if err != nil {
-					log.Warn("failed to re-send transaction", "err", err)
 					nextSend := time.Now().Add(time.Minute)
 					if nextCheck.After(nextSend) {
 						nextCheck = nextSend
-					}
-				} else {
-					newTx := *tx
-					newTx.Sent = true
-					err = p.saveTx(ctx, tx, &newTx)
-					if err != nil {
-						log.Warn("failed to update tx to indicate it being sent", "err", err)
 					}
 				}
 			}
