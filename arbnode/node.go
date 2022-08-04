@@ -1106,11 +1106,23 @@ func CreateNode(
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
+			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator},
+			Public:    false,
+		})
+		apis = append(apis, rpc.API{
+			Namespace: "arbdebug",
+			Version:   "1.0",
+			Service:   &BlockValidatorDebugAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
 			Public:    false,
 		})
 	}
 
+	apis = append(apis, rpc.API{
+		Namespace: "arb",
+		Version:   "1.0",
+		Service:   &ArbAPI{currentNode.TxPublisher},
+		Public:    false,
+	})
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",

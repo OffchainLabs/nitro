@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"time"
@@ -107,7 +106,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if err := ioutil.WriteFile(*outfile, deployData, 0600); err != nil {
+	if err := os.WriteFile(*outfile, deployData, 0600); err != nil {
 		panic(err)
 	}
 }
