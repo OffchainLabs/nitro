@@ -58,8 +58,8 @@ const (
 )
 
 type Precompile struct {
-	methods       map[[4]byte]PrecompileMethod
-	methodsByName map[string]PrecompileMethod
+	methods       map[[4]byte]*PrecompileMethod
+	methodsByName map[string]*PrecompileMethod
 	events        map[string]PrecompileEvent
 	errors        map[string]PrecompileError
 	name          string
@@ -155,8 +155,8 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 		return true
 	}
 
-	methods := make(map[[4]byte]PrecompileMethod)
-	methodsByName := make(map[string]PrecompileMethod)
+	methods := make(map[[4]byte]*PrecompileMethod)
+	methodsByName := make(map[string]*PrecompileMethod)
 	events := make(map[string]PrecompileEvent)
 	errors := make(map[string]PrecompileError)
 
@@ -228,8 +228,8 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 			handler,
 			0,
 		}
-		methods[id] = method
-		methodsByName[name] = method
+		methods[id] = &method
+		methodsByName[name] = &method
 	}
 
 	// provide the implementer mechanisms to emit logs for the solidity events
@@ -536,9 +536,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	}
 
 	ArbOwnerPublic := insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
-	getter := ArbOwnerPublic.methodsByName["GetInfraFeeAccount"]
-	getter.arbosVersion = 5
-	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"] = getter
+	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
@@ -565,12 +563,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
 	_, ArbOwner := MakePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
-	getter = ArbOwner.methodsByName["GetInfraFeeAccount"]
-	setter := ArbOwner.methodsByName["SetInfraFeeAccount"]
-	getter.arbosVersion = 5
-	setter.arbosVersion = 5
-	ArbOwner.methodsByName["GetInfraFeeAccount"] = getter
-	ArbOwner.methodsByName["SetInfraFeeAccount"] = setter
+	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
+	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))

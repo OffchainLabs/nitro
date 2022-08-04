@@ -70,9 +70,9 @@ func TestInfraFee(t *testing.T) {
 	Require(t, err)
 
 	if !arbmath.BigEquals(netFeeBalanceBefore, netFeeBalanceAfter) {
-		t.Fatal(netFeeBalanceBefore, netFeeBalanceAfter)
+		Fail(t, netFeeBalanceBefore, netFeeBalanceAfter)
 	}
 	if !arbmath.BigEquals(infraFeeBalanceAfter, expectedBalanceAfter) {
-		t.Fatal(infraFeeBalanceBefore, expectedFunds, infraFeeBalanceAfter, expectedBalanceAfter)
+		Fail(t, infraFeeBalanceBefore, expectedFunds, infraFeeBalanceAfter, expectedBalanceAfter)
 	}
 }
