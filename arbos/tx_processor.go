@@ -514,14 +514,31 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	}
 
 	purpose := "feeCollection"
-	util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
+	if p.state.FormatVersion() > 4 {
+		infraFeeAccount, err := p.state.InfraFeeAccount()
+		p.state.Restrict(err)
+		if infraFeeAccount != (common.Address{}) {
+			infraFee, err := p.state.L2PricingState().MinBaseFeeWei()
+			p.state.Restrict(err)
+			if arbmath.BigLessThan(gasPrice, infraFee) {
+				infraFee = gasPrice
+			}
+			computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
+			infraComputeCost := arbmath.BigMulByUint(infraFee, computeGas)
+			util.MintBalance(&infraFeeAccount, infraComputeCost, p.evm, scenario, purpose)
+			computeCost = arbmath.BigSub(computeCost, infraComputeCost)
+		}
+	}
+	if arbmath.BigGreaterThan(computeCost, common.Big0) {
+		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
+	}
 	posterFeeDestination := p.evm.Context.Coinbase
 	if p.state.FormatVersion() >= 2 {
 		posterFeeDestination = l1pricing.L1PricerFundsPoolAddress
 	}
 	util.MintBalance(&posterFeeDestination, p.PosterFee, p.evm, scenario, purpose)
 
-	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price coud be 0
+	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price could be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.
 		// We don't want to remove from the pool the poster's L1 costs (as expressed in L2 gas in this func)
 		// Hence, we deduct the previously saved poster L2-gas-equivalent to reveal the compute-only gas
