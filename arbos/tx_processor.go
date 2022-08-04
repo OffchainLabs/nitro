@@ -529,7 +529,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			computeCost = arbmath.BigSub(computeCost, infraComputeCost)
 		}
 	}
-	if arbmath.BigLessThan(common.Big0, computeCost) {
+	if arbmath.BigGreaterThan(computeCost, common.Big0) {
 		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
 	}
 	posterFeeDestination := p.evm.Context.Coinbase
