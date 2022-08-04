@@ -58,13 +58,15 @@ func (c *BroadcastClientConfig) Enable() bool {
 }
 
 func BroadcastClientConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.StringSlice(prefix+".url", DefaultBroadcastClientConfig.URLs, "URL of sequencer feed source")
+	f.Bool(prefix+".require-chain-id", DefaultBroadcastClientConfig.RequireChainId, "require broadcast server to send chain id when connecting")
 	f.Duration(prefix+".timeout", DefaultBroadcastClientConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
+	f.StringSlice(prefix+".url", DefaultBroadcastClientConfig.URLs, "URL of sequencer feed source")
 }
 
 var DefaultBroadcastClientConfig = BroadcastClientConfig{
-	URLs:    []string{""},
-	Timeout: 20 * time.Second,
+	RequireChainId: false,
+	URLs:           []string{""},
+	Timeout:        20 * time.Second,
 }
 
 type TransactionStreamerInterface interface {
