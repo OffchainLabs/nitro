@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/hex"
-	"io/ioutil"
+	"io"
 	"os"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -20,7 +20,7 @@ import (
 
 func DecodeBase64BLSPublicKey(pubKeyEncodedBytes []byte) (*blsSignatures.PublicKey, error) {
 	pubKeyDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(pubKeyEncodedBytes))
-	pubKeyBytes, err := ioutil.ReadAll(pubKeyDecoder)
+	pubKeyBytes, err := io.ReadAll(pubKeyDecoder)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func DecodeBase64BLSPublicKey(pubKeyEncodedBytes []byte) (*blsSignatures.PublicK
 
 func DecodeBase64BLSPrivateKey(privKeyEncodedBytes []byte) (*blsSignatures.PrivateKey, error) {
 	privKeyDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(privKeyEncodedBytes))
-	privKeyBytes, err := ioutil.ReadAll(privKeyDecoder)
+	privKeyBytes, err := io.ReadAll(privKeyDecoder)
 	if err != nil {
 		return nil, err
 	}
