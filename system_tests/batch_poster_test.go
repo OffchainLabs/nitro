@@ -22,12 +22,14 @@ func TestBatchPosterParallel(t *testing.T) {
 	defer cancel()
 
 	redisUrl := getTestRedisUrl()
+	parallelBatchPosters := 1
 	if redisUrl != "" {
 		opts, err := redis.ParseURL(redisUrl)
 		Require(t, err)
 		client := redis.NewClient(opts)
 		err = client.Del(ctx, "data-poster.queue").Err()
 		Require(t, err)
+		parallelBatchPosters = 4
 	}
 
 	conf := arbnode.ConfigDefaultL1Test()
@@ -62,11 +64,13 @@ func TestBatchPosterParallel(t *testing.T) {
 	seqTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	conf.BatchPoster.Enable = true
 	conf.BatchPoster.MaxBatchSize = len(firstTxData) * 2
-	batchPoster, err := arbnode.NewBatchPoster(nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, &conf.BatchPoster, nodeA.DeployInfo.SequencerInbox, &seqTxOpts, nil)
-	Require(t, err)
 	startL1Block, err := l1client.BlockNumber(ctx)
 	Require(t, err)
-	batchPoster.Start(ctx)
+	for i := 0; i < parallelBatchPosters; i++ {
+		batchPoster, err := arbnode.NewBatchPoster(nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, &conf.BatchPoster, nodeA.DeployInfo.SequencerInbox, &seqTxOpts, nil)
+		Require(t, err)
+		batchPoster.Start(ctx)
+	}
 
 	lastTxHash := txs[len(txs)-1].Hash()
 	for i := 90; i > 0; i-- {

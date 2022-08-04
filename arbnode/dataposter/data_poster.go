@@ -232,7 +232,6 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 		Created:         dataCreatedAt,
 		NextReplacement: time.Now().Add(p.replacementTimes[0]),
 	}
-	fmt.Printf("sending nonce: %v\n", inner.Nonce)
 	return p.sendTx(ctx, nil, &queuedTx)
 }
 
@@ -253,8 +252,8 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 	}
 	err := p.client.SendTransaction(ctx, newTx.FullTx)
 	if err != nil {
-		if strings.Contains(err.Error(), "already known") {
-			log.Info("DataPoster transaction already known", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
+		if strings.Contains(err.Error(), "already known") || strings.Contains(err.Error(), "nonce too low") {
+			log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
 			err = nil
 		} else {
 			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap())
