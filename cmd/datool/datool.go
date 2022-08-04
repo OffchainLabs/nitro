@@ -9,7 +9,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -217,7 +217,7 @@ func startRPCClientGetByHash(args []string) error {
 		}
 	} else {
 		hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
-		decodedHash, err = ioutil.ReadAll(hashDecoder)
+		decodedHash, err = io.ReadAll(hashDecoder)
 		if err != nil {
 			return err
 		}
@@ -278,7 +278,7 @@ func startRESTClientGetByHash(args []string) error {
 		}
 	} else {
 		hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
-		decodedHash, err = ioutil.ReadAll(hashDecoder)
+		decodedHash, err = io.ReadAll(hashDecoder)
 		if err != nil {
 			return err
 		}

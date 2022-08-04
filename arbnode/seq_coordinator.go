@@ -9,8 +9,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -146,7 +146,7 @@ func loadSigningKey(keyConfig string) (*[32]byte, error) {
 	if keyIsHex {
 		keyString = keyConfig
 	} else {
-		contents, err := ioutil.ReadFile(keyConfig)
+		contents, err := os.ReadFile(keyConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read signing key file: %w", err)
 		}
