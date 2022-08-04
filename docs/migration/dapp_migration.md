@@ -5,7 +5,7 @@ The following is a summary of changes in the upcoming Arbitrum One chain's Nitro
 
 It reflects the current state of Nitro and should be considered a living document; things might change before launch.
 
-_Last Updated 2 Aug 2022_
+_Last Updated 4 Aug 2022_
 
 ## Cool New Stuff 
 
@@ -37,6 +37,8 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
     - Auto-redeem will not be created if the user does not have enough balance to pay for `gasFeeCap * gasLimit` (meaning you can no longer set a max gas fee cap).
     - Deposited gas will be refunded to `excessFeeRefundAddress` if it cannot create an auto-redeem.
     - The user will be refunded the submission cost of their retryable if it is auto-redeemed.
+    - The retryable ticket id is now the retryable creation tx hash; with arbitrum sdk you can retrieve it with `L1ToL2Message.retryableCreationId` or calculate it by calling [L1ToL2Message.calculateSubmitRetryableId](https://github.com/OffchainLabs/arbitrum-sdk/blob/105bf73cb788231b6e63c510713f460b36699fcd/src/lib/message/L1ToL2Message.ts#L109-L155)
+    - The retryable redemption hash is no longer deterministic solely based on the retryable ticket id; it is now a hash of the transaction input like a normal transaction 
 
 #### Protocol Contracts 
 
