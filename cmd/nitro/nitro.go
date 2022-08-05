@@ -17,28 +17,29 @@ import (
 
 	grab "github.com/cavaliergopher/grab/v3"
 	extract "github.com/codeclysm/extract/v3"
-
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/graphql"
+	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/providers/confmap"
+	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
+	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/knadh/koanf"
-	"github.com/knadh/koanf/providers/confmap"
-	"github.com/pkg/errors"
-	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -46,11 +47,10 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
-	"github.com/offchainlabs/nitro/statetransfer"
-
-	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
-	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 func printSampleUsage(name string) {
@@ -396,7 +396,8 @@ func main() {
 	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
 	var daSigner func([]byte) ([]byte, error)
-	if nodeConfig.Node.L1Reader.Enable {
+	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
+	if nodeConfig.Node.L1Reader.Enable || setupNeedsKey {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
 		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
@@ -405,16 +406,17 @@ func main() {
 		}
 
 		validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
-		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey {
+		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey || setupNeedsKey {
+			daSigner, err = arbnode.GetSignerFromWallet(l1Wallet)
+			if err != nil {
+				fmt.Printf("%v\n", err.Error())
+				return
+			}
+
 			l1TransactionOpts, err = util.GetTransactOptsFromWallet(
 				l1Wallet,
 				new(big.Int).SetUint64(nodeConfig.L1.ChainID),
 			)
-			if err != nil {
-				panic(err)
-			}
-
-			daSigner, err = arbnode.GetSignerFromWallet(l1Wallet)
 			if err != nil {
 				panic(err)
 			}
@@ -433,6 +435,25 @@ func main() {
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
+	}
+
+	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
+		l1Reader := headerreader.New(l1Client, nodeConfig.Node.L1Reader)
+
+		// Just create validator smart wallet if needed then exit
+		deployInfo, err := nodeConfig.L1.Rollup.ParseAddresses()
+		if err != nil {
+			log.Error("error getting deployment info for creating validator wallet contract", "error", err)
+			return
+		}
+		addr, err := validator.CreateValidatorWallet(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader)
+		if err != nil {
+			log.Error("error creating validator wallet contract", "error", err)
+			return
+		}
+		fmt.Printf("created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart", addr.String())
+
+		return
 	}
 
 	if nodeConfig.Node.Archive && nodeConfig.Node.TxLookupLimit != 0 {
@@ -700,8 +721,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		}
 	}
 
+	chainFound := false
+	l2ChainId := k.Int64("l2.chain-id")
 	if l1ChainId.Uint64() == 1 { // mainnet
-		switch k.Int64("l2.chain-id") {
+		switch l2ChainId {
 		case 0:
 			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
 		case 42161:
@@ -710,28 +733,32 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			if err := applyArbitrumNovaRollupParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
+			chainFound = true
 		}
 	} else if l1ChainId.Uint64() == 4 {
-		switch k.Int64("l2.chain-id") {
+		switch l2ChainId {
 		case 0:
 			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
 		case 421611:
 			if err := applyArbitrumRollupRinkebyTestnetParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
+			chainFound = true
 		}
 	} else if l1ChainId.Uint64() == 5 {
-		switch k.Int64("l2.chain-id") {
+		switch l2ChainId {
 		case 0:
 			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
 		case 421613:
 			if err := applyArbitrumRollupGoerliTestnetParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
+			chainFound = true
 		case 421703:
 			if err := applyArbitrumAnytrustGoerliTestnetParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
+			chainFound = true
 		}
 	}
 
@@ -759,6 +786,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 
 	if nodeConfig.Persistent.Chain == "" {
+		if !chainFound {
+			// If persistent-chain not defined, user not creating custom chain
+			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d. --persistent.chain must be specified\n", l1ChainId.Uint64(), l2ChainId)
+		}
 		return nil, nil, nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
 
