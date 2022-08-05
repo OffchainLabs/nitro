@@ -53,7 +53,7 @@ func main() {
 		Account:      *deployAccount,
 		PasswordImpl: *l1passphrase,
 	}
-	l1TransactionOpts, err := util.GetTransactOptsFromWallet(&wallet, l1ChainId)
+	l1TransactionOpts, _, err := util.OpenWallet("l1", &wallet, l1ChainId)
 	if err != nil {
 		flag.Usage()
 		log.Error("error reading keystore")
