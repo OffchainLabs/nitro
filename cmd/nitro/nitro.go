@@ -788,7 +788,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if nodeConfig.Persistent.Chain == "" {
 		if !chainFound {
 			// If persistent-chain not defined, user not creating custom chain
-			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d\n", l1ChainId.Uint64(), l2ChainId)
+			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d. --persistent.chain must be specified\n", l1ChainId.Uint64(), l2ChainId)
 		}
 		return nil, nil, nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
