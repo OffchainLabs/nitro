@@ -1386,7 +1386,10 @@ func openKeystore(description string, walletPath string, walletPassword *string,
 
 	creatingNew := len(ks.Accounts()) == 0
 	if creatingNew && !onlyCreateKey {
-		return nil, nil, false, errors.New("No wallet exists, re-run with --wallet.local.only-create-key to create a wallet")
+		return nil, nil, false, errors.New("No wallet exists, re-run with --l1.wallet.only-create-key to create a wallet")
+	}
+	if !creatingNew && onlyCreateKey {
+		return nil, nil, false, errors.New("wallet key already created, backup key (" + walletPath + ") and remove --l1.wallet.only-create-key to run normally")
 	}
 	passOpt := walletPassword
 	var password string
@@ -1412,7 +1415,6 @@ func openKeystore(description string, walletPath string, walletPassword *string,
 		if err != nil {
 			return nil, &accounts.Account{}, false, err
 		}
-
 	} else {
 		account = ks.Accounts()[0]
 	}
