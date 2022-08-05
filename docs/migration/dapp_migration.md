@@ -5,7 +5,7 @@ The following is a summary of changes in the upcoming Arbitrum One chain's Nitro
 
 It reflects the current state of Nitro and should be considered a living document; things might change before launch.
 
-_Last Updated 4 Aug 2022_
+_Last Updated 5 Aug 2022_
 
 ## Cool New Stuff 
 
