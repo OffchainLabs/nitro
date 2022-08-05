@@ -69,4 +69,4 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 
 - **Batch Info In Receipts**: Arbitrum transaction receipts no longer include the `l1SequenceNumber` field; the `findBatchContainingBlock` or `getL1Confirmations` methods in the [NodeInterface precompile](../../contracts/src/node-interface/NodeInterface.sol) can be used to determine a transaction's inclusion in L1.
 
-- **Estimate Retryable Ticket**: Use `eth_estimateGas` on `NodeInterface.estimateRetryableTicket` to estimage the gas limit of a retryable, it no longer return the gas used and gas price. The gas price can be estimated using `eth_gasPrice`.
+- **Estimate Retryable Ticket**: Use `eth_estimateGas` on `NodeInterface.estimateRetryableTicket` to estimage the gas limit of a retryable; the function itself no longer return the gas used and gas price. The gas price can be estimated using `eth_gasPrice`.
