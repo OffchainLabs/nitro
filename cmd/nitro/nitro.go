@@ -346,7 +346,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
 
 	vcsRevision, vcsTime := genericconf.GetVersion()
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
@@ -440,10 +441,10 @@ func main() {
 		}
 		addr, err := validator.GetValidatorWallet(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
-			log.Error("error creating validator wallet contract", "error", err)
+			log.Error("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
 			return
 		}
-		fmt.Printf("created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart", addr.String())
+		fmt.Printf("created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
 
 		return
 	}
