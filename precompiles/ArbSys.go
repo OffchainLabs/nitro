@@ -168,6 +168,9 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		calldataForL1,
 	)
 
+	if c.State.FormatVersion() >= 4 {
+		return leafNum, nil
+	}
 	return sendHash.Big(), err
 }
 

@@ -32,7 +32,7 @@ An [`L1IncomingMessage`][L1IncomingMessage_link] represents an incoming sequence
 [L1IncomingMessage_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/incomingmessage.go#L54
 [ProduceBlockAdvanced_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/block_processor.go#L118
 
-## Retryables<a name=Retryables></a>
+## Retryables
 
 A Retryable is a transaction whose *submission* is separable from its *execution*. A retryable can be submitted for a fixed cost (dependent only on its calldata size) paid at L1. If the L1 transition to request submission succeeds (i.e. does not revert) then the submission of the Retryable to the L2 state is guaranteed to succeed.
 
@@ -104,7 +104,7 @@ This component maintains the last 256 L1 block hashes in a circular buffer. This
 [ArbitrumInternalTx_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L116
 [TxProcessor_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L33
 
-### [`l1PricingState`][l1PricingState_link]<a name=l1PricingState></a>
+### [`l1PricingState`][l1PricingState_link]
 
 In addition to supporting the [`ArbAggregator precompile`](Precompiles.md#ArbAggregator), the L1 pricing state provides tools for determining the L1 component of a transaction's gas costs. This part of the state tracks both the total amount of funds collected from transactions in L1 gas fees, as well as the funds spent by batch posters to post data batches on L1. 
 
@@ -114,7 +114,7 @@ Based on this information, ArbOS maintains an L1 data fee, also tracked as part 
 
 [l1PricingState_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/l1pricing/l1pricing.go#L16
 
-### [`l2PricingState`][l2PricingState_link]<a name=l2PricingState></a>
+### [`l2PricingState`][l2PricingState_link]
 
 The L2 pricing state tracks L2 resource usage to determine a reasonable L2 gas price. This process considers a variety of factors, including user demand, the state of geth, and the computational speed limit. The primary mechanism for doing so consists of a pair of pools, one larger than the other, that drain as L2-specific resources are consumed and filled as time passes. L1-specific resources like L1 calldata are not tracked by the pools, as they have little bearing on the actual work done by the network actors that the speed limit is meant to keep stable and synced. 
 

@@ -5,10 +5,10 @@ package arbos
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
-	"strconv"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -81,7 +81,7 @@ type SequencingHooks struct {
 	TxErrors               []error
 	DiscardInvalidTxsEarly bool
 	PreTxFilter            func(*arbosState.ArbosState, *types.Transaction, common.Address) error
-	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error
+	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
 func noopSequencingHooks() *SequencingHooks {
@@ -91,7 +91,7 @@ func noopSequencingHooks() *SequencingHooks {
 		func(*arbosState.ArbosState, *types.Transaction, common.Address) error {
 			return nil
 		},
-		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error {
+		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
 	}
@@ -126,10 +126,9 @@ func ProduceBlock(
 	}
 
 	hooks := noopSequencingHooks()
-	block, receipts := ProduceBlockAdvanced(
+	return ProduceBlockAdvanced(
 		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
-	return block, receipts, nil
 }
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
@@ -142,15 +141,15 @@ func ProduceBlockAdvanced(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
-) (*types.Block, types.Receipts) {
+) (*types.Block, types.Receipts, error) {
 
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
 
 	if statedb.GetUnexpectedBalanceDelta().BitLen() != 0 {
-		panic("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
+		return nil, nil, errors.New("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
 	}
 
 	poster := l1Header.Poster
@@ -195,7 +194,7 @@ func ProduceBlockAdvanced(
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
 			if !ok {
-				panic("retryable tx is somehow not a retryable")
+				return nil, nil, errors.New("retryable tx is somehow not a retryable")
 			}
 			retryable, _ := state.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
@@ -211,9 +210,14 @@ func ProduceBlockAdvanced(
 			}
 		}
 
+		startRefund := statedb.GetRefund()
+		if startRefund != 0 {
+			return nil, nil, fmt.Errorf("at beginning of tx statedb has non-zero refund %v", startRefund)
+		}
+
 		var sender common.Address
 		var dataGas uint64 = 0
-		gasPool := gethGas
+		preTxHeaderGasUsed := header.GasUsed
 		receipt, scheduled, err := (func() (*types.Receipt, types.Transactions, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
@@ -237,7 +241,7 @@ func ProduceBlockAdvanced(
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
 				} else {
-					log.Error("Could not get poster cost in L2 terms", tx.PosterCost, gasPrice)
+					log.Error("Could not get poster cost in L2 terms", "posterCost", posterCost, "gasPrice", gasPrice)
 				}
 			}
 
@@ -262,7 +266,8 @@ func ProduceBlockAdvanced(
 			snap := statedb.Snapshot()
 			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
 
-			receipt, result, err := core.ApplyTransaction(
+			gasPool := gethGas
+			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				chainConfig,
 				chainContext,
 				&header.Coinbase,
@@ -272,6 +277,9 @@ func ProduceBlockAdvanced(
 				tx,
 				&header.GasUsed,
 				vm.Config{},
+				func(result *core.ExecutionResult) error {
+					return hooks.PostTxFilter(state, tx, sender, dataGas, result)
+				},
 			)
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
@@ -279,7 +287,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			return receipt, result.ScheduledTxes, hooks.PostTxFilter(state, tx, sender, dataGas, receipt)
+			return receipt, result.ScheduledTxes, nil
 		})()
 
 		// append the err, even if it is nil
@@ -301,6 +309,11 @@ func ProduceBlockAdvanced(
 			continue
 		}
 
+		if preTxHeaderGasUsed > header.GasUsed {
+			return nil, nil, fmt.Errorf("ApplyTransaction() used -%v gas", preTxHeaderGasUsed-header.GasUsed)
+		}
+		txGasUsed := header.GasUsed - preTxHeaderGasUsed
+
 		// Update expectedTotalBalanceDelta (also done in logs loop)
 		switch txInner := tx.GetInner().(type) {
 		case *types.ArbitrumDepositTx:
@@ -311,25 +324,16 @@ func ProduceBlockAdvanced(
 			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.DepositValue)
 		}
 
-		if gasPool > gethGas {
-			delta := strconv.FormatUint(gasPool.Gas()-gethGas.Gas(), 10)
-			panic("ApplyTransaction() gave back " + delta + " gas")
-		}
-
-		gasUsed := gethGas.Gas() - gasPool.Gas()
-		gethGas = gasPool
-
-		computeUsed := gasUsed - dataGas
-		if gasUsed < dataGas {
-			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-gasUsed)
+		computeUsed := txGasUsed - dataGas
+		if txGasUsed < dataGas {
+			log.Error("ApplyTransaction() used less gas than it should have", "delta", dataGas-txGasUsed)
 			computeUsed = params.TxGas
 		} else if computeUsed < params.TxGas {
 			computeUsed = params.TxGas
 		}
 
-		if gasUsed > tx.Gas() {
-			delta := strconv.FormatUint(gasUsed-tx.Gas(), 10)
-			panic("ApplyTransaction() used " + delta + " more gas than it should have")
+		if txGasUsed > tx.Gas() {
+			return nil, nil, fmt.Errorf("ApplyTransaction() used %v more gas than it should have", txGasUsed-tx.Gas())
 		}
 
 		// append any scheduled redeems
@@ -396,21 +400,21 @@ func ProduceBlockAdvanced(
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
-		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
+		return nil, nil, fmt.Errorf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
 	}
 
 	balanceDelta := statedb.GetUnexpectedBalanceDelta()
 	if !arbmath.BigEquals(balanceDelta, expectedBalanceDelta) {
-		// Panic if funds have been minted or debug mode is enabled (i.e. this is a test)
+		// Fail if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
-			panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
+			return nil, nil, fmt.Errorf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
 		} else {
 			// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
 			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
 		}
 	}
 
-	return block, receipts
+	return block, receipts, nil
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {

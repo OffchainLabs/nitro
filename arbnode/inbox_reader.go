@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -22,27 +24,31 @@ import (
 )
 
 type InboxReaderConfig struct {
-	DelayBlocks uint64        `koanf:"delay-blocks"`
-	CheckDelay  time.Duration `koanf:"check-delay"`
-	HardReorg   bool          `koanf:"hard-reorg"`
+	DelayBlocks     uint64        `koanf:"delay-blocks"`
+	CheckDelay      time.Duration `koanf:"check-delay"`
+	HardReorg       bool          `koanf:"hard-reorg"`
+	MinBlocksToRead uint64        `koanf:"min-blocks-to-read"`
 }
 
 func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
-	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "how long to wait between inbox checks")
+	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "the maximum time to wait between inbox checks (if not enough new blocks are found)")
 	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
+	f.Uint64(prefix+".min-blocks-to-read", DefaultInboxReaderConfig.MinBlocksToRead, "the minimum number of blocks to read at once (when caught up lowers load on L1)")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
-	DelayBlocks: 0,
-	CheckDelay:  20 * time.Second,
-	HardReorg:   false,
+	DelayBlocks:     0,
+	CheckDelay:      time.Minute,
+	HardReorg:       false,
+	MinBlocksToRead: 1,
 }
 
 var TestInboxReaderConfig = InboxReaderConfig{
-	DelayBlocks: 0,
-	CheckDelay:  time.Millisecond * 10,
-	HardReorg:   false,
+	DelayBlocks:     0,
+	CheckDelay:      time.Millisecond * 10,
+	HardReorg:       false,
+	MinBlocksToRead: 1,
 }
 
 type InboxReader struct {
@@ -60,6 +66,9 @@ type InboxReader struct {
 	caughtUpChan   chan bool
 	client         arbutil.L1Interface
 	l1Reader       *headerreader.HeaderReader
+
+	// Atomic
+	lastSeenBatchCount uint64
 
 	// Behind the mutex
 	lastReadMutex      sync.RWMutex
@@ -137,25 +146,35 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	newHeaders, unsubscribe := ir.l1Reader.Subscribe(false)
 	defer unsubscribe()
 	blocksToFetch := uint64(100)
+	neededBlockAdvance := ir.config.DelayBlocks + arbmath.SaturatingUSub(ir.config.MinBlocksToRead, 1)
+	seenBatchCount := uint64(0)
+	seenBatchCountStored := uint64(math.MaxUint64)
+	storeSeenBatchCount := func() {
+		if seenBatchCountStored != seenBatchCount {
+			atomic.StoreUint64(&ir.lastSeenBatchCount, seenBatchCount)
+			seenBatchCountStored = seenBatchCount
+		}
+	}
+	defer storeSeenBatchCount() // in case of error
 	for {
 
-		currentHeightRaw, err := ir.client.BlockNumber(ctx)
+		latestHeader, err := ir.l1Reader.LastHeader(ctx)
 		if err != nil {
 			return err
 		}
-		currentHeight := new(big.Int).SetUint64(currentHeightRaw)
+		currentHeight := latestHeader.Number
 
-		neededBlockHeight := new(big.Int).Add(from, new(big.Int).SetUint64(ir.config.DelayBlocks))
+		neededBlockHeight := arbmath.BigAddByUint(from, neededBlockAdvance)
 		checkDelayTimer := time.NewTimer(ir.config.CheckDelay)
 	WaitForHeight:
 		for arbmath.BigLessThan(currentHeight, neededBlockHeight) {
 			select {
-			case header := <-newHeaders:
-				if header == nil {
+			case latestHeader = <-newHeaders:
+				if latestHeader == nil {
 					// shutting down
 					return nil
 				}
-				currentHeight = new(big.Int).Set(header.Number)
+				currentHeight = new(big.Int).Set(latestHeader.Number)
 			case <-ctx.Done():
 				return nil
 			case <-checkDelayTimer.C:
@@ -211,10 +230,12 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 		}
 
-		checkingBatchCount, err := ir.sequencerInbox.GetBatchCount(ctx, currentHeight)
+		seenBatchCount, err = ir.sequencerInbox.GetBatchCount(ctx, currentHeight)
 		if err != nil {
+			seenBatchCount = 0
 			return err
 		}
+		checkingBatchCount := seenBatchCount
 		{
 			ourLatestBatchCount, err := ir.tracker.GetBatchCount()
 			if err != nil {
@@ -247,11 +268,12 @@ func (ir *InboxReader) run(ctx context.Context) error {
 
 		if !missingDelayed && !reorgingDelayed && !missingSequencer && !reorgingSequencer {
 			// There's nothing to do
-			from = currentHeight
+			from = arbmath.BigAddByUint(currentHeight, 1)
 			ir.lastReadMutex.Lock()
 			ir.lastReadBlock = currentHeight.Uint64()
 			ir.lastReadBatchCount = checkingBatchCount
 			ir.lastReadMutex.Unlock()
+			storeSeenBatchCount()
 			continue
 		}
 
@@ -262,7 +284,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				// nolint:nilerr
 				return nil
 			}
-			if from.Cmp(currentHeight) >= 0 {
+			if from.Cmp(currentHeight) > 0 {
 				if missingDelayed {
 					reorgingDelayed = true
 				}
@@ -374,6 +396,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 					ir.lastReadBlock = to.Uint64()
 					ir.lastReadBatchCount = sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1
 					ir.lastReadMutex.Unlock()
+					storeSeenBatchCount()
 				}
 			}
 			if reorgingDelayed || reorgingSequencer {
@@ -391,6 +414,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			ir.lastReadBlock = currentHeight.Uint64()
 			ir.lastReadBatchCount = checkingBatchCount
 			ir.lastReadMutex.Unlock()
+			storeSeenBatchCount()
 		}
 	}
 }
@@ -461,6 +485,12 @@ func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {
 	r.lastReadMutex.RLock()
 	defer r.lastReadMutex.RUnlock()
 	return r.lastReadBlock, r.lastReadBatchCount
+}
+
+// >0 - last batchcount seen in run() - only written after lastReadBatchCount updated
+// 0 - no batch seen, error
+func (r *InboxReader) GetLastSeenBatchCount() uint64 {
+	return atomic.LoadUint64(&r.lastSeenBatchCount)
 }
 
 func (r *InboxReader) GetDelayBlocks() uint64 {
