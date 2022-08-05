@@ -477,6 +477,10 @@ func main() {
 		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
 
+	if nodeConfig.Init.DebugEmptyBlockStreak {
+		debugEmptyBlockStreak(chainDb)
+	}
+
 	if nodeConfig.Init.ThenQuit {
 		return
 	}
@@ -548,6 +552,8 @@ type InitConfig struct {
 	AccountsPerSync uint          `koanf:"accounts-per-sync"`
 	ImportFile      string        `koanf:"import-file"`
 	ThenQuit        bool          `koanf:"then-quit"`
+
+	DebugEmptyBlockStreak bool `koanf:"debug-emptyblockstreak"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -561,6 +567,8 @@ var InitConfigDefault = InitConfig{
 	ImportFile:      "",
 	AccountsPerSync: 100000,
 	ThenQuit:        false,
+
+	DebugEmptyBlockStreak: false,
 }
 
 func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -575,6 +583,8 @@ func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
+
+	f.Bool(prefix+".debug-emptyblockstreak", InitConfigDefault.DebugEmptyBlockStreak, "you don't need this")
 }
 
 type NodeConfig struct {
@@ -889,4 +899,41 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig) 
 		panic(err)
 	}
 	log.Info("Tx lookup entries written")
+}
+
+func debugEmptyBlockStreak(chainDb ethdb.Database) {
+	chainConfig := arbnode.TryReadStoredChainConfig(chainDb)
+	if chainConfig == nil {
+		panic("chain config not in Db")
+	}
+
+	genesisBlock := chainConfig.ArbitrumChainParams.GenesisBlockNum
+	if genesisBlock == 0 {
+		// no classical
+		return
+	}
+
+	currentStreak := uint64(0)
+	currentStreakStart := uint64(0)
+	maxStreak := uint64(0)
+	maxStreakStart := uint64(0)
+
+	for blockNum := uint64(0); blockNum < genesisBlock; blockNum++ {
+		blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
+		block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
+		if len(block.Transactions()) > 0 {
+			currentStreak = 0
+			continue
+		}
+		if currentStreak == 0 {
+			currentStreakStart = blockNum
+		}
+		currentStreak++
+		if currentStreak > maxStreak {
+			maxStreak = currentStreak
+			maxStreakStart = currentStreakStart
+			log.Info("New max streak", "start", currentStreakStart, "length", currentStreak)
+		}
+	}
+	log.Warn("Ancients without transactions", "maxStreak", maxStreak, "maxStreakStart", maxStreakStart)
 }
