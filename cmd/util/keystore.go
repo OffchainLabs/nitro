@@ -4,50 +4,141 @@
 package util
 
 import (
-	"errors"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"fmt"
 	"math/big"
+	"strings"
+	"syscall"
+
+	"golang.org/x/term"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
 
-func GetTransactOptsFromWallet(walletConfig *genericconf.WalletConfig, chainId *big.Int) (*bind.TransactOpts, error) {
+func OpenWallet(description string, walletConfig *genericconf.WalletConfig, chainId *big.Int) (*bind.TransactOpts, func([]byte) ([]byte, error), error) {
 	if walletConfig.PrivateKey != "" {
 		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+		var txOpts *bind.TransactOpts
+		if chainId != nil {
+			txOpts, err = bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		signer := func(data []byte) ([]byte, error) {
+			return crypto.Sign(data, privateKey)
+		}
+
+		return txOpts, signer, nil
 	}
 
-	if walletConfig.Pathname == "" {
-		return nil, errors.New("keystore path empty")
-	}
-	l1keystore := keystore.NewKeyStore(walletConfig.Pathname, keystore.StandardScryptN, keystore.StandardScryptP)
-	var l1Account accounts.Account
-	if walletConfig.Account == "" {
-		if len(l1keystore.Accounts()) == 0 {
-			return nil, errors.New("keystore empty")
-		}
-		l1Account = l1keystore.Accounts()[0]
-	} else {
-		address := common.HexToAddress(walletConfig.Account)
-		var err error
-		l1Account, err = l1keystore.Find(accounts.Account{Address: address})
-		if err != nil {
-			return nil, err
-		}
-	}
-	if walletConfig.Password() == nil {
-		panic("l2 password not set")
-	}
-	err := l1keystore.Unlock(l1Account, *walletConfig.Password())
+	ks, account, err := openKeystore(description, walletConfig, readPass)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return bind.NewKeyStoreTransactorWithChainID(l1keystore, l1Account, chainId)
+
+	var txOpts *bind.TransactOpts
+	if chainId != nil {
+		txOpts, err = bind.NewKeyStoreTransactorWithChainID(ks, *account, chainId)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	signer := func(data []byte) ([]byte, error) {
+		return ks.SignHash(*account, data)
+	}
+
+	return txOpts, signer, nil
+}
+
+func openKeystore(description string, walletConfig *genericconf.WalletConfig, getPassword func() (string, error)) (*keystore.KeyStore, *accounts.Account, error) {
+	ks := keystore.NewKeyStore(
+		walletConfig.Pathname,
+		keystore.StandardScryptN,
+		keystore.StandardScryptP,
+	)
+
+	creatingNew := len(ks.Accounts()) == 0
+	if creatingNew && !walletConfig.OnlyCreateKey {
+		return nil, nil, fmt.Errorf("no wallet exists, re-run with --%s.wallet.only-create-key to create a wallet", description)
+	}
+	if !creatingNew && walletConfig.OnlyCreateKey {
+		return nil, nil, fmt.Errorf("wallet key already created, backup key (%s) and remove --%s.wallet.only-create-key to run normally", walletConfig.Pathname, description)
+	}
+	passOpt := walletConfig.Password()
+	var password string
+	if passOpt != nil {
+		password = *passOpt
+	} else {
+		if creatingNew {
+			fmt.Print("Enter new account password: ")
+		} else {
+			fmt.Print("Enter account password: ")
+		}
+		var err error
+		password, err = getPassword()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	var account accounts.Account
+	if creatingNew {
+		var err error
+		account, err = ks.NewAccount(password)
+		if err != nil {
+			return nil, &accounts.Account{}, err
+		}
+	} else {
+		if walletConfig.Account == "" {
+			if len(ks.Accounts()) > 1 {
+				names := make([]string, 0, len(ks.Accounts()))
+				for _, acct := range ks.Accounts() {
+					names = append(names, acct.Address.Hex())
+				}
+				return nil, nil, fmt.Errorf("too many existing accounts, choose one: %s", strings.Join(names, ","))
+			}
+			account = ks.Accounts()[0]
+		} else {
+			address := common.HexToAddress(walletConfig.Account)
+			var emptyAddress common.Address
+			if address == emptyAddress {
+				return nil, nil, fmt.Errorf("supplied address is invalid: %s", walletConfig.Account)
+			}
+			var err error
+			account, err = ks.Find(accounts.Account{Address: address})
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
+	if creatingNew {
+		return nil, nil, fmt.Errorf("wallet key created, backup key (%s) and remove --%s.wallet.only-create-key to run normally", walletConfig.Pathname, description)
+	}
+
+	err := ks.Unlock(account, password)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return ks, &account, nil
+}
+
+func readPass() (string, error) {
+	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return "", err
+	}
+	passphrase := string(bytePassword)
+	passphrase = strings.TrimSpace(passphrase)
+	return passphrase, nil
 }
