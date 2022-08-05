@@ -77,8 +77,9 @@ func NewMemoryBackedStateDB() vm.StateDB {
 }
 
 // We map addresses using "pages" of 256 storage slots. We hash over the page number but not the offset within
-//     a page, to preserve contiguity within a page. This will reduce cost if/when Ethereum switches to storage
-//     representations that reward contiguity.
+// a page, to preserve contiguity within a page. This will reduce cost if/when Ethereum switches to storage
+// representations that reward contiguity.
+//
 // Because page numbers are 248 bits, this gives us 124-bit security against collision attacks, which is good enough.
 func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	keyBytes := key.Bytes()
@@ -309,9 +310,9 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 }
 
 // Implementation note for StorageBackedInt64: Conversions between big.Int and common.Hash give weird results
-//     for negative values, so we cast to uint64 before writing to storage and cast back to int64 after reading.
-//     Golang casting between uint64 and int64 doesn't change the data, it just reinterprets the same 8 bytes,
-//     so this is a hacky but reliable way to store an 8-byte int64 in a common.Hash storage slot.
+// for negative values, so we cast to uint64 before writing to storage and cast back to int64 after reading.
+// Golang casting between uint64 and int64 doesn't change the data, it just reinterprets the same 8 bytes,
+// so this is a hacky but reliable way to store an 8-byte int64 in a common.Hash storage slot.
 type StorageBackedInt64 struct {
 	StorageSlot
 }
