@@ -34,7 +34,6 @@ import (
 //
 // This mechanism handles messages sent to 0xc8 and uses NodeInterface.sol to determine what to do. No contract
 // actually exists at 0xc8, but the abi methods allow the incoming message's calldata to specify the arguments.
-//
 type NodeInterface struct {
 	Address       addr
 	backend       core.NodeInterfaceBackendAPI
