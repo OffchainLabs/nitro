@@ -33,8 +33,6 @@ func createWallet(t *testing.T, pathname string) {
 	if testPassCalled {
 		t.Error("password prompted for when it should not have been")
 	}
-
-	return
 }
 
 func TestNewKeystoreNoCreate(t *testing.T) {
