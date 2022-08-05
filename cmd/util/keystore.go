@@ -122,7 +122,7 @@ func openKeystore(description string, walletConfig *genericconf.WalletConfig, ge
 	}
 
 	if creatingNew {
-		return nil, nil, fmt.Errorf("wallet key created, backup key (%s) and remove --%s.wallet.only-create-key to run normally", walletConfig.Pathname, description)
+		return nil, nil, fmt.Errorf("wallet key created with address %s, backup key (%s) and remove --%s.wallet.only-create-key to run normally", account.Address.Hex(), walletConfig.Pathname, description)
 	}
 
 	err := ks.Unlock(account, password)
