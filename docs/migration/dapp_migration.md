@@ -18,8 +18,6 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 - **Tighter Syncronization with L1 Block Numbers 🥳**:  L1 block number (accessed via `block.number` on L2) are updated more frequently in Nitro than in Arbitrum classic; expect them to be nearly real-time/ in sync with L1. 
 - **Frequent Timestamps 🥳**:  Timestamps (accessed via `block.timestamp` on L2) are updated every block based on the sequencer’s clock, it is no longer linked to the timestamp of the last L1 block.
 - **L2 Block hash EVM Consistency 🥳**: L2 block hashes take the same format as on Ethereum (if you query it from the ArbSys precompile, not the one in `block.hash(uin256)`).
-
-
 - **Geth tracing 🥳**: `debug_traceTransaction` RPC endpoint is supported; this includes tracing of ArbOS internal bookkeeping actions.
 
 ## Breaking changes
@@ -49,7 +47,6 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 
 - **Sequencer Inbox changes**: The Sequencer inbox has a new interface and requires a new approach to determining a transaction's inclusion on L1 (see "Batch Info In Receipts" below).
 
-
 - **Outbox Changes**: The Outbox has a new (simplified!) architecture; in short, all outgoing messages will be included in a single Merkle tree (opposed to Arbitrum classic, in which many outbox entries, each with its own Merkle root). See [arbitrum-sdk](https://github.com/offchainlabs/arbitrum-sdk/tree/c-nitro) for a reference implementation on how to handle the new flow of interacting with the outbox.
 
 #### RPCs
@@ -59,3 +56,5 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 - **Gas Info in Transaction Receipts**: Arbitrum transaction receipts return data about gas in a new format; receipts will have `gasUsed` (total) and `gasUsedForL1` fields (instead of the `feeStats` field in Arbitrum classic).
 
 - **Batch Info In Receipts**: Arbitrum transaction receipts no longer include the `l1SequenceNumber` field; the `findBatchContainingBlock` or `getL1Confirmations` methods in the [NodeInterface precompile](../../contracts/src/node-interface/NodeInterface.sol) can be used to determine a transaction's inclusion in L1.
+
+- **Estimate Retryable Ticket**: Use `eth_estimateGas` on `NodeInterface.estimateRetryableTicket` to estimage the gas limit of a retryable, it no longer return the gas used and gas price. The gas price can be estimated using `eth_gasPrice`.
