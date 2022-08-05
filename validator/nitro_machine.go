@@ -13,7 +13,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -60,7 +59,7 @@ func (c NitroMachineConfig) getMachinePath(moduleRoot common.Hash) string {
 
 func (c NitroMachineConfig) ReadLatestWasmModuleRoot() (common.Hash, error) {
 	fileToRead := filepath.Join(c.getMachinePath(common.Hash{}), "module-root.txt")
-	fileBytes, err := ioutil.ReadFile(fileToRead)
+	fileBytes, err := os.ReadFile(fileToRead)
 	if err != nil {
 		return common.Hash{}, err
 	}

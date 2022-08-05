@@ -12,6 +12,7 @@ import (
 
 type TransactionPublisher interface {
 	PublishTransaction(ctx context.Context, tx *types.Transaction) error
+	CheckHealth(ctx context.Context) error
 	Initialize(context.Context) error
 	Start(context.Context) error
 	StopAndWait()

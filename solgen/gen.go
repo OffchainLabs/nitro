@@ -6,7 +6,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -46,7 +45,7 @@ func (m *moduleInfo) exportABIs(dest string) {
 		abi := m.abis[i] + "\n"
 
 		// #nosec G306
-		err := ioutil.WriteFile(path, []byte(abi), 0o644)
+		err := os.WriteFile(path, []byte(abi), 0o644)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -80,7 +79,7 @@ func main() {
 
 		name := file[:len(file)-5]
 
-		data, err := ioutil.ReadFile(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
 			log.Fatal("could not read", path, "for contract", name, err)
 		}
@@ -124,7 +123,7 @@ func main() {
 			#nosec G306
 			This file contains no private information so the permissions can be lenient
 		*/
-		err = ioutil.WriteFile(filepath.Join(folder, module+".go"), []byte(code), 0o644)
+		err = os.WriteFile(filepath.Join(folder, module+".go"), []byte(code), 0o644)
 		if err != nil {
 			log.Fatal(err)
 		}

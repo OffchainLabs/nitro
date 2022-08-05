@@ -15,4 +15,7 @@ interface ArbOwnerPublic {
 
     /// @notice Gets the network fee collector
     function getNetworkFeeAccount() external view returns (address);
+
+    /// @notice Get the infrastructure fee collector
+    function getInfraFeeAccount() external view returns (address);
 }
