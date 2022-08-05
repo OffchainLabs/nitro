@@ -50,6 +50,7 @@ type ArbosState struct {
 	blockhashes       *blockhash.Blockhashes
 	chainId           storage.StorageBackedBigInt
 	genesisBlockNum   storage.StorageBackedUint64
+	infraFeeAccount   storage.StorageBackedAddress
 	backingStorage    *storage.Storage
 	Burner            burn.Burner
 }
@@ -80,6 +81,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
+		backingStorage.OpenStorageBackedAddress(uint64(infraFeeAccountOffset)),
 		backingStorage,
 		burner,
 	}, nil
@@ -135,6 +137,7 @@ const (
 	networkFeeAccountOffset
 	chainIdOffset
 	genesisBlockNumOffset
+	infraFeeAccountOffset
 )
 
 type ArbosStateSubspaceID []byte
@@ -261,6 +264,10 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64) {
 		case 2:
 			ensure(state.l1PricingState.SetPerBatchGasCost(0))
 			ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
+		case 3:
+			// no state changes needed
+		case 4:
+			// no state changes needed
 		default:
 			panic("Unable to perform requested ArbOS upgrade")
 		}
@@ -331,6 +338,14 @@ func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {
 
 func (state *ArbosState) SetNetworkFeeAccount(account common.Address) error {
 	return state.networkFeeAccount.Set(account)
+}
+
+func (state *ArbosState) InfraFeeAccount() (common.Address, error) {
+	return state.infraFeeAccount.Get()
+}
+
+func (state *ArbosState) SetInfraFeeAccount(account common.Address) error {
+	return state.infraFeeAccount.Set(account)
 }
 
 func (state *ArbosState) Keccak(data ...[]byte) ([]byte, error) {

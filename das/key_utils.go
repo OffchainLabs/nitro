@@ -6,9 +6,11 @@ package das
 import (
 	"bytes"
 	"encoding/base64"
-	"io/ioutil"
+	"encoding/hex"
+	"io"
 	"os"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
@@ -18,7 +20,7 @@ import (
 
 func DecodeBase64BLSPublicKey(pubKeyEncodedBytes []byte) (*blsSignatures.PublicKey, error) {
 	pubKeyDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(pubKeyEncodedBytes))
-	pubKeyBytes, err := ioutil.ReadAll(pubKeyDecoder)
+	pubKeyBytes, err := io.ReadAll(pubKeyDecoder)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +33,7 @@ func DecodeBase64BLSPublicKey(pubKeyEncodedBytes []byte) (*blsSignatures.PublicK
 
 func DecodeBase64BLSPrivateKey(privKeyEncodedBytes []byte) (*blsSignatures.PrivateKey, error) {
 	privKeyDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(privKeyEncodedBytes))
-	privKeyBytes, err := ioutil.ReadAll(privKeyDecoder)
+	privKeyBytes, err := io.ReadAll(privKeyDecoder)
 	if err != nil {
 		return nil, err
 	}
@@ -105,4 +107,18 @@ func ReadPrivKeyFromFile(privKeyPath string) (*blsSignatures.PrivateKey, error) 
 		return nil, err
 	}
 	return privKey, nil
+}
+
+func GenerateAndStoreECDSAKeys(dir string) error {
+	privateKey, err := crypto.GenerateKey()
+	if err != nil {
+		return err
+	}
+
+	err = crypto.SaveECDSA(dir+"/ecdsa", privateKey)
+	if err != nil {
+		return err
+	}
+	encodedPubKey := hex.EncodeToString(crypto.FromECDSAPub(&privateKey.PublicKey))
+	return os.WriteFile(dir+"/ecdsa.pub", []byte(encodedPubKey), 0600)
 }

@@ -6,7 +6,6 @@ package statetransfer
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"path"
@@ -70,7 +69,7 @@ func (m *JsonInitDataReader) getListReader(fileName string) (JsonListReader, err
 }
 
 func NewJsonInitDataReader(filepath string) (InitDataReader, error) {
-	data, err := ioutil.ReadFile(filepath)
+	data, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, err
 	}

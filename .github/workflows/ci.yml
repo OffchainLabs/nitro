@@ -32,7 +32,7 @@ jobs:
           submodules: true
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y wabt
+        run: sudo apt update && sudo apt install -y wabt gotestsum
 
       - name: Setup nodejs
         uses: actions/setup-node@v2
@@ -140,29 +140,31 @@ jobs:
           skip-go-installation: true
           skip-pkg-cache: true
 
-      - name: Set TMPDIR
+      - name: Set environment variables
         run: |
           mkdir -p target/tmp
           echo "TMPDIR=$(pwd)/target/tmp" >> "$GITHUB_ENV"
+          echo "GOMEMLIMIT=6GB" >> "$GITHUB_ENV"
+          echo "GOGC=80" >> "$GITHUB_ENV"
 
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
-        run: go test ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
+        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
-        run: go test ./... -race -parallel=1
+        run: gotestsum --format short-verbose -- ./... -race -parallel=1
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: go test ./... -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: gotestsum --format short-verbose -- -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         if: matrix.test-mode == 'defaults'
         with:
           fail_ci_if_error: true
-          files: ./coverage.txt,coverage-redis.txt
+          files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
 

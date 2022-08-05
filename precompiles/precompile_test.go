@@ -27,7 +27,7 @@ func TestEvents(t *testing.T) {
 	debugContractAddr := common.HexToAddress("ff")
 	contract := Precompiles()[debugContractAddr]
 
-	var method PrecompileMethod
+	var method *PrecompileMethod
 	for _, available := range contract.Precompile().methods {
 		if available.name == "Events" {
 			method = available
