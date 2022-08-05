@@ -12,8 +12,15 @@ import (
 )
 
 func logPut(store string, data []byte, timeout uint64, reader arbstate.DataAvailabilityReader, more ...interface{}) {
-	log.Trace(
-		store, "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0),
-		"this", reader, more,
-	)
+	if len(more) == 0 {
+		log.Trace(
+			store, "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0),
+			"this", reader,
+		)
+	} else {
+		log.Trace(
+			store, "message", pretty.FirstFewBytes(data), "timeout", time.Unix(int64(timeout), 0),
+			"this", reader, more,
+		)
+	}
 }
