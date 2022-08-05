@@ -438,8 +438,7 @@ func main() {
 	}
 
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
-		var l1Reader *headerreader.HeaderReader
-		l1Reader = headerreader.New(l1Client, nodeConfig.Node.L1Reader)
+		l1Reader := headerreader.New(l1Client, nodeConfig.Node.L1Reader)
 
 		// Just create validator smart wallet if needed then exit
 		deployInfo, err := nodeConfig.L1.Rollup.ParseAddresses()
