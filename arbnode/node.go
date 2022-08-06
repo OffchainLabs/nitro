@@ -391,23 +391,23 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 }
 
 type Config struct {
-	RPC                  arbitrum.Config                `koanf:"rpc"`
-	Sequencer            SequencerConfig                `koanf:"sequencer"`
-	L1Reader             headerreader.Config            `koanf:"l1-reader"`
-	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
-	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
-	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
-	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
-	TxPreCheckerMode     string                         `koanf:"tx-pre-checker-mode"`
-	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
-	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
-	Validator            validator.L1ValidatorConfig    `koanf:"validator"`
-	SeqCoordinator       SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
-	Wasm                 WasmConfig                     `koanf:"wasm"`
-	Dangerous            DangerousConfig                `koanf:"dangerous"`
-	Archive              bool                           `koanf:"archive"`
-	TxLookupLimit        uint64                         `koanf:"tx-lookup-limit"`
+	RPC                    arbitrum.Config                `koanf:"rpc"`
+	Sequencer              SequencerConfig                `koanf:"sequencer"`
+	L1Reader               headerreader.Config            `koanf:"l1-reader"`
+	InboxReader            InboxReaderConfig              `koanf:"inbox-reader"`
+	DelayedSequencer       DelayedSequencerConfig         `koanf:"delayed-sequencer"`
+	BatchPoster            BatchPosterConfig              `koanf:"batch-poster"`
+	ForwardingTargetImpl   string                         `koanf:"forwarding-target"`
+	TxPreCheckerStrictness uint                           `koanf:"tx-pre-checker-strictness"`
+	BlockValidator         validator.BlockValidatorConfig `koanf:"block-validator"`
+	Feed                   broadcastclient.FeedConfig     `koanf:"feed"`
+	Validator              validator.L1ValidatorConfig    `koanf:"validator"`
+	SeqCoordinator         SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	DataAvailability       das.DataAvailabilityConfig     `koanf:"data-availability"`
+	Wasm                   WasmConfig                     `koanf:"wasm"`
+	Dangerous              DangerousConfig                `koanf:"dangerous"`
+	Archive                bool                           `koanf:"archive"`
+	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -426,7 +426,10 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
-	f.String(prefix+".tx-pre-checker-mode", ConfigDefault.TxPreCheckerMode, "how strict to be when checking txs before forwarding them. \"disabled\" to allow everything, \"loose\" to allow nonce too high, or \"strict\" to deny anything failing locally")
+	txPreCheckerDescription := "how strict to be when checking txs before forwarding them. 0 = accept anything, " +
+		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, " +
+		"30 = full validation which may reject txs that would succeed"
+	f.Uint(prefix+".tx-pre-checker-strictness", ConfigDefault.TxPreCheckerStrictness, txPreCheckerDescription)
 	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
@@ -439,23 +442,23 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 }
 
 var ConfigDefault = Config{
-	RPC:                  arbitrum.DefaultConfig,
-	Sequencer:            DefaultSequencerConfig,
-	L1Reader:             headerreader.DefaultConfig,
-	InboxReader:          DefaultInboxReaderConfig,
-	DelayedSequencer:     DefaultDelayedSequencerConfig,
-	BatchPoster:          DefaultBatchPosterConfig,
-	ForwardingTargetImpl: "",
-	TxPreCheckerMode:     "disabled",
-	BlockValidator:       validator.DefaultBlockValidatorConfig,
-	Feed:                 broadcastclient.FeedConfigDefault,
-	Validator:            validator.DefaultL1ValidatorConfig,
-	SeqCoordinator:       DefaultSeqCoordinatorConfig,
-	DataAvailability:     das.DefaultDataAvailabilityConfig,
-	Wasm:                 DefaultWasmConfig,
-	Dangerous:            DefaultDangerousConfig,
-	Archive:              false,
-	TxLookupLimit:        40_000_000,
+	RPC:                    arbitrum.DefaultConfig,
+	Sequencer:              DefaultSequencerConfig,
+	L1Reader:               headerreader.DefaultConfig,
+	InboxReader:            DefaultInboxReaderConfig,
+	DelayedSequencer:       DefaultDelayedSequencerConfig,
+	BatchPoster:            DefaultBatchPosterConfig,
+	ForwardingTargetImpl:   "",
+	TxPreCheckerStrictness: TxPreCheckerStrictnessAlwaysCompatible,
+	BlockValidator:         validator.DefaultBlockValidatorConfig,
+	Feed:                   broadcastclient.FeedConfigDefault,
+	Validator:              validator.DefaultL1ValidatorConfig,
+	SeqCoordinator:         DefaultSeqCoordinatorConfig,
+	DataAvailability:       das.DefaultDataAvailabilityConfig,
+	Wasm:                   DefaultWasmConfig,
+	Dangerous:              DefaultDangerousConfig,
+	Archive:                false,
+	TxLookupLimit:          40_000_000,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -683,15 +686,7 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
-	if !strings.EqualFold(config.TxPreCheckerMode, "disabled") {
-		strict := false
-		if strings.EqualFold(config.TxPreCheckerMode, "strict") {
-			strict = true
-		} else if !strings.EqualFold(config.TxPreCheckerMode, "loose") {
-			return nil, fmt.Errorf("unknown tx pre checker mode: %v", config.TxPreCheckerMode)
-		}
-		txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, strict)
-	}
+	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, config.TxPreCheckerStrictness)
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {
 		return nil, err

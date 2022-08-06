@@ -5,7 +5,6 @@ package arbnode
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/core"
@@ -20,27 +19,27 @@ import (
 )
 
 type txPreCheckerState struct {
-	header         *types.Header
-	stateDb        *state.StateDB
-	l1PricingState *l1pricing.L1PricingState
+	header  *types.Header
+	stateDb *state.StateDB
+	arbos   *arbosState.ArbosState
 }
 
 type TxPreChecker struct {
 	publisher    TransactionPublisher
 	bc           *core.BlockChain
-	strict       bool
+	strictness   uint
 	latestState  atomic.Value // contains a txPreCheckerState
 	subscription event.Subscription
 	headChan     chan core.ChainHeadEvent
 }
 
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, strict bool) *TxPreChecker {
+func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, strictness uint) *TxPreChecker {
 	headChan := make(chan core.ChainHeadEvent, 64)
 	subscription := bc.SubscribeChainHeadEvent(headChan)
 	c := &TxPreChecker{
 		publisher:    publisher,
 		bc:           bc,
-		strict:       strict,
+		strictness:   strictness,
 		latestState:  atomic.Value{}, // filled in in Initialize
 		subscription: subscription,
 		headChan:     headChan,
@@ -82,9 +81,9 @@ func (c *TxPreChecker) updateLatestState(block *types.Block) error {
 		return err
 	}
 	fullState := txPreCheckerState{
-		header:         block.Header(),
-		stateDb:        stateDb,
-		l1PricingState: arbos.L1PricingState(),
+		header:  block.Header(),
+		stateDb: stateDb,
+		arbos:   arbos,
 	}
 	c.latestState.Store(fullState)
 	return nil
@@ -116,38 +115,67 @@ func (c *TxPreChecker) StopAndWait() {
 	c.publisher.StopAndWait()
 }
 
-func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+const TxPreCheckerStrictnessNone uint = 0
+const TxPreCheckerStrictnessAlwaysCompatible uint = 10
+const TxPreCheckerStrictnessLikelyCompatible uint = 20
+const TxPreCheckerStrictnessFullValidation uint = 30
+
+func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, strictness uint) error {
+	if strictness < TxPreCheckerStrictnessAlwaysCompatible {
+		return nil
+	}
 	if tx.Gas() < params.TxGas {
 		return core.ErrIntrinsicGas
 	}
-	state := c.getLatestState()
-	sender, err := types.Sender(types.LatestSigner(c.bc.Config()), tx)
+	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number), tx)
+	if err != nil {
+		return core.ErrInvalidSender
+	}
+	baseFee := header.BaseFee
+	if strictness < TxPreCheckerStrictnessLikelyCompatible {
+		baseFee, err = arbos.L2PricingState().MinBaseFeeWei()
+		if err != nil {
+			return err
+		}
+	}
+	if arbmath.BigLessThan(tx.GasFeeCap(), baseFee) {
+		return core.ErrUnderpriced
+	}
+	stateNonce := statedb.GetNonce(sender)
+	if tx.Nonce() < stateNonce {
+		return core.ErrNonceTooLow
+	}
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), true)
 	if err != nil {
 		return err
 	}
-	if arbmath.BigLessThan(tx.GasFeeCap(), state.header.BaseFee) {
-		return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, sender, tx.GasFeeCap(), state.header.BaseFee)
+	if tx.Gas() < intrinsic {
+		return core.ErrIntrinsicGas
 	}
-	balance := state.stateDb.GetBalance(sender)
+	if strictness < TxPreCheckerStrictnessLikelyCompatible {
+		return nil
+	}
+	balance := statedb.GetBalance(sender)
 	cost := tx.Cost()
 	if arbmath.BigLessThan(balance, cost) {
-		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
+		return core.ErrInsufficientFunds
 	}
-	stateNonce := state.stateDb.GetNonce(sender)
-	if tx.Nonce() < stateNonce {
-		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooLow, sender, tx.Nonce(), stateNonce)
+	if strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
+		return core.ErrNonceTooHigh
 	}
-	if c.strict && tx.Nonce() > stateNonce {
-		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooHigh, sender, tx.Nonce(), stateNonce)
-	}
-	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, c.bc.Config().IsHomestead(state.header.Number), true)
-	if err != nil {
-		return err
-	}
-	dataCost, _ := state.l1PricingState.GetPosterInfo(tx, l1pricing.BatchPosterAddress)
-	dataGas := arbmath.BigDiv(dataCost, state.header.BaseFee)
+	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress)
+	dataGas := arbmath.BigDiv(dataCost, header.BaseFee)
 	if tx.Gas() < intrinsic+dataGas.Uint64() {
 		return core.ErrIntrinsicGas
+	}
+	return nil
+}
+
+func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	state := c.getLatestState()
+	err := PreCheckTx(c.bc.Config(), state.header, state.stateDb, state.arbos, tx, c.strictness)
+	if err != nil {
+		return err
 	}
 	return c.publisher.PublishTransaction(ctx, tx)
 }
