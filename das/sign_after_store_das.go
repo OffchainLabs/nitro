@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"time"
 
@@ -144,7 +143,7 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 				return nil, err
 			}
 		} else {
-			pubkeyEncoded, err := ioutil.ReadFile(extraSignatureCheckingPublicKey)
+			pubkeyEncoded, err := os.ReadFile(extraSignatureCheckingPublicKey)
 			if err != nil {
 				return nil, err
 			}

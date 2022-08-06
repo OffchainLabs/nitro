@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net"
 	"strings"
 	"time"
@@ -119,7 +118,7 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 			continue
 		}
 
-		data, err := ioutil.ReadAll(&reader)
+		data, err := io.ReadAll(&reader)
 
 		return data, header.OpCode, err
 	}

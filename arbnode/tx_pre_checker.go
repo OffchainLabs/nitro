@@ -151,3 +151,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	}
 	return c.publisher.PublishTransaction(ctx, tx)
 }
+
+func (c *TxPreChecker) CheckHealth(ctx context.Context) error {
+	return c.publisher.CheckHealth(ctx)
+}
