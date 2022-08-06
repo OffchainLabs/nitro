@@ -79,7 +79,6 @@ func NewMemoryBackedStateDB() vm.StateDB {
 // We map addresses using "pages" of 256 storage slots. We hash over the page number but not the offset within
 // a page, to preserve contiguity within a page. This will reduce cost if/when Ethereum switches to storage
 // representations that reward contiguity.
-//
 // Because page numbers are 248 bits, this gives us 124-bit security against collision attacks, which is good enough.
 func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	keyBytes := key.Bytes()

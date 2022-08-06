@@ -67,6 +67,10 @@ func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddres
 	}, nil
 }
 
+func (v *ValidatorWallet) Initialize(ctx context.Context) error {
+	return v.populateWallet(ctx, false)
+}
+
 // May be the nil if the wallet hasn't been deployed yet
 func (v *ValidatorWallet) Address() *common.Address {
 	return v.address
@@ -91,18 +95,21 @@ func (v *ValidatorWallet) executeTransaction(ctx context.Context, tx *types.Tran
 	return v.con.ExecuteTransaction(v.auth, tx.Data(), *tx.To(), tx.Value())
 }
 
-func (v *ValidatorWallet) createWalletIfNeeded(ctx context.Context) error {
+func (v *ValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {
 	if v.con != nil {
 		return nil
 	}
 	if v.address == nil {
-		addr, err := CreateValidatorWallet(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader)
+		addr, err := GetValidatorWallet(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader, createIfMissing)
 		if err != nil {
 			return err
 		}
-		v.address = &addr
+		if addr == nil {
+			return nil
+		}
+		v.address = addr
 		if v.onWalletCreated != nil {
-			v.onWalletCreated(addr)
+			v.onWalletCreated(*addr)
 		}
 	}
 	con, err := rollupgen.NewValidatorWallet(*v.address, v.l1Reader.Client())
@@ -135,7 +142,7 @@ func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *Vali
 		return nil, nil
 	}
 
-	err := v.createWalletIfNeeded(ctx)
+	err := v.populateWallet(ctx, true)
 	if err != nil {
 		return nil, err
 	}
@@ -185,19 +192,20 @@ func (v *ValidatorWallet) TimeoutChallenges(ctx context.Context, manager common.
 	return v.con.TimeoutChallenges(v.auth, manager, challenges)
 }
 
-func CreateValidatorWallet(
+func GetValidatorWallet(
 	ctx context.Context,
 	validatorWalletFactoryAddr common.Address,
 	fromBlock int64,
 	transactAuth *bind.TransactOpts,
 	l1Reader L1ReaderInterface,
-) (common.Address, error) {
+	createIfMissing bool,
+) (*common.Address, error) {
 	client := l1Reader.Client()
 
 	// TODO: If we just save a mapping in the wallet creator we won't need log search
 	walletCreator, err := rollupgen.NewValidatorWalletCreator(validatorWalletFactoryAddr, client)
 	if err != nil {
-		return common.Address{}, errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
 	query := ethereum.FilterQuery{
 		BlockHash: nil,
@@ -208,34 +216,38 @@ func CreateValidatorWallet(
 	}
 	logs, err := client.FilterLogs(ctx, query)
 	if err != nil {
-		return common.Address{}, errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
 	if len(logs) > 1 {
-		return common.Address{}, errors.New("more than one validator wallet created for address")
+		return nil, errors.New("more than one validator wallet created for address")
 	} else if len(logs) == 1 {
 		rawLog := logs[0]
 		parsed, err := walletCreator.ParseWalletCreated(rawLog)
 		if err != nil {
-			return common.Address{}, err
+			return nil, err
 		}
 		log.Info("found validator smart contract wallet", "address", parsed.WalletAddress)
-		return parsed.WalletAddress, err
+		return &parsed.WalletAddress, err
+	}
+
+	if !createIfMissing {
+		return nil, nil
 	}
 
 	var initialExecutorAllowedDests []common.Address
 	tx, err := walletCreator.CreateWallet(transactAuth, initialExecutorAllowedDests)
 	if err != nil {
-		return common.Address{}, err
+		return nil, err
 	}
 
 	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
 	if err != nil {
-		return common.Address{}, err
+		return nil, err
 	}
 	ev, err := walletCreator.ParseWalletCreated(*receipt.Logs[len(receipt.Logs)-1])
 	if err != nil {
-		return common.Address{}, errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
 	log.Info("created validator smart contract wallet", "address", ev.WalletAddress)
-	return ev.WalletAddress, nil
+	return &ev.WalletAddress, nil
 }
