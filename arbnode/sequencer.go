@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -118,9 +117,23 @@ func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transact
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, receipt *types.Receipt) error {
-	if receipt.Status == types.ReceiptStatusFailed && receipt.GasUsed > dataGas && receipt.GasUsed-dataGas <= s.config.MaxRevertGasReject {
-		return vm.ErrExecutionReverted
+func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config.MaxRevertGasReject {
+		return result.Err
+	}
+	return nil
+}
+
+func (s *Sequencer) CheckHealth(ctx context.Context) error {
+	s.forwarderMutex.Lock()
+	forwarder := s.forwarder
+	s.forwarderMutex.Unlock()
+	if forwarder != nil {
+		return forwarder.CheckHealth(ctx)
+	}
+
+	if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
+		return ErrNoSequencer
 	}
 	return nil
 }
@@ -137,7 +150,10 @@ func (s *Sequencer) ForwardTarget() string {
 func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
-	s.forwarder = NewForwarder(url)
+	if s.forwarder != nil {
+		s.forwarder.Disable()
+	}
+	s.forwarder = NewForwarder(url, s.config.ForwardTimeout)
 	err := s.forwarder.Initialize(s.GetContext())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)
@@ -149,17 +165,37 @@ func (s *Sequencer) ForwardTo(url string) error {
 func (s *Sequencer) DontForward() {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
+	if s.forwarder != nil {
+		s.forwarder.Disable()
+	}
 	s.forwarder = nil
+}
+
+var ErrQueueFull error = errors.New("queue full")
+var ErrNoSequencer error = errors.New("sequencer temporarily not available")
+
+func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
+	select {
+	case s.txQueue <- queueItem:
+	default:
+		queueItem.returnResult(err)
+	}
 }
 
 func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	s.forwarderMutex.Lock()
-	defer s.forwarderMutex.Unlock()
-	if s.forwarder == nil {
+	forwarder := s.forwarder
+	s.forwarderMutex.Unlock()
+	if forwarder == nil {
 		return false
 	}
 	for _, item := range queueItems {
-		item.resultChan <- s.forwarder.PublishTransaction(item.ctx, item.tx)
+		res := forwarder.PublishTransaction(item.ctx, item.tx)
+		if errors.Is(res, ErrNoSequencer) {
+			s.requeueOrFail(item, ErrNoSequencer)
+		} else {
+			item.returnResult(res)
+		}
 	}
 	return true
 }
@@ -206,11 +242,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 			// This tx would be too large to add to this batch.
 			// Attempt to put it back in the queue, but error if the queue is full.
 			// Then, end the batch here.
-			select {
-			case s.txQueue <- queueItem:
-			default:
-				queueItem.returnResult(core.ErrOversizedData)
-			}
+			s.requeueOrFail(queueItem, ErrQueueFull)
 			break
 		}
 		totalBatchSize += len(txBytes)
@@ -265,11 +297,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		}
 		// try to add back to queue otherwise
 		for _, item := range queueItems {
-			select {
-			case s.txQueue <- item:
-			default:
-				item.resultChan <- errors.New("queue full")
-			}
+			s.requeueOrFail(item, ErrNoSequencer)
 		}
 		return
 	}
@@ -283,15 +311,11 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 
 	for i, err := range hooks.TxErrors {
 		queueItem := queueItems[i]
-		if errors.Is(err, core.ErrGasLimit) {
+		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
 			// Attempt to re-queue the transaction.
-			// If the queue is full, fall through to returning an error.
-			select {
-			case s.txQueue <- queueItem:
-				continue
-			default:
-			}
+			s.requeueOrFail(queueItem, core.ErrGasLimitReached)
+			continue
 		}
 		queueItem.returnResult(err)
 	}

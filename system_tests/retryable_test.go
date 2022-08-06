@@ -286,11 +286,11 @@ func TestSubmissionGasCosts(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	l2info.GenerateAccount("Refund")
-	l2info.GenerateAccount("Recieve")
+	l2info.GenerateAccount("Receive")
 	faucetAddress := util.RemapL1Address(l1info.GetAddress("Faucet"))
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")
 	feeRefundAddress := l2info.GetAddress("Refund")
-	receiveAddress := l2info.GetAddress("Recieve")
+	receiveAddress := l2info.GetAddress("Receive")
 
 	colors.PrintBlue("Faucet      ", faucetAddress)
 	colors.PrintBlue("Receive     ", receiveAddress)

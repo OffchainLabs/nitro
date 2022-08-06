@@ -17,10 +17,10 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func newBroadcasterConfigTest(port string) *wsbroadcastserver.BroadcasterConfig {
+func newBroadcasterConfigTest() *wsbroadcastserver.BroadcasterConfig {
 	config := wsbroadcastserver.DefaultTestBroadcasterConfig
 	config.Enable = true
-	config.Port = port
+	config.Port = "0"
 	return &config
 }
 
@@ -37,7 +37,7 @@ func TestSequencerFeed(t *testing.T) {
 	defer cancel()
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
-	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
+	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 	defer requireClose(t, l2stackA)
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
@@ -72,11 +72,11 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	defer cancel()
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
-	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest("0")
+	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 	defer requireClose(t, l2stackA)
 
-	relayServerConf := *newBroadcasterConfigTest("0")
+	relayServerConf := *newBroadcasterConfigTest()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	relayClientConf := *newBroadcastClientConfigTest(port)
 
@@ -129,7 +129,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
-	nodeConfigC.Feed.Output = *newBroadcasterConfigTest("0")
+	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
 	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
 	defer requireClose(t, l2stackC)
 

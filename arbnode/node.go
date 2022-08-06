@@ -11,17 +11,9 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"strings"
-	"syscall"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/util/headerreader"
-	"golang.org/x/term"
-
-	"github.com/ethereum/go-ethereum/rpc"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -36,7 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	flag "github.com/spf13/pflag"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -51,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -398,6 +391,7 @@ type Config struct {
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
+	PreCheckTxs          bool                           `koanf:"pre-check-txs"`
 	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
 	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
 	Validator            validator.L1ValidatorConfig    `koanf:"validator"`
@@ -425,6 +419,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	f.Bool(prefix+".pre-check-txs", ConfigDefault.PreCheckTxs, "if true, verify basic state transition requirements of incoming RPC transactions before processing them")
 	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
@@ -444,6 +439,7 @@ var ConfigDefault = Config{
 	DelayedSequencer:     DefaultDelayedSequencerConfig,
 	BatchPoster:          DefaultBatchPosterConfig,
 	ForwardingTargetImpl: "",
+	PreCheckTxs:          false,
 	BlockValidator:       validator.DefaultBlockValidatorConfig,
 	Feed:                 broadcastclient.FeedConfigDefault,
 	Validator:            validator.DefaultL1ValidatorConfig,
@@ -525,6 +521,7 @@ type SequencerConfig struct {
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
+	ForwardTimeout              time.Duration            `koanf:"forward-timeout"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -533,6 +530,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxBlockSpeed:               time.Millisecond * 100,
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
+	ForwardTimeout:              time.Second * 30,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
@@ -542,6 +540,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
 	SenderWhitelist:             "",
+	ForwardTimeout:              time.Second * 2,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -551,6 +550,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
+	f.Duration(prefix+".forward-timeout", DefaultSequencerConfig.ForwardTimeout, "timeout when forwarding to a different sequencer")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -667,7 +667,7 @@ func createNodeImpl(
 		if config.ForwardingTarget() == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.ForwardingTarget())
+			txPublisher = NewForwarder(config.ForwardingTarget(), time.Duration(0))
 		}
 	}
 	if config.SeqCoordinator.Enable {
@@ -675,6 +675,9 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
+	}
+	if config.PreCheckTxs {
+		txPublisher = NewTxPreChecker(txPublisher, l2BlockChain)
 	}
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {
@@ -971,6 +974,7 @@ func SetUpDataAvailability(
 			config.KeyConfig,
 			_seqInboxCaller,
 			topLevelStorageService,
+			config.ExtraSignatureCheckingPublicKey,
 		)
 		if err != nil {
 			return nil, nil, err
@@ -1045,11 +1049,23 @@ func CreateNode(
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
+			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator},
+			Public:    false,
+		})
+		apis = append(apis, rpc.API{
+			Namespace: "arbdebug",
+			Version:   "1.0",
+			Service:   &BlockValidatorDebugAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
 			Public:    false,
 		})
 	}
 
+	apis = append(apis, rpc.API{
+		Namespace: "arb",
+		Version:   "1.0",
+		Service:   &ArbAPI{currentNode.TxPublisher},
+		Public:    false,
+	})
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
@@ -1316,98 +1332,4 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 // Don't preserve reorg'd out blocks
 func shouldPreserveFalse(header *types.Header) bool {
 	return false
-}
-
-func GetSignerFromWallet(
-	walletConfig *genericconf.WalletConfig,
-) (func([]byte) ([]byte, error), error) {
-	var signer func(data []byte) ([]byte, error)
-
-	if len(walletConfig.PrivateKey) != 0 {
-		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		signer = func(data []byte) ([]byte, error) {
-			return crypto.Sign(data, privateKey)
-		}
-	} else {
-		ks, account, newKeystoreCreated, err := openKeystore(
-			"account",
-			walletConfig.Pathname,
-			walletConfig.Password(),
-			walletConfig.OnlyCreateKey,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		if newKeystoreCreated {
-			return nil, errors.New("wallet key created, backup key (" + walletConfig.Pathname + ") and remove --wallet.only-create-key to start normally")
-		}
-
-		signer = func(data []byte) ([]byte, error) {
-			return ks.SignHash(*account, data)
-		}
-	}
-
-	return signer, nil
-}
-
-func openKeystore(description string, walletPath string, walletPassword *string, onlyCreateKey bool) (*keystore.KeyStore, *accounts.Account, bool, error) {
-	ks := keystore.NewKeyStore(
-		walletPath,
-		keystore.StandardScryptN,
-		keystore.StandardScryptP,
-	)
-
-	creatingNew := len(ks.Accounts()) == 0
-	if creatingNew && !onlyCreateKey {
-		return nil, nil, false, errors.New("No wallet exists, re-run with --wallet.local.only-create-key to create a wallet")
-	}
-	passOpt := walletPassword
-	var password string
-	if passOpt != nil {
-		password = *passOpt
-	} else {
-		if creatingNew {
-			fmt.Print("Enter new account password: ")
-		} else {
-			fmt.Print("Enter account password: ")
-		}
-		var err error
-		password, err = readPass()
-		if err != nil {
-			return nil, nil, false, err
-		}
-	}
-
-	var account accounts.Account
-	if creatingNew {
-		var err error
-		account, err = ks.NewAccount(password)
-		if err != nil {
-			return nil, &accounts.Account{}, false, err
-		}
-
-	} else {
-		account = ks.Accounts()[0]
-	}
-
-	err := ks.Unlock(account, password)
-	if err != nil {
-		return nil, nil, false, err
-	}
-
-	return ks, &account, creatingNew, nil
-}
-
-func readPass() (string, error) {
-	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
-	if err != nil {
-		return "", err
-	}
-	passphrase := string(bytePassword)
-	passphrase = strings.TrimSpace(passphrase)
-	return passphrase, nil
 }
