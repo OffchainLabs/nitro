@@ -968,10 +968,14 @@ func SetUpDataAvailability(
 			_seqInboxCaller = nil
 		}
 
+		privKey, err := config.KeyConfig.BLSPrivKey()
+		if err != nil {
+			return nil, nil, err
+		}
+
 		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
-			ctx,
-			config.KeyConfig,
+			privKey,
 			_seqInboxCaller,
 			topLevelStorageService,
 			config.ExtraSignatureCheckingPublicKey,
