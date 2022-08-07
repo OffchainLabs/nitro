@@ -41,7 +41,7 @@ func WaitForTx(ctxinput context.Context, client arbutil.L1Interface, txhash comm
 	chanHead, cancel := HeaderSubscribeWithRetry(ctx, client)
 	defer cancel()
 
-	checkInterval := timeout / 5
+	checkInterval := timeout / 50
 	if checkInterval > time.Second {
 		checkInterval = time.Second
 	}
