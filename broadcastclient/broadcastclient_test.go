@@ -79,7 +79,7 @@ func newTestBroadcastClient(listenerAddress net.Addr, chainId uint64, currentMes
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, feedErrChan chan error) {
 	ts := NewDummyTransactionStreamer()
-	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 20*time.Second, ts, feedErrChan)
+	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 200*time.Millisecond, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 	messageCount := 0
 
@@ -130,20 +130,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	defer b.StopAndWait()
 
 	ts := NewDummyTransactionStreamer()
-
-	badFeedErrChan := make(chan error, 10)
-	badBroadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId+1, 0, 20*time.Second, ts, badFeedErrChan)
-	badBroadcastClient.Start(ctx)
-	badTimer := time.NewTimer(5 * time.Second)
-	select {
-	case <-badFeedErrChan:
-		// Got expected error
-		badTimer.Stop()
-	case <-badTimer.C:
-		t.Fatal("Client channel did not send error as expected")
-	}
-
-	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId, 0, 20*time.Second, ts, feedErrChan)
+	badBroadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId+1, 0, 200*time.Millisecond, ts, badFeedErrChan)
 	broadcastClient.Start(ctx)
 
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
@@ -197,13 +184,14 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	}
 	defer b1.StopAndWait()
 
-	broadcastClient := newTestBroadcastClient(b1.ListenerAddr(), chainId, 0, 2*time.Second, nil, feedErrChan)
+	broadcastClient := newTestBroadcastClient(b1.ListenerAddr(), chainId, 0, 200*time.Millisecond, nil, feedErrChan)
 
 	broadcastClient.Start(ctx)
+	defer broadcastClient.StopAndWait()
 
-	// Client set to timeout connection at 2 seconds, and server set to send ping every 50 seconds,
-	// so at least one timeout/reconnect should happen after 4 seconds
-	time.Sleep(4 * time.Second)
+	// Client set to timeout connection at 200 milliseconds, and server set to send ping every 50 seconds,
+	// so at least one timeout/reconnect should happen after 1 seconds
+	time.Sleep(1 * time.Second)
 
 	if broadcastClient.GetRetryCount() <= 0 {
 		t.Error("Should have had some retry counts")
@@ -243,7 +231,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	wg.Wait()
 
 	// give the above connections time to reconnect
-	time.Sleep(4 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	// Confirmed Accumulator will also broadcast to the clients.
 	b.Confirm(0) // remove the first message we generated
@@ -285,7 +273,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uint64, t *testing.T, clientIndex int, wg *sync.WaitGroup) {
 	ts := NewDummyTransactionStreamer()
 	feedErrChan := make(chan error, 10)
-	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 60*time.Second, ts, feedErrChan)
+	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 200*time.Millisecond, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 
 	go func() {

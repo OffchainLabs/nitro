@@ -31,7 +31,7 @@ func DecodeBase64BLSPublicKey(pubKeyEncodedBytes []byte) (*blsSignatures.PublicK
 	return &pubKey, nil
 }
 
-func DecodeBase64BLSPrivateKey(privKeyEncodedBytes []byte) (*blsSignatures.PrivateKey, error) {
+func DecodeBase64BLSPrivateKey(privKeyEncodedBytes []byte) (blsSignatures.PrivateKey, error) {
 	privKeyDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(privKeyEncodedBytes))
 	privKeyBytes, err := io.ReadAll(privKeyDecoder)
 	if err != nil {
@@ -41,7 +41,7 @@ func DecodeBase64BLSPrivateKey(privKeyEncodedBytes []byte) (*blsSignatures.Priva
 	if err != nil {
 		return nil, err
 	}
-	return &privKey, nil
+	return privKey, nil
 }
 
 const DefaultPubKeyFilename = "das_bls.pub"
@@ -72,7 +72,7 @@ func GenerateAndStoreKeys(keyDir string) (*blsSignatures.PublicKey, *blsSignatur
 	return &pubKey, &privKey, nil
 }
 
-func ReadKeysFromFile(keyDir string) (*blsSignatures.PublicKey, *blsSignatures.PrivateKey, error) {
+func ReadKeysFromFile(keyDir string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
 	pubKey, err := ReadPubKeyFromFile(keyDir + "/" + DefaultPubKeyFilename)
 	if err != nil {
 		return nil, nil, err
@@ -97,7 +97,7 @@ func ReadPubKeyFromFile(pubKeyPath string) (*blsSignatures.PublicKey, error) {
 	return pubKey, nil
 }
 
-func ReadPrivKeyFromFile(privKeyPath string) (*blsSignatures.PrivateKey, error) {
+func ReadPrivKeyFromFile(privKeyPath string) (blsSignatures.PrivateKey, error) {
 	privKeyEncodedBytes, err := os.ReadFile(privKeyPath)
 	if err != nil {
 		return nil, err

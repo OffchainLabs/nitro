@@ -5,10 +5,24 @@ package util
 
 import (
 	"fmt"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"strings"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
+
+func openTestKeystore(description string, walletConfig *genericconf.WalletConfig, getPassword func() (string, error)) (*keystore.KeyStore, *accounts.Account, error) {
+	ks := keystore.NewKeyStore(
+		walletConfig.Pathname,
+		keystore.LightScryptN,
+		keystore.LightScryptP,
+	)
+	acc, err := openKeystore(ks, description, walletConfig, getPassword)
+	return ks, acc, err
+}
 
 func createWallet(t *testing.T, pathname string) {
 	walletConf := genericconf.WalletConfigDefault
@@ -22,7 +36,7 @@ func createWallet(t *testing.T, pathname string) {
 		return "", nil
 	}
 
-	_, _, err := openKeystore("test", &walletConf, testPass)
+	_, _, err := openTestKeystore("test", &walletConf, testPass)
 	if err == nil {
 		t.Fatalf("should have failed")
 	}
@@ -40,7 +54,7 @@ func TestNewKeystoreNoCreate(t *testing.T) {
 	walletConf.Pathname = t.TempDir()
 	walletConf.OnlyCreateKey = false
 
-	_, _, err := openKeystore("test", &walletConf, readPass)
+	_, _, err := openTestKeystore("test", &walletConf, readPass)
 	if err == nil {
 		t.Fatalf("should have failed")
 	}
@@ -67,7 +81,7 @@ func TestExistingKeystoreNoCreate(t *testing.T) {
 		return "", nil
 	}
 
-	_, _, err := openKeystore("test", &walletConf, testPass)
+	_, _, err := openTestKeystore("test", &walletConf, testPass)
 	if err == nil {
 		t.Fatalf("should have failed")
 	}
@@ -96,7 +110,7 @@ func TestNewKeystorePromptPasswordTerminal(t *testing.T) {
 		return password, nil
 	}
 
-	_, _, err := openKeystore("test", &walletConf, getPass)
+	_, _, err := openTestKeystore("test", &walletConf, getPass)
 	if err == nil {
 		t.Fatalf("should have failed")
 	}
@@ -129,7 +143,7 @@ func TestExistingKeystorePromptPasswordTerminal(t *testing.T) {
 		return password, nil
 	}
 
-	_, _, err := openKeystore("test", &walletConf, testPass)
+	_, _, err := openTestKeystore("test", &walletConf, testPass)
 	if err != nil {
 		t.Fatalf("should not have have failed")
 	}
@@ -153,7 +167,7 @@ func TestExistingKeystoreAccountName(t *testing.T) {
 		return password, nil
 	}
 
-	_, _, err := openKeystore("test", &walletConf, testPass)
+	_, _, err := openTestKeystore("test", &walletConf, testPass)
 	if err == nil {
 		t.Fatalf("should have failed")
 	}
@@ -167,7 +181,7 @@ func TestExistingKeystoreAccountName(t *testing.T) {
 
 	// Get new account
 	walletConf.OnlyCreateKey = false
-	_, account, err := openKeystore("test", &walletConf, testPass)
+	_, account, err := openTestKeystore("test", &walletConf, testPass)
 	if err != nil {
 		t.Fatalf("open failed: %v", err)
 	}
@@ -177,7 +191,7 @@ func TestExistingKeystoreAccountName(t *testing.T) {
 
 	// Request account by name
 	walletConf.Account = account.Address.Hex()
-	_, account2, err := openKeystore("test", &walletConf, testPass)
+	_, account2, err := openTestKeystore("test", &walletConf, testPass)
 	if err != nil {
 		t.Fatalf("open failed: %v", err)
 	}
@@ -187,7 +201,7 @@ func TestExistingKeystoreAccountName(t *testing.T) {
 
 	// Test getting key with invalid address
 	walletConf.Account = "junk"
-	_, _, err = openKeystore("test", &walletConf, testPass)
+	_, _, err = openTestKeystore("test", &walletConf, testPass)
 	if err == nil {
 		t.Fatal("should have failed")
 	}
@@ -198,7 +212,7 @@ func TestExistingKeystoreAccountName(t *testing.T) {
 
 	// Test getting key with incorrect address
 	walletConf.Account = "0x85d31caC32F0ECd3a978f31d040528B9A219F1C7"
-	_, _, err = openKeystore("test", &walletConf, testPass)
+	_, _, err = openTestKeystore("test", &walletConf, testPass)
 	if err == nil {
 		t.Fatal("should have failed")
 	}
