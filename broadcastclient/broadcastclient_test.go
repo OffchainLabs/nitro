@@ -25,7 +25,7 @@ func TestReceiveMessages(t *testing.T) {
 	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
 
 	messageCount := 1000
-	clientCount := 10
+	clientCount := 2
 	chainId := uint64(9742)
 
 	feedErrChan := make(chan error, 10)
@@ -130,21 +130,10 @@ func TestServerClientDisconnect(t *testing.T) {
 	defer b.StopAndWait()
 
 	ts := NewDummyTransactionStreamer()
-	badFeedErrChan := make(chan error, 10)
-	badBroadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId+1, 0, 200*time.Millisecond, ts, badFeedErrChan)
-	badBroadcastClient.Start(ctx)
-	badTimer := time.NewTimer(5 * time.Second)
-	select {
-	case <-badFeedErrChan:
-		// Got expected error
-		badTimer.Stop()
-	case <-badTimer.C:
-		t.Fatal("Client channel did not send error as expected")
-	}
-
-	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId+1, 0, 200*time.Millisecond, ts, badFeedErrChan)
+	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId, 0, 200*time.Millisecond, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 
+	t.Log("broadcasting seq 0 message")
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
 
 	// Wait for client to receive batch to ensure it is connected
@@ -174,6 +163,38 @@ func TestServerClientDisconnect(t *testing.T) {
 		default:
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestServerClientIncorrectChainId(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	settings.Ping = 1 * time.Second
+
+	chainId := uint64(8742)
+	feedErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+
+	err := b.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.StopAndWait()
+
+	ts := NewDummyTransactionStreamer()
+	badFeedErrChan := make(chan error, 10)
+	badBroadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId+1, 0, 200*time.Millisecond, ts, badFeedErrChan)
+	badBroadcastClient.Start(ctx)
+	badTimer := time.NewTimer(5 * time.Second)
+	select {
+	case <-badFeedErrChan:
+		// Got expected error
+		badTimer.Stop()
+	case <-badTimer.C:
+		t.Fatal("Client channel did not send error as expected")
 	}
 }
 
