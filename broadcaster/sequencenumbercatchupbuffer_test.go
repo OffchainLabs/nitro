@@ -17,9 +17,10 @@
 package broadcaster
 
 import (
+	"testing"
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
-	"testing"
 )
 
 func TestGetEmptyCacheMessages(t *testing.T) {

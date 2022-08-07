@@ -24,7 +24,7 @@ func TestTransfer(t *testing.T) {
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	bal, err := client.BalanceAt(ctx, l2info.GetAddress("Owner"), nil)

@@ -45,7 +45,7 @@ func TestDelayInboxSimple(t *testing.T) {
 	l2info.GenerateAccount("User2")
 
 	delayedTx := l2info.PrepareTx("Owner", "User2", 50001, big.NewInt(1e6), nil)
-	SendSignedTxViaL1(t, ctx, l1info, l1client, l2client, delayedTx, feedErrChan)
+	SendSignedTxViaL1(t, ctx, l1info, l1client, l2client, delayedTx)
 
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)

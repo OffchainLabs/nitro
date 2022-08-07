@@ -31,7 +31,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client, feedErrChan)
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
@@ -45,7 +45,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, l2client, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	if expensiveTx {
@@ -66,14 +66,14 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		ownerInfo.Nonce++
 		err = l2client.SendTransaction(ctx, tx)
 		Require(t, err)
-		_, err = WaitForTx(ctx, l2client, tx.Hash(), feedErrChan, time.Second*5)
+		_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 		Require(t, err)
 	}
 
 	delayedTx := l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil)
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 		WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000),
-	}, feedErrChan)
+	})
 
 	// give the inbox reader a bit of time to pick up the delayed message
 	time.Sleep(time.Millisecond * 500)
@@ -82,10 +82,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		}, feedErrChan)
+		})
 	}
 
-	_, err = WaitForTx(ctx, l2clientB, delayedTx.Hash(), feedErrChan, time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, delayedTx.Hash(), time.Second*5)
 	Require(t, err)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
@@ -117,7 +117,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		}
 	}
 	timeout := getDeadlineTimeout(t, time.Minute*10)
-	if !nodeB.BlockValidator.WaitForBlock(lastBlock.NumberU64(), timeout, feedErrChan) {
+	if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlock.NumberU64(), timeout) {
 		Fail(t, "did not validate all blocks")
 	}
 }

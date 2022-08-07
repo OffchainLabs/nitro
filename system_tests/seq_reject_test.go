@@ -64,9 +64,9 @@ func TestSequencerRejection(t *testing.T) {
 		err := client1.SendTransaction(ctx, tx)
 		Require(t, err)
 
-		_, err = EnsureTxSucceeded(ctx, client1, tx, feedErrChan)
+		_, err = EnsureTxSucceeded(ctx, client1, tx)
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, client2, tx, feedErrChan)
+		_, err = EnsureTxSucceeded(ctx, client2, tx)
 		Require(t, err)
 
 		wg.Add(1)

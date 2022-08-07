@@ -31,7 +31,7 @@ func TestSequencerCompensation(t *testing.T) {
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -41,10 +41,10 @@ func TestSequencerCompensation(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		}, feedErrChan)
+		})
 	}
 
-	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), feedErrChan, time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	// clientB sees balance means sequencer message was sent

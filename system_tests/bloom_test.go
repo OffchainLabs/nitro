@@ -38,7 +38,7 @@ func TestBloom(t *testing.T) {
 	ownerTxOpts.Context = ctx
 	_, tx, simple, err := mocksgen.DeploySimple(&ownerTxOpts, client)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
@@ -67,7 +67,7 @@ func TestBloom(t *testing.T) {
 		if sendNullEvent {
 			tx, err = simple.EmitNullEvent(&ownerTxOpts)
 			Require(t, err)
-			_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
+			_, err = EnsureTxSucceeded(ctx, client, tx)
 			Require(t, err)
 		}
 
@@ -78,7 +78,7 @@ func TestBloom(t *testing.T) {
 			tx, err = simple.Increment(&ownerTxOpts)
 		}
 		Require(t, err)
-		_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
+		_, err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 		if i%100 == 0 {
 			t.Log("counts: ", i, "/", countsNum)

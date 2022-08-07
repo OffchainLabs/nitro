@@ -44,12 +44,12 @@ func TestInfraFee(t *testing.T) {
 	infraFeeAddr := common.BytesToAddress(crypto.Keccak256([]byte{3, 2, 6}))
 	tx, err := arbowner.SetInfraFeeAccount(&ownerTxOpts, infraFeeAddr)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	_, tx, simple, err := mocksgen.DeploySimple(&ownerTxOpts, client)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	netFeeBalanceBefore, err := client.BalanceAt(ctx, networkFeeAddr, nil)
@@ -59,7 +59,7 @@ func TestInfraFee(t *testing.T) {
 
 	tx, err = simple.Increment(&ownerTxOpts)
 	Require(t, err)
-	receipt, err := EnsureTxSucceeded(ctx, client, tx, feedErrChan)
+	receipt, err := EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	l2GasUsed := receipt.GasUsed - receipt.GasUsedForL1
 	expectedFunds := arbmath.BigMulByUint(arbmath.UintToBig(l2pricing.InitialBaseFeeWei), l2GasUsed)

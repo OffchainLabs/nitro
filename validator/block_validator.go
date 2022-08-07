@@ -844,8 +844,8 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 	return nil
 }
 
-// can only be used from One thread
-func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration, errChan chan error) bool {
+// WaitForBlock can only be used from One thread
+func (v *BlockValidator) WaitForBlock(ctx context.Context, blockNumber uint64, timeout time.Duration) bool {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
@@ -865,8 +865,7 @@ func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration,
 			if !ok {
 				return false
 			}
-		case err := <-errChan:
-			log.Error("error received from channel while waiting for block", err)
+		case <-ctx.Done():
 			return false
 		}
 	}

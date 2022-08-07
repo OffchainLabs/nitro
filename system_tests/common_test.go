@@ -44,24 +44,24 @@ import (
 type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
 
-func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction, errChan chan error) {
+func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
 	t.Helper()
 	for _, tx := range txs {
 		Require(t, client.SendTransaction(ctx, tx))
 	}
 	for _, tx := range txs {
-		_, err := EnsureTxSucceeded(ctx, client, tx, errChan)
+		_, err := EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 }
 
 func TransferBalance(
-	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context, errChan chan error,
+	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
 	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
-	res, err := EnsureTxSucceeded(ctx, client, tx, errChan)
+	res, err := EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	return tx, res
 }
@@ -73,7 +73,6 @@ func SendSignedTxViaL1(
 	l1client arbutil.L1Interface,
 	l2client arbutil.L1Interface,
 	delayedTx *types.Transaction,
-	errChan chan error,
 ) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
 	Require(t, err)
@@ -84,16 +83,16 @@ func SendSignedTxViaL1(
 	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
 	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, l1tx, errChan)
+	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
-		}, errChan)
+		})
 	}
-	receipt, err := WaitForTx(ctx, l2client, delayedTx.Hash(), errChan, time.Second*5)
+	receipt, err := WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
 	Require(t, err)
 	return receipt
 }
@@ -191,7 +190,7 @@ func DeployOnTestL1(
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
-		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)}, errChan)
+		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	addresses, err := arbnode.DeployOnL1(
@@ -320,7 +319,7 @@ func CreateTestL2WithConfig(
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
 		Require(t, err, "failed to deploy ArbDebug")
 
-		_, err = EnsureTxSucceeded(ctx, client, tx, feedErrChan)
+		_, err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 
@@ -407,7 +406,6 @@ func authorizeDASKeyset(
 	dasSignerKey *blsSignatures.PublicKey,
 	l1info info,
 	l1client arbutil.L1Interface,
-	errChan chan error,
 ) {
 	if dasSignerKey == nil {
 		return
@@ -425,7 +423,7 @@ func authorizeDASKeyset(
 	trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx, errChan)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 }
 

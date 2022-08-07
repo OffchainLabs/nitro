@@ -53,7 +53,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
 
 	l2info.GasPrice = GetBaseFee(t, l2client, ctx)
-	tx, receipt := TransferBalance(t, "Faucet", "Faucet", big.NewInt(0), l2info, l2client, ctx, feedErrChan)
+	tx, receipt := TransferBalance(t, "Faucet", "Faucet", big.NewInt(0), l2info, l2client, ctx)
 	txSize := compressedTxSize(t, tx)
 
 	networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
@@ -104,7 +104,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	tx, err := arbdebug.BecomeChainOwner(&ownerAuth)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2client, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 
 	// use ownerAuth to set the L1 price per unit
 	Require(t, err)
@@ -112,7 +112,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	tx, err = arbOwner.SetL1PricePerUnit(&ownerAuth, new(big.Int).SetUint64(initialEstimate))
 	Require(t, err)
-	_, err = WaitForTx(ctx, l2client, tx.Hash(), feedErrChan, time.Second*5)
+	_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
@@ -133,7 +133,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 
 	numRetrogradeMoves := 0
 	for i := 0; i < 256; i++ {
-		tx, receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2info, l2client, ctx, feedErrChan)
+		tx, receipt := TransferBalance(t, "Owner", "Owner", common.Big1, l2info, l2client, ctx)
 		header, err := l2client.HeaderByHash(ctx, receipt.BlockHash)
 		Require(t, err)
 

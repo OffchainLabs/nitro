@@ -72,7 +72,7 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 	broadcastMessage, ok := bmi.(BroadcastMessage)
 	if !ok {
-		log.Crit("Requested to broadcast messasge of unknown type")
+		log.Crit("Requested to broadcast message of unknown type")
 	}
 	defer func() { atomic.StoreInt32(&b.messageCount, int32(len(b.messages))) }()
 

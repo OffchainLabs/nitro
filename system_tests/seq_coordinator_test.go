@@ -130,7 +130,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		return succeeded
 	}
 
-	waitForMsgEverywhere := func(msgNum arbutil.MessageIndex, errChan chan error) {
+	waitForMsgEverywhere := func(msgNum arbutil.MessageIndex, errChan chan error) error {
 		for _, node := range nodes {
 			if node == nil {
 				continue
@@ -146,11 +146,13 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 				}
 				select {
 				case err := <-errChan:
-					Fail(t, "feed error ", err.Error())
+					return err
 				case <-time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3):
 				}
 			}
 		}
+
+		return nil
 	}
 
 	killNode := func(nodeNum int) {
@@ -255,7 +257,10 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		}
 
 		// all nodes get messages
-		waitForMsgEverywhere(sequencedMesssages, feedErrChan)
+		err := waitForMsgEverywhere(sequencedMesssages, feedErrChan)
+		if err != nil {
+			Require(t, err)
+		}
 
 		// can sequence after up to date
 		for i := arbutil.MessageIndex(0); i < messagesPerRound; i++ {
@@ -267,7 +272,10 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		}
 
 		// all nodes get messages
-		waitForMsgEverywhere(sequencedMesssages, feedErrChan)
+		err = waitForMsgEverywhere(sequencedMesssages, feedErrChan)
+		if err != nil {
+			Require(t, err)
+		}
 	}
 
 	for nodeNum := range nodes {
@@ -319,10 +327,10 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	err = clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, clientA, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, clientA, tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, clientB, tx.Hash(), feedErrChan, time.Second*5)
+	_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := clientB.BalanceAt(ctx, l2Info.GetAddress("User2"), nil)
 	Require(t, err)
@@ -377,10 +385,10 @@ func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	err = clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, clientA, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, clientA, tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, clientB, tx.Hash(), feedErrChan, time.Second)
+	_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second)
 	if err == nil {
 		Fail(t, "tx received by node with different seq coordinator signing key")
 	}

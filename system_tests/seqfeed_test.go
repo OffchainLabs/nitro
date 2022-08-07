@@ -55,10 +55,10 @@ func TestSequencerFeed(t *testing.T) {
 	err := client1.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client1, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, client1, tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, client2, tx.Hash(), feedErrChan, time.Second*5)
+	_, err = WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := client2.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
 	Require(t, err)
@@ -104,10 +104,10 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	err = client1.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, client1, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, client1, tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, client3, tx.Hash(), feedErrChan, time.Second*30)
+	_, err = WaitForTx(ctx, client3, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := client3.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
 	Require(t, err)
@@ -130,7 +130,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client, feedErrChan)
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
 	// The lying sequencer
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
@@ -162,13 +162,13 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal(err)
 	}
 
-	_, err = EnsureTxSucceeded(ctx, l2clientC, fraudTx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, l2clientC, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Node B should get the transaction immediately from the sequencer feed
-	_, err = WaitForTx(ctx, l2clientB, fraudTx.Hash(), feedErrChan, time.Second*15)
+	_, err = WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,13 +186,13 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal(err)
 	}
 
-	_, err = EnsureTxSucceeded(ctx, l2clientA, realTx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, realTx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Node B should get the transaction after NodeC posts a batch.
-	_, err = WaitForTx(ctx, l2clientB, realTx.Hash(), feedErrChan, time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, realTx.Hash(), time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}

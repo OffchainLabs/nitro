@@ -24,7 +24,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
-	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client, feedErrChan)
+	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
 	l2clientB, _, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability, feedErrChan)
 	defer requireClose(t, l2stackB)
@@ -36,7 +36,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx, feedErrChan)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -46,10 +46,10 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		}, feedErrChan)
+		})
 	}
 
-	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), feedErrChan, time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
