@@ -130,29 +130,27 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		return succeeded
 	}
 
-	waitForMsgEverywhere := func(msgNum arbutil.MessageIndex, errChan chan error) error {
-		for _, node := range nodes {
-			if node == nil {
+	waitForMsgEverywhere := func(msgNum arbutil.MessageIndex, errChan chan error) {
+		for _, currentNode := range nodes {
+			if currentNode == nil {
 				continue
 			}
 			for attempts := 1; ; attempts++ {
-				msgCount, err := node.n.TxStreamer.GetMessageCountSync()
+				msgCount, err := currentNode.n.TxStreamer.GetMessageCountSync()
 				Require(t, err)
 				if msgCount >= msgNum {
 					break
 				}
 				if attempts > 10 {
-					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", node.n.SeqCoordinator.DebugPrint())
+					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", currentNode.n.SeqCoordinator.DebugPrint())
 				}
 				select {
 				case err := <-errChan:
-					return err
+					Fail(t, err)
 				case <-time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3):
 				}
 			}
 		}
-
-		return nil
 	}
 
 	killNode := func(nodeNum int) {
@@ -257,10 +255,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		}
 
 		// all nodes get messages
-		err := waitForMsgEverywhere(sequencedMesssages, feedErrChan)
-		if err != nil {
-			Require(t, err)
-		}
+		waitForMsgEverywhere(sequencedMesssages, feedErrChan)
 
 		// can sequence after up to date
 		for i := arbutil.MessageIndex(0); i < messagesPerRound; i++ {
@@ -272,10 +267,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		}
 
 		// all nodes get messages
-		err = waitForMsgEverywhere(sequencedMesssages, feedErrChan)
-		if err != nil {
-			Require(t, err)
-		}
+		waitForMsgEverywhere(sequencedMesssages, feedErrChan)
 	}
 
 	for nodeNum := range nodes {
