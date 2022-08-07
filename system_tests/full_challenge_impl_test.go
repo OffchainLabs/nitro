@@ -191,13 +191,13 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	l1Info.GenerateGenesysAccount("sequencer", initialBalance)
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	l1Info, l1Backend, _, _ := CreateTestL1BlockChain(t, l1Info)
+	l1Info, l1Backend, _, _ := createTestL1BlockChain(t, l1Info)
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BlockValidator.Enable = false
 	conf.BatchPoster.Enable = false
 	conf.InboxReader.CheckDelay = time.Second
 	feedErrChan := make(chan error, 10)
-	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig.ChainID, feedErrChan)
+	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig.ChainID)
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)

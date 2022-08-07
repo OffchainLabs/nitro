@@ -59,7 +59,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	feedErrChan := make(chan error, 10)
-	l2info, l2nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true, feedErrChan)
+	l2info, l2nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 

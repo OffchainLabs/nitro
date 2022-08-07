@@ -38,7 +38,7 @@ func TestDelayInboxSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	feedErrChan := make(chan error, 10)
-	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true, feedErrChan)
+	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 

@@ -126,7 +126,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
 	feedErrChan := make(chan error, 10)
-	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig, feedErrChan)
+	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 

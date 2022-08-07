@@ -39,7 +39,7 @@ func retryableSetup(t *testing.T) (
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 	feedErrChan := make(chan error, 10)
-	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true, feedErrChan)
+	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true, feedErrChan)
 
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("Beneficiary")

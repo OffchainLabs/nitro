@@ -34,7 +34,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	feedErrChan := make(chan error, 10)
-	l2info, _, l2client, l2stack, _, _, _, l1stack := CreateTestNodeOnL1(t, ctx, true, feedErrChan)
+	l2info, _, l2client, l2stack, _, _, _, l1stack := createTestNodeOnL1(t, ctx, true, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
@@ -93,7 +93,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	conf.DelayedSequencer.FinalizeDistance = 1
 
 	feedErrChan := make(chan error, 10)
-	l2info, node, l2client, l2stack, _, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig, feedErrChan)
+	l2info, node, l2client, l2stack, _, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig, feedErrChan)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
