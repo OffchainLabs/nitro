@@ -170,6 +170,14 @@ func NewStaker(
 	}, nil
 }
 
+func (s *Staker) Initialize(ctx context.Context) error {
+	err := s.L1Validator.Initialize(ctx)
+	if err != nil {
+		return err
+	}
+	return s.wallet.Initialize(ctx)
+}
+
 func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
 	backoff := time.Second

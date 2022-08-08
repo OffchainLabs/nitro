@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -149,7 +148,7 @@ func startClientStore(args []string) error {
 			Account:       "",
 			OnlyCreateKey: false,
 		}
-		signer, err := arbnode.GetSignerFromWallet(walletConf)
+		_, signer, err := util.OpenWallet("datool", walletConf, nil)
 		if err != nil {
 			return err
 		}
@@ -343,7 +342,7 @@ func startKeyGen(args []string) error {
 			Account:       "",
 			OnlyCreateKey: true,
 		}
-		_, err = arbnode.GetSignerFromWallet(walletConf)
+		_, _, err = util.OpenWallet("datool", walletConf, nil)
 		if err != nil && strings.Contains(fmt.Sprint(err), "wallet key created") {
 			return nil
 		}
