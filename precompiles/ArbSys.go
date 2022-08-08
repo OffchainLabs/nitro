@@ -204,5 +204,5 @@ func (con ArbSys) WithdrawEth(c ctx, evm mech, value huge, destination addr) (hu
 
 func (con ArbSys) isTopLevel(c ctx, evm mech) bool {
 	depth := evm.Depth()
-	return depth < 2 || evm.Origin == c.txProcessor.Callers[depth]
+	return depth < 2 || evm.Origin == c.txProcessor.Callers[depth-2]
 }
