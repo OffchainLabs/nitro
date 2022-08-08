@@ -37,7 +37,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
     - Auto-redeem will not be created if the user does not have enough balance to pay for `gasFeeCap * gasLimit` (meaning you can no longer set a max gas fee cap).
     - Deposited gas will be refunded to `excessFeeRefundAddress` if it cannot create an auto-redeem.
     - The user will be refunded the submission cost of their retryable if it is auto-redeemed.
-- **Arbitrum blockhash**: `blockhash(x)` returns the block hash of a specific L1 block number `x`, if it is known and within the range `block.number - 256 <= x < block.number`. If `x` is outside of this range, `blockhash(x)` will return `0`. This includes `blockhash(block.number)`, which always returns `0` just like on Ethereum. **Usually the block hash is not known for a given `x`.** In these cases `blockhash(x)` will return a fake but unique block hash deterministically generated from the newest, real hash whenever one is added.
+- **Arbitrum blockhash**: `blockhash(x)` returns a cryptographically insecure, pseudo-random hash for `x` within the range `block.number - 256 <= x < block.number`. If `x` is outside of this range, `blockhash(x)` will return `0`. This includes `blockhash(block.number)`, which always returns `0` just like on Ethereum.
 - **ArbSys precompile**: `ArbSys.getTransactionCount` and `ArbSys.getStorageAt` are removed in nitro
 
 #### Protocol Contracts 
