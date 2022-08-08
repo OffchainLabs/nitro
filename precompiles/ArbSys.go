@@ -68,7 +68,10 @@ func (con *ArbSys) GetStorageGasAvailable(c ctx, evm mech) (huge, error) {
 
 // Checks if the call is top-level
 func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
-	return evm.Depth() <= 2, nil
+	if c.State.FormatVersion() < 6 {
+		return evm.Depth() <= 2, nil
+	}
+	return con.isTopLevel(c, evm), nil
 }
 
 // Gets the contract's L2 alias
@@ -78,7 +81,11 @@ func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest 
 
 // Checks if the caller's caller was aliased
 func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
-	aliased := evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType)
+	topLevel := con.isTopLevel(c, evm)
+	if c.State.FormatVersion() < 6 {
+		topLevel = evm.Depth() == 2
+	}
+	aliased := topLevel && util.DoesTxTypeAlias(c.txProcessor.TopTxType)
 	return aliased, nil
 }
 
@@ -91,11 +98,11 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 		address = c.txProcessor.Callers[evm.Depth()-2]
 	}
 
-	if evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType) {
+	aliased, err := con.WasMyCallersAddressAliased(c, evm)
+	if aliased {
 		address = util.InverseRemapL1Address(address)
 	}
-
-	return address, nil
+	return address, err
 }
 
 // Sends a transaction to L1, adding it to the outbox
@@ -193,4 +200,9 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32
 // Send paid eth to the destination on L1
 func (con ArbSys) WithdrawEth(c ctx, evm mech, value huge, destination addr) (huge, error) {
 	return con.SendTxToL1(c, evm, value, destination, []byte{})
+}
+
+func (con ArbSys) isTopLevel(c ctx, evm mech) bool {
+	depth := evm.Depth()
+	return depth < 2 || evm.Origin == c.txProcessor.Callers[depth]
 }
