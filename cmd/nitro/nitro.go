@@ -346,7 +346,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
 
 	vcsRevision, vcsTime := genericconf.GetVersion()
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
@@ -407,18 +408,10 @@ func main() {
 
 		validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
 		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey || setupNeedsKey {
-			daSigner, err = arbnode.GetSignerFromWallet(l1Wallet)
+			l1TransactionOpts, daSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				fmt.Printf("%v\n", err.Error())
 				return
-			}
-
-			l1TransactionOpts, err = util.GetTransactOptsFromWallet(
-				l1Wallet,
-				new(big.Int).SetUint64(nodeConfig.L1.ChainID),
-			)
-			if err != nil {
-				panic(err)
 			}
 		}
 	} else if l1Client != nil {
@@ -448,10 +441,10 @@ func main() {
 		}
 		addr, err := validator.GetValidatorWallet(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
-			log.Error("error creating validator wallet contract", "error", err)
+			log.Error("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
 			return
 		}
-		fmt.Printf("created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart", addr.String())
+		fmt.Printf("created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
 
 		return
 	}
@@ -788,7 +781,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if nodeConfig.Persistent.Chain == "" {
 		if !chainFound {
 			// If persistent-chain not defined, user not creating custom chain
-			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d. --persistent.chain must be specified\n", l1ChainId.Uint64(), l2ChainId)
+			return nil, nil, nil, nil, nil, fmt.Errorf("Unknown chain with L1: %d, L2: %d.  Change L1, update L2 chain id, or provide --persistent.chain\n", l1ChainId.Uint64(), l2ChainId)
 		}
 		return nil, nil, nil, nil, nil, errors.New("--persistent.chain not specified")
 	}
