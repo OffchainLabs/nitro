@@ -77,7 +77,7 @@ func newTestBroadcastClient(listenerAddress net.Addr, idleTimeout time.Duration,
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, wg *sync.WaitGroup) {
 	ts := NewDummyTransactionStreamer()
-	broadcastClient := newTestBroadcastClient(addr, 20*time.Second, ts)
+	broadcastClient := newTestBroadcastClient(addr, 200*time.Millisecond, ts)
 	broadcastClient.Start(ctx)
 	messageCount := 0
 
@@ -126,7 +126,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	defer b.StopAndWait()
 
 	ts := NewDummyTransactionStreamer()
-	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), 20*time.Second, ts)
+	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), 200*time.Millisecond, ts)
 	broadcastClient.Start(ctx)
 
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
@@ -176,13 +176,13 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	}
 	defer b1.StopAndWait()
 
-	broadcastClient := newTestBroadcastClient(b1.ListenerAddr(), 2*time.Second, nil)
-
+	broadcastClient := newTestBroadcastClient(b1.ListenerAddr(), 200*time.Millisecond, nil)
 	broadcastClient.Start(ctx)
+	defer broadcastClient.StopAndWait()
 
-	// Client set to timeout connection at 2 seconds, and server set to send ping every 50 seconds,
-	// so at least one timeout/reconnect should happen after 4 seconds
-	time.Sleep(4 * time.Second)
+	// Client set to timeout connection at 200 milliseconds, and server set to send ping every 50 seconds,
+	// so at least one timeout/reconnect should happen after 1 seconds
+	time.Sleep(1 * time.Second)
 
 	if broadcastClient.GetRetryCount() <= 0 {
 		t.Error("Should have had some retry counts")
@@ -220,7 +220,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	wg.Wait()
 
 	// give the above connections time to reconnect
-	time.Sleep(4 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	// Confirmed Accumulator will also broadcast to the clients.
 	b.Confirm(0) // remove the first message we generated
@@ -261,7 +261,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 
 func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, t *testing.T, clientIndex int, wg *sync.WaitGroup) {
 	ts := NewDummyTransactionStreamer()
-	broadcastClient := newTestBroadcastClient(addr, 60*time.Second, ts)
+	broadcastClient := newTestBroadcastClient(addr, 200*time.Millisecond, ts)
 	broadcastClient.Start(ctx)
 
 	go func() {

@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"time"
@@ -54,7 +53,7 @@ func main() {
 		Account:      *deployAccount,
 		PasswordImpl: *l1passphrase,
 	}
-	l1TransactionOpts, err := util.GetTransactOptsFromWallet(&wallet, l1ChainId)
+	l1TransactionOpts, _, err := util.OpenWallet("l1", &wallet, l1ChainId)
 	if err != nil {
 		flag.Usage()
 		log.Error("error reading keystore")
@@ -107,7 +106,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if err := ioutil.WriteFile(*outfile, deployData, 0600); err != nil {
+	if err := os.WriteFile(*outfile, deployData, 0600); err != nil {
 		panic(err)
 	}
 }

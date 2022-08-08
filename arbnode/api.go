@@ -22,11 +22,25 @@ import (
 )
 
 type BlockValidatorAPI struct {
+	val *validator.BlockValidator
+}
+
+func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (hexutil.Uint64, error) {
+	block := a.val.LastBlockValidated()
+	return hexutil.Uint64(block), nil
+}
+
+func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (common.Hash, error) {
+	_, hash, _ := a.val.LastBlockValidatedAndHash()
+	return hash, nil
+}
+
+type BlockValidatorDebugAPI struct {
 	val        *validator.BlockValidator
 	blockchain *core.BlockChain
 }
 
-func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash) (bool, error) {
+func (a *BlockValidatorDebugAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash) (bool, error) {
 	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
 	if err != nil {
 		return false, err
@@ -47,14 +61,12 @@ func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.Bl
 	return a.val.ValidateBlock(ctx, header, moduleRoot)
 }
 
-func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (hexutil.Uint64, error) {
-	block := a.val.LastBlockValidated()
-	return hexutil.Uint64(block), nil
+type ArbAPI struct {
+	txPublisher TransactionPublisher
 }
 
-func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (common.Hash, error) {
-	_, hash, _ := a.val.LastBlockValidatedAndHash()
-	return hash, nil
+func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
+	return a.txPublisher.CheckHealth(ctx)
 }
 
 type ArbDebugAPI struct {
