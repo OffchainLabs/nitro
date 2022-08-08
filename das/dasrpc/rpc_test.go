@@ -47,7 +47,9 @@ func TestRPC(t *testing.T) {
 	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
 	testhelpers.RequireImpl(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	localDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService)
+	privKey, err := config.KeyConfig.BLSPrivKey()
+	testhelpers.RequireImpl(t, err)
+	localDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(privKey, nil, storageService, "")
 	testhelpers.RequireImpl(t, err)
 	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, localDas)
 	defer func() {

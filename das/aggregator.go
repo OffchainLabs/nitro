@@ -173,15 +173,15 @@ func (a *Aggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, e
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
 			blob, err := d.service.GetByHash(ctx, hash)
+			if err == nil && !dastree.ValidHash(hash, blob) {
+				err = fmt.Errorf("das (mask %X) returned data that doesn't match requested hash", d.signersMask)
+			}
 			if err != nil {
+				log.Warn("Couldn't retrieve message from DAS", "err", err)
 				errorChan <- err
 				return
 			}
-			if dastree.ValidHash(hash, blob) {
-				blobChan <- blob
-			} else {
-				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
-			}
+			blobChan <- blob
 		}(subCtx, d)
 	}
 
@@ -193,14 +193,13 @@ func (a *Aggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, e
 			return blob, nil
 		case err := <-errorChan:
 			errorCollection = append(errorCollection, err)
-			log.Warn("Couldn't retrieve message from DAS", "err", err)
 			errorCount++
 		case <-ctx.Done():
 			break
 		}
 	}
 
-	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS: %v", errorCollection)
+	return nil, fmt.Errorf("data wasn't able to be retrieved from any DAS: %v", errorCollection)
 }
 
 type storeResponse struct {

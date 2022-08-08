@@ -29,7 +29,7 @@ func (w *WalletConfig) Password() *string {
 
 var WalletConfigDefault = WalletConfig{
 	Pathname:      "",
-	PasswordImpl:  "",
+	PasswordImpl:  PASSWORD_NOT_SET,
 	PrivateKey:    "",
 	Account:       "",
 	OnlyCreateKey: false,
@@ -38,7 +38,7 @@ var WalletConfigDefault = WalletConfig{
 func WalletConfigAddOptions(prefix string, f *flag.FlagSet, defaultPathname string) {
 	f.String(prefix+".pathname", defaultPathname, "pathname for wallet")
 	f.String(prefix+".password", WalletConfigDefault.PasswordImpl, "wallet passphrase")
-	f.String(prefix+".private-key", WalletConfigDefault.PasswordImpl, "private key for wallet")
+	f.String(prefix+".private-key", WalletConfigDefault.PrivateKey, "private key for wallet")
 	f.String(prefix+".account", WalletConfigDefault.Account, "account to use (default is first account in keystore)")
 	f.Bool(prefix+".only-create-key", WalletConfigDefault.OnlyCreateKey, "if true, creates new key then exits")
 }

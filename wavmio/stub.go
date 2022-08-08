@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -90,14 +89,14 @@ func StubInit() {
 	delayedMsgFirstPos = uint64(*delayedPositionFlag)
 	lastBlockHash = common.HexToHash(*lastBlockFlag)
 	for _, path := range delayedMsgPath {
-		msg, err := ioutil.ReadFile(path)
+		msg, err := os.ReadFile(path)
 		if err != nil {
 			panic(err)
 		}
 		delayedMsgs = append(delayedMsgs, msg)
 	}
 	if *inboxPath != "" {
-		msg, err := ioutil.ReadFile(*inboxPath)
+		msg, err := os.ReadFile(*inboxPath)
 		if err != nil {
 			panic(err)
 		}
