@@ -40,6 +40,10 @@ Additionally, as long as there’s even one honest validator, the chain will rem
 #### And how exactly is “fraud” “proven”? Sounds complicated. 
 Oh, it’s not so bad. In essence: if two validators disagree, only one of them (at most) can be telling the truth. In a dispute, the two validators play an interactive, call-and-response game, in which they narrow down their dispute to a single computational step (think of something small and simple, like multiplying two numbers). This one step gets executed on L1, and will, by necessity, prove that the honest party was telling the truth. For a more detailed rundown, see [here](OSPAssumptions.md). 	
 
+#### This dispute game obviously takes some time; does this impose any sort of delay on Arbitrum users' transactions?
+The only delay that's felt by a user is in "withdrawing" — moving their funds from Arbitrum back to Ethereum; if users are withdrawing directly from Arbitrum to Ethereum, they must typically wait 1 week before receiving their funds on L1. If users use a fast-bridge application, however, they can bypass this delay period entirely (likely for a small fee). Anything else a user does — i.e., depositing funds from Ethereum onto Arbitrum, or using a dapp deployed on Arbitrum chain — doesn't incur this delay period.  
+
+
 #### Okay, so backing up: the “optimistic execution” part is how and why Arbitrum is able to offer low fees, yes?
 Primarily, yes, this is the heart of where the savings come from. However, there are a number of other means by which Arbitrum alleviates the burden on L1, all of which translate to lower transaction costs for end users. 
 For one, Arbitrum transactions are submitted on the L1 in batches; typically, a single batch (submitted in a single L1 transaction) will contain several hundred L2 transactions. Batching amortizes the overhead cost of interacting with the L1, and thus offers significant savings over posting individual transactions at a time. Furthermore, the transaction data is posted on L1 in compressed form (and only decompressed within the L2 environment), further minimizing the transaction’s L1 footprint.
@@ -58,5 +62,5 @@ Arbitrum Rollup is very awesome and cool; its design is geared heavily toward av
 An Arbitrum AnyTrust chain doesn’t have the same decentralization / trustlessness / permissionless security guarantees of a Rollup chain, and thus can offer lower fees. Rollup and AnyTrust are similar in many ways, though have one key difference: whereas in Rollup, all data is posted on L1 (which allows anyone to permissionless join as a validator), in AnyTrust, data is managed off-chain. In the case of a challenge, an AnyTrust chain reverts back to “rollup mode”; the security assumption here is that at least 2 of the committee members are honest (i.e., they will provide the data when it’s necessary). Keeping the data off-chain in the happy/common case means the system can charge the user significantly lower fees.
 For applications that require high transaction throughput and don’t require the full decentralization that rollups provide, AnyTrust could be a sensible tradeoff. 
 	
-### So there's more than Arbitrum chain out there?
+### So there's more than one Arbitrum chain out there?
 Yep! The fact that multiple chains can run in parallel is a crucial perk to off-chain scaling technology. Currently, on Ethereum mainnet, there are 2 Arbitrum chains: one Arbitrum Rollup chain, called "Arbitrum One," and one AnyTrust chain, called "Nova"; users and developers can pick whatever suits their security / transaction cost needs.
