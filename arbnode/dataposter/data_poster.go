@@ -131,15 +131,6 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 	}, nil
 }
 
-func (p *DataPoster[Meta]) Initialize(ctx context.Context) error {
-	nonce, err := p.client.NonceAt(ctx, p.auth.From, nil)
-	if err != nil {
-		return err
-	}
-	p.nonce = nonce
-	return nil
-}
-
 func (p *DataPoster[Meta]) From() common.Address {
 	return p.auth.From
 }

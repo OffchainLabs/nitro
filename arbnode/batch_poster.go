@@ -523,6 +523,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
+	b.dataPoster.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		err := b.maybePostSequencerBatch(ctx)
@@ -546,4 +547,9 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		}
 		return b.config.BatchPollDelay
 	})
+}
+
+func (b *BatchPoster) StopAndWait() {
+	b.StopWaiter.StopAndWait()
+	b.dataPoster.StopAndWait()
 }

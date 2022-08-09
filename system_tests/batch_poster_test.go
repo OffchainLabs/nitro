@@ -70,6 +70,7 @@ func TestBatchPosterParallel(t *testing.T) {
 		batchPoster, err := arbnode.NewBatchPoster(nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, &conf.BatchPoster, nodeA.DeployInfo.SequencerInbox, &seqTxOpts, nil)
 		Require(t, err)
 		batchPoster.Start(ctx)
+		defer batchPoster.StopAndWait()
 	}
 
 	lastTxHash := txs[len(txs)-1].Hash()
