@@ -75,10 +75,9 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 	// init DB to known state
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
-	feedErrChan := make(chan error, 10)
 	createStartNode := func(nodeNum int) {
 		nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
-		_, node, _, l2stack := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false, feedErrChan)
+		_, node, _, l2stack := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 		node.TxStreamer.StopAndWait() // prevent blocks from building
 		nodes[nodeNum] = &nodeInfo{n: node, s: l2stack}
 	}
@@ -130,7 +129,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		return succeeded
 	}
 
-	waitForMsgEverywhere := func(msgNum arbutil.MessageIndex, errChan chan error) {
+	waitForMsgEverywhere := func(msgNum arbutil.MessageIndex) {
 		for _, currentNode := range nodes {
 			if currentNode == nil {
 				continue
@@ -145,8 +144,6 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", currentNode.n.SeqCoordinator.DebugPrint())
 				}
 				select {
-				case err := <-errChan:
-					Fail(t, err)
 				case <-time.After(nodeConfig.SeqCoordinator.UpdateInterval / 3):
 				}
 			}
@@ -255,7 +252,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		}
 
 		// all nodes get messages
-		waitForMsgEverywhere(sequencedMesssages, feedErrChan)
+		waitForMsgEverywhere(sequencedMesssages)
 
 		// can sequence after up to date
 		for i := arbutil.MessageIndex(0); i < messagesPerRound; i++ {
@@ -267,7 +264,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		}
 
 		// all nodes get messages
-		waitForMsgEverywhere(sequencedMesssages, feedErrChan)
+		waitForMsgEverywhere(sequencedMesssages)
 	}
 
 	for nodeNum := range nodes {
@@ -287,9 +284,8 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
-	feedErrChan := make(chan error, 10)
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
-	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false, feedErrChan)
+	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
 	defer requireClose(t, l2stackA)
 
 	redisOptions, err := redis.ParseURL(nodeConfig.SeqCoordinator.RedisUrl)
@@ -309,7 +305,7 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	}
 
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
-	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false, feedErrChan)
+	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 	defer requireClose(t, l2stackB)
 
 	l2Info.GenerateAccount("User2")
@@ -342,9 +338,8 @@ func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
-	feedErrChan := make(chan error, 10)
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
-	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false, feedErrChan)
+	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
 	defer requireClose(t, l2stackA)
 
 	redisOptions, err := redis.ParseURL(nodeConfig.SeqCoordinator.RedisUrl)
@@ -367,7 +362,7 @@ func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	nodeConfig = &nodeConfigCopy
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
 	nodeConfig.SeqCoordinator.SigningKey = "629b39225c813bf1975fb49bcb6ca2622f2c62509f138ac609f0c048764a95ee"
-	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false, feedErrChan)
+	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 	defer requireClose(t, l2stackB)
 
 	l2Info.GenerateAccount("User2")

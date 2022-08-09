@@ -39,7 +39,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < clientCount; i++ {
-		startMakeBroadcastClient(ctx, t, b.ListenerAddr(), i, messageCount, chainId, &wg, feedErrChan)
+		startMakeBroadcastClient(ctx, t, b.ListenerAddr(), i, messageCount, chainId, &wg)
 	}
 
 	go func() {
@@ -77,8 +77,9 @@ func newTestBroadcastClient(listenerAddress net.Addr, chainId uint64, currentMes
 	return NewBroadcastClient(fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, idleTimeout, txStreamer, feedErrChan)
 }
 
-func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, feedErrChan chan error) {
+func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup) {
 	ts := NewDummyTransactionStreamer()
+	feedErrChan := make(chan error, 10)
 	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 200*time.Millisecond, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 	messageCount := 0
@@ -97,6 +98,9 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, 
 				gotMsg = true
 			case <-timer.C:
 			case <-ctx.Done():
+			case err := <-feedErrChan:
+				t.Error(err)
+				return
 			}
 			timer.Stop()
 			if !gotMsg {

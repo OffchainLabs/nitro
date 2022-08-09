@@ -26,8 +26,7 @@ func TestDeploy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	feedErrChan := make(chan error, 10)
-	l2info, _, client, l2stack := CreateTestL2(t, ctx, feedErrChan)
+	l2info, _, client, l2stack := CreateTestL2(t, ctx)
 	defer requireClose(t, l2stack)
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -55,8 +54,7 @@ func TestEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	feedErrChan := make(chan error, 10)
-	l2info, _, client, l2stack := CreateTestL2(t, ctx, feedErrChan)
+	l2info, _, client, l2stack := CreateTestL2(t, ctx)
 	defer requireClose(t, l2stack)
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
@@ -136,8 +134,7 @@ func TestComponentEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	feedErrChan := make(chan error, 10)
-	l2info, node, client, l2stack := CreateTestL2(t, ctx, feedErrChan)
+	l2info, node, client, l2stack := CreateTestL2(t, ctx)
 	defer requireClose(t, l2stack)
 
 	l1BaseFee := big.NewInt(l1pricing.InitialPricePerUnitWei)

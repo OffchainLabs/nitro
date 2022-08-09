@@ -19,14 +19,13 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 
 	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 
-	feedErrChan := make(chan error, 10)
-	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, feedErrChan)
+	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
-	l2clientB, _, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability, feedErrChan)
+	l2clientB, _, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability)
 	defer requireClose(t, l2stackB)
 
 	l2info.GenerateAccount("User2")

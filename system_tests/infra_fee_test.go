@@ -25,8 +25,7 @@ func TestInfraFee(t *testing.T) {
 	defer cancel()
 	nodeconfig := arbnode.ConfigDefaultL2Test()
 
-	feedErrChan := make(chan error, 10)
-	l2info, _, client, stack := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, true, feedErrChan)
+	l2info, _, client, stack := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, true)
 	defer requireClose(t, stack)
 
 	l2info.GenerateAccount("User2")

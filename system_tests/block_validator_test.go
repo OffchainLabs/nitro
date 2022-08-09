@@ -26,8 +26,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 
 	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeString)
 
-	feedErrChan := make(chan error, 10)
-	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, feedErrChan)
+	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
@@ -36,7 +35,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
-	l2clientB, nodeB, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, validatorConfig, feedErrChan)
+	l2clientB, nodeB, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, validatorConfig)
 	defer requireClose(t, l2stackB)
 	l2info.GenerateAccount("User2")
 
@@ -109,12 +108,6 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		}
 		lastBlock, err = l2clientB.BlockByHash(ctx, lastBlock.ParentHash())
 		Require(t, err)
-
-		select {
-		case err := <-feedErrChan:
-			Fail(t, "feed error:", err)
-		default:
-		}
 	}
 	timeout := getDeadlineTimeout(t, time.Minute*10)
 	if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlock.NumberU64(), timeout) {

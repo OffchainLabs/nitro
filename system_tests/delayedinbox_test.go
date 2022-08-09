@@ -37,8 +37,7 @@ func WrapL2ForDelayed(t *testing.T, l2Tx *types.Transaction, l1info *BlockchainT
 func TestDelayInboxSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	feedErrChan := make(chan error, 10)
-	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true, feedErrChan)
+	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 

@@ -18,8 +18,7 @@ func TestSequencerWhitelist(t *testing.T) {
 
 	config := arbnode.ConfigDefaultL2Test()
 	config.Sequencer.SenderWhitelist = GetTestAddressForAccountName(t, "Owner").String() + "," + GetTestAddressForAccountName(t, "User").String()
-	feedErrChan := make(chan error, 10)
-	l2info, _, client, l2stack := CreateTestL2WithConfig(t, ctx, nil, config, true, feedErrChan)
+	l2info, _, client, l2stack := CreateTestL2WithConfig(t, ctx, nil, config, true)
 	defer requireClose(t, l2stack)
 
 	l2info.GenerateAccount("User")

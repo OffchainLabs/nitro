@@ -137,7 +137,7 @@ func TestDASRekey(t *testing.T) {
 		l1NodeConfigB.BlockValidator.Enable = false
 		l1NodeConfigB.DataAvailability.Enable = true
 		l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
-		l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB, feedErrChan)
+		l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 		requireClose(t, l2stackA)
 		requireClose(t, l2stackB)
@@ -172,7 +172,7 @@ func TestDASRekey(t *testing.T) {
 	l2clientA := ClientForStack(t, l2stackA)
 
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB, feedErrChan)
+	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(2e12), l2clientB)
 
 	Require(t, l2stackA.Close())
@@ -352,7 +352,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigA.DataAvailability.Enable = true
 	l1NodeConfigB.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB, feedErrChan)
+	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	// Now create a separate REST DAS server using the same local disk storage
 	// and connect a node to it, and make sure it syncs.
@@ -396,7 +396,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 		RequestTimeout: 5 * time.Second,
 	}
-	l2clientC, _, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigC, feedErrChan)
+	l2clientC, _, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigC)
 
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB, l2clientC)
 

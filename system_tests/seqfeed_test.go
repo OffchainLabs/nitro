@@ -38,14 +38,13 @@ func TestSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	feedErrChan := make(chan error, 10)
-	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true, feedErrChan)
+	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 	defer requireClose(t, l2stackA)
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, _, client2, l2stackB := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false, feedErrChan)
+	_, _, client2, l2stackB := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
 	defer requireClose(t, l2stackB)
 
 	l2info1.GenerateAccount("User2")
@@ -74,8 +73,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	feedErrChan := make(chan error, 10)
-	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true, feedErrChan)
+	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 	defer requireClose(t, l2stackA)
 
 	bigChainId, err := client1.ChainID(ctx)
@@ -86,6 +84,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	relayClientConf := *newBroadcastClientConfigTest(port)
 
+	feedErrChan := make(chan error, 10)
 	currentRelay := relay.NewRelay(relayServerConf, relayClientConf, chainId, feedErrChan)
 	err = currentRelay.Start(ctx)
 	Require(t, err)
@@ -94,8 +93,9 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
-	_, _, client3, l2stackC := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false, feedErrChan)
+	_, _, client3, l2stackC := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
 	defer requireClose(t, l2stackC)
+	StartWatchChanErr(t, ctx, feedErrChan, l2stackC)
 
 	l2info1.GenerateAccount("User2")
 
@@ -125,8 +125,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	chainConfig, nodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	feedErrChan := make(chan error, 10)
-	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig, feedErrChan)
+	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
@@ -137,7 +136,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
-	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC, feedErrChan)
+	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
 	defer requireClose(t, l2stackC)
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -147,7 +146,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB, feedErrChan)
+	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
 	defer requireClose(t, l2stackB)
 
 	l2infoA.GenerateAccount("FraudUser")

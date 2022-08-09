@@ -243,13 +243,12 @@ func createTestNodeOnL1(
 	t *testing.T,
 	ctx context.Context,
 	isSequencer bool,
-	feedErrChan chan error,
 ) (
 	l2info info, node *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
 	conf := arbnode.ConfigDefaultL1Test()
-	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, conf, params.ArbitrumDevTestChainConfig(), feedErrChan)
+	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, conf, params.ArbitrumDevTestChainConfig())
 }
 
 func createTestNodeOnL1WithConfig(
@@ -258,11 +257,11 @@ func createTestNodeOnL1WithConfig(
 	isSequencer bool,
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
-	feedErrChan chan error,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
+	feedErrChan := make(chan error, 10)
 	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
@@ -288,18 +287,22 @@ func createTestNodeOnL1WithConfig(
 	Require(t, l2stack.Start())
 
 	l2client = ClientForStack(t, l2stack)
+
+	StartWatchChanErr(t, ctx, feedErrChan, l2stack)
+
 	return
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context, feedErrChan chan error) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *node.Node) {
-	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true, feedErrChan)
+func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *node.Node) {
+	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true)
 }
 
 func CreateTestL2WithConfig(
-	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool, feedErrChan chan error,
+	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *node.Node) {
+	feedErrChan := make(chan error, 10)
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
 	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
@@ -325,7 +328,26 @@ func CreateTestL2WithConfig(
 		Require(t, err)
 	}
 
+	StartWatchChanErr(t, ctx, feedErrChan, stack)
+
 	return l2info, currentNode, client, stack
+}
+
+func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, stack *node.Node) {
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case err := <-feedErrChan:
+			t.Errorf("error occurred: %v", err)
+			if stack != nil {
+				err = stack.Close()
+				if err != nil {
+					t.Errorf("error closing stack: %v", err)
+				}
+			}
+		}
+	}()
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {
@@ -345,7 +367,6 @@ func Create2ndNode(
 	l1stack *node.Node,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	dasConfig *das.DataAvailabilityConfig,
-	feedErrChan chan error,
 ) (*ethclient.Client, *arbnode.Node, *node.Node) {
 	nodeConf := arbnode.ConfigDefaultL1NonSequencerTest()
 	if dasConfig == nil {
@@ -353,7 +374,7 @@ func Create2ndNode(
 	} else {
 		nodeConf.DataAvailability = *dasConfig
 	}
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, nodeConf, feedErrChan)
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, nodeConf)
 }
 
 func Create2ndNodeWithConfig(
@@ -363,8 +384,8 @@ func Create2ndNodeWithConfig(
 	l1stack *node.Node,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
-	feedErrChan chan error,
 ) (*ethclient.Client, *arbnode.Node, *node.Node) {
+	feedErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		Fail(t, err)
@@ -388,6 +409,9 @@ func Create2ndNodeWithConfig(
 	err = l2stack.Start()
 	Require(t, err)
 	l2client := ClientForStack(t, l2stack)
+
+	StartWatchChanErr(t, ctx, feedErrChan, l1stack)
+
 	return l2client, currentNode, l2stack
 }
 
