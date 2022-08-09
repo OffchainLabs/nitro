@@ -17,7 +17,7 @@ Ethereum is awesome; on its own, however, it’s also very limited. The Ethereum
 #### Why does Ethereum have such low TPS?
 This was a deliberate decision in Ethereum’s design. Ethereum requires that its nodes (computers running the Ethereum software) have a way of coming to consensus on the current state of things; the way they do this is by processing every transaction in Ethereum’s history; i.e., if you’ve ever used Ethereum, every Ethereum full node has a copy of your transactions in its blockchain ledger. 
 
-One of the Ethereum community’s precepts, being an open, decentralized, peer to peer system, is that it should be reasonably accessible for anyone to run an Ethereum node and validate the chain for themself; i.e., if it gets too expensive (in terms of hardware requirements / computational resources), this undercuts the fundamental goal of decentralization. 
+One of the Ethereum community’s precepts, being an open, decentralized, peer to peer system, is that it should be reasonably accessible for anyone to run an Ethereum node and validate the chain for themselves; i.e., if it gets too expensive (in terms of hardware requirements / computational resources), this undercuts the fundamental goal of decentralization. 
 The combination of these two factors — every node has to process every transaction, and we want it to be relatively feasible to run a node — means Ethereum transaction throughput has to be capped fairly low.
 
 
@@ -30,11 +30,11 @@ This ability to adjudicate and prove fraud on L1 is Arbitrum’s key, fundamenta
 Yes, indeed we can be. This is where the “rollup” part comes in. The data that gets fed into an Arbitrum Rollup chain (i.e., user’s transaction data) is posted directly on Ethereum. Thus, as long as Ethereum itself is running securely, anybody who’s interested has visibility into what’s going on in Arbitrum, and has the ability to detect and prove fraud.
 
 #### Who actually does this work (of checking for fraud, proving it, etc?)
-The parties who move the Arbitrum chain forward; i.e., making claims about the chain’s state, disputing other’s claims, etc., are called validators. 
+The parties who move the Arbitrum chain state forward on L1 — i.e., making claims about the chain’s state, disputing other’s claims, etc. — are called validators. 
 In practice, we don’t expect the average Arbitrum user to be interested in running a 
 validator, just like the average Ethereum user typically doesn’t run their own layer 1 mining (or staking) node. The crucial property, however, is that anybody can; becoming an Arbitrum validator requires no special permission (post-mainnet beta), only that a user runs the open source validator software, (and stakes Ether when/if they need to take action).
 
-Additionally, as long as there’s even one honest validator, the chain will remain secure; i.e., it only takes one non-malicious fraud-prover to catch any number of malicious trouble makers. These properties together make the system “trustless”; users are not relying on any special designated party for their funds to be secure.
+Additionally, as long as there’s even just one honest validator, the chain will remain secure; i.e., it only takes one non-malicious fraud-prover to catch any number of malicious trouble makers. These properties together make the system “trustless”; users are not relying on any special designated party for their funds to be secure.
 
 
 #### And how exactly is “fraud” “proven”? Sounds complicated. 
