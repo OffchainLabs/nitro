@@ -168,7 +168,10 @@ func startClientStore(args []string) error {
 
 	if config.RandomMessageSize > 0 {
 		message := make([]byte, config.RandomMessageSize)
-		rand.Read(message)
+		_, err = rand.Read(message)
+		if err != nil {
+			return err
+		}
 		cert, err = dasClient.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	} else if len(config.Message) > 0 {
 		cert, err = dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
