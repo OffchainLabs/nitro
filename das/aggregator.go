@@ -287,21 +287,27 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	var storeFailures, successfullyStoredCount int
 	var errs []error
 	for i := 0; i < len(a.services) && storeFailures <= a.maxAllowedServiceStoreFailures && successfullyStoredCount < a.requiredServicesForStore; i++ {
+		var r storeResponse
 		select {
+		case r = <-responses:
 		case <-ctx.Done():
-			break
-		case r := <-responses:
-			if r.err != nil {
-				storeFailures++
-				errs = append(errs, fmt.Errorf("Error from backend %v, with signer mask %d: %w", r.details.service, r.details.signersMask, r.err))
-				continue
+			// Give it one last shot to pull out a response
+			select {
+			case r = <-responses:
+			default:
+				r.err = ctx.Err()
 			}
-
-			pubKeys = append(pubKeys, r.details.pubKey)
-			sigs = append(sigs, r.sig)
-			aggSignersMask |= r.details.signersMask
-			successfullyStoredCount++
 		}
+		if r.err != nil {
+			storeFailures++
+			errs = append(errs, fmt.Errorf("Error from backend %v, with signer mask %d: %w", r.details.service, r.details.signersMask, r.err))
+			continue
+		}
+
+		pubKeys = append(pubKeys, r.details.pubKey)
+		sigs = append(sigs, r.sig)
+		aggSignersMask |= r.details.signersMask
+		successfullyStoredCount++
 	}
 
 	if successfullyStoredCount < a.requiredServicesForStore {
