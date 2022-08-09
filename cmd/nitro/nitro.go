@@ -788,10 +788,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
 		err = util.DumpConfig(k, map[string]interface{}{
-			"l1.wallet.password":    "",
-			"l1.wallet.private-key": "",
-			"l2.wallet.password":    "",
-			"l2.wallet.private-key": "",
+			"l1.wallet.password":        "",
+			"l1.wallet.private-key":     "",
+			"l2.dev-wallet.password":    "",
+			"l2.dev-wallet.private-key": "",
 		})
 		if err != nil {
 			return nil, nil, nil, nil, nil, err

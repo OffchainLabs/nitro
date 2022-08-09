@@ -148,7 +148,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	err = stakerA.Initialize(ctx)
 	Require(t, err)
 
-	valWalletB, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader, &l1authB, 0, func(common.Address) {})
+	valWalletB, err := validator.NewValidatorWallet(nil, l2nodeB.DeployInfo.ValidatorWalletCreator, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader, &l1authB, 0, func(common.Address) {})
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	stakerB, err := validator.NewStaker(
@@ -163,10 +163,31 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.TxStreamer,
 		l2nodeB.BlockValidator,
 		nitroMachineLoader,
-		l2nodeA.DeployInfo.ValidatorUtils,
+		l2nodeB.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
+	Require(t, err)
+
+	valWalletC, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {})
+	Require(t, err)
+	valConfig.Strategy = "Watchtower"
+	stakerC, err := validator.NewStaker(
+		l2nodeA.L1Reader,
+		valWalletC,
+		bind.CallOpts{},
+		valConfig,
+		l2nodeA.ArbInterface.BlockChain(),
+		nil,
+		l2nodeA.InboxReader,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.BlockValidator,
+		nitroMachineLoader,
+		l2nodeA.DeployInfo.ValidatorUtils,
+	)
+	Require(t, err)
+	err = stakerC.Initialize(ctx)
 	Require(t, err)
 
 	l2info.GenerateAccount("BackgroundUser")
@@ -263,6 +284,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		Require(t, err)
 		if isHonestZombie {
 			Fail(t, "staker A became a zombie")
+		}
+		watchTx, err := stakerC.Act(ctx)
+		Require(t, err, "watchtower staker failed to act")
+		if watchTx != nil {
+			Fail(t, "watchtower staker made a transaction")
 		}
 		for j := 0; j < 5; j++ {
 			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)

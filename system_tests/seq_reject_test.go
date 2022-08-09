@@ -87,7 +87,7 @@ func TestSequencerRejection(t *testing.T) {
 					info.Nonce += 1
 				} else if user%3 == 1 {
 					txData.Data = revertId
-					expectedErr = "execution reverted"
+					expectedErr = "execution reverted: SOLIDITY_REVERTING"
 				} else {
 					txData.Nonce = 1 << 32
 					expectedErr = "nonce too high"
