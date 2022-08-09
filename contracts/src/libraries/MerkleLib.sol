@@ -33,7 +33,7 @@ library MerkleLib {
         uint256 proofItems = nodes.length;
         if (proofItems > 256) revert MerkleProofTooLong(proofItems, 256);
         bytes32 h = item;
-        for (uint256 i = 0; i < proofItems; i++) {
+        for (uint256 i = 0; i < proofItems; ) {
             bytes32 node = nodes[i];
             if ((route & (1 << i)) == 0) {
                 assembly {
@@ -47,6 +47,9 @@ library MerkleLib {
                     mstore(0x20, h)
                     h := keccak256(0x00, 0x40)
                 }
+            }
+            unchecked {
+                ++i;
             }
         }
         return h;
