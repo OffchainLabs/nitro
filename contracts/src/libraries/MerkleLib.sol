@@ -35,7 +35,7 @@ library MerkleLib {
         bytes32 h = item;
         for (uint256 i = 0; i < proofItems; i++) {
             bytes32 node = nodes[i];
-            if (route % 2 == 0) {
+            if ((route & (1 << i)) == 0) {
                 assembly {
                     mstore(0x00, h)
                     mstore(0x20, node)
@@ -48,7 +48,6 @@ library MerkleLib {
                     h := keccak256(0x00, 0x40)
                 }
             }
-            route /= 2;
         }
         return h;
     }
