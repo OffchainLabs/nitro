@@ -171,11 +171,13 @@ func NewStaker(
 }
 
 func (s *Staker) Initialize(ctx context.Context) error {
-	err := s.L1Validator.Initialize(ctx)
-	if err != nil {
-		return err
+	if s.strategy != WatchtowerStrategy {
+		err := s.wallet.Initialize(ctx)
+		if err != nil {
+			return err
+		}
 	}
-	return s.wallet.Initialize(ctx)
+	return s.L1Validator.Initialize(ctx)
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
