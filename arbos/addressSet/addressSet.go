@@ -10,8 +10,8 @@ import (
 )
 
 // Represents a set of addresses
-//   size is stored at position 0
-//   members of the set are stored sequentially from 1 onward
+// size is stored at position 0
+// members of the set are stored sequentially from 1 onward
 type AddressSet struct {
 	backingStorage *storage.Storage
 	size           storage.StorageBackedUint64

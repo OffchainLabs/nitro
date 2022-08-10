@@ -27,7 +27,7 @@ func newBroadcasterConfigTest() *wsbroadcastserver.BroadcasterConfig {
 func newBroadcastClientConfigTest(port int) *broadcastclient.BroadcastClientConfig {
 	return &broadcastclient.BroadcastClientConfig{
 		URLs:    []string{fmt.Sprintf("ws://localhost:%d/feed", port)},
-		Timeout: 20 * time.Second,
+		Timeout: 200 * time.Millisecond,
 	}
 }
 

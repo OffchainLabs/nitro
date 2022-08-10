@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/blsSignatures"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -27,31 +29,22 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	numBackendDAS := 10
 	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
-		dbPath := t.TempDir()
-		_, _, err := GenerateAndStoreKeys(dbPath)
+		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
 		config := DataAvailabilityConfig{
 			Enable: true,
 			KeyConfig: KeyConfig{
-				KeyDir: dbPath,
-			},
-			LocalFileStorageConfig: LocalFileStorageConfig{
-				Enable:  true,
-				DataDir: dbPath,
+				PrivKey: privKey,
 			},
 			L1NodeURL: "none",
 		}
 
-		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
-		Require(t, err)
-		defer lifecycleManager.StopAndWaitUntil(time.Second)
+		storageService := NewMemoryBackedStorageService(ctx)
 		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
-		pubKey, _, err := ReadKeysFromFile(dbPath)
-		Require(t, err)
 		signerMask := uint64(1 << i)
-		details, err := NewServiceDetails(das, *pubKey, signerMask)
+		details, err := NewServiceDetails(das, *das.pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
 	}
@@ -138,10 +131,10 @@ func (w *WrapGetByHash) GetByHash(ctx context.Context, hash common.Hash) ([]byte
 	case success:
 		return w.DataAvailabilityService.GetByHash(ctx, hash)
 	case immediateError:
-		return nil, errors.New("Expected Retrieve failure")
+		return nil, errors.New("expected Retrieve failure")
 	case tooSlow:
 		<-ctx.Done()
-		return nil, errors.New("Canceled")
+		return nil, ctx.Err()
 	case dataCorruption:
 		data, err := w.DataAvailabilityService.GetByHash(ctx, hash)
 		if err != nil {
@@ -159,10 +152,10 @@ func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64, s
 	case success:
 		return w.DataAvailabilityService.Store(ctx, message, timeout, sig)
 	case immediateError:
-		return nil, errors.New("Expected Store failure")
+		return nil, errors.New("expected Store failure")
 	case tooSlow:
 		<-ctx.Done()
-		return nil, errors.New("Canceled")
+		return nil, ctx.Err()
 	case dataCorruption:
 		cert, err := w.DataAvailabilityService.Store(ctx, message, timeout, sig)
 		if err != nil {
@@ -213,31 +206,22 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	var backends []ServiceDetails
 	for i := 0; i < numBackendDAS; i++ {
-		dbPath := t.TempDir()
-		_, _, err := GenerateAndStoreKeys(dbPath)
+		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
 		config := DataAvailabilityConfig{
 			Enable: true,
 			KeyConfig: KeyConfig{
-				KeyDir: dbPath,
-			},
-			LocalFileStorageConfig: LocalFileStorageConfig{
-				Enable:  true,
-				DataDir: dbPath,
+				PrivKey: privKey,
 			},
 			L1NodeURL: "none",
 		}
 
-		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
-		Require(t, err)
-		defer lifecycleManager.StopAndWaitUntil(time.Second)
+		storageService := NewMemoryBackedStorageService(ctx)
 		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
-		pubKey, _, err := ReadKeysFromFile(dbPath)
-		Require(t, err)
 		signerMask := uint64(1 << i)
-		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *pubKey, signerMask)
+		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask)
 		Require(t, err)
 		backends = append(backends, *details)
 	}
@@ -276,8 +260,6 @@ func initTest(t *testing.T) int {
 	}
 	rand.Seed(seed)
 
-	log.Trace(fmt.Sprintf("Running test with seed %d", seed))
-
 	runsStr := os.Getenv("RUNS")
 	runs := 2 ^ 32
 	if len(runsStr) > 0 {
@@ -291,6 +273,8 @@ func initTest(t *testing.T) int {
 		enableLogging()
 	}
 
+	log.Trace(fmt.Sprintf("Running test with seed %d", seed))
+
 	return runs
 }
 
@@ -298,15 +282,20 @@ func TestDAS_LessThanHStorageFailures(t *testing.T) {
 	runs := initTest(t)
 
 	for i := 0; i < min(runs, 20); i++ {
-		testConfigurableStorageFailures(t, false)
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			t.Parallel()
+			testConfigurableStorageFailures(t, false)
+		})
 	}
 }
 
 func TestDAS_AtLeastHStorageFailures(t *testing.T) {
 	runs := initTest(t)
-
 	for i := 0; i < min(runs, 10); i++ {
-		testConfigurableStorageFailures(t, true)
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			t.Parallel()
+			testConfigurableStorageFailures(t, true)
+		})
 	}
 }
 
@@ -327,31 +316,22 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	var backends []ServiceDetails
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	for i := 0; i < numBackendDAS; i++ {
-		dbPath := t.TempDir()
-		_, _, err := GenerateAndStoreKeys(dbPath)
+		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
 
 		config := DataAvailabilityConfig{
 			Enable: true,
 			KeyConfig: KeyConfig{
-				KeyDir: dbPath,
-			},
-			LocalFileStorageConfig: LocalFileStorageConfig{
-				Enable:  true,
-				DataDir: dbPath,
+				PrivKey: privKey,
 			},
 			L1NodeURL: "none",
 		}
 
-		storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
-		Require(t, err)
-		defer lifecycleManager.StopAndWaitUntil(time.Second)
+		storageService := NewMemoryBackedStorageService(ctx)
 		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
 		Require(t, err)
-		pubKey, _, err := ReadKeysFromFile(dbPath)
-		Require(t, err)
 		signerMask := uint64(1 << i)
-		details := ServiceDetails{&WrapGetByHash{t, injectedFailures, das}, *pubKey, signerMask}
+		details := ServiceDetails{&WrapGetByHash{t, injectedFailures, das}, *das.pubKey, signerMask}
 
 		backends = append(backends, details)
 	}
@@ -359,12 +339,12 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: numBackendDAS}, L1NodeURL: "none"}, backends)
+	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: 1}, L1NodeURL: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
+	cert, err := unwrappedAggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
 	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash)
@@ -384,13 +364,19 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 func TestDAS_RetrieveFailureFromSomeDASes(t *testing.T) {
 	runs := initTest(t)
 	for i := 0; i < min(runs, 10); i++ {
-		testConfigurableRetrieveFailures(t, false)
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			t.Parallel()
+			testConfigurableRetrieveFailures(t, false)
+		})
 	}
 }
 
 func TestDAS_RetrieveFailureFromAllDASes(t *testing.T) {
 	runs := initTest(t)
 	for i := 0; i < min(runs, 10); i++ {
-		testConfigurableRetrieveFailures(t, true)
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			t.Parallel()
+			testConfigurableRetrieveFailures(t, true)
+		})
 	}
 }

@@ -39,6 +39,6 @@ contract Simple {
     function noop() external pure {}
 
     function pleaseRevert() external pure {
-        revert();
+        revert("SOLIDITY_REVERTING");
     }
 }

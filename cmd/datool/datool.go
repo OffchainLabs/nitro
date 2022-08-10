@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -17,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
 	"github.com/offchainlabs/nitro/cmd/util"
@@ -81,6 +83,7 @@ func startClient(args []string) error {
 type ClientStoreConfig struct {
 	URL                   string                 `koanf:"url"`
 	Message               string                 `koanf:"message"`
+	RandomMessageSize     int                    `koanf:"random-message-size"`
 	DASRetentionPeriod    time.Duration          `koanf:"das-retention-period"`
 	SigningKey            string                 `koanf:"signing-key"`
 	SigningWallet         string                 `koanf:"signing-wallet"`
@@ -92,6 +95,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f := flag.NewFlagSet("datool client store", flag.ContinueOnError)
 	f.String("url", "", "URL of DAS server to connect to")
 	f.String("message", "", "message to send")
+	f.Int("random-message-size", 0, "send a message of a specified number of random bytes")
 	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherise treated as a file; if not specified the message is not signed")
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
@@ -149,7 +153,7 @@ func startClientStore(args []string) error {
 			Account:       "",
 			OnlyCreateKey: false,
 		}
-		signer, err := arbnode.GetSignerFromWallet(walletConf)
+		_, signer, err := util.OpenWallet("datool", walletConf, nil)
 		if err != nil {
 			return err
 		}
@@ -160,7 +164,21 @@ func startClientStore(args []string) error {
 	}
 
 	ctx := context.Background()
-	cert, err := dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+	var cert *arbstate.DataAvailabilityCertificate
+
+	if config.RandomMessageSize > 0 {
+		message := make([]byte, config.RandomMessageSize)
+		_, err = rand.Read(message)
+		if err != nil {
+			return err
+		}
+		cert, err = dasClient.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+	} else if len(config.Message) > 0 {
+		cert, err = dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+	} else {
+		return errors.New("--message or --random-message-size must be specified")
+	}
+
 	if err != nil {
 		return err
 	}
@@ -217,7 +235,7 @@ func startRPCClientGetByHash(args []string) error {
 		}
 	} else {
 		hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
-		decodedHash, err = ioutil.ReadAll(hashDecoder)
+		decodedHash, err = io.ReadAll(hashDecoder)
 		if err != nil {
 			return err
 		}
@@ -278,7 +296,7 @@ func startRESTClientGetByHash(args []string) error {
 		}
 	} else {
 		hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
-		decodedHash, err = ioutil.ReadAll(hashDecoder)
+		decodedHash, err = io.ReadAll(hashDecoder)
 		if err != nil {
 			return err
 		}
@@ -343,7 +361,7 @@ func startKeyGen(args []string) error {
 			Account:       "",
 			OnlyCreateKey: true,
 		}
-		_, err = arbnode.GetSignerFromWallet(walletConf)
+		_, _, err = util.OpenWallet("datool", walletConf, nil)
 		if err != nil && strings.Contains(fmt.Sprint(err), "wallet key created") {
 			return nil
 		}
