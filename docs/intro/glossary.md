@@ -3,15 +3,13 @@
 
 - **Arbitrum Chain**: A chain running on Ethereum, containing some contracts. Many Arbitrum chains can (and do!) exist.
 
-- **Arbitrum AnyTrust**: Arbitrum chain in which which data availability is managed by a permissioned set of parties; compared to Arbitrum Rollup, not strictly trustless, but offers lower fees (e.g., Arbitrum Nova). 
+- **Arbitrum AnyTrust**: Arbitrum protocol in which which data availability is managed by a permissioned set of parties; compared to Arbitrum Rollup, not strictly trustless, but offers lower fees (e.g., Arbitrum Nova). 
 
 - **Arbitrum Rollup**: Trustless Arbitrum L2 protocol in which participation is permissionless and underlying layer is used for data availability (e.g., Arbitrum One).
 
 - **Arbitrum One**: The first Arbitrum Rollup chain running on Ethereum mainnet! (Currently in Beta).
 
 - **Arbitrum Nova**: The first Arbitrum AnyTrust chain running on Ethereum mainnet! (Currently in Beta).
-
-- **ArbGas**: Unit for pricing execution on Arbitrum; denominated in the chain's native currency (Ether on Arbitrum One and Nova). ArbGas is somewhat analogous to gas on L1 Ethereum, though different factors go into its calculation. ( See [ArbGas and Fees](Inside_Arbitrum.md#arbgas-and-fees).)
 
 - **Arbitrum Full Node**: A party who keeps track of the state of an Arbitrum chain and receives remote procedure calls (RPCs) from clients. Analogous to a non-mining L1 Ethereum node.
 
