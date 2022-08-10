@@ -12,6 +12,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -25,11 +27,32 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-var ErrDasKeysetNotFound = errors.New("no such keyset")
-
 type KeyConfig struct {
 	KeyDir  string `koanf:"key-dir"`
 	PrivKey string `koanf:"priv-key"`
+}
+
+func (c *KeyConfig) BLSPrivKey() (blsSignatures.PrivateKey, error) {
+	var privKeyBytes []byte
+	if len(c.PrivKey) != 0 {
+		privKeyBytes = []byte(c.PrivKey)
+	} else if len(c.KeyDir) != 0 {
+		var err error
+		privKeyBytes, err = os.ReadFile(c.KeyDir + "/" + DefaultPrivKeyFilename)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("required BLS keypair did not exist at %s", c.KeyDir)
+			}
+			return nil, err
+		}
+	} else {
+		return nil, errors.New("must specify PrivKey or KeyDir")
+	}
+	privKey, err := DecodeBase64BLSPrivateKey(privKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("'priv-key' was invalid: %w", err)
+	}
+	return privKey, nil
 }
 
 var DefaultKeyConfig = KeyConfig{}
@@ -39,8 +62,8 @@ func KeyConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".priv-key", DefaultKeyConfig.PrivKey, "the base64 BLS private key to use for signing DAS certificates; if using any of the DAS storage types exactly one of key-dir or priv-key must be specified")
 }
 
-// Provides DAS signature functionality over a StorageService by adapting
-// DataAvailabilityService.Store(...) to StorageService.Put(...).
+// SignAfterStoreDAS provides DAS signature functionality over a StorageService
+// by adapting DataAvailabilityService.Store(...) to StorageService.Put(...).
 // There are two different signature functionalities it provides:
 //
 // 1) SignAfterStoreDAS.Store(...) assembles the returned hash into a
@@ -51,8 +74,8 @@ func KeyConfigAddOptions(prefix string, f *flag.FlagSet) {
 // is from the batch poster. If the contract details are not provided, then the
 // signature is not checked, which is useful for testing.
 type SignAfterStoreDAS struct {
-	config         KeyConfig
-	privKey        *blsSignatures.PrivateKey
+	privKey        blsSignatures.PrivateKey
+	pubKey         *blsSignatures.PublicKey
 	keysetHash     [32]byte
 	keysetBytes    []byte
 	storageService StorageService
@@ -64,8 +87,12 @@ type SignAfterStoreDAS struct {
 }
 
 func NewSignAfterStoreDAS(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreDAS, error) {
+	privKey, err := config.KeyConfig.BLSPrivKey()
+	if err != nil {
+		return nil, err
+	}
 	if config.L1NodeURL == "none" {
-		return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService, config.ExtraSignatureCheckingPublicKey)
+		return NewSignAfterStoreDASWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
 	}
 	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 	if err != nil {
@@ -76,42 +103,23 @@ func NewSignAfterStoreDAS(ctx context.Context, config DataAvailabilityConfig, st
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, nil, storageService, config.ExtraSignatureCheckingPublicKey)
+		return NewSignAfterStoreDASWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
 	}
 
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(*seqInboxAddress, l1client)
 	if err != nil {
 		return nil, err
 	}
-	return NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, seqInboxCaller, storageService, config.ExtraSignatureCheckingPublicKey)
+	return NewSignAfterStoreDASWithSeqInboxCaller(privKey, seqInboxCaller, storageService, config.ExtraSignatureCheckingPublicKey)
 }
 
 func NewSignAfterStoreDASWithSeqInboxCaller(
-	ctx context.Context,
-	config KeyConfig,
+	privKey blsSignatures.PrivateKey,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 	storageService StorageService,
 	extraSignatureCheckingPublicKey string,
 ) (*SignAfterStoreDAS, error) {
-	var privKey *blsSignatures.PrivateKey
-	var err error
-	if len(config.PrivKey) != 0 {
-		privKey, err = DecodeBase64BLSPrivateKey([]byte(config.PrivKey))
-		if err != nil {
-			return nil, fmt.Errorf("'priv-key' was invalid: %w", err)
-		}
-	} else {
-		_, privKey, err = ReadKeysFromFile(config.KeyDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("Required BLS keypair did not exist at %s", config.KeyDir)
-			} else {
-				return nil, err
-			}
-		}
-	}
-
-	publicKey, err := blsSignatures.PublicKeyFromPrivateKey(*privKey)
+	publicKey, err := blsSignatures.PublicKeyFromPrivateKey(privKey)
 	if err != nil {
 		return nil, err
 	}
@@ -162,8 +170,8 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 	}
 
 	return &SignAfterStoreDAS{
-		config:          config,
 		privKey:         privKey,
+		pubKey:          &publicKey,
 		keysetHash:      ksHash,
 		keysetBytes:     ksBuf.Bytes(),
 		storageService:  storageService,
@@ -203,7 +211,7 @@ func (d *SignAfterStoreDAS) Store(
 	}
 
 	fields := c.SerializeSignableFields()
-	c.Sig, err = blsSignatures.SignMessage(*d.privKey, fields)
+	c.Sig, err = blsSignatures.SignMessage(d.privKey, fields)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +235,7 @@ func (d *SignAfterStoreDAS) GetByHash(ctx context.Context, hash common.Hash) ([]
 }
 
 func (d *SignAfterStoreDAS) String() string {
-	return fmt.Sprintf("SignAfterStoreDAS{config:%v}", d.config)
+	return fmt.Sprintf("SignAfterStoreDAS{%v}", hexutil.Encode(blsSignatures.PublicKeyToBytes(*d.pubKey)))
 }
 
 func (d *SignAfterStoreDAS) HealthCheck(ctx context.Context) error {
