@@ -6,7 +6,6 @@ package validator
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -190,9 +189,6 @@ func (t *LocalStateTracker) Reorg(blockNum uint64, blockHash common.Hash, nextPo
 	t.nextGlobalState = nextPosition
 
 	if t.lastBlockValidated > blockNum {
-		atomic.StoreUint64(&t.lastBlockValidated, blockNum)
-		t.lastBlockValidatedHash = blockHash
-
 		err := t.setLastValidated(blockNum, blockHash, nextPosition)
 		if err != nil {
 			return err
