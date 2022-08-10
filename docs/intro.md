@@ -1,5 +1,0 @@
----
-slug: /
----
-
-TODO: docs landing
