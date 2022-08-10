@@ -1,4 +1,4 @@
-## Q: Is the "Sequencer" the only "Validator" of the Arbitrum One chain? If the Sequencer is centralized, is everything centralized? Can a centralized Sequencer do bad things like steal all of my money?
+# Q: Is the "Sequencer" the only "Validator" of the Arbitrum One chain? If the Sequencer is centralized, is everything centralized? Can a centralized Sequencer do bad things like steal all of my money?
 
 A: No, no, and no!
 
