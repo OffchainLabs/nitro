@@ -290,7 +290,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if initDataReader == nil {
 		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
-			panic("No initialization mode supplied, chain data not in Db")
+			return nil, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
 		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
 		if err != nil {
@@ -483,7 +483,8 @@ func main() {
 
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
 	if err != nil {
-		panic(err)
+		printSampleUsage(os.Args[0])
+		fmt.Printf("%s\n", err.Error())
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
@@ -509,7 +510,20 @@ func main() {
 		}
 	}
 
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, &nodeConfig.Node, l2BlockChain, l1Client, &rollupAddrs, l1TransactionOpts, daSigner)
+	feedErrChan := make(chan error, 10)
+	currentNode, err := arbnode.CreateNode(
+		ctx,
+		stack,
+		chainDb,
+		arbDb,
+		&nodeConfig.Node,
+		l2BlockChain,
+		l1Client,
+		&rollupAddrs,
+		l1TransactionOpts,
+		daSigner,
+		feedErrChan,
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -541,7 +555,13 @@ func main() {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	<-sigint
+	select {
+	case err := <-feedErrChan:
+		log.Error("shutting down because broadcaster stopped", "err", err)
+	case <-sigint:
+		log.Info("shutting down because of sigint")
+	}
+
 	// cause future ctrl+c's to panic
 	close(sigint)
 
