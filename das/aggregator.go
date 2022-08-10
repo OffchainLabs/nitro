@@ -155,7 +155,7 @@ func NewAggregatorWithSeqInboxCaller(
 		config:                         config,
 		services:                       services,
 		requiredServicesForStore:       len(services) + 1 - config.AssumedHonest,
-		maxAllowedServiceStoreFailures: config.AssumedHonest - 1,
+		maxAllowedServiceStoreFailures: config.AssumedHonest,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    ksBuf.Bytes(),
 		bpVerifier:                     bpVerifier,
