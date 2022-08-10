@@ -559,7 +559,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	}
 
 	if s.validator != nil {
-		s.validator.NewBlock(block, lastBlockHeader, msgWithMeta)
+		s.validator.NewBlock(block)
 	}
 
 	return nil
@@ -782,7 +782,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 
 		if s.validator != nil {
-			s.validator.NewBlock(block, lastBlockHeader, msg)
+			s.validator.NewBlock(block)
 		}
 
 		s.latestBlockAndMessageMutex.Lock()

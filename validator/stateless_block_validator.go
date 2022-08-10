@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos"
@@ -30,7 +29,6 @@ type StatelessBlockValidator struct {
 	inboxTracker    InboxTrackerInterface
 	streamer        TransactionStreamerInterface
 	blockchain      *core.BlockChain
-	db              ethdb.Database
 	daService       arbstate.DataAvailabilityReader
 	genesisBlockNum uint64
 }
@@ -168,6 +166,8 @@ func newValidationEntry(
 	delayedMsgNr uint64,
 	preimages map[common.Hash][]byte,
 	batchInfo []BatchInfo,
+	startPos GlobalStatePosition,
+	endPos GlobalStatePosition,
 ) (*validationEntry, error) {
 	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
 	if err != nil {
@@ -188,6 +188,8 @@ func newValidationEntry(
 		DelayedMsgNr:  delayedMsgNr,
 		Preimages:     preimages,
 		BatchInfo:     batchInfo,
+		StartPosition: startPos,
+		EndPosition:   endPos,
 	}, nil
 }
 
@@ -197,7 +199,6 @@ func NewStatelessBlockValidator(
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
 	blockchain *core.BlockChain,
-	db ethdb.Database,
 	das arbstate.DataAvailabilityReader,
 ) (*StatelessBlockValidator, error) {
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
@@ -210,7 +211,6 @@ func NewStatelessBlockValidator(
 		inboxTracker:    inbox,
 		streamer:        streamer,
 		blockchain:      blockchain,
-		db:              db,
 		daService:       das,
 		genesisBlockNum: genesisBlockNum,
 	}
@@ -476,12 +476,10 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 		return false, fmt.Errorf("failed calculating position for validation: %w", err)
 	}
 
-	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages, readBatchInfo)
+	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages, readBatchInfo, startPos, endPos)
 	if err != nil {
 		return false, fmt.Errorf("failed to create validation entry %w", err)
 	}
-	entry.StartPosition = startPos
-	entry.EndPosition = endPos
 
 	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
 	if err != nil {
