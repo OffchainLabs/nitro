@@ -1,9 +1,9 @@
 
 # Glossary of Arbitrum Terms
 
-- **Arbitrum Chain**: A chain running on Ethereum, containing some contracts. Many Arbitrum chains can (and do!) exist.
+- **Arbitrum Chain**: A Layer 2 EVM environment running on Ethereum using Arbitrum technologies. Arbitrum Chains come in two forms, rollup and anytrust, depending on a user's needs.
 
-- **Arbitrum AnyTrust**: Arbitrum protocol in which which data availability is managed by a permissioned set of parties; compared to Arbitrum Rollup, not strictly trustless, but offers lower fees (e.g., Arbitrum Nova). 
+- **Arbitrum AnyTrust**: Arbitrum protocol in which data availability is managed by a permissioned set of parties; compared to Arbitrum Rollup, not strictly trustless, but offers lower fees (e.g., Arbitrum Nova). 
 
 - **Arbitrum Rollup**: Trustless Arbitrum L2 protocol in which participation is permissionless and underlying layer is used for data availability (e.g., Arbitrum One).
 
@@ -29,7 +29,7 @@
 
 - **Rollup Protocol**: Protocol for tracking the tree of assertions in an Arbitrum chain and their confirmation status.
 
-- **Speed Limit**: Target L2 computation limit for an Arbitrum chain.
+- **Speed Limit**: Target L2 computation limit for an Arbitrum chain. When computation exceeds this limit, fees rise, ala [EIP-1559](https://notes.ethereum.org/@vbuterin/eip-1559-faq).
 
 ## Proving Fraud
 
