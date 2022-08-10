@@ -232,6 +232,14 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 		methodsByName[name] = &method
 	}
 
+	for i := 0; i < implementerType.NumMethod(); i++ {
+		method := implementerType.Method(i)
+		name := method.Name
+		if method.IsExported() && methodsByName[name] == nil {
+			log.Crit(contract + " is missing a solidity interface for " + name)
+		}
+	}
+
 	// provide the implementer mechanisms to emit logs for the solidity events
 
 	supportedIndices := map[string]struct{}{

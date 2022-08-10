@@ -305,7 +305,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	}
 
 	if successfullyStoredCount < a.requiredServicesForStore {
-		return nil, fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest), errors received %d, %v", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, storeFailures, errs)
+		return nil, fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest), aggregate signer mask: 0x%X, errors received %d, %v", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, aggSignersMask, storeFailures, errs)
 	}
 
 	aggCert.Sig = blsSignatures.AggregateSignatures(sigs)
