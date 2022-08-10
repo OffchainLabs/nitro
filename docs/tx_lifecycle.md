@@ -40,7 +40,7 @@ Upon receiving a transaction, the Sequencer will:
 - [Geth](arbos/ArbOS)
 - [L1 pricing](arbos/L1_Pricing) / [L2 Gas](Gas)
 
-#### ~~~ FINALITY CHECK: Trusted / Soft Confirmation ~~~
+#### ~ ~ ~ FINALITY CHECK: Trusted / Soft Confirmation ~ ~ ~
 
 At this phase, the client's acceptance of finality relies on some degree of trust in the Sequencer. I.e., a malicious/faulty Sequencer could deviate between what it promised in the transaction receipt and what is ultimately published in a batch (see phase 3).
 
@@ -58,7 +58,7 @@ Even if the Sequencer never includes our transaction in a batch, the client can 
 
 - "The Sequencer / Censorship Resistance."
 
-#### ~~~ FINALITY CHECK: Ethereum-Equivalent Finality! ~~~
+#### ~ ~ ~ FINALITY CHECK: Ethereum-Equivalent Finality! ~ ~ ~
 
 At this stage, assuming that a client believes there to be at least one well behaved active Arbitrum validator (recall that in Arbitrum Rollup, validating is permissionless), the client can treat their transaction's finality as equivalent to an ordinary Ethereum transaction. In other words, their transaction has L1-level security. This means the client should use whatever finality heuristic they use for Ethereum transactions (i.e., waiting on L1 block confirmations, etc.) This also means that a client uncomfortable with the trust model of the Sequencer's soft confirmations (phase 2) can simply wait for the Sequencer to post their transaction in a batch (phase 3).
 
@@ -106,7 +106,7 @@ L1 contracts also keep track of the tree of all assertions; i.e., how many stake
 
 - "Rollup Protocol"
 
-#### ~~~ FINALITY CHECK: STILL THE SAME Ethereum-Equivalent Finality! ~~~
+#### ~ ~ ~ FINALITY CHECK: STILL THE SAME Ethereum-Equivalent Finality! ~ ~ ~
 
 Remember in phase 3 when said that once the L1 has committed to inputs, we can guarantee the L2 output? We meant it! Even during a dispute, Arbitrum nodes continue to execute and active validators continue to make assertions on the valid leaf in the state-tree; nothing that can happen in phase 4 has any effect on the L1-level finality we've already locked in at phase 3.
 
@@ -114,6 +114,6 @@ Remember in phase 3 when said that once the L1 has committed to inputs, we can g
 
 Once any all disputes have been resolved and sufficient time has passed, our RBlock can be confirmed on L1 (any Ethereum account on L1 can confirm it). Upon confirmation, the Outbox root on L1 gets updated.
 
-#### ~~~ FINALITY CHECK: L2 to L1 Messages Executable on L1 ~~~
+#### ~ ~ ~ FINALITY CHECK: L2 to L1 Messages Executable on L1 ~ ~ ~
 
 If our client's transaction didn't include any L2 to L1 messages (i.e., withdrawals), phase 5 has no material affect on their transaction. If it did include an L2 to L1 transaction, it is only after confirmation that the message can be executed in the Outbox. Note that even before phase 5, the client has L1 finality on the _result_ of their L2 to L1 message, they just can't execute it yet; i.e., they're have a guarantee that they'll eventually be able to, e.g., finalize their withdrawal, they just can't actually claim their funds on L1 until the RBlock is confirmed.
