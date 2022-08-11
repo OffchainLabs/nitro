@@ -31,5 +31,8 @@ func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 
 // Gets the infrastructure fee collector
 func (con ArbOwnerPublic) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
-	return c.State.NetworkFeeAccount()
+	if c.State.FormatVersion() < 6 {
+		return c.State.NetworkFeeAccount()
+	}
+	return c.State.InfraFeeAccount()
 }

@@ -26,7 +26,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 
 	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeString)
 
-	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
@@ -109,8 +109,8 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		lastBlock, err = l2clientB.BlockByHash(ctx, lastBlock.ParentHash())
 		Require(t, err)
 	}
-	testDeadLine, _ := t.Deadline()
-	if !nodeB.BlockValidator.WaitForBlock(lastBlock.NumberU64(), time.Until(testDeadLine)-time.Second*10) {
+	timeout := getDeadlineTimeout(t, time.Minute*10)
+	if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlock.NumberU64(), timeout) {
 		Fail(t, "did not validate all blocks")
 	}
 }
