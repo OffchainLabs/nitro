@@ -31,7 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
-func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
+func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
 	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethc
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = EnsureTxSucceeded(context.Background(), client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +61,7 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethc
 
 func CreateChallenge(
 	t *testing.T,
+	ctx context.Context,
 	auth *bind.TransactOpts,
 	client *ethclient.Client,
 	ospEntry common.Address,
@@ -75,11 +76,11 @@ func CreateChallenge(
 ) (*mocksgen.MockResultReceiver, common.Address) {
 	challengeManagerLogic, tx, _, err := challengegen.DeployChallengeManager(auth, client)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	challengeManagerAddr, tx, _, err := mocksgen.DeploySimpleProxy(auth, client, challengeManagerLogic)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	challengeManager, err := challengegen.NewChallengeManager(challengeManagerAddr, client)
 	Require(t, err)
@@ -88,7 +89,7 @@ func CreateChallenge(
 	Require(t, err)
 	tx, err = challengeManager.Initialize(auth, resultReceiverAddr, sequencerInbox, delayedBridge, ospEntry)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	tx, err = resultReceiver.CreateChallenge(
 		auth,
@@ -114,7 +115,7 @@ func CreateChallenge(
 		big.NewInt(100000),
 	)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	return resultReceiver, challengeManagerAddr
 }
@@ -190,11 +191,12 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	l1Info.GenerateGenesysAccount("sequencer", initialBalance)
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	l1Info, l1Backend, _, _ := CreateTestL1BlockChain(t, l1Info)
+	l1Info, l1Backend, _, _ := createTestL1BlockChain(t, l1Info)
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BlockValidator.Enable = false
 	conf.BatchPoster.Enable = false
 	conf.InboxReader.CheckDelay = time.Second
+	feedErrChan := make(chan error, 10)
 	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig.ChainID)
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
@@ -203,7 +205,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger", ctx)
 	delayedBridge, tx, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, l1Backend)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
 
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
@@ -220,11 +222,11 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		timeBounds,
 	)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
 	tx, err = asserterSeqInbox.AddInitMessage(&deployerTxOpts)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
 	challengerSeqInboxAddr, tx, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&deployerTxOpts,
@@ -234,23 +236,23 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		timeBounds,
 	)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
 	tx, err = challengerSeqInbox.AddInitMessage(&deployerTxOpts)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
 
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	rollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, rollupAddresses, nil, nil)
+	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, rollupAddresses, nil, nil, feedErrChan)
 	Require(t, err)
 	err = asserterL2Stack.Start()
 	Require(t, err)
 
 	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, challengerL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	rollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, rollupAddresses, nil, nil)
+	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, rollupAddresses, nil, nil, feedErrChan)
 	Require(t, err)
 	err = challengerL2Stack.Start()
 	Require(t, err)
@@ -266,7 +268,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		trueSeqInboxAddr = asserterSeqInboxAddr
 		expectedWinner = l1Info.GetAddress("asserter")
 	}
-	ospEntry := DeployOneStepProofEntry(t, &deployerTxOpts, l1Backend)
+	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, l1Backend)
 
 	wasmModuleRoot, err := validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
 	if err != nil {
@@ -298,6 +300,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	resultReceiver, challengeManagerAddr := CreateChallenge(
 		t,
+		ctx,
 		&deployerTxOpts,
 		l1Backend,
 		ospEntry,

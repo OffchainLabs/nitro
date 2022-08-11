@@ -221,6 +221,20 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
+		s.logIfHeaderIsOld()
+	}
+}
+
+func (s *HeaderReader) logIfHeaderIsOld() {
+	s.chanMutex.Lock()
+	storedHeader := s.lastBroadcastHeader
+	s.chanMutex.Unlock()
+	if storedHeader == nil {
+		return
+	}
+	headerTime := time.Unix(int64(storedHeader.Time), 0)
+	if time.Since(headerTime) >= 5*time.Minute {
+		log.Warn("latest L1 block is at least 5 minutes old", "l1Block", storedHeader.Number, "l1Timestamp", headerTime)
 	}
 }
 
