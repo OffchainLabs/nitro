@@ -35,7 +35,7 @@ func TestBatchPosterParallel(t *testing.T) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.Enable = false
 	conf.BatchPoster.DataPoster.RedisUrl = redisUrl
-	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, conf, params.ArbitrumDevTestChainConfig())
+	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, params.ArbitrumDevTestChainConfig())
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
