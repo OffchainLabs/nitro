@@ -318,7 +318,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
      * @param maxFeePerGas price bid for L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
      * @param data ABI encoded data of L2 message
-     * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
+     * @return unique message number of the retryable transaction
      */
     function createRetryableTicketNoRefundAliasRewrite(
         address to,
@@ -355,7 +355,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
      * @param maxFeePerGas price bid for L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
      * @param data ABI encoded data of L2 message
-     * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
+     * @return unique message number of the retryable transaction
      */
     function createRetryableTicket(
         address to,
@@ -414,7 +414,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
      * @param maxFeePerGas price bid for L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
      * @param data ABI encoded data of L2 message
-     * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
+     * @return unique message number of the retryable transaction
      */
     function unsafeCreateRetryableTicket(
         address to,

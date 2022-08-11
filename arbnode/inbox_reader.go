@@ -332,12 +332,12 @@ func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 				if !reorgingDelayed && !reorgingSequencer {
 					break
 				} else {
-					from = currentHeight
+					from = new(big.Int).Set(currentHeight)
 				}
 			}
 			to := new(big.Int).Add(from, new(big.Int).SetUint64(blocksToFetch))
 			if to.Cmp(currentHeight) > 0 {
-				to = currentHeight
+				to.Set(currentHeight)
 			}
 			var delayedMessages []*DelayedInboxMessage
 			delayedMessages, err := ir.delayedBridge.LookupMessagesInRange(ctx, from, to)
@@ -443,7 +443,7 @@ func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 					return err
 				}
 			} else {
-				from = from.Add(to, big.NewInt(1))
+				from = arbmath.BigAddByUint(to, 1)
 			}
 			haveMessages := uint64(len(delayedMessages) + len(sequencerBatches))
 			if haveMessages <= (ir.config.TargetMessagesRead / 2) {
@@ -487,7 +487,7 @@ func (r *InboxReader) getPrevBlockForReorg(from *big.Int) (*big.Int, error) {
 	if from.Cmp(r.firstMessageBlock) <= 0 {
 		return nil, errors.New("can't get older messages")
 	}
-	newFrom := new(big.Int).Sub(from, big.NewInt(10))
+	newFrom := arbmath.BigSub(from, big.NewInt(10))
 	if newFrom.Cmp(r.firstMessageBlock) < 0 {
 		newFrom = new(big.Int).Set(r.firstMessageBlock)
 	}
