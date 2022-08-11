@@ -34,6 +34,16 @@ type InboxReaderConfig struct {
 	MaxBlocksToRead     uint64        `koanf:"max-blocks-to-read"`
 }
 
+func (c *InboxReaderConfig) Validate() error {
+	if c.MaxBlocksToRead == 0 || c.MaxBlocksToRead < c.DefaultBlocksToRead {
+		return errors.New("inbox reader max-blocks-to-read cannot be zero or less than default-blocks-to-read")
+	}
+	if c.AdjustBlocksToRead && c.TargetMessagesRead == 0 {
+		return errors.New("inbox reader target-messages-read cannot be zero if adjust-blocks-to-read is true")
+	}
+	return nil
+}
+
 func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
 	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "the maximum time to wait between inbox checks (if not enough new blocks are found)")
@@ -93,11 +103,9 @@ type InboxReader struct {
 }
 
 func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
-	if config.MaxBlocksToRead == 0 || config.MaxBlocksToRead < config.DefaultBlocksToRead {
-		return nil, errors.New("inbox reader max-blocks-to-read cannot be zero or less than default-blocks-to-read")
-	}
-	if config.AdjustBlocksToRead && config.TargetMessagesRead == 0 {
-		return nil, errors.New("inbox reader target-messages-read cannot be zero if adjust-blocks-to-read is true")
+	err := config.Validate()
+	if err != nil {
+		return nil, err
 	}
 	return &InboxReader{
 		tracker:           tracker,
@@ -440,9 +448,9 @@ func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 			haveMessages := uint64(len(delayedMessages) + len(sequencerBatches))
 			if haveMessages <= (ir.config.TargetMessagesRead / 2) {
 				// This cannot overflow, as it'll never try to subtract more than blocksToFetch
-				blocksToFetch -= (blocksToFetch + 9) / 10
+				blocksToFetch -= (blocksToFetch + 4) / 5
 			} else if haveMessages >= (ir.config.TargetMessagesRead * 3 / 2) {
-				blocksToFetch += (blocksToFetch + 9) / 10
+				blocksToFetch += (blocksToFetch + 4) / 5
 			}
 			if blocksToFetch < 1 {
 				blocksToFetch = 1
