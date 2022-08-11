@@ -60,7 +60,7 @@ Even if the Sequencer never includes our transaction in a batch, the client can 
 
 #### ~ ~ ~ FINALITY CHECK: Ethereum-Equivalent Finality! ~ ~ ~
 
-At this stage, assuming that a client believes there to be at least one well behaved active Arbitrum validator (recall that in Arbitrum Rollup, validating is permissionless), the client can treat their transaction's finality as equivalent to an ordinary Ethereum transaction. In other words, their transaction has L1-level security. This means the client should use whatever finality heuristic they use for Ethereum transactions (i.e., waiting on L1 block confirmations, etc.) This also means that a client uncomfortable with the trust model of the Sequencer's soft confirmations (phase 2) can simply wait for the Sequencer to post their transaction in a batch (phase 3).
+At this stage, assuming that a client believes there to be at least one well behaved active Arbitrum validator (recall that in Arbitrum Rollup, validating is permissionless), the client can treat their transaction's finality as equivalent to an ordinary Ethereum transaction. In other words, their L2 transaction has the same finality as the L1 transaction that recorded it in a bath. This means the client should use whatever finality heuristic they use for regular Ethereum transactions (i.e., waiting on L1 block confirmations, etc.), applied to the L1 batch-posting transaction. This also means that a client uncomfortable with the trust model of the Sequencer's soft confirmations (phase 2) can simply wait for the Sequencer to post their transaction in a batch (phase 3).
 
 How are we able to make such bold a claim? A few (related) things:
 
