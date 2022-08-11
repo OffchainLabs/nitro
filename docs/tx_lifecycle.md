@@ -112,7 +112,7 @@ Remember in phase 3 when said that once the L1 has committed to inputs, we can g
 
 ### 5. RBlock is confirmed on L1
 
-Once any all disputes have been resolved and sufficient time has passed, our RBlock can be confirmed on L1 (any Ethereum account on L1 can confirm it). Upon confirmation, the Outbox root on L1 gets updated.
+Once any and all disputes have been resolved and sufficient time has passed, our RBlock can be confirmed on L1 (any Ethereum account on L1 can confirm it). Upon confirmation, the Outbox root on L1 gets updated.
 
 #### ~ ~ ~ FINALITY CHECK: L2 to L1 Messages Executable on L1 ~ ~ ~
 
