@@ -38,7 +38,7 @@ func retryableSetup(t *testing.T) (
 	func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
 
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("Beneficiary")
