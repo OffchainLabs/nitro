@@ -24,10 +24,14 @@ import (
 )
 
 type InboxReaderConfig struct {
-	DelayBlocks     uint64        `koanf:"delay-blocks"`
-	CheckDelay      time.Duration `koanf:"check-delay"`
-	HardReorg       bool          `koanf:"hard-reorg"`
-	MinBlocksToRead uint64        `koanf:"min-blocks-to-read"`
+	DelayBlocks         uint64        `koanf:"delay-blocks"`
+	CheckDelay          time.Duration `koanf:"check-delay"`
+	HardReorg           bool          `koanf:"hard-reorg"`
+	MinBlocksToRead     uint64        `koanf:"min-blocks-to-read"`
+	DefaultBlocksToRead uint64        `koanf:"default-blocks-to-read"`
+	AdjustBlocksToRead  bool          `koanf:"adjust-blocks-to-read"`
+	TargetMessagesRead  uint64        `koanf:"target-messages-read"`
+	MaxBlocksToRead     uint64        `koanf:"max-blocks-to-read"`
 }
 
 func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -35,20 +39,32 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "the maximum time to wait between inbox checks (if not enough new blocks are found)")
 	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
 	f.Uint64(prefix+".min-blocks-to-read", DefaultInboxReaderConfig.MinBlocksToRead, "the minimum number of blocks to read at once (when caught up lowers load on L1)")
+	f.Uint64(prefix+".default-blocks-to-read", DefaultInboxReaderConfig.DefaultBlocksToRead, "the default number of blocks to read at once (will vary based on traffic by default)")
+	f.Bool(prefix+".adjust-blocks-to-read", DefaultInboxReaderConfig.AdjustBlocksToRead, "if the number of blocks read at once should be automatically adjusted based on traffic")
+	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
+	f.Uint64(prefix+".max-blocks-to-read", DefaultInboxReaderConfig.MaxBlocksToRead, "if adjust-blocks-to-read is enabled, the maximum number of blocks to read at once")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
-	DelayBlocks:     0,
-	CheckDelay:      time.Minute,
-	HardReorg:       false,
-	MinBlocksToRead: 1,
+	DelayBlocks:         0,
+	CheckDelay:          time.Minute,
+	HardReorg:           false,
+	MinBlocksToRead:     1,
+	DefaultBlocksToRead: 100,
+	AdjustBlocksToRead:  true,
+	TargetMessagesRead:  500,
+	MaxBlocksToRead:     2000,
 }
 
 var TestInboxReaderConfig = InboxReaderConfig{
-	DelayBlocks:     0,
-	CheckDelay:      time.Millisecond * 10,
-	HardReorg:       false,
-	MinBlocksToRead: 1,
+	DelayBlocks:         0,
+	CheckDelay:          time.Millisecond * 10,
+	HardReorg:           false,
+	MinBlocksToRead:     1,
+	DefaultBlocksToRead: 100,
+	AdjustBlocksToRead:  true,
+	TargetMessagesRead:  500,
+	MaxBlocksToRead:     2000,
 }
 
 type InboxReader struct {
@@ -77,6 +93,12 @@ type InboxReader struct {
 }
 
 func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
+	if config.MaxBlocksToRead == 0 || config.MaxBlocksToRead < config.DefaultBlocksToRead {
+		return nil, errors.New("inbox reader max-blocks-to-read cannot be zero or less than default-blocks-to-read")
+	}
+	if config.AdjustBlocksToRead && config.TargetMessagesRead == 0 {
+		return nil, errors.New("inbox reader target-messages-read cannot be zero if adjust-blocks-to-read is true")
+	}
 	return &InboxReader{
 		tracker:           tracker,
 		delayedBridge:     delayedBridge,
@@ -91,10 +113,14 @@ func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader 
 
 func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn)
+	hadError := false
 	r.CallIteratively(func(ctx context.Context) time.Duration {
-		err := r.run(ctx)
+		err := r.run(ctx, hadError)
 		if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
 			log.Warn("error reading inbox", "err", err)
+			hadError = true
+		} else {
+			hadError = false
 		}
 		return time.Second
 	})
@@ -138,14 +164,17 @@ func (r *InboxReader) DelayedBridge() *DelayedBridge {
 	return r.delayedBridge
 }
 
-func (ir *InboxReader) run(ctx context.Context) error {
+func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 	from, err := ir.getNextBlockToRead()
 	if err != nil {
 		return err
 	}
 	newHeaders, unsubscribe := ir.l1Reader.Subscribe(false)
 	defer unsubscribe()
-	blocksToFetch := uint64(100)
+	blocksToFetch := uint64(ir.config.DefaultBlocksToRead)
+	if hadError {
+		blocksToFetch = 1
+	}
 	neededBlockAdvance := ir.config.DelayBlocks + arbmath.SaturatingUSub(ir.config.MinBlocksToRead, 1)
 	seenBatchCount := uint64(0)
 	seenBatchCountStored := uint64(math.MaxUint64)
@@ -269,6 +298,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		if !missingDelayed && !reorgingDelayed && !missingSequencer && !reorgingSequencer {
 			// There's nothing to do
 			from = arbmath.BigAddByUint(currentHeight, 1)
+			blocksToFetch = ir.config.DefaultBlocksToRead
 			ir.lastReadMutex.Lock()
 			ir.lastReadBlock = currentHeight.Uint64()
 			ir.lastReadBatchCount = checkingBatchCount
@@ -406,6 +436,18 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				}
 			} else {
 				from = arbmath.BigAddByUint(to, 1)
+			}
+			haveMessages := uint64(len(delayedMessages) + len(sequencerBatches))
+			if haveMessages <= (ir.config.TargetMessagesRead / 2) {
+				// This cannot overflow, as it'll never try to subtract more than blocksToFetch
+				blocksToFetch -= (blocksToFetch + 9) / 10
+			} else if haveMessages >= (ir.config.TargetMessagesRead * 3 / 2) {
+				blocksToFetch += (blocksToFetch + 9) / 10
+			}
+			if blocksToFetch < 1 {
+				blocksToFetch = 1
+			} else if blocksToFetch > ir.config.MaxBlocksToRead {
+				blocksToFetch = ir.config.MaxBlocksToRead
 			}
 		}
 
