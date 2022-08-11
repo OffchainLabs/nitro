@@ -23,7 +23,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 
 - **Frequent Timestamps 🥳**:  Timestamps (accessed via `block.timestamp` on L2) are updated every block based on the sequencer’s clock, it is no longer linked to the timestamp of the last L1 block.
 
-- **L2 Block hash EVM Consistency 🥳**: L2 block hashes take the same format as on Ethereum (if you query it from the ArbSys precompile, not the one in `block.hash(uin256)`).
+- **L2 Block hash EVM Consistency 🥳**: L2 block hashes take the same format as on Ethereum (if you query it from the ArbSys precompile, not the one in `block.hash(uint256)`).
 
 - **Geth tracing 🥳**: `debug_traceTransaction` RPC endpoint is supported; this includes tracing of ArbOS internal bookkeeping actions.
 
