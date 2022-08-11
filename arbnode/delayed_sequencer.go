@@ -45,13 +45,13 @@ func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:           false,
-	FinalizeDistance: 12,
+	FinalizeDistance: 20,
 	TimeAggregate:    time.Minute,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:           true,
-	FinalizeDistance: 12,
+	FinalizeDistance: 20,
 	TimeAggregate:    time.Second,
 }
 

@@ -70,7 +70,11 @@ const RECENT_FEED_ITEM_TTL time.Duration = time.Second * 10
 
 func (r *Relay) Start(ctx context.Context) error {
 	r.StopWaiter.Start(ctx)
-	err := r.broadcaster.Start(ctx)
+	err := r.broadcaster.Initialize()
+	if err != nil {
+		return errors.New("broadcast unable to initialize")
+	}
+	err = r.broadcaster.Start(ctx)
 	if err != nil {
 		return errors.New("broadcast unable to start")
 	}

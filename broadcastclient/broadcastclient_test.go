@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -31,10 +32,8 @@ func TestReceiveMessages(t *testing.T) {
 	feedErrChan := make(chan error, 10)
 	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
 
-	err := b.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, b.Initialize())
+	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
 	var wg sync.WaitGroup
@@ -127,10 +126,8 @@ func TestServerClientDisconnect(t *testing.T) {
 	feedErrChan := make(chan error, 10)
 	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
 
-	err := b.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, b.Initialize())
+	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
 	ts := NewDummyTransactionStreamer()
@@ -182,10 +179,8 @@ func TestServerClientIncorrectChainId(t *testing.T) {
 	feedErrChan := make(chan error, 10)
 	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
 
-	err := b.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, b.Initialize())
+	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
 	ts := NewDummyTransactionStreamer()
@@ -215,10 +210,8 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	chainId := uint64(8742)
 	b1 := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
 
-	err := b1.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, b1.Initialize())
+	Require(t, b1.Start(ctx))
 	defer b1.StopAndWait()
 
 	broadcastClient := newTestBroadcastClient(b1.ListenerAddr(), chainId, 0, 200*time.Millisecond, nil, feedErrChan)
@@ -250,10 +243,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	chainId := uint64(8744)
 	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
 
-	err := b.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, b.Initialize())
+	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
@@ -350,4 +341,9 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uin
 		}
 
 	}()
+}
+
+func Require(t *testing.T, err error, printables ...interface{}) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, printables...)
 }
