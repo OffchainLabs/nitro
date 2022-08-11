@@ -65,6 +65,10 @@ func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastSer
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 	}
+	err := inbox.cleanupInconsistentState()
+	if err != nil {
+		return nil, err
+	}
 	return inbox, nil
 }
 
@@ -487,7 +491,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
 
-	block, receipts := arbos.ProduceBlockAdvanced(
+	block, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
 		txes,
 		delayedMessagesRead,
@@ -497,6 +501,9 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		s.bc.Config(),
 		hooks,
 	)
+	if err != nil {
+		return err
+	}
 
 	if len(receipts) == 0 {
 		return nil
@@ -836,10 +843,6 @@ func (s *TransactionStreamer) SyncProgressMap() map[string]interface{} {
 	res["messageOfLastBlock"] = lastBuiltMessage
 	res["messageOfProcessedBatch"] = processedMetadata.MessageCount
 	return res
-}
-
-func (s *TransactionStreamer) Initialize() error {
-	return s.cleanupInconsistentState()
 }
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) {

@@ -52,25 +52,27 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type L1ValidatorConfig struct {
-	Enable             bool              `koanf:"enable"`
-	Strategy           string            `koanf:"strategy"`
-	StakerInterval     time.Duration     `koanf:"staker-interval"`
-	L1PostingStrategy  L1PostingStrategy `koanf:"posting-strategy"`
-	DisableChallenge   bool              `koanf:"disable-challenge"`
-	TargetMachineCount int               `koanf:"target-machine-count"`
-	ConfirmationBlocks int64             `koanf:"confirmation-blocks"`
-	Dangerous          DangerousConfig   `koanf:"dangerous"`
+	Enable                   bool              `koanf:"enable"`
+	Strategy                 string            `koanf:"strategy"`
+	StakerInterval           time.Duration     `koanf:"staker-interval"`
+	L1PostingStrategy        L1PostingStrategy `koanf:"posting-strategy"`
+	DisableChallenge         bool              `koanf:"disable-challenge"`
+	TargetMachineCount       int               `koanf:"target-machine-count"`
+	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
+	Dangerous                DangerousConfig   `koanf:"dangerous"`
+	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
-	Enable:             false,
-	Strategy:           "Watchtower",
-	StakerInterval:     time.Minute,
-	L1PostingStrategy:  L1PostingStrategy{},
-	DisableChallenge:   false,
-	TargetMachineCount: 4,
-	ConfirmationBlocks: 12,
-	Dangerous:          DangerousConfig{},
+	Enable:                   false,
+	Strategy:                 "Watchtower",
+	StakerInterval:           time.Minute,
+	L1PostingStrategy:        L1PostingStrategy{},
+	DisableChallenge:         false,
+	TargetMachineCount:       4,
+	ConfirmationBlocks:       12,
+	Dangerous:                DefaultDangerousConfig,
+	OnlyCreateWalletContract: false,
 }
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -82,6 +84,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
 }
 
 type DangerousConfig struct {
@@ -165,6 +168,16 @@ func NewStaker(
 		inboxReader:         inboxReader,
 		nitroMachineLoader:  nitroMachineLoader,
 	}, nil
+}
+
+func (s *Staker) Initialize(ctx context.Context) error {
+	if s.strategy != WatchtowerStrategy {
+		err := s.wallet.Initialize(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return s.L1Validator.Initialize(ctx)
 }
 
 func (s *Staker) Start(ctxIn context.Context) {

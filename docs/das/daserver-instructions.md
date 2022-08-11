@@ -77,6 +77,14 @@ Options generating/using JSON config:
       --conf.file strings                                                                          name of configuration file
 ```
 
+Options for producing Prometheus metrics:
+```
+      --metrics                                                                                    enable metrics
+      --metrics-server.addr string                                                                 metrics server address (default "127.0.0.1")
+      --metrics-server.port int                                                                    metrics server port (default 6070)
+      --metrics-server.update-interval duration                                                    metrics server update interval (default 3s)
+```
+
 Some options are not shown because they are only used by nodes, or they are experimental/advanced. A complete list of options can be found by running `daserver --help`
 
 ## Sample Deployments
@@ -193,7 +201,7 @@ spec:
           mkdir -p /home/user/data/db
 		  mkdir -p /home/user/data/badgerdb
           /usr/local/bin/daserver --data-availability.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT>
---enable-rpc --rpc-addr '0.0.0.0' --enable-rest --rest-addr '0.0.0.0' --log-level 3 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.key.key-dir /home/user/data/keys --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.online-url-list "https://arbitrum-mainnet-uw2-anytrust-chaindata.s3.us-west-2.amazonaws.com/das-data-servers" --data-availability.sequencer-inbox-address '0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b'
+--enable-rpc --rpc-addr '0.0.0.0' --enable-rest --rest-addr '0.0.0.0' --log-level 3 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.key.key-dir /home/user/data/keys --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.online-url-list "https://nova.arbitrum.io/das-servers" --data-availability.sequencer-inbox-address '0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b'
         image: offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72
         imagePullPolicy: Always
         resources:
@@ -294,7 +302,7 @@ spec:
           mkdir -p /home/user/data/db
 		  mkdir -p /home/user/data/badgerdb
           /usr/local/bin/daserver --data-availability.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT>
---enable-rest --rest-addr '0.0.0.0' --log-level 3 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.urls "http://your-committee-member.svc.cluster.local:9877" --data-availability.rest-aggregator.online-url-list "https://arbitrum-mainnet-uw2-anytrust-chaindata.s3.us-west-2.amazonaws.com/das-data-servers" --data-availability.rest-aggregator.sync-to-storage.eager --data-availability.rest-aggregator.sync-to-storage.eager-lower-bound-block 15025611 --data-availability.sequencer-inbox-address '0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b'
+--enable-rest --rest-addr '0.0.0.0' --log-level 3 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.urls "http://your-committee-member.svc.cluster.local:9877" --data-availability.rest-aggregator.online-url-list "https://nova.arbitrum.io/das-servers" --data-availability.rest-aggregator.sync-to-storage.eager --data-availability.rest-aggregator.sync-to-storage.eager-lower-bound-block 15025611 --data-availability.sequencer-inbox-address '0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b'
         image: offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72
         imagePullPolicy: Always
         resources:
@@ -329,25 +337,92 @@ spec:
 
 
 
-### Validating deployments
-In the docker image there is the `datool` utility that can be used to Store and Retrieve messages from a DAS. We will take advantage of a data hash that will always be present for the health check.
+### Testing
+#### Basic validation: health check data is present
+In the docker image there is the `datool` utility that can be used to Store and Retrieve messages from a DAS. We will take advantage of a data hash that will always be present if the the health check is enabled.
 
 From the pod:
 ```
-$ /usr/local/bin/datool client rest getbyhash --url http://localhost:9877   --data-hash 0xdac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
+$ /usr/local/bin/datool client rest getbyhash --url http://localhost:9877   --data-hash 0x8b248e2bd8f75bf1334fe7f0da75cc7c1a34e00e00a22a96b7a43d580d250f3d
 Message: Test-Data
 
-$ /usr/local/bin/datool client rpc getbyhash --url http://localhost:9876   --data-hash 0xdac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
+$ /usr/local/bin/datool client rpc getbyhash --url http://localhost:9876   --data-hash 0x8b248e2bd8f75bf1334fe7f0da75cc7c1a34e00e00a22a96b7a43d580d250f3d
 Message: Test-Data
+```
+
+If you do not have the health check configured yet, you can trigger one manually as follows:
+```
+$ curl http://localhost:9877/health
 ```
 
 Using curl to check the REST endpoint
 ```
-$ curl  https://anytrust-devnet.arbitrum.io/da-mirror-0/get-by-hash/dac8a9f2bbcca34aecad0af5a43dcb48c94f0755f7cf4d87bc01925eb390b762
+$ curl  https://<HOST>/<PATH>/get-by-hash/8b248e2bd8f75bf1334fe7f0da75cc7c1a34e00e00a22a96b7a43d580d250f3d
 {"data":"VGVzdC1EYXRh"}
+```
+
+#### Further validation: using Store interface directly
+
+The Store interface of `daserver` validates that requests to store data are signed by the the Batch Poster's ECDSA key, identified via a call to the Sequencer Inbox contract on L1. It can also be configured to accept Store requests signed with another ECDSA key of your chosing. This could be useful for running load tests, canaries, or troubleshooting your own infrastructure. Using this facility, a load test could be constructed by writing a script to store arbitrary amounts of data at an arbitrary rate; a canary could be constructed to store and retrieve data on some interval.
+
+Generate an ECDSA keypair:
+```
+$ /usr/local/bin/datool keygen --dir /dir-of-your-choice/ --ecdsa
+```
+
+Then add the following configuration option to `daserver`:
+```
+--data-availability.extra-signature-checking-public-key /dir-of-your-choice/ecdsa.pub
+
+OR
+
+--data-availability.extra-signature-checking-public-key 0x<contents of ecdsa.pub>
+```
+
+Now you can use the `datool` utility to send Store requests signed with the ecdsa private key:
+```
+$ /usr/local/bin/datool rpc store  --url http://localhost:9876 --message "Hello world" --signing-key /tmp/ecdsatest/ecdsa
+
+OR
+
+$ /usr/local/bin/datool client rpc store  --url http://localhost:9876 --message "Hello world" --signing-key "0x<contents of ecdsa>"
+```
+
+The above command outputs the `Hex Encoded Data Hash: ` which can be used to retrieve the data:
+```
+$ /usr/local/bin/datool client rpc getbyhash --url  http://localhost:9876 --data-hash 0x052cca0e379137c975c966bcc69ac8237ac38dc1fcf21ac9a6524c87a2aab423
+Message: Hello world
+$ /usr/local/bin/datool client rest getbyhash --url  http://localhost:9877 --data-hash 0x052cca0e379137c975c966bcc69ac8237ac38dc1fcf21ac9a6524c87a2aab423
+Message: Hello world
+```
+
+The retention period defaults to 24h but can be configured for `datool client rpc store` with the option:
+```
+--das-retention-period
 ```
 
 ### Deployment recommendations
 The REST interface is cacheable, consider using a CDN or caching proxy in front of your REST endpoint.
 
-If you are running a mirrors, the REST interface on your committee member does not have to be exposed publicly. Your mirrors can sync on your private network from the REST interface of your committee member and other public mirrors.
+If you are running a mirror, the REST interface on your committee member does not have to be exposed publicly. Your mirrors can sync on your private network from the REST interface of your committee member and other public mirrors.
+
+### Metrics
+If metrics are enabled in configuration, then several useful metrics are available at the configured port (default 6070), at path `debug/metrics` or `debug/metrics/prometheus`.
+
+| Metric | Description
+| - | - |
+| arb_das_rest_getbyhash_requests | Count of REST GetByHash calls |
+| arb_das_rest_getbyhash_success | Successful REST GetByHash calls |
+| arb_das_rest_getbyhash_failure | Failed REST GetByHash calls |
+| arb_das_rest_getbyhash_bytes | Bytes retrieved with REST GetByHash calls |
+| arb_das_rest_getbyhash_duration (p50, p75, p95, p99, p999, p9999) | Duration of REST GetByHash calls |
+| arb_das_rpc_getbyhash_requests | Count of RPC GetByHash calls |
+| arb_das_rpc_getbyhash_success | Successful RPC GetByHash calls |
+| arb_das_rpc_getbyhash_failure | Failed RPC GetByHash calls |
+| arb_das_rpc_getbyhash_bytes | Bytes retrieved with RPC GetByHash calls |
+| arb_das_rpc_getbyhash_duration (p50, p75, p95, p99, p999, p9999) | Duration of RPC GetByHash calls |
+| arb_das_rpc_store_requests | Count of RPC Store calls |
+| arb_das_rpc_store_success | Successful RPC Store calls |
+| arb_das_rpc_store_failure | Failed RPC Store calls |
+| arb_das_rpc_store_bytes | Bytes retrieved with RPC Store calls |
+| arb_das_rpc_store_duration (p50, p75, p95, p99, p999, p9999) | Duration of RPC Store calls |

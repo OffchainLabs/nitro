@@ -57,7 +57,10 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 
 	broadcasterSettings := wsbroadcastserver.DefaultTestBroadcasterConfig
 
-	b := NewBroadcaster(broadcasterSettings)
+	chainId := uint64(5555)
+	feedErrChan := make(chan error, 10)
+	b := NewBroadcaster(broadcasterSettings, chainId, feedErrChan)
+	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 

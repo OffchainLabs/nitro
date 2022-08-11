@@ -16,8 +16,8 @@ const initialMaxRecurseDepth uint16 = 8
 // RestfulServerURLsFromList reads a list of Restful server URLs from a remote URL.
 // The contents at the remote URL are parsed into a series of whitespace-separated words.
 // Each word is interpreted as the URL of a Restful server, except that if a word is "LIST"
-//    (case-insensitive) then the following word is interpreted as the URL of another list,
-//    which is recursively fetched. The depth of recursion is limited to initialMaxRecurseDepth.
+// (case-insensitive) then the following word is interpreted as the URL of another list,
+// which is recursively fetched. The depth of recursion is limited to initialMaxRecurseDepth.
 func RestfulServerURLsFromList(ctx context.Context, listUrl string) ([]string, error) {
 	client := &http.Client{}
 	urls, err := restfulServerURLsFromList(ctx, client, listUrl, initialMaxRecurseDepth, make(map[string]bool))
