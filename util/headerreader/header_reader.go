@@ -234,7 +234,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	}
 	headerTime := time.Unix(int64(storedHeader.Time), 0)
 	if time.Since(headerTime) >= 5*time.Minute {
-		log.Warn("latest L1 block read is at least 5 minutes old", "l1Timestamp", headerTime)
+		log.Warn("latest L1 block is at least 5 minutes old", "l1Block", storedHeader.Number, "l1Timestamp", headerTime)
 	}
 }
 
