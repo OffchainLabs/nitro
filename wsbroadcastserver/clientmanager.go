@@ -11,14 +11,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
-
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
+	"github.com/pkg/errors"
+
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
 /* Protocol-specific client catch-up logic can be injected using this interface. */
@@ -72,9 +74,9 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 }
 
 // Register registers new connection as a Client.
-func (cm *ClientManager) Register(conn net.Conn, desc *netpoll.Desc) *ClientConnection {
+func (cm *ClientManager) Register(conn net.Conn, desc *netpoll.Desc, requestedSeqNum arbutil.MessageIndex) *ClientConnection {
 	createClient := ClientConnectionAction{
-		NewClientConnection(conn, desc, cm),
+		NewClientConnection(conn, desc, cm, requestedSeqNum),
 		true,
 	}
 
