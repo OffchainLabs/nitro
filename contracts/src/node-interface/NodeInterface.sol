@@ -11,9 +11,10 @@ pragma solidity >=0.4.21 <0.9.0;
  */
 interface NodeInterface {
     /**
-     * @notice Estimate the cost of putting a message in the L2 inbox that is reexecuted.
-     * @dev Use eth_estimateGas to call.
-     * @param sender sender of the L1 and L2 transaction
+     * @notice Simulate the execution of a retryable ticket
+     * @dev Use eth_estimateGas on this call to estimate gas usage of retryable ticket
+     *      Since gas usage is not yet known, you may need to add extra deposit (e.g. 1e18 wei) during estimation
+     * @param sender unaliased sender of the L1 and L2 transaction
      * @param deposit amount to deposit to sender in L2
      * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
