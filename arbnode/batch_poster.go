@@ -58,6 +58,7 @@ type BatchPosterConfig struct {
 	HighGasThreshold                   float32       `koanf:"high-gas-threshold"`
 	HighGasDelay                       time.Duration `koanf:"high-gas-delay"`
 	GasRefunderAddress                 string        `koanf:"gas-refunder-address"`
+	GasMarginBasisPoints               uint64        `koanf:"gas-margin-basis-points"`
 }
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -72,6 +73,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Float32(prefix+".high-gas-threshold", DefaultBatchPosterConfig.HighGasThreshold, "If the gas price in gwei is above this amount, delay posting a batch")
 	f.Duration(prefix+".high-gas-delay", DefaultBatchPosterConfig.HighGasDelay, "The maximum delay while waiting for the gas price to go below the high gas threshold")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
+	f.Uint64(prefix+".gas-margin-basis-points", DefaultBatchPosterConfig.GasMarginBasisPoints, "The number of basis points to increase the gas limit of batch posting by")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -86,6 +88,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	HighGasThreshold:                   150.,
 	HighGasDelay:                       14 * time.Hour,
 	GasRefunderAddress:                 "",
+	GasMarginBasisPoints:               500,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -99,6 +102,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	HighGasThreshold:     0.,
 	HighGasDelay:         0,
 	GasRefunderAddress:   "",
+	GasMarginBasisPoints: 500,
 }
 
 func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
@@ -426,6 +430,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	txOpts := *b.transactOpts
 	txOpts.Context = ctx
 	txOpts.NoSend = true
+	txOpts.GasMargin = b.config.GasMarginBasisPoints
 	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(&txOpts, new(big.Int).SetUint64(batchSeqNum), sequencerMsg, new(big.Int).SetUint64(b.building.segments.delayedMsg), b.gasRefunder)
 	if err != nil {
 		return nil, err
