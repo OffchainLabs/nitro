@@ -47,8 +47,8 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
     - Auto-redeem will not be created if the user does not have enough balance to pay for `gasFeeCap * gasLimit` (meaning you can no longer set a max gas fee cap).
     - Deposited gas will be refunded to `excessFeeRefundAddress` if it cannot create an auto-redeem.
     - The user will be refunded the submission cost of their retryable if it is auto-redeemed.
-    - The retryable ticket id is now the retryable creation tx hash; with arbitrum sdk you can retrieve it with `L1ToL2Message.retryableCreationId` or calculate it by calling [L1ToL2Message.calculateSubmitRetryableId](https://github.com/OffchainLabs/arbitrum-sdk/blob/105bf73cb788231b6e63c510713f460b36699fcd/src/lib/message/L1ToL2Message.ts#L109-L155)
-    - The retryable redemption hash is no longer deterministic solely based on the retryable ticket id; it is now a hash of the transaction input like a normal transaction 
+    - The lifecycle of retryable tickets are now tracked differently. Previously there was a retryable ticket ID, which could be used to deterministically generate the expected tx hash. In Nitro, you instead have a retryable creation tx hash (which can be retrieved by the SDK's `L1ToL2Message.retryableCreationId` or calculated by calling  [L1ToL2Message.calculateSubmitRetryableId](https://github.com/OffchainLabs/arbitrum-sdk/blob/105bf73cb788231b6e63c510713f460b36699fcd/src/lib/message/L1ToL2Message.ts#L109-L155)). This value does not directly map into an expected tx hash where it was redeemed. You need to instead listen to the [RedeemScheduled](https://github.com/OffchainLabs/nitro/blob/ec70ed7527597e7e1e8380a59c07e8449885e408/contracts/src/precompiles/ArbRetryableTx.sol#L85-L93) event, which tells you the expected `retryTxHash` of that attempt.
+    - The retryTxHash is no longer deterministic solely based on the retryable ticket id; it is now a hash of the transaction input like a normal transaction (following the [Typed Tx Envelope standard](https://eips.ethereum.org/EIPS/eip-2718))
 
 #### Protocol Contracts 
 
