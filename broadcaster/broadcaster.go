@@ -93,6 +93,10 @@ func (b *Broadcaster) GetCachedMessageCount() int {
 	return b.catchupBuffer.GetMessageCount()
 }
 
+func (b *Broadcaster) Initialize() error {
+	return b.server.Initialize()
+}
+
 func (b *Broadcaster) Start(ctx context.Context) error {
 	return b.server.Start(ctx)
 }
