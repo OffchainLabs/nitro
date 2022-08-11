@@ -66,12 +66,9 @@ func (con *ArbSys) GetStorageGasAvailable(c ctx, evm mech) (huge, error) {
 	return big.NewInt(0), nil
 }
 
-// Checks if the call is top-level
+// Checks if the call is top-level (deprecated)
 func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
-	if c.State.FormatVersion() < 6 {
-		return evm.Depth() <= 2, nil
-	}
-	return con.isTopLevel(c, evm), nil
+	return evm.Depth() <= 2, nil
 }
 
 // Gets the contract's L2 alias
