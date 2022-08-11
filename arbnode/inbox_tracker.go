@@ -255,13 +255,13 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 		pos++
 	}
 
-	return t.setDelayedCountReorgAndWriteBatch(batch, pos)
+	return t.setDelayedCountReorgAndWriteBatch(batch, pos, true)
 }
 
 // All-in-one delayed message count adjuster. Can go forwards or backwards.
 // Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
 // Also deletes any future delayed messages.
-func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newDelayedCount uint64) error {
+func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newDelayedCount uint64, canReorgBatches bool) error {
 	err := deleteStartingAt(t.db, batch, delayedMessagePrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
 		return err
@@ -284,6 +284,9 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		err := rlp.DecodeBytes(seqBatchIter.Value(), &batchSeqNum)
 		if err != nil {
 			return err
+		}
+		if !canReorgBatches {
+			return errors.New("reorging of sequencer batches via delayed messages disabled in this instance")
 		}
 		err = batch.Delete(seqBatchIter.Key())
 		if err != nil {
@@ -553,7 +556,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	return nil
 }
 
-func (t *InboxTracker) ReorgDelayedTo(count uint64) error {
+func (t *InboxTracker) ReorgDelayedTo(count uint64, canReorgBatches bool) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
@@ -567,7 +570,7 @@ func (t *InboxTracker) ReorgDelayedTo(count uint64) error {
 		return errors.New("attempted to reorg to future delayed count")
 	}
 
-	return t.setDelayedCountReorgAndWriteBatch(t.db.NewBatch(), count)
+	return t.setDelayedCountReorgAndWriteBatch(t.db.NewBatch(), count, canReorgBatches)
 }
 
 func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
