@@ -18,7 +18,7 @@ func TestSequencerCompensation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, node1, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
