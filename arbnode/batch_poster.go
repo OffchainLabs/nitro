@@ -64,6 +64,7 @@ type BatchPosterConfig struct {
 	DASRetentionPeriod                 time.Duration               `koanf:"das-retention-period"`
 	GasRefunderAddress                 string                      `koanf:"gas-refunder-address"`
 	DataPoster                         dataposter.DataPosterConfig `koanf:"data-poster"`
+	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas"`
 }
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -76,6 +77,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
+	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 }
 
@@ -89,6 +91,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:                   brotli.DefaultCompression,
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
 	GasRefunderAddress:                 "",
+	ExtraBatchGas:                      10_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
 }
 
@@ -101,6 +104,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:     2,
 	DASRetentionPeriod:   time.Hour * 24 * 15,
 	GasRefunderAddress:   "",
+	ExtraBatchGas:        10_000,
 	DataPoster:           dataposter.TestDataPosterConfig,
 }
 
@@ -386,8 +390,6 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 	return fullData, nil
 }
 
-const extraBatchGas uint64 = 10_000
-
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
 	// Here we set seqNum to MaxUint256, and prevMsgNum and nextMsgNum to 0,
 	// because it disables the smart contracts' consistency checks.
@@ -405,7 +407,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	if err != nil {
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
-	return gas + extraBatchGas, nil
+	return gas + b.config.ExtraBatchGas, nil
 }
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
