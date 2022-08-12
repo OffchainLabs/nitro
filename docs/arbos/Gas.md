@@ -4,7 +4,7 @@ There are two parties a user pays when submitting a tx:
 - the poster, if reimbursable, for L1 resources such as the L1 calldata needed to post the tx
 - the network fee account for L2 resources, which include the computation, storage, and other burdens L2 nodes must bare to service the tx
 
-The L1 component is the product of the tx's estimated calldata size and the L2's view of the L1 data price, a value which dynamically adjusts over time to ensure the batch-poster is ultimately fairly compensated. For details, see [ L1 Pricing](ArbOS.md#l1pricingstate).
+The L1 component is the product of the tx's estimated contribution to its batch's size — computed using Brotli on the tx by itself — and the L2's view of the L1 data price, a value which dynamically adjusts over time to ensure the batch-poster is ultimately fairly compensated. For details, see [ L1 Pricing](ArbOS.md#l1pricingstate).
 
 [The L2 component](ArbOS.md#l2pricingstate) consists of the traditional fees geth would pay to miners in a vanilla L1 chain, such as the computation and storage charges applying the state transition function entails. ArbOS charges additional fees for executing its L2-specific [precompiles](Precompiles.md), whose fees are dynamically priced according to the specific resources used while executing the call.
 
