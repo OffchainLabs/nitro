@@ -170,7 +170,10 @@ func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
 }
 
 func (v *BlockValidator) NewBlock(block *types.Block) {
-	v.sendValidationsChan <- struct{}{}
+	select {
+	case v.sendValidationsChan <- struct{}{}:
+	default:
+	}
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
