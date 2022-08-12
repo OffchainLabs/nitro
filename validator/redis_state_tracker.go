@@ -34,7 +34,7 @@ type RedisStateTrackerConfig struct {
 }
 
 func RedisStateTrackerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".redis-url", DefaultRedisStateTrackerConfig.Url, "validator state tracker redis url")
+	f.String(prefix+".url", DefaultRedisStateTrackerConfig.Url, "validator state tracker redis url")
 	f.Duration(prefix+".lockout-duration", DefaultRedisStateTrackerConfig.LockoutDuration, "validator redis state tracker block validation lockout duration")
 	f.Duration(prefix+".refresh-interval", DefaultRedisStateTrackerConfig.RefreshInterval, "validator redis state tracker block validation lockout refresh interval")
 	f.String(prefix+".signing-key", DefaultRedisStateTrackerConfig.SigningKey, "validator redis state tracker signing key")
@@ -87,8 +87,8 @@ func (t *RedisStateTracker) Initialize(ctx context.Context, genesisBlock *types.
 		PosInBatch:  0,
 	}
 	val, err := t.generateLastValidatedData(ctx, genesisBlock.NumberU64(), lastValidatedMetadata{
-		blockHash: genesisBlock.Hash(),
-		endPos:    endPos,
+		BlockHash: genesisBlock.Hash(),
+		EndPos:    endPos,
 	})
 	if err != nil {
 		return err
@@ -99,8 +99,8 @@ func (t *RedisStateTracker) Initialize(ctx context.Context, genesisBlock *types.
 		return err
 	}
 	val, err = rlp.EncodeToBytes(nextValidation{
-		blockNum: genesisBlock.NumberU64() + 1,
-		pos:      endPos,
+		BlockNum: genesisBlock.NumberU64() + 1,
+		Pos:      endPos,
 	})
 	if err != nil {
 		return err
@@ -169,11 +169,12 @@ func (t *RedisStateTracker) redisSet(ctx context.Context, client redis.Cmdable, 
 	return t.redisSetEx(ctx, client, key, value, 0)
 }
 
+var lastBlockPrefix = []byte("\x00 BLOCK ")
 var lastBlockSeparator = []byte(" \x00")
 
 type lastValidatedMetadata struct {
-	blockHash common.Hash
-	endPos    GlobalStatePosition
+	BlockHash common.Hash
+	EndPos    GlobalStatePosition
 }
 
 const lastBlockValidatedKey = "last-block-validated"
@@ -183,6 +184,10 @@ func (t *RedisStateTracker) lastBlockValidatedAndMeta(ctx context.Context, clien
 	if err != nil {
 		return 0, lastValidatedMetadata{}, err
 	}
+	if !bytes.HasPrefix(res, lastBlockPrefix) {
+		return 0, lastValidatedMetadata{}, errors.New("last block validated doesn't begin with prefix")
+	}
+	res = res[len(lastBlockPrefix):]
 	idx := bytes.Index(res, lastBlockSeparator)
 	if idx == -1 {
 		return 0, lastValidatedMetadata{}, errors.New("last block validated doesn't contain separator")
@@ -208,7 +213,7 @@ func (t *RedisStateTracker) LastBlockValidated(ctx context.Context) (uint64, err
 
 func (t *RedisStateTracker) LastBlockValidatedAndHash(ctx context.Context) (uint64, common.Hash, error) {
 	block, meta, err := t.lastBlockValidatedAndMeta(ctx, t.client)
-	return block, meta.blockHash, err
+	return block, meta.BlockHash, err
 }
 
 func (t *RedisStateTracker) generateLastValidatedData(ctx context.Context, blockNumber uint64, meta lastValidatedMetadata) ([]byte, error) {
@@ -217,7 +222,9 @@ func (t *RedisStateTracker) generateLastValidatedData(ctx context.Context, block
 	if err != nil {
 		return nil, err
 	}
-	val := []byte(firstPart)
+	var val []byte
+	val = append(val, lastBlockPrefix...)
+	val = append(val, firstPart...)
 	val = append(val, secondPart...)
 	return val, nil
 }
@@ -231,8 +238,8 @@ func (t *RedisStateTracker) setLastValidated(ctx context.Context, blockNumber ui
 }
 
 type nextValidation struct {
-	blockNum uint64
-	pos      GlobalStatePosition
+	BlockNum uint64
+	Pos      GlobalStatePosition
 }
 
 const nextValidationKey = "next-validation"
@@ -244,7 +251,7 @@ func (t *RedisStateTracker) getNextValidation(ctx context.Context, client redis.
 	}
 	var info nextValidation
 	err = rlp.DecodeBytes(data, &info)
-	return info.blockNum, info.pos, err
+	return info.BlockNum, info.Pos, err
 }
 
 func (t *RedisStateTracker) setNextValidation(ctx context.Context, client redis.Cmdable, next nextValidation) error {
@@ -302,9 +309,9 @@ func (t *RedisStateTracker) getPrevHash(ctx context.Context, tx *redis.Tx, nextB
 		if err != nil {
 			return 0, common.Hash{}, err
 		}
-		return lastBlockValidated, status.blockHash, nil
+		return lastBlockValidated, status.BlockHash, nil
 	} else if nextBlockToValidate == lastBlockValidated+1 {
-		return lastBlockValidated, lastBlockValidatedMeta.blockHash, nil
+		return lastBlockValidated, lastBlockValidatedMeta.BlockHash, nil
 	} else {
 		return 0, common.Hash{}, fmt.Errorf("lastBlockValidated is %v but nextBlockToValidate is %v?", lastBlockValidated, nextBlockToValidate)
 	}
@@ -346,10 +353,10 @@ func (t *RedisStateTracker) beginRefresh(num uint64, status validationStatus, st
 			}
 			err := t.refresh(ctx, num, statusData)
 			if err != nil {
-				log.Warn("failed to refresh validation status", "err", err, "num", num, "blockHash", status.blockHash)
+				log.Warn("failed to refresh validation status", "err", err, "num", num, "blockHash", status.BlockHash)
 				contents, err := t.client.Get(ctx, t.getValidationStatusKey(num)).Result()
 				if errors.Is(err, redis.Nil) || (err == nil && !bytes.Equal([]byte(contents), statusData)) {
-					log.Warn("validation status key no longer exists", "num", num, "blockHash", status.blockHash)
+					log.Warn("validation status key no longer exists", "num", num, "blockHash", status.BlockHash)
 					atomic.StoreUint32(&statusExists, 0)
 					return
 				}
@@ -379,7 +386,7 @@ func (t *RedisStateTracker) beginRefresh(num uint64, status validationStatus, st
 			}
 			err := t.client.Watch(ctx, act, statusKey)
 			if err != nil && !errors.Is(err, redis.TxFailedErr) {
-				log.Warn("failed to delete validation status", "err", err, "num", num, "blockHash", status.blockHash)
+				log.Warn("failed to delete validation status", "err", err, "num", num, "blockHash", status.BlockHash)
 			}
 		}
 	}
@@ -388,10 +395,10 @@ func (t *RedisStateTracker) beginRefresh(num uint64, status validationStatus, st
 func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.Header, startPos GlobalStatePosition, endPos GlobalStatePosition) (bool, func(), error) {
 	num := header.Number.Uint64()
 	status := validationStatus{
-		prevHash:    header.ParentHash,
-		blockHash:   header.Hash(),
-		validated:   false,
-		endPosition: endPos,
+		PrevHash:    header.ParentHash,
+		BlockHash:   header.Hash(),
+		Validated:   false,
+		EndPosition: endPos,
 	}
 	statusData, err := rlp.EncodeToBytes(status)
 	if err != nil {
@@ -419,8 +426,8 @@ func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.H
 			return err
 		}
 		err = t.setNextValidation(ctx, pipe, nextValidation{
-			blockNum: num + 1,
-			pos:      endPos,
+			BlockNum: num + 1,
+			Pos:      endPos,
 		})
 		if err != nil {
 			return err
@@ -448,15 +455,18 @@ func (t *RedisStateTracker) tryToAdvanceLastBlockValidatedByOne(ctx context.Cont
 		}
 		status, err := t.getValidationStatus(ctx, tx, lastBlockValidated+1)
 		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				return nil
+			}
 			return err
 		}
-		if !status.validated {
+		if !status.Validated {
 			return nil
 		}
 		pipe := tx.TxPipeline()
 		err = t.setLastValidated(ctx, lastBlockValidated+1, lastValidatedMetadata{
-			blockHash: status.blockHash,
-			endPos:    status.endPosition,
+			BlockHash: status.BlockHash,
+			EndPos:    status.EndPosition,
 		})
 		if err != nil {
 			return err
@@ -491,10 +501,10 @@ func (t *RedisStateTracker) ValidationCompleted(ctx context.Context, initialEntr
 		if err != nil {
 			return err
 		}
-		if status.blockHash != initialEntry.BlockHash {
-			return fmt.Errorf("completed validation for block %v with hash %v but we have hash %v saved", initialEntry.BlockNumber, initialEntry.BlockHash, status.blockHash)
+		if status.BlockHash != initialEntry.BlockHash {
+			return fmt.Errorf("completed validation for block %v with hash %v but we have hash %v saved", initialEntry.BlockNumber, initialEntry.BlockHash, status.BlockHash)
 		}
-		status.validated = true
+		status.Validated = true
 		pipe := tx.TxPipeline()
 		data, err := rlp.EncodeToBytes(status)
 		if err != nil {
@@ -515,7 +525,7 @@ func (t *RedisStateTracker) ValidationCompleted(ctx context.Context, initialEntr
 		log.Error("error updating last block validated in redis", "err", err)
 	}
 	lastValidated, lastValidatedMeta, err := t.lastBlockValidatedAndMeta(ctx, t.client)
-	return lastValidated, lastValidatedMeta.endPos, err
+	return lastValidated, lastValidatedMeta.EndPos, err
 }
 
 func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHash common.Hash, nextPosition GlobalStatePosition, isValid func(uint64, common.Hash) bool) error {
@@ -544,8 +554,8 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 			}
 		}
 		err = t.setNextValidation(ctx, pipe, nextValidation{
-			blockNum: blockNum + 1,
-			pos:      nextPosition,
+			BlockNum: blockNum + 1,
+			Pos:      nextPosition,
 		})
 		if err != nil {
 			return err
@@ -553,8 +563,8 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 
 		if lastBlockValidated > blockNum {
 			err := t.setLastValidated(ctx, blockNum, lastValidatedMetadata{
-				blockHash: blockHash,
-				endPos:    nextPosition,
+				BlockHash: blockHash,
+				EndPos:    nextPosition,
 			})
 			if err != nil {
 				return err

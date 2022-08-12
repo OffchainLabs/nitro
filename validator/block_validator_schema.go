@@ -13,10 +13,10 @@ type lastBlockValidatedDbInfo struct {
 
 // Not stored in DB but stored in local and redis state trackers
 type validationStatus struct {
-	prevHash    common.Hash
-	blockHash   common.Hash
-	validated   bool
-	endPosition GlobalStatePosition
+	PrevHash    common.Hash
+	BlockHash   common.Hash
+	Validated   bool
+	EndPosition GlobalStatePosition
 }
 
 var (

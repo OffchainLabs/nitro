@@ -120,7 +120,7 @@ func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.H
 	}
 	var prevHash common.Hash
 	if num > t.lastBlockValidated+1 {
-		prevHash = t.status[num-1].blockHash
+		prevHash = t.status[num-1].BlockHash
 	} else if num == t.lastBlockValidated+1 {
 		prevHash = t.lastBlockValidatedHash
 	} else {
@@ -130,10 +130,10 @@ func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.H
 		return false, nil, fmt.Errorf("previous block %v hash is %v but attempting to validate next block with a previous hash of %v", num-1, prevHash, header.ParentHash)
 	}
 	t.status[num] = &validationStatus{
-		prevHash:    header.ParentHash,
-		blockHash:   header.Hash(),
-		validated:   false,
-		endPosition: endPos,
+		PrevHash:    header.ParentHash,
+		BlockHash:   header.Hash(),
+		Validated:   false,
+		EndPosition: endPos,
 	}
 	t.nextBlockToValidate = num + 1
 	t.nextGlobalState = endPos
@@ -150,24 +150,24 @@ func (t *LocalStateTracker) ValidationCompleted(ctx context.Context, initialEntr
 	if !ok {
 		return 0, GlobalStatePosition{}, fmt.Errorf("completed validation for unknown block %v", initialEntry.BlockNumber)
 	}
-	if status.blockHash != initialEntry.BlockHash {
-		return 0, GlobalStatePosition{}, fmt.Errorf("completed validation for block %v with hash %v but we have hash %v saved", initialEntry.BlockNumber, initialEntry.BlockHash, status.blockHash)
+	if status.BlockHash != initialEntry.BlockHash {
+		return 0, GlobalStatePosition{}, fmt.Errorf("completed validation for block %v with hash %v but we have hash %v saved", initialEntry.BlockNumber, initialEntry.BlockHash, status.BlockHash)
 	}
-	status.validated = true
+	status.Validated = true
 	var lastEndPosition GlobalStatePosition
 	for {
 		blockNum := t.lastBlockValidated + 1
 		status, ok := t.status[blockNum]
-		if !ok || !status.validated {
+		if !ok || !status.Validated {
 			break
 		}
-		if t.lastBlockValidatedHash != status.prevHash {
-			return 0, GlobalStatePosition{}, fmt.Errorf("at block number %v last validated hash %v doesn't match new validation parent %v", t.lastBlockValidated, t.lastBlockValidatedHash, status.prevHash)
+		if t.lastBlockValidatedHash != status.PrevHash {
+			return 0, GlobalStatePosition{}, fmt.Errorf("at block number %v last validated hash %v doesn't match new validation parent %v", t.lastBlockValidated, t.lastBlockValidatedHash, status.PrevHash)
 		}
 		delete(t.status, blockNum)
 		t.lastBlockValidated = blockNum
-		t.lastBlockValidatedHash = status.blockHash
-		lastEndPosition = status.endPosition
+		t.lastBlockValidatedHash = status.BlockHash
+		lastEndPosition = status.EndPosition
 	}
 	return t.lastBlockValidated, lastEndPosition, nil
 }
