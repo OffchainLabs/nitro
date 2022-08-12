@@ -32,7 +32,7 @@ type StateTracker interface {
 	LastBlockValidated(context.Context) (uint64, error)
 	LastBlockValidatedAndHash(context.Context) (uint64, common.Hash, error)
 	GetNextValidation(context.Context) (uint64, GlobalStatePosition, error)
-	BeginValidation(context.Context, *types.Header, GlobalStatePosition, GlobalStatePosition) (bool, func(), error)
+	BeginValidation(context.Context, *types.Header, GlobalStatePosition, GlobalStatePosition) (bool, func(bool), error)
 	ValidationCompleted(context.Context, *validationEntry) (uint64, GlobalStatePosition, error)
 	Reorg(context.Context, uint64, common.Hash, GlobalStatePosition, func(uint64, common.Hash) bool) error
 }
@@ -131,7 +131,7 @@ func NewBlockValidator(
 	}
 	var stateTracker StateTracker
 	if len(config.Redis.Url) > 0 {
-		stateTracker, err = NewRedisStateTracker(config.Redis, "block-validator")
+		stateTracker, err = NewRedisStateTracker(config.Redis)
 		if err != nil {
 			return nil, err
 		}
@@ -418,19 +418,14 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 
-		acquiredLockout, validationCanceled, err := v.stateTracker.BeginValidation(ctx, block.Header(), startPos, endPos)
+		acquiredLockout, validationStopped, err := v.stateTracker.BeginValidation(ctx, block.Header(), startPos, endPos)
 		if err != nil {
 			log.Error("failed to begin validation in state tracker", "err", err)
 			return
 		}
 		if acquiredLockout {
 			v.LaunchThread(func(ctx context.Context) {
-				validationSuccessful := false
-				defer func() {
-					if !validationSuccessful {
-						validationCanceled()
-					}
-				}()
+				defer validationStopped(false)
 				validationCtx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				blockNum := block.NumberU64()
@@ -459,11 +454,11 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				}
 
 				v.validationCancels.Delete(blockNum)
+				validationStopped(true)
 				v.finishedValidation(ctx, entry)
-				validationSuccessful = true
 			})
 			if v.GetContext().Err() != nil {
-				validationCanceled()
+				validationStopped(false)
 			}
 		}
 	}

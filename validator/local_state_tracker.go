@@ -111,7 +111,7 @@ func (t *LocalStateTracker) GetNextValidation(ctx context.Context) (uint64, Glob
 	return t.nextBlockToValidate, t.nextGlobalState, nil
 }
 
-func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.Header, startPos GlobalStatePosition, endPos GlobalStatePosition) (bool, func(), error) {
+func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.Header, startPos GlobalStatePosition, endPos GlobalStatePosition) (bool, func(bool), error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	num := header.Number.Uint64()
@@ -137,7 +137,7 @@ func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.H
 	}
 	t.nextBlockToValidate = num + 1
 	t.nextGlobalState = endPos
-	return true, func() {}, nil
+	return true, func(bool) {}, nil
 }
 
 func (t *LocalStateTracker) ValidationCompleted(ctx context.Context, initialEntry *validationEntry) (uint64, GlobalStatePosition, error) {
