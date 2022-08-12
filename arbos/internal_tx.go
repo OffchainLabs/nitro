@@ -49,10 +49,12 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		if err != nil {
 			panic(err)
 		}
-		l1BlockNumber, _ := inputs[1].(uint64) // current block's
-		timePassed, _ := inputs[2].(uint64)    // actually the L2 block number, fixed in upgrade 3
-		if state.FormatVersion() >= 3 {
-			timePassed, _ = inputs[3].(uint64) // time passed since last block
+
+		l1BlockNumber := util.SafeMapGet[uint64](inputs, "l1BlockNumber")
+		timePassed := util.SafeMapGet[uint64](inputs, "timePassed")
+		if state.FormatVersion() < 3 {
+			// (incorrectly) use the L2 block number instead
+			timePassed = util.SafeMapGet[uint64](inputs, "l2BlockNumber")
 		}
 
 		nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
@@ -83,11 +85,10 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		if err != nil {
 			panic(err)
 		}
-		batchTimestamp, _ := inputs[0].(*big.Int)
-		batchPosterAddress, _ := inputs[1].(common.Address)
-		// ignore input[2], batchNumber, which exist because we might need them in the future
-		batchDataGas, _ := inputs[3].(uint64)
-		l1BaseFeeWei, _ := inputs[4].(*big.Int)
+		batchTimestamp := util.SafeMapGet[*big.Int](inputs, "batchTimestamp")
+		batchPosterAddress := util.SafeMapGet[common.Address](inputs, "batchPosterAddress")
+		batchDataGas := util.SafeMapGet[uint64](inputs, "batchDataGas")
+		l1BaseFeeWei := util.SafeMapGet[*big.Int](inputs, "l1BaseFeeWei")
 
 		l1p := state.L1PricingState()
 		perBatchGas, err := l1p.PerBatchGasCost()

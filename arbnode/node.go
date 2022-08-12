@@ -1152,6 +1152,12 @@ func (n *Node) Start(ctx context.Context) error {
 			return err
 		}
 	}
+	if n.BroadcastServer != nil {
+		err = n.BroadcastServer.Initialize()
+		if err != nil {
+			return err
+		}
+	}
 	n.TxStreamer.Start(ctx)
 	if n.InboxReader != nil {
 		err = n.InboxReader.Start(ctx)

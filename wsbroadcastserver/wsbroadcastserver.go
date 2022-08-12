@@ -107,11 +107,9 @@ func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffe
 	}
 }
 
-func (s *WSBroadcastServer) Start(ctx context.Context) error {
-	s.startMutex.Lock()
-	defer s.startMutex.Unlock()
-	if s.started {
-		return errors.New("broadcast server already started")
+func (s *WSBroadcastServer) Initialize() error {
+	if s.poller != nil {
+		return errors.New("broadcast server already initialized")
 	}
 
 	var err error
@@ -123,10 +121,19 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 
 	// Make pool of X size, Y sized work queue and one pre-spawned
 	// goroutine.
-	var clientManager = NewClientManager(s.poller, s.settings, s.catchupBuffer)
-	clientManager.Start(ctx)
+	s.clientManager = NewClientManager(s.poller, s.settings, s.catchupBuffer)
 
-	s.clientManager = clientManager // maintain the pointer in this instance... used for testing
+	return nil
+}
+
+func (s *WSBroadcastServer) Start(ctx context.Context) error {
+	s.startMutex.Lock()
+	defer s.startMutex.Unlock()
+	if s.started {
+		return errors.New("broadcast server already started")
+	}
+
+	s.clientManager.Start(ctx)
 
 	// handle incoming connection requests.
 	// It upgrades TCP connection to WebSocket, registers netpoll listener on
@@ -200,7 +207,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		}
 
 		// Register incoming client in clientManager.
-		client := clientManager.Register(safeConn, desc, requestedSeqNum)
+		client := s.clientManager.Register(safeConn, desc, requestedSeqNum)
 
 		// Subscribe to events about conn.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {
@@ -208,7 +215,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 				// ReadHup or Hup received, means the client has close the connection
 				// remove it from the clientManager registry.
 				log.Info("Hup received", "connection_name", nameConn(safeConn))
-				clientManager.Remove(client)
+				s.clientManager.Remove(client)
 				return
 			}
 
@@ -217,11 +224,11 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 			}
 
 			// receive client messages, close on error
-			clientManager.pool.Schedule(func() {
+			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client
 				if _, _, err := client.Receive(ctx, s.settings.ClientTimeout); err != nil {
 					log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
-					clientManager.Remove(client)
+					s.clientManager.Remove(client)
 					return
 				}
 			})
@@ -267,7 +274,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		// busy. So if there are no free goroutines during 1ms we want to
 		// cooldown the server and do not receive connection for some short
 		// time.
-		err := clientManager.pool.ScheduleTimeout(time.Millisecond, func() {
+		err := s.clientManager.pool.ScheduleTimeout(time.Millisecond, func() {
 			conn, err := ln.Accept()
 			if err != nil {
 				acceptErrChan <- err
