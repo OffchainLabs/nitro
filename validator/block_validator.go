@@ -32,7 +32,7 @@ type StateTracker interface {
 	LastBlockValidated(context.Context) (uint64, error)
 	LastBlockValidatedAndHash(context.Context) (uint64, common.Hash, error)
 	GetNextValidation(context.Context) (uint64, GlobalStatePosition, error)
-	BeginValidation(context.Context, *types.Header, GlobalStatePosition, GlobalStatePosition) (bool, error)
+	BeginValidation(context.Context, *types.Header, GlobalStatePosition, GlobalStatePosition) (bool, func(), error)
 	ValidationCompleted(context.Context, *validationEntry) (uint64, GlobalStatePosition, error)
 	Reorg(context.Context, uint64, common.Hash, GlobalStatePosition, func(uint64, common.Hash) bool) error
 }
@@ -296,16 +296,14 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	return fmt.Errorf("unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v", hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot)
 }
 
-func (v *BlockValidator) validate(ctx context.Context, moduleRoots []common.Hash, prevHeader *types.Header, header *types.Header, msg arbstate.MessageWithMetadata, seqMsg []byte, startPos GlobalStatePosition, endPos GlobalStatePosition) {
+func (v *BlockValidator) validate(ctx context.Context, moduleRoots []common.Hash, prevHeader *types.Header, header *types.Header, msg arbstate.MessageWithMetadata, seqMsg []byte, startPos GlobalStatePosition, endPos GlobalStatePosition) (*validationEntry, error) {
 	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, v.config.StorePreimages)
 	if err != nil {
-		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
-		return
+		return nil, err
 	}
 	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages, readBatchInfo, startPos, endPos)
 	if err != nil {
-		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
-		return
+		return nil, err
 	}
 	defer func() {
 		atomic.AddInt32(&v.atomicValidationsRunning, -1)
@@ -324,12 +322,7 @@ func (v *BlockValidator) validate(ctx context.Context, moduleRoots []common.Hash
 		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, moduleRoot)
 		duration := time.Since(before)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				log.Info("Validation of block canceled", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "err", err)
-			} else {
-				log.Error("Validation of block failed", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "err", err)
-			}
-			return
+			return nil, fmt.Errorf("validation of block with wasm module root %v failed: %w", moduleRoot, err)
 		}
 		gsExpected := entry.expectedEnd()
 		resultValid := gsEnd == gsExpected
@@ -347,15 +340,12 @@ func (v *BlockValidator) validate(ctx context.Context, moduleRoots []common.Hash
 		}
 
 		if !resultValid {
-			log.Error("validation failed", "moduleRoot", moduleRoot, "got", gsEnd, "expected", gsExpected, "expHeader", entry.BlockHeader)
-			return
+			return nil, fmt.Errorf("validation of block with wasm module root %v failed: expected %v with header %v but got %v", moduleRoot, gsExpected, entry.BlockHeader, gsEnd)
 		}
 
 		log.Info("validation succeeded", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", duration)
 	}
-
-	v.validationCancels.Delete(entry.BlockNumber)
-	v.finishedValidation(ctx, entry)
+	return entry, nil
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {
@@ -425,13 +415,19 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 
-		success, err := v.stateTracker.BeginValidation(ctx, block.Header(), startPos, endPos)
+		acquiredLockout, validationCanceled, err := v.stateTracker.BeginValidation(ctx, block.Header(), startPos, endPos)
 		if err != nil {
 			log.Error("failed to begin validation in state tracker", "err", err)
 			return
 		}
-		if success {
+		if acquiredLockout {
 			v.LaunchThread(func(ctx context.Context) {
+				validationSuccessful := false
+				defer func() {
+					if !validationSuccessful {
+						validationCanceled()
+					}
+				}()
 				validationCtx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				blockNum := block.NumberU64()
@@ -448,8 +444,24 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 					v.nextValidationCancelsBlock = blockNum + 1
 				}
 				v.cancelMutex.Unlock()
-				v.validate(validationCtx, v.GetModuleRootsToValidate(), prevHeader, block.Header(), msg, seqMsg, startPos, endPos)
+				entry, err := v.validate(validationCtx, v.GetModuleRootsToValidate(), prevHeader, block.Header(), msg, seqMsg, startPos, endPos)
+				if err != nil {
+					blockHash := block.Hash()
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						log.Info("validation of block canceled", "blockNr", blockNum, "blockHash", blockHash, "err", err)
+					} else {
+						log.Error("validation of block failed", "blockNr", blockNum, "blockHash", blockHash, "err", err)
+					}
+					return
+				}
+
+				v.validationCancels.Delete(blockNum)
+				v.finishedValidation(ctx, entry)
+				validationSuccessful = true
 			})
+			if v.GetContext().Err() != nil {
+				validationCanceled()
+			}
 		}
 	}
 }

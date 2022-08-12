@@ -9,6 +9,8 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -107,7 +109,11 @@ func (t *RedisStateTracker) Initialize(ctx context.Context, genesisBlock *types.
 		return err
 	}
 	data = t.signMessage(nextValidationKey, val)
-	return t.client.SetNX(ctx, t.prefix+"."+nextValidationKey, data, 0).Err()
+	err = t.client.SetNX(ctx, t.prefix+"."+nextValidationKey, data, 0).Err()
+	if err != nil {
+		return err
+	}
+	return t.tryToAdvanceLastBlockValidated(ctx)
 }
 
 func (t *RedisStateTracker) verifyMessageSignature(key string, value string) ([]byte, error) {
@@ -157,9 +163,13 @@ func (t *RedisStateTracker) redisGet(ctx context.Context, client redis.Cmdable, 
 	return t.verifyMessageSignature(key, res)
 }
 
-func (t *RedisStateTracker) redisSet(ctx context.Context, client redis.Cmdable, key string, value []byte) error {
+func (t *RedisStateTracker) redisSetEx(ctx context.Context, client redis.Cmdable, key string, value []byte, expiry time.Duration) error {
 	data := t.signMessage(key, value)
-	return client.Set(ctx, t.prefix+"."+key, data, 0).Err()
+	return client.Set(ctx, t.prefix+"."+key, data, expiry).Err()
+}
+
+func (t *RedisStateTracker) redisSet(ctx context.Context, client redis.Cmdable, key string, value []byte) error {
+	return t.redisSetEx(ctx, client, key, value, 0)
 }
 
 var lastBlockSeparator = []byte(" \x00")
@@ -281,15 +291,6 @@ func (t *RedisStateTracker) getValidationStatus(ctx context.Context, client redi
 	return status, err
 }
 
-// TODO: expiry and refresh
-func (t *RedisStateTracker) setValidationStatus(ctx context.Context, client redis.Cmdable, num uint64, status validationStatus) error {
-	data, err := rlp.EncodeToBytes(status)
-	if err != nil {
-		return err
-	}
-	return t.redisSet(ctx, client, t.getValidationStatusKey(num), data)
-}
-
 func (t *RedisStateTracker) getPrevHash(ctx context.Context, tx *redis.Tx, nextBlockToValidate uint64) (uint64, common.Hash, error) {
 	lastBlockValidated, lastBlockValidatedMeta, err := t.lastBlockValidatedAndMeta(ctx, t.client)
 	if err != nil {
@@ -312,8 +313,93 @@ func (t *RedisStateTracker) getPrevHash(ctx context.Context, tx *redis.Tx, nextB
 	}
 }
 
-func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.Header, startPos GlobalStatePosition, endPos GlobalStatePosition) (bool, error) {
+func (t *RedisStateTracker) refresh(ctx context.Context, num uint64, statusData []byte) error {
+	statusKey := t.getValidationStatusKey(num)
+	act := func(tx *redis.Tx) error {
+		value, err := tx.Get(ctx, statusKey).Result()
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal([]byte(value), statusData) {
+			return nil
+		}
+		pipe := tx.Pipeline()
+		err = tx.Expire(ctx, statusKey, t.config.LockoutDuration).Err()
+		if err != nil {
+			return err
+		}
+		return execTestPipe(pipe, ctx)
+	}
+	err := t.client.Watch(ctx, act, statusKey)
+	return err
+}
+
+func (t *RedisStateTracker) beginRefresh(num uint64, status validationStatus, statusData []byte) func() {
+	ctx, ctxCancel := context.WithCancel(context.Background())
+	var statusExists uint32 = 1
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(t.config.RefreshInterval):
+			}
+			err := t.refresh(ctx, num, statusData)
+			if err != nil {
+				log.Warn("failed to refresh validation status", "err", err, "num", num, "blockHash", status.blockHash)
+				contents, err := t.client.Get(ctx, t.getValidationStatusKey(num)).Result()
+				if errors.Is(err, redis.Nil) || (err == nil && !bytes.Equal([]byte(contents), statusData)) {
+					log.Warn("validation status key no longer exists", "num", num, "blockHash", status.blockHash)
+					atomic.StoreUint32(&statusExists, 0)
+					return
+				}
+			}
+		}
+	}()
+	return func() {
+		ctxCancel()
+		wg.Wait()
+		if atomic.SwapUint32(&statusExists, 0) == 1 {
+			ctx = context.Background()
+			statusKey := t.getValidationStatusKey(num)
+			act := func(tx *redis.Tx) error {
+				value, err := tx.Get(ctx, statusKey).Result()
+				if err != nil {
+					return err
+				}
+				if !bytes.Equal([]byte(value), statusData) {
+					return nil
+				}
+				pipe := tx.Pipeline()
+				err = tx.Del(ctx, statusKey).Err()
+				if err != nil {
+					return err
+				}
+				return execTestPipe(pipe, ctx)
+			}
+			err := t.client.Watch(ctx, act, statusKey)
+			if err != nil && !errors.Is(err, redis.TxFailedErr) {
+				log.Warn("failed to delete validation status", "err", err, "num", num, "blockHash", status.blockHash)
+			}
+		}
+	}
+}
+
+func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.Header, startPos GlobalStatePosition, endPos GlobalStatePosition) (bool, func(), error) {
 	num := header.Number.Uint64()
+	status := validationStatus{
+		prevHash:    header.ParentHash,
+		blockHash:   header.Hash(),
+		validated:   false,
+		endPosition: endPos,
+	}
+	statusData, err := rlp.EncodeToBytes(status)
+	if err != nil {
+		return false, nil, err
+	}
 	var success bool
 	act := func(tx *redis.Tx) error {
 		nextBlockToValidate, nextGlobalState, err := t.getNextValidation(ctx, tx)
@@ -331,13 +417,7 @@ func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.H
 			return fmt.Errorf("previous block %v hash is %v but attempting to validate next block with a previous hash of %v", num-1, prevHash, header.ParentHash)
 		}
 		pipe := tx.TxPipeline()
-		status := validationStatus{
-			prevHash:    header.ParentHash,
-			blockHash:   header.Hash(),
-			validated:   false,
-			endPosition: endPos,
-		}
-		err = t.setValidationStatus(ctx, pipe, num, status)
+		err = t.redisSetEx(ctx, pipe, t.getValidationStatusKey(num), statusData, t.config.LockoutDuration)
 		if err != nil {
 			return err
 		}
@@ -351,14 +431,18 @@ func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.H
 		success = true
 		return execTestPipe(pipe, ctx)
 	}
-	err := t.client.Watch(ctx, act, t.prefix+"."+lastBlockValidatedKey, t.prefix+"."+nextValidationKey)
+	err = t.client.Watch(ctx, act, t.prefix+"."+lastBlockValidatedKey, t.prefix+"."+nextValidationKey)
 	if errors.Is(err, redis.TxFailedErr) {
-		return false, nil
+		return false, nil, nil
 	}
-	return success, err
+	var cancel func()
+	if success {
+		cancel = t.beginRefresh(num, status, statusData)
+	}
+	return success, cancel, err
 }
 
-func (t *RedisStateTracker) tryToAdvanceLastBlockValidated(ctx context.Context) (bool, error) {
+func (t *RedisStateTracker) tryToAdvanceLastBlockValidatedByOne(ctx context.Context) (bool, error) {
 	var success bool
 	act := func(tx *redis.Tx) error {
 		lastBlockValidated, _, err := t.lastBlockValidatedAndMeta(ctx, tx)
@@ -387,6 +471,22 @@ func (t *RedisStateTracker) tryToAdvanceLastBlockValidated(ctx context.Context) 
 	return success, err
 }
 
+func (t *RedisStateTracker) tryToAdvanceLastBlockValidated(ctx context.Context) error {
+	for {
+		success, err := t.tryToAdvanceLastBlockValidatedByOne(ctx)
+		if err != nil {
+			if errors.Is(err, redis.TxFailedErr) {
+				return nil
+			}
+			return err
+		}
+		if !success {
+			break
+		}
+	}
+	return nil
+}
+
 func (t *RedisStateTracker) ValidationCompleted(ctx context.Context, initialEntry *validationEntry) (uint64, GlobalStatePosition, error) {
 	initialNum := initialEntry.BlockNumber
 	act := func(tx *redis.Tx) error {
@@ -399,7 +499,11 @@ func (t *RedisStateTracker) ValidationCompleted(ctx context.Context, initialEntr
 		}
 		status.validated = true
 		pipe := tx.TxPipeline()
-		err = t.setValidationStatus(ctx, pipe, initialNum, status)
+		data, err := rlp.EncodeToBytes(status)
+		if err != nil {
+			return err
+		}
+		err = t.redisSet(ctx, pipe, t.getValidationStatusKey(initialNum), data)
 		if err != nil {
 			return err
 		}
@@ -409,17 +513,9 @@ func (t *RedisStateTracker) ValidationCompleted(ctx context.Context, initialEntr
 	if err != nil {
 		return 0, GlobalStatePosition{}, err
 	}
-	for {
-		success, err := t.tryToAdvanceLastBlockValidated(ctx)
-		if err != nil {
-			if !errors.Is(err, redis.TxFailedErr) {
-				log.Error("error updating last block validated in redis", "err", err)
-			}
-			break
-		}
-		if !success {
-			break
-		}
+	err = t.tryToAdvanceLastBlockValidated(ctx)
+	if err != nil {
+		log.Error("error updating last block validated in redis", "err", err)
 	}
 	lastValidated, lastValidatedMeta, err := t.lastBlockValidatedAndMeta(ctx, t.client)
 	return lastValidated, lastValidatedMeta.endPos, err

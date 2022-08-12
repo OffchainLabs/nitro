@@ -111,12 +111,12 @@ func (t *LocalStateTracker) GetNextValidation(ctx context.Context) (uint64, Glob
 	return t.nextBlockToValidate, t.nextGlobalState, nil
 }
 
-func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.Header, startPos GlobalStatePosition, endPos GlobalStatePosition) (bool, error) {
+func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.Header, startPos GlobalStatePosition, endPos GlobalStatePosition) (bool, func(), error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	num := header.Number.Uint64()
 	if t.nextBlockToValidate != num || t.nextGlobalState != startPos {
-		return false, nil
+		return false, nil, nil
 	}
 	var prevHash common.Hash
 	if num > t.lastBlockValidated+1 {
@@ -124,10 +124,10 @@ func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.H
 	} else if num == t.lastBlockValidated+1 {
 		prevHash = t.lastBlockValidatedHash
 	} else {
-		return false, fmt.Errorf("lastBlockValidated is %v but nextBlockToValidate is %v?", t.lastBlockValidated, num)
+		return false, nil, fmt.Errorf("lastBlockValidated is %v but nextBlockToValidate is %v?", t.lastBlockValidated, num)
 	}
 	if header.ParentHash != prevHash {
-		return false, fmt.Errorf("previous block %v hash is %v but attempting to validate next block with a previous hash of %v", num-1, prevHash, header.ParentHash)
+		return false, nil, fmt.Errorf("previous block %v hash is %v but attempting to validate next block with a previous hash of %v", num-1, prevHash, header.ParentHash)
 	}
 	t.status[num] = &validationStatus{
 		prevHash:    header.ParentHash,
@@ -137,7 +137,7 @@ func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.H
 	}
 	t.nextBlockToValidate = num + 1
 	t.nextGlobalState = endPos
-	return true, nil
+	return true, func() {}, nil
 }
 
 func (t *LocalStateTracker) ValidationCompleted(ctx context.Context, initialEntry *validationEntry) (uint64, GlobalStatePosition, error) {
