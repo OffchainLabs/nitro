@@ -11,7 +11,7 @@ which are not part of WASM nor any WASM proposal.
 Many of these opcodes have implicit invariants about what's on the stack,
 e.g. "Pops an i32 from the stack" assumes that the top of the stack has an i32.
 If these conditions are not satisfied, execution is generally not possible.
-These invariants are maintained by WASM validation and Arbitrator codegen.  (See `OSPAssumptions.md`.)
+These invariants are maintained by WASM validation and Arbitrator codegen.  (See `osp-assumptions.md`.)
 
 ## Codegen internal
 
@@ -57,7 +57,7 @@ These are only used in the implementation of "host calls".
 Each of these has an equivalent host call method, which can be invoked from libraries.
 The exception is `CallerModuleInternalCall`,
 which is used for the implementation of all of the `wavm_caller_*` host calls.
-Those calls are documented in `WAVMModules.md`.
+Those calls are documented in `wavm-modules.md`.
 
 For these instruction descriptions, all pointers and offsets are represented as WASM i32s.
 
