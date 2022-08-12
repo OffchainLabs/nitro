@@ -25,8 +25,7 @@ import (
 )
 
 type RedisStateTrackerConfig struct {
-	Enable                       bool          `koanf:"enable"`
-	RedisUrl                     string        `koanf:"redis-url"`
+	Url                          string        `koanf:"url"`
 	LockoutDuration              time.Duration `koanf:"lockout-duration"`
 	RefreshInterval              time.Duration `koanf:"refresh-interval"`
 	SigningKey                   string        `koanf:"signing-key"`
@@ -35,8 +34,7 @@ type RedisStateTrackerConfig struct {
 }
 
 func RedisStateTrackerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultRedisStateTrackerConfig.Enable, "enable validator redis state tracker")
-	f.String(prefix+".redis-url", DefaultRedisStateTrackerConfig.RedisUrl, "validator state tracker redis url")
+	f.String(prefix+".redis-url", DefaultRedisStateTrackerConfig.Url, "validator state tracker redis url")
 	f.Duration(prefix+".lockout-duration", DefaultRedisStateTrackerConfig.LockoutDuration, "validator redis state tracker block validation lockout duration")
 	f.Duration(prefix+".refresh-interval", DefaultRedisStateTrackerConfig.RefreshInterval, "validator redis state tracker block validation lockout refresh interval")
 	f.String(prefix+".signing-key", DefaultRedisStateTrackerConfig.SigningKey, "validator redis state tracker signing key")
@@ -45,7 +43,6 @@ func RedisStateTrackerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultRedisStateTrackerConfig = RedisStateTrackerConfig{
-	Enable:          false,
 	LockoutDuration: 5 * time.Minute,
 	RefreshInterval: time.Minute,
 }
@@ -59,7 +56,7 @@ type RedisStateTracker struct {
 }
 
 func NewRedisStateTracker(config RedisStateTrackerConfig, prefix string) (*RedisStateTracker, error) {
-	redisOptions, err := redis.ParseURL(config.RedisUrl)
+	redisOptions, err := redis.ParseURL(config.Url)
 	if err != nil {
 		return nil, err
 	}

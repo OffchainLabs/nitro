@@ -130,7 +130,7 @@ func NewBlockValidator(
 		return nil, err
 	}
 	var stateTracker StateTracker
-	if config.Redis.Enable {
+	if len(config.Redis.Url) > 0 {
 		stateTracker, err = NewRedisStateTracker(config.Redis, "block-validator")
 		if err != nil {
 			return nil, err
