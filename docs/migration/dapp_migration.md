@@ -49,6 +49,8 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
     - The user will be refunded the submission cost of their retryable if it is auto-redeemed.
     - The lifecycle of retryable tickets are now tracked differently. Previously there was a retryable ticket ID, which could be used to deterministically generate the expected tx hash. In Nitro, you instead have a retryable creation tx hash (which can be retrieved by the SDK's `L1ToL2Message.retryableCreationId` or calculated by calling  [L1ToL2Message.calculateSubmitRetryableId](https://github.com/OffchainLabs/arbitrum-sdk/blob/105bf73cb788231b6e63c510713f460b36699fcd/src/lib/message/L1ToL2Message.ts#L109-L155)). This value does not directly map into an expected tx hash where it was redeemed. You need to instead listen to the [RedeemScheduled](https://github.com/OffchainLabs/nitro/blob/ec70ed7527597e7e1e8380a59c07e8449885e408/contracts/src/precompiles/ArbRetryableTx.sol#L85-L93) event, which tells you the expected `retryTxHash` of that attempt.
     - The retryTxHash is no longer deterministic solely based on the retryable ticket id; it is now a hash of the transaction input like a normal transaction (following the [Typed Tx Envelope standard](https://eips.ethereum.org/EIPS/eip-2718))
+- **Arbitrum blockhash**: `blockhash(x)` returns a cryptographically insecure, pseudo-random hash for `x` within the range `block.number - 256 <= x < block.number`. If `x` is outside of this range, `blockhash(x)` will return `0`. This includes `blockhash(block.number)`, which always returns `0` just like on Ethereum. The hashes returned do not come from L1.
+- **ArbSys precompile**: `ArbSys.getTransactionCount` and `ArbSys.getStorageAt` are removed in nitro
 
 #### Protocol Contracts 
 
