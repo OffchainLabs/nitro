@@ -28,6 +28,7 @@ import (
 )
 
 type StateTracker interface {
+	Initialize(context.Context, *types.Block) error
 	LastBlockValidated(context.Context) (uint64, error)
 	LastBlockValidatedAndHash(context.Context) (uint64, common.Hash, error)
 	GetNextValidation(context.Context) (uint64, GlobalStatePosition, error)
@@ -128,18 +129,14 @@ func NewBlockValidator(
 	if err != nil {
 		return nil, err
 	}
-	genesisBlock := blockchain.GetBlockByNumber(statelessVal.genesisBlockNum)
-	if genesisBlock == nil {
-		return nil, fmt.Errorf("blockchain missing genesis block number %v", statelessVal.genesisBlockNum)
-	}
 	var stateTracker StateTracker
 	if config.Redis.Enable {
-		stateTracker, err = NewRedisStateTracker(config.Redis, "block-validator", genesisBlock)
+		stateTracker, err = NewRedisStateTracker(config.Redis, "block-validator")
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		stateTracker, err = NewLocalStateTracker(db, genesisBlock)
+		stateTracker, err = NewLocalStateTracker(db)
 		if err != nil {
 			return nil, err
 		}
@@ -666,6 +663,15 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 		}
 	}
 	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true); err != nil {
+		return err
+	}
+
+	genesisBlock := v.blockchain.GetBlockByNumber(v.genesisBlockNum)
+	if genesisBlock == nil {
+		return fmt.Errorf("blockchain missing genesis block number %v", v.genesisBlockNum)
+	}
+	err := v.stateTracker.Initialize(ctx, genesisBlock)
+	if err != nil {
 		return err
 	}
 

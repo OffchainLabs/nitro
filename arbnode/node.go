@@ -1225,6 +1225,8 @@ func (n *Node) StopAndWait() {
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.StopAndWait()
 	}
+	// Due to block validator reorgs, we may need to stop the tx streamer first.
+	n.TxStreamer.StopOnly()
 	if n.InboxReader != nil {
 		n.InboxReader.StopAndWait()
 	}

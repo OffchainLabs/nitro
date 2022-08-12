@@ -56,7 +56,7 @@ type RedisStateTracker struct {
 	fallbackVerificationKey *[32]byte
 }
 
-func NewRedisStateTracker(config RedisStateTrackerConfig, prefix string, genesisBlock *types.Block) (*RedisStateTracker, error) {
+func NewRedisStateTracker(config RedisStateTrackerConfig, prefix string) (*RedisStateTracker, error) {
 	redisOptions, err := redis.ParseURL(config.RedisUrl)
 	if err != nil {
 		return nil, err
@@ -79,8 +79,35 @@ func NewRedisStateTracker(config RedisStateTrackerConfig, prefix string, genesis
 		signingKey:              signingKey,
 		fallbackVerificationKey: fallbackVerificationKey,
 	}
-	// TODO: populate last block validated in Initialize method with genesisBlock if missing
 	return t, nil
+}
+
+func (t *RedisStateTracker) Initialize(ctx context.Context, genesisBlock *types.Block) error {
+	endPos := GlobalStatePosition{
+		BatchNumber: 1,
+		PosInBatch:  0,
+	}
+	val, err := t.generateLastValidatedData(ctx, genesisBlock.NumberU64(), lastValidatedMetadata{
+		blockHash: genesisBlock.Hash(),
+		endPos:    endPos,
+	})
+	if err != nil {
+		return err
+	}
+	data := t.signMessage(lastBlockValidatedKey, val)
+	err = t.client.SetNX(ctx, t.prefix+"."+lastBlockValidatedKey, data, 0).Err()
+	if err != nil {
+		return err
+	}
+	val, err = rlp.EncodeToBytes(nextValidation{
+		blockNum: genesisBlock.NumberU64() + 1,
+		pos:      endPos,
+	})
+	if err != nil {
+		return err
+	}
+	data = t.signMessage(nextValidationKey, val)
+	return t.client.SetNX(ctx, t.prefix+"."+nextValidationKey, data, 0).Err()
 }
 
 func (t *RedisStateTracker) verifyMessageSignature(key string, value string) ([]byte, error) {
@@ -114,12 +141,12 @@ func (t *RedisStateTracker) verifyMessageSignature(key string, value string) ([]
 	}
 }
 
-func (t *RedisStateTracker) signMessage(key string, msg []byte) []byte {
+func (t *RedisStateTracker) signMessage(key string, msg []byte) string {
 	var hmac [32]byte
 	if t.signingKey != nil {
 		hmac = crypto.Keccak256Hash(t.signingKey[:], []byte(key), msg)
 	}
-	return append(hmac[:], msg...)
+	return string(append(hmac[:], msg...))
 }
 
 func (t *RedisStateTracker) redisGet(ctx context.Context, client redis.Cmdable, key string) ([]byte, error) {
@@ -132,7 +159,7 @@ func (t *RedisStateTracker) redisGet(ctx context.Context, client redis.Cmdable, 
 
 func (t *RedisStateTracker) redisSet(ctx context.Context, client redis.Cmdable, key string, value []byte) error {
 	data := t.signMessage(key, value)
-	return client.Set(ctx, t.prefix+"."+key, string(data), 0).Err()
+	return client.Set(ctx, t.prefix+"."+key, data, 0).Err()
 }
 
 var lastBlockSeparator = []byte(" \x00")
@@ -177,14 +204,22 @@ func (t *RedisStateTracker) LastBlockValidatedAndHash(ctx context.Context) (uint
 	return block, meta.blockHash, err
 }
 
-func (t *RedisStateTracker) setLastValidated(ctx context.Context, blockNumber uint64, meta lastValidatedMetadata) error {
+func (t *RedisStateTracker) generateLastValidatedData(ctx context.Context, blockNumber uint64, meta lastValidatedMetadata) ([]byte, error) {
 	firstPart := fmt.Sprintf("%v \x00", blockNumber)
 	secondPart, err := rlp.EncodeToBytes(meta)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	val := []byte(firstPart)
 	val = append(val, secondPart...)
+	return val, nil
+}
+
+func (t *RedisStateTracker) setLastValidated(ctx context.Context, blockNumber uint64, meta lastValidatedMetadata) error {
+	val, err := t.generateLastValidatedData(ctx, blockNumber, meta)
+	if err != nil {
+		return err
+	}
 	return t.redisSet(ctx, t.client, lastBlockValidatedKey, val)
 }
 

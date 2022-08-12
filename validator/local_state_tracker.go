@@ -25,12 +25,16 @@ type LocalStateTracker struct {
 	status                 map[uint64]*validationStatus
 }
 
-func NewLocalStateTracker(db ethdb.Database, genesisBlock *types.Block) (*LocalStateTracker, error) {
+func NewLocalStateTracker(db ethdb.Database) (*LocalStateTracker, error) {
 	t := &LocalStateTracker{
 		db:     db,
 		status: make(map[uint64]*validationStatus),
 	}
-	return t, t.readFromDisk(genesisBlock)
+	return t, nil
+}
+
+func (t *LocalStateTracker) Initialize(ctx context.Context, genesisBlock *types.Block) error {
+	return t.readFromDisk(genesisBlock)
 }
 
 func (t *LocalStateTracker) readFromDisk(genesisBlock *types.Block) error {
