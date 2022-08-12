@@ -550,7 +550,11 @@ func (v *BlockValidator) ReorgToBlock(ctx context.Context, blockNum uint64, bloc
 	defer v.reorgMutex.Unlock()
 	atomic.AddInt32(&v.reorgsPending, -1)
 
-	if blockNum+1 < v.nextValidationCancelsBlock {
+	nextBlockToValidate, _, err := v.stateTracker.GetNextValidation(ctx)
+	if err != nil {
+		return err
+	}
+	if blockNum+1 < nextBlockToValidate {
 		log.Warn("block validator processing reorg", "blockNum", blockNum)
 		err := v.reorgToBlockImpl(ctx, blockNum, blockHash)
 		if err != nil {
@@ -625,8 +629,18 @@ func (v *BlockValidator) reorgToBlockImpl(ctx context.Context, blockNum uint64, 
 	}
 
 	isBlockValid := func(num uint64, hash common.Hash) bool {
-		header := v.blockchain.GetHeaderByNumber(num)
-		return header != nil && header.Hash() == hash
+		// If this is before the reorg, it's fine
+		if num <= blockNum {
+			return true
+		}
+		bcHash := v.blockchain.GetCanonicalHash(num)
+		if bcHash == (common.Hash{}) {
+			// For safety, we treat unknown block numbers as invalid.
+			return false
+		}
+		// Counterintuitively, the reorg function is called _before_ the blocks are removed.
+		// Thus, a good heuristic is that our blockchain hash is **invalid**.
+		return bcHash != hash
 	}
 
 	return v.stateTracker.Reorg(ctx, blockNum, blockHash, newNextPosition, isBlockValid)

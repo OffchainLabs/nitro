@@ -173,9 +173,9 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock != nil {
 		if s.validator != nil {
-			err = s.validator.ReorgToBlock(context.TODO(), targetBlock.NumberU64(), targetBlock.Hash())
+			err = s.validator.ReorgToBlock(s.GetContext(), targetBlock.NumberU64(), targetBlock.Hash())
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to reorg block validator: %w", err)
 			}
 		}
 
