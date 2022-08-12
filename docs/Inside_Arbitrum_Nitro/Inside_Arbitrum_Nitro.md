@@ -63,7 +63,7 @@ The essence of Nitro, and its key innovations, lie in four big ideas. We'll list
 
 This diagram summarizes how transactions are processed in Nitro.
 
-![seq-then-exec](/Users/ed/Desktop/Inside Arbitrum Nitro/seq-then-exec.png)
+![seq-then-exec](seq-then-exec.png)
 
 Let's follow a user's transaction through this process.
 
@@ -91,7 +91,7 @@ The sequencer's batches are compressed using a general-purpose data compression 
 
 The second key design idea in Nitro is "geth at the core." Here "geth" refers to go-ethereum, the most common node software for Ethereum. As its name would suggest, go-ethereum is written in the Go programming language, as is almost all of Nitro.
 
-![geth-sandwich](/Users/ed/Desktop/Inside Arbitrum Nitro/geth-sandwich.png)
+![geth-sandwich](geth-sandwich.png)
 
 The software that makes up a Nitro node can be thought of as built in three main layers, which are shown above:
 
