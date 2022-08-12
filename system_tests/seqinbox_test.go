@@ -269,7 +269,8 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 		if validator && i%15 == 0 {
 			for i := 0; ; i++ {
-				lastValidated := arbNode.BlockValidator.LastBlockValidated()
+				lastValidated, err := arbNode.BlockValidator.LastBlockValidated(ctx)
+				Require(t, err)
 				if lastValidated == expectedBlockNumber {
 					break
 				} else if i >= 1000 {

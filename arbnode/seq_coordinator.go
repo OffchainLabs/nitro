@@ -10,8 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -134,45 +132,19 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	},
 }
 
-var keyIsHexRegex = regexp.MustCompile("^(0x)?[a-fA-F0-9]{64}$")
-
-func loadSigningKey(keyConfig string) (*[32]byte, error) {
-	if keyConfig == "" {
-		return nil, nil
-	}
-	keyIsHex := keyIsHexRegex.Match([]byte(keyConfig))
-	var keyString string
-	if keyIsHex {
-		keyString = keyConfig
-	} else {
-		contents, err := os.ReadFile(keyConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read signing key file: %w", err)
-		}
-		s := strings.TrimSpace(string(contents))
-		if keyIsHexRegex.Match([]byte(s)) {
-			keyString = s
-		} else {
-			return nil, errors.New("signing key file contents are not 32 bytes of hex")
-		}
-	}
-	var b [32]byte = common.HexToHash(keyString)
-	return &b, nil
-}
-
 func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
 	redisOptions, err := redis.ParseURL(config.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
-	signingKey, err := loadSigningKey(config.SigningKey)
+	signingKey, err := arbutil.LoadSigningKey(config.SigningKey)
 	if err != nil {
 		return nil, err
 	}
 	if signingKey == nil && !config.Dangerous.DisableSignatureVerification {
 		return nil, errors.New("signature verification is enabled but no key is present")
 	}
-	fallbackVerificationKey, err := loadSigningKey(config.FallbackVerificationKey)
+	fallbackVerificationKey, err := arbutil.LoadSigningKey(config.FallbackVerificationKey)
 	if err != nil {
 		return nil, err
 	}

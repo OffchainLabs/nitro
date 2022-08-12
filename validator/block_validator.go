@@ -60,18 +60,18 @@ type BlockValidator struct {
 	concurrentRunsLimit      int32
 	initialReorgBlock        *types.Block
 
-	sendValidationsChan    chan struct{}
-	finishedValidationChan chan *validationEntry
-	progressChan           chan uint64
+	sendValidationsChan chan struct{}
+	progressChan        chan uint64
 }
 
 type BlockValidatorConfig struct {
-	Enable                   bool   `koanf:"enable"`
-	OutputPath               string `koanf:"output-path"`
-	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
-	CurrentModuleRoot        string `koanf:"current-module-root"`
-	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
-	StorePreimages           bool   `koanf:"store-preimages"`
+	Enable                   bool                    `koanf:"enable"`
+	OutputPath               string                  `koanf:"output-path"`
+	ConcurrentRunsLimit      int                     `koanf:"concurrent-runs-limit"`
+	CurrentModuleRoot        string                  `koanf:"current-module-root"`
+	PendingUpgradeModuleRoot string                  `koanf:"pending-upgrade-module-root"`
+	StorePreimages           bool                    `koanf:"store-preimages"`
+	Redis                    RedisStateTrackerConfig `koanf:"redis"`
 }
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -81,6 +81,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".store-preimages", DefaultBlockValidatorConfig.StorePreimages, "store preimages of running machines (higher memory cost, better debugging, potentially better performance)")
+	RedisStateTrackerConfigAddOptions(prefix+".redis", f)
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
@@ -132,15 +133,20 @@ func NewBlockValidator(
 		return nil, fmt.Errorf("blockchain missing genesis block number %v", statelessVal.genesisBlockNum)
 	}
 	var stateTracker StateTracker
-	// TODO: support a redis state tracker
-	stateTracker, err = NewLocalStateTracker(db, genesisBlock)
-	if err != nil {
-		return nil, err
+	if config.Redis.Enable {
+		stateTracker, err = NewRedisStateTracker(config.Redis, "block-validator", genesisBlock)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		stateTracker, err = NewLocalStateTracker(db, genesisBlock)
+		if err != nil {
+			return nil, err
+		}
 	}
 	validator := &BlockValidator{
 		StatelessBlockValidator: statelessVal,
 		sendValidationsChan:     make(chan struct{}, 1),
-		finishedValidationChan:  make(chan *validationEntry, 1),
 		progressChan:            make(chan uint64, 1),
 		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
@@ -352,7 +358,7 @@ func (v *BlockValidator) validate(ctx context.Context, moduleRoots []common.Hash
 	}
 
 	v.validationCancels.Delete(entry.BlockNumber)
-	v.finishedValidationChan <- entry
+	v.finishedValidation(ctx, entry)
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {
@@ -451,7 +457,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 	}
 }
 
-func (v *BlockValidator) progressValidated(ctx context.Context, entry *validationEntry) {
+func (v *BlockValidator) finishedValidation(ctx context.Context, entry *validationEntry) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 	latestValidated, nextGlobalState, err := v.stateTracker.ValidationCompleted(ctx, entry)
@@ -462,11 +468,10 @@ func (v *BlockValidator) progressValidated(ctx context.Context, entry *validatio
 
 	earliestBatchKept := atomic.LoadUint64(&v.earliestBatchKept)
 	seqMsgNr := nextGlobalState.BatchNumber
-	if earliestBatchKept < seqMsgNr {
-		for batch := earliestBatchKept; batch < seqMsgNr; batch++ {
-			v.sequencerBatches.Delete(batch)
-		}
-		atomic.StoreUint64(&v.earliestBatchKept, seqMsgNr)
+	for earliestBatchKept < seqMsgNr {
+		v.sequencerBatches.Delete(earliestBatchKept)
+		atomic.CompareAndSwapUint64(&v.earliestBatchKept, earliestBatchKept, earliestBatchKept+1)
+		earliestBatchKept = atomic.LoadUint64(&v.earliestBatchKept)
 	}
 
 	select {
@@ -702,11 +707,6 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 		v.sendValidations(ctx)
 		for {
 			select {
-			case entry, ok := <-v.finishedValidationChan:
-				if !ok {
-					return
-				}
-				v.progressValidated(ctx, entry)
 			case _, ok := <-v.sendValidationsChan:
 				if !ok {
 					return

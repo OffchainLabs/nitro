@@ -26,13 +26,13 @@ type BlockValidatorAPI struct {
 }
 
 func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (hexutil.Uint64, error) {
-	block := a.val.LastBlockValidated()
-	return hexutil.Uint64(block), nil
+	block, err := a.val.LastBlockValidated(ctx)
+	return hexutil.Uint64(block), err
 }
 
 func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (common.Hash, error) {
-	_, hash, _ := a.val.LastBlockValidatedAndHash()
-	return hash, nil
+	_, hash, _, err := a.val.LastBlockValidatedAndHash(ctx)
+	return hash, err
 }
 
 type BlockValidatorDebugAPI struct {
