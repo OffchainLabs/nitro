@@ -169,7 +169,7 @@ func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisUrl st
 		return err
 	}
 	r := redis.NewClient(redisOptions)
-	signingKey, err := loadSigningKey(keyConfig)
+	signingKey, err := arbutil.LoadSigningKey(keyConfig)
 	if err != nil {
 		return err
 	}
