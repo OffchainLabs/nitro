@@ -1,4 +1,4 @@
-# If there is a dispute, can my L2 transaction get reorged/ throwned out?
+# If there is a dispute, can my L2 transaction get reorged / throw out / "yeeted"? ?
 
 Nope; once an Arbitrum transaction is included on L1, there is no way it can be reorged (unless the L1 itself reorgs, of course). A "dispute" involves Validators disagreeing over execution, i.e., the outputted state of a chain. The inputs, however, can't be disputed; they are determined by the Inbox on L1. (See "Transaction Lifecycle")
 
