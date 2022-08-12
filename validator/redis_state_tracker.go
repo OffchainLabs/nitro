@@ -231,7 +231,7 @@ func (t *RedisStateTracker) LastBlockValidatedAndHash(ctx context.Context) (uint
 	return block, meta.BlockHash, err
 }
 
-func (t *RedisStateTracker) setLastValidated(ctx context.Context, blockNumber uint64, meta lastValidatedMetadata) error {
+func (t *RedisStateTracker) setLastValidated(ctx context.Context, client redis.Cmdable, blockNumber uint64, meta lastValidatedMetadata) error {
 	val, err := serializeWithBlockNumber(blockNumber, meta)
 	if err != nil {
 		return err
@@ -319,7 +319,7 @@ func (t *RedisStateTracker) refresh(ctx context.Context, num uint64, statusData 
 			return errors.New("validation status data changed")
 		}
 		pipe := tx.TxPipeline()
-		err = tx.Expire(ctx, statusKey, t.config.LockoutDuration).Err()
+		err = pipe.Expire(ctx, statusKey, t.config.LockoutDuration).Err()
 		if err != nil {
 			return err
 		}
@@ -455,14 +455,10 @@ func (t *RedisStateTracker) tryToAdvanceLastBlockValidatedByOne(ctx context.Cont
 			return nil
 		}
 		pipe := tx.TxPipeline()
-		val, err := serializeWithBlockNumber(lastBlockValidated+1, lastValidatedMetadata{
+		err = t.setLastValidated(ctx, pipe, lastBlockValidated+1, lastValidatedMetadata{
 			BlockHash: status.BlockHash,
 			EndPos:    status.EndPosition,
 		})
-		if err != nil {
-			return err
-		}
-		err = t.redisSet(ctx, pipe, lastBlockValidatedKey, val)
 		if err != nil {
 			return err
 		}
@@ -558,7 +554,7 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 		}
 
 		if lastBlockValidated > blockNum {
-			err := t.setLastValidated(ctx, blockNum, lastValidatedMetadata{
+			err := t.setLastValidated(ctx, pipe, blockNum, lastValidatedMetadata{
 				BlockHash: blockHash,
 				EndPos:    nextPosition,
 			})
