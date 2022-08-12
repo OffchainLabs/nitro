@@ -318,7 +318,7 @@ func (t *RedisStateTracker) refresh(ctx context.Context, num uint64, statusData 
 		if !bytes.Equal([]byte(value), statusData) {
 			return errors.New("validation status data changed")
 		}
-		pipe := tx.Pipeline()
+		pipe := tx.TxPipeline()
 		err = tx.Expire(ctx, statusKey, t.config.LockoutDuration).Err()
 		if err != nil {
 			return err
@@ -371,8 +371,8 @@ func (t *RedisStateTracker) beginRefresh(num uint64, status validationStatus, st
 				if !bytes.Equal([]byte(value), statusData) {
 					return nil
 				}
-				pipe := tx.Pipeline()
-				err = tx.Del(ctx, statusKey).Err()
+				pipe := tx.TxPipeline()
+				err = pipe.Del(ctx, statusKey).Err()
 				if err != nil {
 					return err
 				}
@@ -455,10 +455,14 @@ func (t *RedisStateTracker) tryToAdvanceLastBlockValidatedByOne(ctx context.Cont
 			return nil
 		}
 		pipe := tx.TxPipeline()
-		err = t.setLastValidated(ctx, lastBlockValidated+1, lastValidatedMetadata{
+		val, err := serializeWithBlockNumber(lastBlockValidated+1, lastValidatedMetadata{
 			BlockHash: status.BlockHash,
 			EndPos:    status.EndPosition,
 		})
+		if err != nil {
+			return err
+		}
+		err = t.redisSet(ctx, pipe, lastBlockValidatedKey, val)
 		if err != nil {
 			return err
 		}

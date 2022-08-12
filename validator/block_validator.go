@@ -309,7 +309,6 @@ func (v *BlockValidator) validate(ctx context.Context, moduleRoots []common.Hash
 		return nil, err
 	}
 	defer func() {
-		atomic.AddInt32(&v.atomicValidationsRunning, -1)
 		select {
 		case v.sendValidationsChan <- struct{}{}:
 		default:
@@ -410,7 +409,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("inconsistent pos mapping", "msg", nextMsg, "expected", globalPosNextSend, "found", startPos)
 			return
 		}
-		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 
 		seqMsg, ok := seqBatchEntry.([]byte)
 		if !ok {
@@ -424,8 +422,10 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 		if acquiredLockout {
+			atomic.AddInt32(&v.atomicValidationsRunning, 1)
 			v.LaunchThread(func(ctx context.Context) {
 				defer validationStopped(false)
+				defer atomic.AddInt32(&v.atomicValidationsRunning, -1)
 				validationCtx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				blockNum := block.NumberU64()
