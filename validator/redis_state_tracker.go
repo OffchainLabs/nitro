@@ -79,12 +79,51 @@ func NewRedisStateTracker(config RedisStateTrackerConfig) (*RedisStateTracker, e
 	return t, nil
 }
 
+var lastBlockPrefix = []byte("\x00 BLOCK ")
+var lastBlockSeparator = []byte(" \x00")
+
+func serializeWithBlockNumber(blockNum uint64, data interface{}) ([]byte, error) {
+	firstPart := fmt.Sprintf("%v \x00", blockNum)
+	secondPart, err := rlp.EncodeToBytes(data)
+	if err != nil {
+		return nil, err
+	}
+	var val []byte
+	val = append(val, lastBlockPrefix...)
+	val = append(val, firstPart...)
+	val = append(val, secondPart...)
+	return val, nil
+}
+
+func deserializeWithBlockNumber[T any](res []byte) (uint64, T, error) {
+	var data T
+	if !bytes.HasPrefix(res, lastBlockPrefix) {
+		return 0, data, errors.New("last block validated doesn't begin with prefix")
+	}
+	res = res[len(lastBlockPrefix):]
+	idx := bytes.Index(res, lastBlockSeparator)
+	if idx == -1 {
+		return 0, data, errors.New("last block validated doesn't contain separator")
+	}
+	blockNumStr := res[:idx]
+	blockNum, err := strconv.ParseUint(string(blockNumStr), 10, 64)
+	if err != nil {
+		return 0, data, err
+	}
+	blockMetaStr := res[(idx + len(lastBlockSeparator)):]
+	err = rlp.DecodeBytes(blockMetaStr, &data)
+	if err != nil {
+		return 0, data, err
+	}
+	return blockNum, data, err
+}
+
 func (t *RedisStateTracker) Initialize(ctx context.Context, genesisBlock *types.Block) error {
 	endPos := GlobalStatePosition{
 		BatchNumber: 1,
 		PosInBatch:  0,
 	}
-	val, err := t.generateLastValidatedData(ctx, genesisBlock.NumberU64(), lastValidatedMetadata{
+	val, err := serializeWithBlockNumber(genesisBlock.NumberU64(), lastValidatedMetadata{
 		BlockHash: genesisBlock.Hash(),
 		EndPos:    endPos,
 	})
@@ -96,10 +135,7 @@ func (t *RedisStateTracker) Initialize(ctx context.Context, genesisBlock *types.
 	if err != nil {
 		return err
 	}
-	val, err = rlp.EncodeToBytes(nextValidation{
-		BlockNum: genesisBlock.NumberU64() + 1,
-		Pos:      endPos,
-	})
+	val, err = serializeWithBlockNumber(genesisBlock.NumberU64()+1, endPos)
 	if err != nil {
 		return err
 	}
@@ -167,9 +203,6 @@ func (t *RedisStateTracker) redisSet(ctx context.Context, client redis.Cmdable, 
 	return t.redisSetEx(ctx, client, key, value, 0)
 }
 
-var lastBlockPrefix = []byte("\x00 BLOCK ")
-var lastBlockSeparator = []byte(" \x00")
-
 type lastValidatedMetadata struct {
 	BlockHash common.Hash
 	EndPos    GlobalStatePosition
@@ -185,26 +218,7 @@ func (t *RedisStateTracker) lastBlockValidatedAndMeta(ctx context.Context, clien
 	if err != nil {
 		return 0, lastValidatedMetadata{}, err
 	}
-	if !bytes.HasPrefix(res, lastBlockPrefix) {
-		return 0, lastValidatedMetadata{}, errors.New("last block validated doesn't begin with prefix")
-	}
-	res = res[len(lastBlockPrefix):]
-	idx := bytes.Index(res, lastBlockSeparator)
-	if idx == -1 {
-		return 0, lastValidatedMetadata{}, errors.New("last block validated doesn't contain separator")
-	}
-	blockNumStr := res[:idx]
-	blockNum, err := strconv.ParseUint(string(blockNumStr), 10, 64)
-	if err != nil {
-		return 0, lastValidatedMetadata{}, err
-	}
-	blockMetaStr := res[(idx + len(lastBlockSeparator)):]
-	var blockMeta lastValidatedMetadata
-	err = rlp.DecodeBytes(blockMetaStr, &blockMeta)
-	if err != nil {
-		return 0, lastValidatedMetadata{}, err
-	}
-	return blockNum, blockMeta, nil
+	return deserializeWithBlockNumber[lastValidatedMetadata](res)
 }
 
 func (t *RedisStateTracker) LastBlockValidated(ctx context.Context) (uint64, error) {
@@ -217,30 +231,12 @@ func (t *RedisStateTracker) LastBlockValidatedAndHash(ctx context.Context) (uint
 	return block, meta.BlockHash, err
 }
 
-func (t *RedisStateTracker) generateLastValidatedData(ctx context.Context, blockNumber uint64, meta lastValidatedMetadata) ([]byte, error) {
-	firstPart := fmt.Sprintf("%v \x00", blockNumber)
-	secondPart, err := rlp.EncodeToBytes(meta)
-	if err != nil {
-		return nil, err
-	}
-	var val []byte
-	val = append(val, lastBlockPrefix...)
-	val = append(val, firstPart...)
-	val = append(val, secondPart...)
-	return val, nil
-}
-
 func (t *RedisStateTracker) setLastValidated(ctx context.Context, blockNumber uint64, meta lastValidatedMetadata) error {
-	val, err := t.generateLastValidatedData(ctx, blockNumber, meta)
+	val, err := serializeWithBlockNumber(blockNumber, meta)
 	if err != nil {
 		return err
 	}
 	return t.redisSet(ctx, t.client, lastBlockValidatedKey, val)
-}
-
-type nextValidation struct {
-	BlockNum uint64
-	Pos      GlobalStatePosition
 }
 
 func (t *RedisStateTracker) getNextValidation(ctx context.Context, client redis.Cmdable) (uint64, GlobalStatePosition, error) {
@@ -248,17 +244,15 @@ func (t *RedisStateTracker) getNextValidation(ctx context.Context, client redis.
 	if err != nil {
 		return 0, GlobalStatePosition{}, err
 	}
-	var info nextValidation
-	err = rlp.DecodeBytes(data, &info)
-	return info.BlockNum, info.Pos, err
+	return deserializeWithBlockNumber[GlobalStatePosition](data)
 }
 
-func (t *RedisStateTracker) setNextValidation(ctx context.Context, client redis.Cmdable, next nextValidation) error {
-	nextValidationData, err := rlp.EncodeToBytes(next)
+func (t *RedisStateTracker) setNextValidation(ctx context.Context, client redis.Cmdable, blockNum uint64, nextPos GlobalStatePosition) error {
+	data, err := serializeWithBlockNumber(blockNum, nextPos)
 	if err != nil {
 		return err
 	}
-	return t.redisSet(ctx, client, nextValidationKey, nextValidationData)
+	return t.redisSet(ctx, client, nextValidationKey, data)
 }
 
 func (t *RedisStateTracker) GetNextValidation(ctx context.Context) (uint64, GlobalStatePosition, error) {
@@ -425,10 +419,7 @@ func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.H
 		if err != nil {
 			return err
 		}
-		err = t.setNextValidation(ctx, pipe, nextValidation{
-			BlockNum: num + 1,
-			Pos:      endPos,
-		})
+		err = t.setNextValidation(ctx, pipe, num+1, endPos)
 		if err != nil {
 			return err
 		}
@@ -557,10 +548,7 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 				return err
 			}
 		}
-		err = t.setNextValidation(ctx, pipe, nextValidation{
-			BlockNum: blockNum + 1,
-			Pos:      nextPosition,
-		})
+		err = t.setNextValidation(ctx, pipe, blockNum+1, nextPosition)
 		if err != nil {
 			return err
 		}
