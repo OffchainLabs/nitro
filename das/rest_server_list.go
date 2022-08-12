@@ -89,6 +89,13 @@ const maxListFetchTime = time.Minute
 
 func StartRestfulServerListFetchDaemon(ctx context.Context, listUrl string, updatePeriod time.Duration) <-chan []string {
 	updateChan := make(chan []string)
+	if listUrl == "" {
+		log.Info("Trying to start RestfulServerListFetchDaemon with empty online-url-list, not starting.")
+		return updateChan
+	}
+	if updatePeriod == 0 {
+		panic("RestfulServerListFetchDaemon started with zero updatePeriod")
+	}
 
 	downloadAndSend := func() error { // download and send once
 		subCtx, subCtxCancel := context.WithTimeout(ctx, maxListFetchTime)
