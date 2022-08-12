@@ -11,6 +11,14 @@ type lastBlockValidatedDbInfo struct {
 	AfterPosition GlobalStatePosition
 }
 
+// Not stored in DB but stored in local and redis state trackers
+type validationStatus struct {
+	prevHash    common.Hash
+	blockHash   common.Hash
+	validated   bool
+	endPosition GlobalStatePosition
+}
+
 var (
 	lastBlockValidatedInfoKey []byte = []byte("_lastBlockValidatedInfo") // contains a rlp encoded lastBlockValidatedDbInfo
 )

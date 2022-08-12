@@ -4,6 +4,7 @@
 package validator
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -12,13 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 )
-
-type validationStatus struct {
-	prevHash    common.Hash
-	blockHash   common.Hash
-	validated   bool
-	endPosition GlobalStatePosition
-}
 
 type LocalStateTracker struct {
 	db ethdb.Database
@@ -77,16 +71,16 @@ func (t *LocalStateTracker) readFromDisk(genesisBlock *types.Block) error {
 	return nil
 }
 
-func (t *LocalStateTracker) LastBlockValidated() uint64 {
+func (t *LocalStateTracker) LastBlockValidated(ctx context.Context) (uint64, error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	return t.lastBlockValidated
+	return t.lastBlockValidated, nil
 }
 
-func (t *LocalStateTracker) LastBlockValidatedAndHash() (blockNumber uint64, blockHash common.Hash) {
+func (t *LocalStateTracker) LastBlockValidatedAndHash(ctx context.Context) (uint64, common.Hash, error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	return t.lastBlockValidated, t.lastBlockValidatedHash
+	return t.lastBlockValidated, t.lastBlockValidatedHash, nil
 }
 
 func (t *LocalStateTracker) setLastValidated(blockNumber uint64, blockHash common.Hash, endPos GlobalStatePosition) error {
@@ -107,13 +101,13 @@ func (t *LocalStateTracker) setLastValidated(blockNumber uint64, blockHash commo
 	return t.db.Put(lastBlockValidatedInfoKey, encodedInfo)
 }
 
-func (t *LocalStateTracker) GetNextValidation() (uint64, GlobalStatePosition) {
+func (t *LocalStateTracker) GetNextValidation(ctx context.Context) (uint64, GlobalStatePosition, error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	return t.nextBlockToValidate, t.nextGlobalState
+	return t.nextBlockToValidate, t.nextGlobalState, nil
 }
 
-func (t *LocalStateTracker) BeginValidation(header *types.Header, startPos GlobalStatePosition, endPos GlobalStatePosition) (bool, error) {
+func (t *LocalStateTracker) BeginValidation(ctx context.Context, header *types.Header, startPos GlobalStatePosition, endPos GlobalStatePosition) (bool, error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	num := header.Number.Uint64()
@@ -142,7 +136,7 @@ func (t *LocalStateTracker) BeginValidation(header *types.Header, startPos Globa
 	return true, nil
 }
 
-func (t *LocalStateTracker) ValidationCompleted(initialEntry *validationEntry) (uint64, GlobalStatePosition, error) {
+func (t *LocalStateTracker) ValidationCompleted(ctx context.Context, initialEntry *validationEntry) (uint64, GlobalStatePosition, error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if initialEntry.BlockNumber >= t.nextBlockToValidate {
@@ -174,7 +168,7 @@ func (t *LocalStateTracker) ValidationCompleted(initialEntry *validationEntry) (
 	return t.lastBlockValidated, lastEndPosition, nil
 }
 
-func (t *LocalStateTracker) Reorg(blockNum uint64, blockHash common.Hash, nextPosition GlobalStatePosition, isValid func(uint64, common.Hash) bool) error {
+func (t *LocalStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHash common.Hash, nextPosition GlobalStatePosition, isValid func(uint64, common.Hash) bool) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 

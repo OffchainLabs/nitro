@@ -28,12 +28,12 @@ import (
 )
 
 type StateTracker interface {
-	LastBlockValidated() uint64
-	LastBlockValidatedAndHash() (blockNumber uint64, blockHash common.Hash)
-	GetNextValidation() (uint64, GlobalStatePosition)
-	BeginValidation(*types.Header, GlobalStatePosition, GlobalStatePosition) (bool, error)
-	ValidationCompleted(*validationEntry) (uint64, GlobalStatePosition, error)
-	Reorg(uint64, common.Hash, GlobalStatePosition, func(uint64, common.Hash) bool) error
+	LastBlockValidated(context.Context) (uint64, error)
+	LastBlockValidatedAndHash(context.Context) (uint64, common.Hash, error)
+	GetNextValidation(context.Context) (uint64, GlobalStatePosition, error)
+	BeginValidation(context.Context, *types.Header, GlobalStatePosition, GlobalStatePosition) (bool, error)
+	ValidationCompleted(context.Context, *validationEntry) (uint64, GlobalStatePosition, error)
+	Reorg(context.Context, uint64, common.Hash, GlobalStatePosition, func(uint64, common.Hash) bool) error
 }
 
 type BlockValidator struct {
@@ -58,6 +58,7 @@ type BlockValidator struct {
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
 	concurrentRunsLimit      int32
+	initialReorgBlock        *types.Block
 
 	sendValidationsChan    chan struct{}
 	finishedValidationChan chan *validationEntry
@@ -144,40 +145,7 @@ func NewBlockValidator(
 		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
 		stateTracker:            stateTracker,
-	}
-	lastBlockValidated, lastBlockHashValidated := stateTracker.LastBlockValidatedAndHash()
-	if reorgingToBlock != nil && reorgingToBlock.NumberU64() >= lastBlockValidated {
-		// Disregard this reorg as it doesn't affect the last validated block
-		reorgingToBlock = nil
-	}
-	if reorgingToBlock == nil {
-		expectedHash := blockchain.GetCanonicalHash(lastBlockValidated)
-		if expectedHash != lastBlockHashValidated {
-			return nil, fmt.Errorf("last validated block %v stored with hash %v, but blockchain has hash %v", lastBlockValidated, lastBlockHashValidated, expectedHash)
-		}
-	}
-	if reorgingToBlock != nil {
-		err = validator.reorgToBlockImpl(reorgingToBlock.NumberU64(), reorgingToBlock.Hash())
-		if err != nil {
-			return nil, err
-		}
-	}
-	if config.PendingUpgradeModuleRoot != "" {
-		if config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := machineLoader.GetConfig().ReadLatestWasmModuleRoot()
-			if err != nil {
-				return nil, err
-			}
-			validator.pendingWasmModuleRoot = latest
-		} else {
-			validator.pendingWasmModuleRoot = common.HexToHash(config.PendingUpgradeModuleRoot)
-			if (validator.pendingWasmModuleRoot == common.Hash{}) {
-				return nil, errors.New("pending-upgrade-module-root config value illegal")
-			}
-		}
-		if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true); err != nil {
-			return nil, err
-		}
+		initialReorgBlock:       reorgingToBlock,
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
@@ -395,7 +363,11 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		if atomic.LoadInt32(&v.atomicValidationsRunning) >= v.concurrentRunsLimit {
 			return
 		}
-		nextBlockToValidate, globalPosNextSend := v.stateTracker.GetNextValidation()
+		nextBlockToValidate, globalPosNextSend, err := v.stateTracker.GetNextValidation(ctx)
+		if err != nil {
+			log.Error("validator failed to get next validation", "err", err)
+			return
+		}
 		if batchCount <= globalPosNextSend.BatchNumber {
 			var err error
 			batchCount, err = v.inboxTracker.GetBatchCount()
@@ -450,7 +422,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 
-		success, err := v.stateTracker.BeginValidation(block.Header(), startPos, endPos)
+		success, err := v.stateTracker.BeginValidation(ctx, block.Header(), startPos, endPos)
 		if err != nil {
 			log.Error("failed to begin validation in state tracker", "err", err)
 			return
@@ -479,10 +451,10 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 	}
 }
 
-func (v *BlockValidator) progressValidated(entry *validationEntry) {
+func (v *BlockValidator) progressValidated(ctx context.Context, entry *validationEntry) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
-	latestValidated, nextGlobalState, err := v.stateTracker.ValidationCompleted(entry)
+	latestValidated, nextGlobalState, err := v.stateTracker.ValidationCompleted(ctx, entry)
 	if err != nil {
 		log.Error("failed to record completed validation", "block", entry.BlockNumber, "err", err)
 		return
@@ -503,17 +475,25 @@ func (v *BlockValidator) progressValidated(entry *validationEntry) {
 	}
 }
 
-func (v *BlockValidator) LastBlockValidated() uint64 {
-	return v.stateTracker.LastBlockValidated()
+func (v *BlockValidator) LastBlockValidated(ctx context.Context) (uint64, error) {
+	block, err := v.stateTracker.LastBlockValidated(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get last block validated: %w", err)
+	}
+	return block, nil
 }
 
-func (v *BlockValidator) LastBlockValidatedAndHash() (blockNumber uint64, blockHash common.Hash, wasmModuleRoots []common.Hash) {
-	blockValidated, blockValidatedHash := v.stateTracker.LastBlockValidatedAndHash()
+func (v *BlockValidator) LastBlockValidatedAndHash(ctx context.Context) (blockNumber uint64, blockHash common.Hash, wasmModuleRoots []common.Hash, err error) {
+	blockNumber, blockHash, err = v.stateTracker.LastBlockValidatedAndHash(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to get last block validated and hash: %w", err)
+		return
+	}
 
 	// things can be removed from, but not added to, moduleRootsToValidate. By taking root hashes fter the block we know result is valid
-	moduleRootsValidated := v.GetModuleRootsToValidate()
+	wasmModuleRoots = v.GetModuleRootsToValidate()
 
-	return blockValidated, blockValidatedHash, moduleRootsValidated
+	return
 }
 
 // Because batches and blocks are handled at separate layers in the node,
@@ -556,7 +536,7 @@ func (v *BlockValidator) ProcessBatches(pos uint64, batches [][]byte) {
 	}
 }
 
-func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) error {
+func (v *BlockValidator) ReorgToBlock(ctx context.Context, blockNum uint64, blockHash common.Hash) error {
 	v.cancelMutex.Lock()
 	defer v.cancelMutex.Unlock()
 
@@ -567,7 +547,7 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) er
 
 	if blockNum+1 < v.nextValidationCancelsBlock {
 		log.Warn("block validator processing reorg", "blockNum", blockNum)
-		err := v.reorgToBlockImpl(blockNum, blockHash)
+		err := v.reorgToBlockImpl(ctx, blockNum, blockHash)
 		if err != nil {
 			return fmt.Errorf("block validator reorg failed: %w", err)
 		}
@@ -576,7 +556,7 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) er
 	return nil
 }
 
-func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash) error {
+func (v *BlockValidator) reorgToBlockImpl(ctx context.Context, blockNum uint64, blockHash common.Hash) error {
 	for b := blockNum + 1; b < v.nextValidationCancelsBlock; b++ {
 		entry, found := v.validationCancels.Load(b)
 		if !found {
@@ -593,7 +573,10 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 		cancel()
 	}
 	v.nextValidationCancelsBlock = blockNum + 1
-	nextBlockToValidate, _ := v.stateTracker.GetNextValidation()
+	nextBlockToValidate, _, err := v.stateTracker.GetNextValidation(ctx)
+	if err != nil {
+		return err
+	}
 	if nextBlockToValidate <= blockNum+1 {
 		return nil
 	}
@@ -641,11 +624,11 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 		return header != nil && header.Hash() == hash
 	}
 
-	return v.stateTracker.Reorg(blockNum, blockHash, newNextPosition, isBlockValid)
+	return v.stateTracker.Reorg(ctx, blockNum, blockHash, newNextPosition, isBlockValid)
 }
 
 // Must be called after SetCurrentWasmModuleRoot sets the current one
-func (v *BlockValidator) Initialize() error {
+func (v *BlockValidator) Initialize(ctx context.Context) error {
 	switch v.config.CurrentModuleRoot {
 	case "latest":
 		latest, err := v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
@@ -667,6 +650,46 @@ func (v *BlockValidator) Initialize() error {
 		return err
 	}
 
+	lastBlockValidated, lastBlockHashValidated, err := v.stateTracker.LastBlockValidatedAndHash(ctx)
+	if err != nil {
+		return err
+	}
+	reorgingToBlock := v.initialReorgBlock
+	if reorgingToBlock != nil && reorgingToBlock.NumberU64() >= lastBlockValidated {
+		// Disregard this reorg as it doesn't affect the last validated block
+		reorgingToBlock = nil
+	}
+	if reorgingToBlock == nil {
+		expectedHash := v.blockchain.GetCanonicalHash(lastBlockValidated)
+		if expectedHash != lastBlockHashValidated {
+			return fmt.Errorf("last validated block %v stored with hash %v, but blockchain has hash %v", lastBlockValidated, lastBlockHashValidated, expectedHash)
+		}
+	}
+	if reorgingToBlock != nil {
+		err = v.reorgToBlockImpl(ctx, reorgingToBlock.NumberU64(), reorgingToBlock.Hash())
+		if err != nil {
+			return err
+		}
+	}
+	if v.config.PendingUpgradeModuleRoot != "" {
+		if v.config.PendingUpgradeModuleRoot == "latest" {
+			latest, err := v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
+			if err != nil {
+				return err
+			}
+			v.pendingWasmModuleRoot = latest
+		} else {
+			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
+			if (v.pendingWasmModuleRoot == common.Hash{}) {
+				return errors.New("pending-upgrade-module-root config value illegal")
+			}
+		}
+		if err := v.MachineLoader.CreateMachine(v.pendingWasmModuleRoot, true); err != nil {
+			return err
+		}
+	}
+	v.initialReorgBlock = nil
+
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
 	return nil
 }
@@ -683,7 +706,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 				if !ok {
 					return
 				}
-				v.progressValidated(entry)
+				v.progressValidated(ctx, entry)
 			case _, ok := <-v.sendValidationsChan:
 				if !ok {
 					return
@@ -702,12 +725,20 @@ func (v *BlockValidator) WaitForBlock(ctx context.Context, blockNumber uint64, t
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
-		if v.stateTracker.LastBlockValidated() >= blockNumber {
+		lastValidated, err := v.stateTracker.LastBlockValidated(ctx)
+		if err != nil {
+			log.Error("failed to get last validated block", "err", err)
+		} else if lastValidated >= blockNumber {
 			return true
 		}
 		select {
 		case <-timer.C:
-			if v.stateTracker.LastBlockValidated() >= blockNumber {
+			lastValidated, err := v.stateTracker.LastBlockValidated(ctx)
+			if err != nil {
+				log.Error("failed to get last block validated", "err", err)
+				return false
+			}
+			if lastValidated >= blockNumber {
 				return true
 			}
 			return false

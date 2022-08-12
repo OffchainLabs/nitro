@@ -296,7 +296,10 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 	if v.blockValidator != nil {
 		var expectedHash common.Hash
 		var validRoots []common.Hash
-		lastBlockValidated, expectedHash, validRoots = v.blockValidator.LastBlockValidatedAndHash()
+		lastBlockValidated, expectedHash, validRoots, err = v.blockValidator.LastBlockValidatedAndHash(ctx)
+		if err != nil {
+			return nil, false, err
+		}
 		haveHash := v.l2Blockchain.GetCanonicalHash(lastBlockValidated)
 		if haveHash != expectedHash {
 			return nil, false, fmt.Errorf("block validator validated block %v as hash %v but blockchain has hash %v", lastBlockValidated, expectedHash, haveHash)
