@@ -52,6 +52,10 @@ type RedisStateTracker struct {
 	client                  redis.UniversalClient
 	signingKey              *[32]byte
 	fallbackVerificationKey *[32]byte
+
+	nextValidationCacheMutex      sync.Mutex
+	nextValidationCacheValue      uint64
+	nextValidationCacheExpiration time.Time
 }
 
 func NewRedisStateTracker(config RedisStateTrackerConfig) (*RedisStateTracker, error) {
@@ -135,15 +139,6 @@ func (t *RedisStateTracker) Initialize(ctx context.Context, genesisBlock *types.
 	if err != nil {
 		return err
 	}
-	val, err = serializeWithBlockNumber(genesisBlock.NumberU64()+1, endPos)
-	if err != nil {
-		return err
-	}
-	data = t.signMessage(nextValidationKey, val)
-	err = t.client.SetNX(ctx, nextValidationKey, data, 0).Err()
-	if err != nil {
-		return err
-	}
 	return t.tryToAdvanceLastBlockValidated(ctx)
 }
 
@@ -210,7 +205,7 @@ type lastValidatedMetadata struct {
 
 const redisPrefix = "block-validator."
 const lastBlockValidatedKey = redisPrefix + "last-block-validated"
-const nextValidationKey = redisPrefix + "next-validation"
+const untouchedValidationKey = redisPrefix + "untouched-validation"
 const statusSubkey = redisPrefix + "validation-status"
 
 func (t *RedisStateTracker) lastBlockValidatedAndMeta(ctx context.Context, client redis.Cmdable) (uint64, lastValidatedMetadata, error) {
@@ -236,27 +231,81 @@ func (t *RedisStateTracker) setLastValidated(ctx context.Context, client redis.C
 	if err != nil {
 		return err
 	}
-	return t.redisSet(ctx, t.client, lastBlockValidatedKey, val)
+	return t.redisSet(ctx, client, lastBlockValidatedKey, val)
 }
 
-func (t *RedisStateTracker) getNextValidation(ctx context.Context, client redis.Cmdable) (uint64, GlobalStatePosition, error) {
-	data, err := t.redisGet(ctx, client, nextValidationKey)
+func (t *RedisStateTracker) getUntouchedValidation(ctx context.Context, client redis.Cmdable) (uint64, error) {
+	data, err := t.redisGet(ctx, client, untouchedValidationKey)
 	if err != nil {
-		return 0, GlobalStatePosition{}, err
+		if errors.Is(err, redis.Nil) {
+			return 0, nil
+		}
+		return 0, err
 	}
-	return deserializeWithBlockNumber[GlobalStatePosition](data)
+	num, _, err := deserializeWithBlockNumber[struct{}](data)
+	return num, err
 }
 
-func (t *RedisStateTracker) setNextValidation(ctx context.Context, client redis.Cmdable, blockNum uint64, nextPos GlobalStatePosition) error {
-	data, err := serializeWithBlockNumber(blockNum, nextPos)
+func (t *RedisStateTracker) setUntouchedValidation(ctx context.Context, client redis.Cmdable, blockNum uint64) error {
+	data, err := serializeWithBlockNumber(blockNum, struct{}{})
 	if err != nil {
 		return err
 	}
-	return t.redisSet(ctx, client, nextValidationKey, data)
+	return t.redisSet(ctx, client, untouchedValidationKey, data)
 }
 
 func (t *RedisStateTracker) GetNextValidation(ctx context.Context) (uint64, GlobalStatePosition, error) {
-	return t.getNextValidation(ctx, t.client)
+	nextValidation, lastValidatedMeta, err := t.lastBlockValidatedAndMeta(ctx, t.client)
+	if err != nil {
+		return 0, GlobalStatePosition{}, err
+	}
+	nextValidation++
+	nextValidationPos := lastValidatedMeta.EndPos
+
+	t.nextValidationCacheMutex.Lock()
+	nextValidationCacheValue := t.nextValidationCacheValue
+	nextValidationCacheExpiration := t.nextValidationCacheExpiration
+	t.nextValidationCacheMutex.Unlock()
+
+	if nextValidationCacheExpiration.After(time.Now()) && nextValidationCacheValue+1 > nextValidation {
+		status, err := t.getValidationStatus(ctx, t.client, nextValidationCacheValue)
+		if err == nil {
+			nextValidation = nextValidationCacheValue
+			nextValidationPos = status.EndPosition
+		} else if !errors.Is(err, redis.Nil) {
+			return 0, GlobalStatePosition{}, err
+		}
+	} else {
+		nextValidationCacheExpiration = time.Now().Add(time.Minute)
+	}
+
+	for {
+		status, err := t.getValidationStatus(ctx, t.client, nextValidation)
+		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				t.nextValidationCacheMutex.Lock()
+				t.nextValidationCacheValue = nextValidation + 1
+				t.nextValidationCacheExpiration = nextValidationCacheExpiration
+				t.nextValidationCacheMutex.Unlock()
+
+				return nextValidation, nextValidationPos, nil
+			}
+			return 0, GlobalStatePosition{}, err
+		}
+		expiry, err := t.client.TTL(ctx, t.getValidationStatusKey(nextValidation+1)).Result()
+		if err == nil {
+			if expiry > 0 {
+				thisExpiry := time.Now().Add(time.Second * expiry)
+				if thisExpiry.Before(nextValidationCacheExpiration) {
+					nextValidationCacheExpiration = thisExpiry
+				}
+			}
+		} else if !errors.Is(err, redis.Nil) {
+			return 0, GlobalStatePosition{}, err
+		}
+		nextValidation++
+		nextValidationPos = status.EndPosition
+	}
 }
 
 func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
@@ -286,25 +335,25 @@ func (t *RedisStateTracker) getValidationStatus(ctx context.Context, client redi
 	return status, err
 }
 
-func (t *RedisStateTracker) getPrevHash(ctx context.Context, tx *redis.Tx, nextBlockToValidate uint64) (uint64, common.Hash, error) {
-	lastBlockValidated, lastBlockValidatedMeta, err := t.lastBlockValidatedAndMeta(ctx, t.client)
-	if err != nil {
-		return 0, common.Hash{}, err
-	}
+func (t *RedisStateTracker) getPrevMeta(ctx context.Context, tx *redis.Tx, nextBlockToValidate uint64, lastBlockValidated uint64, lastBlockValidatedMeta lastValidatedMetadata) (lastValidatedMetadata, error) {
 	if nextBlockToValidate > lastBlockValidated+1 {
-		err = tx.Watch(ctx, t.getValidationStatusKey(nextBlockToValidate-1)).Err()
+		err := tx.Watch(ctx, t.getValidationStatusKey(nextBlockToValidate-1)).Err()
 		if err != nil {
-			return 0, common.Hash{}, err
+			return lastValidatedMetadata{}, err
 		}
 		status, err := t.getValidationStatus(ctx, tx, nextBlockToValidate-1)
 		if err != nil {
-			return 0, common.Hash{}, err
+			return lastValidatedMetadata{}, err
 		}
-		return lastBlockValidated, status.BlockHash, nil
+		meta := lastValidatedMetadata{
+			BlockHash: status.BlockHash,
+			EndPos:    status.EndPosition,
+		}
+		return meta, nil
 	} else if nextBlockToValidate == lastBlockValidated+1 {
-		return lastBlockValidated, lastBlockValidatedMeta.BlockHash, nil
+		return lastBlockValidatedMeta, nil
 	} else {
-		return 0, common.Hash{}, fmt.Errorf("lastBlockValidated is %v but nextBlockToValidate is %v?", lastBlockValidated, nextBlockToValidate)
+		return lastValidatedMetadata{}, fmt.Errorf("lastBlockValidated is %v but nextBlockToValidate is %v?", lastBlockValidated, nextBlockToValidate)
 	}
 }
 
@@ -400,33 +449,43 @@ func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.H
 	}
 	var success bool
 	act := func(tx *redis.Tx) error {
-		nextBlockToValidate, nextGlobalState, err := t.getNextValidation(ctx, tx)
+		lastBlockValidated, lastBlockValidatedMeta, err := t.lastBlockValidatedAndMeta(ctx, tx)
 		if err != nil {
 			return err
 		}
-		if nextBlockToValidate != num || nextGlobalState != startPos {
+		prevMeta, err := t.getPrevMeta(ctx, tx, num, lastBlockValidated, lastBlockValidatedMeta)
+		if err != nil {
+			return err
+		}
+		if header.ParentHash != prevMeta.BlockHash {
+			return fmt.Errorf("previous block %v hash is %v but attempting to validate next block with a previous hash of %v", num-1, prevMeta.BlockHash, header.ParentHash)
+		}
+		exists, err := tx.Exists(ctx, t.getValidationStatusKey(num)).Result()
+		if err != nil {
+			return err
+		}
+		if exists != 0 {
 			return nil
 		}
-		_, prevHash, err := t.getPrevHash(ctx, tx, nextBlockToValidate)
+		lastUntouchedValidation, err := t.getUntouchedValidation(ctx, tx)
 		if err != nil {
 			return err
-		}
-		if header.ParentHash != prevHash {
-			return fmt.Errorf("previous block %v hash is %v but attempting to validate next block with a previous hash of %v", num-1, prevHash, header.ParentHash)
 		}
 		pipe := tx.TxPipeline()
 		err = t.redisSetEx(ctx, pipe, t.getValidationStatusKey(num), statusData, t.config.LockoutDuration)
 		if err != nil {
 			return err
 		}
-		err = t.setNextValidation(ctx, pipe, num+1, endPos)
-		if err != nil {
-			return err
+		if lastUntouchedValidation < num+1 {
+			err = t.setUntouchedValidation(ctx, pipe, num+1)
+			if err != nil {
+				return err
+			}
 		}
 		success = true
 		return execTestPipe(pipe, ctx)
 	}
-	err = t.client.Watch(ctx, act, lastBlockValidatedKey, nextValidationKey)
+	err = t.client.Watch(ctx, act, lastBlockValidatedKey, untouchedValidationKey, t.getValidationStatusKey(num), t.getValidationStatusKey(num-1))
 	if errors.Is(err, redis.TxFailedErr) {
 		return false, nil, nil
 	}
@@ -525,19 +584,30 @@ func (t *RedisStateTracker) ValidationCompleted(ctx context.Context, initialEntr
 
 func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHash common.Hash, nextPosition GlobalStatePosition, isValid func(uint64, common.Hash) bool) error {
 	act := func(tx *redis.Tx) error {
-		nextToValidate, _, err := t.getNextValidation(ctx, tx)
+		nextToValidate, err := t.getUntouchedValidation(ctx, tx)
 		if err != nil {
 			return err
 		}
 		if nextToValidate <= blockNum+1 {
 			return nil
 		}
-		lastBlockValidated, prevHash, err := t.getPrevHash(ctx, tx, nextToValidate)
+		lastBlockValidated, lastBlockValidatedMeta, err := t.lastBlockValidatedAndMeta(ctx, tx)
 		if err != nil {
 			return err
 		}
-		if isValid(nextToValidate-1, prevHash) {
-			return nil
+		for {
+			prevMeta, err := t.getPrevMeta(ctx, tx, nextToValidate, lastBlockValidated, lastBlockValidatedMeta)
+			if err != nil {
+				if errors.Is(err, redis.Nil) && nextToValidate > lastBlockValidated+1 {
+					nextToValidate--
+					continue
+				}
+				return err
+			}
+			if isValid(nextToValidate-1, prevMeta.BlockHash) {
+				return nil
+			}
+			break
 		}
 
 		pipe := tx.TxPipeline()
@@ -548,7 +618,7 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 				return err
 			}
 		}
-		err = t.setNextValidation(ctx, pipe, blockNum+1, nextPosition)
+		err = t.setUntouchedValidation(ctx, pipe, blockNum+1)
 		if err != nil {
 			return err
 		}
@@ -565,6 +635,6 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 
 		return execTestPipe(pipe, ctx)
 	}
-	err := t.client.Watch(ctx, act, lastBlockValidatedKey, nextValidationKey)
+	err := t.client.Watch(ctx, act, lastBlockValidatedKey, untouchedValidationKey)
 	return err
 }
