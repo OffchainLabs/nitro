@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/subtle"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"sync"
@@ -154,13 +155,15 @@ func (t *RedisStateTracker) verifyMessageSignature(key string, value string) ([]
 	var haveHmac common.Hash
 	copy(haveHmac[:], data[:32])
 
-	expectHmac := crypto.Keccak256Hash(t.signingKey[:], []byte(key), msg)
+	var keyLen [8]byte
+	binary.BigEndian.PutUint64(keyLen[:], uint64(len(key)))
+	expectHmac := crypto.Keccak256Hash(t.signingKey[:], keyLen[:], []byte(key), msg)
 	if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
 		return msg, nil
 	}
 
 	if t.fallbackVerificationKey != nil {
-		expectHmac = crypto.Keccak256Hash(t.fallbackVerificationKey[:], []byte(key), msg)
+		expectHmac = crypto.Keccak256Hash(t.fallbackVerificationKey[:], keyLen[:], []byte(key), msg)
 		if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
 			return msg, nil
 		}
@@ -176,7 +179,9 @@ func (t *RedisStateTracker) verifyMessageSignature(key string, value string) ([]
 func (t *RedisStateTracker) signMessage(key string, msg []byte) string {
 	var hmac [32]byte
 	if t.signingKey != nil {
-		hmac = crypto.Keccak256Hash(t.signingKey[:], []byte(key), msg)
+		var keyLen [8]byte
+		binary.BigEndian.PutUint64(keyLen[:], uint64(len(key)))
+		hmac = crypto.Keccak256Hash(t.signingKey[:], keyLen[:], []byte(key), msg)
 	}
 	return string(append(hmac[:], msg...))
 }
