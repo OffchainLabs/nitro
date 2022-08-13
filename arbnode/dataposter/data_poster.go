@@ -78,6 +78,7 @@ type DataPoster[Meta any] struct {
 	headerReader      *headerreader.HeaderReader
 	client            arbutil.L1Interface
 	auth              *bind.TransactOpts
+	redisLock         AttemptLocker
 	config            *DataPosterConfig
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)
@@ -91,7 +92,11 @@ type DataPoster[Meta any] struct {
 	errorCount map[uint64]int // number of consecutive intermittent errors rbf-ing or sending, per nonce
 }
 
-func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, config *DataPosterConfig, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+type AttemptLocker interface {
+	AttemptLock(context.Context) bool
+}
+
+func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisLock AttemptLocker, config *DataPosterConfig, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
 	for _, s := range strings.Split(config.ReplacementTimes, ",") {
@@ -128,6 +133,7 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 		replacementTimes:  replacementTimes,
 		metadataRetriever: metadataRetriever,
 		queue:             queue,
+		redisLock:         redisLock,
 	}, nil
 }
 
@@ -362,6 +368,9 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 	p.CallIteratively(func(ctx context.Context) time.Duration {
 		p.mutex.Lock()
 		defer p.mutex.Unlock()
+		if !p.redisLock.AttemptLock(ctx) {
+			return p.replacementTimes[0]
+		}
 		err := p.updateState(ctx)
 		if err != nil {
 			log.Warn("failed to update tx poster internal state", "err", err)
