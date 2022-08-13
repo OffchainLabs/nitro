@@ -57,7 +57,7 @@ If the user attempts to purchase compute gas in excess of ArbOS's per-block gas 
 [max_perblock_limit_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/l2pricing/pools.go#L100
 
 ### [`PushCaller`][PushCaller_link]
-These hooks track the callers within the EVM callstack, pushing and popping as calls are made and complete. This provides [`ArbSys`](Precompiles.md#ArbSys) with info about the callstack, which it uses to implement the methods [`WasMyCallersAddressAliased`](Precompiles.md#ArbSys) and [`MyCallersAddressWithoutAliasing`](Precompiles.md#ArbSys).
+These hooks track the callers within the EVM callstack, pushing and popping as calls are made and complete. This provides [`ArbSys`](precompiles.md#ArbSys) with info about the callstack, which it uses to implement the methods [`WasMyCallersAddressAliased`](precompiles.md#ArbSys) and [`MyCallersAddressWithoutAliasing`](precompiles.md#ArbSys).
 
 ### [`L1BlockHash`][L1BlockHash_link]
 In arbitrum, the BlockHash and Number operations return data that relies on underlying L1 blocks intead of L2 blocks, to accomendate the normal use-case of these opcodes, which often assume ethereum-like time passes between different blocks. The L1BlockHash and L1BlockNumber hooks have the required data for these operations.
@@ -153,10 +153,10 @@ These are like an [`ArbitrumUnsignedTx`][ArbitrumUnsignedTx_link] but are intend
 Represents a user deposit from L1 to L2. This increases the user's balance by the amount deposited on L1.
 
 ### [`ArbitrumSubmitRetryableTx`][ArbitrumSubmitRetryableTx_link]
-Represents a retryable submission and may schedule an [`ArbitrumRetryTx`](#ArbitrumRetryTx) if provided enough gas. Please see the [retryables documentation](ArbOS.md#Retryables) for more info.
+Represents a retryable submission and may schedule an [`ArbitrumRetryTx`](#ArbitrumRetryTx) if provided enough gas. Please see the [retryables documentation](arbos.md#Retryables) for more info.
 
 ### [`ArbitrumRetryTx`][ArbitrumRetryTx_link]
-These are scheduled by calls to the [`redeem`](Precompiles.md#ArbRetryableTx) precompile method and via retryable auto-redemption. Please see the [retryables documentation](ArbOS.md#Retryables) for more info.
+These are scheduled by calls to the [`redeem`](precompiles.md#ArbRetryableTx) precompile method and via retryable auto-redemption. Please see the [retryables documentation](arbos.md#Retryables) for more info.
 
 ### [`ArbitrumInternalTx`][ArbitrumInternalTx_link]
 Because tracing support requires ArbOS's state-changes happen inside a transaction, ArbOS may create a tx of this type to update its state in-between user-generated transactions. Such a tx has a [`Type`][InternalType_link] field signifying the state it will update, though currently this is just future-proofing as there's only one value it may have. Below are the internal tx types.
@@ -184,7 +184,7 @@ A message [derived from a transaction][AsMessage_link] will carry that transacti
 | Run Mode                                 | Scope                   | Carries an Underlying Tx?                                                          |
 |:-----------------------------------------|:------------------------|:-----------------------------------------------------------------------------------|
 | [`MessageCommitMode`][MC0]               | state transition &nbsp; | always                                                                             |
-| [`MessageGasEstimationMode`][MC1] &nbsp; | gas estimation          | when created via [`NodeInterface.sol`](Gas.md#NodeInterface.sol) or when scheduled |
+| [`MessageGasEstimationMode`][MC1] &nbsp; | gas estimation          | when created via [`NodeInterface.sol`](gas.md#NodeInterface.sol) or when scheduled |
 | [`MessageEthcallMode`][MC2]              | eth_calls               | never                                                                              |
 
 [MC0]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L648
@@ -201,7 +201,7 @@ A message [derived from a transaction][AsMessage_link] will carry that transacti
 Nitro's geth may be configured with the following [l2-specific chain parameters][chain_params_link]. These allow the rollup creator to customize their rollup at genesis.
 
 ### `EnableArbos`
-Introduces [ArbOS](ArbOS.md), converting what would otherwise be a vanilla L1 chain into an L2 Arbitrum rollup.
+Introduces [ArbOS](arbos.md), converting what would otherwise be a vanilla L1 chain into an L2 Arbitrum rollup.
 
 ### `AllowDebugPrecompiles`
 Allows access to debug precompiles. Not enabled for Arbitrum One. When false, calls to debug precompiles will always revert.
@@ -224,14 +224,14 @@ The total amount of L2 ether in the system should not change except in controlle
 To aid with [outbox proof construction][proof_link], the root hash and leaf count of ArbOS's [send merkle accumulator][merkle_link] are stored in the `MixDigest` and `ExtraData` fields of each L2 block. The yellow paper specifies that the `ExtraData` field may be no larger than 32 bytes, so we use the first 8 bytes of the `MixDigest`, which has no meaning in a system without miners, to store the send count.
 
 ### Retryable Support
-Retryables are mostly implemented in [ArbOS](ArbOS.md#retryables). Some modifications were required in geth to support them.
+Retryables are mostly implemented in [ArbOS](arbos.md#retryables). Some modifications were required in geth to support them.
 * Added ScheduledTxes field to ExecutionResult. This lists transactions scheduled during the execution. To enable using this field, we also pass the ExecutionResult to callers of ApplyTransaction.
 * Added gasEstimation param to DoCall. When enabled, DoCall will also also executing any retryable activated by the original call. This allows estimating gas to enable retryables.
 
 ### Added accessors
 Added [`UnderlyingTransaction`][UnderlyingTransaction_link] to Message interface
 Added [`GetCurrentTxLogs`](../../go-ethereum/core/state/statedb_arbitrum.go) to StateDB
-We created the AdvancedPrecompile interface, which executes and charges gas with the same function call. This is used by Arbitrum's precompiles, and also wraps geth's standard precompiles. For more information on Arbitrum precompiles, see [ArbOS doc](ArbOS.md#precompiles).
+We created the AdvancedPrecompile interface, which executes and charges gas with the same function call. This is used by Arbitrum's precompiles, and also wraps geth's standard precompiles. For more information on Arbitrum precompiles, see [ArbOS doc](arbos.md#precompiles).
 
 ### WASM build support
 The WASM arbitrum executable does not support file oprations. We created [`fileutil.go`](../../go-ethereum/core/rawdb/fileutil.go) to wrap fileutil calls, stubbing them out when building WASM. [`fake_leveldb.go`](../../go-ethereum/ethdb/leveldb/fake_leveldb.go) is a similar WASM-mock for leveldb. These are not required for the WASM block-replayer.
