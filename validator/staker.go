@@ -57,7 +57,7 @@ type L1ValidatorConfig struct {
 	StakerInterval           time.Duration     `koanf:"staker-interval"`
 	L1PostingStrategy        L1PostingStrategy `koanf:"posting-strategy"`
 	DisableChallenge         bool              `koanf:"disable-challenge"`
-	TargetMachineCount       int               `koanf:"target-machine-count"`
+	MachineCacheSize         int               `koanf:"machine-cache-size"`
 	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
 	Dangerous                DangerousConfig   `koanf:"dangerous"`
 	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
@@ -69,7 +69,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	StakerInterval:           time.Minute,
 	L1PostingStrategy:        L1PostingStrategy{},
 	DisableChallenge:         false,
-	TargetMachineCount:       4,
+	MachineCacheSize:         4,
 	ConfirmationBlocks:       12,
 	Dangerous:                DefaultDangerousConfig,
 	OnlyCreateWalletContract: false,
@@ -81,7 +81,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
 	L1PostingStrategyAddOptions(prefix+".posting-strategy", f)
 	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
-	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
+	f.Int(prefix+".machine-cache-size", DefaultL1ValidatorConfig.MachineCacheSize, "when disputing a challenge, the size of the machine cache")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
@@ -459,7 +459,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.txStreamer,
 			s.nitroMachineLoader,
 			latestConfirmedCreated,
-			s.config.TargetMachineCount,
+			s.config.MachineCacheSize,
 			s.config.ConfirmationBlocks,
 		)
 		if err != nil {

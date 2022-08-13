@@ -68,7 +68,7 @@ type BlockValidator struct {
 type BlockValidatorConfig struct {
 	Enable                   bool                    `koanf:"enable"`
 	OutputPath               string                  `koanf:"output-path"`
-	ConcurrentRunsLimit      int                     `koanf:"concurrent-runs-limit"`
+	Threads                  int                     `koanf:"threads"`
 	CurrentModuleRoot        string                  `koanf:"current-module-root"`
 	PendingUpgradeModuleRoot string                  `koanf:"pending-upgrade-module-root"`
 	StorePreimages           bool                    `koanf:"store-preimages"`
@@ -78,7 +78,7 @@ type BlockValidatorConfig struct {
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
-	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
+	f.Int(prefix+".threads", DefaultBlockValidatorConfig.Threads, "the number of threads to use for block validation (0 = don't validate anything, -1 = use number of cores)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".store-preimages", DefaultBlockValidatorConfig.StorePreimages, "store preimages of running machines (higher memory cost, better debugging, potentially better performance)")
@@ -88,7 +88,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	OutputPath:               "./target/output",
-	ConcurrentRunsLimit:      0,
+	Threads:                  -1,
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
@@ -97,7 +97,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	OutputPath:               "./target/output",
-	ConcurrentRunsLimit:      0,
+	Threads:                  -1,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
@@ -114,8 +114,8 @@ func NewBlockValidator(
 	das arbstate.DataAvailabilityReader,
 	reorgingToBlock *types.Block,
 ) (*BlockValidator, error) {
-	concurrent := config.ConcurrentRunsLimit
-	if concurrent == 0 {
+	concurrent := config.Threads
+	if concurrent < 0 {
 		concurrent = runtime.NumCPU()
 	}
 	statelessVal, err := NewStatelessBlockValidator(
