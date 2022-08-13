@@ -263,6 +263,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 
 	// Confirmed Accumulator will also broadcast to the clients.
 	b.Confirm(0) // remove the first message we generated
+	b.Confirm(0) // need to confirm a second time to get first confirm sent
 
 	updateTimer := time.NewTimer(2 * time.Second)
 	defer updateTimer.Stop()
@@ -279,7 +280,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Send second accumulator again so that the previously added accumulator is sent
+	b.Confirm(1)
 	b.Confirm(1)
 
 	updateTimer = time.NewTimer(2 * time.Second)

@@ -17,6 +17,7 @@
 package broadcaster
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -25,7 +26,7 @@ import (
 
 func TestGetEmptyCacheMessages(t *testing.T) {
 	buffer := SequenceNumberCatchupBuffer{
-		messages:     []*BroadcastFeedMessage{},
+		messages:     nil,
 		messageCount: 0,
 	}
 
@@ -37,7 +38,10 @@ func TestGetEmptyCacheMessages(t *testing.T) {
 }
 
 func createDummyBroadcastMessages(seqNums []arbutil.MessageIndex) []*BroadcastFeedMessage {
-	broadcastMessages := make([]*BroadcastFeedMessage, 0, len(seqNums))
+	return createDummyBroadcastMessagesImpl(seqNums, len(seqNums))
+}
+func createDummyBroadcastMessagesImpl(seqNums []arbutil.MessageIndex, length int) []*BroadcastFeedMessage {
+	broadcastMessages := make([]*BroadcastFeedMessage, 0, length)
 	for _, seqNum := range seqNums {
 		broadcastMessage := &BroadcastFeedMessage{
 			SequenceNumber: seqNum,
@@ -91,4 +95,117 @@ func TestGetCacheMessages(t *testing.T) {
 	if bm.Messages[0].SequenceNumber != 46 {
 		t.Errorf("expected sequence number 46, got %d", bm.Messages[0].SequenceNumber)
 	}
+}
+
+func TestDeleteConfirmedNil(t *testing.T) {
+	buffer := SequenceNumberCatchupBuffer{
+		messages:     nil,
+		messageCount: 0,
+	}
+
+	buffer.deleteConfirmed(0)
+	if len(buffer.messages) != 0 {
+		t.Error("nothing should be present")
+	}
+}
+
+func TestDeleteConfirmInvalidOrder(t *testing.T) {
+	indexes := []arbutil.MessageIndex{40, 42}
+	buffer := SequenceNumberCatchupBuffer{
+		messages:     createDummyBroadcastMessages(indexes),
+		messageCount: int32(len(indexes)),
+	}
+
+	// Confirm before cache
+	buffer.deleteConfirmed(41)
+	if len(buffer.messages) != 0 {
+		t.Error("cache not in contiguous order should have caused everything to be deleted")
+	}
+}
+
+func TestDeleteConfirmed(t *testing.T) {
+	indexes := []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46}
+	buffer := SequenceNumberCatchupBuffer{
+		messages:     createDummyBroadcastMessages(indexes),
+		messageCount: int32(len(indexes)),
+	}
+
+	// Confirm older than cache
+	buffer.deleteConfirmed(39)
+	if len(buffer.messages) != 7 {
+		t.Error("nothing should have been deleted")
+	}
+
+}
+func TestDeleteFreeMem(t *testing.T) {
+	indexes := []arbutil.MessageIndex{40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51}
+	buffer := SequenceNumberCatchupBuffer{
+		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
+		messageCount: int32(len(indexes)),
+	}
+
+	// Confirm older than cache
+	buffer.deleteConfirmed(40)
+	if cap(buffer.messages) > 20 {
+		t.Error("extra memory was not freed, cap: ", cap(buffer.messages))
+	}
+
+}
+
+func TestBroadcastBadMessage(t *testing.T) {
+	buffer := SequenceNumberCatchupBuffer{
+		messages:     nil,
+		messageCount: 0,
+	}
+
+	var foo int
+	err := buffer.OnDoBroadcast(foo)
+	if err == nil {
+		t.Error("expected error")
+	}
+	if !strings.Contains(err.Error(), "unknown type") {
+		t.Error("unexpected type")
+	}
+}
+
+func TestBroadcastPastSeqNum(t *testing.T) {
+	indexes := []arbutil.MessageIndex{40}
+	buffer := SequenceNumberCatchupBuffer{
+		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
+		messageCount: int32(len(indexes)),
+	}
+
+	bm := BroadcastMessage{
+		Messages: []*BroadcastFeedMessage{
+			&BroadcastFeedMessage{
+				SequenceNumber: 39,
+			},
+		},
+	}
+	err := buffer.OnDoBroadcast(bm)
+	if err != nil {
+		t.Error("expected error")
+	}
+
+}
+
+func TestBroadcastFutureSeqNum(t *testing.T) {
+	indexes := []arbutil.MessageIndex{40}
+	buffer := SequenceNumberCatchupBuffer{
+		messages:     createDummyBroadcastMessagesImpl(indexes, len(indexes)*10+1),
+		messageCount: int32(len(indexes)),
+	}
+
+	bm := BroadcastMessage{
+		Messages: []*BroadcastFeedMessage{
+			&BroadcastFeedMessage{
+				SequenceNumber: 42,
+			},
+		},
+	}
+	err := buffer.OnDoBroadcast(bm)
+	if err != nil {
+		t.Error("expected error")
+	}
+
 }

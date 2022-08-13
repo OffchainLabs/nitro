@@ -7,18 +7,21 @@ import (
 	"context"
 	"net"
 
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Broadcaster struct {
-	server        *wsbroadcastserver.WSBroadcastServer
-	catchupBuffer *SequenceNumberCatchupBuffer
+	server                          *wsbroadcastserver.WSBroadcastServer
+	catchupBuffer                   *SequenceNumberCatchupBuffer
+	previousConfirmedSequenceNumber arbutil.MessageIndex
 }
 
 /*
- * The base message type for messages to send over the network.
+ * BroadcastMessage is the base message type for messages to send over the network.
  *
  * Acts as a variant holding the message types. The type of the message is
  * indicated by whichever of the fields is non-empty. The fields holding the message
@@ -76,9 +79,18 @@ func (b *Broadcaster) Broadcast(msg BroadcastMessage) {
 }
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
+	// Always send confirmation for previous sequence number even if current sequence number invalid
+	log.Debug("confirming previous sequence number", "previous", b.previousConfirmedSequenceNumber, "new", seq)
 	b.server.Broadcast(BroadcastMessage{
 		Version:                        1,
-		ConfirmedSequenceNumberMessage: &ConfirmedSequenceNumberMessage{seq}})
+		ConfirmedSequenceNumberMessage: &ConfirmedSequenceNumberMessage{b.previousConfirmedSequenceNumber}})
+
+	if seq <= b.previousConfirmedSequenceNumber {
+		// Already confirmed, don't update previous
+		log.Error("attempt to confirm old sequence number", "previous", b.previousConfirmedSequenceNumber, "new", seq)
+		return
+	}
+	b.previousConfirmedSequenceNumber = seq
 }
 
 func (b *Broadcaster) ClientCount() int32 {
