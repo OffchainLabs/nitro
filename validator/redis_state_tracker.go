@@ -284,7 +284,7 @@ func (t *RedisStateTracker) GetNextValidation(ctx context.Context) (uint64, Glob
 		if err != nil {
 			if errors.Is(err, redis.Nil) {
 				t.nextValidationCacheMutex.Lock()
-				t.nextValidationCacheValue = nextValidation + 1
+				t.nextValidationCacheValue = nextValidation
 				t.nextValidationCacheExpiration = nextValidationCacheExpiration
 				t.nextValidationCacheMutex.Unlock()
 
@@ -493,6 +493,12 @@ func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.H
 	var cancel func(bool)
 	if success {
 		cancel = t.beginRefresh(num, status, statusData)
+
+		t.nextValidationCacheMutex.Lock()
+		if t.nextValidationCacheValue == num {
+			t.nextValidationCacheValue++
+		}
+		t.nextValidationCacheMutex.Unlock()
 	}
 	return success, cancel, err
 }
@@ -585,11 +591,11 @@ func (t *RedisStateTracker) ValidationCompleted(ctx context.Context, initialEntr
 
 func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHash common.Hash, nextPosition GlobalStatePosition, isValid func(uint64, common.Hash) bool) error {
 	act := func(tx *redis.Tx) error {
-		nextToValidate, err := t.getUntouchedValidation(ctx, tx)
+		untouchedValidation, err := t.getUntouchedValidation(ctx, tx)
 		if err != nil {
 			return err
 		}
-		if nextToValidate <= blockNum+1 {
+		if untouchedValidation <= blockNum+1 {
 			return nil
 		}
 		lastBlockValidated, lastBlockValidatedMeta, err := t.lastBlockValidatedAndMeta(ctx, tx)
@@ -597,15 +603,15 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 			return err
 		}
 		for {
-			prevMeta, err := t.getPrevMeta(ctx, tx, nextToValidate, lastBlockValidated, lastBlockValidatedMeta)
+			prevMeta, err := t.getPrevMeta(ctx, tx, untouchedValidation, lastBlockValidated, lastBlockValidatedMeta)
 			if err != nil {
-				if errors.Is(err, redis.Nil) && nextToValidate > lastBlockValidated+1 {
-					nextToValidate--
+				if errors.Is(err, redis.Nil) && untouchedValidation > lastBlockValidated+1 {
+					untouchedValidation--
 					continue
 				}
 				return err
 			}
-			if isValid(nextToValidate-1, prevMeta.BlockHash) {
+			if isValid(untouchedValidation-1, prevMeta.BlockHash) {
 				return nil
 			}
 			break
@@ -613,7 +619,7 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 
 		pipe := tx.TxPipeline()
 
-		for i := lastBlockValidated + 1; i < nextToValidate; i++ {
+		for i := lastBlockValidated + 1; i < untouchedValidation; i++ {
 			err = pipe.Del(ctx, t.getValidationStatusKey(i)).Err()
 			if err != nil {
 				return err
