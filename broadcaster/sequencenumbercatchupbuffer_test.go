@@ -177,7 +177,7 @@ func TestBroadcastPastSeqNum(t *testing.T) {
 
 	bm := BroadcastMessage{
 		Messages: []*BroadcastFeedMessage{
-			&BroadcastFeedMessage{
+			{
 				SequenceNumber: 39,
 			},
 		},
@@ -198,7 +198,7 @@ func TestBroadcastFutureSeqNum(t *testing.T) {
 
 	bm := BroadcastMessage{
 		Messages: []*BroadcastFeedMessage{
-			&BroadcastFeedMessage{
+			{
 				SequenceNumber: 42,
 			},
 		},
