@@ -486,7 +486,7 @@ func (t *RedisStateTracker) BeginValidation(ctx context.Context, header *types.H
 		success = true
 		return execTestPipe(pipe, ctx)
 	}
-	err = t.client.Watch(ctx, act, lastBlockValidatedKey, untouchedValidationKey, t.getValidationStatusKey(num), t.getValidationStatusKey(num-1))
+	err = t.client.Watch(ctx, act, lastBlockValidatedKey, untouchedValidationKey, t.getValidationStatusKey(num))
 	if errors.Is(err, redis.TxFailedErr) {
 		return false, nil, nil
 	}
