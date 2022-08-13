@@ -409,7 +409,8 @@ func (t *RedisStateTracker) beginRefresh(num uint64, status validationStatus, st
 	return func(success bool) {
 		ctxCancel()
 		wg.Wait()
-		if atomic.SwapUint32(&needsCleanup, 0) == 1 && !success {
+		neededCleanup := atomic.SwapUint32(&needsCleanup, 0)
+		if neededCleanup == 1 && !success {
 			ctx = context.Background()
 			statusKey := t.getValidationStatusKey(num)
 			act := func(tx *redis.Tx) error {
