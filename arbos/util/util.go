@@ -24,9 +24,9 @@ var ParseRedeemScheduledLog func(interface{}, *types.Log) error
 var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
 var ParseL2ToL1TxLog func(interface{}, *types.Log) error
 var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
-var UnpackInternalTxDataStartBlock func([]byte) ([]interface{}, error)
+var UnpackInternalTxDataStartBlock func([]byte) (map[string]interface{}, error)
 var PackInternalTxDataBatchPostingReport func(...interface{}) ([]byte, error)
-var UnpackInternalTxDataBatchPostingReport func([]byte) ([]interface{}, error)
+var UnpackInternalTxDataBatchPostingReport func([]byte) (map[string]interface{}, error)
 var PackArbRetryableTxRedeem func(...interface{}) ([]byte, error)
 
 func init() {
@@ -64,7 +64,7 @@ func init() {
 	}
 
 	// Create a mechanism for packing and unpacking calls
-	callParser := func(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) ([]interface{}, error)) {
+	callParser := func(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) (map[string]interface{}, error)) {
 		contract, err := abi.JSON(strings.NewReader(source))
 		if err != nil {
 			panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
@@ -76,11 +76,12 @@ func init() {
 		pack := func(args ...interface{}) ([]byte, error) {
 			return contract.Pack(name, args...)
 		}
-		unpack := func(data []byte) ([]interface{}, error) {
+		unpack := func(data []byte) (map[string]interface{}, error) {
 			if len(data) < 4 {
 				return nil, errors.New("Data not long enough")
 			}
-			return method.Inputs.Unpack(data[4:])
+			args := make(map[string]interface{})
+			return args, method.Inputs.UnpackIntoMap(args, data[4:])
 		}
 		return pack, unpack
 	}
@@ -235,4 +236,16 @@ func TxTypeHasPosterCosts(txType byte) bool {
 		return false
 	}
 	return true
+}
+
+func SafeMapGet[T any](kvs map[string]interface{}, field string) T {
+	value, ok := kvs[field]
+	if !ok {
+		panic(fmt.Sprintf("map does not contain field %v", field))
+	}
+	cast, ok := value.(T)
+	if !ok {
+		panic(fmt.Sprintf("field %v is of the wrong type", field))
+	}
+	return cast
 }
