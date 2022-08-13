@@ -15,9 +15,8 @@ import (
 )
 
 type Broadcaster struct {
-	server                          *wsbroadcastserver.WSBroadcastServer
-	catchupBuffer                   *SequenceNumberCatchupBuffer
-	previousConfirmedSequenceNumber arbutil.MessageIndex
+	server        *wsbroadcastserver.WSBroadcastServer
+	catchupBuffer *SequenceNumberCatchupBuffer
 }
 
 /*
@@ -79,18 +78,10 @@ func (b *Broadcaster) Broadcast(msg BroadcastMessage) {
 }
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
-	// Always send confirmation for previous sequence number even if current sequence number invalid
-	log.Debug("confirming previous sequence number", "previous", b.previousConfirmedSequenceNumber, "new", seq)
+	log.Debug("confirming sequence number", "sequenceNumber", seq)
 	b.server.Broadcast(BroadcastMessage{
 		Version:                        1,
-		ConfirmedSequenceNumberMessage: &ConfirmedSequenceNumberMessage{b.previousConfirmedSequenceNumber}})
-
-	if seq <= b.previousConfirmedSequenceNumber {
-		// Already confirmed, don't update previous
-		log.Error("attempt to confirm old sequence number", "previous", b.previousConfirmedSequenceNumber, "new", seq)
-		return
-	}
-	b.previousConfirmedSequenceNumber = seq
+		ConfirmedSequenceNumberMessage: &ConfirmedSequenceNumberMessage{seq}})
 }
 
 func (b *Broadcaster) ClientCount() int32 {

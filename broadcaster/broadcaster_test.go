@@ -81,25 +81,24 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
 
 	b.Confirm(1)
-	b.Confirm(2) // For next check
 	waitUntilUpdated(t, expectMessageCount(3,
-		"after 4 messages, 1 cleared by penultimate confirm"))
+		"after 4 messages, 1 cleared by confirm"))
 
-	b.Confirm(1) // For next check
+	b.Confirm(2)
 	waitUntilUpdated(t, expectMessageCount(2,
-		"after 4 messages, 2 cleared by penultimate confirm"))
+		"after 4 messages, 2 cleared by confirm"))
 
-	b.Confirm(3) // For next check
+	b.Confirm(1)
 	waitUntilUpdated(t, expectMessageCount(2,
 		"nothing changed because confirmed sequence number before cache"))
 
+	b.Confirm(2)
 	b.BroadcastSingle(dummyMessage, 5)
 	waitUntilUpdated(t, expectMessageCount(3,
-		"after 5 messages, 2 cleared by penultimate confirm"))
+		"after 5 messages, 2 cleared by confirm"))
 
 	// Confirm not-yet-seen or already confirmed/cleared sequence numbers twice to force clearing cache
 	b.Confirm(6)
-	b.Confirm(1) // Just to get previous confirm handled
 	waitUntilUpdated(t, expectMessageCount(0,
 		"clear all messages after confirmed 1 beyond latest"))
 }
