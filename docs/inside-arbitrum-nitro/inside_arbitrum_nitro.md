@@ -1,8 +1,8 @@
 ---
-id: Inside_Arbitrum_Nitro
-title: Inside Arbitrum Nitro
-sidebar_label: Inside Arbitrum Nitro
+
 ---
+
+# Inside Arbitrum Nitro
 
 This document is a deep-dive explanation of Arbitrum Nitro’s design and the rationale for it. This isn’t API documentation, nor is it a guided tour of the code--look elsewhere for those. “Inside Arbitrum Nitro” is for people who want to understand Nitro's design.
 
@@ -20,6 +20,7 @@ Some other Layer 2 systems provide some of these features, but to our knowledge 
 Nitro is a major upgrade to Arbitrum, improving over "classic" Arbitrum in several ways:
 
 * **Advanced Calldata Compression,** which further drives down transaction costs on Arbitrum by reducing the amount of data posted to L1.
+* **Separate Contexts For Common Execution and Fault Proving,** increasing the performance of L1 nodes, and thus offering lower fees.
 * **Ethereum L1 Gas Compatibility,** bringing pricing and accounting for EVM operations perfectly in line with Ethereum.
 * **Additional L1 Interoperability,** including tighter synchronization with L1 Block numbers, and full support for all Ethereum L1 precompiles.
 * **Safe Retryables,** eliminating the failure mode where a retryable ticket fails to get created.
@@ -34,7 +35,7 @@ At the most basic level, an Arbitrum chain works like this:
 
 People and contracts put messages into the inbox. The chain reads the messages one at a time, and processes each one. This updates the state of the chain and produces some outputs.
 
-If you want an Arbitrum chain to process a transaction for you, you need to put that transaction into the chain’s inbox. Then the chain will see your transaction, execute it, and produce some outputs: a transaction receipt, and any withdrawals that your transaction did.
+If you want an Arbitrum chain to process a transaction for you, you need to put that transaction into the chain’s inbox. Then the chain will see your transaction, execute it, and produce some outputs: a transaction receipt, and any withdrawals that your transaction initiated.
 
 Execution is deterministic -- which means that the chain’s behavior is uniquely determined by the contents of its inbox. Because of this, the result of your transaction is knowable as soon as your transaction has been put in the inbox. Any Arbitrum node will be able to tell you the result. (And you can run an Arbitrum node yourself if you want.)
 
@@ -67,11 +68,11 @@ This diagram summarizes how transactions are processed in Nitro.
 
 Let's follow a user's transaction through this process.
 
-First, the user creates a transaction, uses their wallet to sign it, and sends it to the Nitro chain's sequencer. The sequencer's job, as its name implies, is to take the arriving transactions, put them into an ordered sequence, and publish that sequence.
+First, the user creates a transaction, uses their wallet to sign it, and sends it to the Nitro chain's Sequencer. The Sequencer's job, as its name implies, is to take the arriving transactions, put them into an ordered sequence, and publish that sequence.
 
 Once the transactions are sequenced, they are run through the *state transition function*, one by one, in order. The state transition function takes as input the current state of the chain (account balances, contract code, and so on), along with the next transaction. It updates the state and sometimes emits a new Layer 2 block on the Nitro chain.
 
-Because the protocol doesn't trust the sequencer not to put garbage into its sequence, the state transition function will detect and discard any invalid transactions in the sequence. A well-behaved sequencer will filter out invalid transactions so the state transition function never sees them--and this reduces cost and therefore keeps transactions fees low--but Nitro will still work correctly no matter what the sequencer puts into its feed. (Transactions in the feed are signed by their senders, so the sequencer can't create forged transactions.)
+Because the protocol doesn't trust the Sequencer not to put garbage into its sequence, the state transition function will detect and discard any invalid (e.g., improperly formed) transactions in the sequence. A well-behaved Sequencer will filter out invalid transactions so the state transition function never sees them--and this reduces cost and therefore keeps transactions fees low--but Nitro will still work correctly no matter what the Sequencer puts into its feed. (Transactions in the feed are signed by their senders, so the Sequencer can't create forged transactions.)
 
 The state transition function is deterministic, which means that its behavior depends only on the current state and the contents of the next transaction--and nothing else. Because of this determinism, the result of a transaction T will depend only on the genesis state of the chain, the transactions before T in the sequence, and T itself. 
 
@@ -79,13 +80,13 @@ It follows that anyone who knows the transaction sequence can compute the state 
 
 ### How the Sequencer Publishes the Sequence
 
-So how do nodes get the sequence? The sequencer publishes it in two ways: a real-time feed, and batches posted on L1 Ethereum.
+So how do nodes get the sequence? The Sequencer publishes it in two ways: a real-time feed, and batches posted on L1 Ethereum.
 
-The real-time feed is published by the sequencer so that anyone who subscribes to the feed receives instant notification of each transaction as it is sequenced. Nitro nodes can subscribe to the feed directly from the sequencer, or through a relay that forwards the feed. The feed represents the sequencer's promise that it will record transactions in a particular order. If the sequencer is honest and doesn't have a long downtime, this promise will be kept. So anyone who trusts the sequencer to keep it promises can rely on the feed to get instant information about the transaction sequence--and they can run the sequenced transactions through the state transition function to learn the results of each transaction immediately. This is "soft finality" for transactions; it's "soft" because it depends on the sequencer keeping its promises.
+The real-time feed is published by the Sequencer so that anyone who subscribes to the feed receives instant notifications of each transaction as it is sequenced. Nitro nodes can subscribe to the feed directly from the Sequencer, or through a relay that forwards the feed. The feed represents the Sequencer's promise that it will record transactions in a particular order. If the Sequencer is honest and doesn't have a long downtime, this promise will be kept. So anyone who trusts the Sequencer to keep it promises can rely on the feed to get instant information about the transaction sequence--and they can run the sequenced transactions through the state transition function to learn the results of each transaction immediately. This is "soft finality" for transactions; it's "soft" because it depends on the Sequencer keeping its promises.
 
-The sequencer also publishes its sequence on the L1 Ethereum chain. Periodically--perhaps every few minutes in production--the sequencer concatenates the next group of transactions in the feed, compresses them for efficiency, and posts the result as calldata on Ethereum. This is the final and official record of the transaction sequence. As soon as this Ethereum transaction has finality on Ethereum. the Layer 2 Nitro transactions it records will have finality. These transactions are final because their position in the sequence has finality, and the outcome of the transactions is deterministic and knowable to any party. This is "hard finality".
+The Sequencer also publishes its sequence on the L1 Ethereum chain. Periodically--perhaps every few minutes in production--the Sequencer concatenates the next group of transactions in the feed, compresses them for efficiency, and posts the result as calldata on Ethereum. This is the final and official record of the transaction sequence. As soon as this Ethereum transaction has finality on Ethereum, the Layer 2 Nitro transactions it records will have finality. These transactions are final because their position in the sequence has finality, and the outcome of the transactions is deterministic and knowable to any party. This is "hard finality".
 
-The sequencer's batches are compressed using a general-purpose data compression algorithm called "brotli", on its highest-compression setting.
+The Sequencer's batches are compressed using a general-purpose data compression algorithm called "brotli", on its highest-compression setting.
 
 ## Geth at the Core
 
@@ -97,7 +98,7 @@ The software that makes up a Nitro node can be thought of as built in three main
 
 * The base layer is the core of geth--the parts of geth that emulate the execution of EVM contracts and maintain the data structures that make up the Ethereum state. Nitro compiles in this code as a library, with a few minor modifications to add necessary hooks.
 * The middle layer, which we call ArbOS, is custom software that provides additional functions associated with Layer 2 functionality, such as decompressing and parsing the Sequencer's data batches, accounting for Layer 1 gas costs and collecting fees to reimburse for them, and supporting cross-chain bridge functionalities such as deposits of Ether and tokens from L1 and withdrawals of the same back to L1. We'll dig in to the details of ArbOS below.
-* The top layer consists of node software, mostly drawn from geth. This handles connections and incoming RPC requests from clients and provides the other top-level functionality required to operate an Ethereu-compatible blockchain node.
+* The top layer consists of node software, mostly drawn from geth. This handles connections and incoming RPC requests from clients and provides the other top-level functionality required to operate an Ethereum-compatible blockchain node.
 
 Because the top and bottom layers rely heavily on code from geth, this structure has been dubbed a "geth sandwich." Strictly speaking, geth plays the role of the bread in the sandwich, and ArbOS is the filling, but this sandwich is named for the bread.
 
@@ -149,7 +150,7 @@ Arbitrum is optimistic, which means that Arbitrum advances the state of its chai
 
 Because a party who tries to cheat will lose a deposit, attempts to cheat should be very rare, and the normal case will be a single party posting a correct rollup block, and nobody challenging it.
 
-## Interactive Proving
+## Resolving disputes using interactive fraud proofs
 
 Among optimistic rollups, the most important design decision is how to resolve disputes. Suppose Alice claims that the chain will produce a certain result, and Bob disagrees. How will the protocol decide which version to accept?
 
@@ -193,7 +194,7 @@ You’re welcome to study, observe, and even participate in the rollup protocol,
 
 The second thing to understand about the rollup protocol is that *the protocol doesn’t decide the results of transactions, it only confirms the results*. The results are uniquely determined by the sequence of messages in the chain’s inbox. So once your transaction message is in the chain’s inbox, its result is knowable--and Arbitrum nodes will report that your transaction is done. The role of the rollup protocol is to confirm transaction results that, as far as Arbitrum users are concerned, have already occurred. (This is why Arbitrum users can effectively ignore the rollup protocol.)
 
-You might wonder why we need the rollup protocol. If everyone knows the results of transactions already, why bother confirming them? The rollup protocol exists for two reasons. First, somebody might lie about a result, and we need a definitive, trustless way to tell who is lying. Second, Ethereum doesn’t know the results. The whole point of a Layer 2 scaling system is to run transactions without Ethereum needing to do all of the work--and indeed Arbitrum can go fast enough that Ethereum couldn’t hope to monitor every Arbitrum transaction. But once a result is confirmed, Ethereum knows about it and can rely on it.
+You might wonder why we need the rollup protocol. If everyone knows the results of transactions already, why bother confirming them? The rollup protocol exists for two reasons. First, somebody might lie about a result, and we need a definitive, trustless way to tell who is lying. Second, Ethereum doesn’t know the results. The whole point of a Layer 2 scaling system is to run transactions without Ethereum needing to do all of the work--and indeed Arbitrum can go fast enough that Ethereum couldn’t hope to monitor every Arbitrum transaction. But once a result is confirmed, Ethereum knows about it and can rely on it, enabling operations on Ethereum such as processing withdrawals of funds from Nitro back to L1.
 
 With those preliminaries behind us, let’s jump into the details of the rollup protocol.
 
@@ -203,9 +204,9 @@ The key security property of the rollup protocol is that any one honest validato
 
 ### The Rollup Chain
 
-The rollup protocol tracks a chain of rollup blocks---we'll call these "Blocks" for clarity. They're not the same as Layer 1 Ethereum blocks, and also not the same as Layer 2 Nitro blocks. You can think of the Blocks  as forming a separate chain, which the Arbitrum rollup protocol manages and oversees.
+The rollup protocol tracks a chain of rollup blocks---we'll call these "RBlocks" for clarity. They're not the same as Layer 1 Ethereum blocks, and also not the same as Layer 2 Nitro blocks. You can think of the RBlocks as forming a separate chain, which the Arbitrum rollup protocol manages and oversees.
 
-Validators can propose Blocks. New Blocks will be _unresolved_ at first. Eventually every Blocks will be _resolved_, by being either _confirmed_ or _rejected_. The confirmed RBlocks make up the confirmed history of the chain.
+Validators can propose RBlocks. New RBlocks will be _unresolved_ at first. Eventually every RBlock will be _resolved_, by being either _confirmed_ or _rejected_. The confirmed RBlocks make up the confirmed history of the chain.
 
 Each RBlock contains:
 
@@ -393,58 +394,58 @@ As the name suggests, full nodes in Arbitrum play the same role that full nodes 
 
 Arbitrum full nodes normally "live at Layer 2" which means that they don’t worry about the rollup protocol but simply treat their Arbitrum chain as a mechanism that feeds inbox messages to the State Transition Function to evolve the Layer 2 chain and produce outputs. 
 
-## Sequencer Mode
+## The Sequencer
 
-Sequencer mode is an optional feature of Arbitrum chains, which can be turned on or off for each chain.  We expect it to be enabled for most chains. Arbitrum One uses a sequencer that is operated by Offchain Labs.
+The Sequencer is a specially designated full node, which is given limited power to control the ordering of transactions. This allows the Sequencer to guarantee the results of user transactions immediately, without needing to wait for anything to happen on Ethereum. So no need to wait five minutes or so for block confirmations--and no need to even wait 15 seconds for Ethereum to make a block.
 
-The sequencer is a specially designated full node, which is given limited power to control the ordering of transactions. This allows the sequencer to guarantee the results of user transactions immediately, without needing to wait for anything to happen on Ethereum. So no need to wait five minutes or so for block confirmations--and no need to even wait 15 seconds for Ethereum to make a block.
+Clients interact with the Sequencer in exactly the same way they would interact with any full node, for example by giving their wallet software a network URL that happens to point to the Sequencer.
 
-Clients interact with the sequencer in exactly the same way they would interact with any full node, for example by giving their wallet software a network URL that happens to point to the sequencer.
+On the Arbitrum One and Arbitrum Nova chains, the Sequencer is run by Offchain Labs.
 
 ### Instant confirmation
 
-Without a sequencer, a node can predict what the results of a client transaction will be, but the node can't be sure, because it can't know or control how the transactions it submits will be ordered in the inbox, relative to transactions submitted by other nodes.
+Without a Sequencer, a node can predict what the results of a client transaction will be, but the node can't be sure, because it can't know or control how the transactions it submits will be ordered in the inbox, relative to transactions submitted by other nodes.
 
-The sequencer is given more control over ordering, so it has the power to assign its clients' transactions a position in the inbox queue, thereby ensuring that it can determine the results of client transactions immediately. The sequencer's power to reorder has limits (see below for details) but it does have more power than anyone else to influence transaction ordering.
+The Sequencer is given more control over ordering, so it has the power to assign its clients' transactions a position in the inbox queue, thereby ensuring that it can determine the results of client transactions immediately. The Sequencer's power to reorder has limits (see below for details) but it does have more power than anyone else to influence transaction ordering.
 
 ### Inboxes, fast and slow
 
-When we add a sequencer, the operation of the inbox changes.
+When we add a Sequencer, the operation of the inbox changes.
 
-* Only the sequencer can put new messages directly into the inbox. The sequencer tags the messages it is submitting with an Ethereum block number and timestamp. (ArbOS ensures that these are non-decreasing, adjusting them upward if necessary to avoid decreases.)
-* Anyone else can submit a message, but messages submitted by non-sequencer nodes will be put into the "delayed inbox" queue, which is managed by an L1 Ethereum contract.  
-  * Messages in the delayed inbox queue will wait there until the sequencer chooses to "release" them into the main inbox, where they will be added to the end of the inbox.  A well-behaved sequencer will typically release delayed messages after about ten minutes, for reasons explained below.
-  * Alternatively, if a message has been in the delayed inbox queue for longer than a maximum delay interval (currently 24 hours) then anyone can force it to be promoted into the main inbox. (This ensures that the sequencer can only delay messages but can't censor them.)
+* Only the Sequencer can put new messages directly into the inbox. The Sequencer tags the messages it is submitting with an Ethereum block number and timestamp. (ArbOS ensures that these are non-decreasing, adjusting them upward if necessary to avoid decreases.)
+* Anyone else can submit a message, but messages submitted by non-Sequencer nodes will be put into the "delayed inbox" queue, which is managed by an L1 Ethereum contract.  
+  * Messages in the delayed inbox queue will wait there until the Sequencer chooses to "release" them into the main inbox, where they will be added to the end of the inbox. A well-behaved Sequencer will typically release delayed messages after about ten minutes, for reasons explained below.
+  * Alternatively, if a message has been in the delayed inbox queue for longer than a maximum delay interval (currently 24 hours) then anyone can force it to be promoted into the main inbox. (This ensures that the Sequencer can only delay messages but can't censor them.)
 
-### If the sequencer is well-behaved...
+### If the Sequencer is well-behaved...
 
-A well-behaved sequencer will accept transactions from all requesters and treat them fairly, giving each one a promised transaction result as quickly as it can.
+A well-behaved Sequencer will accept transactions from all requesters and treat them fairly, giving each one a promised transaction result as quickly as it can.
 
-It will also minimize the delay it imposes on non-sequencer transactions by releasing delayed messages promptly, consistent with the goal of providing strong promises of transaction results. Specifically, if the sequencer believes that 40 confirmation blocks are needed to have good confidence of finality on Ethereum, then it will release delayed messages after 40 blocks. This is enough to ensure that the sequencer knows exactly which transactions will precede its current transaction, because those preceding transactions have finality. There is no need for a benign sequencer to delay non-sequencer messages more than that, so it won't.
+It will also minimize the delay it imposes on non-Sequencer transactions by releasing delayed messages promptly, consistent with the goal of providing strong promises of transaction results. Specifically, if the Sequencer believes that 40 confirmation blocks are needed to have good confidence of finality on Ethereum, then it will release delayed messages after 40 blocks. This is enough to ensure that the Sequencer knows exactly which transactions will precede its current transaction, because those preceding transactions have finality. There is no need for a benign Sequencer to delay non-Sequencer messages more than that, so it won't.
 
 This does mean that transactions that go through the delayed inbox will take longer to get finality. Their time to finality will roughly double, because they will have to wait one finality period for promotion, then another finality period for the Ethereum transaction that promoted them to achieve finality.
 
-This is the basic tradeoff of having a sequencer: if your message uses the sequencer, finality is C blocks faster; but if your message doesn't use the sequencer, finality is C blocks slower. This is usually a good tradeoff, because most transactions will use the sequencer; and because the practical difference between instant and 10-minute finality is bigger than the difference between 10-minute and 20-minute finality.
+This is the basic tradeoff of having a Sequencer: if your message uses the Sequencer, finality is C blocks faster; but if your message doesn't use the Sequencer, finality is C blocks slower. This is usually a good tradeoff, because most transactions will use the Sequencer; and because the practical difference between instant and 10-minute finality is bigger than the difference between 10-minute and 20-minute finality.
 
-So a sequencer is generally a win, if the sequencer is well behaved.
+So a Sequencer is generally a win, if the Sequencer is well behaved.
 
-### If the sequencer is malicious...
+### If the Sequencer is malicious...
 
-A malicious sequencer, on the other hand, could cause some pain. If it refuses to handle your transactions, you're forced to go through the delayed inbox, with longer delay. And a malicious sequencer has great power to front-run everyone's transactions, so it could profit greatly at users' expense.
+A malicious Sequencer, on the other hand, could cause some pain. If it refuses to handle your transactions, you're forced to go through the delayed inbox, with longer delay. And a malicious Sequencer has great power to front-run everyone's transactions, so it could profit greatly at users' expense.
 
-On Arbitrum One, Offchain Labs runs a sequencer which is well-behaved--we promise!. This will be useful but it's not decentralized. Over time, we'll switch to decentralized, fair sequencing, as described below.
+On Arbitrum One, Offchain Labs runs a Sequencer which is well-behaved--we promise!. This will be useful but it's not decentralized. Over time, we'll switch to decentralized, fair sequencing, as described below.
 
-Because the sequencer will be run by a trusted party at first, and will be decentralized later, we haven't built in a mechanism to directly punish a misbehaving sequencer. We're asking users to trust the centralized sequencer at first, until we switch to decentralized fair sequencing later.
+Because the Sequencer will be run by a trusted party at first, and will be decentralized later, we haven't built in a mechanism to directly punish a misbehaving Sequencer. We're asking users to trust the centralized Sequencer at first, until we switch to decentralized fair sequencing later.
 
 ### Decentralized fair sequencing
 
-Viewed from 30,000 feet, decentralized fair sequencing isn't too complicated. Instead of being a single centralized server, the sequencer is a committee of servers, and as long as a large enough supermajority of the committee is honest, the sequencer will establish a fair ordering over transactions.
+Viewed from 30,000 feet, decentralized fair sequencing isn't too complicated. Instead of being a single centralized server, the Sequencer is a committee of servers, and as long as a large enough supermajority of the committee is honest, the Sequencer will establish a fair ordering over transactions.
 
-How to achieve this is more complicated. Research by a team at Cornell Tech, including Offchain Labs CEO and Co-founder Steven Goldfeder, developed the first-ever decentralized fair sequencing algorithm. With some improvements that are under development, these concepts will form the basis for our longer-term solution, of a fair decentralized sequencer.
+How to achieve this is more complicated. Research by a team at Cornell Tech, including Offchain Labs CEO and Co-founder Steven Goldfeder, developed the first-ever decentralized fair sequencing algorithm. With some improvements that are under development, these concepts will form the basis for our longer-term solution, of a fair decentralized Sequencer.
 
 ## Bridging
 
-We have already covered how users interact with L2 contracts--they submit transactions by putting messages into the chain’s inbox, or having a full node sequencer or aggregator do so on their behalf. Let’s talk about how contracts interact between L1 and L2--how an L1 contract calls an L2 contract, and vice versa.
+We have already covered how users interact with L2 contracts--they submit transactions by putting messages into the chain’s inbox, or having a full node Sequencer or aggregator do so on their behalf. Let’s talk about how contracts interact between L1 and L2--how an L1 contract calls an L2 contract, and vice versa.
 
 The L1 and L2 chains run asynchronously from each other, so it is not possible to make a cross-chain call that produces a result within the same transaction as the caller. Instead, cross-chain calls must be asynchronous, meaning that the caller submits the call at some point in time, and the call runs later. As a consequence, a cross-chain contract-to-contract call can never produce a result that is available to the calling contract (except for acknowledgement that the call was successfully submitted for later execution).
 
@@ -464,7 +465,7 @@ When saving a transaction for retry, Nitro records the sender’s address, desti
 
 If the redemption succeeds, the transaction is done, a receipt is issued for it, and the ticketID is canceled and can’t be used again. If the redemption fails, for example because the packaged transaction fails, the redemption reports failure and the ticketID remains available for redemption.
 
-Normally the original submitter will try to cause their transaction to succeed immediately, so it never needs to be recorded or retried.  As an example, our "token deposit" use case above should, in the happy, common case, still only require a single signature from the user. If this initial execution fails, the ticketID will still exist as a backstop which others can redeem later.
+Normally the original submitter will try to cause their transaction to succeed immediately, so it never needs to be recorded or retried. As an example, our "token deposit" use case above should, in the happy, common case, still only require a single signature from the user. If this initial execution fails, the ticketID will still exist as a backstop which others can redeem later.
 
 Submitting a transaction in this way carries a price in ETH which the submitter must pay, which varies based on the calldata size of the transaction. Once submitted, the ticket is valid for about a week. If the ticket has not been redeemed in that period, it is deleted.
 
@@ -476,7 +477,7 @@ This mechanism is a bit more cumbersome than ordinary L1 to L2 transactions, but
 
 Calls from L2 to L1 operate in a similar way, with a ticket-based system. An L2 contract can call a method of the precompiled ArbSys contract, to send a transaction to L1. When the execution of the L2 transaction containing the submission is confirmed at L1 (some days later), a ticket is created in the L1 outbox contract. That ticket can be triggered by anyone who calls a certain L1 outbox method and submits the ticketID. The ticket is only marked as redeemed if the L1 transaction does not revert.
 
-These L2-to-L1 tickets have unlimited lifetime, until they’re successfully redeemed. No rent is required, as the costs are covered by network fees that are collected elsewhere in Arbitrum.
+These L2-to-L1 tickets have unlimited lifetime, until they’re successfully redeemed. No rent is required, as the tickets (actually a Merkle hash of the tickets) are recorded in Ethereum storage, which does not require rent. (The cost of allocating storage for the ticket Merkle roots is covered by L2 transaction fees.)
 
 ## Gas and Fees
 
@@ -498,7 +499,7 @@ Fees are charged for two resources that a transaction can use:
 
 * *L2 gas*: an Ethereum-equivalent amount of gas, as required to execute the transaction on the Nitro chain,
 
-- _L1 calldata_: a fee per unit of L1 calldata attributable to the transaction, which is charged only if the transaction came in via the sequencer, and is paid to the sequencer to cover its costs,
+- _L1 calldata_: a fee per unit of L1 calldata attributable to the transaction, which is charged only if the transaction came in via the Sequencer, and is paid to the Sequencer to cover its costs,
 
 #### L2 gas fees
 
@@ -514,11 +515,11 @@ To make this more precise, the basefee is an exponential function of the backlog
 
 #### L1 calldata fees
 
-L1 calldata fees exist because the sequencer, or the batch poster which posts the sequencer's transaction batches on Ethereum,  incurs costs in L1 gas to post transactions on Ethereum as calldata.  Funds collected in L1 calldata fees are credited to the batch poster to cover its costs. 
+L1 calldata fees exist because the Sequencer, or the batch poster which posts the Sequencer's transaction batches on Ethereum, incurs costs in L1 gas to post transactions on Ethereum as calldata. Funds collected in L1 calldata fees are credited to the batch poster to cover its costs. 
 
-Every transaction that comes in through the sequencer will pay an L1 calldata fee. Transactions that come in through the delayed inbox do not pay this fee because they don't add to batch posting costs--but these transactions pay gas fees to Ethereum when they are put into the delayed inbox.
+Every transaction that comes in through the Sequencer will pay an L1 calldata fee. Transactions that come in through the delayed inbox do not pay this fee because they don't add to batch posting costs--but these transactions pay gas fees to Ethereum when they are put into the delayed inbox.
 
-The L1 pricing algorithm assigns an L1 calldata fee to each sequencer transaction. First, it computes the transaction's size, which is an estimate of how many bytes the transaction will add to the compressed batch it is in; the formula for this includes an estimate of how compressible the transaction is. Second, it multiplies the computed size estimate by the current price per esimated byte, to determine the transaction's L1 calldata wei, in wei. Finally, it divides this cost by the current L2 basefee to translate the fee into L2 gas units. The result is reported as the "poster fee" for the transaction.
+The L1 pricing algorithm assigns an L1 calldata fee to each Sequencer transaction. First, it computes the transaction's size, which is an estimate of how many bytes the transaction will add to the compressed batch it is in; the formula for this includes an estimate of how compressible the transaction is. Second, it multiplies the computed size estimate by the current price per estimated byte, to determine the transaction's L1 calldata wei, in wei. Finally, it divides this cost by the current L2 basefee to translate the fee into L2 gas units. The result is reported as the "poster fee" for the transaction.
 
 The price per estimated byte is set by a dynamic algorithm that compares the total L1 calldata fees collected to the total fees actually paid by batch posters, and tries to bring the two as close to equality as possible. If the batch posters' costs have been less than fee receipts, the price will increase, and if batch poster costs have exceeded fee receipts, the price will decrease. 
 
