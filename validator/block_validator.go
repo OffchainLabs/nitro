@@ -5,10 +5,7 @@ package validator
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -87,7 +84,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	OutputPath:               "./target/output",
+	OutputPath:               "output",
 	Threads:                  -1,
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
@@ -96,7 +93,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	OutputPath:               "./target/output",
+	OutputPath:               "output",
 	Threads:                  -1,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
@@ -125,6 +122,7 @@ func NewBlockValidator(
 		streamer,
 		blockchain,
 		das,
+		config.OutputPath,
 	)
 	if err != nil {
 		return nil, err
@@ -177,102 +175,6 @@ func (v *BlockValidator) NewBlock(block *types.Block) {
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
-
-//nolint:gosec
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
-	machConf := v.MachineLoader.GetConfig()
-	outDirPath := filepath.Join(machConf.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
-	err := os.MkdirAll(outDirPath, 0755)
-	if err != nil {
-		return err
-	}
-
-	cmdFile, err := os.OpenFile(filepath.Join(outDirPath, "run-prover.sh"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
-	if err != nil {
-		return err
-	}
-	defer cmdFile.Close()
-	_, err = cmdFile.WriteString("#!/bin/bash\n" +
-		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchNumber, end.PosInBatch, validationEntry.BlockHash) +
-		"MACHPATH=\"" + machConf.getMachinePath(moduleRoot) + "\"\n" +
-		"if (( $# > 1 )); then\n" +
-		"	if [[ $1 == \"-m\" ]]; then\n" +
-		"		MACHPATH=$2\n" +
-		"		shift\n" +
-		"		shift\n" +
-		"	fi\n" +
-		"fi\n" +
-		"${ROOTPATH}/bin/prover ${MACHPATH}/" + machConf.ProverBinPath)
-	if err != nil {
-		return err
-	}
-
-	for _, module := range machConf.LibraryPaths {
-		_, err = cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
-		if err != nil {
-			return err
-		}
-	}
-	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", start.BatchNumber, start.PosInBatch, validationEntry.PrevBlockHash))
-	if err != nil {
-		return err
-	}
-
-	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNumber)
-	err = os.WriteFile(filepath.Join(outDirPath, sequencerFileName), sequencerMsg, 0644)
-	if err != nil {
-		return err
-	}
-	_, err = cmdFile.WriteString(" --inbox " + sequencerFileName)
-	if err != nil {
-		return err
-	}
-
-	preimageFile, err := os.Create(filepath.Join(outDirPath, "preimages.bin"))
-	if err != nil {
-		return err
-	}
-	defer preimageFile.Close()
-	for _, data := range preimages {
-		lenbytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(lenbytes, uint64(len(data)))
-		_, err := preimageFile.Write(lenbytes)
-		if err != nil {
-			return err
-		}
-		_, err = preimageFile.Write(data)
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = cmdFile.WriteString(" --preimages preimages.bin")
-	if err != nil {
-		return err
-	}
-
-	if validationEntry.HasDelayedMsg {
-		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.DelayedMsgNr))
-		if err != nil {
-			return err
-		}
-		filename := fmt.Sprintf("delayed_%d.bin", validationEntry.DelayedMsgNr)
-		err = os.WriteFile(filepath.Join(outDirPath, filename), delayedMsg, 0644)
-		if err != nil {
-			return err
-		}
-		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox %s", filename))
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = cmdFile.WriteString(" \"$@\"\n")
-	if err != nil {
-		return err
-	}
-	return nil
-}
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	v.cancelMutex.Lock()

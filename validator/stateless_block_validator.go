@@ -5,7 +5,10 @@ package validator
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/offchainlabs/nitro/arbutil"
 
@@ -31,6 +34,7 @@ type StatelessBlockValidator struct {
 	blockchain      *core.BlockChain
 	daService       arbstate.DataAvailabilityReader
 	genesisBlockNum uint64
+	outputPath      string
 }
 
 type BlockValidatorRegistrer interface {
@@ -200,6 +204,7 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	blockchain *core.BlockChain,
 	das arbstate.DataAvailabilityReader,
+	outputPath string,
 ) (*StatelessBlockValidator, error) {
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
 	if err != nil {
@@ -213,6 +218,7 @@ func NewStatelessBlockValidator(
 		blockchain:      blockchain,
 		daService:       das,
 		genesisBlockNum: genesisBlockNum,
+		outputPath:      outputPath,
 	}
 	return validator, nil
 }
@@ -443,7 +449,104 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 	return mach.GetGlobalState(), delayedMsg, nil
 }
 
-func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header, moduleRoot common.Hash) (bool, error) {
+//nolint:gosec
+func (v *StatelessBlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
+	machConf := v.MachineLoader.GetConfig()
+	outDirPath := filepath.Join(machConf.RootPath, v.outputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
+	log.Info("writing validation info", "dir", outDirPath, "block", validationEntry.BlockNumber, "blockHash", validationEntry.BlockHash)
+	err := os.MkdirAll(outDirPath, 0755)
+	if err != nil {
+		return err
+	}
+
+	cmdFile, err := os.OpenFile(filepath.Join(outDirPath, "run-prover.sh"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	defer cmdFile.Close()
+	_, err = cmdFile.WriteString("#!/bin/bash\n" +
+		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchNumber, end.PosInBatch, validationEntry.BlockHash) +
+		"MACHPATH=\"" + machConf.getMachinePath(moduleRoot) + "\"\n" +
+		"if (( $# > 1 )); then\n" +
+		"	if [[ $1 == \"-m\" ]]; then\n" +
+		"		MACHPATH=\"$2\"\n" +
+		"		shift\n" +
+		"		shift\n" +
+		"	fi\n" +
+		"fi\n" +
+		"\"${ROOTPATH}\"/bin/prover \"${MACHPATH}\"/" + machConf.ProverBinPath)
+	if err != nil {
+		return err
+	}
+
+	for _, module := range machConf.LibraryPaths {
+		_, err = cmdFile.WriteString(" -l " + "\"${MACHPATH}\"/" + module)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", start.BatchNumber, start.PosInBatch, validationEntry.PrevBlockHash))
+	if err != nil {
+		return err
+	}
+
+	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNumber)
+	err = os.WriteFile(filepath.Join(outDirPath, sequencerFileName), sequencerMsg, 0644)
+	if err != nil {
+		return err
+	}
+	_, err = cmdFile.WriteString(" --inbox " + sequencerFileName)
+	if err != nil {
+		return err
+	}
+
+	preimageFile, err := os.Create(filepath.Join(outDirPath, "preimages.bin"))
+	if err != nil {
+		return err
+	}
+	defer preimageFile.Close()
+	for _, data := range preimages {
+		lenbytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(lenbytes, uint64(len(data)))
+		_, err := preimageFile.Write(lenbytes)
+		if err != nil {
+			return err
+		}
+		_, err = preimageFile.Write(data)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = cmdFile.WriteString(" --preimages preimages.bin")
+	if err != nil {
+		return err
+	}
+
+	if validationEntry.HasDelayedMsg {
+		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.DelayedMsgNr))
+		if err != nil {
+			return err
+		}
+		filename := fmt.Sprintf("delayed_%d.bin", validationEntry.DelayedMsgNr)
+		err = os.WriteFile(filepath.Join(outDirPath, filename), delayedMsg, 0644)
+		if err != nil {
+			return err
+		}
+		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox %s", filename))
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = cmdFile.WriteString(" \"$@\"\n")
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header, moduleRoot common.Hash, writeToFile bool) (bool, error) {
 	if header == nil {
 		return false, errors.New("header not found")
 	}
@@ -457,7 +560,7 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 	if err != nil {
 		return false, err
 	}
-	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, false)
+	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, writeToFile)
 	if err != nil {
 		return false, fmt.Errorf("failed to get block data to validate: %w", err)
 	}
@@ -490,9 +593,17 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 		Data:   seqMsg,
 	})
 
-	gsEnd, _, err := v.executeBlock(ctx, entry, moduleRoot)
+	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, moduleRoot)
 	if err != nil {
 		return false, err
 	}
+
+	if writeToFile {
+		err = v.writeToFile(entry, moduleRoot, entry.StartPosition, entry.EndPosition, entry.Preimages, seqMsg, delayedMsg)
+		if err != nil {
+			log.Error("failed to write file", "err", err)
+		}
+	}
+
 	return gsEnd == entry.expectedEnd(), nil
 }

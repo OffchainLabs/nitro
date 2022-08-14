@@ -40,7 +40,7 @@ type BlockValidatorDebugAPI struct {
 	blockchain *core.BlockChain
 }
 
-func (a *BlockValidatorDebugAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash) (bool, error) {
+func (a *BlockValidatorDebugAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash, writeToFile *bool) (bool, error) {
 	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
 	if err != nil {
 		return false, err
@@ -58,7 +58,7 @@ func (a *BlockValidatorDebugAPI) RevalidateBlock(ctx context.Context, blockNum r
 		}
 		moduleRoot = moduleRoots[0]
 	}
-	return a.val.ValidateBlock(ctx, header, moduleRoot)
+	return a.val.ValidateBlock(ctx, header, moduleRoot, writeToFile != nil && *writeToFile)
 }
 
 type ArbAPI struct {
