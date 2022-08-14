@@ -184,7 +184,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 
 	data = append(header, data...)
 	preimages := make(map[common.Hash][]byte)
-	if _, err = arbstate.RecoverPayloadFromDasBatch(ctx, data, s.dataSource, preimages, arbstate.KeysetValidate); err != nil {
+	if _, err = arbstate.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, preimages, arbstate.KeysetValidate); err != nil {
 		log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
 		return err
 	}

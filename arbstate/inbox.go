@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"math/big"
 
@@ -61,7 +60,7 @@ const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, data []byte, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -80,7 +79,7 @@ func parseSequencerMessage(ctx context.Context, data []byte, dasReader DataAvail
 			log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 		} else {
 			var err error
-			payload, err = RecoverPayloadFromDasBatch(ctx, data, dasReader, nil, keysetValidationMode)
+			payload, err = RecoverPayloadFromDasBatch(ctx, batchNum, data, dasReader, nil, keysetValidationMode)
 			if err != nil {
 				return nil, err
 			}
@@ -131,6 +130,7 @@ func parseSequencerMessage(ctx context.Context, data []byte, dasReader DataAvail
 
 func RecoverPayloadFromDasBatch(
 	ctx context.Context,
+	batchNum uint64,
 	sequencerMsg []byte,
 	dasReader DataAvailabilityReader,
 	preimages map[common.Hash][]byte,
@@ -191,10 +191,11 @@ func RecoverPayloadFromDasBatch(
 
 	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage), keysetValidationMode == KeysetDontValidate)
 	if err != nil {
+		logLevel := log.Error
 		if keysetValidationMode == KeysetPanicIfInvalid {
-			panic(fmt.Sprintf("Couldn't deserialize keyset: %v", err))
+			logLevel = log.Crit
 		}
-		log.Error("Couldn't deserialize keyset", "err", err)
+		logLevel("Couldn't deserialize keyset", "err", err, "keysetHash", cert.KeysetHash, "batchNum", batchNum)
 		return nil, nil
 	}
 	err = keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
@@ -279,7 +280,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, bytes, r.dasReader, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, bytes, r.dasReader, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}
