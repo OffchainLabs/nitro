@@ -131,7 +131,12 @@ func main() {
 		if dasEnabled {
 			dasReader = &PreimageDASReader{}
 		}
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead, dasReader)
+		backend := WavmInbox{}
+		var keysetValidationMode = arbstate.KeysetPanicIfInvalid
+		if backend.GetPositionWithinMessage() > 0 {
+			keysetValidationMode = arbstate.KeysetDontValidate
+		}
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {

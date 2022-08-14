@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 
@@ -60,7 +61,7 @@ const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, data []byte, dasReader DataAvailabilityReader) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, data []byte, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -79,7 +80,7 @@ func parseSequencerMessage(ctx context.Context, data []byte, dasReader DataAvail
 			log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 		} else {
 			var err error
-			payload, err = RecoverPayloadFromDasBatch(ctx, data, dasReader, nil)
+			payload, err = RecoverPayloadFromDasBatch(ctx, data, dasReader, nil, keysetValidationMode)
 			if err != nil {
 				return nil, err
 			}
@@ -133,6 +134,7 @@ func RecoverPayloadFromDasBatch(
 	sequencerMsg []byte,
 	dasReader DataAvailabilityReader,
 	preimages map[common.Hash][]byte,
+	keysetValidationMode KeysetValidationMode,
 ) ([]byte, error) {
 	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
 	if err != nil {
@@ -187,8 +189,11 @@ func RecoverPayloadFromDasBatch(
 		dastree.RecordHash(recordPreimage, keysetPreimage)
 	}
 
-	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage))
+	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage), keysetValidationMode == KeysetDontValidate)
 	if err != nil {
+		if keysetValidationMode == KeysetPanicIfInvalid {
+			panic(fmt.Sprintf("Couldn't deserialize keyset: %v", err))
+		}
 		log.Error("Couldn't deserialize keyset", "err", err)
 		return nil, nil
 	}
@@ -224,6 +229,12 @@ func RecoverPayloadFromDasBatch(
 	return payload, nil
 }
 
+type KeysetValidationMode uint8
+
+const KeysetValidate KeysetValidationMode = 0
+const KeysetPanicIfInvalid KeysetValidationMode = 1
+const KeysetDontValidate KeysetValidationMode = 2
+
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
@@ -234,13 +245,15 @@ type inboxMultiplexer struct {
 	cachedSegmentTimestamp    uint64
 	cachedSegmentBlockNumber  uint64
 	cachedSubMessageNumber    uint64
+	keysetValidationMode      KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader) InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) InboxMultiplexer {
 	return &inboxMultiplexer{
-		backend:             backend,
-		delayedMessagesRead: delayedMessagesRead,
-		dasReader:           dasReader,
+		backend:              backend,
+		delayedMessagesRead:  delayedMessagesRead,
+		dasReader:            dasReader,
+		keysetValidationMode: keysetValidationMode,
 	}
 }
 
@@ -266,7 +279,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, bytes, r.dasReader)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, bytes, r.dasReader, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}
