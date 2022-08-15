@@ -234,6 +234,10 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 		if err != nil {
 			return PublicKey{}, err
 		}
+		if trustedSource {
+			// Skip verification of the validity proof
+			return PublicKey{key, validityProof}, nil
+		}
 		return NewPublicKey(key, validityProof)
 	}
 }
