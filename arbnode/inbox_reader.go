@@ -207,9 +207,9 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if ourLatestDelayedCount < checkingDelayedCount {
 				checkingDelayedCount = ourLatestDelayedCount
 				missingDelayed = true
-			} else if ourLatestDelayedCount > checkingDelayedCount && ir.config.HardReorg {
+			} else if ourLatestDelayedCount > checkingDelayedCount {
 				log.Info("backwards reorg of delayed messages", "from", ourLatestDelayedCount, "to", checkingDelayedCount)
-				err = ir.tracker.ReorgDelayedTo(checkingDelayedCount)
+				err = ir.tracker.ReorgDelayedTo(checkingDelayedCount, ir.config.HardReorg)
 				if err != nil {
 					return err
 				}
