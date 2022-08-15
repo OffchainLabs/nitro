@@ -28,8 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 
-	"github.com/offchainlabs/nitro/das/dasrpc"
-
 	"github.com/offchainlabs/nitro/das"
 )
 
@@ -39,7 +37,7 @@ func startLocalDASServer(
 	dataDir string,
 	l1client arbutil.L1Interface,
 	seqInboxAddress common.Address,
-) (*http.Server, *blsSignatures.PublicKey, dasrpc.BackendConfig) {
+) (*http.Server, *blsSignatures.PublicKey, das.BackendConfig) {
 	lis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	keyDir := t.TempDir()
@@ -69,9 +67,9 @@ func startLocalDASServer(
 	Require(t, err)
 	currentDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
 	Require(t, err)
-	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, currentDas)
+	dasServer, err := das.StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, currentDas)
 	Require(t, err)
-	beConfig := dasrpc.BackendConfig{
+	beConfig := das.BackendConfig{
 		URL:                 "http://" + lis.Addr().String(),
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
 		SignerMask:          1,
@@ -86,8 +84,8 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 	return string(encodedPubkey)
 }
 
-func aggConfigForBackend(t *testing.T, backendConfig dasrpc.BackendConfig) das.AggregatorConfig {
-	backendsJsonByte, err := json.Marshal([]dasrpc.BackendConfig{backendConfig})
+func aggConfigForBackend(t *testing.T, backendConfig das.BackendConfig) das.AggregatorConfig {
+	backendsJsonByte, err := json.Marshal([]das.BackendConfig{backendConfig})
 	Require(t, err)
 	return das.AggregatorConfig{
 		Enable:        true,
@@ -282,7 +280,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, &serverConfig, l1Reader, addresses)
 	Require(t, err)
-	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+	dasServer, err := das.StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
 	Require(t, err)
 
 	_ = dasServer
@@ -306,7 +304,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 
-	beConfigA := dasrpc.BackendConfig{
+	beConfigA := das.BackendConfig{
 		URL:                 "http://" + lis.Addr().String(),
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
 		SignerMask:          1,

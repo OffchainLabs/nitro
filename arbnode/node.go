@@ -37,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/das/dasrpc"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -1005,7 +1004,7 @@ func SetUpDataAvailability(
 		if topLevelStorageService != nil {
 			return nil, nil, errors.New("If rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
 		}
-		rpcAggregator, err := dasrpc.NewRPCAggregatorWithSeqInboxCaller(config.AggregatorConfig, seqInboxCaller)
+		rpcAggregator, err := das.NewRPCAggregatorWithSeqInboxCaller(config.AggregatorConfig, seqInboxCaller)
 		if err != nil {
 			return nil, nil, err
 		}

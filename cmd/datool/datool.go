@@ -24,7 +24,6 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/das/dasrpc"
 	"github.com/offchainlabs/nitro/das/dastree"
 	flag "github.com/spf13/pflag"
 )
@@ -120,7 +119,7 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	client, err := dasrpc.NewDASRPCClient(config.URL)
+	client, err := das.NewDASRPCClient(config.URL)
 	if err != nil {
 		return err
 	}
@@ -222,7 +221,7 @@ func startRPCClientGetByHash(args []string) error {
 		return err
 	}
 
-	client, err := dasrpc.NewDASRPCClient(config.URL)
+	client, err := das.NewDASRPCClient(config.URL)
 	if err != nil {
 		return err
 	}
