@@ -17,12 +17,6 @@ use wasmparser::{
     Parser, Payload, TableType, TypeDef,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MemoryArg {
-    pub alignment: u32,
-    pub offset: u32,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FloatType {
     F32,
