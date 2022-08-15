@@ -386,7 +386,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 data
             );
 
-        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, 0);
+        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
         if (maxSubmissionCost < submissionFee)
             revert InsufficientSubmissionCost(submissionFee, maxSubmissionCost);
 
