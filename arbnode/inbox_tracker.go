@@ -6,6 +6,7 @@ package arbnode
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -286,7 +287,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 			return err
 		}
 		if !canReorgBatches {
-			return errors.New("reorging of sequencer batches via delayed messages disabled in this instance")
+			return fmt.Errorf("reorging of sequencer batch number %v via delayed messages reorg to count %v disabled in this instance", batchSeqNum, newDelayedCount)
 		}
 		err = batch.Delete(seqBatchIter.Key())
 		if err != nil {
