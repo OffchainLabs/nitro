@@ -145,6 +145,7 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 func (cert *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
 	da DataAvailabilityReader,
+	assumeKeysetValid bool,
 ) (*DataAvailabilityKeyset, error) {
 	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash)
 	if err != nil {
@@ -153,19 +154,7 @@ func (cert *DataAvailabilityCertificate) RecoverKeyset(
 	if !dastree.ValidHash(cert.KeysetHash, keysetBytes) {
 		return nil, errors.New("keyset hash does not match cert")
 	}
-	return DeserializeKeyset(bytes.NewReader(keysetBytes))
-}
-
-func (cert *DataAvailabilityCertificate) VerifyNonPayloadParts(
-	ctx context.Context,
-	da DataAvailabilityReader,
-) error {
-	keyset, err := cert.RecoverKeyset(ctx, da)
-	if err != nil {
-		return err
-	}
-
-	return keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
+	return DeserializeKeyset(bytes.NewReader(keysetBytes), assumeKeysetValid)
 }
 
 type DataAvailabilityKeyset struct {
@@ -202,7 +191,7 @@ func (keyset *DataAvailabilityKeyset) Hash() (common.Hash, error) {
 	return dastree.Hash(wr.Bytes()), nil
 }
 
-func DeserializeKeyset(rd io.Reader) (*DataAvailabilityKeyset, error) {
+func DeserializeKeyset(rd io.Reader, assumeKeysetValid bool) (*DataAvailabilityKeyset, error) {
 	assumedHonest, err := util.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
@@ -224,7 +213,7 @@ func DeserializeKeyset(rd io.Reader) (*DataAvailabilityKeyset, error) {
 		if _, err := io.ReadFull(rd, buf); err != nil {
 			return nil, err
 		}
-		pubkeys[i], err = blsSignatures.PublicKeyFromBytes(buf, false)
+		pubkeys[i], err = blsSignatures.PublicKeyFromBytes(buf, assumeKeysetValid)
 		if err != nil {
 			return nil, err
 		}
