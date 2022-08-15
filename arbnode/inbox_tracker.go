@@ -546,8 +546,17 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		t.validator.ProcessBatches(startPos, batchBytes)
 	}
 
-	if t.txStreamer.broadcastServer != nil && prevbatchmeta.MessageCount > 0 {
-		t.txStreamer.broadcastServer.Confirm(prevbatchmeta.MessageCount - 1)
+	if t.txStreamer.broadcastServer != nil && pos > 1 {
+		prevprevbatchmeta, err := t.GetBatchMetadata(pos - 2)
+		if errors.Is(err, accumulatorNotFound) {
+			return errors.New("missing previous previous sequencer batch")
+		} else if err != nil {
+			return err
+		}
+		if prevprevbatchmeta.MessageCount > 0 {
+			// Confirm messages from batch before last batch
+			t.txStreamer.broadcastServer.Confirm(prevprevbatchmeta.MessageCount - 1)
+		}
 	}
 
 	return nil
