@@ -20,7 +20,7 @@ func TestRestfulServerList(t *testing.T) {
 
 	urlsIn := []string{"https://supersecret.nowhere.com:9871", "http://www.google.com"}
 	listContents := urlsIn[0] + " \t" + urlsIn[1]
-	port, server := newListHttpServerForTest(t, listContents)
+	port, server := newListHttpServerForTest(t, &stringHandler{listContents})
 
 	listUrl := fmt.Sprintf("http://localhost:%d", port)
 	urls, err := RestfulServerURLsFromList(ctx, listUrl)
@@ -41,7 +41,7 @@ func TestRestfulServerListDaemon(t *testing.T) {
 
 	urlsIn := []string{"https://supersecret.nowhere.com:9871", "http://www.google.com"}
 	listContents := urlsIn[0] + " \t" + urlsIn[1]
-	port, server := newListHttpServerForTest(t, listContents)
+	port, server := newListHttpServerForTest(t, &stringHandler{listContents})
 
 	listUrl := fmt.Sprintf("http://localhost:%d", port)
 
@@ -50,6 +50,43 @@ func TestRestfulServerListDaemon(t *testing.T) {
 		list := <-listChan
 		if !stringListIsPermutation(list, urlsIn) {
 			t.Fatal(i)
+		}
+	}
+
+	err := server.Shutdown(ctx)
+	Require(t, err)
+}
+
+func TestRestfulServerListDaemonWithErrors(t *testing.T) {
+	initTest(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	urlsIn := []string{"https://supersecret.nowhere.com:9871", "http://www.google.com"}
+	listContents := urlsIn[0] + " \t" + urlsIn[1]
+	port, server := newListHttpServerForTest(
+		t,
+		Handlers(
+			&connectionClosingHandler{},
+			&connectionClosingHandler{},
+			&stringHandler{listContents},
+			&erroringHandler{},
+			&erroringHandler{},
+			&stringHandler{listContents},
+			&erroringHandler{},
+			&connectionClosingHandler{},
+			&stringHandler{listContents},
+		),
+	)
+
+	listUrl := fmt.Sprintf("http://localhost:%d", port)
+
+	listChan := StartRestfulServerListFetchDaemon(ctx, listUrl, 200*time.Millisecond)
+	for i := 0; i < 3; i++ {
+		list := <-listChan
+		if !stringListIsPermutation(list, urlsIn) {
+			t.Fatal(i, "not a match")
 		}
 	}
 
@@ -73,9 +110,9 @@ func stringListIsPermutation(lis1, lis2 []string) bool {
 	return true
 }
 
-func newListHttpServerForTest(t *testing.T, contents string) (int, *http.Server) {
+func newListHttpServerForTest(t *testing.T, handler http.Handler) (int, *http.Server) {
 	server := &http.Server{
-		Handler:           &testHandler{contents},
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	listener, err := net.Listen("tcp", "localhost:0")
@@ -87,10 +124,39 @@ func newListHttpServerForTest(t *testing.T, contents string) (int, *http.Server)
 	return tcpAddr.Port, server
 }
 
-type testHandler struct {
+type stringHandler struct {
 	contents string
 }
 
-func (th *testHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	_, _ = w.Write([]byte(th.contents))
+func (h *stringHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	_, _ = w.Write([]byte(h.contents))
+}
+
+type erroringHandler struct {
+}
+
+func (h *erroringHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	w.WriteHeader(404)
+}
+
+type connectionClosingHandler struct {
+}
+
+func (h *connectionClosingHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	panic("close connection")
+}
+
+type multiHandler struct {
+	current  int
+	handlers []http.Handler
+}
+
+func Handlers(hs ...http.Handler) *multiHandler {
+	return &multiHandler{0, hs}
+}
+
+func (h *multiHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	i := h.current % len(h.handlers)
+	h.current++
+	h.handlers[i].ServeHTTP(w, req)
 }
