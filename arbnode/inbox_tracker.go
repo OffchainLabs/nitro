@@ -448,7 +448,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das, arbstate.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {
