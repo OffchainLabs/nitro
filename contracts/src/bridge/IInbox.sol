@@ -143,5 +143,11 @@ interface IInbox is IDelayedMessageProvider {
 
     // ---------- initializer ----------
 
+    /**
+     * @dev function to be called one time during the inbox upgrade process
+     *      this is used to fix the storage slots
+     */
+    function postUpgradeInit(IBridge _bridge) external;
+
     function initialize(IBridge _bridge, ISequencerInbox _sequencerInbox) external;
 }
