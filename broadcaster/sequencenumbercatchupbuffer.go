@@ -2,6 +2,7 @@ package broadcaster
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -69,51 +70,60 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 	return nil
 }
 
+func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber arbutil.MessageIndex) {
+	if len(b.messages) == 0 {
+		return
+	}
+
+	firstSequenceNumber := b.messages[0].SequenceNumber
+
+	if confirmedSequenceNumber < firstSequenceNumber {
+		// Confirmed sequence number is older than cache, so nothing to do
+		return
+	}
+
+	confirmedIndex := uint64(confirmedSequenceNumber - firstSequenceNumber)
+
+	if confirmedIndex >= uint64(len(b.messages)) {
+		log.Error("ConfirmedSequenceNumber: ", confirmedSequenceNumber, " is past the end of stored messages, clearing buffer. first sequence number: ", firstSequenceNumber, ", cache length: ", len(b.messages))
+		b.messages = nil
+		return
+	}
+
+	if b.messages[confirmedIndex].SequenceNumber != confirmedSequenceNumber {
+		// Log instead of returning error here so that the message will be sent to downstream
+		// relays to also cause them to be cleared.
+		log.Error("Invariant violation: confirmedSequenceNumber: ", confirmedSequenceNumber, " is not where expected, clearing buffer. first sequence number: ", firstSequenceNumber, ", cache length: ", len(b.messages), "found: ", b.messages[confirmedIndex].SequenceNumber)
+		b.messages = nil
+		return
+	}
+
+	b.messages = b.messages[confirmedIndex+1:]
+	if len(b.messages) > 10 && cap(b.messages) > len(b.messages)*10 {
+		// Too much spare capacity, copy to fresh slice to reset memory usage
+		b.messages = append([]*BroadcastFeedMessage(nil), b.messages[:len(b.messages)]...)
+	}
+}
+
 func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 	broadcastMessage, ok := bmi.(BroadcastMessage)
 	if !ok {
-		log.Crit("Requested to broadcast message of unknown type")
+		msg := "requested to broadcast message of unknown type"
+		log.Error(msg)
+		return errors.New(msg)
 	}
 	defer func() { atomic.StoreInt32(&b.messageCount, int32(len(b.messages))) }()
 
 	if confirmMsg := broadcastMessage.ConfirmedSequenceNumberMessage; confirmMsg != nil {
-		if len(b.messages) == 0 {
-			return nil
-		}
-
-		// If new sequence number is less than the earliest in the buffer,
-		// then do nothing, as this message was probably already confirmed.
-		if confirmMsg.SequenceNumber < b.messages[0].SequenceNumber {
-			return nil
-		}
-		confirmedIndex := uint64(confirmMsg.SequenceNumber - b.messages[0].SequenceNumber)
-
-		if uint64(len(b.messages)) <= confirmedIndex {
-			log.Error("ConfirmedSequenceNumber message ", confirmMsg.SequenceNumber, " is past the end of stored messages. Clearing buffer. Final stored sequence number was ", b.messages[len(b.messages)-1])
-			b.messages = nil
-			return nil
-		}
-
-		if b.messages[confirmedIndex].SequenceNumber != confirmMsg.SequenceNumber {
-			// Log instead of returning error here so that the message will be sent to downstream
-			// relays to also cause them to be cleared.
-			log.Error("Invariant violation: Non-sequential messages stored in SequenceNumberCatchupBuffer. Found ", b.messages[confirmedIndex].SequenceNumber, " expected ", confirmMsg.SequenceNumber, ". Clearing buffer.")
-			b.messages = nil
-			return nil
-		}
-
-		b.messages = b.messages[confirmedIndex+1:]
-		if len(b.messages) > 10 && cap(b.messages) > len(b.messages)*10 {
-			// Too much spare capacity, copy to fresh slice to reset memory usage
-			b.messages = append([]*BroadcastFeedMessage(nil), b.messages[:len(b.messages)]...)
-		}
-		return nil
+		b.deleteConfirmed(confirmMsg.SequenceNumber)
 	}
 
 	for _, newMsg := range broadcastMessage.Messages {
 		if len(b.messages) == 0 {
+			// Add to empty list
 			b.messages = append(b.messages, newMsg)
 		} else if expectedSequenceNumber := b.messages[len(b.messages)-1].SequenceNumber + 1; newMsg.SequenceNumber == expectedSequenceNumber {
+			// Next sequence number to add to end of list
 			b.messages = append(b.messages, newMsg)
 		} else if newMsg.SequenceNumber > expectedSequenceNumber {
 			log.Warn(
