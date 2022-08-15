@@ -55,7 +55,8 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 
 #### Protocol Contracts
 
-- **New Contract Deployments**: For the Nitro upgrade, the following contracts will be redeployed on L1 to new addresses:
+- **New Contract Deployments**: For the Nitro upgrade, all contracts will be redeployed on L1 to new addresses except the Delayed Inbox contract. The list of contracts that will be redeployed is:
+    - Bridge 
     - SequencerInbox
     - RollupCore
     - Outbox
