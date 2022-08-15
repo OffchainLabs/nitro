@@ -22,7 +22,10 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
     address public rollup; // the rollup contract
     IBridge public bridge; // the bridge contract
 
-    mapping(uint256 => bool) public spent; // maps leaf number => if spent
+    function spent(uint256) external pure override returns (bytes32){
+        revert("NOT_IMPLEMETED");
+    }
+    mapping(uint256 => bool) public isSpent; // maps leaf number => if spent
     mapping(bytes32 => bytes32) public roots; // maps root hashes => L2 block hash
 
     struct L2ToL1Context {
@@ -70,7 +73,7 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
     }
 
     // @deprecated batch number is now always 0
-    function l2ToL1BatchNum() external pure override returns (uint256) {
+    function l2ToL1BatchNum() external pure returns (uint256) {
         return 0;
     }
 
@@ -150,10 +153,6 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         revert("Not implemented");
     }
 
-    function isSpent(uint256) external pure override returns (bool) {
-        revert("Not implemented");
-    }
-
     function recordOutputAsSpent(
         bytes32[] memory proof,
         uint256 index,
@@ -166,8 +165,8 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
         if (roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
 
-        if (spent[index]) revert AlreadySpent(index);
-        spent[index] = true;
+        if (isSpent[index]) revert AlreadySpent(index);
+        isSpent[index] = true;
 
         return bytes32(index);
     }
