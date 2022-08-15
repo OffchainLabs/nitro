@@ -22,9 +22,10 @@ contract OutboxWithoutOptTester is DelegateCallAware, IOutbox {
     address public rollup; // the rollup contract
     IBridge public bridge; // the bridge contract
 
-    function spent(uint256) external pure override returns (bytes32){
+    function spent(uint256) external pure override returns (bytes32) {
         revert("NOT_IMPLEMETED");
     }
+
     mapping(uint256 => bool) public isSpent; // maps leaf number => if spent
     mapping(bytes32 => bytes32) public roots; // maps root hashes => L2 block hash
 

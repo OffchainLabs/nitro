@@ -17,11 +17,14 @@ interface IOutbox {
     );
 
     function rollup() external view returns (address); // the rollup contract
+
     function bridge() external view returns (IBridge); // the bridge contract
 
     function spent(uint256) external view returns (bytes32); // packed spent bitmap
+
     function roots(bytes32) external view returns (bytes32); // maps root hashes => L2 block hash
 
+    // solhint-disable-next-line func-name-mixedcase
     function OUTBOX_VERSION() external view returns (uint128); // the outbox version
 
     function updateSendRoot(bytes32 sendRoot, bytes32 l2BlockHash) external;

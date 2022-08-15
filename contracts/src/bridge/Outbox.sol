@@ -48,7 +48,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     bytes32 private constant OUTPUTID_DEFAULT_CONTEXT = bytes32(type(uint256).max);
     address private constant SENDER_DEFAULT_CONTEXT = address(type(uint160).max);
 
-    uint128 public override constant OUTBOX_VERSION = 2;
+    uint128 public constant override OUTBOX_VERSION = 2;
 
     function initialize(IBridge _bridge) external onlyDelegated {
         if (address(bridge) != address(0)) revert AlreadyInit();
