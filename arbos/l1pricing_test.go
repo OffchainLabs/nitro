@@ -212,7 +212,8 @@ func TestUpdateTimeUpgradeBehavior(t *testing.T) {
 	l1p := arbosSt.L1PricingState()
 	amount := arbmath.UintToBig(10 * params.GWei)
 	poster := common.Address{3, 4, 5}
-	l1p.BatchPosterTable().AddPoster(poster, poster)
+	_, err = l1p.BatchPosterTable().AddPoster(poster, poster)
+	Require(t, err)
 
 	// In the past this would have errored due to an invalid timestamp.
 	// We don't want to error since it'd create noise in the console,
