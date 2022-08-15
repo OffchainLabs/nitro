@@ -22,11 +22,11 @@ import "../libraries/DelegateCallAware.sol";
 error SimulationOnlyEntrypoint();
 
 contract Outbox is DelegateCallAware, IOutbox {
-    address public rollup; // the rollup contract
-    IBridge public bridge; // the bridge contract
+    address public override rollup; // the rollup contract
+    IBridge public override bridge; // the bridge contract
 
-    mapping(uint256 => bytes32) public spent; // packed spent bitmap
-    mapping(bytes32 => bytes32) public roots; // maps root hashes => L2 block hash
+    mapping(uint256 => bytes32) public override spent; // packed spent bitmap
+    mapping(bytes32 => bytes32) public override roots; // maps root hashes => L2 block hash
 
     struct L2ToL1Context {
         uint128 l2Block;
@@ -48,7 +48,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     bytes32 private constant OUTPUTID_DEFAULT_CONTEXT = bytes32(type(uint256).max);
     address private constant SENDER_DEFAULT_CONTEXT = address(type(uint160).max);
 
-    uint128 public constant OUTBOX_VERSION = 2;
+    uint128 public override constant OUTBOX_VERSION = 2;
 
     function initialize(IBridge _bridge) external onlyDelegated {
         if (address(bridge) != address(0)) revert AlreadyInit();
@@ -72,9 +72,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         emit SendRootUpdated(root, l2BlockHash);
     }
 
-    /// @notice When l2ToL1Sender returns a nonzero address, the message was originated by an L2 account
-    /// When the return value is zero, that means this is a system message
-    /// @dev the l2ToL1Sender behaves as the tx.origin, the msg.sender should be validated to protect against reentrancies
+    /// @inheritdoc IOutbox
     function l2ToL1Sender() external view override returns (address) {
         address sender = context.sender;
         // we don't return the default context value to avoid a breaking change in the API
@@ -82,8 +80,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         return sender;
     }
 
-    /// @return l2Block return L2 block when the L2 tx was initiated or zero
-    /// if no L2 to L1 transaction is active
+    /// @inheritdoc IOutbox
     function l2ToL1Block() external view override returns (uint256) {
         uint128 l2Block = context.l2Block;
         // we don't return the default context value to avoid a breaking change in the API
@@ -91,8 +88,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         return uint256(l2Block);
     }
 
-    /// @return l1Block return L1 block when the L2 tx was initiated or zero
-    /// if no L2 to L1 transaction is active
+    /// @inheritdoc IOutbox
     function l2ToL1EthBlock() external view override returns (uint256) {
         uint128 l1Block = context.l1Block;
         // we don't return the default context value to avoid a breaking change in the API
@@ -100,8 +96,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         return uint256(l1Block);
     }
 
-    /// @return timestamp return L2 timestamp when the L2 tx was initiated or zero
-    /// if no L2 to L1 transaction is active
+    /// @inheritdoc IOutbox
     function l2ToL1Timestamp() external view override returns (uint256) {
         uint128 timestamp = context.timestamp;
         // we don't return the default context value to avoid a breaking change in the API
@@ -110,12 +105,11 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     /// @notice batch number is deprecated and now always returns 0
-    function l2ToL1BatchNum() external pure override returns (uint256) {
+    function l2ToL1BatchNum() external pure returns (uint256) {
         return 0;
     }
 
-    /// @return outputId returns the unique output identifier of the L2 to L1 tx or
-    /// zero if no L2 to L1 transaction is active
+    /// @inheritdoc IOutbox
     function l2ToL1OutputId() external view override returns (bytes32) {
         bytes32 outputId = context.outputId;
         // we don't return the default context value to avoid a breaking change in the API
@@ -123,20 +117,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         return outputId;
     }
 
-    /**
-     * @notice Executes a messages in an Outbox entry.
-     * @dev Reverts if dispute period hasn't expired, since the outbox entry
-     * is only created once the rollup confirms the respective assertion.
-     * @param proof Merkle proof of message inclusion in send root
-     * @param index Merkle path to message
-     * @param l2Sender sender if original message (i.e., caller of ArbSys.sendTxToL1)
-     * @param to destination address for L1 contract call
-     * @param l2Block l2 block number at which sendTxToL1 call was made
-     * @param l1Block l1 block number at which sendTxToL1 call was made
-     * @param l2Timestamp l2 Timestamp at which sendTxToL1 call was made
-     * @param value wei in L1 message
-     * @param data abi-encoded L1 message data
-     */
+    /// @inheritdoc IOutbox
     function executeTransaction(
         bytes32[] calldata proof,
         uint256 index,
@@ -163,15 +144,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         executeTransactionImpl(index, l2Sender, to, l2Block, l1Block, l2Timestamp, value, data);
     }
 
-    /// @dev function used to simulate the result of a particular function call from the outbox
-    /// it is useful for things such as gas estimates. This function includes all costs except for
-    /// proof validation (which can be considered offchain as a somewhat of a fixed cost - it's
-    /// not really a fixed cost, but can be treated as so with a fixed overhead for gas estimation).
-    /// We can't include the cost of proof validation since this is intended to be used to simulate txs
-    /// that are included in yet-to-be confirmed merkle roots. The simulation entrypoint could instead pretend
-    /// to confirm a pending merkle root, but that would be less pratical for integrating with tooling.
-    /// It is only possible to trigger it when the msg sender is address zero, which should be impossible
-    /// unless under simulation in an eth_call or eth_estimateGas
+    /// @inheritdoc IOutbox
     function executeTransactionSimulation(
         uint256 index,
         address l2Sender,
@@ -235,6 +208,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         return ((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0);
     }
 
+    /// @inheritdoc IOutbox
     function isSpent(uint256 index) external view override returns (bool) {
         (, uint256 bitOffset, bytes32 replay) = _calcSpentIndexOffset(index);
         return _isSpent(bitOffset, replay);
