@@ -15,12 +15,6 @@ interface IInbox is IDelayedMessageProvider {
     function sequencerInbox() external view returns (ISequencerInbox);
 
     /**
-     * @dev function to be called one time during the inbox upgrade process
-     *      this is used to fix the storage slots
-     */
-    function postUpgradeInit(IBridge _bridge) external;
-
-    /**
      * @notice Send a generic L2 message to the chain
      * @dev This method is an optimization to avoid having to emit the entirety of the messageData in a log. Instead validators are expected to be able to parse the data from the transaction's input
      * @param messageData Data of the message being sent
