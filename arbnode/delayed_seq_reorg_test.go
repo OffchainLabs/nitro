@@ -97,7 +97,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	Require(t, err)
 
 	// Reorg out the user delayed message
-	err = tracker.ReorgDelayedTo(1)
+	err = tracker.ReorgDelayedTo(1, true)
 	Require(t, err)
 
 	msgCount, err := streamer.GetMessageCount()
