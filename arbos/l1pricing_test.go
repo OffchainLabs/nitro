@@ -218,7 +218,10 @@ func TestUpdateTimeUpgradeBehavior(t *testing.T) {
 	// In the past this would have errored due to an invalid timestamp.
 	// We don't want to error since it'd create noise in the console,
 	// so instead let's check that nothing happened
-	statedb := evm.StateDB.(*state.StateDB)
+	statedb, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		panic("not a statedb")
+	}
 	stateCheck(t, statedb, false, "uh oh, nothing should have happened", func() {
 		Require(t, l1p.UpdateForBatchPosterSpending(
 			evm.StateDB, evm, 1, 1, 1, poster, common.Big1, amount, util.TracingDuringEVM,
