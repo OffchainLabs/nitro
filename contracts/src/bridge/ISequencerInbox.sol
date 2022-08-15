@@ -68,14 +68,14 @@ interface ISequencerInbox is IDelayedMessageProvider {
     function rollup() external view returns (IOwnable);
 
     function isBatchPoster(address) external view returns (bool);
-
-    // function maxTimeVariation() external view returns (MaxTimeVariation calldata);
-
+    
     struct DasKeySetInfo {
         bool isValidKeyset;
         uint64 creationBlock;
     }
 
+    // https://github.com/ethereum/solidity/issues/11826
+    // function maxTimeVariation() external view returns (MaxTimeVariation calldata);
     // function dasKeySetInfo(bytes32) external view returns (DasKeySetInfo calldata);
 
     /// @notice Force messages from the delayed inbox to be included in the chain
