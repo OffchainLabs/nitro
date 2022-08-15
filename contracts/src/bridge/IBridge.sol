@@ -32,11 +32,25 @@ interface IBridge {
 
     event SequencerInboxUpdated(address newSequencerInbox);
 
-    function enqueueDelayedMessage(
-        uint8 kind,
-        address sender,
-        bytes32 messageDataHash
-    ) external payable returns (uint256);
+    function allowedDelayedInboxList(uint256) external returns (address);
+
+    function allowedOutboxList(uint256) external returns (address);
+
+    /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
+    function delayedInboxAccs(uint256) external view returns (bytes32);
+
+    /// @dev Accumulator for sequencer inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
+    function sequencerInboxAccs(uint256) external view returns (bytes32);
+
+    function rollup() external view returns (IOwnable);
+
+    function sequencerInbox() external view returns (address);
+
+    function activeOutbox() external view returns (address);
+
+    function allowedDelayedInboxes(address inbox) external view returns (bool);
+
+    function allowedOutboxes(address outbox) external view returns (bool);
 
     function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         external
@@ -47,9 +61,26 @@ interface IBridge {
             bytes32 acc
         );
 
+    /**
+     * @dev Allows the sequencer inbox to submit a delayed message of the batchPostingReport type
+     *      This is done through a separate function entrypoint instead of allowing the sequencer inbox
+     *      to call `enqueueDelayedMessage` to avoid the gas overhead of an extra SLOAD in either
+     *      every delayed inbox or every sequencer inbox call.
+     */
     function submitBatchSpendingReport(address batchPoster, bytes32 dataHash)
         external
         returns (uint256 msgNum);
+
+    /**
+     * @dev Enqueue a message in the delayed inbox accumulator.
+     *      These messages are later sequenced in the SequencerInbox, either
+     *      by the sequencer as part of a normal batch, or by force inclusion.
+     */
+    function enqueueDelayedMessage(
+        uint8 kind,
+        address sender,
+        bytes32 messageDataHash
+    ) external payable returns (uint256);
 
     function executeCall(
         address to,
@@ -57,32 +88,13 @@ interface IBridge {
         bytes calldata data
     ) external returns (bool success, bytes memory returnData);
 
-    // These are only callable by the admin
+    function setSequencerInbox(address _sequencerInbox) external;
+
     function setDelayedInbox(address inbox, bool enabled) external;
 
     function setOutbox(address inbox, bool enabled) external;
 
-    function setSequencerInbox(address _sequencerInbox) external;
-
-    // View functions
-
-    function sequencerInbox() external view returns (address);
-
-    function activeOutbox() external view returns (address);
-
-    function allowedDelayedInboxes(address inbox) external view returns (bool);
-
-    function allowedOutboxes(address outbox) external view returns (bool);
-
-    function delayedInboxAccs(uint256 index) external view returns (bytes32);
-
-    function sequencerInboxAccs(uint256 index) external view returns (bytes32);
-
     function delayedMessageCount() external view returns (uint256);
 
     function sequencerMessageCount() external view returns (uint256);
-
-    function rollup() external view returns (IOwnable);
-
-    function acceptFundsFromOldBridge() external payable;
 }
