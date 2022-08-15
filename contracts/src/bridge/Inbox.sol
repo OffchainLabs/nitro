@@ -43,7 +43,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
  * to await inclusion in the SequencerInbox
  */
 contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
-    IBridge public override bridge;
+    IBridge public bridge;
     ISequencerInbox public sequencerInbox;
 
     /// ------------------------------------ allow list start ------------------------------------ ///
@@ -115,7 +115,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     /// @inheritdoc IInbox
-    function postUpgradeInit(IBridge _bridge) external override onlyDelegated onlyProxyOwner {
+    function postUpgradeInit(IBridge _bridge) external onlyDelegated onlyProxyOwner {
         uint8 slotsToWipe = 3;
         for (uint8 i = 0; i < slotsToWipe; i++) {
             assembly {
@@ -129,7 +129,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /// @inheritdoc IInbox
     function sendL2MessageFromOrigin(bytes calldata messageData)
         external
-        override
         whenNotPaused
         onlyAllowed
         returns (uint256)
@@ -146,7 +145,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /// @inheritdoc IInbox
     function sendL2Message(bytes calldata messageData)
         external
-        override
         whenNotPaused
         onlyAllowed
         returns (uint256)
@@ -160,7 +158,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 nonce,
         address to,
         bytes calldata data
-    ) external payable override whenNotPaused onlyAllowed returns (uint256) {
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -182,7 +180,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         address to,
         bytes calldata data
-    ) external payable override whenNotPaused onlyAllowed returns (uint256) {
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -205,7 +203,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         uint256 value,
         bytes calldata data
-    ) external override whenNotPaused onlyAllowed returns (uint256) {
+    ) external whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -228,7 +226,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         uint256 value,
         bytes calldata data
-    ) external override whenNotPaused onlyAllowed returns (uint256) {
+    ) external whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -255,7 +253,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     /// @inheritdoc IInbox
-    function depositEth() public payable override whenNotPaused onlyAllowed returns (uint256) {
+    function depositEth() public payable whenNotPaused onlyAllowed returns (uint256) {
         address dest = msg.sender;
 
         // solhint-disable-next-line avoid-tx-origin
@@ -328,7 +326,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) external payable override whenNotPaused onlyAllowed returns (uint256) {
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
         if (msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
             revert InsufficientValue(
@@ -371,7 +369,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) public payable override whenNotPaused onlyAllowed returns (uint256) {
+    ) public payable whenNotPaused onlyAllowed returns (uint256) {
         // gas price and limit of 1 should never be a valid input, so instead they are used as
         // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
         if (gasLimit == 1 || maxFeePerGas == 1)

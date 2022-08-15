@@ -22,11 +22,11 @@ import "../libraries/DelegateCallAware.sol";
 error SimulationOnlyEntrypoint();
 
 contract Outbox is DelegateCallAware, IOutbox {
-    address public override rollup; // the rollup contract
-    IBridge public override bridge; // the bridge contract
+    address public rollup; // the rollup contract
+    IBridge public bridge; // the bridge contract
 
-    mapping(uint256 => bytes32) public override spent; // packed spent bitmap
-    mapping(bytes32 => bytes32) public override roots; // maps root hashes => L2 block hash
+    mapping(uint256 => bytes32) public spent; // packed spent bitmap
+    mapping(bytes32 => bytes32) public roots; // maps root hashes => L2 block hash
 
     struct L2ToL1Context {
         uint128 l2Block;
@@ -48,7 +48,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     bytes32 private constant OUTPUTID_DEFAULT_CONTEXT = bytes32(type(uint256).max);
     address private constant SENDER_DEFAULT_CONTEXT = address(type(uint160).max);
 
-    uint128 public constant override OUTBOX_VERSION = 2;
+    uint128 public constant OUTBOX_VERSION = 2;
 
     function initialize(IBridge _bridge) external onlyDelegated {
         if (address(bridge) != address(0)) revert AlreadyInit();
@@ -66,14 +66,14 @@ contract Outbox is DelegateCallAware, IOutbox {
         rollup = address(_bridge.rollup());
     }
 
-    function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external override {
+    function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external {
         if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         roots[root] = l2BlockHash;
         emit SendRootUpdated(root, l2BlockHash);
     }
 
     /// @inheritdoc IOutbox
-    function l2ToL1Sender() external view override returns (address) {
+    function l2ToL1Sender() external view returns (address) {
         address sender = context.sender;
         // we don't return the default context value to avoid a breaking change in the API
         if (sender == SENDER_DEFAULT_CONTEXT) return address(0);
@@ -81,7 +81,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     /// @inheritdoc IOutbox
-    function l2ToL1Block() external view override returns (uint256) {
+    function l2ToL1Block() external view returns (uint256) {
         uint128 l2Block = context.l2Block;
         // we don't return the default context value to avoid a breaking change in the API
         if (l2Block == L1BLOCK_DEFAULT_CONTEXT) return uint256(0);
@@ -89,7 +89,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     /// @inheritdoc IOutbox
-    function l2ToL1EthBlock() external view override returns (uint256) {
+    function l2ToL1EthBlock() external view returns (uint256) {
         uint128 l1Block = context.l1Block;
         // we don't return the default context value to avoid a breaking change in the API
         if (l1Block == L1BLOCK_DEFAULT_CONTEXT) return uint256(0);
@@ -97,7 +97,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     /// @inheritdoc IOutbox
-    function l2ToL1Timestamp() external view override returns (uint256) {
+    function l2ToL1Timestamp() external view returns (uint256) {
         uint128 timestamp = context.timestamp;
         // we don't return the default context value to avoid a breaking change in the API
         if (timestamp == TIMESTAMP_DEFAULT_CONTEXT) return uint256(0);
@@ -110,7 +110,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     /// @inheritdoc IOutbox
-    function l2ToL1OutputId() external view override returns (bytes32) {
+    function l2ToL1OutputId() external view returns (bytes32) {
         bytes32 outputId = context.outputId;
         // we don't return the default context value to avoid a breaking change in the API
         if (outputId == OUTPUTID_DEFAULT_CONTEXT) return bytes32(0);
@@ -128,7 +128,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) external override {
+    ) external {
         bytes32 userTx = calculateItemHash(
             l2Sender,
             to,
@@ -154,7 +154,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) external override {
+    ) external {
         if (msg.sender != address(0)) revert SimulationOnlyEntrypoint();
         executeTransactionImpl(index, l2Sender, to, l2Block, l1Block, l2Timestamp, value, data);
     }
@@ -209,7 +209,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     /// @inheritdoc IOutbox
-    function isSpent(uint256 index) external view override returns (bool) {
+    function isSpent(uint256 index) external view returns (bool) {
         (, uint256 bitOffset, bytes32 replay) = _calcSpentIndexOffset(index);
         return _isSpent(bitOffset, replay);
     }
@@ -259,7 +259,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) public pure override returns (bytes32) {
+    ) public pure returns (bytes32) {
         return
             keccak256(abi.encodePacked(l2Sender, to, l2Block, l1Block, l2Timestamp, value, data));
     }
@@ -268,7 +268,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32[] memory proof,
         uint256 path,
         bytes32 item
-    ) public pure override returns (bytes32) {
+    ) public pure returns (bytes32) {
         return MerkleLib.calculateRoot(proof, path, keccak256(abi.encodePacked(item)));
     }
 }
