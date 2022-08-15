@@ -138,4 +138,16 @@ interface IInbox is IDelayedMessageProvider {
         uint256 maxFeePerGas,
         bytes calldata data
     ) external payable returns (uint256);
+
+    // ---------- onlyRollupOrOwner functions ----------
+
+    /// @notice pauses all inbox functionality
+    function pause() external;
+
+    /// @notice unpauses all inbox functionality
+    function unpause() external;
+
+    // ---------- initializer ----------
+
+    function initialize(IBridge _bridge, ISequencerInbox _sequencerInbox) external;
 }

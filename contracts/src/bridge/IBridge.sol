@@ -52,6 +52,29 @@ interface IBridge {
 
     function allowedOutboxes(address outbox) external view returns (bool);
 
+    /**
+     * @dev Enqueue a message in the delayed inbox accumulator.
+     *      These messages are later sequenced in the SequencerInbox, either
+     *      by the sequencer as part of a normal batch, or by force inclusion.
+     */
+    function enqueueDelayedMessage(
+        uint8 kind,
+        address sender,
+        bytes32 messageDataHash
+    ) external payable returns (uint256);
+
+    function executeCall(
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external returns (bool success, bytes memory returnData);
+
+    function delayedMessageCount() external view returns (uint256);
+
+    function sequencerMessageCount() external view returns (uint256);
+
+    // ---------- onlySequencerInbox functions ----------
+
     function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         external
         returns (
@@ -71,22 +94,7 @@ interface IBridge {
         external
         returns (uint256 msgNum);
 
-    /**
-     * @dev Enqueue a message in the delayed inbox accumulator.
-     *      These messages are later sequenced in the SequencerInbox, either
-     *      by the sequencer as part of a normal batch, or by force inclusion.
-     */
-    function enqueueDelayedMessage(
-        uint8 kind,
-        address sender,
-        bytes32 messageDataHash
-    ) external payable returns (uint256);
-
-    function executeCall(
-        address to,
-        uint256 value,
-        bytes calldata data
-    ) external returns (bool success, bytes memory returnData);
+    // ---------- onlyRollupOrOwner functions ----------
 
     function setSequencerInbox(address _sequencerInbox) external;
 
@@ -94,7 +102,7 @@ interface IBridge {
 
     function setOutbox(address inbox, bool enabled) external;
 
-    function delayedMessageCount() external view returns (uint256);
+    // ---------- initializer ----------
 
-    function sequencerMessageCount() external view returns (uint256);
+    function initialize(IOwnable rollup_) external;
 }

@@ -97,6 +97,17 @@ interface ISequencerInbox is IDelayedMessageProvider {
         bytes32 messageDataHash
     ) external;
 
+    function inboxAccs(uint256 index) external view returns (bytes32);
+
+    function batchCount() external view returns (uint256);
+
+    function isValidKeysetHash(bytes32 ksHash) external view returns (bool);
+
+    /// @notice the creation block is intended to still be available after a keyset is deleted
+    function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256);
+
+    // ---------- BatchPoster functions ----------
+
     function addSequencerL2BatchFromOrigin(
         uint256 sequenceNumber,
         bytes calldata data,
@@ -111,11 +122,7 @@ interface ISequencerInbox is IDelayedMessageProvider {
         IGasRefunder gasRefunder
     ) external;
 
-    function inboxAccs(uint256 index) external view returns (bytes32);
-
-    function batchCount() external view returns (uint256);
-
-    // Methods only callable by rollup owner
+    // ---------- onlyRollupOrOwner functions ----------
 
     /**
      * @notice Set max delay for sequencer inbox
@@ -142,8 +149,7 @@ interface ISequencerInbox is IDelayedMessageProvider {
      */
     function invalidateKeysetHash(bytes32 ksHash) external;
 
-    function isValidKeysetHash(bytes32 ksHash) external view returns (bool);
+    // ---------- initializer ----------
 
-    /// @notice the creation block is intended to still be available after a keyset is deleted
-    function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256);
+    function initialize(IBridge bridge_, MaxTimeVariation calldata maxTimeVariation_) external;
 }

@@ -23,6 +23,14 @@ contract InboxStub is IInbox {
 
     bool public paused;
 
+    function pause() external pure {
+        revert("NOT IMPLEMENTED");
+    }
+
+    function unpause() external pure {
+        revert("NOT IMPLEMENTED");
+    }
+
     function initialize(IBridge _bridge, ISequencerInbox) external {
         require(address(bridge) == address(0), "ALREADY_INIT");
         bridge = _bridge;

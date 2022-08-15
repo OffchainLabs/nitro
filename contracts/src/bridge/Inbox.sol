@@ -92,12 +92,12 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         _;
     }
 
-    /// @notice pauses all inbox functionality
+    /// @inheritdoc IInbox
     function pause() external onlyRollupOrOwner {
         _pause();
     }
 
-    /// @notice unpauses all inbox functionality
+    /// @inheritdoc IInbox
     function unpause() external onlyRollupOrOwner {
         _unpause();
     }
