@@ -1,25 +1,25 @@
 # Nitro Migration Notes for Solidity Devs: Living Document
 
 
-The following is a summary of changes in the upcoming Arbitrum One chain's Nitro upgrade that dapp devs should be aware of. 
+The following is a summary of changes in the upcoming Arbitrum One chain's Nitro upgrade that dapp devs should be aware of.
 
 It reflects the current state of Nitro and should be considered a living document; things might change before launch.
 
 _Last Updated 5 Aug 2022_
 
-## Cool New Stuff 
+## Cool New Stuff
 
 For starters, here's a sampling of exciting perks dapps with get with the Nitro upgrade:
 
-- **Ethereum L1 Gas Compatibility 🥳**:  gas pricing and accounting for EVM operations is be perfectly in line with L1; no more ArbGas.  
+- **Ethereum L1 Gas Compatibility 🥳**:  gas pricing and accounting for EVM operations is be perfectly in line with L1; no more ArbGas.
 
-- **Safer Retryable tickets 🥳**: Retryable tickets' submission cost is collected in the L1 Inbox contract; if the submission cost is too low, the transaction will simply revert on the L1 side, eliminating the [failure mode](https://developer.offchainlabs.com/docs/l1_l2_messages#important-note-about-base-submission-fee) in which a retryable ticket fails to get created. 
+- **Safer Retryable tickets 🥳**: Retryable tickets' submission cost is collected in the L1 Inbox contract; if the submission cost is too low, the transaction will simply revert on the L1 side, eliminating the [failure mode](https://developer.offchainlabs.com/docs/l1_l2_messages#important-note-about-base-submission-fee) in which a retryable ticket fails to get created.
 
 - **Calldata compression 🥳**: Compression takes place protocol level; dapps don't need to change anything, data will just get cheaper! (You are charged even less if your calldata is highly compressible with brotli.)
 
 - **Support for All Ethereum L1 precompiles 🥳**: (`blake2f`, `ripemd160`, etc)
 
-- **Tighter Syncronization with L1 Block Numbers 🥳**:  L1 block number (accessed via `block.number` on L2) are updated more frequently in Nitro than in Arbitrum classic; expect them to be nearly real-time/ in sync with L1. 
+- **Tighter Syncronization with L1 Block Numbers 🥳**:  L1 block number (accessed via `block.number` on L2) are updated more frequently in Nitro than in Arbitrum classic; expect them to be nearly real-time/ in sync with L1.
 
 - **Frequent Timestamps 🥳**:  Timestamps (accessed via `block.timestamp` on L2) are updated every block based on the sequencer’s clock, it is no longer linked to the timestamp of the last L1 block.
 
@@ -39,20 +39,21 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 
 - **Lower contract code size limit**: Contracts of up to 48KB were deployable, but now only up to 24KB are deployable (as specified in [EIP 170](https://eips.ethereum.org/EIPS/eip-170)). Previously deployed contracts above the limit will be maintained (but contracts deployed by these legacy contracts are capped by the new size).
 
-- **Retryable Tickets**: 
+- **Retryable Tickets**:
     - The submission cost is now enforced in the L1 inbox and checked against the L1 transaction's `msg.value`; contracts shouldn't rely on funds pooled in the L2 destination to cover this cost.
     - The current submission price is now not available in the L2 ArbRetryableTx precompile, instead it can be queried in the L1 Delayed Inbox [`calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)`](https://github.com/OffchainLabs/nitro/blob/01412b3cd0fca28bf9931407ca1ccfeb8714d478/contracts/src/bridge/Inbox.sol#L262)
-    - For the redemption of retryable tickets, the calculation of the L2 transaction ID changed and differs between different redeem attempts (i.e. after failed attempts). See [arbitrum-sdk](https://github.com/offchainlabs/arbitrum-sdk/tree/c-nitro-stable) for a reference implementation on the new client-side flow. 
+    - For the redemption of retryable tickets, the calculation of the L2 transaction ID changed and differs between different redeem attempts (i.e. after failed attempts). See [arbitrum-sdk](https://github.com/offchainlabs/arbitrum-sdk/tree/c-nitro-stable) for a reference implementation on the new client-side flow.
     - A retryable ticket now isn't redeemed in the same transaction as when the `redeem` function was called. The user's transaction causes the retryable to be scheduled to be executed after the current transaction is complete. More information on this available in [here](../arbos/arbos.md#redeeming-a-retryable).
     - Auto-redeem will not be created if the user does not have enough balance to pay for `gasFeeCap * gasLimit` (meaning you can no longer set a max gas fee cap).
     - Deposited gas will be refunded to `excessFeeRefundAddress` if it cannot create an auto-redeem.
     - The user will be refunded the submission cost of their retryable if it is auto-redeemed.
     - The lifecycle of retryable tickets are now tracked differently. Previously there was a retryable ticket ID, which could be used to deterministically generate the expected tx hash. In Nitro, you instead have a retryable creation tx hash (which can be retrieved by the SDK's `L1ToL2Message.retryableCreationId` or calculated by calling  [L1ToL2Message.calculateSubmitRetryableId](https://github.com/OffchainLabs/arbitrum-sdk/blob/105bf73cb788231b6e63c510713f460b36699fcd/src/lib/message/L1ToL2Message.ts#L109-L155)). This value does not directly map into an expected tx hash where it was redeemed. You need to instead listen to the [RedeemScheduled](https://github.com/OffchainLabs/nitro/blob/ec70ed7527597e7e1e8380a59c07e8449885e408/contracts/src/precompiles/ArbRetryableTx.sol#L85-L93) event, which tells you the expected `retryTxHash` of that attempt.
     - The retryTxHash is no longer deterministic solely based on the retryable ticket id; it is now a hash of the transaction input like a normal transaction (following the [Typed Tx Envelope standard](https://eips.ethereum.org/EIPS/eip-2718))
+    - If the retryable `to` address is set to the zero address, it will now function as a contract deployment.
 - **Arbitrum blockhash**: `blockhash(x)` returns a cryptographically insecure, pseudo-random hash for `x` within the range `block.number - 256 <= x < block.number`. If `x` is outside of this range, `blockhash(x)` will return `0`. This includes `blockhash(block.number)`, which always returns `0` just like on Ethereum. The hashes returned do not come from L1.
 - **ArbSys precompile**: `ArbSys.getTransactionCount` and `ArbSys.getStorageAt` are removed in nitro
 
-#### Protocol Contracts 
+#### Protocol Contracts
 
 - **New Contract Deployments**: For the Nitro upgrade, the following contracts will be redeployed on L1 to new addresses:
     - SequencerInbox
