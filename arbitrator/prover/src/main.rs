@@ -73,6 +73,8 @@ struct Opts {
     /// Generate WAVM binary, until host io state, and module root and exit
     #[structopt(long)]
     generate_binaries: Option<PathBuf>,
+    #[structopt(long)]
+    skip_until_host_io: bool,
 }
 
 fn parse_size_delim(path: &Path) -> Result<Vec<Vec<u8>>> {
@@ -194,11 +196,7 @@ fn main() -> Result<()> {
         module_root_file.flush()?;
 
         mach.serialize_binary(output_path.join("machine.wavm.br"))?;
-        while mach
-            .get_next_instruction()
-            .map(|i| !i.opcode.is_host_io())
-            .unwrap_or(false)
-        {
+        while !mach.next_instruction_is_host_io() {
             mach.step_n(1)?;
         }
         mach.serialize_state(output_path.join("until-host-io-state.bin"))?;
@@ -224,6 +222,12 @@ fn main() -> Result<()> {
         cycles_bigloop_start = core::arch::x86_64::_rdtsc();
     }
     mach.step_n(opts.proving_start)?;
+    if opts.skip_until_host_io && !opts.profile_run {
+        while !mach.next_instruction_is_host_io() {
+            mach.step_n(1)?;
+        }
+    }
+    let mut skipping_profiling = opts.skip_until_host_io;
     while !mach.is_halted() {
         let next_inst = mach.get_next_instruction().unwrap();
         let next_opcode = next_inst.opcode;
@@ -242,6 +246,7 @@ fn main() -> Result<()> {
         }
 
         if opts.profile_run {
+            skipping_profiling = skipping_profiling && !mach.next_instruction_is_host_io();
             let start: u64;
             let end: u64;
             let pc = mach.get_pc().unwrap();
@@ -261,9 +266,11 @@ fn main() -> Result<()> {
             }
             let profile_time = end - start;
 
-            cycles_measured_total += profile_time;
+            if !skipping_profiling {
+                cycles_measured_total += profile_time;
+            }
 
-            if opts.profile_sum_opcodes {
+            if opts.profile_sum_opcodes && !skipping_profiling {
                 let opprofile = opcode_profile.entry(next_opcode).or_default();
                 opprofile.count += 1;
                 opprofile.total_cycles += profile_time;
@@ -274,13 +281,15 @@ fn main() -> Result<()> {
                 backtrace_stack.push((pc.module, pc.func));
             }
             let this_func_profile = &mut func_stack.last_mut().unwrap().2;
-            this_func_profile.count += 1;
-            this_func_profile.total_cycles += profile_time;
-            this_func_profile.local_cycles += profile_time;
+            if !skipping_profiling {
+                this_func_profile.count += 1;
+                this_func_profile.total_cycles += profile_time;
+                this_func_profile.local_cycles += profile_time;
+            }
             if next_opcode == Opcode::Return {
                 let (module, func, profile) = func_stack.pop().unwrap();
 
-                if opts.profile_sum_funcs {
+                if opts.profile_sum_funcs && !skipping_profiling {
                     if let Some(parent_func) = &mut func_stack.last_mut() {
                         parent_func.2.count += profile.count;
                         parent_func.2.total_cycles += profile.total_cycles;
@@ -291,7 +300,7 @@ fn main() -> Result<()> {
                     func_profile_entry.local_cycles += profile.local_cycles;
                 }
 
-                if opts.profile_output.is_some() {
+                if opts.profile_output.is_some() && !skipping_profiling {
                     *profile_backtrace_counts
                         .entry(backtrace_stack.clone())
                         .or_default() += profile.local_cycles;

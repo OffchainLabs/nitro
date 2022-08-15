@@ -99,6 +99,12 @@ func (v *ValidatorWallet) populateWallet(ctx context.Context, createIfMissing bo
 	if v.con != nil {
 		return nil
 	}
+	if v.auth == nil {
+		if createIfMissing {
+			return errors.New("cannot create validator smart contract wallet without key wallet")
+		}
+		return nil
+	}
 	if v.address == nil {
 		addr, err := GetValidatorWallet(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader, createIfMissing)
 		if err != nil {

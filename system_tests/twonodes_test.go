@@ -19,7 +19,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 
 	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 
-	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 

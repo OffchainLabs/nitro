@@ -14,6 +14,7 @@ import (
 
 	"github.com/offchainlabs/nitro/util/headerreader"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -119,7 +120,7 @@ func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transact
 
 func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config.MaxRevertGasReject {
-		return result.Err
+		return arbitrum.NewRevertReason(result)
 	}
 	return nil
 }

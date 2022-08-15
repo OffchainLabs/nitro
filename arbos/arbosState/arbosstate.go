@@ -268,6 +268,8 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64) {
 			// no state changes needed
 		case 4:
 			// no state changes needed
+		case 5:
+			// no state changes needed
 		default:
 			panic("Unable to perform requested ArbOS upgrade")
 		}

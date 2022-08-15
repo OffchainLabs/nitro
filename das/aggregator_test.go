@@ -260,8 +260,6 @@ func initTest(t *testing.T) int {
 	}
 	rand.Seed(seed)
 
-	log.Trace(fmt.Sprintf("Running test with seed %d", seed))
-
 	runsStr := os.Getenv("RUNS")
 	runs := 2 ^ 32
 	if len(runsStr) > 0 {
@@ -274,6 +272,8 @@ func initTest(t *testing.T) int {
 	if len(loggingStr) > 0 {
 		enableLogging()
 	}
+
+	log.Trace(fmt.Sprintf("Running test with seed %d", seed))
 
 	return runs
 }
@@ -339,7 +339,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// All honest -> at least 1 store succeeds.
 	// Aggregator should collect responses up until end of deadline, so
 	// it should get all successes.
-	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: numBackendDAS}, L1NodeURL: "none"}, backends)
+	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: 1}, L1NodeURL: "none"}, backends)
 	Require(t, err)
 	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 

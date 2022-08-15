@@ -225,7 +225,7 @@ impl Memory {
         }
         let idx = idx as usize;
         let end_idx = end_idx as usize;
-        self.buffer[idx..end_idx].copy_from_slice(&*value);
+        self.buffer[idx..end_idx].copy_from_slice(value);
 
         if let Some(mut merkle) = self.merkle.take() {
             let start_leaf = idx / Self::LEAF_SIZE;

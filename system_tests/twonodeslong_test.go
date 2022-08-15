@@ -40,7 +40,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
 
-	l2info, nodeA, l2client, l2stackA, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	l2info, nodeA, l2client, l2stackA, l1info, l1backend, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
@@ -169,14 +169,8 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
-		testDeadLine, deadlineExist := t.Deadline()
-		var timeout time.Duration
-		if deadlineExist {
-			timeout = time.Until(testDeadLine) - (time.Second * 10)
-		} else {
-			timeout = time.Hour * 12
-		}
-		if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), timeout) {
+		timeout := getDeadlineTimeout(t, time.Minute*30)
+		if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlockHeader.Number.Uint64(), timeout) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
