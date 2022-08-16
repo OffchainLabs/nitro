@@ -175,7 +175,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 
 		handler, ok := implementerType.MethodByName(name)
 		if !ok {
-			log.Crit("Precompile ", contract, " must implement ", name)
+			log.Crit("Precompile " + contract + " must implement " + name)
 		}
 
 		var needs = []reflect.Type{

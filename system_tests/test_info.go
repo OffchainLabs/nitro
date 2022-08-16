@@ -207,9 +207,16 @@ func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Tra
 func (b *BlockchainTestInfo) PrepareTx(from, to string, gas uint64, value *big.Int, data []byte) *types.Transaction {
 	b.T.Helper()
 	addr := b.GetAddress(to)
+	return b.PrepareTxTo(from, &addr, gas, value, data)
+}
+
+func (b *BlockchainTestInfo) PrepareTxTo(
+	from string, to *common.Address, gas uint64, value *big.Int, data []byte,
+) *types.Transaction {
+	b.T.Helper()
 	info := b.GetInfoWithPrivKey(from)
 	txData := &types.DynamicFeeTx{
-		To:        &addr,
+		To:        to,
 		Gas:       gas,
 		GasFeeCap: new(big.Int).Set(b.GasPrice),
 		Value:     value,
