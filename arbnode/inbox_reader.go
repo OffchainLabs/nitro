@@ -447,10 +447,10 @@ func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 			}
 			haveMessages := uint64(len(delayedMessages) + len(sequencerBatches))
 			if haveMessages <= (ir.config.TargetMessagesRead / 2) {
+				blocksToFetch += (blocksToFetch + 4) / 5
+			} else if haveMessages >= (ir.config.TargetMessagesRead * 3 / 2) {
 				// This cannot overflow, as it'll never try to subtract more than blocksToFetch
 				blocksToFetch -= (blocksToFetch + 4) / 5
-			} else if haveMessages >= (ir.config.TargetMessagesRead * 3 / 2) {
-				blocksToFetch += (blocksToFetch + 4) / 5
 			}
 			if blocksToFetch < 1 {
 				blocksToFetch = 1
