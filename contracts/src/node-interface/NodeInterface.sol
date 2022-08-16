@@ -123,4 +123,9 @@ interface NodeInterface {
             uint256 amount,
             bytes memory calldataForL1
         );
+
+    // @notice Returns the first block produced using the Nitro codebase
+    // @dev returns 0 for chains like Nova that don't contain classic blocks
+    // @return number the block number
+    function nitroGenesisBlock() external pure returns (uint256 number);
 }
