@@ -41,8 +41,7 @@ func TestSequencerRejection(t *testing.T) {
 	defer requireClose(t, l2stackB)
 
 	auth := l2info1.GetDefaultTransactOpts("Owner", ctx)
-	simpleAddr, _, _, err := mocksgen.DeploySimple(&auth, client1)
-	Require(t, err)
+	simpleAddr, _ := deploySimple(t, ctx, auth, client1)
 	simpleAbi, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 	noopId := simpleAbi.Methods["noop"].ID
