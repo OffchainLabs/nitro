@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -350,7 +351,8 @@ func main() {
 	defer cancelFunc()
 
 	vcsRevision, vcsTime := genericconf.GetVersion()
-	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
+	args := os.Args[1:]
+	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
 	if err != nil {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
 		printSampleUsage(os.Args[0])
@@ -510,13 +512,16 @@ func main() {
 		}
 	}
 
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
+	nodeConfigFetcher := func() *arbnode.Config { return &liveNodeConfig.Get().Node }
+
 	feedErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
 		chainDb,
 		arbDb,
-		&nodeConfig.Node,
+		nodeConfigFetcher,
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
@@ -551,6 +556,8 @@ func main() {
 	if err := stack.Start(); err != nil {
 		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
+
+	liveNodeConfig.Start(ctx)
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
@@ -933,4 +940,81 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig) 
 		panic(err)
 	}
 	log.Info("Tx lookup entries written")
+}
+
+type LiveNodeConfig struct {
+	mutex  sync.RWMutex
+	args   []string
+	config *NodeConfig
+}
+
+func (c *LiveNodeConfig) Get() *NodeConfig {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.config
+}
+
+func (c *LiveNodeConfig) set(config *NodeConfig) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	newConfig := *c.config
+
+	newConfig.Node.Sequencer.MaxBlockSpeed = config.Node.Sequencer.MaxBlockSpeed
+
+	err := initLog(config.LogType, log.Lvl(config.LogLevel))
+	if err != nil {
+		return err
+	}
+	newConfig.LogType = config.LogType
+	newConfig.LogLevel = config.LogLevel
+
+	// TODO
+	// if newConfig.Persistent != config.Persistent {
+	//	log.Info("ignoring persistent config change")
+	//}
+	// if newConfig.Conf != config.Conf || newConfig.Node != config.Node || newConfig.L1 != config.L1 || newConfig.L2 != config.L2 || newConfig.LogLevel != config.LogLevel || newConfig.LogType != config.LogType || newConfig.HTTP != config.HTTP || newConfig.WS != config.WS || newConfig.GraphQL != config.GraphQL || newConfig.Metrics != config.Metrics || newConfig.MetricsServer != config.MetricsServer || newConfig.Init != config.Init {
+	//	return errors.New("some config changes are unsupported")
+	//}
+
+	c.config = &newConfig
+	return nil
+}
+
+func (c *LiveNodeConfig) Start(ctx context.Context) {
+	go func() {
+		for {
+			// TODO
+			// timer := time.NewTimer(c.config.Conf.ReloadInterval)
+			sigusr1 := make(chan os.Signal, 1)
+			signal.Notify(sigusr1, syscall.SIGUSR1)
+			select {
+			case <-ctx.Done():
+				// timer.Stop()
+				return
+			case <-sigusr1:
+				log.Info("SIGUSR1")
+				// case <-timer.C:
+			}
+			log.Info("Reloading config...")
+			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
+			if err != nil {
+				log.Info("error parsing live config", "error", err.Error())
+				continue
+			}
+			err = c.set(nodeConfig)
+			if err != nil {
+				log.Info("error updating live config", "error", err.Error())
+				continue
+			}
+			log.Info("Successfully reloaded config.")
+		}
+	}()
+}
+
+func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
+	return &LiveNodeConfig{
+		args:   args,
+		config: config,
+	}
 }

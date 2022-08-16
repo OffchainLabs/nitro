@@ -586,12 +586,15 @@ type Node struct {
 	ClassicOutboxRetriever *ClassicOutboxRetriever
 }
 
+type ConfigFetcher func() *Config
+type SequencerConfigFetcher func() *SequencerConfig
+
 func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
 	chainDb ethdb.Database,
 	arbDb ethdb.Database,
-	config *Config,
+	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
@@ -599,6 +602,7 @@ func createNodeImpl(
 	daSigner das.DasSigner,
 	feedErrChan chan error,
 ) (*Node, error) {
+	config := configFetcher()
 	var reorgingToBlock *types.Block
 	if config.Dangerous.ReorgToBlock >= 0 {
 		blockNum := uint64(config.Dangerous.ReorgToBlock)
@@ -649,13 +653,14 @@ func createNodeImpl(
 		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
 			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 		}
+		sequencerConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
 		if config.L1Reader.Enable {
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
-			sequencer, err = NewSequencer(txStreamer, l1Reader, config.Sequencer)
+			sequencer, err = NewSequencer(txStreamer, l1Reader, sequencerConfigFetcher)
 		} else {
-			sequencer, err = NewSequencer(txStreamer, nil, config.Sequencer)
+			sequencer, err = NewSequencer(txStreamer, nil, sequencerConfigFetcher)
 		}
 		if err != nil {
 			return nil, err
@@ -1086,7 +1091,7 @@ func CreateNode(
 	stack *node.Node,
 	chainDb ethdb.Database,
 	arbDb ethdb.Database,
-	config *Config,
+	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
@@ -1094,7 +1099,7 @@ func CreateNode(
 	daSigner das.DasSigner,
 	feedErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1120,6 +1125,7 @@ func CreateNode(
 		Service:   &ArbAPI{currentNode.TxPublisher},
 		Public:    false,
 	})
+	config := configFetcher()
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",

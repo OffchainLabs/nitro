@@ -341,7 +341,8 @@ func createTestNodeOnL1WithConfig(
 	}
 
 	var err error
-	currentNode, err = arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+	nodeConfigFetcher := func() *arbnode.Config { return nodeConfig }
+	currentNode, err = arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfigFetcher, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
 
 	Require(t, l2stack.Start())
@@ -364,7 +365,8 @@ func CreateTestL2WithConfig(
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *node.Node) {
 	feedErrChan := make(chan error, 10)
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
-	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
+	nodeConfigFetcher := func() *arbnode.Config { return nodeConfig }
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfigFetcher, blockchain, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
@@ -463,7 +465,8 @@ func Create2ndNodeWithConfig(
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil, feedErrChan)
+	nodeConfigFetcher := func() *arbnode.Config { return nodeConfig }
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfigFetcher, l2blockchain, l1client, first.DeployInfo, nil, nil, feedErrChan)
 	Require(t, err)
 
 	err = l2stack.Start()
