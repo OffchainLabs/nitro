@@ -10,7 +10,6 @@ package arbtest
 import (
 	"context"
 	"math/big"
-	"net"
 	"testing"
 	"time"
 
@@ -18,8 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/das"
 )
 
 func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bool) {
@@ -27,32 +24,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, dasConfig, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeString)
-	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, dasConfig, nil, nil)
-	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
-	if dasModeString != "onchain" {
-		Require(t, err)
-		rpcLis, err := net.Listen("tcp", "localhost:0")
-		Require(t, err)
-		restLis, err := net.Listen("tcp", "localhost:0")
-		Require(t, err)
-		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
-		Require(t, err)
-		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
-		Require(t, err)
-
-		beConfigA := das.BackendConfig{
-			URL:                 "http://" + rpcLis.Addr().String(),
-			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
-			SignerMask:          1,
-		}
-		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
-		l1NodeConfigA.DataAvailability.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
-		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
-	}
+	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeString)
 
 	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
@@ -70,7 +42,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 
-	err = l2client.SendTransaction(ctx, tx)
+	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)

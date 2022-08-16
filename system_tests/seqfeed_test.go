@@ -13,8 +13,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -124,32 +122,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	// The truthful sequencer
-	chainConfig, nodeConfigA, dasConfig, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
-	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, dasConfig, nil, nil)
-	Require(t, err)
-	rpcLis, err := net.Listen("tcp", "localhost:0")
-	Require(t, err)
-	restLis, err := net.Listen("tcp", "localhost:0")
-	Require(t, err)
-	nodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
-	if dasModeStr != "onchain" {
-		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
-		Require(t, err)
-		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
-		Require(t, err)
-
-		beConfigA := das.BackendConfig{
-			URL:                 "http://" + rpcLis.Addr().String(),
-			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
-			SignerMask:          1,
-		}
-		nodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
-		nodeConfigA.DataAvailability.Enable = true
-		nodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
-		nodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
-		nodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
-		nodeConfigA.DataAvailability.L1NodeURL = "none"
-	}
+	chainConfig, nodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
@@ -186,7 +159,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
 	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
 
-	err = l2clientC.SendTransaction(ctx, fraudTx)
+	err := l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}

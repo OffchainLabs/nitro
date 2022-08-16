@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"math/big"
+	"net"
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -455,7 +457,7 @@ func authorizeDASKeyset(
 
 func setupConfigWithDAS(
 	t *testing.T, ctx context.Context, dasModeString string,
-) (*params.ChainConfig, *arbnode.Config, *das.DataAvailabilityConfig, string, *blsSignatures.PublicKey) {
+) (*params.ChainConfig, *arbnode.Config, *das.LifecycleManager, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
@@ -498,7 +500,36 @@ func setupConfigWithDAS(
 		DisableSignatureChecking: true,
 	}
 
-	return chainConfig, l1NodeConfigA, dasConfig, dbPath, dasSignerKey
+	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
+	var lifecycleManager *das.LifecycleManager
+	if dasModeString != "onchain" {
+		var dasServerStack das.DataAvailabilityService
+		dasServerStack, lifecycleManager, err = arbnode.SetUpDataAvailability(ctx, dasConfig, nil, nil)
+
+		Require(t, err)
+		rpcLis, err := net.Listen("tcp", "localhost:0")
+		Require(t, err)
+		restLis, err := net.Listen("tcp", "localhost:0")
+		Require(t, err)
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+
+		beConfigA := das.BackendConfig{
+			URL:                 "http://" + rpcLis.Addr().String(),
+			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
+			SignerMask:          1,
+		}
+		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+		l1NodeConfigA.DataAvailability.Enable = true
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
+		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+	}
+
+	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
 }
 
 func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {
