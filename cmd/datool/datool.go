@@ -124,7 +124,7 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	var dasClient das.DataAvailabilityService = client
+	var dasClient das.DataAvailabilityServiceWriter = client
 	if config.SigningKey != "" {
 		var privateKey *ecdsa.PrivateKey
 		if config.SigningKey[:2] == "0x" {

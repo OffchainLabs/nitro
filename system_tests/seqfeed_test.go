@@ -13,6 +13,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -122,7 +124,33 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	// The truthful sequencer
-	chainConfig, nodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
+	chainConfig, nodeConfigA, dasConfig, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, dasConfig, nil, nil)
+	Require(t, err)
+	rpcLis, err := net.Listen("tcp", "localhost:0")
+	Require(t, err)
+	restLis, err := net.Listen("tcp", "localhost:0")
+	Require(t, err)
+	nodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
+	if dasModeStr != "onchain" {
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+
+		beConfigA := das.BackendConfig{
+			URL:                 "http://" + rpcLis.Addr().String(),
+			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
+			SignerMask:          1,
+		}
+		nodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+		nodeConfigA.DataAvailability.Enable = true
+		nodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
+		nodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
+		nodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
+		nodeConfigA.DataAvailability.L1NodeURL = "none"
+	}
+
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
 	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
@@ -135,6 +163,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
+	nodeConfigC.DataAvailability.AggregatorConfig.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
 	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
 	defer requireClose(t, l2stackC)
@@ -146,6 +175,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
+	nodeConfigB.DataAvailability.AggregatorConfig.Enable = false
 	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
 	defer requireClose(t, l2stackB)
 
@@ -156,7 +186,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
 	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2clientC.SendTransaction(ctx, fraudTx)
+	err = l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +240,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balanceRealAcct)
 	}
+
+	lifecycleManager.StopAndWaitUntil(time.Second)
 }
 
 func TestLyingSequencer(t *testing.T) {

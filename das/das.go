@@ -23,6 +23,12 @@ import (
 type DataAvailabilityServiceWriter interface {
 	// Requests that the message be stored until timeout (UTC time in unix epoch seconds).
 	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error)
+	fmt.Stringer
+}
+
+type DataAvailabilityServiceReader interface {
+	arbstate.DataAvailabilityReader
+	fmt.Stringer
 }
 
 type DataAvailabilityService interface {
@@ -138,7 +144,7 @@ func GetL1Client(ctx context.Context, maxConnectionAttempts int, l1URL string) (
 		if err == nil {
 			return l1Client, nil
 		}
-		log.Warn("error connecting to L1", "err", err)
+		log.Warn("error connecting to L1 from DAS", "l1URL", l1URL, "err", err)
 
 		timer := time.NewTimer(time.Second * 1)
 		select {

@@ -454,8 +454,8 @@ func authorizeDASKeyset(
 }
 
 func setupConfigWithDAS(
-	t *testing.T, dasModeString string,
-) (*params.ChainConfig, *arbnode.Config, string, *blsSignatures.PublicKey) {
+	t *testing.T, ctx context.Context, dasModeString string,
+) (*params.ChainConfig, *arbnode.Config, *das.DataAvailabilityConfig, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
@@ -478,7 +478,7 @@ func setupConfigWithDAS(
 	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dasConfig := das.DataAvailabilityConfig{
+	dasConfig := &das.DataAvailabilityConfig{
 		Enable: enableDas,
 		KeyConfig: das.KeyConfig{
 			KeyDir: dbPath,
@@ -493,12 +493,12 @@ func setupConfigWithDAS(
 		},
 		RequestTimeout:           5 * time.Second,
 		L1NodeURL:                "none",
+		SequencerInboxAddress:    "none",
 		PanicOnError:             true,
 		DisableSignatureChecking: true,
 	}
 
-	l1NodeConfigA.DataAvailability = dasConfig
-	return chainConfig, l1NodeConfigA, dbPath, dasSignerKey
+	return chainConfig, l1NodeConfigA, dasConfig, dbPath, dasSignerKey
 }
 
 func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {

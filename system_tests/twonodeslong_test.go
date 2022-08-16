@@ -11,10 +11,14 @@ import (
 	"context"
 	"math/big"
 	"math/rand"
+	"net"
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/das"
 
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -38,14 +42,41 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
+	chainConfig, l1NodeConfigA, dasConfig, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, dasConfig, nil, nil)
+	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
+	if dasModeStr != "onchain" {
+		Require(t, err)
+		rpcLis, err := net.Listen("tcp", "localhost:0")
+		Require(t, err)
+		restLis, err := net.Listen("tcp", "localhost:0")
+		Require(t, err)
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+
+		beConfigA := das.BackendConfig{
+			URL:                 "http://" + rpcLis.Addr().String(),
+			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
+			SignerMask:          1,
+		}
+		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+		l1NodeConfigA.DataAvailability.Enable = true
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
+		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+	}
 
 	l2info, nodeA, l2client, l2stackA, l1info, l1backend, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
-	l2clientB, nodeB, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigA.DataAvailability)
+	l1NodeConfigBDataAvailability := l1NodeConfigA.DataAvailability
+	l1NodeConfigBDataAvailability.AggregatorConfig.Enable = false
+	l2clientB, nodeB, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigBDataAvailability)
 	defer requireClose(t, l2stackB)
 
 	l2info.GenerateAccount("DelayedFaucet")
@@ -174,6 +205,8 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
+
+	lifecycleManager.StopAndWaitUntil(time.Second)
 }
 
 func TestTwoNodesLong(t *testing.T) {

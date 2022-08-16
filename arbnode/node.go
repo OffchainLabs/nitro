@@ -739,33 +739,29 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
-	if err != nil {
-		return nil, err
-	}
-	if dataAvailabilityService != nil {
+
+	var daWriter das.DataAvailabilityServiceWriter
+	var daReader das.DataAvailabilityServiceReader
+	var dasLifecycleManager *das.LifecycleManager
+	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
-			if daSigner != nil {
-				dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
-				if err != nil {
-					return nil, err
-				}
+			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, daSigner, l1client, deployInfo.SequencerInbox)
+			if err != nil {
+				return nil, err
 			}
 		} else {
-			dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
-		}
-		dataAvailabilityService = das.NewTimeoutWrapper(
-			dataAvailabilityService, config.DataAvailability.RequestTimeout,
-		)
-		if config.DataAvailability.PanicOnError {
-			dataAvailabilityService = das.NewPanicWrapper(dataAvailabilityService)
+			daReader, dasLifecycleManager, err = SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
+			if err != nil {
+				return nil, err
+			}
 		}
 	} else if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
+	// TODO timeouts
+	// TODO panic on error
 
-	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dataAvailabilityReader)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader)
 	if err != nil {
 		return nil, err
 	}
@@ -790,7 +786,7 @@ func createNodeImpl(
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader, reorgingToBlock)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, daReader, reorgingToBlock)
 		if err != nil {
 			return nil, err
 		}
@@ -803,7 +799,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, dataAvailabilityReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, daReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -815,7 +811,7 @@ func createNodeImpl(
 		if txOpts == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, txOpts, dataAvailabilityService)
+		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, txOpts, daWriter)
 		if err != nil {
 			return nil, err
 		}
@@ -1003,6 +999,7 @@ func SetUpDataAvailability(
 	if config.AggregatorConfig.Enable {
 		if topLevelStorageService != nil {
 			return nil, nil, errors.New("If rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
+
 		}
 		rpcAggregator, err := das.NewRPCAggregatorWithSeqInboxCaller(config.AggregatorConfig, seqInboxCaller)
 		if err != nil {
