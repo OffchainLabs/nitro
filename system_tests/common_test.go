@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/das"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 
 	"github.com/offchainlabs/nitro/arbstate"
 
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -35,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -58,7 +61,13 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 func TransferBalance(
 	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
-	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
+	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
+}
+
+func TransferBalanceTo(
+	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client client, ctx context.Context,
+) (*types.Transaction, *types.Receipt) {
+	tx := l2info.PrepareTxTo(from, &to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
 	res, err := EnsureTxSucceeded(ctx, client, tx)
@@ -92,7 +101,58 @@ func SendSignedTxViaL1(
 			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
 		})
 	}
-	receipt, err := WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, delayedTx)
+	Require(t, err)
+	return receipt
+}
+
+func SendUnsignedTxViaL1(
+	t *testing.T,
+	ctx context.Context,
+	l1info *BlockchainTestInfo,
+	l1client arbutil.L1Interface,
+	l2client arbutil.L1Interface,
+	templateTx *types.Transaction,
+) *types.Receipt {
+	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
+	Require(t, err)
+
+	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
+	remapped := util.RemapL1Address(usertxopts.From)
+	nonce, err := l2client.NonceAt(ctx, remapped, nil)
+	Require(t, err)
+
+	unsignedTx := types.NewTx(&types.ArbitrumUnsignedTx{
+		ChainId:   templateTx.ChainId(),
+		From:      remapped,
+		Nonce:     nonce,
+		GasFeeCap: templateTx.GasFeeCap(),
+		Gas:       templateTx.Gas(),
+		To:        templateTx.To(),
+		Value:     templateTx.Value(),
+		Data:      templateTx.Data(),
+	})
+
+	l1tx, err := delayedInboxContract.SendUnsignedTransaction(
+		&usertxopts,
+		arbmath.UintToBig(unsignedTx.Gas()),
+		unsignedTx.GasFeeCap(),
+		arbmath.UintToBig(unsignedTx.Nonce()),
+		*unsignedTx.To(),
+		unsignedTx.Value(),
+		unsignedTx.Data(),
+	)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
+	Require(t, err)
+
+	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
+	for i := 0; i < 30; i++ {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
+		})
+	}
+	receipt, err := EnsureTxSucceeded(ctx, l2client, unsignedTx)
 	Require(t, err)
 	return receipt
 }
@@ -514,4 +574,14 @@ func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duratio
 	}
 
 	return timeout
+}
+
+func deploySimple(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
+) (common.Address, *mocksgen.Simple) {
+	addr, tx, simple, err := mocksgen.DeploySimple(&auth, client)
+	Require(t, err, "could not deploy Simple.sol contract")
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+	return addr, simple
 }
