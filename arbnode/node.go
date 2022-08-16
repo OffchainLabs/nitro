@@ -749,14 +749,24 @@ func createNodeImpl(
 			if err != nil {
 				return nil, err
 			}
-			daWriter = das.NewWriterTimeoutWrapper(daWriter, config.DataAvailability.RequestTimeout)
 		} else {
 			daReader, dasLifecycleManager, err = SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
 			if err != nil {
 				return nil, err
 			}
 		}
+
+		if daWriter != nil {
+			daWriter = das.NewWriterTimeoutWrapper(daWriter, config.DataAvailability.RequestTimeout)
+		}
 		daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
+
+		if config.DataAvailability.PanicOnError {
+			if daWriter != nil {
+				daWriter = das.NewWriterPanicWrapper(daWriter)
+			}
+			daReader = das.NewReaderPanicWrapper(daReader)
+		}
 	} else if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
