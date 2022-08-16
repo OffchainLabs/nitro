@@ -18,6 +18,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
@@ -58,8 +59,6 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
-
-	lifecycleManager.StopAndWaitUntil(time.Second)
 }
 
 func TestTwoNodesSimple(t *testing.T) {

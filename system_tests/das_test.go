@@ -264,6 +264,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	dasServerStack, lifecycleManager, err := arbnode.SetUpDataAvailability(ctx, &serverConfig, l1Reader, addresses)
 	Require(t, err)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
@@ -341,8 +342,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	err = restServer.Shutdown()
 	Require(t, err)
-
-	lifecycleManager.StopAndWaitUntil(time.Second)
 }
 
 func enableLogging(logLvl int) {

@@ -80,7 +80,7 @@ func CreateBatchPosterDAS(
 	}
 
 	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
-		return nil, nil, nil, errors.New("--node.data-availability.key.key-dir, priv-key not be set when running a Batch Poster in AnyTrust mode.")
+		return nil, nil, nil, errors.New("--node.data-availability.key.key-dir, priv-key may not be set when running a Batch Poster in AnyTrust mode.")
 	}
 
 	var daWriter DataAvailabilityServiceWriter
@@ -89,6 +89,7 @@ func CreateBatchPosterDAS(
 		return nil, nil, nil, err
 	}
 	if daSigner != nil {
+		// In some tests the batch poster does not sign Store requests
 		daWriter, err = NewStoreSigningDAS(daWriter, daSigner)
 		if err != nil {
 			return nil, nil, nil, err

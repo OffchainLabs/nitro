@@ -39,6 +39,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	l2info, nodeA, l2client, l2stackA, l1info, l1backend, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
@@ -176,8 +177,6 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
-
-	lifecycleManager.StopAndWaitUntil(time.Second)
 }
 
 func TestTwoNodesLong(t *testing.T) {

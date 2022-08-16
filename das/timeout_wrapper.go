@@ -41,7 +41,7 @@ func NewWriterTimeoutWrapper(dataAvailabilityServiceWriter DataAvailabilityServi
 
 func (w *ReaderTimeoutWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(w.t))
-	// For Retrieve we want fast cancellation of all goroutines started by
+	// For GetByHash we want fast cancellation of all goroutines started by
 	// the aggregator as soon as one returns.
 	defer cancel()
 	return w.DataAvailabilityServiceReader.GetByHash(deadlineCtx, hash)

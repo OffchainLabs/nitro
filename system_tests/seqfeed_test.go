@@ -123,6 +123,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	// The truthful sequencer
 	chainConfig, nodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
@@ -213,8 +214,6 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balanceRealAcct)
 	}
-
-	lifecycleManager.StopAndWaitUntil(time.Second)
 }
 
 func TestLyingSequencer(t *testing.T) {
