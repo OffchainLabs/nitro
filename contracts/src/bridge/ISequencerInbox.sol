@@ -68,7 +68,7 @@ interface ISequencerInbox is IDelayedMessageProvider {
     function rollup() external view returns (IOwnable);
 
     function isBatchPoster(address) external view returns (bool);
-    
+
     struct DasKeySetInfo {
         bool isValidKeyset;
         uint64 creationBlock;
