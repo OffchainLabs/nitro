@@ -54,6 +54,10 @@ function writeConfigs(argv: any) {
             },
             "batch-poster": {
                 "enable": false,
+                "redis-lock": {
+                    "redis-url": argv.redisUrl,
+                    "key": "batchPosterLock",
+                },
                 "max-interval": "30s",
             }
         },
@@ -67,7 +71,9 @@ function writeConfigs(argv: any) {
             "addr": "0.0.0.0"
         },
         "http": {
-            "addr": "0.0.0.0"
+            "addr": "0.0.0.0",
+            "vhosts": "*",
+            "corsdomain": "*"
         },
     }
     const baseConfJSON = JSON.stringify(baseConfig)
