@@ -9,14 +9,14 @@ package arbtest
 
 import (
 	"context"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"testing"
 )
 
 func TestInfraFee(t *testing.T) {
@@ -46,10 +46,7 @@ func TestInfraFee(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	_, tx, simple, err := mocksgen.DeploySimple(&ownerTxOpts, client)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
+	_, simple := deploySimple(t, ctx, ownerTxOpts, client)
 
 	netFeeBalanceBefore, err := client.BalanceAt(ctx, networkFeeAddr, nil)
 	Require(t, err)
