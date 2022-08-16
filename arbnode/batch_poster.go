@@ -123,7 +123,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	if err != nil {
 		return nil, err
 	}
-	redisLock, err := NewSimpleRedisLock(&config.RedisLock)
+	redisLock, err := NewSimpleRedisLock(&config.RedisLock, func() bool { return len(streamer.SyncProgressMap()) == 0 })
 	if err != nil {
 		return nil, err
 	}

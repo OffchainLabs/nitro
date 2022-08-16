@@ -2,6 +2,8 @@ package arbnode
 
 import (
 	"context"
+	"math/rand"
+	"strconv"
 	"sync"
 	"time"
 
@@ -19,6 +21,8 @@ type SimpleRedisLock struct {
 	lockedUntil int64
 	mutex       sync.Mutex
 	stopping    bool
+	readyToLock func() bool
+	myId        string
 }
 
 type SimpleRedisLockConfig struct {
@@ -32,14 +36,14 @@ type SimpleRedisLockConfig struct {
 
 func RedisLockConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultRedisLockConfig.RedisUrl, "URL of redis server for coordination")
-	f.String(prefix+".my-id", DefaultRedisLockConfig.RedisUrl, "this node's id whenacquiring the lock")
+	f.String(prefix+".my-id", DefaultRedisLockConfig.RedisUrl, "this node's id prefix when acquiring the lock (optional)")
 	f.Duration(prefix+".lockout-duration", DefaultRedisLockConfig.LockoutDuration, "how long lock is held")
 	f.Duration(prefix+".refresh-duration", DefaultRedisLockConfig.RefreshDuration, "how long between consecutive calls to redis")
 	f.String(prefix+".key", DefaultRedisLockConfig.Key, "key for lock")
 	f.Bool(prefix+".background-lock", DefaultRedisLockConfig.BackgroundLock, "should node always try grabing lock in background")
 }
 
-func NewSimpleRedisLock(config *SimpleRedisLockConfig) (*SimpleRedisLock, error) {
+func NewSimpleRedisLock(config *SimpleRedisLockConfig, readyToLock func() bool) (*SimpleRedisLock, error) {
 	var client redis.UniversalClient
 	if config.RedisUrl == "" {
 		client = nil
@@ -51,14 +55,15 @@ func NewSimpleRedisLock(config *SimpleRedisLockConfig) (*SimpleRedisLock, error)
 		client = redis.NewClient(redisOptions)
 	}
 	return &SimpleRedisLock{
-		client: client,
-		config: config,
+		myId:        config.MyId + "-" + strconv.FormatInt(rand.Int63(), 16), // unique even if config is not
+		client:      client,
+		config:      config,
+		readyToLock: readyToLock,
 	}, nil
 }
 
 var DefaultRedisLockConfig = SimpleRedisLockConfig{
 	RedisUrl:        "",
-	MyId:            "",
 	LockoutDuration: time.Minute,
 	RefreshDuration: time.Second * 10,
 	Key:             "",
@@ -69,6 +74,9 @@ func (l *SimpleRedisLock) attemptLock(ctx context.Context) (bool, error) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 	if l.stopping || l.client == nil {
+		return false, nil
+	}
+	if !l.readyToLock() {
 		return false, nil
 	}
 	gotLock := false
@@ -83,11 +91,11 @@ func (l *SimpleRedisLock) attemptLock(ctx context.Context) (bool, error) {
 		if err != nil {
 			return err
 		}
-		if current != "" && (current != l.config.MyId) {
+		if current != "" && (current != l.myId) {
 			return nil
 		}
 		pipe := tx.TxPipeline()
-		pipe.Set(ctx, l.config.Key, l.config.MyId, l.config.LockoutDuration)
+		pipe.Set(ctx, l.config.Key, l.myId, l.config.LockoutDuration)
 		pipe.PExpireAt(ctx, l.config.Key, timeAtStart.Add(l.config.LockoutDuration))
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
@@ -154,11 +162,11 @@ func (l *SimpleRedisLock) Release(ctx context.Context) {
 		if err != nil {
 			return err
 		}
-		if current != l.config.MyId {
+		if current != l.myId {
 			return nil
 		}
 		pipe := tx.TxPipeline()
-		pipe.Del(ctx, l.config.Key, l.config.MyId)
+		pipe.Del(ctx, l.config.Key, l.myId)
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
 			return nil
