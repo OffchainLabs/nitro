@@ -552,7 +552,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 
 	if t.txStreamer.broadcastServer != nil && pos > 1 {
 		prevprevbatchmeta, err := t.GetBatchMetadata(pos - 2)
-		if errors.Is(err, accumulatorNotFound) {
+		if errors.Is(err, AccumulatorNotFoundErr) {
 			return errors.New("missing previous previous sequencer batch")
 		} else if err != nil {
 			return err
