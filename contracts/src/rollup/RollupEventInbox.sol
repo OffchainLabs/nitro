@@ -15,11 +15,6 @@ import {AlreadyInit, HadZeroInit} from "../libraries/Error.sol";
  * @title The inbox for rollup protocol events
  */
 contract RollupEventInbox is IRollupEventInbox, IDelayedMessageProvider, DelegateCallAware {
-    uint8 internal constant CREATE_NODE_EVENT = 0;
-    uint8 internal constant CONFIRM_NODE_EVENT = 1;
-    uint8 internal constant REJECT_NODE_EVENT = 2;
-    uint8 internal constant STAKE_CREATED_EVENT = 3;
-
     IBridge public override bridge;
     address public override rollup;
 
