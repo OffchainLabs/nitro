@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -74,8 +75,9 @@ const (
 	InitialPerBatchGasCostV7 = 141000
 )
 
-var InitialEquilibrationUnitsV0 = 60 * params.TxDataNonZeroGasEIP2028 * 100000 // one minute at 100000 bytes / sec
-var InitialEquilibrationUnitsV7 = big.NewInt(141000)
+// one minute at 100000 bytes / sec
+var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
+var InitialEquilibrationUnitsV7 = big.NewInt(160000000)
 
 func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address) error {
 	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
@@ -90,7 +92,7 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 		return err
 	}
 	equilibrationUnits := sto.OpenStorageBackedBigInt(equilibrationUnitsOffset)
-	if err := equilibrationUnits.Set(am.UintToBig(InitialEquilibrationUnitsV0)); err != nil {
+	if err := equilibrationUnits.Set(InitialEquilibrationUnitsV0); err != nil {
 		return err
 	}
 	if err := sto.SetUint64ByUint64(inertiaOffset, InitialInertia); err != nil {
