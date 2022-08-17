@@ -43,7 +43,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			b.BroadcastSingle(arbstate.MessageWithMetadata{}, arbutil.MessageIndex(i))
+			b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, arbutil.MessageIndex(i))
 		}
 	}()
 
@@ -135,7 +135,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
+	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0)
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -247,8 +247,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
-	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 1)
+	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0)
+	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 1)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {

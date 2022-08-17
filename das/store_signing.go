@@ -5,29 +5,22 @@ package das
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"encoding/binary"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 var uniquifyingPrefix = []byte("Arbitrum Nitro DAS API Store:")
 
-type DasSigner func([]byte) ([]byte, error) // takes 32-byte array (hash of data) and produces signature bytes (and/or error)
-
-func DasSignerFromPrivateKey(privateKey *ecdsa.PrivateKey) DasSigner {
-	return func(data []byte) ([]byte, error) {
-		return crypto.Sign(data, privateKey)
-	}
-}
-
-func applyDasSigner(signer DasSigner, data []byte, timeout uint64) ([]byte, error) {
+func applyDasSigner(signer util.DataSignerFunc, data []byte, timeout uint64) ([]byte, error) {
 	return signer(dasStoreHash(data, timeout))
 }
 
@@ -47,11 +40,11 @@ func dasStoreHash(data []byte, timeout uint64) []byte {
 
 type StoreSigningDAS struct {
 	DataAvailabilityService
-	signer DasSigner
+	signer util.DataSignerFunc
 	addr   common.Address
 }
 
-func NewStoreSigningDAS(inner DataAvailabilityService, signer DasSigner) (DataAvailabilityService, error) {
+func NewStoreSigningDAS(inner DataAvailabilityService, signer util.DataSignerFunc) (DataAvailabilityService, error) {
 	sig, err := applyDasSigner(signer, []byte{}, 0)
 	if err != nil {
 		return nil, err

@@ -5,9 +5,12 @@ package das
 
 import (
 	"crypto/ecdsa"
-	"github.com/ethereum/go-ethereum/crypto"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/cmd/util"
 )
 
 func TestStoreSigning(t *testing.T) {
@@ -20,7 +23,7 @@ func TestStoreSigning(t *testing.T) {
 	weirdMessage := []byte("The quick brown fox jumped over the lazy dog.")
 	timeout := uint64(time.Now().Unix())
 
-	signer := DasSignerFromPrivateKey(privateKey)
+	signer := util.DataSignerFromPrivateKey(privateKey)
 	sig, err := applyDasSigner(signer, weirdMessage, timeout)
 	Require(t, err)
 

@@ -139,7 +139,7 @@ func startClientStore(args []string) error {
 				return err
 			}
 		}
-		signer := das.DasSignerFromPrivateKey(privateKey)
+		signer := util.DataSignerFromPrivateKey(privateKey)
 
 		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
 		if err != nil {

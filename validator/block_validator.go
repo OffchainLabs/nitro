@@ -519,7 +519,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				log.Warn("failed to get message in block validator", "err", err)
 				return
 			}
-			v.NewBlock(block, prevHeader, msg)
+			v.NewBlock(block, prevHeader, *msg)
 			return
 		}
 		validationStatus, ok := entry.(*validationStatus)

@@ -443,7 +443,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		if nextHeader == nil {
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
-		preimages, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(ctx, m.blockchain, m.inboxReader, nextHeader, blockHeader, message, false)
+		preimages, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(ctx, m.blockchain, m.inboxReader, nextHeader, blockHeader, *message, false)
 		if err != nil {
 			return err
 		}

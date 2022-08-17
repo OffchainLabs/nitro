@@ -65,19 +65,18 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	dummyMessage := arbstate.MessageWithMetadata{}
 	expectMessageCount := func(count int, contextMessage string) predicate {
 		return &messageCountPredicate{b, count, contextMessage, 0}
 	}
 
 	// Normal broadcasting and confirming
-	b.BroadcastSingle(dummyMessage, 1)
+	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 1)
 	waitUntilUpdated(t, expectMessageCount(1, "after 1 message"))
-	b.BroadcastSingle(dummyMessage, 2)
+	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 2)
 	waitUntilUpdated(t, expectMessageCount(2, "after 2 messages"))
-	b.BroadcastSingle(dummyMessage, 3)
+	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 3)
 	waitUntilUpdated(t, expectMessageCount(3, "after 3 messages"))
-	b.BroadcastSingle(dummyMessage, 4)
+	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 4)
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
 
 	b.Confirm(1)
@@ -93,7 +92,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 		"nothing changed because confirmed sequence number before cache"))
 
 	b.Confirm(2)
-	b.BroadcastSingle(dummyMessage, 5)
+	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 5)
 	waitUntilUpdated(t, expectMessageCount(3,
 		"after 5 messages, 2 cleared by confirm"))
 

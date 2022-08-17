@@ -211,15 +211,19 @@ func dbKey(prefix []byte, pos uint64) []byte {
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error) {
+func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbstate.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, uint64(seqNum))
 	data, err := s.db.Get(key)
 	if err != nil {
-		return arbstate.MessageWithMetadata{}, err
+		return nil, err
 	}
 	var message arbstate.MessageWithMetadata
 	err = rlp.DecodeBytes(data, &message)
-	return message, err
+	if err != nil {
+		return nil, err
+	}
+
+	return &message, nil
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
@@ -782,7 +786,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 
 		if s.validator != nil {
-			s.validator.NewBlock(block, lastBlockHeader, msg)
+			s.validator.NewBlock(block, lastBlockHeader, *msg)
 		}
 
 		s.latestBlockAndMessageMutex.Lock()

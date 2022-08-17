@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dasrpc"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -596,7 +597,7 @@ func createNodeImpl(
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
-	daSigner das.DasSigner,
+	dataSigner util.DataSignerFunc,
 	feedErrChan chan error,
 ) (*Node, error) {
 	var reorgingToBlock *types.Block
@@ -746,8 +747,8 @@ func createNodeImpl(
 	}
 	if dataAvailabilityService != nil {
 		if config.BatchPoster.Enable {
-			if daSigner != nil {
-				dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
+			if dataSigner != nil {
+				dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, dataSigner)
 				if err != nil {
 					return nil, err
 				}
@@ -855,7 +856,7 @@ type L1ReaderCloser struct {
 	l1Reader *headerreader.HeaderReader
 }
 
-func (c *L1ReaderCloser) Close(ctx context.Context) error {
+func (c *L1ReaderCloser) Close(_ context.Context) error {
 	c.l1Reader.StopOnly()
 	return nil
 }
@@ -864,8 +865,8 @@ func (c *L1ReaderCloser) String() string {
 	return "l1 reader closer"
 }
 
-// Set up a das.DataAvailabilityService stack without relying on any
-// objects already created for setting up the Node.
+// SetUpDataAvailabilityWithoutNode sets up a das.DataAvailabilityService stack
+// without relying on any objects already created for setting up the Node.
 func SetUpDataAvailabilityWithoutNode(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
@@ -878,7 +879,7 @@ func SetUpDataAvailabilityWithoutNode(
 		}
 		l1Reader = headerreader.New(l1Client, headerreader.DefaultConfig) // TODO: config
 	}
-	das, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
+	newDas, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -886,11 +887,11 @@ func SetUpDataAvailabilityWithoutNode(
 		l1Reader.Start(ctx)
 		lifeCycle.Register(&L1ReaderCloser{l1Reader})
 	}
-	return das, lifeCycle, err
+	return newDas, lifeCycle, err
 }
 
-// Set up a das.DataAvailabilityService stack allowing some dependencies
-// that were created for the Node to be injected.
+// SetUpDataAvailability sets up a das.DataAvailabilityService stack allowing
+// some dependencies that were created for the Node to be injected.
 func SetUpDataAvailability(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
@@ -922,7 +923,7 @@ func SetUpDataAvailability(
 			return nil, nil, err
 		}
 		if seqInboxAddress == nil {
-			return nil, nil, errors.New("Must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+			return nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
 		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
 		if err != nil {
@@ -1003,7 +1004,7 @@ func SetUpDataAvailability(
 	// Its use for read-only purposes will be deprecated when the REST DAS servers have been rolled out.
 	if config.AggregatorConfig.Enable {
 		if topLevelStorageService != nil {
-			return nil, nil, errors.New("If rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
+			return nil, nil, errors.New("if rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
 		}
 		rpcAggregator, err := dasrpc.NewRPCAggregatorWithSeqInboxCaller(config.AggregatorConfig, seqInboxCaller)
 		if err != nil {
@@ -1062,7 +1063,7 @@ func SetUpDataAvailability(
 	}
 
 	if topLevelDas == nil {
-		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled.")
+		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
 	}
 
 	return topLevelDas, dasLifecycleManager, nil
@@ -1091,10 +1092,10 @@ func CreateNode(
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
-	daSigner das.DasSigner,
+	dataSigner util.DataSignerFunc,
 	feedErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, dataSigner, feedErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1386,6 +1387,6 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 }
 
 // Don't preserve reorg'd out blocks
-func shouldPreserveFalse(header *types.Header) bool {
+func shouldPreserveFalse(_ *types.Header) bool {
 	return false
 }

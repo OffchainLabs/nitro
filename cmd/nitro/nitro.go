@@ -396,7 +396,7 @@ func main() {
 
 	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
-	var daSigner func([]byte) ([]byte, error)
+	var dataSigner util.DataSignerFunc
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
 	if nodeConfig.Node.L1Reader.Enable || setupNeedsKey {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
@@ -408,7 +408,7 @@ func main() {
 
 		validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
 		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey || setupNeedsKey {
-			l1TransactionOpts, daSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 			if err != nil {
 				fmt.Printf("%v\n", err.Error())
 				return
@@ -521,7 +521,7 @@ func main() {
 		l1Client,
 		&rollupAddrs,
 		l1TransactionOpts,
-		daSigner,
+		dataSigner,
 		feedErrChan,
 	)
 	if err != nil {

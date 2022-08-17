@@ -49,7 +49,7 @@ type InboxTrackerInterface interface {
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
-	GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error)
+	GetMessage(seqNum arbutil.MessageIndex) (*arbstate.MessageWithMetadata, error)
 	GetGenesisBlockNumber() (uint64, error)
 	PauseReorgs()
 	ResumeReorgs()
@@ -457,7 +457,7 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 	if err != nil {
 		return false, err
 	}
-	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, false)
+	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, *msg, false)
 	if err != nil {
 		return false, fmt.Errorf("failed to get block data to validate: %w", err)
 	}

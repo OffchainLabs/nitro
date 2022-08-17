@@ -74,6 +74,14 @@ func (info *L1Info) Equals(o *L1Info) bool {
 }
 
 func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
+	return msg.serializeImpl(false)
+}
+
+func (msg *L1IncomingMessage) SerializePermissive() ([]byte, error) {
+	return msg.serializeImpl(true)
+}
+
+func (msg *L1IncomingMessage) serializeImpl(permissive bool) ([]byte, error) {
 	wr := &bytes.Buffer{}
 	if err := wr.WriteByte(msg.Header.Kind); err != nil {
 		return nil, err
@@ -91,14 +99,23 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if msg.Header.RequestId == nil {
+	var requestId common.Hash
+	if msg.Header.RequestId != nil {
+		requestId = *msg.Header.RequestId
+	} else if !permissive {
 		return nil, errors.New("cannot serialize L1IncomingMessage without RequestId")
 	}
-	if err := util.HashToWriter(*msg.Header.RequestId, wr); err != nil {
+	if err := util.HashToWriter(requestId, wr); err != nil {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(common.BigToHash(msg.Header.L1BaseFee), wr); err != nil {
+	var l1BaseFeeHash common.Hash
+	if msg.Header.L1BaseFee != nil {
+		l1BaseFeeHash = common.BigToHash(msg.Header.L1BaseFee)
+	} else if !permissive {
+		return nil, errors.New("cannot serialize L1IncomingMessage without L1BaseFee")
+	}
+	if err := util.HashToWriter(l1BaseFeeHash, wr); err != nil {
 		return nil, err
 	}
 
