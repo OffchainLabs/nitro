@@ -21,7 +21,6 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -70,7 +69,7 @@ var DefaultBroadcastClientConfig = BroadcastClientConfig{
 }
 
 type TransactionStreamerInterface interface {
-	AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error
+	AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error
 }
 
 type BroadcastClient struct {
@@ -272,16 +271,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
-						var messages []arbstate.MessageWithMetadata
-						for _, message := range res.Messages {
-							if message == nil {
-								log.Warn("ignoring nil feed message")
-								continue
-							}
-							bc.nextSeqNum = message.SequenceNumber
-							messages = append(messages, message.Message)
-						}
-						if err := bc.txStreamer.AddBroadcastMessages(res.Messages[0].SequenceNumber, messages); err != nil {
+						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}

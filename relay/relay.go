@@ -9,7 +9,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -22,24 +21,16 @@ type Relay struct {
 	broadcastClients            []*broadcastclient.BroadcastClient
 	broadcaster                 *broadcaster.Broadcaster
 	confirmedSequenceNumberChan chan arbutil.MessageIndex
-	messageChan                 chan broadcastFeedMessage
-}
-
-type broadcastFeedMessage struct {
-	message        arbstate.MessageWithMetadata
-	sequenceNumber arbutil.MessageIndex
+	messageChan                 chan broadcaster.BroadcastFeedMessage
 }
 
 type RelayMessageQueue struct {
-	queue chan broadcastFeedMessage
+	queue chan broadcaster.BroadcastFeedMessage
 }
 
-func (q *RelayMessageQueue) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
-	for i, message := range messages {
-		q.queue <- broadcastFeedMessage{
-			sequenceNumber: pos + arbutil.MessageIndex(i),
-			message:        message,
-		}
+func (q *RelayMessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+	for _, feedMessage := range feedMessages {
+		q.queue <- *feedMessage
 	}
 
 	return nil
@@ -48,7 +39,7 @@ func (q *RelayMessageQueue) AddBroadcastMessages(pos arbutil.MessageIndex, messa
 func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadcastclient.BroadcastClientConfig, chainId uint64, feedErrChan chan error) *Relay {
 	var broadcastClients []*broadcastclient.BroadcastClient
 
-	q := RelayMessageQueue{make(chan broadcastFeedMessage, 100)}
+	q := RelayMessageQueue{make(chan broadcaster.BroadcastFeedMessage, 100)}
 
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, 10)
 
@@ -92,11 +83,11 @@ func (r *Relay) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case msg := <-r.messageChan:
-				if recentFeedItems[msg.sequenceNumber] != (time.Time{}) {
+				if recentFeedItems[msg.SequenceNumber] != (time.Time{}) {
 					continue
 				}
-				recentFeedItems[msg.sequenceNumber] = time.Now()
-				r.broadcaster.BroadcastSingle(msg.message, msg.sequenceNumber)
+				recentFeedItems[msg.SequenceNumber] = time.Now()
+				r.broadcaster.BroadcastSingle(msg.Message, msg.SequenceNumber)
 			case cs := <-r.confirmedSequenceNumberChan:
 				r.broadcaster.Confirm(cs)
 			case <-recentFeedItemsCleanup.C:

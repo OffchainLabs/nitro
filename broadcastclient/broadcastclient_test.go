@@ -61,12 +61,9 @@ func NewDummyTransactionStreamer() *dummyTransactionStreamer {
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
-	for i, message := range messages {
-		ts.messageReceiver <- broadcaster.BroadcastFeedMessage{
-			SequenceNumber: pos + arbutil.MessageIndex(i),
-			Message:        message,
-		}
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+	for _, feedMessage := range feedMessages {
+		ts.messageReceiver <- *feedMessage
 	}
 	return nil
 }

@@ -244,12 +244,17 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, 
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
-	for i, message := range messages {
-		msgPos := pos + arbutil.MessageIndex(i)
-		if message.Message == nil || message.Message.Header == nil {
-			return fmt.Errorf("invalid feed message at sequence number %v", msgPos)
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+	if len(feedMessages) == 0 {
+		return nil
+	}
+	pos := feedMessages[0].SequenceNumber
+	var messages []arbstate.MessageWithMetadata
+	for _, feedMessage := range feedMessages {
+		if feedMessage.Message.Message == nil || feedMessage.Message.Message.Header == nil {
+			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
 		}
+		messages = append(messages, feedMessage.Message)
 	}
 
 	s.insertionMutex.Lock()
