@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -50,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -620,11 +622,11 @@ func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type NodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	Node          arbnode.Config                  `koanf:"node"`
+	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
-	LogLevel      int                             `koanf:"log-level"`
-	LogType       string                          `koanf:"log-type"`
+	LogLevel      int                             `koanf:"log-level" reload:"hot"`
+	LogType       string                          `koanf:"log-type" reload:"hot"`
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
@@ -673,6 +675,34 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	c.L2.ResolveDirectoryNames(c.Persistent.Chain)
 
 	return nil
+}
+
+func (c *NodeConfig) CanReload(new *NodeConfig) error {
+	var check func(node, other reflect.Value, path string)
+	var err error
+
+	check = func(node, value reflect.Value, path string) {
+		if node.Kind() != reflect.Struct {
+			return
+		}
+
+		for i := 0; i < node.NumField(); i++ {
+			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
+			dot := path + "." + node.Type().Field(i).Name
+
+			first := node.Field(i).Interface()
+			other := value.Field(i).Interface()
+
+			if !hot && !reflect.DeepEqual(first, other) {
+				err = fmt.Errorf("Illegal change to %v%v%v", colors.Red, dot, colors.Clear)
+			} else {
+				check(node.Field(i), value.Field(i), dot)
+			}
+		}
+	}
+
+	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
+	return err
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
