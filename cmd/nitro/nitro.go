@@ -702,10 +702,7 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 	}
 
 	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
