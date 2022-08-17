@@ -4,12 +4,12 @@
 package arbos
 
 import (
-	"errors"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -209,17 +209,28 @@ func TestUpdateTimeUpgradeBehavior(t *testing.T) {
 	arbosSt, err := arbosState.OpenArbosState(evm.StateDB, burner)
 	Require(t, err)
 
-	poster := common.Address{3, 4, 5}
-
 	l1p := arbosSt.L1PricingState()
-
-	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 1, 1, 1, poster, common.Big1, arbmath.UintToBig(10*params.GWei), util.TracingDuringEVM)
-	if !errors.Is(err, l1pricing.ErrInvalidTime) {
-		Fail(t)
-	}
-
-	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 3, 1, 1, poster, common.Big1, arbmath.UintToBig(10*params.GWei), util.TracingDuringEVM)
+	amount := arbmath.UintToBig(10 * params.GWei)
+	poster := common.Address{3, 4, 5}
+	_, err = l1p.BatchPosterTable().AddPoster(poster, poster)
 	Require(t, err)
+
+	// In the past this would have errored due to an invalid timestamp.
+	// We don't want to error since it'd create noise in the console,
+	// so instead let's check that nothing happened
+	statedb, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		panic("not a statedb")
+	}
+	stateCheck(t, statedb, false, "uh oh, nothing should have happened", func() {
+		Require(t, l1p.UpdateForBatchPosterSpending(
+			evm.StateDB, evm, 1, 1, 1, poster, common.Big1, amount, util.TracingDuringEVM,
+		))
+	})
+
+	Require(t, l1p.UpdateForBatchPosterSpending(
+		evm.StateDB, evm, 3, 1, 1, poster, common.Big1, amount, util.TracingDuringEVM,
+	))
 }
 
 func TestL1PriceEquilibrationUp(t *testing.T) {

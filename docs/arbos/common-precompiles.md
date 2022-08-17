@@ -1,5 +1,5 @@
 # Overview
-ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This reference details those we expect users to most frequently use. For an exhaustive reference including those we don't expect most users to ever call, please refer to the [Full Precompiles documentation](Precompiles.md).
+ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This reference details those we expect users to most frequently use. For an exhaustive reference including those we don't expect most users to ever call, please refer to the [Full Precompiles documentation](precompiles.md).
 
 From the perspective of user applications, precompiles live as contracts at the following addresses. Click on any to jump to their section.
 
@@ -54,7 +54,7 @@ Provides insight into the cost of using the chain. These methods have been adjus
 [GIs11]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L122
 
 # [ArbRetryableTx][ArbRetryableTx_link]
-Provides methods for managing retryables. The model has been adjusted for Nitro, most notably in terms of how retry transactions are scheduled. For more information on retryables, please see [the retryable documentation](ArbOS.md#Retryables).
+Provides methods for managing retryables. The model has been adjusted for Nitro, most notably in terms of how retry transactions are scheduled. For more information on retryables, please see [the retryable documentation](arbos.md#Retryables).
 
 
 | Methods                                                     |                                                                                    | Nitro changes          |

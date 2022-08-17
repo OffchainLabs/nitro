@@ -193,11 +193,7 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(
             if mach.is_halted() {
                 return std::ptr::null_mut();
             }
-            if mach
-                .get_next_instruction()
-                .map(|i| i.opcode.is_host_io())
-                .unwrap_or(true)
-            {
+            if mach.next_instruction_is_host_io() {
                 return std::ptr::null_mut();
             }
             match mach.step_n(1) {
