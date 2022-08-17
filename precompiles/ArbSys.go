@@ -17,7 +17,7 @@ import (
 
 // Provides system-level functionality for interacting with L1 and understanding the call stack.
 type ArbSys struct {
-	Address                 addr
+	Address                 addr // 0x64
 	L2ToL1Tx                func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, []byte) error
 	L2ToL1TxGasCost         func(addr, addr, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
 	SendMerkleUpdate        func(ctx, mech, huge, bytes32, huge) error

@@ -455,7 +455,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		lastUpdateTime = updateTime - 1
 	}
 	if updateTime >= currentTime || updateTime < lastUpdateTime {
-		return ErrInvalidTime
+		return nil // historically this returned an error
 	}
 	allocationNumerator := updateTime - lastUpdateTime
 	allocationDenominator := currentTime - lastUpdateTime
