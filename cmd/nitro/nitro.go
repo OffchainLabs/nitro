@@ -515,7 +515,7 @@ func main() {
 	}
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
-	nodeConfigFetcher := func() *arbnode.Config { return &liveNodeConfig.get().Node }
+	nodeConfigFetcher := func() *arbnode.Config { return &liveNodeConfig.Get().Node }
 
 	feedErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
