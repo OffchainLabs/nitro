@@ -72,12 +72,12 @@ const (
 	InitialInertia           = 10
 	InitialPerUnitReward     = 10
 	InitialPricePerUnitWei   = 50 * params.GWei
-	InitialPerBatchGasCostV7 = 100000
+	InitialPerBatchGasCostV6 = 100000
 )
 
 // one minute at 100000 bytes / sec
 var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGasEIP2028 * 100000)
-var InitialEquilibrationUnitsV7 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
+var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
 
 func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address) error {
 	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
