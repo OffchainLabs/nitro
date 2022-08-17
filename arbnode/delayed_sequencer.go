@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -45,13 +46,13 @@ func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:           false,
-	FinalizeDistance: 12,
+	FinalizeDistance: 20,
 	TimeAggregate:    time.Minute,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:           true,
-	FinalizeDistance: 12,
+	FinalizeDistance: 20,
 	TimeAggregate:    time.Second,
 }
 
@@ -141,7 +142,7 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 		}
 		if delayedBridgeAcc != lastDelayedAcc {
 			// Probably a reorg that hasn't been picked up by the inbox reader
-			return errors.New("inbox reader db accumulator doesn't match delayed bridge")
+			return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
 		}
 
 		err = d.txStreamer.SequenceDelayedMessages(ctx, messages, startPos)

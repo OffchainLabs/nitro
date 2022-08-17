@@ -103,3 +103,45 @@ func TestArbOwner(t *testing.T) {
 		Fail(t)
 	}
 }
+
+func TestArbInfraFeeAccount(t *testing.T) {
+	version0 := uint64(0)
+	evm := newMockEVMForTestingWithVersion(&version0)
+	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
+	newAddr := common.BytesToAddress(crypto.Keccak256([]byte{0})[:20])
+	callCtx := testContext(caller, evm)
+	prec := &ArbOwner{}
+	_, err := prec.GetInfraFeeAccount(callCtx, evm)
+	Require(t, err)
+	err = prec.SetInfraFeeAccount(callCtx, evm, newAddr) // this should be a no-op (because ArbOS version 0)
+	Require(t, err)
+
+	version5 := uint64(5)
+	evm = newMockEVMForTestingWithVersion(&version5)
+	callCtx = testContext(caller, evm)
+	prec = &ArbOwner{}
+	precPublic := &ArbOwnerPublic{}
+	addr, err := prec.GetInfraFeeAccount(callCtx, evm)
+	Require(t, err)
+	if addr != (common.Address{}) {
+		t.Fatal()
+	}
+	addr, err = precPublic.GetInfraFeeAccount(callCtx, evm)
+	Require(t, err)
+	if addr != (common.Address{}) {
+		t.Fatal()
+	}
+
+	err = prec.SetInfraFeeAccount(callCtx, evm, newAddr)
+	Require(t, err)
+	addr, err = prec.GetInfraFeeAccount(callCtx, evm)
+	Require(t, err)
+	if addr != newAddr {
+		t.Fatal()
+	}
+	addr, err = precPublic.GetInfraFeeAccount(callCtx, evm)
+	Require(t, err)
+	if addr != newAddr {
+		t.Fatal()
+	}
+}

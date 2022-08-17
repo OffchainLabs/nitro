@@ -30,6 +30,7 @@ func TestSequencerRejection(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
+	feedErrChan := make(chan error, 10)
 	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 	defer requireClose(t, l2stackA)
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
@@ -40,8 +41,7 @@ func TestSequencerRejection(t *testing.T) {
 	defer requireClose(t, l2stackB)
 
 	auth := l2info1.GetDefaultTransactOpts("Owner", ctx)
-	simpleAddr, _, _, err := mocksgen.DeploySimple(&auth, client1)
-	Require(t, err)
+	simpleAddr, _ := deploySimple(t, ctx, auth, client1)
 	simpleAbi, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 	noopId := simpleAbi.Methods["noop"].ID
@@ -86,7 +86,7 @@ func TestSequencerRejection(t *testing.T) {
 					info.Nonce += 1
 				} else if user%3 == 1 {
 					txData.Data = revertId
-					expectedErr = "execution reverted"
+					expectedErr = "execution reverted: SOLIDITY_REVERTING"
 				} else {
 					txData.Nonce = 1 << 32
 					expectedErr = "nonce too high"
@@ -109,7 +109,11 @@ func TestSequencerRejection(t *testing.T) {
 		if i == 0 {
 			Fail(t, "failed to reach block 200, only reached block", block)
 		}
-		time.Sleep(time.Millisecond * 100)
+		select {
+		case err := <-feedErrChan:
+			Fail(t, "error: ", err)
+		case <-time.After(time.Millisecond * 100):
+		}
 	}
 
 	atomic.StoreInt32(&stopBackground, 1)
@@ -121,7 +125,11 @@ func TestSequencerRejection(t *testing.T) {
 	for i := 100; i >= 0; i-- {
 		header2, err := client2.HeaderByNumber(ctx, header1.Number)
 		if err != nil {
-			time.Sleep(time.Millisecond * 100)
+			select {
+			case err := <-feedErrChan:
+				Fail(t, "error: ", err)
+			case <-time.After(time.Millisecond * 100):
+			}
 			if i == 0 {
 				client2Block, _ := client2.BlockNumber(ctx)
 				Fail(t, "client2 failed to reach client1 block ", header1.Number, ", only reached block", client2Block)

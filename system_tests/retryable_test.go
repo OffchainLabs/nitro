@@ -38,7 +38,7 @@ func retryableSetup(t *testing.T) (
 	func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
 
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("Beneficiary")
@@ -193,8 +193,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
-	simpleAddr, _, simple, err := mocksgen.DeploySimple(&ownerTxOpts, l2client)
-	Require(t, err)
+	simpleAddr, simple := deploySimple(t, ctx, ownerTxOpts, l2client)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
@@ -286,11 +285,11 @@ func TestSubmissionGasCosts(t *testing.T) {
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	l2info.GenerateAccount("Refund")
-	l2info.GenerateAccount("Recieve")
+	l2info.GenerateAccount("Receive")
 	faucetAddress := util.RemapL1Address(l1info.GetAddress("Faucet"))
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")
 	feeRefundAddress := l2info.GetAddress("Refund")
-	receiveAddress := l2info.GetAddress("Recieve")
+	receiveAddress := l2info.GetAddress("Receive")
 
 	colors.PrintBlue("Faucet      ", faucetAddress)
 	colors.PrintBlue("Receive     ", receiveAddress)

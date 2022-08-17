@@ -34,7 +34,6 @@ import (
 //
 // This mechanism handles messages sent to 0xc8 and uses NodeInterface.sol to determine what to do. No contract
 // actually exists at 0xc8, but the abi methods allow the incoming message's calldata to specify the arguments.
-//
 type NodeInterface struct {
 	Address       addr
 	backend       core.NodeInterfaceBackendAPI
@@ -53,6 +52,11 @@ var l2ToL1TransactionTopic common.Hash
 
 var blockInGenesis = errors.New("")
 var blockAfterLatestBatch = errors.New("")
+
+func (n NodeInterface) NitroGenesisBlock(c ctx) (huge, error) {
+	block := n.backend.ChainConfig().ArbitrumChainParams.GenesisBlockNum
+	return arbmath.UintToBig(block), nil
+}
 
 func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
 	node, err := arbNodeFromNodeInterfaceBackend(n.backend)

@@ -53,7 +53,7 @@ func startLocalDASServer(
 		},
 		LocalFileStorageConfig: das.LocalFileStorageConfig{
 			Enable:  true,
-			DataDir: keyDir,
+			DataDir: dataDir,
 		},
 		L1NodeURL:      "none",
 		RequestTimeout: 5 * time.Second,
@@ -65,9 +65,11 @@ func startLocalDASServer(
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	Require(t, err)
-	das, err := das.NewSignAfterStoreDASWithSeqInboxCaller(ctx, config.KeyConfig, seqInboxCaller, storageService, "")
+	privKey, err := config.KeyConfig.BLSPrivKey()
 	Require(t, err)
-	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, das)
+	currentDas, err := das.NewSignAfterStoreDASWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
+	Require(t, err)
+	dasServer, err := dasrpc.StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, currentDas)
 	Require(t, err)
 	beConfig := dasrpc.BackendConfig{
 		URL:                 "http://" + lis.Addr().String(),
@@ -100,8 +102,9 @@ func TestDASRekey(t *testing.T) {
 
 	// Setup L1 chain and contracts
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
-	l1info, l1client, _, l1stack := CreateTestL1BlockChain(t, nil)
+	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
+	feedErrChan := make(chan error, 10)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 
 	// Setup DAS servers
@@ -126,7 +129,7 @@ func TestDASRekey(t *testing.T) {
 		l1NodeConfigA.DataAvailability.Enable = true
 		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
 
-		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
+		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 		Require(t, err)
 		Require(t, l2stackA.Start())
 		l2clientA := ClientForStack(t, l2stackA)
@@ -163,7 +166,7 @@ func TestDASRekey(t *testing.T) {
 	l2blockchain, err := arbnode.GetBlockChain(l2chainDb, nil, chainConfig, arbnode.ConfigDefaultL2Test())
 	Require(t, err)
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
 	Require(t, l2stackA.Start())
 	l2clientA := ClientForStack(t, l2stackA)
@@ -215,11 +218,12 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	// Setup L1 chain and contracts
 	chainConfig := params.ArbitrumDevTestDASChainConfig()
-	l1info, l1client, _, l1stack := CreateTestL1BlockChain(t, nil)
+	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
 	l1Reader := headerreader.New(l1client, headerreader.TestConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
+	feedErrChan := make(chan error, 10)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 
 	lis, err := net.Listen("tcp", "localhost:0")
@@ -322,7 +326,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, daSigner)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, daSigner, feedErrChan)
 	Require(t, err)
 	Require(t, l2stackA.Start())
 	l2clientA := ClientForStack(t, l2stackA)

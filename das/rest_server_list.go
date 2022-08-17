@@ -6,9 +6,12 @@ package das
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 const initialMaxRecurseDepth uint16 = 8
@@ -16,8 +19,8 @@ const initialMaxRecurseDepth uint16 = 8
 // RestfulServerURLsFromList reads a list of Restful server URLs from a remote URL.
 // The contents at the remote URL are parsed into a series of whitespace-separated words.
 // Each word is interpreted as the URL of a Restful server, except that if a word is "LIST"
-//    (case-insensitive) then the following word is interpreted as the URL of another list,
-//    which is recursively fetched. The depth of recursion is limited to initialMaxRecurseDepth.
+// (case-insensitive) then the following word is interpreted as the URL of another list,
+// which is recursively fetched. The depth of recursion is limited to initialMaxRecurseDepth.
 func RestfulServerURLsFromList(ctx context.Context, listUrl string) ([]string, error) {
 	client := &http.Client{}
 	urls, err := restfulServerURLsFromList(ctx, client, listUrl, initialMaxRecurseDepth, make(map[string]bool))
@@ -58,6 +61,9 @@ func restfulServerURLsFromList(
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("Recieved error response (%d) fetching online-url-list at %s", resp.StatusCode, listUrl)
+	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Split(bufio.ScanWords)
 	for scanner.Scan() {
@@ -83,20 +89,27 @@ const maxListFetchTime = time.Minute
 
 func StartRestfulServerListFetchDaemon(ctx context.Context, listUrl string, updatePeriod time.Duration) <-chan []string {
 	updateChan := make(chan []string)
+	if listUrl == "" {
+		log.Info("Trying to start RestfulServerListFetchDaemon with empty online-url-list, not starting.")
+		return updateChan
+	}
+	if updatePeriod == 0 {
+		panic("RestfulServerListFetchDaemon started with zero updatePeriod")
+	}
 
-	downloadAndSend := func() bool { // download and send once, return true iff success
+	downloadAndSend := func() error { // download and send once
 		subCtx, subCtxCancel := context.WithTimeout(ctx, maxListFetchTime)
 		defer subCtxCancel()
 
 		urls, err := RestfulServerURLsFromList(subCtx, listUrl)
 		if err != nil {
-			return false
+			return err
 		}
 		select {
 		case updateChan <- urls:
-			return true
+			return nil
 		case <-ctx.Done():
-			return false
+			return ctx.Err()
 		}
 	}
 
@@ -104,8 +117,9 @@ func StartRestfulServerListFetchDaemon(ctx context.Context, listUrl string, upda
 		defer close(updateChan)
 
 		// send the first result immediately
-		if !downloadAndSend() {
-			return
+		err := downloadAndSend()
+		if err != nil {
+			log.Warn("Couldn't download data availability online-url-list, will retry immediately", "err", err)
 		}
 
 		// now send periodically
@@ -116,8 +130,9 @@ func StartRestfulServerListFetchDaemon(ctx context.Context, listUrl string, upda
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if !downloadAndSend() {
-					return
+				err := downloadAndSend()
+				if err != nil {
+					log.Warn(fmt.Sprintf("Couldn't download data availability online-url-list, will retry in %s", updatePeriod), "err", err)
 				}
 			}
 		}

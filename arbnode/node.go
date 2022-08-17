@@ -11,17 +11,9 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"strings"
-	"syscall"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/util/headerreader"
-	"golang.org/x/term"
-
-	"github.com/ethereum/go-ethereum/rpc"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -36,7 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	flag "github.com/spf13/pflag"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -51,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -604,6 +597,7 @@ func createNodeImpl(
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
+	feedErrChan chan error,
 ) (*Node, error) {
 	var reorgingToBlock *types.Block
 	if config.Dangerous.ReorgToBlock >= 0 {
@@ -633,7 +627,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2BlockChain.Config().ChainID.Uint64(), feedErrChan)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -695,14 +689,44 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	currentMessageCount, err := txStreamer.GetMessageCount()
+	if err != nil {
+		return nil, err
+	}
 	var broadcastClients []*broadcastclient.BroadcastClient
 	if config.Feed.Input.Enable() {
 		for _, address := range config.Feed.Input.URLs {
-			broadcastClients = append(broadcastClients, broadcastclient.NewBroadcastClient(address, nil, config.Feed.Input.Timeout, txStreamer))
+			client := broadcastclient.NewBroadcastClient(
+				address,
+				l2BlockChain.Config().ChainID.Uint64(),
+				currentMessageCount,
+				config.Feed.Input.Timeout,
+				txStreamer,
+				feedErrChan,
+			)
+			broadcastClients = append(broadcastClients, client)
 		}
 	}
 	if !config.L1Reader.Enable {
-		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator, nil, classicOutbox}, nil
+		return &Node{
+			backend,
+			arbInterface,
+			nil,
+			txStreamer,
+			txPublisher,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			broadcastServer,
+			broadcastClients,
+			coordinator,
+			nil,
+			classicOutbox,
+		}, nil
 	}
 
 	if deployInfo == nil {
@@ -806,7 +830,25 @@ func createNodeImpl(
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator, dasLifecycleManager, classicOutbox}, nil
+	return &Node{
+		backend,
+		arbInterface,
+		l1Reader,
+		txStreamer,
+		txPublisher,
+		deployInfo,
+		inboxReader,
+		inboxTracker,
+		delayedSequencer,
+		batchPoster,
+		blockValidator,
+		staker,
+		broadcastServer,
+		broadcastClients,
+		coordinator,
+		dasLifecycleManager,
+		classicOutbox,
+	}, nil
 }
 
 type L1ReaderCloser struct {
@@ -975,10 +1017,14 @@ func SetUpDataAvailability(
 			_seqInboxCaller = nil
 		}
 
+		privKey, err := config.KeyConfig.BLSPrivKey()
+		if err != nil {
+			return nil, nil, err
+		}
+
 		// TODO rename StorageServiceDASAdapter
 		topLevelDas, err = das.NewSignAfterStoreDASWithSeqInboxCaller(
-			ctx,
-			config.KeyConfig,
+			privKey,
 			_seqInboxCaller,
 			topLevelStorageService,
 			config.ExtraSignatureCheckingPublicKey,
@@ -1046,8 +1092,9 @@ func CreateNode(
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
-) (newNode *Node, err error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner)
+	feedErrChan chan error,
+) (*Node, error) {
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1056,11 +1103,23 @@ func CreateNode(
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
+			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator},
+			Public:    false,
+		})
+		apis = append(apis, rpc.API{
+			Namespace: "arbdebug",
+			Version:   "1.0",
+			Service:   &BlockValidatorDebugAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
 			Public:    false,
 		})
 	}
 
+	apis = append(apis, rpc.API{
+		Namespace: "arb",
+		Version:   "1.0",
+		Service:   &ArbAPI{currentNode.TxPublisher},
+		Public:    false,
+	})
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
@@ -1087,12 +1146,14 @@ func (n *Node) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = n.TxStreamer.Initialize()
-	if err != nil {
-		return err
-	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()
+		if err != nil {
+			return err
+		}
+	}
+	if n.BroadcastServer != nil {
+		err = n.BroadcastServer.Initialize()
 		if err != nil {
 			return err
 		}
@@ -1327,98 +1388,4 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 // Don't preserve reorg'd out blocks
 func shouldPreserveFalse(header *types.Header) bool {
 	return false
-}
-
-func GetSignerFromWallet(
-	walletConfig *genericconf.WalletConfig,
-) (func([]byte) ([]byte, error), error) {
-	var signer func(data []byte) ([]byte, error)
-
-	if len(walletConfig.PrivateKey) != 0 {
-		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		signer = func(data []byte) ([]byte, error) {
-			return crypto.Sign(data, privateKey)
-		}
-	} else {
-		ks, account, newKeystoreCreated, err := openKeystore(
-			"account",
-			walletConfig.Pathname,
-			walletConfig.Password(),
-			walletConfig.OnlyCreateKey,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		if newKeystoreCreated {
-			return nil, errors.New("wallet key created, backup key (" + walletConfig.Pathname + ") and remove --wallet.only-create-key to start normally")
-		}
-
-		signer = func(data []byte) ([]byte, error) {
-			return ks.SignHash(*account, data)
-		}
-	}
-
-	return signer, nil
-}
-
-func openKeystore(description string, walletPath string, walletPassword *string, onlyCreateKey bool) (*keystore.KeyStore, *accounts.Account, bool, error) {
-	ks := keystore.NewKeyStore(
-		walletPath,
-		keystore.StandardScryptN,
-		keystore.StandardScryptP,
-	)
-
-	creatingNew := len(ks.Accounts()) == 0
-	if creatingNew && !onlyCreateKey {
-		return nil, nil, false, errors.New("No wallet exists, re-run with --wallet.local.only-create-key to create a wallet")
-	}
-	passOpt := walletPassword
-	var password string
-	if passOpt != nil {
-		password = *passOpt
-	} else {
-		if creatingNew {
-			fmt.Print("Enter new account password: ")
-		} else {
-			fmt.Print("Enter account password: ")
-		}
-		var err error
-		password, err = readPass()
-		if err != nil {
-			return nil, nil, false, err
-		}
-	}
-
-	var account accounts.Account
-	if creatingNew {
-		var err error
-		account, err = ks.NewAccount(password)
-		if err != nil {
-			return nil, &accounts.Account{}, false, err
-		}
-
-	} else {
-		account = ks.Accounts()[0]
-	}
-
-	err := ks.Unlock(account, password)
-	if err != nil {
-		return nil, nil, false, err
-	}
-
-	return ks, &account, creatingNew, nil
-}
-
-func readPass() (string, error) {
-	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
-	if err != nil {
-		return "", err
-	}
-	passphrase := string(bytePassword)
-	passphrase = strings.TrimSpace(passphrase)
-	return passphrase, nil
 }
