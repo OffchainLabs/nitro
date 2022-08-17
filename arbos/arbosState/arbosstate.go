@@ -232,7 +232,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 	if desiredArbosVersion > 1 {
-		aState.UpgradeArbosVersion(desiredArbosVersion)
+		aState.UpgradeArbosVersion(desiredArbosVersion, true)
 	}
 	return aState, err
 }
@@ -242,11 +242,11 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64)
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
-		state.UpgradeArbosVersion(upgradeTo)
+		state.UpgradeArbosVersion(upgradeTo, false)
 	}
 }
 
-func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64) {
+func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
 			if err != nil {
@@ -275,6 +275,14 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64) {
 		}
 		state.arbosVersion++
 	}
+
+	if firstTime && upgradeTo >= 7 {
+		state.Restrict(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV7))
+		state.Restrict(state.l1PricingState.SetEquilibrationUnits(l1pricing.InitialEquilibrationUnitsV7))
+		state.Restrict(state.l2PricingState.SetSpeedLimitPerSecond(l2pricing.InitialSpeedLimitPerSecondV7))
+		state.Restrict(state.l2PricingState.SetMaxPerBlockGasLimit(l2pricing.InitialPerBlockGasLimitV7))
+	}
+
 	state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), state.arbosVersion))
 }
 
