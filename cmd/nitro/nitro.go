@@ -988,17 +988,13 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	newConfig := *c.config
-
-	newConfig.Node.Sequencer.MaxBlockSpeed = config.Node.Sequencer.MaxBlockSpeed
-
+	if err := c.config.CanReload(config); err != nil {
+		return err
+	}
 	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
 		return err
 	}
-	newConfig.LogType = config.LogType
-	newConfig.LogLevel = config.LogLevel
-
-	c.config = &newConfig
+	c.config = config
 	return nil
 }
 
