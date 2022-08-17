@@ -246,15 +246,14 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	rollupAddresses.SequencerInbox = asserterSeqInboxAddr
 
-	nodeConfigFetcher := func() *arbnode.Config { return conf }
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, nodeConfigFetcher, asserterL2Blockchain, l1Backend, rollupAddresses, nil, nil, feedErrChan)
+	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, rollupAddresses, nil, nil, feedErrChan)
 	Require(t, err)
 	err = asserterL2Stack.Start()
 	Require(t, err)
 
 	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, challengerL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	rollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, nodeConfigFetcher, challengerL2Blockchain, l1Backend, rollupAddresses, nil, nil, feedErrChan)
+	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, rollupAddresses, nil, nil, feedErrChan)
 	Require(t, err)
 	err = challengerL2Stack.Start()
 	Require(t, err)

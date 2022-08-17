@@ -515,15 +515,14 @@ func main() {
 	}
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
-	nodeConfigFetcher := func() *arbnode.Config { return &liveNodeConfig.get().Node }
-
+	nodeConfigFetcher := LiveNodeConfigFetcher{liveNodeConfig}
 	feedErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
 		chainDb,
 		arbDb,
-		nodeConfigFetcher,
+		&nodeConfigFetcher,
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
@@ -1034,4 +1033,12 @@ func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
 		args:   args,
 		config: config,
 	}
+}
+
+type LiveNodeConfigFetcher struct {
+	*LiveNodeConfig
+}
+
+func (f *LiveNodeConfigFetcher) Get() *arbnode.Config {
+	return &f.LiveNodeConfig.get().Node
 }
