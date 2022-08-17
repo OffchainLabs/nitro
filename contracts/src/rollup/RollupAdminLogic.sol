@@ -156,6 +156,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
      * @param _val value to set in the whitelist for corresponding address
      */
     function setValidator(address[] calldata _validator, bool[] calldata _val) external override {
+        require(_validator.length > 0, "EMPTY_ARRAY");
         require(_validator.length == _val.length, "WRONG_LENGTH");
 
         for (uint256 i = 0; i < _validator.length; i++) {
@@ -251,6 +252,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         override
         whenPaused
     {
+        require(stakerA.length > 0, "EMPTY_ARRAY");
         require(stakerA.length == stakerB.length, "WRONG_LENGTH");
         for (uint256 i = 0; i < stakerA.length; i++) {
             uint64 chall = inChallenge(stakerA[i], stakerB[i]);
@@ -264,6 +266,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     }
 
     function forceRefundStaker(address[] calldata staker) external override whenPaused {
+        require(staker.length > 0, "EMPTY_ARRAY");
         for (uint256 i = 0; i < staker.length; i++) {
             require(_stakerMap[staker[i]].currentChallenge == NO_CHAL_INDEX, "STAKER_IN_CHALL");
             reduceStakeTo(staker[i], 0);
