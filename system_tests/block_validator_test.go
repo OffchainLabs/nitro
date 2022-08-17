@@ -56,7 +56,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		ownerInfo := l2info.GetInfoWithPrivKey("Owner")
 		tx = l2info.SignTxAs("Owner", &types.DynamicFeeTx{
 			To:        nil,
-			Gas:       l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimitV0,
+			Gas:       l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimitV7,
 			GasFeeCap: new(big.Int).Set(l2info.GasPrice),
 			Value:     common.Big0,
 			Nonce:     ownerInfo.Nonce,
