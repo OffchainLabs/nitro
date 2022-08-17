@@ -200,11 +200,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     function addSequencerL2BatchFromOrigin(
         uint256 sequenceNumber,
-        uint256 prevMessageCount,
-        uint256 newMessageCount,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
-        IGasRefunder gasRefunder
+        IGasRefunder gasRefunder,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
     ) external refundsGas(gasRefunder) {
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
