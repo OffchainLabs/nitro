@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
-	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -33,20 +32,6 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 		clnt: clnt,
 		url:  target,
 	}, nil
-}
-
-func (c *DASRPCClient) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	if len(hash) != 32 {
-		return nil, fmt.Errorf("Hash must be 32 bytes long, was %d", len(hash))
-	}
-	var ret hexutil.Bytes
-	if err := c.clnt.CallContext(ctx, &ret, "das_getByHash", hash); err != nil {
-		return nil, err
-	}
-	if !dastree.ValidHash(hash, ret) { // check hash because RPC server might be untrusted
-		return nil, arbstate.ErrHashMismatch
-	}
-	return ret, nil
 }
 
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
