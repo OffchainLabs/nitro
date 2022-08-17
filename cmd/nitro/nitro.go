@@ -513,7 +513,7 @@ func main() {
 	}
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
-	nodeConfigFetcher := func() *arbnode.Config { return &liveNodeConfig.Get().Node }
+	nodeConfigFetcher := func() *arbnode.Config { return &liveNodeConfig.get().Node }
 
 	feedErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
@@ -948,7 +948,7 @@ type LiveNodeConfig struct {
 	config *NodeConfig
 }
 
-func (c *LiveNodeConfig) Get() *NodeConfig {
+func (c *LiveNodeConfig) get() *NodeConfig {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 	return c.config
@@ -962,20 +962,11 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 
 	newConfig.Node.Sequencer.MaxBlockSpeed = config.Node.Sequencer.MaxBlockSpeed
 
-	err := initLog(config.LogType, log.Lvl(config.LogLevel))
-	if err != nil {
+	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
 		return err
 	}
 	newConfig.LogType = config.LogType
 	newConfig.LogLevel = config.LogLevel
-
-	// TODO
-	// if newConfig.Persistent != config.Persistent {
-	//	log.Info("ignoring persistent config change")
-	//}
-	// if newConfig.Conf != config.Conf || newConfig.Node != config.Node || newConfig.L1 != config.L1 || newConfig.L2 != config.L2 || newConfig.LogLevel != config.LogLevel || newConfig.LogType != config.LogType || newConfig.HTTP != config.HTTP || newConfig.WS != config.WS || newConfig.GraphQL != config.GraphQL || newConfig.Metrics != config.Metrics || newConfig.MetricsServer != config.MetricsServer || newConfig.Init != config.Init {
-	//	return errors.New("some config changes are unsupported")
-	//}
 
 	c.config = &newConfig
 	return nil
@@ -983,11 +974,11 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 
 func (c *LiveNodeConfig) Start(ctx context.Context) {
 	go func() {
+		sigusr1 := make(chan os.Signal, 1)
+		signal.Notify(sigusr1, syscall.SIGUSR1)
 		for {
 			// TODO
 			// timer := time.NewTimer(c.config.Conf.ReloadInterval)
-			sigusr1 := make(chan os.Signal, 1)
-			signal.Notify(sigusr1, syscall.SIGUSR1)
 			select {
 			case <-ctx.Done():
 				// timer.Stop()
@@ -999,12 +990,12 @@ func (c *LiveNodeConfig) Start(ctx context.Context) {
 			log.Info("Reloading config...")
 			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
 			if err != nil {
-				log.Info("error parsing live config", "error", err.Error())
+				log.Error("error parsing live config", "error", err.Error())
 				continue
 			}
 			err = c.set(nodeConfig)
 			if err != nil {
-				log.Info("error updating live config", "error", err.Error())
+				log.Error("error updating live config", "error", err.Error())
 				continue
 			}
 			log.Info("Successfully reloaded config.")
