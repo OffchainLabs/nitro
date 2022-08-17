@@ -355,7 +355,7 @@ func SetMachinePreimageResolver(ctx context.Context, mach *ArbitratorMachine, pr
 					return errors.New("processing data availability chain without DAS configured")
 				}
 			} else {
-				_, err := arbstate.RecoverPayloadFromDasBatch(ctx, batch.Data, das, preimages)
+				_, err := arbstate.RecoverPayloadFromDasBatch(ctx, batch.Number, batch.Data, das, preimages, arbstate.KeysetValidate)
 				if err != nil {
 					return err
 				}

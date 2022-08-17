@@ -172,6 +172,7 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 			return err
 		}
 		if r.Timeout <= currentTimestamp {
+			statedb.AddBalance(r.Beneficiary, r.Callvalue)
 			continue
 		}
 		retryablesList = append(retryablesList, r)

@@ -35,10 +35,7 @@ func TestBloom(t *testing.T) {
 
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
 	ownerTxOpts.Context = ctx
-	_, tx, simple, err := mocksgen.DeploySimple(&ownerTxOpts, client)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
+	_, simple := deploySimple(t, ctx, ownerTxOpts, client)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
 
