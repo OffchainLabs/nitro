@@ -677,7 +677,7 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	return nil
 }
 
-func (c *NodeConfig) Reload(new *NodeConfig) error {
+func (c *NodeConfig) CanReload(new *NodeConfig) error {
 	var check func(node, other reflect.Value, path string)
 	var err error
 
@@ -705,7 +705,6 @@ func (c *NodeConfig) Reload(new *NodeConfig) error {
 	if err != nil {
 		return err
 	}
-	*c = *new
 	return nil
 }
 
