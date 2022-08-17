@@ -44,13 +44,13 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
 
     address private _activeOutbox;
 
-    /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
-    bytes32[] public override delayedInboxAccs;
+    /// @inheritdoc IBridge
+    bytes32[] public delayedInboxAccs;
 
-    /// @dev Accumulator for sequencer inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
-    bytes32[] public override sequencerInboxAccs;
+    /// @inheritdoc IBridge
+    bytes32[] public sequencerInboxAccs;
 
-    IOwnable public override rollup;
+    IOwnable public rollup;
     address public sequencerInbox;
 
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
@@ -81,11 +81,11 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         return outbox;
     }
 
-    function allowedDelayedInboxes(address inbox) external view override returns (bool) {
+    function allowedDelayedInboxes(address inbox) external view returns (bool) {
         return allowedDelayedInboxesMap[inbox].allowed;
     }
 
-    function allowedOutboxes(address outbox) external view override returns (bool) {
+    function allowedOutboxes(address outbox) external view returns (bool) {
         return allowedOutboxesMap[outbox].allowed;
     }
 
@@ -96,7 +96,6 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
 
     function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         external
-        override
         onlySequencerInbox
         returns (
             uint256 seqMessageIndex,
@@ -116,15 +115,9 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         sequencerInboxAccs.push(acc);
     }
 
-    /**
-     * @dev allows the sequencer inbox to submit a delayed message of the batchPostingReport type
-     * This is done through a separate function entrypoint instead of allowing the sequencer inbox
-     * to call `enqueueDelayedMessage` to avoid the gas overhead of an extra SLOAD in either
-     * every delayed inbox or every sequencer inbox call.
-     */
+    /// @inheritdoc IBridge
     function submitBatchSpendingReport(address sender, bytes32 messageDataHash)
         external
-        override
         onlySequencerInbox
         returns (uint256)
     {
@@ -139,16 +132,12 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
             );
     }
 
-    /**
-     * @dev Enqueue a message in the delayed inbox accumulator.
-     * These messages are later sequenced in the SequencerInbox, either by the sequencer as
-     * part of a normal batch, or by force inclusion.
-     */
+    /// @inheritdoc IBridge
     function enqueueDelayedMessage(
         uint8 kind,
         address sender,
         bytes32 messageDataHash
-    ) external payable override returns (uint256) {
+    ) external payable returns (uint256) {
         if (!allowedDelayedInboxesMap[msg.sender].allowed) revert NotDelayedInbox(msg.sender);
         return
             addMessageToDelayedAccumulator(
@@ -201,7 +190,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         address to,
         uint256 value,
         bytes calldata data
-    ) external override returns (bool success, bytes memory returnData) {
+    ) external returns (bool success, bytes memory returnData) {
         if (!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
         if (data.length > 0 && !to.isContract()) revert NotContract(to);
         address prevOutbox = _activeOutbox;
@@ -216,12 +205,12 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         emit BridgeCallTriggered(msg.sender, to, value, data);
     }
 
-    function setSequencerInbox(address _sequencerInbox) external override onlyRollupOrOwner {
+    function setSequencerInbox(address _sequencerInbox) external onlyRollupOrOwner {
         sequencerInbox = _sequencerInbox;
         emit SequencerInboxUpdated(_sequencerInbox);
     }
 
-    function setDelayedInbox(address inbox, bool enabled) external override onlyRollupOrOwner {
+    function setDelayedInbox(address inbox, bool enabled) external onlyRollupOrOwner {
         InOutInfo storage info = allowedDelayedInboxesMap[inbox];
         bool alreadyEnabled = info.allowed;
         emit InboxToggle(inbox, enabled);
@@ -241,7 +230,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         }
     }
 
-    function setOutbox(address outbox, bool enabled) external override onlyRollupOrOwner {
+    function setOutbox(address outbox, bool enabled) external onlyRollupOrOwner {
         if (outbox == EMPTY_ACTIVEOUTBOX) revert InvalidOutboxSet(outbox);
 
         InOutInfo storage info = allowedOutboxesMap[outbox];
@@ -261,11 +250,11 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         }
     }
 
-    function delayedMessageCount() external view override returns (uint256) {
+    function delayedMessageCount() external view returns (uint256) {
         return delayedInboxAccs.length;
     }
 
-    function sequencerMessageCount() external view override returns (uint256) {
+    function sequencerMessageCount() external view returns (uint256) {
         return sequencerInboxAccs.length;
     }
 

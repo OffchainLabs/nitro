@@ -19,10 +19,19 @@ import {
 
 contract InboxStub is IInbox {
     IBridge public override bridge;
+    ISequencerInbox public override sequencerInbox;
 
     bool public paused;
 
-    function initialize(IBridge _bridge) external {
+    function pause() external pure {
+        revert("NOT IMPLEMENTED");
+    }
+
+    function unpause() external pure {
+        revert("NOT IMPLEMENTED");
+    }
+
+    function initialize(IBridge _bridge, ISequencerInbox) external {
         require(address(bridge) == address(0), "ALREADY_INIT");
         bridge = _bridge;
     }
@@ -129,9 +138,14 @@ contract InboxStub is IInbox {
         revert("NOT_IMPLEMENTED");
     }
 
-    function depositEth(uint256) external payable override returns (uint256) {
+    function postUpgradeInit(IBridge _bridge) external {}
+
+    function calculateRetryableSubmissionFee(uint256, uint256)
+        external
+        pure
+        override
+        returns (uint256)
+    {
         revert("NOT_IMPLEMENTED");
     }
-
-    function postUpgradeInit(IBridge _bridge) external {}
 }

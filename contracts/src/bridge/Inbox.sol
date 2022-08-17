@@ -43,7 +43,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
  * to await inclusion in the SequencerInbox
  */
 contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
-    IBridge public override bridge;
+    IBridge public bridge;
     ISequencerInbox public sequencerInbox;
 
     /// ------------------------------------ allow list start ------------------------------------ ///
@@ -92,12 +92,12 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         _;
     }
 
-    /// @notice pauses all inbox functionality
+    /// @inheritdoc IInbox
     function pause() external onlyRollupOrOwner {
         _pause();
     }
 
-    /// @notice unpauses all inbox functionality
+    /// @inheritdoc IInbox
     function unpause() external onlyRollupOrOwner {
         _unpause();
     }
@@ -114,8 +114,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         __Pausable_init();
     }
 
-    /// @dev function to be called one time during the inbox upgrade process
-    /// this is used to fix the storage slots
+    /// @inheritdoc IInbox
     function postUpgradeInit(IBridge _bridge) external onlyDelegated onlyProxyOwner {
         uint8 slotsToWipe = 3;
         for (uint8 i = 0; i < slotsToWipe; i++) {
@@ -127,11 +126,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bridge = _bridge;
     }
 
-    /**
-     * @notice Send a generic L2 message to the chain
-     * @dev This method is an optimization to avoid having to emit the entirety of the messageData in a log. Instead validators are expected to be able to parse the data from the transaction's input
-     * @param messageData Data of the message being sent
-     */
+    /// @inheritdoc IInbox
     function sendL2MessageFromOrigin(bytes calldata messageData)
         external
         whenNotPaused
@@ -147,14 +142,9 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return msgNum;
     }
 
-    /**
-     * @notice Send a generic L2 message to the chain
-     * @dev This method can be used to send any type of message that doesn't require L1 validation
-     * @param messageData Data of the message being sent
-     */
+    /// @inheritdoc IInbox
     function sendL2Message(bytes calldata messageData)
         external
-        override
         whenNotPaused
         onlyAllowed
         returns (uint256)
@@ -168,7 +158,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 nonce,
         address to,
         bytes calldata data
-    ) external payable virtual override whenNotPaused onlyAllowed returns (uint256) {
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -190,7 +180,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         address to,
         bytes calldata data
-    ) external payable virtual override whenNotPaused onlyAllowed returns (uint256) {
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -213,7 +203,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         uint256 value,
         bytes calldata data
-    ) external virtual override whenNotPaused onlyAllowed returns (uint256) {
+    ) external whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -236,7 +226,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         uint256 value,
         bytes calldata data
-    ) external virtual override whenNotPaused onlyAllowed returns (uint256) {
+    ) external whenNotPaused onlyAllowed returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -252,13 +242,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             );
     }
 
-    /**
-     * @notice Get the L1 fee for submitting a retryable
-     * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
-     * @dev This formula may change in the future, to future proof your code query this method instead of inlining!!
-     * @param dataLength The length of the retryable's calldata, in bytes
-     * @param baseFee The block basefee when the retryable is included in the chain, if 0 current block.basefee will be used
-     */
+    /// @inheritdoc IInbox
     function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
         public
         view
@@ -268,11 +252,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return (1400 + 6 * dataLength) * (baseFee == 0 ? block.basefee : baseFee);
     }
 
-    /// @notice deposit eth from L1 to L2
-    /// @dev this does not trigger the fallback function when receiving in the L2 side.
-    /// Look into retryable tickets if you are interested in this functionality.
-    /// @dev this function should not be called inside contract constructors
-    function depositEth() public payable override whenNotPaused onlyAllowed returns (uint256) {
+    /// @inheritdoc IInbox
+    function depositEth() public payable whenNotPaused onlyAllowed returns (uint256) {
         address dest = msg.sender;
 
         // solhint-disable-next-line avoid-tx-origin
@@ -294,15 +275,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     /// @notice deprecated in favour of depositEth with no parameters
-    function depositEth(uint256)
-        external
-        payable
-        virtual
-        override
-        whenNotPaused
-        onlyAllowed
-        returns (uint256)
-    {
+    function depositEth(uint256) external payable whenNotPaused onlyAllowed returns (uint256) {
         return depositEth();
     }
 
@@ -329,7 +302,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) external payable virtual whenNotPaused onlyAllowed returns (uint256) {
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
         return
             unsafeCreateRetryableTicket(
                 to,
@@ -343,20 +316,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             );
     }
 
-    /**
-     * @notice Put a message in the L2 inbox that can be reexecuted for some fixed amount of time if it reverts
-     * @dev all msg.value will deposited to callValueRefundAddress on L2
-     * @dev Gas limit and maxFeePerGas should not be set to 1 as that is used to trigger the RetryableData error
-     * @param to destination L2 contract address
-     * @param l2CallValue call value for retryable L2 message
-     * @param maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
-     * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
-     * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
-     * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
-     * @param maxFeePerGas price bid for L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
-     * @param data ABI encoded data of L2 message
-     * @return unique message number of the retryable transaction
-     */
+    /// @inheritdoc IInbox
     function createRetryableTicket(
         address to,
         uint256 l2CallValue,
@@ -366,7 +326,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) external payable virtual override whenNotPaused onlyAllowed returns (uint256) {
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
         if (msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
             revert InsufficientValue(
@@ -399,23 +359,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             );
     }
 
-    /**
-     * @notice Put a message in the L2 inbox that can be reexecuted for some fixed amount of time if it reverts
-     * @dev Same as createRetryableTicket, but does not guarantee that submission will succeed by requiring the needed funds
-     * come from the deposit alone, rather than falling back on the user's L2 balance
-     * @dev Advanced usage only (does not rewrite aliases for excessFeeRefundAddress and callValueRefundAddress).
-     * createRetryableTicket method is the recommended standard.
-     * @dev Gas limit and maxFeePerGas should not be set to 1 as that is used to trigger the RetryableData error
-     * @param to destination L2 contract address
-     * @param l2CallValue call value for retryable L2 message
-     * @param maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
-     * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
-     * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
-     * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
-     * @param maxFeePerGas price bid for L2 execution. Should not be set to 1 (magic value used to trigger the RetryableData error)
-     * @param data ABI encoded data of L2 message
-     * @return unique message number of the retryable transaction
-     */
+    /// @inheritdoc IInbox
     function unsafeCreateRetryableTicket(
         address to,
         uint256 l2CallValue,
@@ -425,7 +369,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) public payable virtual override whenNotPaused onlyAllowed returns (uint256) {
+    ) public payable whenNotPaused onlyAllowed returns (uint256) {
         // gas price and limit of 1 should never be a valid input, so instead they are used as
         // magic values to trigger a revert in eth calls that surface data without requiring a tx trace
         if (gasLimit == 1 || maxFeePerGas == 1)
