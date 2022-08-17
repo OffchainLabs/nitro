@@ -385,7 +385,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 
 type Config struct {
 	RPC                  arbitrum.Config                `koanf:"rpc"`
-	Sequencer            SequencerConfig                `koanf:"sequencer"`
+	Sequencer            SequencerConfig                `koanf:"sequencer" reload:"hot"`
 	L1Reader             headerreader.Config            `koanf:"l1-reader"`
 	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
@@ -517,7 +517,7 @@ func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type SequencerConfig struct {
 	Enable                      bool                     `koanf:"enable"`
-	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed"`
+	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
