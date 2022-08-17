@@ -81,15 +81,20 @@ func (t *LocalStateTracker) LastBlockValidated(ctx context.Context) (uint64, err
 	return t.lastBlockValidated, nil
 }
 
+func (t *LocalStateTracker) BlockAfterLastValidated(ctx context.Context) (uint64, error) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	return t.lastBlockValidated + 1, nil
+}
+
 func (t *LocalStateTracker) LastBlockValidatedAndHash(ctx context.Context) (uint64, common.Hash, error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	return t.lastBlockValidated, t.lastBlockValidatedHash, nil
 }
 
+// Requires mutex is held
 func (t *LocalStateTracker) setLastValidated(blockNumber uint64, blockHash common.Hash, endPos GlobalStatePosition) error {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
 	t.lastBlockValidated = blockNumber
 	t.lastBlockValidatedHash = blockHash
 
@@ -180,7 +185,11 @@ func (t *LocalStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 		return nil
 	}
 
-	for i := t.lastBlockValidated + 1; i < t.nextBlockToValidate; i++ {
+	cancelStartingAt := blockNum + 1
+	if t.lastBlockValidated > blockNum {
+		cancelStartingAt = t.lastBlockValidated + 1
+	}
+	for i := cancelStartingAt; i < t.nextBlockToValidate; i++ {
 		delete(t.status, i)
 	}
 	t.nextBlockToValidate = blockNum + 1
@@ -191,6 +200,30 @@ func (t *LocalStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 		if err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (t *LocalStateTracker) ForceConfirm(ctx context.Context, blockNum uint64, blockHash common.Hash, nextPosition GlobalStatePosition) error {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
+	if t.lastBlockValidated >= blockNum {
+		return nil
+	}
+
+	for i := t.lastBlockValidated + 1; i <= blockNum && i < t.nextBlockToValidate; i++ {
+		delete(t.status, i)
+	}
+	if t.nextBlockToValidate <= blockNum {
+		t.nextBlockToValidate = blockNum + 1
+		t.nextGlobalState = nextPosition
+	}
+
+	err := t.setLastValidated(blockNum, blockHash, nextPosition)
+	if err != nil {
+		return err
 	}
 
 	return nil

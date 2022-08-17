@@ -119,14 +119,15 @@ func (v *L1Validator) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return v.updateBlockValidatorModuleRoot(ctx)
+	return v.updateBlockValidatorState(ctx)
 }
 
-func (v *L1Validator) updateBlockValidatorModuleRoot(ctx context.Context) error {
+func (v *L1Validator) updateBlockValidatorState(ctx context.Context) error {
 	if v.blockValidator == nil {
 		return nil
 	}
-	moduleRoot, err := v.rollup.WasmModuleRoot(v.getCallOpts(ctx))
+	callOpts := v.getCallOpts(ctx)
+	moduleRoot, err := v.rollup.WasmModuleRoot(callOpts)
 	if err != nil {
 		return err
 	}
@@ -138,6 +139,39 @@ func (v *L1Validator) updateBlockValidatorModuleRoot(ctx context.Context) error 
 		v.lastWasmModuleRoot = moduleRoot
 	} else if (moduleRoot == common.Hash{}) {
 		return errors.New("wasmModuleRoot in rollup is zero")
+	}
+
+	latestConfirmed, err := v.rollup.LatestConfirmed(callOpts)
+	if err != nil {
+		return err
+	}
+	nodeInfo, err := v.rollup.LookupNode(ctx, latestConfirmed)
+	if err != nil {
+		return err
+	}
+	confirmedState := nodeInfo.AfterState().GlobalState
+	localBatchCount, err := v.inboxTracker.GetBatchCount()
+	if err != nil {
+		return err
+	}
+	missingBatches := localBatchCount < nodeInfo.AfterState().RequiredBatches()
+	defer v.blockValidator.SetValidationPaused(missingBatches)
+	if missingBatches {
+		log.Info("catching up to latest confirmed batches", "localBatches", localBatchCount, "target", nodeInfo.AfterState().RequiredBatches())
+		return nil
+	}
+	blockNum, invalid, err := v.blockNumberFromGlobalState(confirmedState)
+	if err != nil {
+		return err
+	}
+	if invalid {
+		return errors.New("invalid latest confirmed global state inbox position")
+	}
+	if blockNum >= 0 {
+		err = v.blockValidator.ForceConfirm(ctx, uint64(blockNum), confirmedState)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -304,7 +338,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		if haveHash != expectedHash {
 			return nil, false, fmt.Errorf("block validator validated block %v as hash %v but blockchain has hash %v", lastBlockValidated, expectedHash, haveHash)
 		}
-		if err := v.updateBlockValidatorModuleRoot(ctx); err != nil {
+		if err := v.updateBlockValidatorState(ctx); err != nil {
 			return nil, false, err
 		}
 		wasmRootValid := false

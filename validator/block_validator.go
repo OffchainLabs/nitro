@@ -28,10 +28,12 @@ type StateTracker interface {
 	Initialize(context.Context, *types.Block) error
 	LastBlockValidated(context.Context) (uint64, error)
 	LastBlockValidatedAndHash(context.Context) (uint64, common.Hash, error)
+	BlockAfterLastValidated(context.Context) (uint64, error)
 	GetNextValidation(context.Context) (uint64, GlobalStatePosition, error)
 	BeginValidation(context.Context, *types.Header, GlobalStatePosition, GlobalStatePosition) (bool, func(bool), error)
 	ValidationCompleted(context.Context, *validationEntry) (uint64, GlobalStatePosition, error)
 	Reorg(context.Context, uint64, common.Hash, GlobalStatePosition, func(uint64, common.Hash) bool) error
+	ForceConfirm(context.Context, uint64, common.Hash, GlobalStatePosition) error
 }
 
 type BlockValidator struct {
@@ -44,6 +46,7 @@ type BlockValidator struct {
 	batchMutex        sync.Mutex
 	reorgMutex        sync.Mutex
 	reorgsPending     int32 // atomic
+	validationPaused  int32 // atomic
 
 	nextValidationCancelsBlock uint64
 	earliestBatchKept          uint64
@@ -201,6 +204,48 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	return fmt.Errorf("unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v", hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot)
 }
 
+func (v *BlockValidator) ForceConfirm(ctx context.Context, blockNumber uint64, globalState GoGlobalState) error {
+	v.cancelMutex.Lock()
+	defer v.cancelMutex.Unlock()
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+	afterLastValidated, err := v.stateTracker.BlockAfterLastValidated(ctx)
+	if err != nil {
+		return err
+	}
+	if afterLastValidated > blockNumber {
+		return nil
+	}
+	for b := afterLastValidated; b <= blockNumber && b < v.nextValidationCancelsBlock; b++ {
+		entry, found := v.validationCancels.Load(b)
+		if !found {
+			continue
+		}
+		v.validationCancels.Delete(b)
+
+		cancel, ok := entry.(func())
+		if !ok || cancel == nil {
+			log.Error("bad cancel function trying to force confirm block validator")
+			continue
+		}
+		log.Debug("canceling validation due to L1 rollup progress", "block", b)
+		cancel()
+	}
+	globalStatePos := GlobalStatePosition{
+		BatchNumber: globalState.Batch,
+		PosInBatch:  globalState.PosInBatch,
+	}
+	return v.stateTracker.ForceConfirm(ctx, blockNumber, globalState.BlockHash, globalStatePos)
+}
+
+func (v *BlockValidator) SetValidationPaused(pause bool) {
+	var pauseInt int32
+	if pause {
+		pauseInt = 1
+	}
+	atomic.StoreInt32(&v.validationPaused, pauseInt)
+}
+
 func (v *BlockValidator) validate(ctx context.Context, moduleRoots []common.Hash, prevHeader *types.Header, header *types.Header, msg arbstate.MessageWithMetadata, seqMsg []byte, startPos GlobalStatePosition, endPos GlobalStatePosition) (*validationEntry, error) {
 	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, v.config.StorePreimages)
 	if err != nil {
@@ -258,6 +303,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 	var batchCount uint64
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
 		if atomic.LoadInt32(&v.atomicValidationsRunning) >= v.concurrentRunsLimit {
+			return
+		}
+		if atomic.LoadInt32(&v.validationPaused) != 0 {
 			return
 		}
 		nextBlockToValidate, globalPosNextSend, err := v.stateTracker.GetNextValidation(ctx)

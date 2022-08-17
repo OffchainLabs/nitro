@@ -184,7 +184,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		err := s.updateBlockValidatorModuleRoot(ctx)
+		err := s.updateBlockValidatorState(ctx)
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}

@@ -226,6 +226,23 @@ func (t *RedisStateTracker) LastBlockValidated(ctx context.Context) (uint64, err
 	return block, err
 }
 
+func (t *RedisStateTracker) blockAfterLastValidated(ctx context.Context, client redis.Cmdable) (uint64, error) {
+	lastBlockValidated, _, err := t.lastBlockValidatedAndMeta(ctx, client)
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return 0, nil
+		} else {
+			return 0, err
+		}
+	} else {
+		return lastBlockValidated + 1, nil
+	}
+}
+
+func (t *RedisStateTracker) BlockAfterLastValidated(ctx context.Context) (uint64, error) {
+	return t.blockAfterLastValidated(ctx, t.client)
+}
+
 func (t *RedisStateTracker) LastBlockValidatedAndHash(ctx context.Context) (uint64, common.Hash, error) {
 	block, meta, err := t.lastBlockValidatedAndMeta(ctx, t.client)
 	return block, meta.BlockHash, err
@@ -624,7 +641,11 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 
 		pipe := tx.TxPipeline()
 
-		for i := lastBlockValidated + 1; i < untouchedValidation; i++ {
+		cancelStartingAt := blockNum + 1
+		if lastBlockValidated > blockNum {
+			cancelStartingAt = lastBlockValidated + 1
+		}
+		for i := cancelStartingAt; i < untouchedValidation; i++ {
 			err = pipe.Del(ctx, t.getValidationStatusKey(i)).Err()
 			if err != nil {
 				return err
@@ -636,7 +657,7 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 		}
 
 		if lastBlockValidated > blockNum {
-			err := t.setLastValidated(ctx, pipe, blockNum, lastValidatedMetadata{
+			err = t.setLastValidated(ctx, pipe, blockNum, lastValidatedMetadata{
 				BlockHash: blockHash,
 				EndPos:    nextPosition,
 			})
@@ -647,6 +668,47 @@ func (t *RedisStateTracker) Reorg(ctx context.Context, blockNum uint64, blockHas
 
 		return execTestPipe(pipe, ctx)
 	}
-	err := t.client.Watch(ctx, act, lastBlockValidatedKey, untouchedValidationKey)
-	return err
+	return t.client.Watch(ctx, act, lastBlockValidatedKey, untouchedValidationKey)
+}
+
+func (t *RedisStateTracker) ForceConfirm(ctx context.Context, blockNum uint64, blockHash common.Hash, nextPosition GlobalStatePosition) error {
+	act := func(tx *redis.Tx) error {
+		blockAfterLastValidated, err := t.blockAfterLastValidated(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if blockAfterLastValidated > blockNum {
+			return nil
+		}
+		untouchedValidation, err := t.getUntouchedValidation(ctx, tx)
+		if err != nil {
+			return err
+		}
+
+		pipe := tx.TxPipeline()
+
+		for i := blockAfterLastValidated; i <= blockNum && i < untouchedValidation; i++ {
+			err = pipe.Del(ctx, t.getValidationStatusKey(i)).Err()
+			if err != nil {
+				return err
+			}
+		}
+		if untouchedValidation <= blockNum {
+			err = t.setUntouchedValidation(ctx, pipe, blockNum+1)
+			if err != nil {
+				return err
+			}
+		}
+
+		err = t.setLastValidated(ctx, pipe, blockNum, lastValidatedMetadata{
+			BlockHash: blockHash,
+			EndPos:    nextPosition,
+		})
+		if err != nil {
+			return err
+		}
+
+		return execTestPipe(pipe, ctx)
+	}
+	return t.client.Watch(ctx, act, lastBlockValidatedKey, untouchedValidationKey)
 }
