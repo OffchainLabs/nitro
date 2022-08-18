@@ -628,7 +628,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2BlockChain.Config().ChainID.Uint64(), feedErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2BlockChain.Config().ChainID.Uint64(), feedErrChan, dataSigner)
 	}
 
 	var l1Reader *headerreader.HeaderReader

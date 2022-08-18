@@ -9,6 +9,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -49,8 +51,12 @@ func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadca
 		broadcastClients = append(broadcastClients, client)
 	}
 
+	dataSignerErr := func([]byte) ([]byte, error) {
+		log.Crit("relay attempted to sign feed message")
+		return nil, errors.New("relay attempted to sign feed message")
+	}
 	return &Relay{
-		broadcaster:                 broadcaster.NewBroadcaster(serverConf, chainId, feedErrChan),
+		broadcaster:                 broadcaster.NewBroadcaster(serverConf, chainId, feedErrChan, dataSignerErr),
 		broadcastClients:            broadcastClients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,
@@ -87,7 +93,7 @@ func (r *Relay) Start(ctx context.Context) error {
 					continue
 				}
 				recentFeedItems[msg.SequenceNumber] = time.Now()
-				r.broadcaster.BroadcastSingle(msg.Message, msg.SequenceNumber)
+				r.broadcaster.BroadcastSingleFeedMessage(&msg)
 			case cs := <-r.confirmedSequenceNumberChan:
 				r.broadcaster.Confirm(cs)
 			case <-recentFeedItemsCleanup.C:

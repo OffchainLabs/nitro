@@ -550,7 +550,9 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	}
 
 	if s.broadcastServer != nil {
-		s.broadcastServer.BroadcastSingle(msgWithMeta, pos)
+		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
+			return err
+		}
 	}
 
 	// Only write the block after we've written the messages, so if the node dies in the middle of this,
@@ -618,7 +620,9 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 
 	for i, msg := range messagesWithMeta {
 		if s.broadcastServer != nil {
-			s.broadcastServer.BroadcastSingle(msg, pos+arbutil.MessageIndex(i))
+			if err := s.broadcastServer.BroadcastSingle(msg, pos+arbutil.MessageIndex(i)); err != nil {
+				return err
+			}
 		}
 	}
 

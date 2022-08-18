@@ -11,12 +11,15 @@ import (
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Broadcaster struct {
 	server        *wsbroadcastserver.WSBroadcastServer
 	catchupBuffer *SequenceNumberCatchupBuffer
+	chainId       uint64
+	dataSigner    util.DataSignerFunc
 }
 
 /*
@@ -45,29 +48,62 @@ type BroadcastMessage struct {
 type BroadcastFeedMessage struct {
 	SequenceNumber arbutil.MessageIndex         `json:"sequenceNumber"`
 	Message        arbstate.MessageWithMetadata `json:"message"`
+	Signature      []byte                       `json:"signature"`
+}
+
+func NewBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex, chainId uint64, dataSigner util.DataSignerFunc) (*BroadcastFeedMessage, error) {
+	hash, err := message.Hash(sequenceNumber, chainId)
+	if err != nil {
+		return nil, err
+	}
+
+	var signature []byte
+	if dataSigner != nil {
+		signature, err = dataSigner(hash.Bytes())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &BroadcastFeedMessage{
+		SequenceNumber: sequenceNumber,
+		Message:        message,
+		Signature:      signature,
+	}, nil
 }
 
 type ConfirmedSequenceNumberMessage struct {
 	SequenceNumber arbutil.MessageIndex `json:"sequenceNumber"`
 }
 
-func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64, feedErrChan chan error) *Broadcaster {
+func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64, feedErrChan chan error, dataSigner util.DataSignerFunc) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer()
 	return &Broadcaster{
 		server:        wsbroadcastserver.NewWSBroadcastServer(settings, catchupBuffer, chainId, feedErrChan),
 		catchupBuffer: catchupBuffer,
+		chainId:       chainId,
+		dataSigner:    dataSigner,
 	}
 }
 
-func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) {
-	var broadcastMessages []*BroadcastFeedMessage
+func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) error {
+	bfm, err := NewBroadcastFeedMessage(msg, seq, b.chainId, b.dataSigner)
+	if err != nil {
+		return err
+	}
 
-	bfm := BroadcastFeedMessage{SequenceNumber: seq, Message: msg}
-	broadcastMessages = append(broadcastMessages, &bfm)
+	b.BroadcastSingleFeedMessage(bfm)
+	return nil
+}
+
+func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *BroadcastFeedMessage) {
+	broadcastFeedMessages := make([]*BroadcastFeedMessage, 0, 1)
+
+	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
 
 	bm := BroadcastMessage{
 		Version:  1,
-		Messages: broadcastMessages,
+		Messages: broadcastFeedMessages,
 	}
 
 	b.server.Broadcast(bm)

@@ -30,7 +30,7 @@ func TestReceiveMessages(t *testing.T) {
 	chainId := uint64(9742)
 
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, nil)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -43,7 +43,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, arbutil.MessageIndex(i))
+			Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, arbutil.MessageIndex(i)))
 		}
 	}()
 
@@ -121,7 +121,7 @@ func TestServerClientDisconnect(t *testing.T) {
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, nil)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -132,7 +132,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0)
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0))
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -174,7 +174,7 @@ func TestServerClientIncorrectChainId(t *testing.T) {
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, nil)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -205,7 +205,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 
 	feedErrChan := make(chan error, 10)
 	chainId := uint64(8742)
-	b1 := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b1 := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, nil)
 
 	Require(t, b1.Initialize())
 	Require(t, b1.Start(ctx))
@@ -238,14 +238,14 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 
 	feedErrChan := make(chan error, 10)
 	chainId := uint64(8744)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, nil)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0)
-	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 1)
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0))
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 1))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {

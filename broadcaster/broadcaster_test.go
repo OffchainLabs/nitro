@@ -60,7 +60,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 
 	chainId := uint64(5555)
 	feedErrChan := make(chan error, 10)
-	b := NewBroadcaster(broadcasterSettings, chainId, feedErrChan)
+	b := NewBroadcaster(broadcasterSettings, chainId, feedErrChan, nil)
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
@@ -70,13 +70,13 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	}
 
 	// Normal broadcasting and confirming
-	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 1)
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 1))
 	waitUntilUpdated(t, expectMessageCount(1, "after 1 message"))
-	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 2)
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 2))
 	waitUntilUpdated(t, expectMessageCount(2, "after 2 messages"))
-	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 3)
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 3))
 	waitUntilUpdated(t, expectMessageCount(3, "after 3 messages"))
-	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 4)
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 4))
 	waitUntilUpdated(t, expectMessageCount(4, "after 4 messages"))
 
 	b.Confirm(1)
@@ -92,7 +92,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 		"nothing changed because confirmed sequence number before cache"))
 
 	b.Confirm(2)
-	b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 5)
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 5))
 	waitUntilUpdated(t, expectMessageCount(3,
 		"after 5 messages, 2 cleared by confirm"))
 
