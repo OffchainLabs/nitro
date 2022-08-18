@@ -615,10 +615,14 @@ func createNodeImpl(
 		}
 	}
 
+	l2ChainId := l2BlockChain.Config().ChainID.Uint64()
 	var classicOutbox *ClassicOutboxRetriever
 	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
 	if err != nil {
-		log.Warn("Classic Msg Database not found", "err", err)
+		if l2ChainId == 42161 || l2ChainId == 421611 {
+			// we only expect classic msg on rinkeby and arbitrum one
+			log.Warn("Classic Msg Database not found", "err", err)
+		}
 		classicOutbox = nil
 	} else {
 		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
@@ -626,7 +630,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2BlockChain.Config().ChainID.Uint64(), feedErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, feedErrChan)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -697,7 +701,7 @@ func createNodeImpl(
 		for _, address := range config.Feed.Input.URLs {
 			client := broadcastclient.NewBroadcastClient(
 				address,
-				l2BlockChain.Config().ChainID.Uint64(),
+				l2ChainId,
 				currentMessageCount,
 				config.Feed.Input.Timeout,
 				txStreamer,
