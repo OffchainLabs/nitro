@@ -44,6 +44,7 @@ type BatchPoster struct {
 	streamer     *TransactionStreamer
 	config       *BatchPosterConfig
 	seqInbox     *bridgegen.SequencerInbox
+	syncMonitor  *SyncMonitor
 	seqInboxABI  *abi.ABI
 	seqInboxAddr common.Address
 	gasRefunder  common.Address
@@ -111,7 +112,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DataPoster:           dataposter.TestDataPosterConfig,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -123,7 +124,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	if err != nil {
 		return nil, err
 	}
-	redisLock, err := NewSimpleRedisLock(&config.RedisLock, func() bool { return len(streamer.SyncProgressMap()) == 0 })
+	redisLock, err := NewSimpleRedisLock(&config.RedisLock, func() bool { return syncMonitor.Synced() })
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +132,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		l1Reader:     l1Reader,
 		inbox:        inbox,
 		streamer:     streamer,
+		syncMonitor:  syncMonitor,
 		config:       config,
 		seqInbox:     seqInbox,
 		seqInboxABI:  seqInboxABI,

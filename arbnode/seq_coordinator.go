@@ -41,6 +41,7 @@ const INVALID_URL string = "<?INVALID-URL?>"
 type SeqCoordinator struct {
 	stopwaiter.StopWaiter
 
+	sync                    *SyncMonitor
 	streamer                *TransactionStreamer
 	sequencer               *Sequencer
 	client                  redis.UniversalClient
@@ -66,7 +67,6 @@ type SeqCoordinatorConfig struct {
 	SeqNumDuration          time.Duration                 `koanf:"seq-num-duration"`
 	UpdateInterval          time.Duration                 `koanf:"update-interval"`
 	RetryInterval           time.Duration                 `koanf:"retry-interval"`
-	AllowedMsgLag           arbutil.MessageIndex          `koanf:"allowed-msg-lag"`
 	MaxMsgPerPoll           arbutil.MessageIndex          `koanf:"msg-per-poll"`
 	MyUrl                   string                        `koanf:"my-url"`
 	SigningKey              string                        `koanf:"signing-key"`
@@ -87,7 +87,6 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
 	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "")
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
-	f.Uint16(prefix+".allowed-msg-lag", uint16(DefaultSeqCoordinatorConfig.AllowedMsgLag), "will only be marked live if not too far behind")
 	f.Uint16(prefix+".msg-per-poll", uint16(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrl, "a 32-byte (64-character) hex string used to sign messages, or a path to a file containing it")
 	f.String(prefix+".signing-key", DefaultSeqCoordinatorConfig.SigningKey, "")
@@ -107,7 +106,6 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	SeqNumDuration:        time.Duration(24) * time.Hour,
 	UpdateInterval:        time.Duration(5) * time.Second,
 	RetryInterval:         time.Second,
-	AllowedMsgLag:         200,
 	MaxMsgPerPoll:         2000,
 	MyUrl:                 INVALID_URL,
 	SigningKey:            "",
@@ -126,7 +124,6 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	SeqNumDuration:  time.Minute * 10,
 	UpdateInterval:  time.Millisecond * 10,
 	RetryInterval:   time.Millisecond * 3,
-	AllowedMsgLag:   5,
 	MaxMsgPerPoll:   20,
 	MyUrl:           INVALID_URL,
 	SigningKey:      "b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
@@ -161,7 +158,7 @@ func loadSigningKey(keyConfig string) (*[32]byte, error) {
 	return &b, nil
 }
 
-func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
 	redisOptions, err := redis.ParseURL(config.RedisUrl)
 	if err != nil {
 		return nil, err
@@ -181,6 +178,7 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, conf
 		config.MyUrl = INVALID_URL
 	}
 	coordinator := &SeqCoordinator{
+		sync:                    sync,
 		streamer:                streamer,
 		sequencer:               sequencer,
 		client:                  redis.NewClient(redisOptions),
@@ -399,8 +397,8 @@ func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmda
 	return arbutil.MessageIndex(binary.BigEndian.Uint64(resBytes)), nil
 }
 
-func (c *SeqCoordinator) GetRemoteMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	return c.getRemoteMsgCountImpl(ctx, c.client)
+func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
+	return c.getRemoteMsgCountImpl(c.GetContext(), c.client)
 }
 
 func (c *SeqCoordinator) livelinessUpdate(ctx context.Context) error {
@@ -553,7 +551,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		log.Error("cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
-	remoteMsgCount, err := c.GetRemoteMsgCount(ctx)
+	remoteMsgCount, err := c.GetRemoteMsgCount()
 	if err != nil {
 		log.Warn("cannot get remote message count", "err", err)
 		return c.retryAfterRedisError()
@@ -642,17 +640,15 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 
 	// update liveliness
 	var livelinessErr error
-	if localMsgCount+c.config.AllowedMsgLag < remoteMsgCount {
-		if c.reportedAlive {
-			livelinessErr = c.livelinessRelease(ctx)
-			if livelinessErr == nil {
-				c.reportedAlive = false
-			}
-		}
-	} else {
+	if c.sync.Synced() {
 		livelinessErr = c.livelinessUpdate(ctx)
 		if livelinessErr == nil {
 			c.reportedAlive = true
+		}
+	} else if c.reportedAlive {
+		livelinessErr = c.livelinessRelease(ctx)
+		if livelinessErr == nil {
+			c.reportedAlive = false
 		}
 	}
 	if livelinessErr != nil {
