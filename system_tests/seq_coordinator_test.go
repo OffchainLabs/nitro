@@ -79,7 +79,6 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 	createStartNode := func(nodeNum int) {
 		nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
 		_, node, _, l2stack := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
-		node.TxStreamer.StopAndWait() // prevent blocks from building
 		nodes[nodeNum] = &nodeInfo{n: node, s: l2stack}
 	}
 
