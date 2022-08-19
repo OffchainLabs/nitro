@@ -59,7 +59,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/nitro $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/datool $(output_root)/bin/seq-coordinator-invalidate
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate benchmark)
 	@printf $(done)
 
 build-node-deps: $(go_source) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
@@ -154,6 +154,9 @@ $(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
+
+$(output_root)/bin/benchmark: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ "$(CURDIR)/cmd/benchmark"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen

@@ -118,6 +118,12 @@ func main() {
 	Require(err)
 	l1client := ethclient.NewClient(l1rpcClient)
 
+	machineConfig := validator.DefaultNitroMachineConfig
+	machineConfig.RootPath = machinePath
+	machineLoader := validator.NewNitroMachineLoader(machineConfig)
+	moduleRoot, err := machineConfig.ReadLatestWasmModuleRoot()
+	Require(err)
+
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -125,7 +131,7 @@ func main() {
 		sequencerAddr,
 		l1Auth.From,
 		0,
-		common.Hash{},
+		moduleRoot,
 		chainConfig.ChainID,
 		headerreader.TestConfig,
 		validator.DefaultNitroMachineConfig,
@@ -207,10 +213,6 @@ func main() {
 		Require(err)
 		return confs != 0
 	})
-
-	machineConfig := validator.DefaultNitroMachineConfig
-	machineConfig.RootPath = machinePath
-	machineLoader := validator.NewNitroMachineLoader(machineConfig)
 
 	prover, err := validator.NewStatelessBlockValidator(
 		machineLoader,
