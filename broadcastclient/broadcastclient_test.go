@@ -61,7 +61,7 @@ func NewDummyTransactionStreamer() *dummyTransactionStreamer {
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(_ context.Context, feedMessages []*broadcaster.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		ts.messageReceiver <- *feedMessage
 	}

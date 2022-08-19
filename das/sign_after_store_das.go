@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/pretty"
 
 	flag "github.com/spf13/pflag"
@@ -79,7 +80,7 @@ type SignAfterStoreDAS struct {
 	keysetHash     [32]byte
 	keysetBytes    []byte
 	storageService StorageService
-	bpVerifier     *BatchPosterVerifier
+	bpVerifier     *contracts.BatchPosterVerifier
 
 	// Extra batch poster verifier, for local installations to have their
 	// own way of testing Stores.
@@ -137,9 +138,9 @@ func NewSignAfterStoreDASWithSeqInboxCaller(
 		return nil, err
 	}
 
-	var bpVerifier *BatchPosterVerifier
+	var bpVerifier *contracts.BatchPosterVerifier
 	if seqInboxCaller != nil {
-		bpVerifier = NewBatchPosterVerifier(seqInboxCaller)
+		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
 	}
 
 	var extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool

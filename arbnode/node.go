@@ -636,7 +636,11 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, config.L1Reader)
 	}
 
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
+	var sequencerInboxAddr common.Address
+	if deployInfo != nil {
+		sequencerInboxAddr = deployInfo.SequencerInbox
+	}
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, l2BlockChain.Config().ChainID.Uint64(), sequencerInboxAddr, l1client)
 	if err != nil {
 		return nil, err
 	}

@@ -12,18 +12,18 @@ import (
 	"os"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/log"
+	flag "github.com/spf13/pflag"
+
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/pretty"
-
-	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/blsSignatures"
-	flag "github.com/spf13/pflag"
 )
 
 type AggregatorConfig struct {
@@ -55,7 +55,7 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
-	bpVerifier                     *BatchPosterVerifier
+	bpVerifier                     *contracts.BatchPosterVerifier
 }
 
 type ServiceDetails struct {
@@ -146,9 +146,9 @@ func NewAggregatorWithSeqInboxCaller(
 		os.Exit(0)
 	}
 
-	var bpVerifier *BatchPosterVerifier
+	var bpVerifier *contracts.BatchPosterVerifier
 	if seqInboxCaller != nil {
-		bpVerifier = NewBatchPosterVerifier(seqInboxCaller)
+		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
 	}
 
 	return &Aggregator{

@@ -184,8 +184,8 @@ func startClientStore(args []string) error {
 	}
 
 	serializedCert := das.Serialize(cert)
-	fmt.Printf("Hex Encoded Cert: %s\n", string(hexutil.Encode(serializedCert)))
-	fmt.Printf("Hex Encoded Data Hash: %s\n", string(hexutil.Encode(cert.DataHash[:])))
+	fmt.Printf("Hex Encoded Cert: %s\n", hexutil.Encode(serializedCert))
+	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(cert.DataHash[:]))
 
 	return nil
 }

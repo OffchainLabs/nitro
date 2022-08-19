@@ -56,8 +56,7 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 	start := time.Now()
 	bm := b.getCacheMessages(clientConnection.RequestedSeqNum())
 	if bm != nil {
-		// send the newly connected client all the messages we've got...
-
+		// send the newly connected client the requested messages
 		err := clientConnection.Write(bm)
 		if err != nil {
 			log.Error("error sending client cached messages", err, "client", clientConnection.Name, "elapsed", time.Since(start))

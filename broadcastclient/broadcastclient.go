@@ -69,7 +69,7 @@ var DefaultBroadcastClientConfig = BroadcastClientConfig{
 }
 
 type TransactionStreamerInterface interface {
-	AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error
+	AddBroadcastMessages(ctx context.Context, feedMessages []*broadcaster.BroadcastFeedMessage) error
 }
 
 type BroadcastClient struct {
@@ -271,7 +271,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
-						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
+						if err := bc.txStreamer.AddBroadcastMessages(ctx, res.Messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}

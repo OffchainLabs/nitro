@@ -5,6 +5,9 @@ package broadcaster
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/pkg/errors"
 	"net"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -70,6 +73,19 @@ func NewBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumbe
 		Message:        message,
 		Signature:      signature,
 	}, nil
+}
+
+func (m *BroadcastFeedMessage) SigningAddress(chainId uint64) (common.Address, error) {
+	hash, err := m.Message.Hash(m.SequenceNumber, chainId)
+	if err != nil {
+		return common.Address{}, errors.Wrap(err, "unable to generate feed message hash")
+	}
+	sigPublicKey, err := crypto.SigToPub(hash.Bytes(), m.Signature)
+	if err != nil {
+		return common.Address{}, errors.Wrap(err, "unable to recover sequencer feed signing key")
+	}
+
+	return crypto.PubkeyToAddress(*sigPublicKey), nil
 }
 
 type ConfirmedSequenceNumberMessage struct {
