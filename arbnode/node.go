@@ -599,11 +599,14 @@ func createNodeImpl(
 	feedErrChan chan error,
 ) (*Node, error) {
 	var reorgingToBlock *types.Block
+
+	l2Config := l2BlockChain.Config()
+	l2ChainId := l2Config.ChainID.Uint64()
+
 	if config.Dangerous.ReorgToBlock >= 0 {
 		blockNum := uint64(config.Dangerous.ReorgToBlock)
-		genesis := l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum
-		if blockNum < genesis {
-			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, genesis)
+		if blockNum < l2Config.ArbitrumChainParams.GenesisBlockNum {
+			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, l2Config.ArbitrumChainParams.GenesisBlockNum)
 		}
 		reorgingToBlock = l2BlockChain.GetBlockByNumber(blockNum)
 		if reorgingToBlock == nil {
@@ -615,12 +618,10 @@ func createNodeImpl(
 		}
 	}
 
-	l2ChainId := l2BlockChain.Config().ChainID.Uint64()
 	var classicOutbox *ClassicOutboxRetriever
 	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
 	if err != nil {
-		if l2ChainId == 42161 || l2ChainId == 421611 {
-			// we only expect classic msg on rinkeby and arbitrum one
+		if l2Config.ArbitrumChainParams.GenesisBlockNum > 0 {
 			log.Warn("Classic Msg Database not found", "err", err)
 		}
 		classicOutbox = nil
