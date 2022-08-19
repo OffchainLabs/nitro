@@ -5,6 +5,11 @@ package das
 
 import (
 	"context"
+	"errors"
+	"github.com/offchainlabs/nitro/cmd/util"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 // Create any storage services that persist to files, database, cloud storage,
@@ -54,4 +59,56 @@ func CreatePersistentStorageService(
 		return storageServices[0], &lifecycleManager, nil
 	}
 	return nil, &lifecycleManager, nil
+}
+
+func CreateBatchPosterDAS(
+	ctx context.Context,
+	config *DataAvailabilityConfig,
+	dataSigner util.DataSignerFunc,
+	l1Reader arbutil.L1Interface,
+	sequencerInboxAddr common.Address,
+) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *LifecycleManager, error) {
+	if !config.Enable {
+		return nil, nil, nil, nil
+	}
+
+	if !config.AggregatorConfig.Enable || !config.RestfulClientAggregatorConfig.Enable {
+		return nil, nil, nil, errors.New("--node.data-availabilty.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode.")
+	}
+
+	if config.LocalDBStorageConfig.Enable || config.LocalFileStorageConfig.Enable || config.S3StorageServiceConfig.Enable {
+		return nil, nil, nil, errors.New("--node.data-availability.local-db-storage.enable, local-file-storage.enable, s3-storage.enable may not be set when running a Batch Poster in AnyTrust mode.")
+	}
+
+	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
+		return nil, nil, nil, errors.New("--node.data-availability.key.key-dir, priv-key may not be set when running a Batch Poster in AnyTrust mode.")
+	}
+
+	var daWriter DataAvailabilityServiceWriter
+	daWriter, err := NewRPCAggregator(ctx, *config)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if dataSigner != nil {
+		// In some tests the batch poster does not sign Store requests
+		daWriter, err = NewStoreSigningDAS(daWriter, dataSigner)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
+	restAgg, err := NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	restAgg.Start(ctx)
+	var lifecycleManager LifecycleManager
+	lifecycleManager.Register(restAgg)
+	var daReader DataAvailabilityServiceReader = restAgg
+	daReader, err = NewChainFetchReader(daReader, l1Reader, sequencerInboxAddr)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return daWriter, daReader, &lifecycleManager, nil
 }

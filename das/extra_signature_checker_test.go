@@ -64,7 +64,7 @@ func TestExtraSignatureCheck(t *testing.T) {
 	Require(t, err)
 	signer := util.DataSignerFromPrivateKey(privateKey)
 
-	var da DataAvailabilityService = &StubSignatureCheckDAS{keyDir}
+	var da DataAvailabilityServiceWriter = &StubSignatureCheckDAS{keyDir}
 	da, err = NewStoreSigningDAS(da, signer)
 	Require(t, err)
 

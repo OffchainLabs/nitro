@@ -39,12 +39,12 @@ func dasStoreHash(data []byte, timeout uint64) []byte {
 }
 
 type StoreSigningDAS struct {
-	DataAvailabilityService
+	DataAvailabilityServiceWriter
 	signer util.DataSignerFunc
 	addr   common.Address
 }
 
-func NewStoreSigningDAS(inner DataAvailabilityService, signer util.DataSignerFunc) (DataAvailabilityService, error) {
+func NewStoreSigningDAS(inner DataAvailabilityServiceWriter, signer util.DataSignerFunc) (DataAvailabilityServiceWriter, error) {
 	sig, err := applyDasSigner(signer, []byte{}, 0)
 	if err != nil {
 		return nil, err
@@ -62,11 +62,11 @@ func (s *StoreSigningDAS) Store(ctx context.Context, message []byte, timeout uin
 	if err != nil {
 		return nil, err
 	}
-	return s.DataAvailabilityService.Store(ctx, message, timeout, mySig)
+	return s.DataAvailabilityServiceWriter.Store(ctx, message, timeout, mySig)
 }
 
 func (s *StoreSigningDAS) String() string {
-	return "StoreSigningDAS (" + s.SignerAddress().Hex() + " ," + s.DataAvailabilityService.String() + ")"
+	return "StoreSigningDAS (" + s.SignerAddress().Hex() + " ," + s.DataAvailabilityServiceWriter.String() + ")"
 }
 
 func (s *StoreSigningDAS) SignerAddress() common.Address {
