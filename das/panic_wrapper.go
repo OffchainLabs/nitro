@@ -13,18 +13,42 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
-type PanicWrapper struct {
-	DataAvailabilityService
+type WriterPanicWrapper struct {
+	DataAvailabilityServiceWriter
 }
 
-func NewPanicWrapper(dataAvailabilityService DataAvailabilityService) DataAvailabilityService {
-	return &PanicWrapper{
-		DataAvailabilityService: dataAvailabilityService,
+func NewWriterPanicWrapper(dataAvailabilityService DataAvailabilityServiceWriter) DataAvailabilityServiceWriter {
+	return &WriterPanicWrapper{
+		DataAvailabilityServiceWriter: dataAvailabilityService,
 	}
 }
+func (w *WriterPanicWrapper) String() string {
+	return fmt.Sprintf("WriterPanicWrapper{%v}", w.DataAvailabilityServiceWriter)
+}
 
-func (w *PanicWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	data, err := w.DataAvailabilityService.GetByHash(ctx, hash)
+func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout, sig)
+	if err != nil {
+		panic(fmt.Sprintf("panic wrapper Store: %v", err))
+	}
+	return cert, nil
+}
+
+type ReaderPanicWrapper struct {
+	DataAvailabilityServiceReader
+}
+
+func NewReaderPanicWrapper(dataAvailabilityService DataAvailabilityServiceReader) DataAvailabilityServiceReader {
+	return &ReaderPanicWrapper{
+		DataAvailabilityServiceReader: dataAvailabilityService,
+	}
+}
+func (w *ReaderPanicWrapper) String() string {
+	return fmt.Sprintf("ReaderPanicWrapper{%v}", w.DataAvailabilityServiceReader)
+}
+
+func (w *ReaderPanicWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	data, err := w.DataAvailabilityServiceReader.GetByHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			log.Error("DAS hash lookup failed from cancelled context")
@@ -33,16 +57,4 @@ func (w *PanicWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte,
 		panic(fmt.Sprintf("panic wrapper GetByHash: %v", err))
 	}
 	return data, nil
-}
-
-func (w *PanicWrapper) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
-	cert, err := w.DataAvailabilityService.Store(ctx, message, timeout, sig)
-	if err != nil {
-		panic(fmt.Sprintf("panic wrapper Store: %v", err))
-	}
-	return cert, nil
-}
-
-func (w *PanicWrapper) String() string {
-	return fmt.Sprintf("PanicWrapper{%v}", w.DataAvailabilityService)
 }
