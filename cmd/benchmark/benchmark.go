@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package main
@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -62,7 +63,8 @@ func main() {
 	l2Auth.Context = ctx
 	l2Auth.GasLimit = 2 * l2pricing.InitialPerBlockGasLimitV6 // fill the block
 
-	tempDir := os.TempDir() + "/nitro-benchmark/"
+	tempDir, err := os.MkdirTemp("", "nitro-benchmark-")
+	Require(err)
 	defer os.RemoveAll(tempDir)
 
 	stackConf := node.DefaultConfig
@@ -184,9 +186,14 @@ func main() {
 	waitForTx(tx, err, types.ReceiptStatusSuccessful)
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2client)
 	waitForTx(tx, err, types.ReceiptStatusSuccessful)
+	ArbGasInfo, err := precompilesgen.NewArbGasInfo(types.ArbGasInfoAddress, l2client)
+	waitForTx(tx, err, types.ReceiptStatusSuccessful)
 
 	tx, err = simple.Exhaust(l2Auth)
 	receipt := waitForTx(tx, err, types.ReceiptStatusFailed)
+
+	speedLimit, _, _, err := ArbGasInfo.GetGasAccountingParams(&bind.CallOpts{})
+	Require(err)
 
 	redo("failed to confirm on L1", func() bool {
 		confs, err := nodeInterface.GetL1Confirmations(&bind.CallOpts{}, receipt.BlockHash)
@@ -209,12 +216,33 @@ func main() {
 	)
 	Require(err)
 
+	start := time.Now()
 	header := l2Blockchain.GetHeaderByHash(receipt.BlockHash)
 	valid, err := prover.ValidateBlock(ctx, header, common.Hash{})
 	Require(err)
 	if !valid {
 		panic("Failed to validate block")
 	}
+	delay := time.Since(start)
+
+	println()
+	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), false, true, true)
+	Require(err)
+	gasUsed := receipt.GasUsed - receipt.GasUsedForL1 - intrinsic
+	fmt.Printf(
+		"Validated block of %v%v%v gas in %v%v%v\n",
+		colors.Pink, gasUsed, colors.Clear,
+		colors.Pink, delay, colors.Clear,
+	)
+	gasPerSecond := float64(gasUsed) / delay.Seconds()
+	coresNeeded := float64(speedLimit.Uint64()) / gasPerSecond
+
+	fmt.Printf(
+		"Validated @ %v%.2f%v gas/s,\nso %v%.2f%v cores are needed for a %v%v%v gas/s speed limit\n",
+		colors.Pink, gasPerSecond, colors.Clear,
+		colors.Pink, coresNeeded, colors.Clear,
+		colors.Pink, speedLimit, colors.Clear,
+	)
 }
 
 func keypair(seed byte) (*ecdsa.PrivateKey, common.Address) {
