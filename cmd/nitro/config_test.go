@@ -132,7 +132,9 @@ func TestLiveNodeConfig(t *testing.T) {
 	// to avoid creating config files, we'll change the args to reflect the change
 	update.Node.Sequencer.MaxBlockSpeed += time.Millisecond
 	newArgs := []string{"--node.sequencer.max-block-speed", update.Node.Sequencer.MaxBlockSpeed.String()}
+	liveConfig.mutex.Lock()
 	liveConfig.args = append(liveConfig.args, newArgs...)
+	liveConfig.mutex.Unlock()
 
 	// triggering LiveConfig reload, which should overwrite max-block-speed from args
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
