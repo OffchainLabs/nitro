@@ -59,7 +59,7 @@ type TransactionStreamer struct {
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
 	inboxReader     *InboxReader
-	bpfVerifier     *contracts.BatchPosterVerifier
+	bpVerifier      *contracts.BatchPosterVerifier
 }
 
 func NewTransactionStreamer(
@@ -69,13 +69,13 @@ func NewTransactionStreamer(
 	seqInboxAddress common.Address,
 	l1Client arbutil.L1Interface,
 ) (*TransactionStreamer, error) {
-	var bpfVerifier *contracts.BatchPosterVerifier
+	var bpVerifier *contracts.BatchPosterVerifier
 	if l1Client != nil {
 		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1Client)
 		if err != nil {
 			return nil, err
 		}
-		bpfVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
 	}
 
 	inbox := &TransactionStreamer{
@@ -85,7 +85,7 @@ func NewTransactionStreamer(
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 		chainId:            bc.Config().ChainID.Uint64(),
-		bpfVerifier:        bpfVerifier,
+		bpVerifier:         bpVerifier,
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -267,7 +267,7 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, 
 }
 
 func (s *TransactionStreamer) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) bool {
-	if message.Signature == nil || s.bpfVerifier == nil {
+	if message.Signature == nil || s.bpVerifier == nil {
 		// Nothing to validate or validating disabled
 		return true
 	}
@@ -277,7 +277,7 @@ func (s *TransactionStreamer) isValidSignature(ctx context.Context, message *bro
 		log.Error("unable to extract signing address from feed", "error", err)
 		return false
 	}
-	isValid, err := s.bpfVerifier.IsBatchPoster(ctx, address)
+	isValid, err := s.bpVerifier.IsBatchPoster(ctx, address)
 	if err != nil {
 		log.Error("unable to check if address is batch poster", "address", address, "error", err)
 		return false
