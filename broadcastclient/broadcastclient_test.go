@@ -5,15 +5,20 @@ package broadcastclient
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"fmt"
 	"net"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -29,8 +34,14 @@ func TestReceiveMessages(t *testing.T) {
 	clientCount := 2
 	chainId := uint64(9742)
 
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	publicKey := privateKey.Public()
+	sequencerAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
+	dataSigner := util.DataSignerFromPrivateKey(privateKey)
+
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, nil)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -38,7 +49,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < clientCount; i++ {
-		startMakeBroadcastClient(ctx, t, b.ListenerAddr(), i, messageCount, chainId, &wg)
+		startMakeBroadcastClient(ctx, t, b.ListenerAddr(), i, messageCount, chainId, &wg, sequencerAddr)
 	}
 
 	go func() {
@@ -52,20 +63,43 @@ func TestReceiveMessages(t *testing.T) {
 }
 
 type dummyTransactionStreamer struct {
+	t               *testing.T
 	messageReceiver chan broadcaster.BroadcastFeedMessage
+	chainId         uint64
+	sequencerAddr   *common.Address
 }
 
-func NewDummyTransactionStreamer() *dummyTransactionStreamer {
+func NewDummyTransactionStreamer(t *testing.T, chainId uint64, sequencerAddr *common.Address) *dummyTransactionStreamer {
 	return &dummyTransactionStreamer{
 		messageReceiver: make(chan broadcaster.BroadcastFeedMessage),
+		chainId:         chainId,
+		sequencerAddr:   sequencerAddr,
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddBroadcastMessages(_ context.Context, feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(ctx context.Context, feedMessages []*broadcaster.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
+		if !ts.IsValidSignature(ctx, feedMessage) {
+			ts.t.Log("feedMessage invalid signature")
+		}
 		ts.messageReceiver <- *feedMessage
 	}
 	return nil
+}
+
+func (ts *dummyTransactionStreamer) IsValidSignature(_ context.Context, message *broadcaster.BroadcastFeedMessage) bool {
+	if message.Signature == nil || ts.sequencerAddr == nil {
+		// Nothing to validate or validating disabled
+		return true
+	}
+
+	address, err := message.SigningAddress(ts.chainId)
+	if err != nil {
+		ts.t.Log("unable to extract signing address from feed", "error", err)
+		return false
+	}
+
+	return address == *ts.sequencerAddr
 }
 
 func newTestBroadcastClient(listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, idleTimeout time.Duration, txStreamer TransactionStreamerInterface, feedErrChan chan error) *BroadcastClient {
@@ -73,8 +107,8 @@ func newTestBroadcastClient(listenerAddress net.Addr, chainId uint64, currentMes
 	return NewBroadcastClient(fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, idleTimeout, txStreamer, feedErrChan)
 }
 
-func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup) {
-	ts := NewDummyTransactionStreamer()
+func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, sequencerAddr common.Address) {
+	ts := NewDummyTransactionStreamer(t, chainId, &sequencerAddr)
 	feedErrChan := make(chan error, 10)
 	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 200*time.Millisecond, ts, feedErrChan)
 	broadcastClient.Start(ctx)
@@ -127,7 +161,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer()
+	ts := NewDummyTransactionStreamer(t, chainId, nil)
 	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId, 0, 200*time.Millisecond, ts, feedErrChan)
 	broadcastClient.Start(ctx)
 
@@ -180,7 +214,7 @@ func TestServerClientIncorrectChainId(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer()
+	ts := NewDummyTransactionStreamer(t, chainId, nil)
 	badFeedErrChan := make(chan error, 10)
 	badBroadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId+1, 0, 200*time.Millisecond, ts, badFeedErrChan)
 	badBroadcastClient.Start(ctx)
@@ -295,7 +329,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 }
 
 func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uint64, t *testing.T, clientIndex int, wg *sync.WaitGroup) {
-	ts := NewDummyTransactionStreamer()
+	ts := NewDummyTransactionStreamer(t, chainId, nil)
 	feedErrChan := make(chan error, 10)
 	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 200*time.Millisecond, ts, feedErrChan)
 	broadcastClient.Start(ctx)
