@@ -129,8 +129,7 @@ func TestDASRekey(t *testing.T) {
 		l1NodeConfigA.DataAvailability.Enable = true
 		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigA)
 
-		nodeConfigFetcher := func() *arbnode.Config { return l1NodeConfigA }
-		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, nodeConfigFetcher, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 		Require(t, err)
 		Require(t, l2stackA.Start())
 		l2clientA := ClientForStack(t, l2stackA)
@@ -167,9 +166,7 @@ func TestDASRekey(t *testing.T) {
 	l2blockchain, err := arbnode.GetBlockChain(l2chainDb, nil, chainConfig, arbnode.ConfigDefaultL2Test())
 	Require(t, err)
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
-
-	nodeConfigFetcher := func() *arbnode.Config { return l1NodeConfigA }
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, nodeConfigFetcher, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
 	Require(t, l2stackA.Start())
 	l2clientA := ClientForStack(t, l2stackA)
@@ -329,8 +326,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	nodeConfigFetcher := func() *arbnode.Config { return l1NodeConfigA }
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, nodeConfigFetcher, l2blockchain, l1client, addresses, sequencerTxOptsPtr, daSigner, feedErrChan)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, daSigner, feedErrChan)
 	Require(t, err)
 	Require(t, l2stackA.Start())
 	l2clientA := ClientForStack(t, l2stackA)
