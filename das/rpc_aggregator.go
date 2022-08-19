@@ -20,14 +20,14 @@ type BackendConfig struct {
 }
 
 func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig) (*Aggregator, error) {
-	services, err := setUpServices(config.AggregatorConfig)
+	services, err := setUpServices(config)
 	if err != nil {
 		return nil, err
 	}
 	return NewAggregator(ctx, config, services)
 }
 
-func NewRPCAggregatorWithL1Info(config AggregatorConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*Aggregator, error) {
+func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*Aggregator, error) {
 	services, err := setUpServices(config)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,7 @@ func NewRPCAggregatorWithL1Info(config AggregatorConfig, l1client arbutil.L1Inte
 	return NewAggregatorWithL1Info(config, services, l1client, seqInboxAddress)
 }
 
-func NewRPCAggregatorWithSeqInboxCaller(config AggregatorConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*Aggregator, error) {
+func NewRPCAggregatorWithSeqInboxCaller(config DataAvailabilityConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*Aggregator, error) {
 	services, err := setUpServices(config)
 	if err != nil {
 		return nil, err
@@ -43,9 +43,9 @@ func NewRPCAggregatorWithSeqInboxCaller(config AggregatorConfig, seqInboxCaller 
 	return NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
 }
 
-func setUpServices(config AggregatorConfig) ([]ServiceDetails, error) {
+func setUpServices(config DataAvailabilityConfig) ([]ServiceDetails, error) {
 	var cs []BackendConfig
-	err := json.Unmarshal([]byte(config.Backends), &cs)
+	err := json.Unmarshal([]byte(config.AggregatorConfig.Backends), &cs)
 	if err != nil {
 		return nil, err
 	}
