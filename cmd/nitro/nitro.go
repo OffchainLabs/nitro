@@ -1003,9 +1003,10 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 }
 
 func (c *LiveNodeConfig) Start(ctx context.Context) {
+	sigusr1 := make(chan os.Signal, 1)
+	signal.Notify(sigusr1, syscall.SIGUSR1)
+
 	go func() {
-		sigusr1 := make(chan os.Signal, 1)
-		signal.Notify(sigusr1, syscall.SIGUSR1)
 		for {
 			// TODO
 			// timer := time.NewTimer(c.config.Conf.ReloadInterval)
