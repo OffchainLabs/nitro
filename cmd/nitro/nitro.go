@@ -675,6 +675,12 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	return nil
 }
 
+func (c *NodeConfig) ShallowClone() *NodeConfig {
+	config := &NodeConfig{}
+	*config = *c
+	return config
+}
+
 func (c *NodeConfig) CanReload(new *NodeConfig) error {
 	var check func(node, other reflect.Value, path string)
 	var err error
