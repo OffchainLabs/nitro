@@ -39,6 +39,15 @@ import (
 )
 
 func main() {
+	args := os.Args[1:]
+	machinePath := "./target/machines/"
+	if len(args) > 0 {
+		machinePath = args[0]
+		if _, err := os.Stat(machinePath); err != nil {
+			panic(fmt.Sprintf("%v%v%v", colors.Red, err, colors.Clear))
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -96,8 +105,6 @@ func main() {
 
 	l1backend, err := eth.New(l1Stack, &ethNodeConf)
 	Require(err)
-	// l1stackDir := os.TempDir() + "/nitro-benchmark/"
-	// defer os.RemoveAll(l1stackDir)
 	tempKeyStore := keystore.NewPlaintextKeyStore(tempDir)
 	faucetAccount, err := tempKeyStore.ImportECDSA(authKey, "passphrase")
 	Require(err)
@@ -202,7 +209,7 @@ func main() {
 	})
 
 	machineConfig := validator.DefaultNitroMachineConfig
-	machineConfig.RootPath = "./target/machines/" // TODO: from command line
+	machineConfig.RootPath = machinePath
 	machineLoader := validator.NewNitroMachineLoader(machineConfig)
 
 	prover, err := validator.NewStatelessBlockValidator(
