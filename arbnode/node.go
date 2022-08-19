@@ -946,8 +946,7 @@ func SetUpDataAvailability(
 	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
 	/*
 			      ChainFetchDAS → Bigcache → Redis →
-				       RPC Aggregator
-				       | SignAfterStoreDAS →
+				       SignAfterStoreDAS →
 				              FallbackDAS (if the REST client aggregator was specified)
 				              (primary) → RedundantStorage (if multiple persistent backing stores were specified)
 				                            → S3
@@ -956,8 +955,6 @@ func SetUpDataAvailability(
 				         (fallback only)→ RESTful client aggregator
 
 		          → : X--delegates to-->Y
-		          | : Exclusive OR
-
 	*/
 	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config)
 	if err != nil {
@@ -1009,20 +1006,10 @@ func SetUpDataAvailability(
 	}
 
 	var topLevelDas das.DataAvailabilityService
-	// Create the RPC aggregator. None of the the above storage types can be enabled in combination with it.
-	// Its use for read-only purposes will be deprecated when the REST DAS servers have been rolled out.
 	if config.AggregatorConfig.Enable {
-		if topLevelStorageService != nil {
-			return nil, nil, errors.New("If rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
-
-		}
-		rpcAggregator, err := das.NewRPCAggregatorWithSeqInboxCaller(config.AggregatorConfig, seqInboxCaller)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		topLevelDas = rpcAggregator
-	} else if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
+		panic("Tried to make an aggregator using wrong factory method")
+	}
+	if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
 		_seqInboxCaller := seqInboxCaller
 		if config.DisableSignatureChecking {
 			_seqInboxCaller = nil
