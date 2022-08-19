@@ -108,7 +108,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), l2client)
 	Require(t, err)
-	tx, err = arbOwner.SetL1PricePerUnit(&ownerAuth, new(big.Int).SetUint64(initialEstimate))
+	tx, err = arbOwner.SetL1PricePerUnit(&ownerAuth, arbmath.UintToBig(initialEstimate))
 	Require(t, err)
 	_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 	Require(t, err)

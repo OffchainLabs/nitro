@@ -44,20 +44,16 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     IBridge public bridge;
 
-    /// @dev The size of the batch header
+    /// @inheritdoc ISequencerInbox
     uint256 public constant HEADER_LENGTH = 40;
-    /// @dev If the first batch data byte after the header has this bit set,
-    /// the sequencer inbox has authenticated the data. Currently not used.
+
+    /// @inheritdoc ISequencerInbox
     bytes1 public constant DATA_AUTHENTICATED_FLAG = 0x40;
 
     IOwnable public rollup;
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
-    struct DasKeySetInfo {
-        bool isValidKeyset;
-        uint64 creationBlock;
-    }
     mapping(bytes32 => DasKeySetInfo) public dasKeySetInfo;
 
     modifier onlyRollupOwner() {
@@ -89,17 +85,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return bounds;
     }
 
-    /// @notice Force messages from the delayed inbox to be included in the chain
-    /// Callable by any address, but message can only be force-included after maxTimeVariation.delayBlocks and maxTimeVariation.delaySeconds
-    /// has elapsed. As part of normal behaviour the sequencer will include these messages
-    /// so it's only necessary to call this if the sequencer is down, or not including
-    /// any delayed messages.
-    /// @param _totalDelayedMessagesRead The total number of messages to read up to
-    /// @param kind The kind of the last message to be included
-    /// @param l1BlockAndTime The l1 block and the l1 timestamp of the last message to be included
-    /// @param baseFeeL1 The l1 gas price of the last message to be included
-    /// @param sender The sender of the last message to be included
-    /// @param messageDataHash The messageDataHash of the last message to be included
+    /// @inheritdoc ISequencerInbox
     function forceInclusion(
         uint256 _totalDelayedMessagesRead,
         uint8 kind,
@@ -396,42 +382,31 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         }
     }
 
-    function inboxAccs(uint256 index) external view override returns (bytes32) {
+    function inboxAccs(uint256 index) external view returns (bytes32) {
         return bridge.sequencerInboxAccs(index);
     }
 
-    function batchCount() external view override returns (uint256) {
+    function batchCount() external view returns (uint256) {
         return bridge.sequencerMessageCount();
     }
 
-    /**
-     * @notice Set max delay for sequencer inbox
-     * @param maxTimeVariation_ the maximum time variation parameters
-     */
+    /// @inheritdoc ISequencerInbox
     function setMaxTimeVariation(ISequencerInbox.MaxTimeVariation memory maxTimeVariation_)
         external
-        override
         onlyRollupOwner
     {
         maxTimeVariation = maxTimeVariation_;
         emit OwnerFunctionCalled(0);
     }
 
-    /**
-     * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
-     * @param addr the address
-     * @param isBatchPoster_ if the specified address should be authorized as a batch poster
-     */
-    function setIsBatchPoster(address addr, bool isBatchPoster_) external override onlyRollupOwner {
+    /// @inheritdoc ISequencerInbox
+    function setIsBatchPoster(address addr, bool isBatchPoster_) external onlyRollupOwner {
         isBatchPoster[addr] = isBatchPoster_;
         emit OwnerFunctionCalled(1);
     }
 
-    /**
-     * @notice Makes Data Availability Service keyset valid
-     * @param keysetBytes bytes of the serialized keyset
-     */
-    function setValidKeyset(bytes calldata keysetBytes) external override onlyRollupOwner {
+    /// @inheritdoc ISequencerInbox
+    function setValidKeyset(bytes calldata keysetBytes) external onlyRollupOwner {
         uint256 ksWord = uint256(keccak256(bytes.concat(hex"fe", keccak256(keysetBytes))));
         bytes32 ksHash = bytes32(ksWord ^ (1 << 255));
         require(keysetBytes.length < 64 * 1024, "keyset is too large");
@@ -445,11 +420,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         emit OwnerFunctionCalled(2);
     }
 
-    /**
-     * @notice Invalidates a Data Availability Service keyset
-     * @param ksHash hash of the keyset
-     */
-    function invalidateKeysetHash(bytes32 ksHash) external override onlyRollupOwner {
+    /// @inheritdoc ISequencerInbox
+    function invalidateKeysetHash(bytes32 ksHash) external onlyRollupOwner {
         if (!dasKeySetInfo[ksHash].isValidKeyset) revert NoSuchKeyset(ksHash);
         // we don't delete the block creation value since its used to fetch the SetValidKeyset
         // event efficiently. The event provides the hash preimage of the key.
@@ -463,7 +435,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return dasKeySetInfo[ksHash].isValidKeyset;
     }
 
-    /// @notice the creation block is intended to still be available after a keyset is deleted
+    /// @inheritdoc ISequencerInbox
     function getKeysetCreationBlock(bytes32 ksHash) external view returns (uint256) {
         DasKeySetInfo memory ksInfo = dasKeySetInfo[ksHash];
         if (ksInfo.creationBlock == 0) revert NoSuchKeyset(ksHash);
