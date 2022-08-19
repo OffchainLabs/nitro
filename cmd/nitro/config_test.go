@@ -6,6 +6,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -92,7 +94,12 @@ func TestLiveNodeConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// create empty config file
+	configFile := filepath.Join(t.TempDir(), "config.json")
+	Require(t, os.WriteFile(configFile, []byte("{}"), 0600))
+
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	args = append(args, []string{"--conf.file", configFile}...)
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
@@ -108,15 +115,13 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// check updating the config
 	update := config.ShallowClone()
+	expected := config.ShallowClone()
 	update.Node.Sequencer.MaxBlockSpeed += 2 * time.Millisecond
-	if !reflect.DeepEqual(liveConfig.get(), config) {
-		Fail(t, "failed to get live config")
-	}
+	expected.Node.Sequencer.MaxBlockSpeed += 2 * time.Millisecond
 	Require(t, liveConfig.set(update))
-	if !reflect.DeepEqual(liveConfig.get(), update) {
+	if !reflect.DeepEqual(liveConfig.get(), expected) {
 		Fail(t, "failed to set config")
 	}
-	*config = *update
 
 	// check that an invalid reload gets rejected
 	update = config.ShallowClone()
@@ -124,24 +129,22 @@ func TestLiveNodeConfig(t *testing.T) {
 	if liveConfig.set(update) == nil {
 		Fail(t, "failed to reject invalid update")
 	}
-	if !reflect.DeepEqual(liveConfig.get(), config) {
+	if !reflect.DeepEqual(liveConfig.get(), expected) {
 		Fail(t, "config should not change if its update fails")
 	}
-	*update = *config
 
-	// to avoid creating config files, we'll change the args to reflect the change
-	update.Node.Sequencer.MaxBlockSpeed += time.Millisecond
-	newArgs := []string{"--node.sequencer.max-block-speed", update.Node.Sequencer.MaxBlockSpeed.String()}
-	liveConfig.mutex.Lock()
-	liveConfig.args = append(liveConfig.args, newArgs...)
-	liveConfig.mutex.Unlock()
+	// change the config file
+	expected = config.ShallowClone()
+	expected.Node.Sequencer.MaxBlockSpeed += time.Millisecond
+	jsonConfig := fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}}", expected.Node.Sequencer.MaxBlockSpeed.String())
+	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
 
-	// triggering LiveConfig reload, which should overwrite max-block-speed from args
+	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 
 	for i := 0; i < 16; i++ {
 		config = liveConfig.get()
-		if reflect.DeepEqual(config, update) {
+		if reflect.DeepEqual(config, expected) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
