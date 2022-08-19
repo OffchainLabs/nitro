@@ -675,6 +675,12 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	return nil
 }
 
+func (c *NodeConfig) ShallowClone() *NodeConfig {
+	config := &NodeConfig{}
+	*config = *c
+	return config
+}
+
 func (c *NodeConfig) CanReload(new *NodeConfig) error {
 	var check func(node, other reflect.Value, path string)
 	var err error
@@ -997,9 +1003,10 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 }
 
 func (c *LiveNodeConfig) Start(ctx context.Context) {
+	sigusr1 := make(chan os.Signal, 1)
+	signal.Notify(sigusr1, syscall.SIGUSR1)
+
 	go func() {
-		sigusr1 := make(chan os.Signal, 1)
-		signal.Notify(sigusr1, syscall.SIGUSR1)
 		for {
 			// TODO
 			// timer := time.NewTimer(c.config.Conf.ReloadInterval)

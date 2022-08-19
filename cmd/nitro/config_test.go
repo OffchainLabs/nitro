@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -88,14 +89,26 @@ func TestReloads(t *testing.T) {
 }
 
 func TestLiveNodeConfig(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
-	update, _, _, _, _, err := ParseNode(context.Background(), args)
-	Require(t, err)
-	update.Node.Sequencer.MaxBlockSpeed++
 
 	liveConfig := NewLiveNodeConfig(args, config)
+	liveConfig.Start(ctx)
+
+	// check that reloading the config doesn't change anything
+	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
+	time.Sleep(20 * time.Millisecond)
+	if !reflect.DeepEqual(liveConfig.get(), config) {
+		Fail(t, "live config differs from expected")
+	}
+
+	// check updating the config
+	update := config.ShallowClone()
+	update.Node.Sequencer.MaxBlockSpeed += 2 * time.Millisecond
 	if !reflect.DeepEqual(liveConfig.get(), config) {
 		Fail(t, "failed to get live config")
 	}
@@ -103,47 +116,35 @@ func TestLiveNodeConfig(t *testing.T) {
 	if !reflect.DeepEqual(liveConfig.get(), update) {
 		Fail(t, "failed to set config")
 	}
-	// swap pointers, as update is now the config stored in LiveConfig
-	config, update = update, config
-	// make update not valid for hot reload
+	*config = *update
+
+	// check that an invalid reload gets rejected
+	update = config.ShallowClone()
 	update.L2.ChainID++
 	if liveConfig.set(update) == nil {
-		Fail(t, "didn't fail when setting a config that is not hot reloadable")
+		Fail(t, "failed to reject invalid update")
 	}
 	if !reflect.DeepEqual(liveConfig.get(), config) {
 		Fail(t, "config should not change if its update fails")
 	}
-	// make update valid again
-	update.L2.ChainID--
-	// sync update to config
-	update.Node.Sequencer.MaxBlockSpeed = config.Node.Sequencer.MaxBlockSpeed
-	// rename for clarity
-	expected := update
-	if !reflect.DeepEqual(config, expected) {
-		Fail(t, "internal test failure, expected is not in sync with config")
-	}
-	liveConfig.Start(context.Background())
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
-		Fail(t, "live config differs from expected")
-	}
-	err = syscall.Kill(syscall.Getpid(), syscall.SIGUSR1)
-	Require(t, err)
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
-		Fail(t, "live config differs from expected")
-	}
-	// modifying args won't happen in production, but makes the test easier as there's no need for temporary test config files
-	expected.Node.Sequencer.MaxBlockSpeed += 10
-	liveConfig.args = append(liveConfig.args, fmt.Sprintf("--node.sequencer.max-block-speed \"%s\"", expected.Node.Sequencer.MaxBlockSpeed.String()))
+	*update = *config
+
+	// to avoid creating config files, we'll change the args to reflect the change
+	update.Node.Sequencer.MaxBlockSpeed += time.Millisecond
+	newArgs := []string{"--node.sequencer.max-block-speed", update.Node.Sequencer.MaxBlockSpeed.String()}
+	liveConfig.args = append(liveConfig.args, newArgs...)
+
 	// triggering LiveConfig reload, which should overwrite max-block-speed from args
-	err = syscall.Kill(syscall.Getpid(), syscall.SIGUSR1)
-	// FIXME the reload is not triggered for some reason
-	Require(t, err)
-	if liveConfig.get() != config {
-		Fail(t, "internal test failure, LiveNodeConfig stores unexpected config pointer")
+	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
+
+	for i := 0; i < 16; i++ {
+		config = liveConfig.get()
+		if reflect.DeepEqual(config, update) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if !reflect.DeepEqual(config, expected) {
-		Fail(t, "config differs from expected")
-	}
+	Fail(t, "failed to update config", config.Node.Sequencer.MaxBlockSpeed, update.Node.Sequencer.MaxBlockSpeed)
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {
