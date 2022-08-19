@@ -176,3 +176,6 @@ func arbNodeFromNodeInterfaceBackend(backend BackendAPI) (*arbnode.Node, error) 
 	}
 	return arbNode, nil
 }
+
+// Does nothing, but forces an import to let the init function run
+func RequireVirtualContracts() {}

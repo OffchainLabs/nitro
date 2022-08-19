@@ -13,6 +13,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -59,8 +60,8 @@ func NewArbTestInfo(t *testing.T, chainId *big.Int) *BlockchainTestInfo {
 		types.NewArbitrumSigner(types.NewLondonSigner(chainId)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
-	arbinfo.GenerateGenesysAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
-	arbinfo.GenerateGenesysAccount("Faucet", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
+	arbinfo.GenerateGenesisAccount("Owner", arbmath.BigSub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
+	arbinfo.GenerateGenesisAccount("Faucet", arbmath.BigSub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
 	return arbinfo
 }
 
@@ -106,7 +107,7 @@ func (b *BlockchainTestInfo) HasAccount(name string) bool {
 	return b.Accounts[name] != nil
 }
 
-func (b *BlockchainTestInfo) GenerateGenesysAccount(name string, balance *big.Int) {
+func (b *BlockchainTestInfo) GenerateGenesisAccount(name string, balance *big.Int) {
 	b.GenerateAccount(name)
 	b.ArbInitData.Accounts = append(b.ArbInitData.Accounts, statetransfer.AccountInitializationInfo{
 		Addr:       b.Accounts[name].Address,
@@ -114,7 +115,7 @@ func (b *BlockchainTestInfo) GenerateGenesysAccount(name string, balance *big.In
 	})
 }
 
-func (b *BlockchainTestInfo) GetGenesysAlloc() core.GenesisAlloc {
+func (b *BlockchainTestInfo) GetGenesisAlloc() core.GenesisAlloc {
 	alloc := make(core.GenesisAlloc)
 	for _, info := range b.ArbInitData.Accounts {
 		var contractCode []byte

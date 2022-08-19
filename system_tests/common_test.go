@@ -206,13 +206,13 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesys := core.DeveloperGenesisBlock(0, 15_000_000, l1info.GetAddress("Faucet"))
-	infoGenesys := l1info.GetGenesysAlloc()
-	for acct, info := range infoGenesys {
-		l1Genesys.Alloc[acct] = info
+	l1Genesis := core.DeveloperGenesisBlock(0, 15_000_000, l1info.GetAddress("Faucet"))
+	infoGenesis := l1info.GetGenesisAlloc()
+	for acct, info := range infoGenesis {
+		l1Genesis.Alloc[acct] = info
 	}
-	l1Genesys.BaseFee = big.NewInt(50 * params.GWei)
-	nodeConf.Genesis = l1Genesys
+	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
+	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
 
 	l1backend, err := eth.New(stack, &nodeConf)

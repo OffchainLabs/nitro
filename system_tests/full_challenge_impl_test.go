@@ -185,10 +185,10 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
 	l1Info := NewL1TestInfo(t)
-	l1Info.GenerateGenesysAccount("deployer", initialBalance)
-	l1Info.GenerateGenesysAccount("asserter", initialBalance)
-	l1Info.GenerateGenesysAccount("challenger", initialBalance)
-	l1Info.GenerateGenesysAccount("sequencer", initialBalance)
+	l1Info.GenerateGenesisAccount("deployer", initialBalance)
+	l1Info.GenerateGenesisAccount("asserter", initialBalance)
+	l1Info.GenerateGenesisAccount("challenger", initialBalance)
+	l1Info.GenerateGenesisAccount("sequencer", initialBalance)
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	l1Info, l1Backend, _, _ := createTestL1BlockChain(t, l1Info)

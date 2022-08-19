@@ -43,6 +43,14 @@ contract Simple {
         revert("SOLIDITY_REVERTING");
     }
 
+    function exhaust() external {
+        bytes32 value = keccak256("");
+        while (value != 0) {
+            value = keccak256(abi.encodePacked(value));
+        }
+        counter++;
+    }
+
     function checkIsTopLevelOrWasAliased(bool useTopLevel, bool expected) public view {
         if (useTopLevel) {
             require(ArbSys(address(100)).isTopLevelCall() == expected, "UNEXPECTED_RESULT");
