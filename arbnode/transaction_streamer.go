@@ -66,7 +66,6 @@ func NewTransactionStreamer(
 	db ethdb.Database,
 	bc *core.BlockChain,
 	broadcastServer *broadcaster.Broadcaster,
-	chainId uint64,
 	seqInboxAddress common.Address,
 	l1Client arbutil.L1Interface,
 ) (*TransactionStreamer, error) {
@@ -85,7 +84,7 @@ func NewTransactionStreamer(
 		newMessageNotifier: make(chan struct{}, 1),
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
-		chainId:            chainId,
+		chainId:            bc.Config().ChainID.Uint64(),
 		bpfVerifier:        bpfVerifier,
 	}
 	err := inbox.cleanupInconsistentState()
