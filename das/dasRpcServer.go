@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package dasrpc
+package das
 
 import (
 	"context"
@@ -19,7 +19,6 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -45,10 +44,10 @@ var (
 )
 
 type DASRPCServer struct {
-	localDAS das.DataAvailabilityService
+	localDAS DataAvailabilityService
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS das.DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS DataAvailabilityService) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
@@ -56,7 +55,7 @@ func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServ
 	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, localDAS)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS das.DataAvailabilityService) (*http.Server, error) {
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, localDAS DataAvailabilityService) (*http.Server, error) {
 	rpcServer := rpc.NewServer()
 	err := rpcServer.RegisterName("das", &DASRPCServer{localDAS: localDAS})
 	if err != nil {

@@ -228,7 +228,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest}, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
+	aggregator := TimeoutWrapper{ReaderTimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}, WriterTimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}}
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
@@ -341,7 +341,7 @@ func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
 	// it should get all successes.
 	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: 1}, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
+	aggregator := TimeoutWrapper{ReaderTimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}, WriterTimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}}
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	cert, err := unwrappedAggregator.Store(ctx, rawMsg, 0, []byte{})
