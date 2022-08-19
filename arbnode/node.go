@@ -599,11 +599,14 @@ func createNodeImpl(
 	feedErrChan chan error,
 ) (*Node, error) {
 	var reorgingToBlock *types.Block
+
+	l2Config := l2BlockChain.Config()
+	l2ChainId := l2Config.ChainID.Uint64()
+
 	if config.Dangerous.ReorgToBlock >= 0 {
 		blockNum := uint64(config.Dangerous.ReorgToBlock)
-		genesis := l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum
-		if blockNum < genesis {
-			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, genesis)
+		if blockNum < l2Config.ArbitrumChainParams.GenesisBlockNum {
+			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, l2Config.ArbitrumChainParams.GenesisBlockNum)
 		}
 		reorgingToBlock = l2BlockChain.GetBlockByNumber(blockNum)
 		if reorgingToBlock == nil {
@@ -618,7 +621,9 @@ func createNodeImpl(
 	var classicOutbox *ClassicOutboxRetriever
 	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
 	if err != nil {
-		log.Warn("Classic Msg Database not found", "err", err)
+		if l2Config.ArbitrumChainParams.GenesisBlockNum > 0 {
+			log.Warn("Classic Msg Database not found", "err", err)
+		}
 		classicOutbox = nil
 	} else {
 		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
@@ -626,7 +631,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2BlockChain.Config().ChainID.Uint64(), feedErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, feedErrChan)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -697,7 +702,7 @@ func createNodeImpl(
 		for _, address := range config.Feed.Input.URLs {
 			client := broadcastclient.NewBroadcastClient(
 				address,
-				l2BlockChain.Config().ChainID.Uint64(),
+				l2ChainId,
 				currentMessageCount,
 				config.Feed.Input.Timeout,
 				txStreamer,
