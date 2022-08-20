@@ -207,7 +207,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     adduser user sudo && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    nitro --version
 
 USER user
 
