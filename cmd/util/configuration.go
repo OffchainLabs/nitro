@@ -123,12 +123,13 @@ func HandleError(err error, usage func(string)) {
 }
 
 func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
-	version := f.Bool("version", false, "print version and exit")
+	for _, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			return nil, ErrVersion
+		}
+	}
 	if err := f.Parse(args); err != nil {
 		return nil, err
-	}
-	if *version {
-		return nil, ErrVersion
 	}
 
 	if f.NArg() != 0 {
