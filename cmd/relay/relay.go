@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -32,8 +31,7 @@ func main() {
 	}
 }
 
-func printSampleUsage() {
-	progname := os.Args[0]
+func printSampleUsage(progname string) {
 	fmt.Printf("\n")
 	fmt.Printf("Sample usage:                  %s --node.feed.input.url=<L1 RPC> --l2.chain-id=<L2 chain id> \n", progname)
 }
@@ -41,14 +39,9 @@ func printSampleUsage() {
 func startup() error {
 	ctx := context.Background()
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
 	relayConfig, err := ParseRelay(ctx, os.Args[1:])
 	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
-		printSampleUsage()
-		if !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+		util.HandleError(err, printSampleUsage)
 
 		return nil
 	}
@@ -62,6 +55,7 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(relayConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
+	vcsRevision, vcsTime := genericconf.GetVersion()
 	log.Info("Running Arbitrum nitro relay", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	serverConf := wsbroadcastserver.BroadcasterConfig{

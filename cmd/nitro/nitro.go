@@ -349,14 +349,9 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
 	if err != nil {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
-		printSampleUsage(os.Args[0])
-		if !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+		util.HandleError(err, printSampleUsage)
 
 		return
 	}
@@ -365,6 +360,7 @@ func main() {
 		panic(err)
 	}
 
+	vcsRevision, vcsTime := genericconf.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {

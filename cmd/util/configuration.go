@@ -17,6 +17,8 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
 
 func ApplyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
@@ -105,9 +107,28 @@ func loadS3Variables(k *koanf.Koanf) error {
 	}), nil)
 }
 
+var ErrVersion = errors.New("configuration: version requested")
+
+func HandleError(err error, usage func(string)) {
+	vcsRevision, vcsTime := genericconf.GetVersion()
+	fmt.Printf("revision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
+	if errors.Is(err, ErrVersion) {
+		// Already printed version, just exit
+		return
+	}
+	usage(os.Args[0])
+	if !errors.Is(err, flag.ErrHelp) {
+		fmt.Printf("%s\n", err.Error())
+	}
+}
+
 func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
+	version := f.Bool("version", false, "print version and exit")
 	if err := f.Parse(args); err != nil {
 		return nil, err
+	}
+	if *version {
+		return nil, ErrVersion
 	}
 
 	if f.NArg() != 0 {
