@@ -3,7 +3,6 @@
 **/.dockerignore
 **/Dockerfile
 **/.gitignore
-**/.git
 **/.gitmodules
 go-ethereum/tests
 **/*.yml

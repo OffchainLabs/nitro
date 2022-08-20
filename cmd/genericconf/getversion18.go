@@ -15,6 +15,9 @@ func GetVersion() (string, string) {
 	for _, v := range info.Settings {
 		if v.Key == "vcs.revision" {
 			vcsRevision = v.Value
+			if len(vcsRevision) > 7 {
+				vcsRevision = vcsRevision[:7]
+			}
 		} else if v.Key == "vcs.time" {
 			vcsTime = v.Value
 		} else if v.Key == "vcs.modified" {
