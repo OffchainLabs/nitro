@@ -163,13 +163,14 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     ca-certificates \
     wabt && \
     /usr/sbin/update-ca-certificates && \
-    useradd -ms /bin/bash user && \
+    useradd -s /bin/bash user && \
     mkdir -p /home/user/l1keystore && \
     mkdir -p /home/user/.arbitrum/local/nitro && \
     chown -R user:user /home/user && \
     chmod -R 555 /home/user/target/machines && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    nitro --version
 
 USER user
 WORKDIR /home/user/
@@ -186,7 +187,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     node-ws vim-tiny python3 \
     dnsutils && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    nitro --version
 
 USER user
 
