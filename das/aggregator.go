@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -63,13 +64,14 @@ type ServiceDetails struct {
 	service     DataAvailabilityServiceWriter
 	pubKey      blsSignatures.PublicKey
 	signersMask uint64
+	metricName  string
 }
 
 func (this *ServiceDetails) String() string {
 	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", this.service, this.signersMask)
 }
 
-func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatures.PublicKey, signersMask uint64) (*ServiceDetails, error) {
+func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
 		return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
 	}
@@ -77,6 +79,7 @@ func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatur
 		service:     service,
 		pubKey:      pubKey,
 		signersMask: signersMask,
+		metricName:  metricName,
 	}, nil
 }
 
@@ -211,8 +214,18 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 		go func(ctx context.Context, d ServiceDetails) {
 			storeCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
 			defer cancel()
+			incFailureMetric := func() {
+				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/failure", nil).Inc(1)
+			}
+
 			cert, err := d.service.Store(storeCtx, message, timeout, sig)
 			if err != nil {
+				incFailureMetric()
+				if errors.Is(err, context.DeadlineExceeded) {
+					metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/timeout", nil).Inc(1)
+				} else {
+					metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/client_error", nil).Inc(1)
+				}
 				responses <- storeResponse{d, nil, err}
 				return
 			}
@@ -221,10 +234,14 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 				cert.Sig, cert.SerializeSignableFields(), d.pubKey,
 			)
 			if err != nil {
+				incFailureMetric()
+				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, err}
 				return
 			}
 			if !verified {
+				incFailureMetric()
+				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, errors.New("Signature verification failed.")}
 				return
 			}
@@ -232,14 +249,19 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			// SignersMask from backend DAS is ignored.
 
 			if cert.DataHash != expectedHash {
+				incFailureMetric()
+				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, errors.New("Hash verification failed.")}
 				return
 			}
 			if cert.Timeout != timeout {
+				incFailureMetric()
+				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, fmt.Errorf("Timeout was %d, expected %d", cert.Timeout, timeout)}
 				return
 			}
 
+			metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/success", nil).Inc(1)
 			responses <- storeResponse{d, cert.Sig, nil}
 		}(ctx, d)
 	}
@@ -260,7 +282,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 		var sigs []blsSignatures.Signature
 		var aggSignersMask uint64
 		var storeFailures, successfullyStoredCount int
-		var errs []error
 		var returned bool
 		for i := 0; i < len(a.services); i++ {
 
@@ -270,7 +291,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			case r := <-responses:
 				if r.err != nil {
 					storeFailures++
-					errs = append(errs, fmt.Errorf("Error from backend %v, with signer mask %d: %w", r.details.service, r.details.signersMask, r.err))
+					log.Warn("das.Aggregator: Error from backend", "backend", r.details.service, "signerMask", r.details.signersMask, "err", r.err)
 				} else {
 					pubKeys = append(pubKeys, r.details.pubKey)
 					sigs = append(sigs, r.sig)
@@ -294,22 +315,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 					returned = true
 				} else if storeFailures > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
-					cd.err = fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest), %v", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, errs)
+					cd.err = fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest)", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest)
 					certDetailsChan <- cd
 					returned = true
 				}
 			}
 
 		}
-
-		/*
-			if successfullyStoredCount < a.requiredServicesForStore {
-				// who errored
-				// who timed out
-			} else {
-			}
-		*/
-
 	}()
 
 	cd := <-certDetailsChan

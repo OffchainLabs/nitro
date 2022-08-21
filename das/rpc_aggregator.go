@@ -6,6 +6,8 @@ package das
 import (
 	"context"
 	"encoding/json"
+	"net/url"
+	"strings"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 
@@ -53,6 +55,13 @@ func setUpServices(config DataAvailabilityConfig) ([]ServiceDetails, error) {
 	var services []ServiceDetails
 
 	for _, b := range cs {
+		url, err := url.Parse(b.URL)
+		if err != nil {
+			return nil, err
+		}
+		// Prometheus metric names must contain only chars [a-zA-Z0-9:_]
+		metricName := strings.ReplaceAll(url.Hostname(), ".", "_")
+
 		service, err := NewDASRPCClient(b.URL)
 		if err != nil {
 			return nil, err
@@ -63,7 +72,7 @@ func setUpServices(config DataAvailabilityConfig) ([]ServiceDetails, error) {
 			return nil, err
 		}
 
-		d, err := NewServiceDetails(service, *pubKey, uint64(b.SignerMask))
+		d, err := NewServiceDetails(service, *pubKey, uint64(b.SignerMask), metricName)
 		if err != nil {
 			return nil, err
 		}
