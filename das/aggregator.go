@@ -216,6 +216,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			defer cancel()
 			incFailureMetric := func() {
 				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/failure", nil).Inc(1)
+				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/all/failure", nil).Inc(1)
 			}
 
 			cert, err := d.service.Store(storeCtx, message, timeout, sig)
@@ -262,6 +263,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			}
 
 			metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/success", nil).Inc(1)
+			metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/all/success", nil).Inc(1)
 			responses <- storeResponse{d, cert.Sig, nil}
 		}(ctx, d)
 	}
