@@ -400,6 +400,7 @@ type Config struct {
 	Dangerous            DangerousConfig                `koanf:"dangerous"`
 	Archive              bool                           `koanf:"archive"`
 	TxLookupLimit        uint64                         `koanf:"tx-lookup-limit"`
+	Pruning              PruningConfig                  `koanf:"pruning"`
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -563,6 +564,21 @@ func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultWasmConfig = WasmConfig{
 	RootPath: "",
+}
+
+type PruningConfig struct {
+	BlockCount uint64        `koanf:"block-count"`
+	BlockAge   time.Duration `koanf:"block-age"`
+}
+
+func PruningConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Uint64(prefix+".block-count", DefaultPruningConfig.BlockCount, "minimum number of recent blocks to keep in memory")
+	f.Duration(prefix+".block-age", DefaultPruningConfig.BlockAge, "minimum age a block must be to be pruned")
+}
+
+var DefaultPruningConfig = PruningConfig{
+	BlockCount: 128,
+	BlockAge:   30 * time.Minute,
 }
 
 type Node struct {
@@ -1262,9 +1278,9 @@ func CreateDefaultStackForTest(dataDir string) (*node.Node, error) {
 	return stack, nil
 }
 
-func DefaultCacheConfigFor(stack *node.Node, archiveMode bool) *core.CacheConfig {
+func DefaultCacheConfigFor(stack *node.Node, nodeConfig *Config) *core.CacheConfig {
 	baseConf := ethconfig.Defaults
-	if archiveMode {
+	if nodeConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
 	}
 
@@ -1276,6 +1292,8 @@ func DefaultCacheConfigFor(stack *node.Node, archiveMode bool) *core.CacheConfig
 		TrieDirtyLimit:      baseConf.TrieDirtyCache,
 		TrieDirtyDisabled:   baseConf.NoPruning,
 		TrieTimeLimit:       baseConf.TrieTimeout,
+		TriesInMemory:       nodeConfig.Pruning.BlockCount,
+		TrieRetention:       nodeConfig.Pruning.BlockAge,
 		SnapshotLimit:       baseConf.SnapshotCache,
 		Preimages:           baseConf.Preimages,
 	}
