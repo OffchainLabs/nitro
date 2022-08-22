@@ -4,7 +4,7 @@ As an introduction to the various components that compromise the Arbitrum protoc
 
 We'll also intersperse it with "finality checks," explaining what guarantees the client has over their transaction's finality (i.e., assurances that their transaction's result is guaranteed and won't later be altered) over the course of a transaction's various stages.
 
-This overview will be focused on the Arbitrum Rollup protocol; see [Inside AnyTrust](inside_anytrust) for differences in the Arbitrum AnyTrust protocol. Also, for convenience/simplicity, we'll be describing the system in its fully permissionless final form; for the current state of the Arbitrum Mainnet chains, see "Mainnet Beta."
+This overview will be focused on the Arbitrum Rollup protocol; see [Inside AnyTrust](inside_anytrust) for differences in the Arbitrum AnyTrust protocol. Also, for convenience/simplicity, we'll be describing the system in its final form in terms of things like permissionless validation and contract upgradeability; for the current state of the Arbitrum Mainnet chains, see "Mainnet Beta."
 
 For clarity on any terminology that may be unfamiliar see, "glossary."
 
