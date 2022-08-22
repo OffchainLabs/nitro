@@ -502,6 +502,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function deleteStaker(address stakerAddress) private {
         Staker storage staker = _stakerMap[stakerAddress];
+        require(staker.isStaked, "NOT_STAKED");
         uint64 stakerIndex = staker.index;
         _stakerList[stakerIndex] = _stakerList[_stakerList.length - 1];
         _stakerMap[_stakerList[stakerIndex]].index = stakerIndex;

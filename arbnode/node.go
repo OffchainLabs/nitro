@@ -37,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/das/dasrpc"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -600,11 +599,14 @@ func createNodeImpl(
 	feedErrChan chan error,
 ) (*Node, error) {
 	var reorgingToBlock *types.Block
+
+	l2Config := l2BlockChain.Config()
+	l2ChainId := l2Config.ChainID.Uint64()
+
 	if config.Dangerous.ReorgToBlock >= 0 {
 		blockNum := uint64(config.Dangerous.ReorgToBlock)
-		genesis := l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum
-		if blockNum < genesis {
-			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, genesis)
+		if blockNum < l2Config.ArbitrumChainParams.GenesisBlockNum {
+			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, l2Config.ArbitrumChainParams.GenesisBlockNum)
 		}
 		reorgingToBlock = l2BlockChain.GetBlockByNumber(blockNum)
 		if reorgingToBlock == nil {
@@ -619,7 +621,9 @@ func createNodeImpl(
 	var classicOutbox *ClassicOutboxRetriever
 	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
 	if err != nil {
-		log.Warn("Classic Msg Database not found", "err", err)
+		if l2Config.ArbitrumChainParams.GenesisBlockNum > 0 {
+			log.Warn("Classic Msg Database not found", "err", err)
+		}
 		classicOutbox = nil
 	} else {
 		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
@@ -627,7 +631,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2BlockChain.Config().ChainID.Uint64(), feedErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, feedErrChan)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -698,7 +702,7 @@ func createNodeImpl(
 		for _, address := range config.Feed.Input.URLs {
 			client := broadcastclient.NewBroadcastClient(
 				address,
-				l2BlockChain.Config().ChainID.Uint64(),
+				l2ChainId,
 				currentMessageCount,
 				config.Feed.Input.Timeout,
 				txStreamer,
@@ -740,33 +744,39 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
-	if err != nil {
-		return nil, err
-	}
-	if dataAvailabilityService != nil {
+
+	var daWriter das.DataAvailabilityServiceWriter
+	var daReader das.DataAvailabilityServiceReader
+	var dasLifecycleManager *das.LifecycleManager
+	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
-			if daSigner != nil {
-				dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
-				if err != nil {
-					return nil, err
-				}
+			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, daSigner, l1client, deployInfo.SequencerInbox)
+			if err != nil {
+				return nil, err
 			}
 		} else {
-			dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
+			daReader, dasLifecycleManager, err = SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
+			if err != nil {
+				return nil, err
+			}
 		}
-		dataAvailabilityService = das.NewTimeoutWrapper(
-			dataAvailabilityService, config.DataAvailability.RequestTimeout,
-		)
+
+		if daWriter != nil {
+			daWriter = das.NewWriterTimeoutWrapper(daWriter, config.DataAvailability.RequestTimeout)
+		}
+		daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
+
 		if config.DataAvailability.PanicOnError {
-			dataAvailabilityService = das.NewPanicWrapper(dataAvailabilityService)
+			if daWriter != nil {
+				daWriter = das.NewWriterPanicWrapper(daWriter)
+			}
+			daReader = das.NewReaderPanicWrapper(daReader)
 		}
 	} else if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dataAvailabilityReader)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +801,7 @@ func createNodeImpl(
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader, reorgingToBlock)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, daReader, reorgingToBlock)
 		if err != nil {
 			return nil, err
 		}
@@ -804,7 +814,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, dataAvailabilityReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, daReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -816,7 +826,7 @@ func createNodeImpl(
 		if txOpts == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, txOpts, dataAvailabilityService)
+		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, txOpts, daWriter)
 		if err != nil {
 			return nil, err
 		}
@@ -936,8 +946,7 @@ func SetUpDataAvailability(
 	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
 	/*
 			      ChainFetchDAS → Bigcache → Redis →
-				       RPC Aggregator
-				       | SignAfterStoreDAS →
+				       SignAfterStoreDAS →
 				              FallbackDAS (if the REST client aggregator was specified)
 				              (primary) → RedundantStorage (if multiple persistent backing stores were specified)
 				                            → S3
@@ -946,8 +955,6 @@ func SetUpDataAvailability(
 				         (fallback only)→ RESTful client aggregator
 
 		          → : X--delegates to-->Y
-		          | : Exclusive OR
-
 	*/
 	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config)
 	if err != nil {
@@ -999,19 +1006,10 @@ func SetUpDataAvailability(
 	}
 
 	var topLevelDas das.DataAvailabilityService
-	// Create the RPC aggregator. None of the the above storage types can be enabled in combination with it.
-	// Its use for read-only purposes will be deprecated when the REST DAS servers have been rolled out.
 	if config.AggregatorConfig.Enable {
-		if topLevelStorageService != nil {
-			return nil, nil, errors.New("If rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
-		}
-		rpcAggregator, err := dasrpc.NewRPCAggregatorWithSeqInboxCaller(config.AggregatorConfig, seqInboxCaller)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		topLevelDas = rpcAggregator
-	} else if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
+		panic("Tried to make an aggregator using wrong factory method")
+	}
+	if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
 		_seqInboxCaller := seqInboxCaller
 		if config.DisableSignatureChecking {
 			_seqInboxCaller = nil

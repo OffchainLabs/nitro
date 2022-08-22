@@ -55,12 +55,15 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 
 #### Protocol Contracts
 
-- **New Contract Deployments**: For the Nitro upgrade, all contracts will be redeployed on L1 to new addresses except the Delayed Inbox contract. The list of contracts that will be redeployed is:
-    - Bridge 
+- **New Contract Deployments**: For the Nitro upgrade, these contracts will be redeployed on L1 to the new addresses:
     - SequencerInbox
     - RollupCore
     - Outbox
+    - Bridge
+        - bridge.sol contract will be redeployed and not the whole Bridge.
+        - The [bridge contract address](https://etherscan.io/address/0x011B6E24FfB0B5f5fCc564cf4183C5BBBc96D515) will be changed. 
 
+Also, worth mentioning that the address of the Delayed Inbox contract and Token Bridge contracts (Router and Gateways) won't be changed after migration.
 - **Sequencer Inbox changes**: The Sequencer inbox has a new interface and requires a new approach to determining a transaction's inclusion on L1 (see "Batch Info In Receipts" below).
 
 - **Outbox Changes**: The Outbox has a new (simplified!) architecture; in short, all outgoing messages will be included in a single Merkle tree (opposed to Arbitrum classic, in which many outbox entries, each with its own Merkle root). See [arbitrum-sdk](https://github.com/offchainlabs/arbitrum-sdk/tree/c-nitro) for a reference implementation on how to handle the new flow of interacting with the outbox.
