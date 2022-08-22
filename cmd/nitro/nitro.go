@@ -456,11 +456,11 @@ func main() {
 		return
 	}
 
-	archive := nodeConfig.Node.Archive || nodeConfig.Node.Pruning.Archive
 	if nodeConfig.Node.Archive {
 		log.Warn("node.archive has been deprecated. Please use node.pruning.archive instead.")
+		nodeConfig.Node.Pruning.Archive = true
 	}
-	if archive && nodeConfig.Node.TxLookupLimit != 0 {
+	if nodeConfig.Node.Pruning.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
 	}
