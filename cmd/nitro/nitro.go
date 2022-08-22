@@ -619,7 +619,7 @@ func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type NodeConfig struct {
-	Conf          genericconf.ConfConfig          `koanf:"conf"`
+	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
@@ -1008,15 +1008,22 @@ func (c *LiveNodeConfig) Start(ctx context.Context) {
 
 	go func() {
 		for {
-			// TODO
-			// timer := time.NewTimer(c.config.Conf.ReloadInterval)
-			select {
-			case <-ctx.Done():
-				// timer.Stop()
-				return
-			case <-sigusr1:
-				log.Info("SIGUSR1")
-				// case <-timer.C:
+			if c.config.Conf.ReloadInterval == 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-sigusr1:
+				}
+			} else {
+				timer := time.NewTimer(c.config.Conf.ReloadInterval)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-sigusr1:
+					timer.Stop()
+				case <-timer.C:
+				}
 			}
 			log.Info("Reloading config...")
 			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)

@@ -171,6 +171,53 @@ func TestLiveNodeConfig(t *testing.T) {
 	}
 }
 
+func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// create config file with ReloadInterval = 20 ms
+	configFile := filepath.Join(t.TempDir(), "config.json")
+	jsonConfig := "{\"conf\":{\"reload-interval\":\"20ms\"}}"
+	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	args = append(args, []string{"--conf.file", configFile}...)
+	config, _, _, _, _, err := ParseNode(context.Background(), args)
+	Require(t, err)
+
+	liveConfig := NewLiveNodeConfig(args, config)
+	liveConfig.Start(ctx)
+
+	// test if periodic reload works
+	expected := config.ShallowClone()
+	expected.Conf.ReloadInterval = 0
+	jsonConfig = "{\"conf\":{\"reload-interval\":\"0\"}}"
+	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+	success := false
+	start := time.Now()
+	for i := 0; i < 8; i++ {
+		time.Sleep(10 * time.Millisecond)
+		if reflect.DeepEqual(liveConfig.get(), expected) {
+			success = true
+			break
+		}
+	}
+	stop := time.Now()
+	if !success {
+		Fail(t, fmt.Sprintf("failed to update config after %d ms, while reload interval is %s", stop.Sub(start).Milliseconds(), config.Conf.ReloadInterval))
+	}
+
+	// test if previous config successfully disabled periodic reload
+	expected = config.ShallowClone()
+	expected.Conf.ReloadInterval = 10 * time.Millisecond
+	jsonConfig = "{\"conf\":{\"reload-interval\":\"10ms\"}}"
+	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+	time.Sleep(80 * time.Millisecond)
+	if reflect.DeepEqual(liveConfig.get(), expected) {
+		Fail(t, "failed to disable periodic reload")
+	}
+}
+
 func Require(t *testing.T, err error, text ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, text...)
