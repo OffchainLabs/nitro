@@ -94,11 +94,12 @@ func TestLiveNodeConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// create empty config file
+	// create a config file
 	configFile := filepath.Join(t.TempDir(), "config.json")
-	Require(t, os.WriteFile(configFile, []byte("{}"), 0600))
+	jsonConfig := "{\"l2\":{\"chain-id\":421613}}"
+	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
 
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
@@ -136,20 +137,38 @@ func TestLiveNodeConfig(t *testing.T) {
 	// change the config file
 	expected = config.ShallowClone()
 	expected.Node.Sequencer.MaxBlockSpeed += time.Millisecond
-	jsonConfig := fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}}", expected.Node.Sequencer.MaxBlockSpeed.String())
+	jsonConfig = fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}, \"l2\":{\"chain-id\":421613}}", expected.Node.Sequencer.MaxBlockSpeed.String())
+	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+
+	// trigger LiveConfig reload
+	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
+
+	success := false
+	for i := 0; i < 16; i++ {
+		if reflect.DeepEqual(liveConfig.get(), expected) {
+			success = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !success {
+		Fail(t, "failed to update config", config.Node.Sequencer.MaxBlockSpeed, update.Node.Sequencer.MaxBlockSpeed)
+	}
+
+	// change l2.chain-id in the config file (currently non-reloadable)
+	jsonConfig = fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}, \"l2\":{\"chain-id\":421703}}", expected.Node.Sequencer.MaxBlockSpeed.String())
 	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
 
 	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 
 	for i := 0; i < 16; i++ {
-		config = liveConfig.get()
-		if reflect.DeepEqual(config, expected) {
-			return
+		if !reflect.DeepEqual(liveConfig.get(), expected) {
+			Fail(t, "failed to reject invalid update")
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	Fail(t, "failed to update config", config.Node.Sequencer.MaxBlockSpeed, update.Node.Sequencer.MaxBlockSpeed)
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {
