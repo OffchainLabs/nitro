@@ -20,8 +20,14 @@ abstract contract AbsRollupUserLogic is
     using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
-        require(isValidator[msg.sender], "NOT_VALIDATOR");
+        require(isValidator[msg.sender] || _chainIdChanged(), "NOT_VALIDATOR");
         _;
+    }
+
+    uint256 internal immutable deployTimeChainId = block.chainid;
+
+    function _chainIdChanged() internal view returns (bool) {
+        return deployTimeChainId != block.chainid;
     }
 
     function isERC20Enabled() public view override returns (bool) {
