@@ -175,7 +175,7 @@ func RecoverPayloadFromDasBatch(
 				"Committee signed unsuported certificate format",
 				"version", version, "hash", hash, "payload", preimage,
 			)
-			panic("node software out of date")
+			return nil, errors.New("node software out of date")
 		}
 		return preimage, nil
 	}
