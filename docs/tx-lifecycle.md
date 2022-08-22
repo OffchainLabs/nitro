@@ -42,7 +42,7 @@ Upon receiving a transaction, the Sequencer will:
 
 #### ~ ~ ~ FINALITY CHECK: Trusted / Soft Confirmation ~ ~ ~
 
-At this phase, the client's acceptance of finality relies on some degree of trust in the Sequencer. I.e., a malicious/faulty Sequencer could deviate between what it promised in the transaction receipt and what is ultimately published in a batch (see phase 3).
+At this phase, the client's acceptance of finality relies on trusting the Sequencer. I.e., a malicious/faulty Sequencer could deviate between what it promised in the transaction receipt and what is ultimately published in a batch (see phase 3).
 
 Note that even a malicious/faulty Sequencer can only, at worst, reorder or temporarily delay transactions; it cannot, e.g., forge a client's transaction or propose an invalid state update. Given the degree of trust in the Sequencer at phase 2, we sometimes refer to the "instant" receipt that the Sequencer provides as a "soft confirmation."
 
@@ -52,7 +52,7 @@ The Sequencer will eventually post a batch of L2 transactions which includes our
 
 ##### 3a. What if the Sequencer never includes our transaction?
 
-Even if the Sequencer never includes our transaction in a batch, the client can include it in the L2 by posting in the delayed inbox and the "force including" it after some delay period (currently ~24 hours on Arbitrum One).
+Even if the Sequencer never includes our transaction in a batch, the client can include it in the L2 by posting in the delayed inbox and the "force including" it after some delay period (currently ~24 hours on Arbitrum One). (Note that the Sequencer is forced to include messages from the delayed Inbox in the queued order that they appear on chain. Thus, it can't selectively delay particular messages while including others; i.e., delaying the message at the front of the queue means delaying all messages behind it as well.)
 
 **See:**
 
