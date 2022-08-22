@@ -398,9 +398,9 @@ type Config struct {
 	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
 	Wasm                 WasmConfig                     `koanf:"wasm"`
 	Dangerous            DangerousConfig                `koanf:"dangerous"`
+	Pruning              PruningConfig                  `koanf:"pruning"`
 	Archive              bool                           `koanf:"archive"`
 	TxLookupLimit        uint64                         `koanf:"tx-lookup-limit"`
-	Pruning              PruningConfig                  `koanf:"pruning"`
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -427,8 +427,11 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
-	f.Bool(prefix+".archive", ConfigDefault.Archive, "retain past block state")
+	PruningConfigAddOptions(prefix+".pruning", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
+
+	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.pruning.archive)", prefix)
+	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
 }
 
 var ConfigDefault = Config{
@@ -449,6 +452,7 @@ var ConfigDefault = Config{
 	Dangerous:            DefaultDangerousConfig,
 	Archive:              false,
 	TxLookupLimit:        40_000_000,
+	Pruning:              DefaultPruningConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -567,16 +571,19 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type PruningConfig struct {
+	Archive    bool          `koanf:"archive"`
 	BlockCount uint64        `koanf:"block-count"`
 	BlockAge   time.Duration `koanf:"block-age"`
 }
 
 func PruningConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".archive", DefaultPruningConfig.Archive, "retain past block state")
 	f.Uint64(prefix+".block-count", DefaultPruningConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultPruningConfig.BlockAge, "minimum age a block must be to be pruned")
 }
 
 var DefaultPruningConfig = PruningConfig{
+	Archive:    false,
 	BlockCount: 128,
 	BlockAge:   30 * time.Minute,
 }
@@ -1278,9 +1285,9 @@ func CreateDefaultStackForTest(dataDir string) (*node.Node, error) {
 	return stack, nil
 }
 
-func DefaultCacheConfigFor(stack *node.Node, nodeConfig *Config) *core.CacheConfig {
+func DefaultCacheConfigFor(stack *node.Node, pruningConfig *PruningConfig) *core.CacheConfig {
 	baseConf := ethconfig.Defaults
-	if nodeConfig.Archive {
+	if pruningConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
 	}
 
@@ -1292,8 +1299,8 @@ func DefaultCacheConfigFor(stack *node.Node, nodeConfig *Config) *core.CacheConf
 		TrieDirtyLimit:      baseConf.TrieDirtyCache,
 		TrieDirtyDisabled:   baseConf.NoPruning,
 		TrieTimeLimit:       baseConf.TrieTimeout,
-		TriesInMemory:       nodeConfig.Pruning.BlockCount,
-		TrieRetention:       nodeConfig.Pruning.BlockAge,
+		TriesInMemory:       pruningConfig.BlockCount,
+		TrieRetention:       pruningConfig.BlockAge,
 		SnapshotLimit:       baseConf.SnapshotCache,
 		Preimages:           baseConf.Preimages,
 	}
