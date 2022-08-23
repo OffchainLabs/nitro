@@ -342,29 +342,31 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 			blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
 			block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
 			txs := block.Transactions()
-			txHashes := make([]common.Hash, 0, len(txs))
 			txHashMap := make(map[common.Hash]int, len(txs))
 			for _, tx := range txs {
 				txHash := tx.Hash()
-				txHashes = append(txHashes, txHash)
 				txHashMap[txHash]++
 			}
-			for txHash := range txHashMap {
-				if entry := rawdb.ReadTxLookupEntry(chainDb, txHash); entry != nil {
-					txHashMap[txHash]++
-				}
-			}
 			var receipts types.Receipts = nil
-			for i, txHash := range txHashes {
-				if txHashMap[txHash] > 1 {
+			txHashes := make([]common.Hash, 0, len(txs))
+			for txHash, times := range txHashMap {
+				if times == 0 {
+					continue
+				}
+				avoidTx := false
+				if entry := rawdb.ReadTxLookupEntry(chainDb, txHash); entry != nil {
+					avoidTx = true
 					if receipts == nil {
-						receipts = rawdb.ReadReceipts(chainDb, blockHash, blockNum, chainConfig)
+						receipts = rawdb.ReadRawReceipts(chainDb, blockHash, blockNum)
 					}
-					if receipts[i].Status == 0 && receipts[i].GasUsed == 0 {
-						log.Info("Not indexing failed duplicate transaction", "block", blockNum, "txHash", txHash, "index", i)
-						txHashes[i] = common.Hash{}
-						txHashMap[txHash]--
+					for i := range receipts {
+						if txs[i].Hash() == txHash && (receipts[i].Status != 0 || receipts[i].GasUsed != 0) {
+							avoidTx = false
+						}
 					}
+				}
+				if !avoidTx {
+					txHashes = append(txHashes, txHash)
 				}
 			}
 			rawdb.WriteTxLookupEntries(batch, blockNum, txHashes)
