@@ -1071,7 +1071,11 @@ type arbNodeLifecycle struct {
 }
 
 func (l arbNodeLifecycle) Start() error {
-	return l.node.Start(context.Background())
+	err := l.node.Start(context.Background())
+	if err != nil {
+		log.Error("failed to start node", "err", err)
+	}
+	return err
 }
 
 func (l arbNodeLifecycle) Stop() error {
@@ -1237,10 +1241,10 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.TxStreamer.StopAndWait()
-	n.ArbInterface.BlockChain().Stop()
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
+	n.ArbInterface.BlockChain().Stop()
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 	}
