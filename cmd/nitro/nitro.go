@@ -1008,14 +1008,17 @@ func (c *LiveNodeConfig) Start(ctx context.Context) {
 
 	go func() {
 		for {
-			if c.config.Conf.ReloadInterval == 0 {
+			c.mutex.RLock()
+			reloadInterval := c.config.Conf.ReloadInterval
+			c.mutex.RUnlock()
+			if reloadInterval == 0 {
 				select {
 				case <-ctx.Done():
 					return
 				case <-sigusr1:
 				}
 			} else {
-				timer := time.NewTimer(c.config.Conf.ReloadInterval)
+				timer := time.NewTimer(reloadInterval)
 				select {
 				case <-ctx.Done():
 					timer.Stop()
