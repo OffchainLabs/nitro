@@ -343,19 +343,26 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 			block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
 			txs := block.Transactions()
 			txHashes := make([]common.Hash, 0, len(txs))
-			var receipts types.Receipts = nil
-			for i, tx := range txs {
+			txHashMap := make(map[common.Hash]int, len(txs))
+			for _, tx := range txs {
 				txHash := tx.Hash()
+				txHashes = append(txHashes, txHash)
+				txHashMap[txHash]++
 				if entry := rawdb.ReadTxLookupEntry(chainDb, txHash); entry != nil {
+					txHashMap[txHash]++
+				}
+			}
+			var receipts types.Receipts = nil
+			for i, txHash := range txHashes {
+				if txHashMap[txHash] > 1 {
 					if receipts == nil {
 						receipts = rawdb.ReadReceipts(chainDb, blockHash, blockNum, chainConfig)
 					}
 					if receipts[i].Status == 0 && receipts[i].GasUsed == 0 {
-						log.Info("Skipping failed duplicate transaction", "block", blockNum, "txHash", txHash)
-						continue
+						log.Info("Not indexing failed duplicate transaction", "block", blockNum, "txHash", txHash, "index", i)
+						txHashes[i] = common.Hash{}
 					}
 				}
-				txHashes = append(txHashes, txHash)
 			}
 			rawdb.WriteTxLookupEntries(batch, blockNum, txHashes)
 			rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
