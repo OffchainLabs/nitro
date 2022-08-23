@@ -251,17 +251,15 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return (1400 + 6 * dataLength) * (baseFee == 0 ? block.basefee : baseFee);
     }
 
-    /// @inheritdoc IInbox
+    /**
+     * @notice Deposit Ether into L2 to the L1 sender's address if the sender is an EOA, and to its aliased address if the sender is a contract.
+     */
     function depositEth() public payable whenNotPaused onlyAllowed returns (uint256) {
         address dest = msg.sender;
 
         // solhint-disable-next-line avoid-tx-origin
         if (AddressUpgradeable.isContract(msg.sender) || tx.origin != msg.sender) {
             // isContract check fails if this function is called during a contract's constructor.
-            // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
-            // If the caller is an EOA, we adjust the address.
-            // This is needed because unsigned messages to the L2 (such as retryables)
-            // have the L1 sender address mapped.
             dest = AddressAliasHelper.applyL1ToL2Alias(msg.sender);
         }
 
