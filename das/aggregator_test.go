@@ -202,9 +202,14 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, *details)
 	}
 
-	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest}, L1NodeURL: "none"}, backends)
+	aggregator, err := NewAggregator(
+		ctx,
+		DataAvailabilityConfig{
+			AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest},
+			L1NodeURL:        "none",
+			RequestTimeout:   time.Millisecond * 2000,
+		}, backends)
 	Require(t, err)
-	aggregator := WriterTimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
