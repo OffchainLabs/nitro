@@ -105,14 +105,6 @@ func TestLiveNodeConfig(t *testing.T) {
 	Require(t, err)
 
 	liveConfig := NewLiveNodeConfig(args, config)
-	liveConfig.Start(ctx)
-
-	// check that reloading the config doesn't change anything
-	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
-	time.Sleep(20 * time.Millisecond)
-	if !reflect.DeepEqual(liveConfig.get(), config) {
-		Fail(t, "live config differs from expected")
-	}
 
 	// check updating the config
 	update := config.ShallowClone()
@@ -132,6 +124,16 @@ func TestLiveNodeConfig(t *testing.T) {
 	}
 	if !reflect.DeepEqual(liveConfig.get(), expected) {
 		Fail(t, "config should not change if its update fails")
+	}
+
+	// starting the LiveNodeConfig after testing LiveNodeConfig.set to avoid race condition in the test
+	liveConfig.Start(ctx)
+
+	// check that reloading the config doesn't change anything
+	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
+	time.Sleep(20 * time.Millisecond)
+	if !reflect.DeepEqual(liveConfig.get(), config) {
+		Fail(t, "live config differs from expected")
 	}
 
 	// change the config file

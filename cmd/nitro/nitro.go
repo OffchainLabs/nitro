@@ -1008,9 +1008,7 @@ func (c *LiveNodeConfig) Start(ctx context.Context) {
 
 	go func() {
 		for {
-			c.mutex.RLock()
 			reloadInterval := c.config.Conf.ReloadInterval
-			c.mutex.RUnlock()
 			if reloadInterval == 0 {
 				select {
 				case <-ctx.Done():
