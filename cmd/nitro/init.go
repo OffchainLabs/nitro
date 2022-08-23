@@ -342,7 +342,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 			blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
 			block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
 			txs := block.Transactions()
-			txHashes := make([]common.Hash, len(txs), 0)
+			txHashes := make([]common.Hash, 0, len(txs))
 			var receipts types.Receipts = nil
 			for i, tx := range txs {
 				txHash := tx.Hash()
