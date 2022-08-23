@@ -365,7 +365,9 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 						}
 					}
 				}
-				if !avoidTx {
+				if avoidTx {
+					log.Info("Skipping lookup entry", "block", blockNum, "txHash", txHash)
+				} else {
 					txHashes = append(txHashes, txHash)
 				}
 			}
