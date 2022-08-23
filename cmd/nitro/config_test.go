@@ -97,7 +97,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	// create a config file
 	configFile := filepath.Join(t.TempDir(), "config.json")
 	jsonConfig := "{\"l2\":{\"chain-id\":421613}}"
-	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
@@ -147,7 +147,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	expected = config.ShallowClone()
 	expected.Node.Sequencer.MaxBlockSpeed += time.Millisecond
 	jsonConfig = fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}, \"l2\":{\"chain-id\":421613}}", expected.Node.Sequencer.MaxBlockSpeed.String())
-	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
@@ -158,7 +158,7 @@ func TestLiveNodeConfig(t *testing.T) {
 
 	// change l2.chain-id in the config file (currently non-reloadable)
 	jsonConfig = fmt.Sprintf("{\"node\":{\"sequencer\":{\"max-block-speed\":\"%s\"}}, \"l2\":{\"chain-id\":421703}}", expected.Node.Sequencer.MaxBlockSpeed.String())
-	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
@@ -175,7 +175,7 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	// create config file with ReloadInterval = 20 ms
 	configFile := filepath.Join(t.TempDir(), "config.json")
 	jsonConfig := "{\"conf\":{\"reload-interval\":\"20ms\"}}"
-	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+	Require(t, WriteToConfigFile(configFile, jsonConfig))
 
 	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.l1-reader.enable=false --l1.chain-id 5 --l2.chain-id 421613 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642", " ")
 	args = append(args, []string{"--conf.file", configFile}...)
@@ -189,21 +189,25 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	expected := config.ShallowClone()
 	expected.Conf.ReloadInterval = 0
 	jsonConfig = "{\"conf\":{\"reload-interval\":\"0\"}}"
-	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+	Require(t, WriteToConfigFile(configFile, jsonConfig))
 	start := time.Now()
 	if !PollLiveConfigUntilEqual(liveConfig, expected) {
-		Fail(t, fmt.Sprintf("failed to update config after %d ms, while reload interval is %s", time.Now().Sub(start).Milliseconds(), config.Conf.ReloadInterval))
+		Fail(t, fmt.Sprintf("failed to update config after %d ms, while reload interval is %s", time.Since(start).Milliseconds(), config.Conf.ReloadInterval))
 	}
 
 	// test if previous config successfully disabled periodic reload
 	expected = config.ShallowClone()
 	expected.Conf.ReloadInterval = 10 * time.Millisecond
 	jsonConfig = "{\"conf\":{\"reload-interval\":\"10ms\"}}"
-	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
+	Require(t, WriteToConfigFile(configFile, jsonConfig))
 	time.Sleep(80 * time.Millisecond)
 	if reflect.DeepEqual(liveConfig.get(), expected) {
 		Fail(t, "failed to disable periodic reload")
 	}
+}
+
+func WriteToConfigFile(path string, jsonConfig string) error {
+	return os.WriteFile(path, []byte(jsonConfig), 0600)
 }
 
 func PollLiveConfigUntilEqual(liveConfig *LiveNodeConfig, expected *NodeConfig) bool {
