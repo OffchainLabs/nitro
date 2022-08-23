@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -287,6 +288,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	var chainConfig *params.ChainConfig
 
 	var l2BlockChain *core.BlockChain
+	txIndexWg := sync.WaitGroup{}
 	if initDataReader == nil {
 		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
@@ -304,6 +306,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			// The node will probably die later, but might as well not kill it here?
 			log.Error("database missing genesis block", "number", genesisBlockNr)
 		}
+		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
 	} else {
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
@@ -313,6 +316,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			panic(err)
 		}
+		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
 		ancients, err := chainDb.Ancients()
 		if err != nil {
 			panic(err)
@@ -334,13 +338,16 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			panic(err)
 		}
 	}
+	txIndexWg.Wait()
+	err = chainDb.Sync()
+	if err != nil {
+		panic(err)
+	}
 
 	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	testUpdateTxIndex(chainDb, chainConfig)
 
 	return chainDb, l2BlockChain, nil
 }
@@ -901,7 +908,7 @@ func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
 	}
 }
 
-func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig) {
+func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, txIndexWg *sync.WaitGroup) {
 	lastBlock := chainConfig.ArbitrumChainParams.GenesisBlockNum
 	if lastBlock == 0 {
 		// no Tx, no need to update index
@@ -913,24 +920,25 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig) 
 		return
 	}
 
+	txIndexWg.Add(1)
 	log.Info("writing Tx lookup entries")
-	batch := chainDb.NewBatch()
-	for blockNum := uint64(0); blockNum <= lastBlock; blockNum++ {
-		blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
-		block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
-		rawdb.WriteTxLookupEntriesByBlock(batch, block)
-		rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
-		if (batch.ValueSize() >= ethdb.IdealBatchSize) || blockNum == lastBlock {
-			err := batch.Write()
-			if err != nil {
-				panic(err)
+
+	go func() {
+		batch := chainDb.NewBatch()
+		for blockNum := uint64(0); blockNum <= lastBlock; blockNum++ {
+			blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
+			block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
+			rawdb.WriteTxLookupEntriesByBlock(batch, block)
+			rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
+			if (batch.ValueSize() >= ethdb.IdealBatchSize) || blockNum == lastBlock {
+				err := batch.Write()
+				if err != nil {
+					panic(err)
+				}
+				batch.Reset()
 			}
-			batch.Reset()
 		}
-	}
-	err := chainDb.Sync()
-	if err != nil {
-		panic(err)
-	}
-	log.Info("Tx lookup entries written")
+		txIndexWg.Done()
+		log.Info("Tx lookup entries written")
+	}()
 }

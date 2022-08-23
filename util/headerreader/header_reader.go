@@ -3,7 +3,7 @@ package headerreader
 import (
 	"context"
 	"fmt"
-	"strings"
+	"math/big"
 	"sync"
 	"time"
 
@@ -197,7 +197,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		case <-ticker.C:
 			h, err := s.client.HeaderByNumber(ctx, nil)
 			if err != nil {
-				if !errors.Is(err, context.Cancelled) {
+				if !errors.Is(err, context.Canceled) {
 					log.Warn("failed reading header", "err", err)
 				}
 			} else {
@@ -289,6 +289,11 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 	return s.lastPendingCallBlockNr
+}
+
+func (s *HeaderReader) LatestFinalizedHeader() (*types.Header, error) {
+	// note, this is not cached
+	return s.client.HeaderByNumber(s.GetContext(), big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 }
 
 func (s *HeaderReader) Client() arbutil.L1Interface {
