@@ -3,6 +3,7 @@ package headerreader
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"sync"
 	"time"
 
@@ -286,6 +287,11 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 	return s.lastPendingCallBlockNr
+}
+
+func (s *HeaderReader) LatestFinalizedHeader() (*types.Header, error) {
+	// note, this is not cached
+	return s.client.HeaderByNumber(s.GetContext(), big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 }
 
 func (s *HeaderReader) Client() arbutil.L1Interface {
