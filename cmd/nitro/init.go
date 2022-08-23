@@ -341,7 +341,23 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 		for blockNum := uint64(0); blockNum <= lastBlock; blockNum++ {
 			blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
 			block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
-			rawdb.WriteTxLookupEntriesByBlock(batch, block)
+			txs := block.Transactions()
+			txHashes := make([]common.Hash, len(txs), 0)
+			var receipts types.Receipts = nil
+			for i, tx := range txs {
+				txHash := tx.Hash()
+				if entry := rawdb.ReadTxLookupEntry(chainDb, txHash); entry != nil {
+					if receipts == nil {
+						receipts = rawdb.ReadReceipts(chainDb, blockHash, blockNum, chainConfig)
+					}
+					if receipts[i].Status == 0 && receipts[i].GasUsed == 0 {
+						log.Info("Skipping failed duplicate transaction", "block", blockNum, "txHash", txHash)
+						continue
+					}
+				}
+				txHashes = append(txHashes, txHash)
+			}
+			rawdb.WriteTxLookupEntries(batch, blockNum, txHashes)
 			rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
 			if (batch.ValueSize() >= ethdb.IdealBatchSize) || blockNum == lastBlock {
 				err := batch.Write()
