@@ -20,7 +20,9 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -47,9 +49,9 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type BroadcastClientConfig struct {
-	RequireChainId bool          `koanf:"require-chain-id"`
-	Timeout        time.Duration `koanf:"timeout"`
-	URLs           []string      `koanf:"url"`
+	RequireSignature bool          `koanf:"require-signature"`
+	Timeout          time.Duration `koanf:"timeout"`
+	URLs             []string      `koanf:"url"`
 }
 
 func (c *BroadcastClientConfig) Enable() bool {
@@ -57,26 +59,38 @@ func (c *BroadcastClientConfig) Enable() bool {
 }
 
 func BroadcastClientConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".require-chain-id", DefaultBroadcastClientConfig.RequireChainId, "require broadcast server to send chain id when connecting")
+	f.Bool(prefix+".require-signature", DefaultBroadcastClientConfig.RequireSignature, "require all feed messages to be signed")
 	f.Duration(prefix+".timeout", DefaultBroadcastClientConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
 	f.StringSlice(prefix+".url", DefaultBroadcastClientConfig.URLs, "URL of sequencer feed source")
 }
 
 var DefaultBroadcastClientConfig = BroadcastClientConfig{
-	RequireChainId: false,
-	URLs:           []string{""},
-	Timeout:        20 * time.Second,
+	RequireSignature: false,
+	URLs:             []string{""},
+	Timeout:          20 * time.Second,
+}
+
+var DefaultTestBroadcastClientConfig = BroadcastClientConfig{
+	RequireSignature: false,
+	URLs:             []string{""},
+	Timeout:          200 * time.Millisecond,
 }
 
 type TransactionStreamerInterface interface {
-	AddBroadcastMessages(ctx context.Context, feedMessages []*broadcaster.BroadcastFeedMessage) error
+	AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error
+}
+
+type BatchPosterVerifierInterface interface {
+	IsBatchPoster(ctx context.Context, addr common.Address) (bool, error)
 }
 
 type BroadcastClient struct {
 	stopwaiter.StopWaiter
 
+	config       BroadcastClientConfig
 	websocketUrl string
 	nextSeqNum   arbutil.MessageIndex
+	bpVerifier   BatchPosterVerifierInterface
 
 	chainId uint64
 
@@ -86,10 +100,10 @@ type BroadcastClient struct {
 
 	retryCount int64
 
+	errorCount                      int
 	retrying                        bool
 	shuttingDown                    bool
 	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
-	idleTimeout                     time.Duration
 	txStreamer                      TransactionStreamerInterface
 	feedErrChan                     chan error
 }
@@ -98,20 +112,27 @@ var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
 var ErrIncorrectChainId = errors.New("incorrect chain id")
 
 func NewBroadcastClient(
+	config BroadcastClientConfig,
 	websocketUrl string,
 	chainId uint64,
 	currentMessageCount arbutil.MessageIndex,
-	idleTimeout time.Duration,
 	txStreamer TransactionStreamerInterface,
 	feedErrChan chan error,
+	bpVerifier BatchPosterVerifierInterface,
 ) *BroadcastClient {
 	return &BroadcastClient{
+		config:       config,
 		websocketUrl: websocketUrl,
 		chainId:      chainId,
 		nextSeqNum:   currentMessageCount,
-		idleTimeout:  idleTimeout,
 		txStreamer:   txStreamer,
-		feedErrChan:  feedErrChan}
+		feedErrChan:  feedErrChan,
+		bpVerifier:   bpVerifier,
+	}
+}
+
+func (bc *BroadcastClient) GetErrorCount() int {
+	return bc.errorCount
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
@@ -236,7 +257,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			default:
 			}
 
-			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.idleTimeout, ws.StateClientSide)
+			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.config.Timeout, ws.StateClientSide)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return
@@ -271,7 +292,28 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
-						if err := bc.txStreamer.AddBroadcastMessages(ctx, res.Messages); err != nil {
+						for _, message := range res.Messages {
+							if message == nil {
+								log.Warn("ignoring nil feed message")
+								bc.nextSeqNum = message.SequenceNumber
+								continue
+							}
+
+							valid, err := bc.isValidSignature(ctx, message)
+							if err != nil {
+								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
+								bc.errorCount++
+								continue
+							}
+
+							if !valid {
+								bc.feedErrChan <- errors.Errorf("invalid feed signature for %v", message.SequenceNumber)
+								bc.errorCount++
+								continue
+							}
+							bc.nextSeqNum = message.SequenceNumber
+						}
+						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}
@@ -332,4 +374,31 @@ func (bc *BroadcastClient) StopAndWait() {
 	if bc.conn != nil {
 		_ = bc.conn.Close()
 	}
+}
+
+func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) (bool, error) {
+	if bc.bpVerifier == nil {
+		// Validating disabled
+		return true, nil
+	}
+	if message.Signature == nil {
+		if !bc.config.RequireSignature {
+			// Signature missing and not required
+			return true, nil
+		}
+
+		// Required signature missing
+		return false, errors.New("missing required feed signature")
+	}
+
+	address, err := message.SigningAddress(bc.chainId)
+	if err != nil {
+		return false, errors.Wrap(err, "unable to extract signing address from feed")
+	}
+	isValid, err := bc.bpVerifier.IsBatchPoster(ctx, address)
+	if err != nil {
+		return false, errors.Wrapf(err, "uanble to check if address %v is batch poster", address)
+	}
+
+	return isValid, nil
 }

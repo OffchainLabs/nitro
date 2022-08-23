@@ -50,7 +50,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 
-	inbox, err := NewTransactionStreamer(arbDb, bc, nil, common.Address{}, nil)
+	inbox, err := NewTransactionStreamer(arbDb, bc, nil)
 	if err != nil {
 		Fail(t, err)
 	}

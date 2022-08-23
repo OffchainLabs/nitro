@@ -30,7 +30,7 @@ type RelayMessageQueue struct {
 	queue chan broadcaster.BroadcastFeedMessage
 }
 
-func (q *RelayMessageQueue) AddBroadcastMessages(_ context.Context, feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (q *RelayMessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		q.queue <- *feedMessage
 	}
@@ -46,7 +46,7 @@ func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadca
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, 10)
 
 	for _, address := range clientConf.URLs {
-		client := broadcastclient.NewBroadcastClient(address, chainId, 0, clientConf.Timeout, &q, feedErrChan)
+		client := broadcastclient.NewBroadcastClient(clientConf, address, chainId, 0, &q, feedErrChan, nil)
 		client.ConfirmedSequenceNumberListener = confirmedSequenceNumberListener
 		broadcastClients = append(broadcastClients, client)
 	}

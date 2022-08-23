@@ -26,8 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -59,25 +57,13 @@ type TransactionStreamer struct {
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
 	inboxReader     *InboxReader
-	bpVerifier      *contracts.BatchPosterVerifier
 }
 
 func NewTransactionStreamer(
 	db ethdb.Database,
 	bc *core.BlockChain,
 	broadcastServer *broadcaster.Broadcaster,
-	seqInboxAddress common.Address,
-	l1Client arbutil.L1Interface,
 ) (*TransactionStreamer, error) {
-	var bpVerifier *contracts.BatchPosterVerifier
-	if l1Client != nil {
-		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1Client)
-		if err != nil {
-			return nil, err
-		}
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
-	}
-
 	inbox := &TransactionStreamer{
 		db:                 db,
 		bc:                 bc,
@@ -85,7 +71,6 @@ func NewTransactionStreamer(
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 		chainId:            bc.Config().ChainID.Uint64(),
-		bpVerifier:         bpVerifier,
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -266,27 +251,7 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, 
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
-func (s *TransactionStreamer) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) bool {
-	if message.Signature == nil || s.bpVerifier == nil {
-		// Nothing to validate or validating disabled
-		return true
-	}
-
-	address, err := message.SigningAddress(s.chainId)
-	if err != nil {
-		log.Error("unable to extract signing address from feed", "error", err)
-		return false
-	}
-	isValid, err := s.bpVerifier.IsBatchPoster(ctx, address)
-	if err != nil {
-		log.Error("unable to check if address is batch poster", "address", address, "error", err)
-		return false
-	}
-
-	return isValid
-}
-
-func (s *TransactionStreamer) AddBroadcastMessages(ctx context.Context, feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
 	}
@@ -295,9 +260,6 @@ func (s *TransactionStreamer) AddBroadcastMessages(ctx context.Context, feedMess
 	for _, feedMessage := range feedMessages {
 		if feedMessage.Message.Message == nil || feedMessage.Message.Message.Header == nil {
 			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
-		}
-		if !s.isValidSignature(ctx, feedMessage) {
-			return fmt.Errorf("invalid feed signature for sequencer number %v", feedMessage.SequenceNumber)
 		}
 		messages = append(messages, feedMessage.Message)
 	}

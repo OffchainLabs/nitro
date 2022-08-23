@@ -43,6 +43,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -644,7 +645,7 @@ func createNodeImpl(
 	if deployInfo != nil {
 		sequencerInboxAddr = deployInfo.SequencerInbox
 	}
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, sequencerInboxAddr, l1client)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
 	if err != nil {
 		return nil, err
 	}
@@ -698,6 +699,14 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	var bpVerifier *contracts.BatchPosterVerifier
+	if l1client != nil {
+		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(sequencerInboxAddr, l1client)
+		if err != nil {
+			return nil, err
+		}
+		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+	}
 	currentMessageCount, err := txStreamer.GetMessageCount()
 	if err != nil {
 		return nil, err
@@ -706,12 +715,13 @@ func createNodeImpl(
 	if config.Feed.Input.Enable() {
 		for _, address := range config.Feed.Input.URLs {
 			client := broadcastclient.NewBroadcastClient(
+				config.Feed.Input,
 				address,
 				l2ChainId,
 				currentMessageCount,
-				config.Feed.Input.Timeout,
 				txStreamer,
 				feedErrChan,
+				bpVerifier,
 			)
 			broadcastClients = append(broadcastClients, client)
 		}
