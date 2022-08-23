@@ -59,7 +59,7 @@ type Aggregator struct {
 }
 
 type ServiceDetails struct {
-	service     DataAvailabilityService
+	service     DataAvailabilityServiceWriter
 	pubKey      blsSignatures.PublicKey
 	signersMask uint64
 }
@@ -68,7 +68,7 @@ func (this *ServiceDetails) String() string {
 	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", this.service, this.signersMask)
 }
 
-func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.PublicKey, signersMask uint64) (*ServiceDetails, error) {
+func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatures.PublicKey, signersMask uint64) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
 		return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
 	}
@@ -160,46 +160,6 @@ func NewAggregatorWithSeqInboxCaller(
 		keysetBytes:                    ksBuf.Bytes(),
 		bpVerifier:                     bpVerifier,
 	}, nil
-}
-
-func (a *Aggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	// Query all services, even those that didn't sign.
-	// They may have been late in returning a response after storing the data,
-	// or got the data by some other means.
-	blobChan := make(chan []byte, len(a.services))
-	errorChan := make(chan error, len(a.services))
-	subCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	for _, d := range a.services {
-		go func(ctx context.Context, d ServiceDetails) {
-			blob, err := d.service.GetByHash(ctx, hash)
-			if err == nil && !dastree.ValidHash(hash, blob) {
-				err = fmt.Errorf("das (mask %X) returned data that doesn't match requested hash", d.signersMask)
-			}
-			if err != nil {
-				log.Warn("Couldn't retrieve message from DAS", "err", err)
-				errorChan <- err
-				return
-			}
-			blobChan <- blob
-		}(subCtx, d)
-	}
-
-	errorCount := 0
-	var errorCollection []error
-	for errorCount < len(a.services) {
-		select {
-		case blob := <-blobChan:
-			return blob, nil
-		case err := <-errorChan:
-			errorCollection = append(errorCollection, err)
-			errorCount++
-		case <-ctx.Done():
-			break
-		}
-	}
-
-	return nil, fmt.Errorf("data wasn't able to be retrieved from any DAS: %v", errorCollection)
 }
 
 type storeResponse struct {
@@ -339,36 +299,4 @@ func (a *Aggregator) String() string {
 	}
 	b.WriteString("}")
 	return b.String()
-}
-
-func (a *Aggregator) HealthCheck(ctx context.Context) error {
-	for _, serv := range a.services {
-		err := serv.service.HealthCheck(ctx)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (a *Aggregator) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	if len(a.services) == 0 {
-		return -1, errors.New("no DataAvailabilityService present")
-	}
-	expectedExpirationPolicy, err := a.services[0].service.ExpirationPolicy(ctx)
-	if err != nil {
-		return -1, err
-	}
-	// Even if a single service is different from the rest,
-	// then whole aggregator will be considered for mixed expiration timeout policy.
-	for _, serv := range a.services {
-		ep, err := serv.service.ExpirationPolicy(ctx)
-		if err != nil {
-			return -1, err
-		}
-		if ep != expectedExpirationPolicy {
-			return arbstate.MixedTimeout, nil
-		}
-	}
-	return expectedExpirationPolicy, nil
 }

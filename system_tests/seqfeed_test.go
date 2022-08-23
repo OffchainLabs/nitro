@@ -122,7 +122,9 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	// The truthful sequencer
-	chainConfig, nodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeStr)
+	chainConfig, nodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeStr)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
+
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
 	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
@@ -135,6 +137,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
+	nodeConfigC.DataAvailability.AggregatorConfig.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
 	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
 	defer requireClose(t, l2stackC)
@@ -146,6 +149,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
+	nodeConfigB.DataAvailability.AggregatorConfig.Enable = false
 	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
 	defer requireClose(t, l2stackB)
 

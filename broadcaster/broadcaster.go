@@ -7,6 +7,8 @@ import (
 	"context"
 	"net"
 
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -18,7 +20,7 @@ type Broadcaster struct {
 }
 
 /*
- * The base message type for messages to send over the network.
+ * BroadcastMessage is the base message type for messages to send over the network.
  *
  * Acts as a variant holding the message types. The type of the message is
  * indicated by whichever of the fields is non-empty. The fields holding the message
@@ -76,6 +78,7 @@ func (b *Broadcaster) Broadcast(msg BroadcastMessage) {
 }
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
+	log.Debug("confirming sequence number", "sequenceNumber", seq)
 	b.server.Broadcast(BroadcastMessage{
 		Version:                        1,
 		ConfirmedSequenceNumberMessage: &ConfirmedSequenceNumberMessage{seq}})

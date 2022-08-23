@@ -20,6 +20,7 @@ type predicate interface {
 }
 
 func waitUntilUpdated(t *testing.T, p predicate) {
+	t.Helper()
 	updateTimer := time.NewTimer(2 * time.Second)
 	defer updateTimer.Stop()
 	for {
@@ -81,45 +82,25 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 
 	b.Confirm(1)
 	waitUntilUpdated(t, expectMessageCount(3,
-		"after 4 messages, 1 cleared"))
+		"after 4 messages, 1 cleared by confirm"))
 
-	b.Confirm(3)
-	waitUntilUpdated(t, expectMessageCount(1,
-		"after 4 messages, 3 cleared"))
-
-	b.BroadcastSingle(dummyMessage, 5)
+	b.Confirm(2)
 	waitUntilUpdated(t, expectMessageCount(2,
-		"after 5 messages, 3 cleared"))
+		"after 4 messages, 2 cleared by confirm"))
 
-	// Confirm not-yet-seen or already confirmed/cleared sequence numbers
-	b.Confirm(7)
+	b.Confirm(1)
+	waitUntilUpdated(t, expectMessageCount(2,
+		"nothing changed because confirmed sequence number before cache"))
+
+	b.Confirm(2)
+	b.BroadcastSingle(dummyMessage, 5)
+	waitUntilUpdated(t, expectMessageCount(3,
+		"after 5 messages, 2 cleared by confirm"))
+
+	// Confirm not-yet-seen or already confirmed/cleared sequence numbers twice to force clearing cache
+	b.Confirm(6)
 	waitUntilUpdated(t, expectMessageCount(0,
 		"clear all messages after confirmed 1 beyond latest"))
-
-	b.BroadcastSingle(dummyMessage, 3)
-	b.BroadcastSingle(dummyMessage, 4)
-	b.BroadcastSingle(dummyMessage, 5)
-	b.BroadcastSingle(dummyMessage, 6)
-	b.Confirm(2)
-	waitUntilUpdated(t, expectMessageCount(4,
-		"don't update count after confirming already confirmed messages"))
-
-	b.Confirm(4)
-	waitUntilUpdated(t, expectMessageCount(2,
-		"update count after 4 mesages, 2 cleared"))
-
-	b.Confirm(9)
-	waitUntilUpdated(t, expectMessageCount(0,
-		"clear all messages after confirmed 3 beyond latest"))
-
-	// Duplicates and messages already seen
-	b.BroadcastSingle(dummyMessage, 2)
-	b.BroadcastSingle(dummyMessage, 0)
-	b.BroadcastSingle(dummyMessage, 1)
-	b.BroadcastSingle(dummyMessage, 2)
-	waitUntilUpdated(t, expectMessageCount(1,
-		"1 message after duplicates and already seen messages"))
-
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {

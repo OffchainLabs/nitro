@@ -53,8 +53,12 @@ func NewBlockChainTestInfo(t *testing.T, signer types.Signer, gasPrice *big.Int,
 }
 
 func NewArbTestInfo(t *testing.T, chainId *big.Int) *BlockchainTestInfo {
-	var transferGas uint64 = util.NormalizeL2GasForL1GasInitial(300_000, params.GWei) // include room for aggregator L1 costs
-	arbinfo := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainId)), big.NewInt(l2pricing.InitialBaseFeeWei*2), transferGas)
+	var transferGas uint64 = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
+	arbinfo := NewBlockChainTestInfo(
+		t,
+		types.NewArbitrumSigner(types.NewLondonSigner(chainId)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		transferGas,
+	)
 	arbinfo.GenerateGenesysAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
 	arbinfo.GenerateGenesysAccount("Faucet", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
 	return arbinfo
@@ -207,9 +211,16 @@ func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Tra
 func (b *BlockchainTestInfo) PrepareTx(from, to string, gas uint64, value *big.Int, data []byte) *types.Transaction {
 	b.T.Helper()
 	addr := b.GetAddress(to)
+	return b.PrepareTxTo(from, &addr, gas, value, data)
+}
+
+func (b *BlockchainTestInfo) PrepareTxTo(
+	from string, to *common.Address, gas uint64, value *big.Int, data []byte,
+) *types.Transaction {
+	b.T.Helper()
 	info := b.GetInfoWithPrivKey(from)
 	txData := &types.DynamicFeeTx{
-		To:        &addr,
+		To:        to,
 		Gas:       gas,
 		GasFeeCap: new(big.Int).Set(b.GasPrice),
 		Value:     value,

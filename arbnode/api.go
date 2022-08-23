@@ -87,16 +87,18 @@ type PricingModelHistory struct {
 	PricingInertia   uint64     `json:"pricingInertia"`
 	BacklogTolerance uint64     `json:"backlogTolerance"`
 
-	L1BaseFeeEstimate    []*big.Int `json:"l1BaseFeeEstimate"`
-	L1LastSurplus        []*big.Int `json:"l1LastSurplus"`
-	L1FundsDue           []*big.Int `json:"l1FundsDue"`
-	L1FundsDueForRewards []*big.Int `json:"l1FundsDueForRewards"`
-	L1UnitsSinceUpdate   []uint64   `json:"l1UnitsSinceUpdate"`
-	L1LastUpdateTime     []uint64   `json:"l1LastUpdateTime"`
-	L1EquilibrationUnits *big.Int   `json:"l1EquilibrationUnits"`
-	L1PricingInertia     uint64     `json:"l1PricingInertia"`
-	L1PerUnitReward      uint64     `json:"l1PerUnitReward"`
-	L1PayRewardTo        string     `json:"l1PayRewardTo"`
+	L1BaseFeeEstimate      []*big.Int `json:"l1BaseFeeEstimate"`
+	L1LastSurplus          []*big.Int `json:"l1LastSurplus"`
+	L1FundsDue             []*big.Int `json:"l1FundsDue"`
+	L1FundsDueForRewards   []*big.Int `json:"l1FundsDueForRewards"`
+	L1UnitsSinceUpdate     []uint64   `json:"l1UnitsSinceUpdate"`
+	L1LastUpdateTime       []uint64   `json:"l1LastUpdateTime"`
+	L1EquilibrationUnits   *big.Int   `json:"l1EquilibrationUnits"`
+	L1PerBatchCost         int64      `json:"l1PerBatchCost"`
+	L1AmortizedCostCapBips uint64     `json:"l1AmortizedCostCapBips"`
+	L1PricingInertia       uint64     `json:"l1PricingInertia"`
+	L1PerUnitReward        uint64     `json:"l1PerUnitReward"`
+	L1PayRewardTo          string     `json:"l1PayRewardTo"`
 }
 
 func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNumber) (PricingModelHistory, error) {
@@ -164,6 +166,8 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 
 			l1PricingInertia, _ := l1Pricing.Inertia()
 			l1EquilibrationUnits, _ := l1Pricing.EquilibrationUnits()
+			l1PerBatchCost, _ := l1Pricing.PerBatchGasCost()
+			l1AmortizedCostCapBips, _ := l1Pricing.AmortizedCostCapBips()
 			l1PerUnitReward, _ := l1Pricing.PerUnitReward()
 			l1PayRewardsTo, err := l1Pricing.PayRewardsTo()
 
@@ -175,9 +179,10 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 			history.PerBlockGasLimit = perBlockGasLimit
 			history.PricingInertia = pricingInertia
 			history.BacklogTolerance = backlogTolerance
-
 			history.L1PricingInertia = l1PricingInertia
 			history.L1EquilibrationUnits = l1EquilibrationUnits
+			history.L1PerBatchCost = l1PerBatchCost
+			history.L1AmortizedCostCapBips = l1AmortizedCostCapBips
 			history.L1PerUnitReward = l1PerUnitReward
 			history.L1PayRewardTo = l1PayRewardsTo.Hex()
 		}

@@ -279,7 +279,6 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Send second accumulator again so that the previously added accumulator is sent
 	b.Confirm(1)
 
 	updateTimer = time.NewTimer(2 * time.Second)
