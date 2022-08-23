@@ -20,7 +20,7 @@ abstract contract AbsRollupUserLogic is
     using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
-        require(isValidator[msg.sender] || _chainIdChanged(), "NOT_VALIDATOR");
+        require(isValidator[msg.sender] || _chainIdChanged() || _validatorIsAfk(), "NOT_VALIDATOR");
         _;
     }
 
@@ -28,6 +28,14 @@ abstract contract AbsRollupUserLogic is
 
     function _chainIdChanged() internal view returns (bool) {
         return deployTimeChainId != block.chainid;
+    }
+
+    function _validatorIsAfk() internal view returns (bool) {
+        Node memory latestNode = getNodeStorage(latestNodeCreated());
+        if (latestNode.createdAtBlock == 0) return false;
+        // TODO: what is the max time validators can be afk?
+        if (latestNode.createdAtBlock + confirmPeriodBlocks * 2 < block.number) return true;
+        return false;
     }
 
     function isERC20Enabled() public view override returns (bool) {
