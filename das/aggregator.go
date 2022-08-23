@@ -213,19 +213,21 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
 			storeCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
+			const metricBase string = "arb/das/rpc/aggregator/store"
+			var metricWithServiceName string = metricBase + "/" + d.metricName
 			defer cancel()
 			incFailureMetric := func() {
-				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/failure", nil).Inc(1)
-				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/all/failure", nil).Inc(1)
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/failure", nil).Inc(1)
+				metrics.GetOrRegisterGauge(metricBase+"/all/failure", nil).Inc(1)
 			}
 
 			cert, err := d.service.Store(storeCtx, message, timeout, sig)
 			if err != nil {
 				incFailureMetric()
 				if errors.Is(err, context.DeadlineExceeded) {
-					metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/timeout", nil).Inc(1)
+					metrics.GetOrRegisterGauge(metricWithServiceName+"/timeout", nil).Inc(1)
 				} else {
-					metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/client_error", nil).Inc(1)
+					metrics.GetOrRegisterGauge(metricWithServiceName+"/client_error", nil).Inc(1)
 				}
 				responses <- storeResponse{d, nil, err}
 				return
@@ -236,13 +238,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			)
 			if err != nil {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/bad_response", nil).Inc(1)
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, err}
 				return
 			}
 			if !verified {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/bad_response", nil).Inc(1)
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, errors.New("Signature verification failed.")}
 				return
 			}
@@ -251,19 +253,19 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 			if cert.DataHash != expectedHash {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/bad_response", nil).Inc(1)
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, errors.New("Hash verification failed.")}
 				return
 			}
 			if cert.Timeout != timeout {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/bad_response", nil).Inc(1)
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, fmt.Errorf("Timeout was %d, expected %d", cert.Timeout, timeout)}
 				return
 			}
 
-			metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/"+d.metricName+"/success", nil).Inc(1)
-			metrics.GetOrRegisterGauge("arb/das/rpc/aggregator/store/all/success", nil).Inc(1)
+			metrics.GetOrRegisterGauge(metricWithServiceName+"/success", nil).Inc(1)
+			metrics.GetOrRegisterGauge(metricBase+"/success", nil).Inc(1)
 			responses <- storeResponse{d, cert.Sig, nil}
 		}(ctx, d)
 	}
