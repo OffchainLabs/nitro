@@ -197,7 +197,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		case <-ticker.C:
 			h, err := s.client.HeaderByNumber(ctx, nil)
 			if err != nil {
-				if !strings.Contains(err.Error(), "context cancelled") {
+				if !errors.Is(err, context.Cancelled) {
 					log.Warn("failed reading header", "err", err)
 				}
 			} else {
