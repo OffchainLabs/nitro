@@ -251,9 +251,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return (1400 + 6 * dataLength) * (baseFee == 0 ? block.basefee : baseFee);
     }
 
-    /**
-     * @notice Deposit Ether into L2 to the L1 sender's address if the sender is an EOA, and to its aliased address if the sender is a contract.
-     */
+    /// @inheritdoc IInbox
     function depositEth() public payable whenNotPaused onlyAllowed returns (uint256) {
         address dest = msg.sender;
 
