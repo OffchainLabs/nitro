@@ -17,7 +17,6 @@ import (
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 )
@@ -28,6 +27,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 
 	numBackendDAS := 10
 	var backends []ServiceDetails
+	var storageServices []StorageService
 	for i := 0; i < numBackendDAS; i++ {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
@@ -40,8 +40,8 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 			L1NodeURL: "none",
 		}
 
-		storageService := NewMemoryBackedStorageService(ctx)
-		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
+		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
+		das, err := NewSignAfterStoreDAS(ctx, config, storageServices[i])
 		Require(t, err)
 		signerMask := uint64(1 << i)
 		details, err := NewServiceDetails(das, *das.pubKey, signerMask)
@@ -56,10 +56,12 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash)
-	Require(t, err, "Failed to retrieve message")
-	if !bytes.Equal(rawMsg, messageRetrieved) {
-		Fail(t, "Retrieved message is not the same as stored one.")
+	for _, storageService := range storageServices {
+		messageRetrieved, err := storageService.GetByHash(ctx, cert.DataHash)
+		Require(t, err, "Failed to retrieve message")
+		if !bytes.Equal(rawMsg, messageRetrieved) {
+			Fail(t, "Retrieved message is not the same as stored one.")
+		}
 	}
 }
 
@@ -120,33 +122,6 @@ type WrapStore struct {
 	DataAvailabilityService
 }
 
-type WrapGetByHash struct {
-	t        *testing.T
-	injector failureInjector
-	DataAvailabilityService
-}
-
-func (w *WrapGetByHash) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	switch w.injector.shouldFail() {
-	case success:
-		return w.DataAvailabilityService.GetByHash(ctx, hash)
-	case immediateError:
-		return nil, errors.New("expected Retrieve failure")
-	case tooSlow:
-		<-ctx.Done()
-		return nil, ctx.Err()
-	case dataCorruption:
-		data, err := w.DataAvailabilityService.GetByHash(ctx, hash)
-		if err != nil {
-			return nil, err
-		}
-		data[0] = ^data[0]
-		return data, nil
-	}
-	Fail(w.t)
-	return nil, nil
-}
-
 func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
@@ -205,6 +180,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
 	var backends []ServiceDetails
+	var storageServices []StorageService
 	for i := 0; i < numBackendDAS; i++ {
 		privKey, err := blsSignatures.GeneratePrivKeyString()
 		Require(t, err)
@@ -217,8 +193,8 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 			L1NodeURL: "none",
 		}
 
-		storageService := NewMemoryBackedStorageService(ctx)
-		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
+		storageServices = append(storageServices, NewMemoryBackedStorageService(ctx))
+		das, err := NewSignAfterStoreDAS(ctx, config, storageServices[i])
 		Require(t, err)
 		signerMask := uint64(1 << i)
 		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask)
@@ -228,7 +204,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 
 	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest}, L1NodeURL: "none"}, backends)
 	Require(t, err)
-	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
+	aggregator := WriterTimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
@@ -241,10 +217,19 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		return
 	}
 
-	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash)
-	Require(t, err, "Failed to retrieve message")
-	if !bytes.Equal(rawMsg, messageRetrieved) {
-		Fail(t, "Retrieved message is not the same as stored one.")
+	// Wait for all stores that would succeed to succeed.
+	time.Sleep(time.Millisecond * 2000)
+	retrievalFailures := 0
+	for _, storageService := range storageServices {
+		messageRetrieved, err := storageService.GetByHash(ctx, cert.DataHash)
+		if err != nil {
+			retrievalFailures++
+		} else if !bytes.Equal(rawMsg, messageRetrieved) {
+			retrievalFailures++
+		}
+	}
+	if retrievalFailures > nFailures {
+		Fail(t, fmt.Sprintf("retrievalFailures(%d) > nFailures(%d)", retrievalFailures, nFailures))
 	}
 }
 
@@ -295,88 +280,6 @@ func TestDAS_AtLeastHStorageFailures(t *testing.T) {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			t.Parallel()
 			testConfigurableStorageFailures(t, true)
-		})
-	}
-}
-
-func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	numBackendDAS := (rand.Int() % 20) + 1
-	var nSuccesses, nFailures int
-	if shouldFail {
-		nSuccesses = 0
-		nFailures = numBackendDAS
-	} else {
-		nSuccesses = (rand.Int() % numBackendDAS) + 1
-		nFailures = numBackendDAS - nSuccesses
-	}
-	log.Trace(fmt.Sprintf("Testing aggregator retrieve with %d successes and %d failures", nSuccesses, nFailures))
-	var backends []ServiceDetails
-	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nFailures, dataCorruption)
-	for i := 0; i < numBackendDAS; i++ {
-		privKey, err := blsSignatures.GeneratePrivKeyString()
-		Require(t, err)
-
-		config := DataAvailabilityConfig{
-			Enable: true,
-			KeyConfig: KeyConfig{
-				PrivKey: privKey,
-			},
-			L1NodeURL: "none",
-		}
-
-		storageService := NewMemoryBackedStorageService(ctx)
-		das, err := NewSignAfterStoreDAS(ctx, config, storageService)
-		Require(t, err)
-		signerMask := uint64(1 << i)
-		details := ServiceDetails{&WrapGetByHash{t, injectedFailures, das}, *das.pubKey, signerMask}
-
-		backends = append(backends, details)
-	}
-
-	// All honest -> at least 1 store succeeds.
-	// Aggregator should collect responses up until end of deadline, so
-	// it should get all successes.
-	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: 1}, L1NodeURL: "none"}, backends)
-	Require(t, err)
-	aggregator := TimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
-
-	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := unwrappedAggregator.Store(ctx, rawMsg, 0, []byte{})
-	Require(t, err, "Error storing message")
-
-	messageRetrieved, err := aggregator.GetByHash(ctx, cert.DataHash)
-	if !shouldFail {
-		Require(t, err, "Error retrieving message")
-	} else {
-		if err == nil {
-			Fail(t, "Expected error from too many failed DASes.")
-		}
-		return
-	}
-	if !bytes.Equal(rawMsg, messageRetrieved) {
-		Fail(t, "Retrieved message is not the same as stored one.")
-	}
-}
-
-func TestDAS_RetrieveFailureFromSomeDASes(t *testing.T) {
-	runs := initTest(t)
-	for i := 0; i < min(runs, 10); i++ {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			t.Parallel()
-			testConfigurableRetrieveFailures(t, false)
-		})
-	}
-}
-
-func TestDAS_RetrieveFailureFromAllDASes(t *testing.T) {
-	runs := initTest(t)
-	for i := 0; i < min(runs, 10); i++ {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			t.Parallel()
-			testConfigurableRetrieveFailures(t, true)
 		})
 	}
 }

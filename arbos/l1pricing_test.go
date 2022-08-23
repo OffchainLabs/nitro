@@ -252,15 +252,13 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 	Require(t, err)
 
 	l1p := state.L1PricingState()
-	err = l1p.SetPerUnitReward(0)
-	Require(t, err)
-	err = l1p.SetPricePerUnit(initialL1BasefeeEstimate)
-	Require(t, err)
+	Require(t, l1p.SetPerUnitReward(0))
+	Require(t, l1p.SetPricePerUnit(initialL1BasefeeEstimate))
 
 	bpAddr := common.Address{3, 4, 5, 6}
 	l1PoolAddress := l1pricing.L1PricerFundsPoolAddress
 	for i := 0; i < 10; i++ {
-		unitsToAdd := l1pricing.InitialEquilibrationUnits
+		unitsToAdd := l1pricing.InitialEquilibrationUnitsV6.Uint64()
 		oldUnits, err := l1p.UnitsSinceUpdate()
 		Require(t, err)
 		err = l1p.SetUnitsSinceUpdate(oldUnits + unitsToAdd)
@@ -292,7 +290,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 	expectedMovement = new(big.Int).Abs(expectedMovement)
 	actualMovement = new(big.Int).Abs(actualMovement)
 	if !_withinOnePercent(expectedMovement, actualMovement) {
-		Fail(t, "Expected vs actual movement are too far apart")
+		Fail(t, "Expected vs actual movement are too far apart", expectedMovement, actualMovement)
 	}
 }
 

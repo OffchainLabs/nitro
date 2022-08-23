@@ -12,27 +12,42 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
-type TimeoutWrapper struct {
+type ReaderTimeoutWrapper struct {
 	t time.Duration
-	DataAvailabilityService
+	DataAvailabilityServiceReader
+}
+type WriterTimeoutWrapper struct {
+	t time.Duration
+	DataAvailabilityServiceWriter
 }
 
-func NewTimeoutWrapper(dataAvailabilityService DataAvailabilityService, t time.Duration) DataAvailabilityService {
-	return &TimeoutWrapper{
-		t:                       t,
-		DataAvailabilityService: dataAvailabilityService,
+type TimeoutWrapper struct {
+	ReaderTimeoutWrapper
+	WriterTimeoutWrapper
+}
+
+func NewReaderTimeoutWrapper(dataAvailabilityServiceReader DataAvailabilityServiceReader, t time.Duration) DataAvailabilityServiceReader {
+	return &ReaderTimeoutWrapper{
+		t:                             t,
+		DataAvailabilityServiceReader: dataAvailabilityServiceReader,
+	}
+}
+func NewWriterTimeoutWrapper(dataAvailabilityServiceWriter DataAvailabilityServiceWriter, t time.Duration) DataAvailabilityServiceWriter {
+	return &WriterTimeoutWrapper{
+		t:                             t,
+		DataAvailabilityServiceWriter: dataAvailabilityServiceWriter,
 	}
 }
 
-func (w *TimeoutWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+func (w *ReaderTimeoutWrapper) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(w.t))
-	// For Retrieve we want fast cancellation of all goroutines started by
+	// For GetByHash we want fast cancellation of all goroutines started by
 	// the aggregator as soon as one returns.
 	defer cancel()
-	return w.DataAvailabilityService.GetByHash(deadlineCtx, hash)
+	return w.DataAvailabilityServiceReader.GetByHash(deadlineCtx, hash)
 }
 
-func (w *TimeoutWrapper) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+func (w *WriterTimeoutWrapper) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(w.t))
 	// In the case of the aggregator, allow goroutines started by Store(...)
 	// to continue until the end of the deadline even after a result
@@ -41,9 +56,13 @@ func (w *TimeoutWrapper) Store(ctx context.Context, message []byte, timeout uint
 		<-deadlineCtx.Done()
 		cancel()
 	}()
-	return w.DataAvailabilityService.Store(deadlineCtx, message, timeout, sig)
+	return w.DataAvailabilityServiceWriter.Store(deadlineCtx, message, timeout, sig)
 }
 
-func (w *TimeoutWrapper) String() string {
-	return fmt.Sprintf("TimeoutWrapper{%v}", w.DataAvailabilityService)
+func (w *ReaderTimeoutWrapper) String() string {
+	return fmt.Sprintf("ReaderTimeoutWrapper{%v}", w.DataAvailabilityServiceReader)
+}
+
+func (w *WriterTimeoutWrapper) String() string {
+	return fmt.Sprintf("WriterTimeoutWrapper{%v}", w.DataAvailabilityServiceWriter)
 }

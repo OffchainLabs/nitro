@@ -10,7 +10,7 @@ module.exports = async (hre) => {
 
   if (inboxDeployResult.newlyDeployed) {
     await bridge.setDelayedInbox(inbox.address, true);
-    await inbox.initialize(bridge.address);
+    await inbox.initialize(bridge.address, ethers.constants.AddressZero);
   }
 };
 

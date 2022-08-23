@@ -11,7 +11,8 @@ import {
     PathNotMinimal,
     UnknownRoot,
     AlreadySpent,
-    BridgeCallFailed
+    BridgeCallFailed,
+    HadZeroInit
 } from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./IOutbox.sol";
@@ -51,6 +52,7 @@ contract Outbox is DelegateCallAware, IOutbox {
     uint128 public constant OUTBOX_VERSION = 2;
 
     function initialize(IBridge _bridge) external onlyDelegated {
+        if (address(_bridge) == address(0)) revert HadZeroInit();
         if (address(bridge) != address(0)) revert AlreadyInit();
         // address zero is returned if no context is set, but the values used in storage
         // are non-zero to save users some gas (as storage refunds are usually maxed out)
@@ -66,43 +68,38 @@ contract Outbox is DelegateCallAware, IOutbox {
         rollup = address(_bridge.rollup());
     }
 
-    function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external override {
+    function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external {
         if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         roots[root] = l2BlockHash;
         emit SendRootUpdated(root, l2BlockHash);
     }
 
-    /// @notice When l2ToL1Sender returns a nonzero address, the message was originated by an L2 account
-    /// When the return value is zero, that means this is a system message
-    /// @dev the l2ToL1Sender behaves as the tx.origin, the msg.sender should be validated to protect against reentrancies
-    function l2ToL1Sender() external view override returns (address) {
+    /// @inheritdoc IOutbox
+    function l2ToL1Sender() external view returns (address) {
         address sender = context.sender;
         // we don't return the default context value to avoid a breaking change in the API
         if (sender == SENDER_DEFAULT_CONTEXT) return address(0);
         return sender;
     }
 
-    /// @return l2Block return L2 block when the L2 tx was initiated or zero
-    /// if no L2 to L1 transaction is active
-    function l2ToL1Block() external view override returns (uint256) {
+    /// @inheritdoc IOutbox
+    function l2ToL1Block() external view returns (uint256) {
         uint128 l2Block = context.l2Block;
         // we don't return the default context value to avoid a breaking change in the API
         if (l2Block == L1BLOCK_DEFAULT_CONTEXT) return uint256(0);
         return uint256(l2Block);
     }
 
-    /// @return l1Block return L1 block when the L2 tx was initiated or zero
-    /// if no L2 to L1 transaction is active
-    function l2ToL1EthBlock() external view override returns (uint256) {
+    /// @inheritdoc IOutbox
+    function l2ToL1EthBlock() external view returns (uint256) {
         uint128 l1Block = context.l1Block;
         // we don't return the default context value to avoid a breaking change in the API
         if (l1Block == L1BLOCK_DEFAULT_CONTEXT) return uint256(0);
         return uint256(l1Block);
     }
 
-    /// @return timestamp return L2 timestamp when the L2 tx was initiated or zero
-    /// if no L2 to L1 transaction is active
-    function l2ToL1Timestamp() external view override returns (uint256) {
+    /// @inheritdoc IOutbox
+    function l2ToL1Timestamp() external view returns (uint256) {
         uint128 timestamp = context.timestamp;
         // we don't return the default context value to avoid a breaking change in the API
         if (timestamp == TIMESTAMP_DEFAULT_CONTEXT) return uint256(0);
@@ -110,33 +107,19 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     /// @notice batch number is deprecated and now always returns 0
-    function l2ToL1BatchNum() external pure override returns (uint256) {
+    function l2ToL1BatchNum() external pure returns (uint256) {
         return 0;
     }
 
-    /// @return outputId returns the unique output identifier of the L2 to L1 tx or
-    /// zero if no L2 to L1 transaction is active
-    function l2ToL1OutputId() external view override returns (bytes32) {
+    /// @inheritdoc IOutbox
+    function l2ToL1OutputId() external view returns (bytes32) {
         bytes32 outputId = context.outputId;
         // we don't return the default context value to avoid a breaking change in the API
         if (outputId == OUTPUTID_DEFAULT_CONTEXT) return bytes32(0);
         return outputId;
     }
 
-    /**
-     * @notice Executes a messages in an Outbox entry.
-     * @dev Reverts if dispute period hasn't expired, since the outbox entry
-     * is only created once the rollup confirms the respective assertion.
-     * @param proof Merkle proof of message inclusion in send root
-     * @param index Merkle path to message
-     * @param l2Sender sender if original message (i.e., caller of ArbSys.sendTxToL1)
-     * @param to destination address for L1 contract call
-     * @param l2Block l2 block number at which sendTxToL1 call was made
-     * @param l1Block l1 block number at which sendTxToL1 call was made
-     * @param l2Timestamp l2 Timestamp at which sendTxToL1 call was made
-     * @param value wei in L1 message
-     * @param data abi-encoded L1 message data
-     */
+    /// @inheritdoc IOutbox
     function executeTransaction(
         bytes32[] calldata proof,
         uint256 index,
@@ -147,7 +130,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) external override {
+    ) external {
         bytes32 userTx = calculateItemHash(
             l2Sender,
             to,
@@ -163,15 +146,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         executeTransactionImpl(index, l2Sender, to, l2Block, l1Block, l2Timestamp, value, data);
     }
 
-    /// @dev function used to simulate the result of a particular function call from the outbox
-    /// it is useful for things such as gas estimates. This function includes all costs except for
-    /// proof validation (which can be considered offchain as a somewhat of a fixed cost - it's
-    /// not really a fixed cost, but can be treated as so with a fixed overhead for gas estimation).
-    /// We can't include the cost of proof validation since this is intended to be used to simulate txs
-    /// that are included in yet-to-be confirmed merkle roots. The simulation entrypoint could instead pretend
-    /// to confirm a pending merkle root, but that would be less pratical for integrating with tooling.
-    /// It is only possible to trigger it when the msg sender is address zero, which should be impossible
-    /// unless under simulation in an eth_call or eth_estimateGas
+    /// @inheritdoc IOutbox
     function executeTransactionSimulation(
         uint256 index,
         address l2Sender,
@@ -181,7 +156,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) external override {
+    ) external {
         if (msg.sender != address(0)) revert SimulationOnlyEntrypoint();
         executeTransactionImpl(index, l2Sender, to, l2Block, l1Block, l2Timestamp, value, data);
     }
@@ -235,7 +210,8 @@ contract Outbox is DelegateCallAware, IOutbox {
         return ((replay >> bitOffset) & bytes32(uint256(1))) != bytes32(0);
     }
 
-    function isSpent(uint256 index) external view override returns (bool) {
+    /// @inheritdoc IOutbox
+    function isSpent(uint256 index) external view returns (bool) {
         (, uint256 bitOffset, bytes32 replay) = _calcSpentIndexOffset(index);
         return _isSpent(bitOffset, replay);
     }
@@ -285,7 +261,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Timestamp,
         uint256 value,
         bytes calldata data
-    ) public pure override returns (bytes32) {
+    ) public pure returns (bytes32) {
         return
             keccak256(abi.encodePacked(l2Sender, to, l2Block, l1Block, l2Timestamp, value, data));
     }
@@ -294,7 +270,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes32[] memory proof,
         uint256 path,
         bytes32 item
-    ) public pure override returns (bytes32) {
+    ) public pure returns (bytes32) {
         return MerkleLib.calculateRoot(proof, path, keccak256(abi.encodePacked(item)));
     }
 }
