@@ -132,15 +132,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	// reload config
 	expected = config.ShallowClone()
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
-	success := false
-	for i := 0; i < 16; i++ {
-		if reflect.DeepEqual(liveConfig.get(), expected) {
-			success = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !success {
+	if !PollLiveConfigUntilEqual(liveConfig, expected) {
 		Fail(t, "live config differs from expected")
 	}
 
@@ -160,15 +152,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 
-	success = false
-	for i := 0; i < 16; i++ {
-		if reflect.DeepEqual(liveConfig.get(), expected) {
-			success = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !success {
+	if !PollLiveConfigUntilEqual(liveConfig, expected) {
 		Fail(t, "failed to update config", config.Node.Sequencer.MaxBlockSpeed, update.Node.Sequencer.MaxBlockSpeed)
 	}
 
@@ -179,12 +163,8 @@ func TestLiveNodeConfig(t *testing.T) {
 	// trigger LiveConfig reload
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 
-	for i := 0; i < 16; i++ {
-		if !reflect.DeepEqual(liveConfig.get(), expected) {
-			Fail(t, "failed to reject invalid update")
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if PollLiveConfigUntilNotEqual(liveConfig, expected) {
+		Fail(t, "failed to reject invalid update")
 	}
 }
 
@@ -210,18 +190,9 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	expected.Conf.ReloadInterval = 0
 	jsonConfig = "{\"conf\":{\"reload-interval\":\"0\"}}"
 	Require(t, os.WriteFile(configFile, []byte(jsonConfig), 0600))
-	success := false
 	start := time.Now()
-	for i := 0; i < 8; i++ {
-		time.Sleep(10 * time.Millisecond)
-		if reflect.DeepEqual(liveConfig.get(), expected) {
-			success = true
-			break
-		}
-	}
-	stop := time.Now()
-	if !success {
-		Fail(t, fmt.Sprintf("failed to update config after %d ms, while reload interval is %s", stop.Sub(start).Milliseconds(), config.Conf.ReloadInterval))
+	if !PollLiveConfigUntilEqual(liveConfig, expected) {
+		Fail(t, fmt.Sprintf("failed to update config after %d ms, while reload interval is %s", time.Now().Sub(start).Milliseconds(), config.Conf.ReloadInterval))
 	}
 
 	// test if previous config successfully disabled periodic reload
@@ -233,6 +204,23 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	if reflect.DeepEqual(liveConfig.get(), expected) {
 		Fail(t, "failed to disable periodic reload")
 	}
+}
+
+func PollLiveConfigUntilEqual(liveConfig *LiveNodeConfig, expected *NodeConfig) bool {
+	return PollLiveConfig(liveConfig, expected, true)
+}
+func PollLiveConfigUntilNotEqual(liveConfig *LiveNodeConfig, expected *NodeConfig) bool {
+	return PollLiveConfig(liveConfig, expected, false)
+}
+
+func PollLiveConfig(liveConfig *LiveNodeConfig, expected *NodeConfig, equal bool) bool {
+	for i := 0; i < 16; i++ {
+		if reflect.DeepEqual(liveConfig.get(), expected) == equal {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {
