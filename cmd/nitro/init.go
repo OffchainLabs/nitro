@@ -348,6 +348,8 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 				txHash := tx.Hash()
 				txHashes = append(txHashes, txHash)
 				txHashMap[txHash]++
+			}
+			for txHash := range txHashMap {
 				if entry := rawdb.ReadTxLookupEntry(chainDb, txHash); entry != nil {
 					txHashMap[txHash]++
 				}
@@ -361,6 +363,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 					if receipts[i].Status == 0 && receipts[i].GasUsed == 0 {
 						log.Info("Not indexing failed duplicate transaction", "block", blockNum, "txHash", txHash, "index", i)
 						txHashes[i] = common.Hash{}
+						txHashMap[txHash]--
 					}
 				}
 			}
