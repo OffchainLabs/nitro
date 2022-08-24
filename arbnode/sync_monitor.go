@@ -22,17 +22,20 @@ func NewSyncMonitor(config *SyncMonitorConfig) *SyncMonitor {
 }
 
 type SyncMonitorConfig struct {
-	BlockBuildLag     uint64 `koanf:"block-build-lag"`
-	CoordinatorMsgLag uint64 `koanf:"coordinator-msg-lag"`
+	BlockBuildLag               uint64 `koanf:"block-build-lag"`
+	BlockBuildSequencerInboxLag uint64 `koanf:"block-build-sequencer-inbox-lag"`
+	CoordinatorMsgLag           uint64 `koanf:"coordinator-msg-lag"`
 }
 
 var DefaultSyncMonitorConfig = SyncMonitorConfig{
-	BlockBuildLag:     20,
-	CoordinatorMsgLag: 200,
+	BlockBuildLag:               20,
+	BlockBuildSequencerInboxLag: 0,
+	CoordinatorMsgLag:           200,
 }
 
 func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".block-build-lag", DefaultSyncMonitorConfig.BlockBuildLag, "allowed lag between messages read and blocks built")
+	f.Uint64(prefix+".block-build-sequencer-inbox-lag", DefaultSyncMonitorConfig.BlockBuildSequencerInboxLag, "allowed lag between messages read from sequencer inbox and blocks built")
 	f.Uint64(prefix+".coordinator-msg-lag", DefaultSyncMonitorConfig.CoordinatorMsgLag, "allowed lag between local and remote messages")
 }
 
@@ -97,7 +100,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 			syncing = true
 		} else {
 			res["messageOfProcessedBatch"] = processedMetadata.MessageCount
-			if lastBuiltMessage < processedMetadata.MessageCount { // block building not caught with inbox
+			if lastBuiltMessage+arbutil.MessageIndex(s.config.BlockBuildSequencerInboxLag) < processedMetadata.MessageCount {
 				syncing = true
 			}
 		}
