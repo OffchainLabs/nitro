@@ -291,6 +291,11 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 	return s.lastPendingCallBlockNr
 }
 
+func (s *HeaderReader) LatestSafeHeader() (*types.Header, error) {
+	// note, this is not cached
+	return s.client.HeaderByNumber(s.GetContext(), big.NewInt(rpc.SafeBlockNumber.Int64()))
+}
+
 func (s *HeaderReader) LatestFinalizedHeader() (*types.Header, error) {
 	// note, this is not cached
 	return s.client.HeaderByNumber(s.GetContext(), big.NewInt(rpc.FinalizedBlockNumber.Int64()))
