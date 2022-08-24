@@ -4,11 +4,11 @@ Nitro software has the option to initialize a chain with state imported from a c
 
 When importing history - Nitro's genesis block will be the block that follows the imported history, and not block 0.
 
-The recommended way to initialize a nitro node is to point it to a pre-initialized database using the --init.url option. This documentation is for users who wish to create the full state on their own classic node.
+The recommended way to initialize a nitro node is to point it to a pre-initialized database using the `--init.url` option. This documentation is for users who wish to create the full state on their own classic node.
 
 ## Exporting Data from a Classic Arbitrum Node
 
-Launch node with the option `--node.rpc.nitroexport.enable=true` note: this is only recommended for nodes with no public/external interfaces. All exportes data will be written to directory "nitroexport" under the classic instance directory - e.g. ${HOME}/.arbitrum/rinkeby/nitroexport.
+Launch node with the option `--node.rpc.nitroexport.enable=true` note: this is only recommended for nodes with no public/external interfaces. All exported data will be written to directory "nitroexport" under the classic instance directory - e.g. `${HOME}/.arbitrum/rinkeby/nitroexport`.
 Make sure the classic node has read the entire rollup state. 
 
 **Important Note:** Exporting the state on your own classic node should produce the same state as using files supplied by offchain labs (e.g. the same genesis blockhash). However, multiple exports of the same state will not necessarily create identical intermediate files. For example - state export is done in parallel, so order of entries in the file is not deterministic.
