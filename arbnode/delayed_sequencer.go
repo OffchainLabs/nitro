@@ -33,31 +33,35 @@ type DelayedSequencer struct {
 }
 
 type DelayedSequencerConfig struct {
-	Enable           bool          `koanf:"enable"`
-	FinalizeDistance int64         `koanf:"finalize-distance"`
-	TimeAggregate    time.Duration `koanf:"time-aggregate"`
-	RequireFinality  bool          `koanf:"require-finality"`
+	Enable              bool          `koanf:"enable"`
+	FinalizeDistance    int64         `koanf:"finalize-distance"`
+	TimeAggregate       time.Duration `koanf:"time-aggregate"`
+	RequireFullFinality bool          `koanf:"require-full-finality"`
+	UseMergeFinality    bool          `koanf:"use-merge-finality"`
 }
 
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
-	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final (ignored post-Merge)")
+	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final (ignored when using Merge finality)")
 	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "polling interval for the delayed sequencer")
-	f.Bool(prefix+".require-finality", DefaultDelayedSequencerConfig.RequireFinality, "whether to wait for full finality before sequencing delayed messages")
+	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
+	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
-	Enable:           false,
-	FinalizeDistance: 20,
-	TimeAggregate:    time.Minute,
-	RequireFinality:  true,
+	Enable:              false,
+	FinalizeDistance:    20,
+	TimeAggregate:       time.Minute,
+	RequireFullFinality: true,
+	UseMergeFinality:    true,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
-	Enable:           true,
-	FinalizeDistance: 20,
-	TimeAggregate:    time.Second,
-	RequireFinality:  true,
+	Enable:              true,
+	FinalizeDistance:    20,
+	TimeAggregate:       time.Second,
+	RequireFullFinality: true,
+	UseMergeFinality:    true,
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
@@ -94,10 +98,10 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 	}
 
 	// Once the merge is live, we can directly query for the latest finalized block number
-	if lastBlockHeader.Difficulty.Sign() == 0 {
+	if lastBlockHeader.Difficulty.Sign() == 0 && d.config.UseMergeFinality {
 		var header *types.Header
 		var err error
-		if d.config.RequireFinality {
+		if d.config.RequireFullFinality {
 			header, err = d.l1Reader.LatestFinalizedHeader()
 		} else {
 			header, err = d.l1Reader.LatestSafeHeader()
