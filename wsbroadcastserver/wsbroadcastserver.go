@@ -336,11 +336,6 @@ func (s *WSBroadcastServer) StopAndWait() {
 		log.Warn("error in poller.Stop", "err", err)
 	}
 
-	err = s.acceptDesc.Close()
-	if err != nil {
-		log.Warn("error in acceptDesc.Close", "err", err)
-	}
-
 	s.clientManager.StopAndWait()
 	s.started = false
 }
