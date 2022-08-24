@@ -147,7 +147,7 @@ func RecoverPayloadFromDasBatch(
 	}
 
 	if version >= 2 {
-		log.Error("Your node software is probably out of date", "version", version)
+		log.Error("Your node software is probably out of date", "certificateVersion", version)
 		return nil, nil
 	}
 
