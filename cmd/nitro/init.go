@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -321,6 +322,21 @@ func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
 	}
 }
 
+func acquireLocks(locks []sync.Mutex, txs []*types.Transaction) []*sync.Mutex {
+	var bytesUsed [256]bool
+	for _, tx := range txs {
+		bytesUsed[tx.Hash()[0]] = true
+	}
+	var haveLocks []*sync.Mutex
+	for b, used := range bytesUsed {
+		if used {
+			locks[b].Lock()
+			haveLocks = append(haveLocks, &locks[b])
+		}
+	}
+	return haveLocks
+}
+
 func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, txIndexWg *sync.WaitGroup) {
 	lastBlock := chainConfig.ArbitrumChainParams.GenesisBlockNum
 	if lastBlock == 0 {
@@ -333,55 +349,61 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 		return
 	}
 
-	txIndexWg.Add(1)
-	log.Info("writing Tx lookup entries")
-
-	go func() {
-		batch := chainDb.NewBatch()
-		for blockNum := uint64(0); blockNum <= lastBlock; blockNum++ {
-			blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
-			block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
-			txs := block.Transactions()
-			txHashMap := make(map[common.Hash]int, len(txs))
-			for _, tx := range txs {
-				txHash := tx.Hash()
-				txHashMap[txHash]++
-			}
-			var receipts types.Receipts = nil
-			txHashes := make([]common.Hash, 0, len(txs))
-			for txHash, times := range txHashMap {
-				if times == 0 {
-					continue
+	var locks [256]sync.Mutex
+	threads := uint64(runtime.NumCPU())
+	for thread := uint64(0); thread < threads; thread++ {
+		thread := thread
+		txIndexWg.Add(1)
+		go func() {
+			for blockNum := thread; blockNum <= lastBlock; blockNum += threads {
+				blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
+				block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
+				txs := block.Transactions()
+				txHashMap := make(map[common.Hash]int, len(txs))
+				for _, tx := range txs {
+					txHash := tx.Hash()
+					txHashMap[txHash]++
 				}
-				avoidTx := false
-				if entry := rawdb.ReadTxLookupEntry(chainDb, txHash); entry != nil {
-					avoidTx = true
-					if receipts == nil {
-						receipts = rawdb.ReadRawReceipts(chainDb, blockHash, blockNum)
+				haveLocks := acquireLocks(locks[:], txs)
+				var receipts types.Receipts = nil
+				txHashes := make([]common.Hash, 0, len(txs))
+				for txHash, times := range txHashMap {
+					if times == 0 {
+						continue
 					}
-					for i := range receipts {
-						if txs[i].Hash() == txHash && (receipts[i].Status != 0 || receipts[i].GasUsed != 0) {
-							avoidTx = false
+					avoidTx := false
+					if entry := rawdb.ReadTxLookupEntry(chainDb, txHash); entry != nil {
+						avoidTx = true
+						if *entry < blockNum {
+							if receipts == nil {
+								receipts = rawdb.ReadRawReceipts(chainDb, blockHash, blockNum)
+							}
+							for i := range receipts {
+								if txs[i].Hash() == txHash && (receipts[i].Status != 0 || receipts[i].GasUsed != 0) {
+									avoidTx = false
+								}
+							}
 						}
 					}
+					if avoidTx {
+						log.Info("Skipping lookup entry", "block", blockNum, "txHash", txHash)
+					} else {
+						txHashes = append(txHashes, txHash)
+					}
 				}
-				if avoidTx {
-					log.Info("Skipping lookup entry", "block", blockNum, "txHash", txHash)
-				} else {
-					txHashes = append(txHashes, txHash)
+				rawdb.WriteTxLookupEntries(chainDb, blockNum, txHashes)
+				for _, lock := range haveLocks {
+					lock.Unlock()
+				}
+				rawdb.WriteHeaderNumber(chainDb, block.Header().Hash(), blockNum)
+				if blockNum%1_000_000 == 0 {
+					log.Info("writing tx lookup entries", "block", blockNum)
 				}
 			}
-			rawdb.WriteTxLookupEntries(batch, blockNum, txHashes)
-			rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
-			if (batch.ValueSize() >= ethdb.IdealBatchSize) || blockNum == lastBlock {
-				err := batch.Write()
-				if err != nil {
-					panic(err)
-				}
-				batch.Reset()
+			txIndexWg.Done()
+			if thread == 0 {
+				log.Info("Tx lookup entries written")
 			}
-		}
-		txIndexWg.Done()
-		log.Info("Tx lookup entries written")
-	}()
+		}()
+	}
 }
