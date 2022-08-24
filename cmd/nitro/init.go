@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -321,7 +322,7 @@ func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
 	}
 }
 
-func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, txIndexWg *sync.WaitGroup) {
+func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, globalWg *sync.WaitGroup) {
 	lastBlock := chainConfig.ArbitrumChainParams.GenesisBlockNum
 	if lastBlock == 0 {
 		// no Tx, no need to update index
@@ -333,47 +334,62 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 		return
 	}
 
-	txIndexWg.Add(1)
-	log.Info("writing Tx lookup entries")
-
-	go func() {
-		batch := chainDb.NewBatch()
-		for blockNum := uint64(0); blockNum <= lastBlock; blockNum++ {
-			blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
-			block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
-			txs := block.Transactions()
-			txHashMap := make(map[common.Hash]int, len(txs))
-			for _, tx := range txs {
-				txHash := tx.Hash()
-				txHashMap[txHash]++
-			}
-			var receipts types.Receipts = nil
-			txHashes := make([]common.Hash, 0, len(txs))
-			for txHash, times := range txHashMap {
-				if times == 0 {
-					continue
-				}
-				avoidTx := false
-				if entry := rawdb.ReadTxLookupEntry(chainDb, txHash); entry != nil {
-					avoidTx = true
-					if receipts == nil {
-						receipts = rawdb.ReadRawReceipts(chainDb, blockHash, blockNum)
-					}
-					for i := range receipts {
-						if txs[i].Hash() == txHash && (receipts[i].Status != 0 || receipts[i].GasUsed != 0) {
-							avoidTx = false
+	var localWg sync.WaitGroup
+	threads := runtime.NumCPU()
+	var failedTxIndiciesMutex sync.Mutex
+	failedTxIndicies := make(map[common.Hash]uint64)
+	for thread := 0; thread < threads; thread++ {
+		thread := thread
+		localWg.Add(1)
+		go func() {
+			batch := chainDb.NewBatch()
+			for blockNum := uint64(thread); blockNum <= lastBlock; blockNum += uint64(threads) {
+				blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
+				block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
+				receipts := rawdb.ReadRawReceipts(chainDb, blockHash, blockNum)
+				for i, receipt := range receipts {
+					// receipt.TxHash isn't populated as we used ReadRawReceipts
+					txHash := block.Transactions()[i].Hash()
+					if receipt.Status != 0 || receipt.GasUsed != 0 {
+						rawdb.WriteTxLookupEntries(batch, blockNum, []common.Hash{txHash})
+					} else {
+						failedTxIndiciesMutex.Lock()
+						prev, exists := failedTxIndicies[txHash]
+						if !exists || prev < blockNum {
+							failedTxIndicies[txHash] = blockNum
 						}
+						failedTxIndiciesMutex.Unlock()
 					}
 				}
-				if avoidTx {
-					log.Info("Skipping lookup entry", "block", blockNum, "txHash", txHash)
-				} else {
-					txHashes = append(txHashes, txHash)
+				rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
+				if blockNum%1_000_000 == 0 {
+					log.Info("writing tx lookup entries", "block", blockNum)
+				}
+				if batch.ValueSize() >= ethdb.IdealBatchSize {
+					err := batch.Write()
+					if err != nil {
+						panic(err)
+					}
+					batch.Reset()
 				}
 			}
-			rawdb.WriteTxLookupEntries(batch, blockNum, txHashes)
-			rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
-			if (batch.ValueSize() >= ethdb.IdealBatchSize) || blockNum == lastBlock {
+			err := batch.Write()
+			if err != nil {
+				panic(err)
+			}
+			localWg.Done()
+		}()
+	}
+
+	globalWg.Add(1)
+	go func() {
+		localWg.Wait()
+		batch := chainDb.NewBatch()
+		for txHash, blockNum := range failedTxIndicies {
+			if rawdb.ReadTxLookupEntry(chainDb, txHash) == nil {
+				rawdb.WriteTxLookupEntries(batch, blockNum, []common.Hash{txHash})
+			}
+			if batch.ValueSize() >= ethdb.IdealBatchSize {
 				err := batch.Write()
 				if err != nil {
 					panic(err)
@@ -381,7 +397,11 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 				batch.Reset()
 			}
 		}
-		txIndexWg.Done()
+		err := batch.Write()
+		if err != nil {
+			panic(err)
+		}
 		log.Info("Tx lookup entries written")
+		globalWg.Done()
 	}()
 }
