@@ -295,7 +295,6 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 						for _, message := range res.Messages {
 							if message == nil {
 								log.Warn("ignoring nil feed message")
-								bc.nextSeqNum = message.SequenceNumber
 								continue
 							}
 
