@@ -772,9 +772,6 @@ func createNodeImpl(
 			}
 		}
 
-		if daWriter != nil {
-			daWriter = das.NewWriterTimeoutWrapper(daWriter, config.DataAvailability.RequestTimeout)
-		}
 		daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
 
 		if config.DataAvailability.PanicOnError {

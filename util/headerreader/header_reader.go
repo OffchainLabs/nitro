@@ -197,7 +197,9 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		case <-ticker.C:
 			h, err := s.client.HeaderByNumber(ctx, nil)
 			if err != nil {
-				log.Warn("failed reading header", "err", err)
+				if !errors.Is(err, context.Canceled) {
+					log.Warn("failed reading header", "err", err)
+				}
 			} else {
 				s.possiblyBroadcast(h)
 			}
@@ -287,6 +289,11 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 	return s.lastPendingCallBlockNr
+}
+
+func (s *HeaderReader) LatestSafeHeader() (*types.Header, error) {
+	// note, this is not cached
+	return s.client.HeaderByNumber(s.GetContext(), big.NewInt(rpc.SafeBlockNumber.Int64()))
 }
 
 func (s *HeaderReader) LatestFinalizedHeader() (*types.Header, error) {
