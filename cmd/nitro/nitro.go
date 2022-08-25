@@ -466,9 +466,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		case 0:
 			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
 		case 42161:
-			return nil, nil, nil, nil, nil, errors.New("mainnet not supported yet")
+			if err := applyArbitrumOneParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+			chainFound = true
 		case 42170:
-			if err := applyArbitrumNovaRollupParameters(k); err != nil {
+			if err := applyArbitrumNovaParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
 			chainFound = true
@@ -545,7 +548,23 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyArbitrumNovaRollupParameters(k *koanf.Koanf) error {
+func applyArbitrumOneParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain":                   "arb1",
+		"node.forwarding-target":             "https://arb1.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://arb1.arbitrum.io/feed",
+		"l1.rollup.bridge":                   "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
+		"l1.rollup.inbox":                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+		"l1.rollup.rollup":                   "0x5ef0d09d1e6204141b4d37530808ed19f60fba35",
+		"l1.rollup.sequencer-inbox":          "0x1c479675ad559dc151f6ec7ed3fbf8cee79582b6",
+		"l1.rollup.validator-utils":          "0x9e40625f52829cf04bc4839f186d621ee33b0e67",
+		"l1.rollup.validator-wallet-creator": "0x960953f7c69cd2bc2322db9223a815c680ccc7ea",
+		"l1.rollup.deployed-at":              15411056,
+		"l2.chain-id":                        42161,
+	}, "."), nil)
+}
+
+func applyArbitrumNovaParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                                       "nova",
 		"node.forwarding-target":                                 "https://nova.arbitrum.io/rpc",
@@ -588,7 +607,7 @@ func applyArbitrumRollupRinkebyTestnetParameters(k *koanf.Koanf) error {
 		"node.forwarding-target":             "https://rinkeby.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://rinkeby.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0x85c720444e436e1f9407e0c3895d3fe149f41168",
-		"l1.rollup.inbox":                    "0xd394acec33ca1c7fc14212b41892bd82deddda94",
+		"l1.rollup.inbox":                    "0x578BAde599406A8fE3d24Fd7f7211c0911F5B29e",
 		"l1.rollup.rollup":                   "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
 		"l1.rollup.sequencer-inbox":          "0x957c9c64f7c2ce091e56af3f33ab20259096355f",
 		"l1.rollup.validator-utils":          "0x0ea7372338a589e7f0b00e463a53aa464ef04e17",
