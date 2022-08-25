@@ -469,7 +469,6 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 				return nil, nil, nil, nil, nil, err
 			}
 			chainFound = true
-			return nil, nil, nil, nil, nil, errors.New("mainnet not supported yet")
 		case 42170:
 			if err := applyArbitrumNovaParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
