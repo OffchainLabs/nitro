@@ -1,6 +1,6 @@
 # L2-to-L1-Messages and the Outbox
 
-Arbitrum's Outbox system allows for arbitrary L2 to L1 contract calls; i.e., messages initiated from L2 which eventually resolve in execution on L1. L2-to-L1 messages (aka "outgoing" messages) bear many things in common with Arbitrum's [L1-to-L2 messages](l1-to-l2-messaging.md) (Retryables), "in reverse" though with a few differences.
+Arbitrum's Outbox system allows for arbitrary L2 to L1 contract calls; i.e., messages initiated from L2 which eventually resolve in execution on L1. L2-to-L1 messages (aka "outgoing" messages) bear many things in common with Arbitrum's [L1-to-L2 messages](l1-to-l2-messaging) (Retryables), "in reverse" though with a few differences.
 
 ### Protocol Flow
 
@@ -17,7 +17,7 @@ An important feature in the design of the Outbox system is that calls to `confir
 Unlike Retryables, which have an option to provide Ether for automatic L2 execution, outgoing messages can't provide in-protocol automatic L1 execution, for the simple reason that Ethereum itself doesn't offer scheduled execution affordances. However, application-layer contracts that interact with the Outbox could in principle be built to provide somewhat-analogous "execution market" functionality for outsourcing the final L1 execution step.
 
 Another difference between outgoing messages and Retryables is that Retryables have a limited lifetime before which they must be redeemed (or have their lifetime explicitly extended), whereas L2 to L1 messages are stored in L1 state, and thus persist permanently / have no deadline before which they must be executed.  
-The week long delay period before outgoing messages can be executed is inherent and fundamental to the nature of Arbitrum Rollup, or any Optimistic Rollup style L2; the moment a transaction is published on-chain, any observer can anticipate its result; however, for Ethereum itself to accept its result, the protocol must give time for Arbitrum validators to detect and prove fault if need-be. For a protocol overview, see [Inside Arbitrum](inside-arbitrum-nitro.md)
+The week long delay period before outgoing messages can be executed is inherent and fundamental to the nature of Arbitrum Rollup, or any Optimistic Rollup style L2; the moment a transaction is published on-chain, any observer can anticipate its result; however, for Ethereum itself to accept its result, the protocol must give time for Arbitrum validators to detect and prove fault if need-be. For a protocol overview, see [Inside Arbitrum](inside-arbitrum-nitro)
 
 \** We refer to `NodeInterface` as a "virtual" contract; its methods are acceible via calls `0x00000000000000000000000000000000000000C8`, but it doesn't really live on chain. It isn't really a precompile, but behaves a lot like a precompile that can't receive calls from other contracts. This is a cute trick that let's us provide Arbitrum-specific data without having to implement a custom RPC.
 
