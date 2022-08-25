@@ -119,7 +119,7 @@ func main() {
 	if err != nil {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
 		printSampleUsage(os.Args[0])
-		if err != nil && !strings.Contains(err.Error(), "help requested") {
+		if !strings.Contains(err.Error(), "help requested") {
 			fmt.Printf("%s\n", err.Error())
 		}
 
