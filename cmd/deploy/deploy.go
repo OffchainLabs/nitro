@@ -50,6 +50,15 @@ func main() {
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
+	if *prod {
+		if *l2ChainIdUint == params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
+			panic("must specify l2 chain id when launching a prod chain")
+		}
+		if *wasmmoduleroot == "" {
+			panic("must specify wasm module root when launching prod chain")
+		}
+	}
+
 	wallet := genericconf.WalletConfig{
 		Pathname:     *l1keystore,
 		Account:      *deployAccount,
