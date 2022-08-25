@@ -61,7 +61,7 @@ In principle, retryable tickets can alternatively be used to deposit Ether; this
 
 ## Transacting via the Delayed Inbox
 
-While Retryables and Eth deposits _must_ be submitted through the delayed inbox, in principle, _any_ message can be included this way; this is a necessary recourse to ensure the Arbitrum chain preserves censorship resistance even if the Sequencer misbehaves (see [The Sequencer and Censorship Resistance](sequencer.md)). However, under ordinary/happy circumstances, the expectation/recommendation is that clients use the delayed inbox only for Retryables and Eth deposits, and transact via the Sequencer for all other messages.
+While Retryables and Eth deposits _must_ be submitted through the delayed inbox, in principle, _any_ message can be included this way; this is a necessary recourse to ensure the Arbitrum chain preserves censorship resistance even if the Sequencer misbehaves (see [The Sequencer and Censorship Resistance](sequencer)). However, under ordinary/happy circumstances, the expectation/recommendation is that clients use the delayed inbox only for Retryables and Eth deposits, and transact via the Sequencer for all other messages.
 
 ## Address Aliasing
 
