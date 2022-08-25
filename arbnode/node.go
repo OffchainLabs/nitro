@@ -533,10 +533,10 @@ func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 type SequencerConfig struct {
 	Enable                      bool                     `koanf:"enable"`
 	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
-	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
-	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
+	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject" reload:"hot"`
+	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
-	ForwardTimeout              time.Duration            `koanf:"forward-timeout"`
+	ForwardTimeout              time.Duration            `koanf:"forward-timeout" reload:"hot"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
