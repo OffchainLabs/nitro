@@ -9,12 +9,12 @@ import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../challenge/IChallengeManager.sol";
-import "../libraries/SecondaryLogicUUPSUpgradeable.sol";
+import "../libraries/DoubleLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 
-contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgradeable {
+contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeable {
     function initialize(Config calldata config, ContractDependencies calldata connectedContracts)
         external
         override
@@ -121,6 +121,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     /**
      * @notice Pause interaction with the rollup contract.
      * The time spent paused is not incremented in the rollup's timing for node validation.
+     * @dev this function may be frontrun by a validator (ie to create a node before the system is paused).
+     * The pause should be called atomically with required checks to be sure the system is paused in a consistent state.
+     * The RollupAdmin may execute a check against the Rollup's latest node num or the ChallengeManager, then execute this function atomically with it.
      */
     function pause() external override {
         _pause();
@@ -153,6 +156,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * @param _val value to set in the whitelist for corresponding address
      */
     function setValidator(address[] calldata _validator, bool[] calldata _val) external override {
+        require(_validator.length > 0, "EMPTY_ARRAY");
         require(_validator.length == _val.length, "WRONG_LENGTH");
 
         for (uint256 i = 0; i < _validator.length; i++) {
@@ -185,6 +189,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * @param newConfirmPeriod new number of blocks
      */
     function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external override {
+        require(newConfirmPeriod > 0, "INVALID_CONFIRM_PERIOD");
         confirmPeriodBlocks = newConfirmPeriod;
         emit OwnerFunctionCalled(9);
     }
@@ -247,6 +252,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         override
         whenPaused
     {
+        require(stakerA.length > 0, "EMPTY_ARRAY");
         require(stakerA.length == stakerB.length, "WRONG_LENGTH");
         for (uint256 i = 0; i < stakerA.length; i++) {
             uint64 chall = inChallenge(stakerA[i], stakerB[i]);
@@ -260,7 +266,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     }
 
     function forceRefundStaker(address[] calldata staker) external override whenPaused {
+        require(staker.length > 0, "EMPTY_ARRAY");
         for (uint256 i = 0; i < staker.length; i++) {
+            require(_stakerMap[staker[i]].currentChallenge == NO_CHAL_INDEX, "STAKER_IN_CHALL");
             reduceStakeTo(staker[i], 0);
             turnIntoZombie(staker[i]);
         }

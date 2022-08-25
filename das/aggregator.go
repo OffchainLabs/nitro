@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -47,8 +48,9 @@ func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Aggregator struct {
-	config   AggregatorConfig
-	services []ServiceDetails
+	config         AggregatorConfig
+	services       []ServiceDetails
+	requestTimeout time.Duration
 
 	// calculated fields
 	requiredServicesForStore       int
@@ -59,16 +61,17 @@ type Aggregator struct {
 }
 
 type ServiceDetails struct {
-	service     DataAvailabilityService
+	service     DataAvailabilityServiceWriter
 	pubKey      blsSignatures.PublicKey
 	signersMask uint64
+	metricName  string
 }
 
 func (this *ServiceDetails) String() string {
 	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", this.service, this.signersMask)
 }
 
-func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.PublicKey, signersMask uint64) (*ServiceDetails, error) {
+func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
 		return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
 	}
@@ -76,12 +79,13 @@ func NewServiceDetails(service DataAvailabilityService, pubKey blsSignatures.Pub
 		service:     service,
 		pubKey:      pubKey,
 		signersMask: signersMask,
+		metricName:  metricName,
 	}, nil
 }
 
 func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services []ServiceDetails) (*Aggregator, error) {
 	if config.L1NodeURL == "none" {
-		return NewAggregatorWithSeqInboxCaller(config.AggregatorConfig, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config, services, nil)
 	}
 	l1client, err := GetL1Client(ctx, config.L1ConnectionAttempts, config.L1NodeURL)
 	if err != nil {
@@ -92,13 +96,13 @@ func NewAggregator(ctx context.Context, config DataAvailabilityConfig, services 
 		return nil, err
 	}
 	if seqInboxAddress == nil {
-		return NewAggregatorWithSeqInboxCaller(config.AggregatorConfig, services, nil)
+		return NewAggregatorWithSeqInboxCaller(config, services, nil)
 	}
-	return NewAggregatorWithL1Info(config.AggregatorConfig, services, l1client, *seqInboxAddress)
+	return NewAggregatorWithL1Info(config, services, l1client, *seqInboxAddress)
 }
 
 func NewAggregatorWithL1Info(
-	config AggregatorConfig,
+	config DataAvailabilityConfig,
 	services []ServiceDetails,
 	l1client arbutil.L1Interface,
 	seqInboxAddress common.Address,
@@ -111,7 +115,7 @@ func NewAggregatorWithL1Info(
 }
 
 func NewAggregatorWithSeqInboxCaller(
-	config AggregatorConfig,
+	config DataAvailabilityConfig,
 	services []ServiceDetails,
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 ) (*Aggregator, error) {
@@ -129,7 +133,7 @@ func NewAggregatorWithSeqInboxCaller(
 	}
 
 	keyset := &arbstate.DataAvailabilityKeyset{
-		AssumedHonest: uint64(config.AssumedHonest),
+		AssumedHonest: uint64(config.AggregatorConfig.AssumedHonest),
 		PubKeys:       pubKeys,
 	}
 	ksBuf := bytes.NewBuffer([]byte{})
@@ -140,7 +144,7 @@ func NewAggregatorWithSeqInboxCaller(
 	if err != nil {
 		return nil, err
 	}
-	if config.DumpKeyset {
+	if config.AggregatorConfig.DumpKeyset {
 		fmt.Printf("Keyset: %s\n", hexutil.Encode(ksBuf.Bytes()))
 		fmt.Printf("KeysetHash: %s\n", hexutil.Encode(keysetHash[:]))
 		os.Exit(0)
@@ -152,55 +156,15 @@ func NewAggregatorWithSeqInboxCaller(
 	}
 
 	return &Aggregator{
-		config:                         config,
+		config:                         config.AggregatorConfig,
 		services:                       services,
-		requiredServicesForStore:       len(services) + 1 - config.AssumedHonest,
-		maxAllowedServiceStoreFailures: config.AssumedHonest - 1,
+		requestTimeout:                 config.RequestTimeout,
+		requiredServicesForStore:       len(services) + 1 - config.AggregatorConfig.AssumedHonest,
+		maxAllowedServiceStoreFailures: config.AggregatorConfig.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    ksBuf.Bytes(),
 		bpVerifier:                     bpVerifier,
 	}, nil
-}
-
-func (a *Aggregator) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	// Query all services, even those that didn't sign.
-	// They may have been late in returning a response after storing the data,
-	// or got the data by some other means.
-	blobChan := make(chan []byte, len(a.services))
-	errorChan := make(chan error, len(a.services))
-	subCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	for _, d := range a.services {
-		go func(ctx context.Context, d ServiceDetails) {
-			blob, err := d.service.GetByHash(ctx, hash)
-			if err != nil {
-				errorChan <- err
-				return
-			}
-			if dastree.ValidHash(hash, blob) {
-				blobChan <- blob
-			} else {
-				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signersMask)
-			}
-		}(subCtx, d)
-	}
-
-	errorCount := 0
-	var errorCollection []error
-	for errorCount < len(a.services) {
-		select {
-		case blob := <-blobChan:
-			return blob, nil
-		case err := <-errorChan:
-			errorCollection = append(errorCollection, err)
-			log.Warn("Couldn't retrieve message from DAS", "err", err)
-			errorCount++
-		case <-ctx.Done():
-			break
-		}
-	}
-
-	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS: %v", errorCollection)
 }
 
 type storeResponse struct {
@@ -248,8 +212,23 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	expectedHash := dastree.Hash(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
-			cert, err := d.service.Store(ctx, message, timeout, sig)
+			storeCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
+			const metricBase string = "arb/das/rpc/aggregator/store"
+			var metricWithServiceName string = metricBase + "/" + d.metricName
+			defer cancel()
+			incFailureMetric := func() {
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/failure", nil).Inc(1)
+				metrics.GetOrRegisterGauge(metricBase+"/all/failure", nil).Inc(1)
+			}
+
+			cert, err := d.service.Store(storeCtx, message, timeout, sig)
 			if err != nil {
+				incFailureMetric()
+				if errors.Is(err, context.DeadlineExceeded) {
+					metrics.GetOrRegisterGauge(metricWithServiceName+"/timeout", nil).Inc(1)
+				} else {
+					metrics.GetOrRegisterGauge(metricWithServiceName+"/client_error", nil).Inc(1)
+				}
 				responses <- storeResponse{d, nil, err}
 				return
 			}
@@ -258,10 +237,14 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 				cert.Sig, cert.SerializeSignableFields(), d.pubKey,
 			)
 			if err != nil {
+				incFailureMetric()
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, err}
 				return
 			}
 			if !verified {
+				incFailureMetric()
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, errors.New("Signature verification failed.")}
 				return
 			}
@@ -269,49 +252,92 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			// SignersMask from backend DAS is ignored.
 
 			if cert.DataHash != expectedHash {
+				incFailureMetric()
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, errors.New("Hash verification failed.")}
 				return
 			}
 			if cert.Timeout != timeout {
+				incFailureMetric()
+				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
 				responses <- storeResponse{d, nil, fmt.Errorf("Timeout was %d, expected %d", cert.Timeout, timeout)}
 				return
 			}
 
+			metrics.GetOrRegisterGauge(metricWithServiceName+"/success", nil).Inc(1)
+			metrics.GetOrRegisterGauge(metricBase+"/success", nil).Inc(1)
 			responses <- storeResponse{d, cert.Sig, nil}
 		}(ctx, d)
 	}
 
-	var pubKeys []blsSignatures.PublicKey
-	var sigs []blsSignatures.Signature
 	var aggCert arbstate.DataAvailabilityCertificate
-	var aggSignersMask uint64
-	var storeFailures, successfullyStoredCount int
-	var errs []error
-	for i := 0; i < len(a.services) && storeFailures <= a.maxAllowedServiceStoreFailures && successfullyStoredCount < a.requiredServicesForStore; i++ {
-		select {
-		case <-ctx.Done():
-			break
-		case r := <-responses:
-			if r.err != nil {
-				storeFailures++
-				errs = append(errs, fmt.Errorf("Error from backend %v, with signer mask %d: %w", r.details.service, r.details.signersMask, r.err))
-				continue
+
+	type certDetails struct {
+		pubKeys        []blsSignatures.PublicKey
+		sigs           []blsSignatures.Signature
+		aggSignersMask uint64
+		err            error
+	}
+
+	// Collect responses from backends.
+	certDetailsChan := make(chan certDetails)
+	go func() {
+		var pubKeys []blsSignatures.PublicKey
+		var sigs []blsSignatures.Signature
+		var aggSignersMask uint64
+		var storeFailures, successfullyStoredCount int
+		var returned bool
+		for i := 0; i < len(a.services); i++ {
+
+			select {
+			case <-ctx.Done():
+				break
+			case r := <-responses:
+				if r.err != nil {
+					storeFailures++
+					log.Warn("das.Aggregator: Error from backend", "backend", r.details.service, "signerMask", r.details.signersMask, "err", r.err)
+				} else {
+					pubKeys = append(pubKeys, r.details.pubKey)
+					sigs = append(sigs, r.sig)
+					aggSignersMask |= r.details.signersMask
+
+					successfullyStoredCount++
+				}
 			}
 
-			pubKeys = append(pubKeys, r.details.pubKey)
-			sigs = append(sigs, r.sig)
-			aggSignersMask |= r.details.signersMask
-			successfullyStoredCount++
+			// As soon as enough responses are returned, pass the response to
+			// certDetailsChan, so the Store function can return, but also continue
+			// running until all responses are received (or the context is canceled)
+			// in order to produce accurate logs/metrics.
+			if !returned {
+				if successfullyStoredCount >= a.requiredServicesForStore {
+					cd := certDetails{}
+					cd.pubKeys = append(cd.pubKeys, pubKeys...)
+					cd.sigs = append(cd.sigs, sigs...)
+					cd.aggSignersMask = aggSignersMask
+					certDetailsChan <- cd
+					returned = true
+				} else if storeFailures > a.maxAllowedServiceStoreFailures {
+					cd := certDetails{}
+					cd.err = fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest)", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest)
+					certDetailsChan <- cd
+					returned = true
+				}
+			}
+
 		}
+	}()
+
+	cd := <-certDetailsChan
+
+	if cd.err != nil {
+		return nil, cd.err
 	}
 
-	if successfullyStoredCount < a.requiredServicesForStore {
-		return nil, fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest), errors received %d, %v", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, storeFailures, errs)
-	}
+	aggCert.Sig = blsSignatures.AggregateSignatures(cd.sigs)
+	aggPubKey := blsSignatures.AggregatePublicKeys(cd.pubKeys)
+	aggCert.SignersMask = cd.aggSignersMask
 
-	aggCert.Sig = blsSignatures.AggregateSignatures(sigs)
-	aggPubKey := blsSignatures.AggregatePublicKeys(pubKeys)
-	aggCert.SignersMask = aggSignersMask
 	aggCert.DataHash = expectedHash
 	aggCert.Timeout = timeout
 	aggCert.KeysetHash = a.keysetHash
@@ -340,36 +366,4 @@ func (a *Aggregator) String() string {
 	}
 	b.WriteString("}")
 	return b.String()
-}
-
-func (a *Aggregator) HealthCheck(ctx context.Context) error {
-	for _, serv := range a.services {
-		err := serv.service.HealthCheck(ctx)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (a *Aggregator) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	if len(a.services) == 0 {
-		return -1, errors.New("no DataAvailabilityService present")
-	}
-	expectedExpirationPolicy, err := a.services[0].service.ExpirationPolicy(ctx)
-	if err != nil {
-		return -1, err
-	}
-	// Even if a single service is different from the rest,
-	// then whole aggregator will be considered for mixed expiration timeout policy.
-	for _, serv := range a.services {
-		ep, err := serv.service.ExpirationPolicy(ctx)
-		if err != nil {
-			return -1, err
-		}
-		if ep != expectedExpirationPolicy {
-			return arbstate.MixedTimeout, nil
-		}
-	}
-	return expectedExpirationPolicy, nil
 }

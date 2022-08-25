@@ -95,6 +95,9 @@ func (this *ChainFetchReader) GetByHash(ctx context.Context, hash common.Hash) (
 	log.Trace("das.ChainFetchReader.GetByHash", "hash", pretty.PrettyHash(hash))
 	return chainFetchGetByHash(ctx, this.DataAvailabilityReader, &this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
 }
+func (this *ChainFetchReader) String() string {
+	return "ChainFetchReader"
+}
 
 func chainFetchGetByHash(
 	ctx context.Context,

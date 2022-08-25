@@ -11,9 +11,10 @@ pragma solidity >=0.4.21 <0.9.0;
  */
 interface NodeInterface {
     /**
-     * @notice Estimate the cost of putting a message in the L2 inbox that is reexecuted.
-     * @dev Use eth_estimateGas to call.
-     * @param sender sender of the L1 and L2 transaction
+     * @notice Simulate the execution of a retryable ticket
+     * @dev Use eth_estimateGas on this call to estimate gas usage of retryable ticket
+     *      Since gas usage is not yet known, you may need to add extra deposit (e.g. 1e18 wei) during estimation
+     * @param sender unaliased sender of the L1 and L2 transaction
      * @param deposit amount to deposit to sender in L2
      * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
@@ -54,7 +55,7 @@ interface NodeInterface {
      * Use eth_call to call.
      * Throws if block doesn't exist, or if block number is 0. Use eth_call
      * @param blockNum The L2 block being queried
-     * @return batch The L1 block containing the requested L2 block
+     * @return batch The sequencer batch number containing the requested L2 block
      */
     function findBatchContainingBlock(uint64 blockNum) external view returns (uint64 batch);
 
@@ -122,4 +123,9 @@ interface NodeInterface {
             uint256 amount,
             bytes memory calldataForL1
         );
+
+    // @notice Returns the first block produced using the Nitro codebase
+    // @dev returns 0 for chains like Nova that don't contain classic blocks
+    // @return number the block number
+    function nitroGenesisBlock() external pure returns (uint256 number);
 }

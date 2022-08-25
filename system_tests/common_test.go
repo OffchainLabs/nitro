@@ -7,15 +7,16 @@ import (
 	"bytes"
 	"context"
 	"math/big"
+	"net"
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/das"
-
-	"github.com/offchainlabs/nitro/blsSignatures"
-
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
-
+	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -35,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -58,7 +60,13 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 func TransferBalance(
 	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
-	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
+	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
+}
+
+func TransferBalanceTo(
+	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client client, ctx context.Context,
+) (*types.Transaction, *types.Receipt) {
+	tx := l2info.PrepareTxTo(from, &to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
 	res, err := EnsureTxSucceeded(ctx, client, tx)
@@ -92,7 +100,58 @@ func SendSignedTxViaL1(
 			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
 		})
 	}
-	receipt, err := WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, delayedTx)
+	Require(t, err)
+	return receipt
+}
+
+func SendUnsignedTxViaL1(
+	t *testing.T,
+	ctx context.Context,
+	l1info *BlockchainTestInfo,
+	l1client arbutil.L1Interface,
+	l2client arbutil.L1Interface,
+	templateTx *types.Transaction,
+) *types.Receipt {
+	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
+	Require(t, err)
+
+	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
+	remapped := util.RemapL1Address(usertxopts.From)
+	nonce, err := l2client.NonceAt(ctx, remapped, nil)
+	Require(t, err)
+
+	unsignedTx := types.NewTx(&types.ArbitrumUnsignedTx{
+		ChainId:   templateTx.ChainId(),
+		From:      remapped,
+		Nonce:     nonce,
+		GasFeeCap: templateTx.GasFeeCap(),
+		Gas:       templateTx.Gas(),
+		To:        templateTx.To(),
+		Value:     templateTx.Value(),
+		Data:      templateTx.Data(),
+	})
+
+	l1tx, err := delayedInboxContract.SendUnsignedTransaction(
+		&usertxopts,
+		arbmath.UintToBig(unsignedTx.Gas()),
+		unsignedTx.GasFeeCap(),
+		arbmath.UintToBig(unsignedTx.Nonce()),
+		*unsignedTx.To(),
+		unsignedTx.Value(),
+		unsignedTx.Data(),
+	)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
+	Require(t, err)
+
+	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
+	for i := 0; i < 30; i++ {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
+		})
+	}
+	receipt, err := EnsureTxSucceeded(ctx, l2client, unsignedTx)
 	Require(t, err)
 	return receipt
 }
@@ -122,7 +181,7 @@ func (l *lifecycle) Stop() error {
 	return nil
 }
 
-func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
+func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
@@ -239,7 +298,7 @@ func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
 }
 
 // Create and deploy L1 and arbnode for L2
-func CreateTestNodeOnL1(
+func createTestNodeOnL1(
 	t *testing.T,
 	ctx context.Context,
 	isSequencer bool,
@@ -248,20 +307,21 @@ func CreateTestNodeOnL1(
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
 	conf := arbnode.ConfigDefaultL1Test()
-	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, conf, params.ArbitrumDevTestChainConfig())
+	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, conf, params.ArbitrumDevTestChainConfig())
 }
 
-func CreateTestNodeOnL1WithConfig(
+func createTestNodeOnL1WithConfig(
 	t *testing.T,
 	ctx context.Context,
 	isSequencer bool,
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
 ) (
-	l2info info, node *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
+	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	l1info, l1client, l1backend, l1stack = CreateTestL1BlockChain(t, nil)
+	feedErrChan := make(chan error, 10)
+	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
@@ -278,12 +338,17 @@ func CreateTestNodeOnL1WithConfig(
 		nodeConfig.Sequencer.Enable = false
 		nodeConfig.DelayedSequencer.Enable = false
 	}
-	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 
+	var err error
+	currentNode, err = arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
+
 	Require(t, l2stack.Start())
 
 	l2client = ClientForStack(t, l2stack)
+
+	StartWatchChanErr(t, ctx, feedErrChan, l2stack)
+
 	return
 }
 
@@ -296,12 +361,13 @@ func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbn
 func CreateTestL2WithConfig(
 	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *node.Node) {
+	feedErrChan := make(chan error, 10)
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", params.ArbitrumDevTestChainConfig())
-	node, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil)
+	currentNode, err := arbnode.CreateNode(ctx, stack, chainDb, arbDb, nodeConfig, blockchain, nil, nil, nil, nil, feedErrChan)
 	Require(t, err)
 
 	// Give the node an init message
-	err = node.TxStreamer.AddFakeInitMessage()
+	err = currentNode.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
 
 	Require(t, stack.Start())
@@ -321,7 +387,26 @@ func CreateTestL2WithConfig(
 		Require(t, err)
 	}
 
-	return l2info, node, client, stack
+	StartWatchChanErr(t, ctx, feedErrChan, stack)
+
+	return l2info, currentNode, client, stack
+}
+
+func StartWatchChanErr(t *testing.T, ctx context.Context, feedErrChan chan error, stack *node.Node) {
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case err := <-feedErrChan:
+			t.Errorf("error occurred: %v", err)
+			if stack != nil {
+				err = stack.Close()
+				if err != nil {
+					t.Errorf("error closing stack: %v", err)
+				}
+			}
+		}
+	}()
 }
 
 func Require(t *testing.T, err error, text ...interface{}) {
@@ -359,6 +444,7 @@ func Create2ndNodeWithConfig(
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
 ) (*ethclient.Client, *arbnode.Node, *node.Node) {
+	feedErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		Fail(t, err)
@@ -376,13 +462,16 @@ func Create2ndNodeWithConfig(
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
-	node, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil, feedErrChan)
 	Require(t, err)
 
 	err = l2stack.Start()
 	Require(t, err)
 	l2client := ClientForStack(t, l2stack)
-	return l2client, node, l2stack
+
+	StartWatchChanErr(t, ctx, feedErrChan, l1stack)
+
+	return l2client, currentNode, l2stack
 }
 
 func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, account common.Address) *big.Int {
@@ -424,8 +513,8 @@ func authorizeDASKeyset(
 }
 
 func setupConfigWithDAS(
-	t *testing.T, dasModeString string,
-) (*params.ChainConfig, *arbnode.Config, string, *blsSignatures.PublicKey) {
+	t *testing.T, ctx context.Context, dasModeString string,
+) (*params.ChainConfig, *arbnode.Config, *das.LifecycleManager, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
@@ -448,7 +537,7 @@ func setupConfigWithDAS(
 	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dasConfig := das.DataAvailabilityConfig{
+	dasConfig := &das.DataAvailabilityConfig{
 		Enable: enableDas,
 		KeyConfig: das.KeyConfig{
 			KeyDir: dbPath,
@@ -463,10 +552,64 @@ func setupConfigWithDAS(
 		},
 		RequestTimeout:           5 * time.Second,
 		L1NodeURL:                "none",
+		SequencerInboxAddress:    "none",
 		PanicOnError:             true,
 		DisableSignatureChecking: true,
 	}
 
-	l1NodeConfigA.DataAvailability = dasConfig
-	return chainConfig, l1NodeConfigA, dbPath, dasSignerKey
+	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
+	var lifecycleManager *das.LifecycleManager
+	if dasModeString != "onchain" {
+		var dasServerStack das.DataAvailabilityService
+		dasServerStack, lifecycleManager, err = arbnode.SetUpDataAvailability(ctx, dasConfig, nil, nil)
+
+		Require(t, err)
+		rpcLis, err := net.Listen("tcp", "localhost:0")
+		Require(t, err)
+		restLis, err := net.Listen("tcp", "localhost:0")
+		Require(t, err)
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+
+		beConfigA := das.BackendConfig{
+			URL:                 "http://" + rpcLis.Addr().String(),
+			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
+			SignerMask:          1,
+		}
+		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+		l1NodeConfigA.DataAvailability.Enable = true
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
+		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+	}
+
+	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
+}
+
+func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {
+	testDeadLine, deadlineExist := t.Deadline()
+	var timeout time.Duration
+	if deadlineExist {
+		timeout = time.Until(testDeadLine) - (time.Second * 10)
+		if timeout > time.Second*10 {
+			timeout = timeout - (time.Second * 10)
+		}
+	} else {
+		timeout = defaultTimeout
+	}
+
+	return timeout
+}
+
+func deploySimple(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
+) (common.Address, *mocksgen.Simple) {
+	addr, tx, simple, err := mocksgen.DeploySimple(&auth, client)
+	Require(t, err, "could not deploy Simple.sol contract")
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+	return addr, simple
 }

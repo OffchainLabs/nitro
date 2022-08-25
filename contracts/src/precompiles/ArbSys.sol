@@ -41,7 +41,8 @@ interface ArbSys {
     function getStorageGasAvailable() external view returns (uint256);
 
     /**
-     * @notice check if current call is top level (meaning it was triggered by an EoA or a L1 contract)
+     * @notice (deprecated) check if current call is top level (meaning it was triggered by an EoA or a L1 contract)
+     * @dev this call has been deprecated and may be removed in a future release
      * @return true if current execution frame is not a call by another L2 contract
      */
     function isTopLevelCall() external view returns (bool);
@@ -79,6 +80,8 @@ interface ArbSys {
 
     /**
      * @notice Send a transaction to L1
+     * @dev it is not possible to execute on the L1 any L2-to-L1 transaction which contains data
+     * to a contract address without any code (as enforced by the Bridge contract).
      * @param destination recipient address on L1
      * @param data (optional) calldata for L1 contract call
      * @return a unique identifier for this L2-to-L1 transaction.

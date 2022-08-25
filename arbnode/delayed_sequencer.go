@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -22,37 +23,45 @@ import (
 
 type DelayedSequencer struct {
 	stopwaiter.StopWaiter
-	l1Reader        *headerreader.HeaderReader
-	bridge          *DelayedBridge
-	inbox           *InboxTracker
-	txStreamer      *TransactionStreamer
-	coordinator     *SeqCoordinator
-	waitingForBlock *big.Int
-	config          *DelayedSequencerConfig
+	l1Reader                 *headerreader.HeaderReader
+	bridge                   *DelayedBridge
+	inbox                    *InboxTracker
+	txStreamer               *TransactionStreamer
+	coordinator              *SeqCoordinator
+	waitingForFinalizedBlock *big.Int
+	config                   *DelayedSequencerConfig
 }
 
 type DelayedSequencerConfig struct {
-	Enable           bool          `koanf:"enable"`
-	FinalizeDistance int64         `koanf:"finalize-distance"`
-	TimeAggregate    time.Duration `koanf:"time-aggregate"`
+	Enable              bool          `koanf:"enable"`
+	FinalizeDistance    int64         `koanf:"finalize-distance"`
+	TimeAggregate       time.Duration `koanf:"time-aggregate"`
+	RequireFullFinality bool          `koanf:"require-full-finality"`
+	UseMergeFinality    bool          `koanf:"use-merge-finality"`
 }
 
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
-	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final")
+	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final (ignored when using Merge finality)")
 	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "polling interval for the delayed sequencer")
+	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
+	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
-	Enable:           false,
-	FinalizeDistance: 12,
-	TimeAggregate:    time.Minute,
+	Enable:              false,
+	FinalizeDistance:    20,
+	TimeAggregate:       time.Minute,
+	RequireFullFinality: true,
+	UseMergeFinality:    true,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
-	Enable:           true,
-	FinalizeDistance: 12,
-	TimeAggregate:    time.Second,
+	Enable:              true,
+	FinalizeDistance:    20,
+	TimeAggregate:       time.Second,
+	RequireFullFinality: true,
+	UseMergeFinality:    true,
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
@@ -82,17 +91,34 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
 		return nil
 	}
-	if d.waitingForBlock != nil && lastBlockHeader.Number.Cmp(d.waitingForBlock) < 0 {
+
+	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(d.config.FinalizeDistance))
+	if finalized.Sign() < 0 {
+		finalized.SetInt64(0)
+	}
+
+	// Once the merge is live, we can directly query for the latest finalized block number
+	if lastBlockHeader.Difficulty.Sign() == 0 && d.config.UseMergeFinality {
+		var header *types.Header
+		var err error
+		if d.config.RequireFullFinality {
+			header, err = d.l1Reader.LatestFinalizedHeader()
+		} else {
+			header, err = d.l1Reader.LatestSafeHeader()
+		}
+		if err != nil {
+			return fmt.Errorf("Failed to get latest header: %w", err)
+		}
+		finalized = header.Number
+	}
+
+	if d.waitingForFinalizedBlock != nil && arbmath.BigLessThan(finalized, d.waitingForFinalizedBlock) {
 		return nil
 	}
 
 	// Unless we find an unfinalized message (which sets waitingForBlock),
 	// we won't find a new finalized message until FinalizeDistance blocks in the future.
-	d.waitingForBlock = new(big.Int).Add(lastBlockHeader.Number, big.NewInt(d.config.FinalizeDistance))
-	finalized := new(big.Int).Sub(lastBlockHeader.Number, big.NewInt(d.config.FinalizeDistance))
-	if finalized.Sign() < 0 {
-		finalized.SetInt64(0)
-	}
+	d.waitingForFinalizedBlock = arbmath.BigAddByUint(lastBlockHeader.Number, 1)
 
 	dbDelayedCount, err := d.inbox.GetDelayedCount()
 	if err != nil {
@@ -115,7 +141,7 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 		blockNumber := arbmath.UintToBig(msg.Header.BlockNumber)
 		if blockNumber.Cmp(finalized) > 0 {
 			// Message isn't finalized yet; stop here
-			d.waitingForBlock = new(big.Int).Add(blockNumber, big.NewInt(d.config.FinalizeDistance))
+			d.waitingForFinalizedBlock = blockNumber
 			break
 		}
 		if lastDelayedAcc != (common.Hash{}) {
@@ -141,7 +167,7 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 		}
 		if delayedBridgeAcc != lastDelayedAcc {
 			// Probably a reorg that hasn't been picked up by the inbox reader
-			return errors.New("inbox reader db accumulator doesn't match delayed bridge")
+			return fmt.Errorf("inbox reader at delayed message %v db accumulator %v doesn't match delayed bridge accumulator %v at L1 block %v", pos-1, lastDelayedAcc, delayedBridgeAcc, finalized)
 		}
 
 		err = d.txStreamer.SequenceDelayedMessages(ctx, messages, startPos)

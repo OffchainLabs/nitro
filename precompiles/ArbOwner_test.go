@@ -120,14 +120,26 @@ func TestArbInfraFeeAccount(t *testing.T) {
 	evm = newMockEVMForTestingWithVersion(&version5)
 	callCtx = testContext(caller, evm)
 	prec = &ArbOwner{}
+	precPublic := &ArbOwnerPublic{}
 	addr, err := prec.GetInfraFeeAccount(callCtx, evm)
 	Require(t, err)
 	if addr != (common.Address{}) {
 		t.Fatal()
 	}
+	addr, err = precPublic.GetInfraFeeAccount(callCtx, evm)
+	Require(t, err)
+	if addr != (common.Address{}) {
+		t.Fatal()
+	}
+
 	err = prec.SetInfraFeeAccount(callCtx, evm, newAddr)
 	Require(t, err)
 	addr, err = prec.GetInfraFeeAccount(callCtx, evm)
+	Require(t, err)
+	if addr != newAddr {
+		t.Fatal()
+	}
+	addr, err = precPublic.GetInfraFeeAccount(callCtx, evm)
 	Require(t, err)
 	if addr != newAddr {
 		t.Fatal()

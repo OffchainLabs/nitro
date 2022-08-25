@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,12 +19,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/das/dasrpc"
 	"github.com/offchainlabs/nitro/das/dastree"
 	flag "github.com/spf13/pflag"
 )
@@ -57,10 +58,8 @@ func startClient(args []string) error {
 		switch strings.ToLower(args[1]) {
 		case "store":
 			return startClientStore(args[2:])
-		case "getbyhash":
-			return startRPCClientGetByHash(args[2:])
 		default:
-			return fmt.Errorf("datool client rpc '%s' not supported, valid arguments are 'store' and 'getByHash'", args[1])
+			return fmt.Errorf("datool client rpc '%s' not supported, valid arguments are 'store'", args[1])
 
 		}
 	case "rest":
@@ -81,6 +80,7 @@ func startClient(args []string) error {
 type ClientStoreConfig struct {
 	URL                   string                 `koanf:"url"`
 	Message               string                 `koanf:"message"`
+	RandomMessageSize     int                    `koanf:"random-message-size"`
 	DASRetentionPeriod    time.Duration          `koanf:"das-retention-period"`
 	SigningKey            string                 `koanf:"signing-key"`
 	SigningWallet         string                 `koanf:"signing-wallet"`
@@ -92,6 +92,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f := flag.NewFlagSet("datool client store", flag.ContinueOnError)
 	f.String("url", "", "URL of DAS server to connect to")
 	f.String("message", "", "message to send")
+	f.Int("random-message-size", 0, "send a message of a specified number of random bytes")
 	f.String("signing-key", "", "ecdsa private key to sign the message with, treated as a hex string if prefixed with 0x otherise treated as a file; if not specified the message is not signed")
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
@@ -116,12 +117,12 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	client, err := dasrpc.NewDASRPCClient(config.URL)
+	client, err := das.NewDASRPCClient(config.URL)
 	if err != nil {
 		return err
 	}
 
-	var dasClient das.DataAvailabilityService = client
+	var dasClient das.DataAvailabilityServiceWriter = client
 	if config.SigningKey != "" {
 		var privateKey *ecdsa.PrivateKey
 		if config.SigningKey[:2] == "0x" {
@@ -149,7 +150,7 @@ func startClientStore(args []string) error {
 			Account:       "",
 			OnlyCreateKey: false,
 		}
-		signer, err := arbnode.GetSignerFromWallet(walletConf)
+		_, signer, err := util.OpenWallet("datool", walletConf, nil)
 		if err != nil {
 			return err
 		}
@@ -160,7 +161,21 @@ func startClientStore(args []string) error {
 	}
 
 	ctx := context.Background()
-	cert, err := dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+	var cert *arbstate.DataAvailabilityCertificate
+
+	if config.RandomMessageSize > 0 {
+		message := make([]byte, config.RandomMessageSize)
+		_, err = rand.Read(message)
+		if err != nil {
+			return err
+		}
+		cert, err = dasClient.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+	} else if len(config.Message) > 0 {
+		cert, err = dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+	} else {
+		return errors.New("--message or --random-message-size must be specified")
+	}
+
 	if err != nil {
 		return err
 	}
@@ -169,66 +184,6 @@ func startClientStore(args []string) error {
 	fmt.Printf("Hex Encoded Cert: %s\n", string(hexutil.Encode(serializedCert)))
 	fmt.Printf("Hex Encoded Data Hash: %s\n", string(hexutil.Encode(cert.DataHash[:])))
 
-	return nil
-}
-
-// datool client rpc getbyhash
-type RPCClientGetByHashConfig struct {
-	URL        string                 `koanf:"url"`
-	DataHash   string                 `koanf:"data-hash"`
-	ConfConfig genericconf.ConfConfig `koanf:"conf"`
-}
-
-func parseRPCClientGetByHashConfig(args []string) (*RPCClientGetByHashConfig, error) {
-	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
-	f.String("url", "http://localhost:9876", "URL of DAS server to connect to.")
-	f.String("data-hash", "", "hash of the message to retrieve, if starts with '0x' it's treated as hex encoded, otherwise base64 encoded")
-
-	genericconf.ConfConfigAddOptions("conf", f)
-
-	k, err := util.BeginCommonParse(f, args)
-	if err != nil {
-		return nil, err
-	}
-
-	var config RPCClientGetByHashConfig
-	if err := util.EndCommonParse(k, &config); err != nil {
-		return nil, err
-	}
-	return &config, nil
-}
-
-func startRPCClientGetByHash(args []string) error {
-	config, err := parseRPCClientGetByHashConfig(args)
-	if err != nil {
-		return err
-	}
-
-	client, err := dasrpc.NewDASRPCClient(config.URL)
-	if err != nil {
-		return err
-	}
-
-	var decodedHash []byte
-	if strings.HasPrefix(config.DataHash, "0x") {
-		decodedHash, err = hexutil.Decode(config.DataHash)
-		if err != nil {
-			return err
-		}
-	} else {
-		hashDecoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader([]byte(config.DataHash)))
-		decodedHash, err = io.ReadAll(hashDecoder)
-		if err != nil {
-			return err
-		}
-	}
-
-	ctx := context.Background()
-	message, err := client.GetByHash(ctx, common.BytesToHash(decodedHash))
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Message: %s\n", message)
 	return nil
 }
 
@@ -343,7 +298,7 @@ func startKeyGen(args []string) error {
 			Account:       "",
 			OnlyCreateKey: true,
 		}
-		_, err = arbnode.GetSignerFromWallet(walletConf)
+		_, _, err = util.OpenWallet("datool", walletConf, nil)
 		if err != nil && strings.Contains(fmt.Sprint(err), "wallet key created") {
 			return nil
 		}

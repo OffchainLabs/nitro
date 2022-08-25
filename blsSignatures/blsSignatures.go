@@ -5,6 +5,7 @@ package blsSignatures
 
 import (
 	cryptorand "crypto/rand"
+	"encoding/base64"
 	"errors"
 	"math/big"
 
@@ -20,6 +21,18 @@ type PublicKey struct {
 type PrivateKey *big.Int
 
 type Signature *bls12381.PointG1
+
+func GeneratePrivKeyString() (string, error) {
+	g2 := bls12381.NewG2()
+	privKey, err := cryptorand.Int(cryptorand.Reader, g2.Q())
+	if err != nil {
+		return "", err
+	}
+	privKeyBytes := PrivateKeyToBytes(privKey)
+	encodedPrivKey := make([]byte, base64.StdEncoding.EncodedLen(len(privKeyBytes)))
+	base64.StdEncoding.Encode(encodedPrivKey, privKeyBytes)
+	return string(encodedPrivKey), nil
+}
 
 func GenerateKeys() (PublicKey, PrivateKey, error) {
 	g2 := bls12381.NewG2()
@@ -220,6 +233,10 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 		key, err := g2.FromBytes(keyBytes)
 		if err != nil {
 			return PublicKey{}, err
+		}
+		if trustedSource {
+			// Skip verification of the validity proof
+			return PublicKey{key, validityProof}, nil
 		}
 		return NewPublicKey(key, validityProof)
 	}

@@ -33,7 +33,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _, l2client, l2stack, _, _, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, _, l2client, l2stack, _, _, _, l1stack := createTestNodeOnL1(t, ctx, true)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
@@ -91,7 +91,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.DelayedSequencer.FinalizeDistance = 1
 
-	l2info, node, l2client, l2stack, _, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig)
+	l2info, node, l2client, l2stack, _, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, chainConfig)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
@@ -108,7 +108,7 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 	Require(t, err)
 	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), l2client)
 	Require(t, err)
-	tx, err = arbOwner.SetL1PricePerUnit(&ownerAuth, new(big.Int).SetUint64(initialEstimate))
+	tx, err = arbOwner.SetL1PricePerUnit(&ownerAuth, arbmath.UintToBig(initialEstimate))
 	Require(t, err)
 	_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 	Require(t, err)

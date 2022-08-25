@@ -65,6 +65,10 @@ func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastSer
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 	}
+	err := inbox.cleanupInconsistentState()
+	if err != nil {
+		return nil, err
+	}
 	return inbox, nil
 }
 
@@ -839,10 +843,6 @@ func (s *TransactionStreamer) SyncProgressMap() map[string]interface{} {
 	res["messageOfLastBlock"] = lastBuiltMessage
 	res["messageOfProcessedBatch"] = processedMetadata.MessageCount
 	return res
-}
-
-func (s *TransactionStreamer) Initialize() error {
-	return s.cleanupInconsistentState()
 }
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) {

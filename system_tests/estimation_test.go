@@ -32,12 +32,9 @@ func TestDeploy(t *testing.T) {
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
-	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
-	Require(t, err, "could not deploy contract")
-	_, err = EnsureTxSucceeded(ctx, client, tx)
-	Require(t, err)
+	_, simple := deploySimple(t, ctx, auth, client)
 
-	tx, err = simple.Increment(&auth)
+	tx, err := simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)

@@ -175,7 +175,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 
 		handler, ok := implementerType.MethodByName(name)
 		if !ok {
-			log.Crit("Precompile ", contract, " must implement ", name)
+			log.Crit("Precompile " + contract + " must implement " + name)
 		}
 
 		var needs = []reflect.Type{
@@ -230,6 +230,14 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 		}
 		methods[id] = &method
 		methodsByName[name] = &method
+	}
+
+	for i := 0; i < implementerType.NumMethod(); i++ {
+		method := implementerType.Method(i)
+		name := method.Name
+		if method.IsExported() && methodsByName[name] == nil {
+			log.Crit(contract + " is missing a solidity interface for " + name)
+		}
 	}
 
 	// provide the implementer mechanisms to emit logs for the solidity events

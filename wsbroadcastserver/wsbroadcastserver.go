@@ -5,30 +5,43 @@ package wsbroadcastserver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
 	"github.com/mailru/easygo/netpoll"
+	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
+const HTTPHeaderFeedServerVersion = "Arbitrum-Feed-Server-Version"
+const HTTPHeaderFeedClientVersion = "Arbitrum-Feed-Client-Version"
+const HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
+const HTTPHeaderChainId = "Arbitrum-Chain-Id"
+const FeedServerVersion = 2
+const FeedClientVersion = 2
+
 type BroadcasterConfig struct {
-	Enable        bool          `koanf:"enable"`
-	Addr          string        `koanf:"addr"`
-	IOTimeout     time.Duration `koanf:"io-timeout"`
-	Port          string        `koanf:"port"`
-	Ping          time.Duration `koanf:"ping"`
-	ClientTimeout time.Duration `koanf:"client-timeout"`
-	Queue         int           `koanf:"queue"`
-	Workers       int           `koanf:"workers"`
-	MaxSendQueue  int           `koanf:"max-send-queue"`
+	Enable         bool          `koanf:"enable"`
+	Addr           string        `koanf:"addr"`
+	IOTimeout      time.Duration `koanf:"io-timeout"`
+	Port           string        `koanf:"port"`
+	Ping           time.Duration `koanf:"ping"`
+	ClientTimeout  time.Duration `koanf:"client-timeout"`
+	Queue          int           `koanf:"queue"`
+	Workers        int           `koanf:"workers"`
+	MaxSendQueue   int           `koanf:"max-send-queue"`
+	RequireVersion bool          `koanf:"require-version"`
 }
 
 func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -41,57 +54,64 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".queue", DefaultBroadcasterConfig.Queue, "queue size")
 	f.Int(prefix+".workers", DefaultBroadcasterConfig.Workers, "number of threads to reserve for HTTP to WS upgrade")
 	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
+	f.Bool(prefix+".require-version", DefaultBroadcasterConfig.RequireVersion, "don't connect if client version not present")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
-	Enable:        false,
-	Addr:          "",
-	IOTimeout:     5 * time.Second,
-	Port:          "9642",
-	Ping:          5 * time.Second,
-	ClientTimeout: 15 * time.Second,
-	Queue:         100,
-	Workers:       100,
-	MaxSendQueue:  4096,
+	Enable:         false,
+	Addr:           "",
+	IOTimeout:      5 * time.Second,
+	Port:           "9642",
+	Ping:           5 * time.Second,
+	ClientTimeout:  15 * time.Second,
+	Queue:          100,
+	Workers:        100,
+	MaxSendQueue:   4096,
+	RequireVersion: false,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
-	Enable:        false,
-	Addr:          "0.0.0.0",
-	IOTimeout:     2 * time.Second,
-	Port:          "0",
-	Ping:          5 * time.Second,
-	ClientTimeout: 15 * time.Second,
-	Queue:         1,
-	Workers:       100,
-	MaxSendQueue:  4096,
+	Enable:         false,
+	Addr:           "0.0.0.0",
+	IOTimeout:      2 * time.Second,
+	Port:           "0",
+	Ping:           5 * time.Second,
+	ClientTimeout:  15 * time.Second,
+	Queue:          1,
+	Workers:        100,
+	MaxSendQueue:   4096,
+	RequireVersion: false,
 }
 
 type WSBroadcastServer struct {
-	startMutex    *sync.Mutex
-	poller        netpoll.Poller
-	acceptDesc    *netpoll.Desc
+	startMutex sync.Mutex
+	poller     netpoll.Poller
+
+	acceptDescMutex sync.Mutex
+	acceptDesc      *netpoll.Desc
+
 	listener      net.Listener
 	settings      BroadcasterConfig
 	started       bool
 	clientManager *ClientManager
 	catchupBuffer CatchupBuffer
+	chainId       uint64
+	feedErrChan   chan error
 }
 
-func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer) *WSBroadcastServer {
+func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer, chainId uint64, feedErrChan chan error) *WSBroadcastServer {
 	return &WSBroadcastServer{
-		startMutex:    &sync.Mutex{},
 		settings:      settings,
 		started:       false,
 		catchupBuffer: catchupBuffer,
+		chainId:       chainId,
+		feedErrChan:   feedErrChan,
 	}
 }
 
-func (s *WSBroadcastServer) Start(ctx context.Context) error {
-	s.startMutex.Lock()
-	defer s.startMutex.Unlock()
-	if s.started {
-		return errors.New("broadcast server already started")
+func (s *WSBroadcastServer) Initialize() error {
+	if s.poller != nil {
+		return errors.New("broadcast server already initialized")
 	}
 
 	var err error
@@ -103,10 +123,19 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 
 	// Make pool of X size, Y sized work queue and one pre-spawned
 	// goroutine.
-	var clientManager = NewClientManager(s.poller, s.settings, s.catchupBuffer)
-	clientManager.Start(ctx)
+	s.clientManager = NewClientManager(s.poller, s.settings, s.catchupBuffer)
 
-	s.clientManager = clientManager // maintain the pointer in this instance... used for testing
+	return nil
+}
+
+func (s *WSBroadcastServer) Start(ctx context.Context) error {
+	s.startMutex.Lock()
+	defer s.startMutex.Unlock()
+	if s.started {
+		return errors.New("broadcast server already started")
+	}
+
+	s.clientManager.Start(ctx)
 
 	// handle incoming connection requests.
 	// It upgrades TCP connection to WebSocket, registers netpoll listener on
@@ -117,8 +146,52 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 
 		safeConn := deadliner{conn, s.settings.IOTimeout}
 
+		// Prepare handshake header writer from http.Header mapping.
+		header := ws.HandshakeHeaderHTTP(http.Header{
+			HTTPHeaderFeedServerVersion: []string{strconv.Itoa(FeedServerVersion)},
+			HTTPHeaderChainId:           []string{strconv.FormatUint(s.chainId, 10)},
+		})
+
+		var feedClientVersionSeen bool
+		var requestedSeqNum arbutil.MessageIndex
+		upgrader := ws.Upgrader{
+			OnHeader: func(key []byte, value []byte) error {
+				headerName := string(key)
+				if headerName == HTTPHeaderFeedClientVersion {
+					feedClientVersion, err := strconv.ParseUint(string(value), 0, 64)
+					if err != nil {
+						return err
+					}
+					if feedClientVersion < FeedClientVersion {
+						return ws.RejectConnectionError(
+							ws.RejectionStatus(http.StatusBadRequest),
+							ws.RejectionReason(fmt.Sprintf("Feed Client version too old: %d, expected %d", feedClientVersion, FeedClientVersion)),
+						)
+					}
+					feedClientVersionSeen = true
+				} else if headerName == HTTPHeaderRequestedSequenceNumber {
+					num, err := strconv.ParseUint(string(value), 0, 64)
+					if err != nil {
+						return fmt.Errorf("unable to parse HTTP header key: %s, value: %s", headerName, string(value))
+					}
+					requestedSeqNum = arbutil.MessageIndex(num)
+				}
+
+				return nil
+			},
+			OnBeforeUpgrade: func() (ws.HandshakeHeader, error) {
+				if s.settings.RequireVersion && !feedClientVersionSeen {
+					return nil, ws.RejectConnectionError(
+						ws.RejectionStatus(http.StatusBadRequest),
+						ws.RejectionReason(HTTPHeaderFeedClientVersion+" HTTP header missing"),
+					)
+				}
+				return header, nil
+			},
+		}
+
 		// Zero-copy upgrade to WebSocket connection.
-		hs, err := ws.Upgrade(safeConn)
+		hs, err := upgrader.Upgrade(safeConn)
 		if err != nil {
 			log.Warn("websocket upgrade error", "connection_name", nameConn(safeConn), "err", err)
 			_ = safeConn.Close()
@@ -136,7 +209,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		}
 
 		// Register incoming client in clientManager.
-		client := clientManager.Register(safeConn, desc)
+		client := s.clientManager.Register(safeConn, desc, requestedSeqNum)
 
 		// Subscribe to events about conn.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {
@@ -144,7 +217,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 				// ReadHup or Hup received, means the client has close the connection
 				// remove it from the clientManager registry.
 				log.Info("Hup received", "connection_name", nameConn(safeConn))
-				clientManager.Remove(client)
+				s.clientManager.Remove(client)
 				return
 			}
 
@@ -153,11 +226,11 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 			}
 
 			// receive client messages, close on error
-			clientManager.pool.Schedule(func() {
+			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client
 				if _, _, err := client.Receive(ctx, s.settings.ClientTimeout); err != nil {
 					log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
-					clientManager.Remove(client)
+					s.clientManager.Remove(client)
 					return
 				}
 			})
@@ -189,6 +262,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	s.acceptDesc = acceptDesc
 
 	// acceptErrChan blocks until connection accepted or error occurred
+	// OneShot is used, so reusing a single channel is fine
 	acceptErrChan := make(chan error, 1)
 
 	// Subscribe to events about listener.
@@ -202,7 +276,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		// busy. So if there are no free goroutines during 1ms we want to
 		// cooldown the server and do not receive connection for some short
 		// time.
-		err := clientManager.pool.ScheduleTimeout(time.Millisecond, func() {
+		err := s.clientManager.pool.ScheduleTimeout(time.Millisecond, func() {
 			conn, err := ln.Accept()
 			if err != nil {
 				acceptErrChan <- err
@@ -232,10 +306,18 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 			time.Sleep(delay)
 		}
 
-		err = s.poller.Resume(acceptDesc)
+		s.acceptDescMutex.Lock()
+		if s.acceptDesc == nil {
+			// Already shutting down
+			s.acceptDescMutex.Unlock()
+			return
+		}
+		err = s.poller.Resume(s.acceptDesc)
+		s.acceptDescMutex.Unlock()
 		if err != nil {
 			log.Warn("error in poller.Resume", "err", err)
-			panic("error resuming broadcaster poller")
+			s.feedErrChan <- errors.Wrap(err, "error in poller.Resume")
+			return
 		}
 	})
 	if err != nil {
@@ -263,7 +345,10 @@ func (s *WSBroadcastServer) StopAndWait() {
 		log.Warn("error in poller.Stop", "err", err)
 	}
 
+	s.acceptDescMutex.Lock()
 	err = s.acceptDesc.Close()
+	s.acceptDesc = nil
+	s.acceptDescMutex.Unlock()
 	if err != nil {
 		log.Warn("error in acceptDesc.Close", "err", err)
 	}

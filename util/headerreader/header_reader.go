@@ -3,6 +3,7 @@ package headerreader
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"sync"
 	"time"
 
@@ -196,7 +197,9 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		case <-ticker.C:
 			h, err := s.client.HeaderByNumber(ctx, nil)
 			if err != nil {
-				log.Warn("failed reading header", "err", err)
+				if !errors.Is(err, context.Canceled) {
+					log.Warn("failed reading header", "err", err)
+				}
 			} else {
 				s.possiblyBroadcast(h)
 			}
@@ -221,6 +224,20 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
+		s.logIfHeaderIsOld()
+	}
+}
+
+func (s *HeaderReader) logIfHeaderIsOld() {
+	s.chanMutex.Lock()
+	storedHeader := s.lastBroadcastHeader
+	s.chanMutex.Unlock()
+	if storedHeader == nil {
+		return
+	}
+	headerTime := time.Unix(int64(storedHeader.Time), 0)
+	if time.Since(headerTime) >= 5*time.Minute {
+		log.Warn("latest L1 block is at least 5 minutes old", "l1Block", storedHeader.Number, "l1Timestamp", headerTime)
 	}
 }
 
@@ -272,6 +289,16 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 	return s.lastPendingCallBlockNr
+}
+
+func (s *HeaderReader) LatestSafeHeader() (*types.Header, error) {
+	// note, this is not cached
+	return s.client.HeaderByNumber(s.GetContext(), big.NewInt(rpc.SafeBlockNumber.Int64()))
+}
+
+func (s *HeaderReader) LatestFinalizedHeader() (*types.Header, error) {
+	// note, this is not cached
+	return s.client.HeaderByNumber(s.GetContext(), big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 }
 
 func (s *HeaderReader) Client() arbutil.L1Interface {

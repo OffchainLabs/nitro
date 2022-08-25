@@ -24,9 +24,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, _, dasSignerKey := setupConfigWithDAS(t, dasModeString)
+	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeString)
+	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
-	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
@@ -35,6 +36,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
+	validatorConfig.DataAvailability.AggregatorConfig.Enable = false
 	l2clientB, nodeB, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, validatorConfig)
 	defer requireClose(t, l2stackB)
 	l2info.GenerateAccount("User2")
@@ -56,7 +58,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		ownerInfo := l2info.GetInfoWithPrivKey("Owner")
 		tx = l2info.SignTxAs("Owner", &types.DynamicFeeTx{
 			To:        nil,
-			Gas:       l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimit,
+			Gas:       l2info.TransferGas*2 + l2pricing.InitialPerBlockGasLimitV6,
 			GasFeeCap: new(big.Int).Set(l2info.GasPrice),
 			Value:     common.Big0,
 			Nonce:     ownerInfo.Nonce,
@@ -109,8 +111,8 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 		lastBlock, err = l2clientB.BlockByHash(ctx, lastBlock.ParentHash())
 		Require(t, err)
 	}
-	testDeadLine, _ := t.Deadline()
-	if !nodeB.BlockValidator.WaitForBlock(lastBlock.NumberU64(), time.Until(testDeadLine)-time.Second*10) {
+	timeout := getDeadlineTimeout(t, time.Minute*10)
+	if !nodeB.BlockValidator.WaitForBlock(ctx, lastBlock.NumberU64(), timeout) {
 		Fail(t, "did not validate all blocks")
 	}
 }

@@ -53,6 +53,11 @@ var l2ToL1TransactionTopic common.Hash
 var blockInGenesis = errors.New("")
 var blockAfterLatestBatch = errors.New("")
 
+func (n NodeInterface) NitroGenesisBlock(c ctx) (huge, error) {
+	block := n.backend.ChainConfig().ArbitrumChainParams.GenesisBlockNum
+	return arbmath.UintToBig(block), nil
+}
+
 func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
 	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
 	if err != nil {
