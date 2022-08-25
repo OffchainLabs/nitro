@@ -84,7 +84,7 @@ func main() {
 	if !common.IsHexAddress(*ownerAddressString) {
 		panic("please specify a valid rollup owner address")
 	}
-	if !common.IsHexAddress(*loserEscrowAddressString) {
+	if *prod && !common.IsHexAddress(*loserEscrowAddressString) {
 		panic("please specify a valid loser escrow address")
 	}
 
