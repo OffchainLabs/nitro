@@ -117,6 +117,10 @@ func init() {
 	}
 
 	core.InterceptRPCGasCap = func(gascap *uint64, msg Message, header *types.Header, statedb *state.StateDB) {
+		if *gascap == 0 {
+			// It's already unlimited
+			return
+		}
 		arbosVersion := arbosState.ArbOSVersion(statedb)
 		if arbosVersion == 0 {
 			// ArbOS hasn't been installed, so use the vanilla gas cap
