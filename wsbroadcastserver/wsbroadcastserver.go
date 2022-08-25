@@ -84,10 +84,10 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 }
 
 type WSBroadcastServer struct {
-	startMutex *sync.Mutex
+	startMutex sync.Mutex
 	poller     netpoll.Poller
 
-	acceptDescMutex *sync.Mutex
+	acceptDescMutex sync.Mutex
 	acceptDesc      *netpoll.Desc
 
 	listener      net.Listener
@@ -101,13 +101,11 @@ type WSBroadcastServer struct {
 
 func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer, chainId uint64, feedErrChan chan error) *WSBroadcastServer {
 	return &WSBroadcastServer{
-		startMutex:      &sync.Mutex{},
-		acceptDescMutex: &sync.Mutex{},
-		settings:        settings,
-		started:         false,
-		catchupBuffer:   catchupBuffer,
-		chainId:         chainId,
-		feedErrChan:     feedErrChan,
+		settings:      settings,
+		started:       false,
+		catchupBuffer: catchupBuffer,
+		chainId:       chainId,
+		feedErrChan:   feedErrChan,
 	}
 }
 
@@ -349,6 +347,7 @@ func (s *WSBroadcastServer) StopAndWait() {
 
 	s.acceptDescMutex.Lock()
 	err = s.acceptDesc.Close()
+	s.acceptDesc = nil
 	s.acceptDescMutex.Unlock()
 	if err != nil {
 		log.Warn("error in acceptDesc.Close", "err", err)
