@@ -131,7 +131,7 @@ func startup() error {
 	if err != nil {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
 		printSampleUsage()
-		if !strings.Contains(err.Error(), "help requested") {
+		if err != nil && !strings.Contains(err.Error(), "help requested") {
 			fmt.Printf("%s\n", err.Error())
 		}
 		return nil
