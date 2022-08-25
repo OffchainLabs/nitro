@@ -252,17 +252,16 @@ func DeployOnTestL1(
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	config := arbnode.GenerateRollupConfig(false, common.Hash{}, l1info.GetAddress("RollupOwner"), chainId, common.Address{})
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
-		l1info.GetAddress("RollupOwner"),
 		0,
-		common.Hash{},
-		chainId,
 		headerreader.TestConfig,
 		validator.DefaultNitroMachineConfig,
+		config,
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
