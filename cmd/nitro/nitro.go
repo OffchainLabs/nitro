@@ -250,6 +250,7 @@ func main() {
 	if err != nil {
 		printSampleUsage(os.Args[0])
 		fmt.Printf("%s\n", err.Error())
+		return
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
