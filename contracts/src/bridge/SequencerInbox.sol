@@ -72,14 +72,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     uint256 internal constant FORK_DELAY_SECONDS = 1;
     uint256 internal constant FORK_FUTURE_SECONDS = 1;
 
-    function _checkAndHandleFork() internal {
-        if (_chainIdChanged() && maxTimeVariation.delayBlocks != FORK_DELAY_BLOCKS) {
-            ISequencerInbox.MaxTimeVariation memory maxTimeVariation_;
-            maxTimeVariation_.delayBlocks = FORK_DELAY_BLOCKS;
-            maxTimeVariation_.futureBlocks = FORK_FUTURE_BLOCKS;
-            maxTimeVariation_.delaySeconds = FORK_DELAY_SECONDS;
-            maxTimeVariation_.futureSeconds = FORK_FUTURE_SECONDS;
-            maxTimeVariation = maxTimeVariation_;
+    function removeDelayAfterFork() external {
+        if (_chainIdChanged()) {
+            maxTimeVariation.delayBlocks = FORK_DELAY_BLOCKS;
+            maxTimeVariation.futureBlocks = FORK_FUTURE_BLOCKS;
+            maxTimeVariation.delaySeconds = FORK_DELAY_SECONDS;
+            maxTimeVariation.futureSeconds = FORK_FUTURE_SECONDS;
         }
     }
 
@@ -116,8 +114,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         address sender,
         bytes32 messageDataHash
     ) external {
-        _checkAndHandleFork();
-
         if (_totalDelayedMessagesRead <= totalDelayedMessagesRead) revert DelayedBackwards();
         bytes32 messageHash = Messages.messageHash(
             kind,
@@ -173,7 +169,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
-        _checkAndHandleFork();
 
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
@@ -205,7 +200,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         IGasRefunder gasRefunder
     ) external refundsGas(gasRefunder) {
         if (!isBatchPoster[msg.sender] && msg.sender != address(rollup)) revert NotBatchPoster();
-        _checkAndHandleFork();
 
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
