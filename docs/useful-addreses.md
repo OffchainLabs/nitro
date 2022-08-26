@@ -4,7 +4,7 @@ Here's some contract addreses that may be useful and/or of interest to those exp
 
 ### Protocol (L1)
 
-<em class="arb-docs-table useful-address-table" id="protocol-addresses-table">
+<em className="arb-docs-table useful-address-table" id="protocol-addresses-table">
 
 |                         | Mainnet: Arbitrum One                                                                                                 | Arbitrum Nova                                                                                                         | Arb-Rinkeby                                                                                                                   | Nitro Goerli Rollup                                                                                                          |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -30,7 +30,7 @@ Here's some contract addreses that may be useful and/or of interest to those exp
 
 _Users should only interact with the token bridge via dapp interfaces like https://bridge.arbitrum.io_.
 
-<em class="arb-docs-table useful-address-table" id="bridge-addresses-table">
+<em className="arb-docs-table useful-address-table" id="bridge-addresses-table">
 
 |                       | Mainnet: Arbitrum One                                                                                                 | Mainnet: Arbitrum Nova                                                                                                             | Arb-Rinkeby                                                                                                                   | Nitro Goerli Rollup                                                                                                                         |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -59,7 +59,7 @@ These are the addresses of some other gateways that have been deployed and integ
 
 ### Arbitrum Precompiles (L2, same on all Arb-chains)
 
-<em class="arb-docs-table useful-address-table" id="precompile-table">
+<em className="arb-docs-table useful-address-table" id="precompile-table">
 
 |                  | Address                                                                                                              |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -76,7 +76,7 @@ These are the addresses of some other gateways that have been deployed and integ
 
 </em> 
 ### Misc
-<em class="arb-docs-table useful-address-table" id="misc-addresses-table">
+<em className="arb-docs-table useful-address-table" id="misc-addresses-table">
 
 |              | Mainnet: Arbitrum One                                                                                                | Mainnet: Arbitrum Nova                                                                                                             | Arb-Rinkeby                                                                                                                  | Nitro Goerli Rollup                                                                                                                         |
 | ------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
