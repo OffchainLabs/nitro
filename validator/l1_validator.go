@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/offchainlabs/nitro/arbstate"
 
@@ -254,11 +255,17 @@ func (v *L1Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool,
 	return arbutil.MessageCountToBlockNumber(batchHeight+arbutil.MessageIndex(gs.PosInBatch), v.genesisBlockNumber), false, nil
 }
 
-func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy) (nodeAction, bool, error) {
+func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, makeAssertionInterval time.Duration) (nodeAction, bool, error) {
 	startState, prevInboxMaxCount, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, err
 	}
+
+	startStateProposedHeader, err := v.client.HeaderByNumber(ctx, new(big.Int).SetUint64(startStateProposed))
+	if err != nil {
+		return nil, false, err
+	}
+	startStateProposedTime := time.Unix(int64(startStateProposedHeader.Time), 0)
 
 	v.txStreamer.PauseReorgs()
 	defer v.txStreamer.ResumeReorgs()
@@ -443,7 +450,11 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		wrongNodesExist = true
 	}
 
-	if strategy > WatchtowerStrategy && correctNode == nil && (strategy >= MakeNodesStrategy || wrongNodesExist) {
+	if correctNode != nil || strategy == WatchtowerStrategy {
+		return correctNode, wrongNodesExist, nil
+	}
+
+	if wrongNodesExist || (strategy >= MakeNodesStrategy && time.Since(startStateProposedTime) >= makeAssertionInterval) {
 		// There's no correct node; create one.
 		var lastNodeHashIfExists *common.Hash
 		if len(successorNodes) > 0 {
@@ -453,7 +464,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return action, wrongNodesExist, err
 	}
 
-	return correctNode, wrongNodesExist, nil
+	return nil, wrongNodesExist, nil
 }
 
 func (v *L1Validator) createNewNodeAction(
