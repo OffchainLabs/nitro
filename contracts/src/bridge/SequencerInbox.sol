@@ -61,25 +61,15 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         _;
     }
 
-    uint256 internal immutable deployTimeChainId = block.chainid;
-
-    function _chainIdChanged() internal view returns (bool) {
-        return deployTimeChainId != block.chainid;
-    }
-
     uint256 internal constant FORK_DELAY_BLOCKS = 1;
     uint256 internal constant FORK_FUTURE_BLOCKS = 1;
     uint256 internal constant FORK_DELAY_SECONDS = 1;
     uint256 internal constant FORK_FUTURE_SECONDS = 1;
 
-    /// @inheritdoc ISequencerInbox
-    function removeDelayAfterFork() external {
-        if (_chainIdChanged()) {
-            maxTimeVariation.delayBlocks = FORK_DELAY_BLOCKS;
-            maxTimeVariation.futureBlocks = FORK_FUTURE_BLOCKS;
-            maxTimeVariation.delaySeconds = FORK_DELAY_SECONDS;
-            maxTimeVariation.futureSeconds = FORK_FUTURE_SECONDS;
-        }
+    uint256 internal immutable deployTimeChainId = block.chainid;
+
+    function _chainIdChanged() internal view returns (bool) {
+        return deployTimeChainId != block.chainid;
     }
 
     function initialize(
@@ -104,6 +94,16 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         }
         bounds.maxBlockNumber = uint64(block.number + maxTimeVariation.futureBlocks);
         return bounds;
+    }
+
+    /// @inheritdoc ISequencerInbox
+    function removeDelayAfterFork() external {
+        if (_chainIdChanged()) {
+            maxTimeVariation.delayBlocks = FORK_DELAY_BLOCKS;
+            maxTimeVariation.futureBlocks = FORK_FUTURE_BLOCKS;
+            maxTimeVariation.delaySeconds = FORK_DELAY_SECONDS;
+            maxTimeVariation.futureSeconds = FORK_FUTURE_SECONDS;
+        }
     }
 
     /// @inheritdoc ISequencerInbox
