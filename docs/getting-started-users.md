@@ -1,4 +1,4 @@
-## Getting Started
+# Getting Started
 
 Welcome to Arbitrum! Here's how to become an Arbitrum user:
 
