@@ -24,7 +24,7 @@ Users can now use [Alchemy](https://alchemy.com/?a=arbitrum-docs), [Infura](http
 Usres can now use [QuickNode](https://www.quicknode.com) to interact with the Arbitrum Nova chain. For a full guide of how to set up an Arbitrum node on QuickNode, see the QuickNode's Arbitrum RPC documentation.
 
 **RinkArby**: RinkArby is the longest running Arbitrum testnet. It previously ran on the classic stack, but at block 7/28/2022 it was migrated use the Nitro stack! Rinkarby will be deprecated [when Rinkeby itself gets deprecated](https://blog.ethereum.org/2022/06/21/testnet-deprecation/); plan accordingly!
-Users can now use [Alchemy](https://alchemy.com/?a=arbitrum-docs), [Infura](https://infura.io/), [QuickNode](https://www.quicknode.com), [Moralis](https://moralis.io/), [Ankr](https://www.ankr.com/), [BlockVision](https://blockvision.org/), and [GetBlock](https://getblock.io/) to interact with the Arbitrum One. See [node providers](Node_Providers.md) for the full guide.
+Users can now use [Alchemy](https://alchemy.com/?a=arbitrum-docs), [Infura](https://infura.io/), [QuickNode](https://www.quicknode.com), [Moralis](https://moralis.io/), [Ankr](https://www.ankr.com/), [BlockVision](https://blockvision.org/), and [GetBlock](https://getblock.io/) to interact with the Arbitrum One. See [node providers](node-providers) for the full guide.
 
 **Nitro Goerli Rollup Testnet**: This testnet (421613) uses the Nitro rollup tech stack; it is expected to be the primary, stable Arbitrum testnet moving forward.
 Users can now use [Alchemy](https://alchemy.com/?a=arbitrum-docs), [Infura](https://infura.io/), and [QuickNode](https://www.quicknode.com) to interact with the Arbitrum One. See [node providers](node-providers) for more.
