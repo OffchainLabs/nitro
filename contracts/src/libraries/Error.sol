@@ -149,3 +149,6 @@ error AlreadyValidDASKeyset(bytes32);
 
 /// @dev Tried to use or invalidate an already invalid Data Availability Service keyset
 error NoSuchKeyset(bytes32);
+
+/// @dev Thrown when calling removeDelayAfterFork when there are no L1 chainId fork
+error NotForked();

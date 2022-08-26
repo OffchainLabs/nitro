@@ -19,7 +19,8 @@ import {
     BadSequencerNumber,
     DataNotAuthenticated,
     AlreadyValidDASKeyset,
-    NoSuchKeyset
+    NoSuchKeyset,
+    NotForked
 } from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./IInbox.sol";
@@ -98,12 +99,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     /// @inheritdoc ISequencerInbox
     function removeDelayAfterFork() external {
-        if (_chainIdChanged()) {
-            maxTimeVariation.delayBlocks = FORK_DELAY_BLOCKS;
-            maxTimeVariation.futureBlocks = FORK_FUTURE_BLOCKS;
-            maxTimeVariation.delaySeconds = FORK_DELAY_SECONDS;
-            maxTimeVariation.futureSeconds = FORK_FUTURE_SECONDS;
-        }
+        if (!_chainIdChanged()) revert NotForked();
+        maxTimeVariation.delayBlocks = FORK_DELAY_BLOCKS;
+        maxTimeVariation.futureBlocks = FORK_FUTURE_BLOCKS;
+        maxTimeVariation.delaySeconds = FORK_DELAY_SECONDS;
+        maxTimeVariation.futureSeconds = FORK_FUTURE_SECONDS;
     }
 
     /// @inheritdoc ISequencerInbox
