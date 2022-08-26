@@ -15,7 +15,8 @@ import {
     InsufficientSubmissionCost,
     NotAllowedOrigin,
     RetryableData,
-    NotRollupOrOwner
+    NotRollupOrOwner,
+    L1Forked
 } from "../libraries/Error.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
@@ -92,6 +93,12 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         _;
     }
 
+    uint256 internal immutable deployTimeChainId = block.chainid;
+
+    function _chainIdChanged() internal view returns (bool) {
+        return deployTimeChainId != block.chainid;
+    }
+
     /// @inheritdoc IInbox
     function pause() external onlyRollupOrOwner {
         _pause();
@@ -132,6 +139,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         onlyAllowed
         returns (uint256)
     {
+        if (_chainIdChanged()) revert L1Forked();
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
         if (messageData.length > MAX_DATA_SIZE)
@@ -148,6 +156,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         onlyAllowed
         returns (uint256)
     {
+        if (_chainIdChanged()) revert L1Forked();
         return _deliverMessage(L2_MSG, msg.sender, messageData);
     }
 
