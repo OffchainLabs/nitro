@@ -125,7 +125,7 @@ func main() {
 		panic(err)
 	}
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
+	vcsRevision, vcsTime := util.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {

@@ -1,22 +1,25 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 //go:build go1.18
 
 package genericconf
 
 import "runtime/debug"
 
-func GetVersion() (string, string) {
-	vcsRevision := "development"
+func GetVersion(definedVersion string, definedTime string, definedModified string) (string, string) {
+	vcsVersion := "development"
 	vcsTime := "development"
 	vcsModified := "false"
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
-		vcsRevision = "unknown"
+		vcsVersion = "unknown"
 	}
 	for _, v := range info.Settings {
 		if v.Key == "vcs.revision" {
-			vcsRevision = v.Value
-			if len(vcsRevision) > 7 {
-				vcsRevision = vcsRevision[:7]
+			vcsVersion = v.Value
+			if len(vcsVersion) > 7 {
+				vcsVersion = vcsVersion[:7]
 			}
 		} else if v.Key == "vcs.time" {
 			vcsTime = v.Value
@@ -24,9 +27,21 @@ func GetVersion() (string, string) {
 			vcsModified = v.Value
 		}
 	}
-	if vcsModified == "true" {
-		vcsRevision = vcsRevision + "-modified"
+
+	// Defined values override if provided
+	if len(definedVersion) > 0 {
+		vcsVersion = definedVersion
+	}
+	if len(definedTime) > 0 {
+		vcsTime = definedTime
+	}
+	if len(definedModified) > 0 {
+		vcsModified = definedModified
 	}
 
-	return vcsRevision, vcsTime
+	if vcsModified == "true" {
+		vcsVersion = vcsVersion + "-modified"
+	}
+
+	return vcsVersion, vcsTime
 }

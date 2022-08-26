@@ -21,6 +21,12 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 )
 
+var (
+	version  = ""
+	datetime = ""
+	modified = ""
+)
+
 func ApplyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 	// Apply command line options and environment variables
 	if err := applyOverrideOverrides(f, k); err != nil {
@@ -109,9 +115,13 @@ func loadS3Variables(k *koanf.Koanf) error {
 
 var ErrVersion = errors.New("configuration: version requested")
 
+func GetVersion() (string, string) {
+	return genericconf.GetVersion(version, datetime, modified)
+}
+
 func HandleError(err error, usage func(string)) {
-	vcsRevision, vcsTime := genericconf.GetVersion()
-	fmt.Printf("revision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
+	vcsRevision, vcsTime := GetVersion()
+	fmt.Printf("version: %v, time: %v\n", vcsRevision, vcsTime)
 	if errors.Is(err, ErrVersion) {
 		// Already printed version, just exit
 		return

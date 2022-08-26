@@ -55,7 +55,7 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(relayConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
+	vcsRevision, vcsTime := util.GetVersion()
 	log.Info("Running Arbitrum nitro relay", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	serverConf := wsbroadcastserver.BroadcasterConfig{

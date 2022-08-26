@@ -159,7 +159,7 @@ func startup() error {
 		return err
 	}
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
+	vcsRevision, vcsTime := util.GetVersion()
 	var rpcServer *http.Server
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
