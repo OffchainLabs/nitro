@@ -535,6 +535,8 @@ type SequencerConfig struct {
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
+type SequencerConfigFetcher func() *SequencerConfig
+
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
 	MaxBlockSpeed:               time.Millisecond * 100,
@@ -599,7 +601,6 @@ type Node struct {
 type ConfigFetcher interface {
 	GetNodeConfig() *Config
 }
-type SequencerConfigFetcher func() *SequencerConfig
 
 func createNodeImpl(
 	ctx context.Context,
