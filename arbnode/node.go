@@ -409,7 +409,7 @@ type Config struct {
 	TxLookupLimit        uint64                         `koanf:"tx-lookup-limit"`
 }
 
-func (c *Config) GetNodeConfig() *Config {
+func (c *Config) Get() *Config {
 	return c
 }
 
@@ -599,7 +599,7 @@ type Node struct {
 }
 
 type ConfigFetcher interface {
-	GetNodeConfig() *Config
+	Get() *Config
 }
 
 func createNodeImpl(
@@ -615,7 +615,7 @@ func createNodeImpl(
 	daSigner das.DasSigner,
 	feedErrChan chan error,
 ) (*Node, error) {
-	config := configFetcher.GetNodeConfig()
+	config := configFetcher.Get()
 	var reorgingToBlock *types.Block
 
 	l2Config := l2BlockChain.Config()
@@ -671,7 +671,7 @@ func createNodeImpl(
 		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
 			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 		}
-		sequencerConfigFetcher := func() *SequencerConfig { return &configFetcher.GetNodeConfig().Sequencer }
+		sequencerConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
 		if config.L1Reader.Enable {
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
@@ -1138,7 +1138,7 @@ func CreateNode(
 		Service:   &ArbAPI{currentNode.TxPublisher},
 		Public:    false,
 	})
-	config := configFetcher.GetNodeConfig()
+	config := configFetcher.Get()
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",

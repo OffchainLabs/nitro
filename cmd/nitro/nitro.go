@@ -288,7 +288,7 @@ func main() {
 		stack,
 		chainDb,
 		arbDb,
-		liveNodeConfig,
+		&NodeConfigFetcher{liveNodeConfig},
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
@@ -742,6 +742,10 @@ func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
 	}
 }
 
-func (c *LiveNodeConfig) GetNodeConfig() *arbnode.Config {
-	return &c.get().Node
+type NodeConfigFetcher struct {
+	*LiveNodeConfig
+}
+
+func (f *NodeConfigFetcher) Get() *arbnode.Config {
+	return &f.LiveNodeConfig.get().Node
 }
