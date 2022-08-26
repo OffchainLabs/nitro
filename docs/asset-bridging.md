@@ -89,7 +89,7 @@ To help illustrate what this all looks like in practice, let's go through the st
 
 Note that arbSomeERC20Token is an instance of StandardArbERC20, which includes `bridgeMint` and `bridgeBurn` methods only callable by the L2ERC20Gateway.
 
-![img](assets/bridge_deposits.png)
+![img](./bridge_deposits.png)
 
 #### Withdrawals
 
