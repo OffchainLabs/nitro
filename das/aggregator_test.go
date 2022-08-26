@@ -44,7 +44,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		das, err := NewSignAfterStoreDAS(ctx, config, storageServices[i])
 		Require(t, err)
 		signerMask := uint64(1 << i)
-		details, err := NewServiceDetails(das, *das.pubKey, signerMask)
+		details, err := NewServiceDetails(das, *das.pubKey, signerMask, "service"+strconv.Itoa(i))
 		Require(t, err)
 		backends = append(backends, *details)
 	}
@@ -197,14 +197,19 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		das, err := NewSignAfterStoreDAS(ctx, config, storageServices[i])
 		Require(t, err)
 		signerMask := uint64(1 << i)
-		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask)
+		details, err := NewServiceDetails(&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask, "service"+strconv.Itoa(i))
 		Require(t, err)
 		backends = append(backends, *details)
 	}
 
-	unwrappedAggregator, err := NewAggregator(ctx, DataAvailabilityConfig{AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest}, L1NodeURL: "none"}, backends)
+	aggregator, err := NewAggregator(
+		ctx,
+		DataAvailabilityConfig{
+			AggregatorConfig: AggregatorConfig{AssumedHonest: assumedHonest},
+			L1NodeURL:        "none",
+			RequestTimeout:   time.Millisecond * 2000,
+		}, backends)
 	Require(t, err)
-	aggregator := WriterTimeoutWrapper{time.Millisecond * 2000, unwrappedAggregator}
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})

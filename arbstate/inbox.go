@@ -146,6 +146,11 @@ func RecoverPayloadFromDasBatch(
 		preimages[key] = value
 	}
 
+	if version >= 2 {
+		log.Error("Your node software is probably out of date", "certificateVersion", version)
+		return nil, nil
+	}
+
 	getByHash := func(ctx context.Context, hash common.Hash) ([]byte, error) {
 		newHash := hash
 		if version == 0 {
@@ -170,12 +175,6 @@ func RecoverPayloadFromDasBatch(
 				"hash", hash, "err", ErrHashMismatch, "version", version,
 			)
 			return nil, ErrHashMismatch
-		case version >= 2:
-			log.Error(
-				"Committee signed unsuported certificate format",
-				"version", version, "hash", hash, "payload", preimage,
-			)
-			panic("node software out of date")
 		}
 		return preimage, nil
 	}

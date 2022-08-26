@@ -281,14 +281,39 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer, rollupOwner common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainId *big.Int, loserStakeEscrow common.Address) rollupgen.Config {
+	var confirmPeriod uint64
+	if prod {
+		confirmPeriod = 45818
+	} else {
+		confirmPeriod = 20
+	}
+	return rollupgen.Config{
+		ConfirmPeriodBlocks:      confirmPeriod,
+		ExtraChallengeTimeBlocks: 200,
+		StakeToken:               common.Address{},
+		BaseStake:                big.NewInt(params.Ether),
+		WasmModuleRoot:           wasmModuleRoot,
+		Owner:                    rollupOwner,
+		LoserStakeEscrow:         loserStakeEscrow,
+		ChainId:                  chainId,
+		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
+			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
+			FutureBlocks:  big.NewInt(12),
+			DelaySeconds:  big.NewInt(60 * 60 * 24),
+			FutureSeconds: big.NewInt(60 * 60),
+		},
+	}
+}
+
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig, config rollupgen.Config) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	if wasmModuleRoot == (common.Hash{}) {
+	if config.WasmModuleRoot == (common.Hash{}) {
 		var err error
-		wasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
+		config.WasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
 		if err != nil {
 			return nil, err
 		}
@@ -299,14 +324,6 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
 
-	var confirmPeriodBlocks uint64 = 20
-	var extraChallengeTimeBlocks uint64 = 200
-	seqInboxParams := rollupgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
-		FutureBlocks:  big.NewInt(12),
-		DelaySeconds:  big.NewInt(60 * 60 * 24),
-		FutureSeconds: big.NewInt(60 * 60),
-	}
 	nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
 	if err != nil {
 		return nil, fmt.Errorf("error getting pending nonce: %w", err)
@@ -314,17 +331,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		rollupgen.Config{
-			ConfirmPeriodBlocks:            confirmPeriodBlocks,
-			ExtraChallengeTimeBlocks:       extraChallengeTimeBlocks,
-			StakeToken:                     common.Address{},
-			BaseStake:                      big.NewInt(params.Ether),
-			WasmModuleRoot:                 wasmModuleRoot,
-			Owner:                          rollupOwner,
-			LoserStakeEscrow:               common.Address{},
-			ChainId:                        chainId,
-			SequencerInboxMaxTimeVariation: seqInboxParams,
-		},
+		config,
 		expectedRollupAddr,
 	)
 	if err != nil {
@@ -761,9 +768,6 @@ func createNodeImpl(
 			}
 		}
 
-		if daWriter != nil {
-			daWriter = das.NewWriterTimeoutWrapper(daWriter, config.DataAvailability.RequestTimeout)
-		}
 		daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
 
 		if config.DataAvailability.PanicOnError {
@@ -1071,7 +1075,11 @@ type arbNodeLifecycle struct {
 }
 
 func (l arbNodeLifecycle) Start() error {
-	return l.node.Start(context.Background())
+	err := l.node.Start(context.Background())
+	if err != nil {
+		log.Error("failed to start node", "err", err)
+	}
+	return err
 }
 
 func (l arbNodeLifecycle) Stop() error {
@@ -1237,10 +1245,10 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.TxStreamer.StopAndWait()
-	n.ArbInterface.BlockChain().Stop()
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
+	n.ArbInterface.BlockChain().Stop()
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 	}
