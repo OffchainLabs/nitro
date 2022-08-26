@@ -43,6 +43,7 @@ import (
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -665,6 +666,8 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 }
 
 type LiveNodeConfig struct {
+	stopwaiter.StopWaiter
+
 	mutex  sync.RWMutex
 	args   []string
 	config *NodeConfig
@@ -691,10 +694,12 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 }
 
 func (c *LiveNodeConfig) Start(ctx context.Context) {
+	c.StopWaiter.Start(ctx)
+
 	sigusr1 := make(chan os.Signal, 1)
 	signal.Notify(sigusr1, syscall.SIGUSR1)
 
-	go func() {
+	c.LaunchThread(func(ctx context.Context) {
 		for {
 			reloadInterval := c.config.Conf.ReloadInterval
 			if reloadInterval == 0 {
@@ -727,7 +732,7 @@ func (c *LiveNodeConfig) Start(ctx context.Context) {
 			}
 			log.Info("Successfully reloaded config.")
 		}
-	}()
+	})
 }
 
 func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
