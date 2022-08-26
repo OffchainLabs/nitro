@@ -99,6 +99,9 @@ error RetryableData(
 /// @dev Thrown when a L1 chainId fork is detected
 error L1Forked();
 
+/// @dev Thrown when a L1 chainId fork is not detected
+error NotForked();
+
 // Outbox Errors
 
 /// @dev The provided proof was too long
@@ -152,6 +155,3 @@ error AlreadyValidDASKeyset(bytes32);
 
 /// @dev Tried to use or invalidate an already invalid Data Availability Service keyset
 error NoSuchKeyset(bytes32);
-
-/// @dev Thrown when calling removeDelayAfterFork when there are no L1 chainId fork
-error NotForked();

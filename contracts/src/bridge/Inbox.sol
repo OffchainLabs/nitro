@@ -16,7 +16,8 @@ import {
     NotAllowedOrigin,
     RetryableData,
     NotRollupOrOwner,
-    L1Forked
+    L1Forked,
+    NotForked
 } from "../libraries/Error.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
@@ -243,6 +244,61 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     L2MessageType_unsignedContractTx,
                     gasLimit,
                     maxFeePerGas,
+                    uint256(uint160(to)),
+                    value,
+                    data
+                )
+            );
+    }
+
+    /// @inheritdoc IInbox
+    function sendL1FundedUnsignedTransactionToFork(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        address to,
+        bytes calldata data
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        if (!_chainIdChanged()) revert NotForked();
+        // solhint-disable-next-line avoid-tx-origin
+        if (msg.sender != tx.origin) revert NotOrigin();
+        return
+            _deliverMessage(
+                L1MessageType_L2FundedByL1,
+                AddressAliasHelper.undoL1ToL2Alias(msg.sender),
+                abi.encodePacked(
+                    L2MessageType_unsignedEOATx,
+                    gasLimit,
+                    maxFeePerGas,
+                    nonce,
+                    uint256(uint160(to)),
+                    msg.value,
+                    data
+                )
+            );
+    }
+
+    /// @inheritdoc IInbox
+    function sendUnsignedTransactionToFork(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external whenNotPaused onlyAllowed returns (uint256) {
+        if (!_chainIdChanged()) revert NotForked();
+        // solhint-disable-next-line avoid-tx-origin
+        if (msg.sender != tx.origin) revert NotOrigin();
+        return
+            _deliverMessage(
+                L2_MSG,
+                AddressAliasHelper.undoL1ToL2Alias(msg.sender),
+                abi.encodePacked(
+                    L2MessageType_unsignedEOATx,
+                    gasLimit,
+                    maxFeePerGas,
+                    nonce,
                     uint256(uint160(to)),
                     value,
                     data
