@@ -693,8 +693,8 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	return nil
 }
 
-func (c *LiveNodeConfig) Start(ctx context.Context) {
-	c.StopWaiter.Start(ctx)
+func (c *LiveNodeConfig) Start(ctxIn context.Context) {
+	c.StopWaiter.Start(ctxIn)
 
 	sigusr1 := make(chan os.Signal, 1)
 	signal.Notify(sigusr1, syscall.SIGUSR1)
