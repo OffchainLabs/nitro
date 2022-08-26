@@ -1,4 +1,4 @@
-## Start Developing on Arbitrum
+# Start Developing on Arbitrum
 
 Developing on Arbitrum is as easy as developing on Ethereum — literally! 
 
