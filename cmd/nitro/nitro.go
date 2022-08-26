@@ -244,8 +244,7 @@ func main() {
 
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
 	if err != nil {
-		printSampleUsage(os.Args[0])
-		fmt.Printf("%s\n", err.Error())
+		util.HandleError(err, printSampleUsage)
 		return
 	}
 
