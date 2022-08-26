@@ -514,4 +514,22 @@ describe('SequencerInboxForceInclude', async () => {
       'ForceIncludeTimeTooSoon',
     )
   })
+
+  it("should fail to call sendL1FundedUnsignedTransactionToFork", async function () {
+    const {
+      inbox,
+    } = await setupSequencerInbox()
+    await expect(inbox.sendL1FundedUnsignedTransactionToFork(
+      0, 0, 0, ethers.constants.AddressZero, "0x"
+    )).to.revertedWith("NotForked()");
+  });
+
+  it("should fail to call sendUnsignedTransactionToFork", async function () {
+    const {
+      inbox,
+    } = await setupSequencerInbox()
+    await expect(inbox.sendUnsignedTransactionToFork(
+      0, 0, 0, ethers.constants.AddressZero, 0, "0x"
+    )).to.revertedWith("NotForked()");
+  });  
 })
