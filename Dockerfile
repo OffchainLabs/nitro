@@ -136,6 +136,12 @@ RUN bash -c 'r=0x3848eff5e0356faf1fc9cafecb789584c5e7f4f8f817694d842ada96613d8ba
 
 FROM golang:1.19-bullseye as node-builder
 WORKDIR /workspace
+ARG version=""
+ARG datetime=""
+ARG modified=""
+ENV NITRO_VERSION=$version
+ENV NITRO_DATETIME=$datetime
+ENV NITRO_MODIFIED=$modified
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
