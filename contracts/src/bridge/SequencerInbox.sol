@@ -72,6 +72,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     uint256 internal constant FORK_DELAY_SECONDS = 1;
     uint256 internal constant FORK_FUTURE_SECONDS = 1;
 
+    /// @inheritdoc ISequencerInbox
     function removeDelayAfterFork() external {
         if (_chainIdChanged()) {
             maxTimeVariation.delayBlocks = FORK_DELAY_BLOCKS;

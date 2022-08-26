@@ -78,6 +78,9 @@ interface ISequencerInbox is IDelayedMessageProvider {
     // function maxTimeVariation() external view returns (MaxTimeVariation calldata);
     // function dasKeySetInfo(bytes32) external view returns (DasKeySetInfo calldata);
 
+    /// @notice Remove force inclusion delay after a L1 chainId fork
+    function removeDelayAfterFork() external;
+
     /// @notice Force messages from the delayed inbox to be included in the chain
     ///         Callable by any address, but message can only be force-included after maxTimeVariation.delayBlocks and
     ///         maxTimeVariation.delaySeconds has elapsed. As part of normal behaviour the sequencer will include these
