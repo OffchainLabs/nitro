@@ -269,12 +269,24 @@ func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	v.blockMutex.Lock()
 	defer v.blockMutex.Unlock()
+	blockNum := block.NumberU64()
+	if blockNum < v.lastBlockValidated {
+		return
+	}
+	if v.lastBlockValidatedUnknown {
+		if block.Hash() == v.lastBlockValidatedHash {
+			v.lastBlockValidated = blockNum
+			v.nextBlockToValidate = blockNum + 1
+			log.Info("Block building caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
+			// note: this block is already valid
+		}
+		return
+	}
 	status := &validationStatus{
 		Status:      validationStatusUnprepared,
 		Entry:       nil,
 		ModuleRoots: v.getModuleRootsToValidateLocked(),
 	}
-	blockNum := block.NumberU64()
 	// It's fine to separately load and then store as we have the blockMutex acquired
 	_, present := v.validationEntries.Load(blockNum)
 	if present {
@@ -501,6 +513,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			v.ProcessBatches(v.globalPosNextSend.BatchNumber, [][]byte{seqMsg})
 			seqBatchEntry = seqMsg
 		}
+		v.blockMutex.Lock()
 		if v.lastBlockValidatedUnknown {
 			firstMsgInBatch := arbutil.MessageIndex(0)
 			if v.globalPosNextSend.BatchNumber > 0 {
@@ -514,8 +527,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			v.nextBlockToValidate = uint64(arbutil.MessageCountToBlockNumber(firstMsgInBatch+arbutil.MessageIndex(v.globalPosNextSend.PosInBatch), v.genesisBlockNum))
 			v.lastBlockValidated = v.nextBlockToValidate - 1
 			v.lastBlockValidatedUnknown = false
-			log.Info("L2 caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
+			log.Info("Inbox caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
 		}
+		v.blockMutex.Unlock()
 		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
 		entry, found := v.validationEntries.Load(v.nextBlockToValidate)
