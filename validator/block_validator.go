@@ -277,6 +277,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 		if block.Hash() == v.lastBlockValidatedHash {
 			v.lastBlockValidated = blockNum
 			v.nextBlockToValidate = blockNum + 1
+			v.lastBlockValidatedUnknown = false
 			log.Info("Block building caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
 			// note: this block is already valid
 		}
@@ -674,7 +675,7 @@ func (v *BlockValidator) AssumeValid(globalState GoGlobalState) error {
 	if v.globalPosNextSend.BatchNumber > globalState.Batch {
 		return nil
 	}
-	if v.globalPosNextSend.BatchNumber == globalState.Batch && v.globalPosNextSend.PosInBatch >= globalState.PosInBatch {
+	if v.globalPosNextSend.BatchNumber == globalState.Batch && v.globalPosNextSend.PosInBatch > globalState.PosInBatch {
 		return nil
 	}
 
