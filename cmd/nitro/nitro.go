@@ -324,8 +324,6 @@ func main() {
 		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
 
-	liveNodeConfig.Start(ctx)
-
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
@@ -748,4 +746,12 @@ type NodeConfigFetcher struct {
 
 func (f *NodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveNodeConfig.get().Node
+}
+
+func (f *NodeConfigFetcher) Start(ctx context.Context) {
+	f.LiveNodeConfig.Start(ctx)
+}
+
+func (f *NodeConfigFetcher) StopAndWait() {
+	f.LiveNodeConfig.StopAndWait()
 }
