@@ -1484,17 +1484,19 @@ func (c *LiveConfig) Start(ctxIn context.Context) {
 			}
 			log.Info("Reloading config...")
 
-			c.mutex.Lock()
-			newFetcher, newReloader, newReloadInterval, err := c.reloader(ctx)
-			c.mutex.Unlock()
-			if err != nil {
-				log.Error("error reloading live config", "error", err.Error())
-				continue
-			}
-			c.fetcher = newFetcher
-			c.reloader = newReloader
-			c.reloadInterval = newReloadInterval
-			log.Info("Successfully reloaded config.")
+			func() {
+				c.mutex.Lock()
+				defer c.mutex.Unlock()
+				newFetcher, newReloader, newReloadInterval, err := c.reloader(ctx)
+				if err != nil {
+					log.Error("error reloading live config", "error", err.Error())
+					return
+				}
+				c.fetcher = newFetcher
+				c.reloader = newReloader
+				c.reloadInterval = newReloadInterval
+				log.Info("Successfully reloaded config.")
+			}()
 		}
 	})
 }
