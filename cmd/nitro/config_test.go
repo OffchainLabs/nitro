@@ -114,7 +114,7 @@ func TestLiveConfig(t *testing.T) {
 	// update.Node.Sequencer.MaxBlockSpeed += 2 * time.Millisecond
 	// expected.Node.Sequencer.MaxBlockSpeed += 2 * time.Millisecond
 	// Require(t, liveConfig.set(update))
-	//if !reflect.DeepEqual(liveConfig.Get(), expected) {
+	// if !reflect.DeepEqual(liveConfig.Get(), expected) {
 	//	Fail(t, "failed to set config")
 	//}
 

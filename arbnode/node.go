@@ -417,6 +417,12 @@ func (c *Config) Get() *Config {
 	return c
 }
 
+func (c *Config) Start(context.Context) {
+}
+
+func (c *Config) StopAndWait() {
+}
+
 func (c *Config) ForwardingTarget() string {
 	if c.ForwardingTargetImpl == "null" {
 		return ""
@@ -600,10 +606,13 @@ type Node struct {
 	SeqCoordinator         *SeqCoordinator
 	DASLifecycleManager    *das.LifecycleManager
 	ClassicOutboxRetriever *ClassicOutboxRetriever
+	configGetter           ConfigGetter
 }
 
 type ConfigGetter interface {
 	Get() *Config
+	Start(context.Context)
+	StopAndWait()
 }
 
 func createNodeImpl(
@@ -753,6 +762,7 @@ func createNodeImpl(
 			coordinator,
 			nil,
 			classicOutbox,
+			configGetter,
 		}, nil
 	}
 
@@ -878,6 +888,7 @@ func createNodeImpl(
 		coordinator,
 		dasLifecycleManager,
 		classicOutbox,
+		configGetter,
 	}, nil
 }
 
@@ -1232,10 +1243,16 @@ func (n *Node) Start(ctx context.Context) error {
 	for _, client := range n.BroadcastClients {
 		client.Start(ctx)
 	}
+	if n.configGetter != nil {
+		n.configGetter.Start(ctx)
+	}
 	return nil
 }
 
 func (n *Node) StopAndWait() {
+	if n.configGetter != nil {
+		n.configGetter.StopAndWait()
+	}
 	for _, client := range n.BroadcastClients {
 		client.StopAndWait()
 	}
