@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"reflect"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -43,7 +42,6 @@ import (
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -112,6 +110,22 @@ func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.W
 		}
 	}
 	return devAddr, nil
+}
+
+func getConfigReloader(config *NodeConfig, args []string) arbnode.ConfigReloader {
+	return func(ctx context.Context) (arbnode.ConfigFetcher, arbnode.ConfigReloader, time.Duration, error) {
+		newConfig, _, _, _, _, err := ParseNode(ctx, args)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		if err := config.CanReload(newConfig); err != nil {
+			return nil, nil, 0, err
+		}
+		if err := initLog(newConfig.LogType, log.Lvl(newConfig.LogLevel)); err != nil {
+			return nil, nil, 0, err
+		}
+		return func() *arbnode.Config { return &newConfig.Node }, getConfigReloader(newConfig, args), newConfig.Conf.ReloadInterval, nil
+	}
 }
 
 func main() {
@@ -281,14 +295,16 @@ func main() {
 		}
 	}
 
-	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
+	liveNodeConfig := arbnode.NewLiveConfig(func() *arbnode.Config { return &nodeConfig.Node }, getConfigReloader(nodeConfig, args), nodeConfig.Conf.ReloadInterval)
+	liveNodeConfig.Start(ctx)
+
 	feedErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
 		chainDb,
 		arbDb,
-		&NodeConfigFetcher{liveNodeConfig},
+		liveNodeConfig,
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
@@ -663,89 +679,4 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain": "goerli-anytrust",
 	}, "."), nil)
-}
-
-type LiveNodeConfig struct {
-	stopwaiter.StopWaiter
-
-	mutex  sync.RWMutex
-	args   []string
-	config *NodeConfig
-}
-
-func (c *LiveNodeConfig) get() *NodeConfig {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-	return c.config
-}
-
-func (c *LiveNodeConfig) set(config *NodeConfig) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	if err := c.config.CanReload(config); err != nil {
-		return err
-	}
-	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
-		return err
-	}
-	c.config = config
-	return nil
-}
-
-func (c *LiveNodeConfig) Start(ctxIn context.Context) {
-	c.StopWaiter.Start(ctxIn)
-
-	sigusr1 := make(chan os.Signal, 1)
-	signal.Notify(sigusr1, syscall.SIGUSR1)
-
-	c.LaunchThread(func(ctx context.Context) {
-		for {
-			reloadInterval := c.config.Conf.ReloadInterval
-			if reloadInterval == 0 {
-				select {
-				case <-ctx.Done():
-					return
-				case <-sigusr1:
-				}
-			} else {
-				timer := time.NewTimer(reloadInterval)
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					return
-				case <-sigusr1:
-					timer.Stop()
-				case <-timer.C:
-				}
-			}
-			log.Info("Reloading config...")
-			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
-			if err != nil {
-				log.Error("error parsing live config", "error", err.Error())
-				continue
-			}
-			err = c.set(nodeConfig)
-			if err != nil {
-				log.Error("error updating live config", "error", err.Error())
-				continue
-			}
-			log.Info("Successfully reloaded config.")
-		}
-	})
-}
-
-func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
-	return &LiveNodeConfig{
-		args:   args,
-		config: config,
-	}
-}
-
-type NodeConfigFetcher struct {
-	*LiveNodeConfig
-}
-
-func (f *NodeConfigFetcher) Get() *arbnode.Config {
-	return &f.LiveNodeConfig.get().Node
 }

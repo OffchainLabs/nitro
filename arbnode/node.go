@@ -10,7 +10,10 @@ import (
 	"math"
 	"math/big"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"sync"
+	"syscall"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -43,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -598,7 +602,7 @@ type Node struct {
 	ClassicOutboxRetriever *ClassicOutboxRetriever
 }
 
-type ConfigFetcher interface {
+type ConfigGetter interface {
 	Get() *Config
 }
 
@@ -607,7 +611,7 @@ func createNodeImpl(
 	stack *node.Node,
 	chainDb ethdb.Database,
 	arbDb ethdb.Database,
-	configFetcher ConfigFetcher,
+	configGetter ConfigGetter,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
@@ -615,7 +619,7 @@ func createNodeImpl(
 	daSigner das.DasSigner,
 	feedErrChan chan error,
 ) (*Node, error) {
-	config := configFetcher.Get()
+	config := configGetter.Get()
 	var reorgingToBlock *types.Block
 
 	l2Config := l2BlockChain.Config()
@@ -671,7 +675,7 @@ func createNodeImpl(
 		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
 			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 		}
-		sequencerConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
+		sequencerConfigFetcher := func() *SequencerConfig { return &configGetter.Get().Sequencer }
 		if config.L1Reader.Enable {
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
@@ -1104,7 +1108,7 @@ func CreateNode(
 	stack *node.Node,
 	chainDb ethdb.Database,
 	arbDb ethdb.Database,
-	configFetcher ConfigFetcher,
+	configGetter ConfigGetter,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
@@ -1112,7 +1116,7 @@ func CreateNode(
 	daSigner das.DasSigner,
 	feedErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configGetter, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1138,7 +1142,7 @@ func CreateNode(
 		Service:   &ArbAPI{currentNode.TxPublisher},
 		Public:    false,
 	})
-	config := configFetcher.Get()
+	config := configGetter.Get()
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
@@ -1407,4 +1411,73 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 // Don't preserve reorg'd out blocks
 func shouldPreserveFalse(header *types.Header) bool {
 	return false
+}
+
+type ConfigFetcher func() *Config
+type ConfigReloader func(context.Context) (ConfigFetcher, ConfigReloader, time.Duration, error)
+
+type LiveConfig struct {
+	stopwaiter.StopWaiter
+
+	mutex sync.RWMutex
+
+	fetcher        ConfigFetcher
+	reloader       ConfigReloader
+	reloadInterval time.Duration
+}
+
+func NewLiveConfig(fetcher ConfigFetcher, reloader ConfigReloader, reloadInterval time.Duration) *LiveConfig {
+	return &LiveConfig{
+		fetcher:        fetcher,
+		reloader:       reloader,
+		reloadInterval: reloadInterval,
+	}
+}
+
+func (c *LiveConfig) Get() *Config {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.fetcher()
+}
+
+func (c *LiveConfig) Start(ctxIn context.Context) {
+	c.StopWaiter.Start(ctxIn)
+
+	sigusr1 := make(chan os.Signal, 1)
+	signal.Notify(sigusr1, syscall.SIGUSR1)
+
+	c.LaunchThread(func(ctx context.Context) {
+		for {
+			if c.reloadInterval == 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-sigusr1:
+				}
+			} else {
+				timer := time.NewTimer(c.reloadInterval)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-sigusr1:
+					timer.Stop()
+				case <-timer.C:
+				}
+			}
+			log.Info("Reloading config...")
+
+			c.mutex.Lock()
+			newFetcher, newReloader, newReloadInterval, err := c.reloader(ctx)
+			c.mutex.Unlock()
+			if err != nil {
+				log.Error("error reloading live config", "error", err.Error())
+				continue
+			}
+			c.fetcher = newFetcher
+			c.reloader = newReloader
+			c.reloadInterval = newReloadInterval
+			log.Info("Successfully reloaded config.")
+		}
+	})
 }
