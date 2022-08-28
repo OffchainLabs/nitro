@@ -525,8 +525,8 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 					return
 				}
 			}
-			v.nextBlockToValidate = uint64(arbutil.MessageCountToBlockNumber(firstMsgInBatch+arbutil.MessageIndex(v.globalPosNextSend.PosInBatch), v.genesisBlockNum))
-			v.lastBlockValidated = v.nextBlockToValidate - 1
+			v.lastBlockValidated = uint64(arbutil.MessageCountToBlockNumber(firstMsgInBatch+arbutil.MessageIndex(v.globalPosNextSend.PosInBatch), v.genesisBlockNum))
+			v.nextBlockToValidate = v.lastBlockValidated + 1
 			v.lastBlockValidatedUnknown = false
 			log.Info("Inbox caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
 		}
