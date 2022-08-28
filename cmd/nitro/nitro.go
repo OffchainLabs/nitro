@@ -340,8 +340,6 @@ func main() {
 		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
 
-	liveNodeConfig.Start(ctx)
-
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
