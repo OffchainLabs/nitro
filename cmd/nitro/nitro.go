@@ -296,7 +296,6 @@ func main() {
 	}
 
 	liveNodeConfig := arbnode.NewLiveConfig(func() *arbnode.Config { return &nodeConfig.Node }, getConfigReloader(nodeConfig, args), nodeConfig.Conf.ReloadInterval)
-	liveNodeConfig.Start(ctx)
 
 	feedErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
