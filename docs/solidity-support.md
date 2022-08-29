@@ -10,4 +10,4 @@ Although Arbitrum supports Solidity code, there are differences in the effects o
 - `block.coinbase` returns zero
 - `block.difficulty` returns the constant 2500000000000000
 - `block.number` / `block.timestamp` return an "estimate" of the L1 block number / timestamp at which the Sequencer received the transaction (see [Time in Arbitrum](time))
-- `msg.sender` works the same way it does on Ethereum for normal L2-to-L2 transactions; for L1-to-L2 "retryable ticket" transactions, it will return the L2 address alias of the L1 contract that triggered the message. See "retryable ticket address aliasing" for more.
+- `msg.sender` works the same way it does on Ethereum for normal L2-to-L2 transactions; for L1-to-L2 "retryable ticket" transactions, it will return the L2 address alias of the L1 contract that triggered the message. See [retryable ticket address aliasing](arbos/l1-to-l2-messaging#address-aliasing) for more.
