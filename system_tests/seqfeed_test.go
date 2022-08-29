@@ -162,22 +162,22 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	err := l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error sending fraud transaction:", err)
 	}
 
 	_, err = EnsureTxSucceeded(ctx, l2clientC, fraudTx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error ensuring fraud transaction succeeded:", err)
 	}
 
 	// Node B should get the transaction immediately from the sequencer feed
 	_, err = WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*15)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error waiting for tx:", err)
 	}
 	l2balance, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("FraudUser"), nil)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error getting balance:", err)
 	}
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
@@ -186,22 +186,22 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	// Send the real transaction to client A
 	err = l2clientA.SendTransaction(ctx, realTx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error sending real transaction:", err)
 	}
 
 	_, err = EnsureTxSucceeded(ctx, l2clientA, realTx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error ensuring real transaction succeeded:", err)
 	}
 
 	// Node B should get the transaction after NodeC posts a batch.
 	_, err = WaitForTx(ctx, l2clientB, realTx.Hash(), time.Second*5)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error waiting for transaction to get to node b:", err)
 	}
 	l2balanceFraudAcct, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("FraudUser"), nil)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error getting fraud balance:", err)
 	}
 	if l2balanceFraudAcct.Cmp(big.NewInt(0)) != 0 {
 		t.Fatal("Unexpected balance (fraud acct should be empty) was:", l2balanceFraudAcct)
@@ -209,10 +209,10 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	l2balanceRealAcct, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("RealUser"), nil)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error getting real balance:", err)
 	}
 	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
-		t.Fatal("Unexpected balance:", l2balanceRealAcct)
+		t.Fatal("Unexpected balance of real account:", l2balanceRealAcct)
 	}
 }
 
