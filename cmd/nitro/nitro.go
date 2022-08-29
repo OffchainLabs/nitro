@@ -705,6 +705,7 @@ func (c *LiveNodeConfig) Start(ctxIn context.Context) {
 				case <-ctx.Done():
 					return
 				case <-sigusr1:
+					log.Info("Configuration reload triggered by SIGUSR1.")
 				}
 			} else {
 				timer := time.NewTimer(reloadInterval)
@@ -714,10 +715,10 @@ func (c *LiveNodeConfig) Start(ctxIn context.Context) {
 					return
 				case <-sigusr1:
 					timer.Stop()
+					log.Info("Configuration reload triggered by SIGUSR1.")
 				case <-timer.C:
 				}
 			}
-			log.Info("Reloading config...")
 			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
 			if err != nil {
 				log.Error("error parsing live config", "error", err.Error())
@@ -728,7 +729,6 @@ func (c *LiveNodeConfig) Start(ctxIn context.Context) {
 				log.Error("error updating live config", "error", err.Error())
 				continue
 			}
-			log.Info("Successfully reloaded config.")
 		}
 	})
 }
