@@ -128,8 +128,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
 	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
-	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stackA)
+	defer requireClose(t, l1stack, "unable to close l1stack")
+	defer requireClose(t, l2stackA, "unable to close l2stackA")
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
@@ -140,7 +140,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.DataAvailability.AggregatorConfig.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
 	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
-	defer requireClose(t, l2stackC)
+	defer requireClose(t, l2stackC, "unable to close l2stackC")
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
@@ -151,7 +151,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigB.DataAvailability.AggregatorConfig.Enable = false
 	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
-	defer requireClose(t, l2stackB)
+	defer requireClose(t, l2stackB, "unable to close l2stackB")
 
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")
