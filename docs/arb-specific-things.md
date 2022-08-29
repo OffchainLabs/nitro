@@ -31,7 +31,7 @@ Arbitrum transaction receipts include two additional fields:
 
 ## L1 to L2 Messages
 
-Arbitrum chains support arbitrary L1 to L2 message passing; developers using this functionality should familiarize themselves with how they work (see L1 to L2 Messaging). Of particular note:
+Arbitrum chains support arbitrary L1 to L2 message passing; developers using this functionality should familiarize themselves with how they work (see [L1 to L2 Messaging](arbos/l1-to-l2-messaging)). Of particular note:
 
 - The result of a successful initial/"auto"-execution of an L1 to L2 message will be an unsigned L2 tx receipt.
 - The `msg.sender` of the L2 side of an L1 to L2 message will be not the initiating L1 address, but rather its address alias.
