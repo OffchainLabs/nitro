@@ -1,6 +1,6 @@
 # Token Bridging 
 
-The Arbitrum protocol's ability to pass messages between L1 and L2 (see L1 to L2 messaging) can be leveraged to trustlessly move assets from Ethereum to an Arbitrum chain and back. Any asset / asset type can in principle be bridged, including Ether, ERC20 tokens, ERC-721 tokens, etc.
+The Arbitrum protocol's ability to pass messages between L1 and L2 (see [L1 to L2 messaging](l1-to-l2-messaging)) can be leveraged to trustlessly move assets from Ethereum to an Arbitrum chain and back. Any asset / asset type can in principle be bridged, including Ether, ERC20 tokens, ERC-721 tokens, etc.
 
 ## Depositing And Withdrawing Ether
 
@@ -20,7 +20,7 @@ ArbSys(100).withdrawEth{ value: 2300000 }(destAddress)
 
 Upon withdrawing, the Ether balance is burnt on the Arbitrum side, and will later be made available on the Ethereum side.
 
-`ArbSys.withdrawEth` is actually a convenience function is which is equivalent to calling `ArbSys.sendTxToL1` with empty calldataForL1. Like any other `sendTxToL1` call, it will require an additional call to `Outbox.executeTransaction` on L1 after the dispute period elapses for the user to finalize claiming their funds on L1 (see "L2 to L1 Messages Lifecycle && API"). Once the withdrawal is executed from the Outbox, the user's Ether balance will be credited on L1.
+`ArbSys.withdrawEth` is actually a convenience function is which is equivalent to calling `ArbSys.sendTxToL1` with empty calldataForL1. Like any other `sendTxToL1` call, it will require an additional call to `Outbox.executeTransaction` on L1 after the dispute period elapses for the user to finalize claiming their funds on L1 (see ["L2 to L1 Messages"](l2-to-l1-messaging)). Once the withdrawal is executed from the Outbox, the user's Ether balance will be credited on L1.
 
 ## Bridging ERC20 Tokens
 
@@ -63,7 +63,7 @@ Our architecture consists of three types of contracts:
 
 ![img](./gatewayUML.svg)
 
-All Ethereum to Arbitrum token transfers are initiated via the `L1GatewayRouter` contract. `L1GatewayRouter` forwards the token's deposit-call to it's appropriate `L1ArbitrumGateway` contract. `L1GatewayRouter` is responsible for mapping L1 token addresses to L1Gateway, thus acting as L1/L2 address oracle and ensuring that each token corresponds to only one gateway. The `L1ArbitrumGateway` communicates to an `L2ArbitrumGateway` (typically/expectedly via retryable tickets (see Retryable Tickets).
+All Ethereum to Arbitrum token transfers are initiated via the `L1GatewayRouter` contract. `L1GatewayRouter` forwards the token's deposit-call to it's appropriate `L1ArbitrumGateway` contract. `L1GatewayRouter` is responsible for mapping L1 token addresses to L1Gateway, thus acting as L1/L2 address oracle and ensuring that each token corresponds to only one gateway. The `L1ArbitrumGateway` communicates to an `L2ArbitrumGateway` (typically/expectedly via retryable tickets (see [Retryable Tickets](retryable-tickets)).
 
 Similarly, Arbitrum to Ethereum transfers are initiated via the `L2GatewayRouter` contract, which forwards calls the token's `L2ArbitrumGateway`, which in turn communicates to its corresponding `L1ArbitrumGateway` (typically/expectedly via sending messages to the Outbox.)
 
