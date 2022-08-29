@@ -395,7 +395,7 @@ type Config struct {
 	Sequencer            SequencerConfig                `koanf:"sequencer" reload:"hot"`
 	L1Reader             headerreader.Config            `koanf:"l1-reader"`
 	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
-	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
+	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
 	PreCheckTxs          bool                           `koanf:"pre-check-txs"`
@@ -923,7 +923,7 @@ func createNodeImpl(
 		}
 	}
 	if config.DelayedSequencer.Enable {
-		delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, &(config.DelayedSequencer))
+		delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
 		if err != nil {
 			return nil, err
 		}

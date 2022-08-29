@@ -29,16 +29,18 @@ type DelayedSequencer struct {
 	txStreamer               *TransactionStreamer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *big.Int
-	config                   *DelayedSequencerConfig
+	config                   DelayedSequencerConfigFetcher
 }
 
 type DelayedSequencerConfig struct {
 	Enable              bool          `koanf:"enable"`
-	FinalizeDistance    int64         `koanf:"finalize-distance"`
+	FinalizeDistance    int64         `koanf:"finalize-distance" reload:"hot"`
 	TimeAggregate       time.Duration `koanf:"time-aggregate"`
-	RequireFullFinality bool          `koanf:"require-full-finality"`
-	UseMergeFinality    bool          `koanf:"use-merge-finality"`
+	RequireFullFinality bool          `koanf:"require-full-finality" reload:"hot"`
+	UseMergeFinality    bool          `koanf:"use-merge-finality" reload:"hot"`
 }
+
+type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
 
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
@@ -64,7 +66,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	UseMergeFinality:    true,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
@@ -92,16 +94,16 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 		return nil
 	}
 
-	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(d.config.FinalizeDistance))
+	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(d.config().FinalizeDistance))
 	if finalized.Sign() < 0 {
 		finalized.SetInt64(0)
 	}
 
 	// Once the merge is live, we can directly query for the latest finalized block number
-	if lastBlockHeader.Difficulty.Sign() == 0 && d.config.UseMergeFinality {
+	if lastBlockHeader.Difficulty.Sign() == 0 && d.config().UseMergeFinality {
 		var header *types.Header
 		var err error
-		if d.config.RequireFullFinality {
+		if d.config().RequireFullFinality {
 			header, err = d.l1Reader.LatestFinalizedHeader()
 		} else {
 			header, err = d.l1Reader.LatestSafeHeader()
