@@ -573,6 +573,49 @@ var DefaultWasmConfig = WasmConfig{
 	RootPath: "",
 }
 
+func (w *WasmConfig) FindMachineDir() (string, bool) {
+	places := []string{}
+
+	if w.RootPath != "" {
+		places = append(places, w.RootPath)
+	} else {
+		// Check the project dir: <project>/arbnode/node.go => ../../target/machines
+		_, thisFile, _, ok := runtime.Caller(0)
+		if !ok {
+			panic("failed to find root path")
+		}
+		projectDir := filepath.Dir(filepath.Dir(thisFile))
+		projectPath := filepath.Join(filepath.Join(projectDir, "target"), "machines")
+		places = append(places, projectPath)
+
+		// Check the working directory: ./machines
+		workDir, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+		workPath := filepath.Join(workDir, "machines")
+		places = append(places, workPath)
+
+		// Check above the executable: <binary> => ../../machines
+		execfile, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		execPath := filepath.Join(filepath.Dir(filepath.Dir(execfile)), "machines")
+		places = append(places, execPath)
+
+		// Check the default
+		places = append(places, validator.DefaultNitroMachineConfig.RootPath)
+	}
+
+	for _, place := range places {
+		if _, err := os.Stat(place); err == nil {
+			return place, true
+		}
+	}
+	return "", false
+}
+
 type Node struct {
 	Backend                 *arbitrum.Backend
 	ArbInterface            *ArbInterface
@@ -794,28 +837,17 @@ func createNodeImpl(
 	txStreamer.SetInboxReader(inboxReader)
 
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
-	if config.Wasm.RootPath != "" {
-		nitroMachineConfig.RootPath = config.Wasm.RootPath
-	} else {
-		_, thisFile, _, ok := runtime.Caller(0) // <project>/arbnode/node.go
-		if !ok {
-			panic("failed to find root path")
-		}
-		projectDir := filepath.Dir(filepath.Dir(thisFile))
-		nitroMachineConfig.RootPath = filepath.Join(filepath.Join(projectDir, "target"), "machines")
-	}
+	machinesPath, foundMachines := config.Wasm.FindMachineDir()
+	nitroMachineConfig.RootPath = machinesPath
 	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
 
 	var blockValidator *validator.BlockValidator
 	var statelessBlockValidator *validator.StatelessBlockValidator
-	machinesPath := nitroMachineConfig.RootPath
-	_, err = os.Stat(machinesPath)
-	foundMachines := err == nil
 
 	if !foundMachines && config.BlockValidator.Enable {
 		return nil, fmt.Errorf("Failed to find machines %v", machinesPath)
 	} else if !foundMachines {
-		log.Warn("Failed to find machines", "path", nitroMachineConfig.RootPath)
+		log.Warn("Failed to find machines", "path", machinesPath)
 	} else {
 		statelessBlockValidator, err = validator.NewStatelessBlockValidator(
 			nitroMachineLoader,
