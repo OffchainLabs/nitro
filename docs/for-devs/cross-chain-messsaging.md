@@ -13,7 +13,7 @@ For an example of retryable tickets in action, see the [Greeter](https://github.
 
 ## Arbitrum to Ethereum Messaging
 
-Similarly, L2 contracts can send Arbitrary messages for execution on L1. These are initiated via calls to the [`ArbSys`](precompiles.md#ArbSys) precompile contract's `sendTxToL1` method. Upon confirmation (about 1 week later), they can executed by retrieving the relevant data via a call to `NodeInterface` contract's `constructOutboxProof` method, and then executing them via the  `Outbox`'s `executeTransaction` method. 
+Similarly, L2 contracts can send Arbitrary messages for execution on L1. These are initiated via calls to the [`ArbSys`](precompiles#ArbSys) precompile contract's `sendTxToL1` method. Upon confirmation (about 1 week later), they can executed by retrieving the relevant data via a call to `NodeInterface` contract's `constructOutboxProof` method, and then executing them via the  `Outbox`'s `executeTransaction` method. 
 
 For details and protocol specification, see [L2 to L1 Messages](arbos/l2-to-l1-messaging).
 
