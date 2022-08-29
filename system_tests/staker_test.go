@@ -285,7 +285,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Fail(t, "staker A became a zombie")
 		}
 		watchTx, err := stakerC.Act(ctx)
-		Require(t, err, "watchtower staker failed to act")
+		if !strings.Contains(err.Error(), "catch up") {
+			Require(t, err, "watchtower staker failed to act")
+		}
 		if watchTx != nil {
 			Fail(t, "watchtower staker made a transaction")
 		}
