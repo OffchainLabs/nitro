@@ -37,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/das/dasrpc"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -282,14 +281,39 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer, rollupOwner common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainId *big.Int, loserStakeEscrow common.Address) rollupgen.Config {
+	var confirmPeriod uint64
+	if prod {
+		confirmPeriod = 45818
+	} else {
+		confirmPeriod = 20
+	}
+	return rollupgen.Config{
+		ConfirmPeriodBlocks:      confirmPeriod,
+		ExtraChallengeTimeBlocks: 200,
+		StakeToken:               common.Address{},
+		BaseStake:                big.NewInt(params.Ether),
+		WasmModuleRoot:           wasmModuleRoot,
+		Owner:                    rollupOwner,
+		LoserStakeEscrow:         loserStakeEscrow,
+		ChainId:                  chainId,
+		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
+			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
+			FutureBlocks:  big.NewInt(12),
+			DelaySeconds:  big.NewInt(60 * 60 * 24),
+			FutureSeconds: big.NewInt(60 * 60),
+		},
+	}
+}
+
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig, config rollupgen.Config) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	if wasmModuleRoot == (common.Hash{}) {
+	if config.WasmModuleRoot == (common.Hash{}) {
 		var err error
-		wasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
+		config.WasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
 		if err != nil {
 			return nil, err
 		}
@@ -300,14 +324,6 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
 
-	var confirmPeriodBlocks uint64 = 20
-	var extraChallengeTimeBlocks uint64 = 200
-	seqInboxParams := rollupgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
-		FutureBlocks:  big.NewInt(12),
-		DelaySeconds:  big.NewInt(60 * 60 * 24),
-		FutureSeconds: big.NewInt(60 * 60),
-	}
 	nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
 	if err != nil {
 		return nil, fmt.Errorf("error getting pending nonce: %w", err)
@@ -315,17 +331,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		rollupgen.Config{
-			ConfirmPeriodBlocks:            confirmPeriodBlocks,
-			ExtraChallengeTimeBlocks:       extraChallengeTimeBlocks,
-			StakeToken:                     common.Address{},
-			BaseStake:                      big.NewInt(params.Ether),
-			WasmModuleRoot:                 wasmModuleRoot,
-			Owner:                          rollupOwner,
-			LoserStakeEscrow:               common.Address{},
-			ChainId:                        chainId,
-			SequencerInboxMaxTimeVariation: seqInboxParams,
-		},
+		config,
 		expectedRollupAddr,
 	)
 	if err != nil {
@@ -600,11 +606,14 @@ func createNodeImpl(
 	feedErrChan chan error,
 ) (*Node, error) {
 	var reorgingToBlock *types.Block
+
+	l2Config := l2BlockChain.Config()
+	l2ChainId := l2Config.ChainID.Uint64()
+
 	if config.Dangerous.ReorgToBlock >= 0 {
 		blockNum := uint64(config.Dangerous.ReorgToBlock)
-		genesis := l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum
-		if blockNum < genesis {
-			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, genesis)
+		if blockNum < l2Config.ArbitrumChainParams.GenesisBlockNum {
+			return nil, fmt.Errorf("cannot reorg to block %v past nitro genesis of %v", blockNum, l2Config.ArbitrumChainParams.GenesisBlockNum)
 		}
 		reorgingToBlock = l2BlockChain.GetBlockByNumber(blockNum)
 		if reorgingToBlock == nil {
@@ -619,7 +628,9 @@ func createNodeImpl(
 	var classicOutbox *ClassicOutboxRetriever
 	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
 	if err != nil {
-		log.Warn("Classic Msg Database not found", "err", err)
+		if l2Config.ArbitrumChainParams.GenesisBlockNum > 0 {
+			log.Warn("Classic Msg Database not found", "err", err)
+		}
 		classicOutbox = nil
 	} else {
 		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
@@ -627,7 +638,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2BlockChain.Config().ChainID.Uint64(), feedErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, feedErrChan)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -698,7 +709,7 @@ func createNodeImpl(
 		for _, address := range config.Feed.Input.URLs {
 			client := broadcastclient.NewBroadcastClient(
 				address,
-				l2BlockChain.Config().ChainID.Uint64(),
+				l2ChainId,
 				currentMessageCount,
 				config.Feed.Input.Timeout,
 				txStreamer,
@@ -740,33 +751,36 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	dataAvailabilityService, dasLifecycleManager, err := SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
-	if err != nil {
-		return nil, err
-	}
-	if dataAvailabilityService != nil {
+
+	var daWriter das.DataAvailabilityServiceWriter
+	var daReader das.DataAvailabilityServiceReader
+	var dasLifecycleManager *das.LifecycleManager
+	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
-			if daSigner != nil {
-				dataAvailabilityService, err = das.NewStoreSigningDAS(dataAvailabilityService, daSigner)
-				if err != nil {
-					return nil, err
-				}
+			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, daSigner, l1client, deployInfo.SequencerInbox)
+			if err != nil {
+				return nil, err
 			}
 		} else {
-			dataAvailabilityService = das.NewReadLimitedDataAvailabilityService(dataAvailabilityService)
+			daReader, dasLifecycleManager, err = SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
+			if err != nil {
+				return nil, err
+			}
 		}
-		dataAvailabilityService = das.NewTimeoutWrapper(
-			dataAvailabilityService, config.DataAvailability.RequestTimeout,
-		)
+
+		daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
+
 		if config.DataAvailability.PanicOnError {
-			dataAvailabilityService = das.NewPanicWrapper(dataAvailabilityService)
+			if daWriter != nil {
+				daWriter = das.NewWriterPanicWrapper(daWriter)
+			}
+			daReader = das.NewReaderPanicWrapper(daReader)
 		}
 	} else if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	var dataAvailabilityReader arbstate.DataAvailabilityReader = dataAvailabilityService
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dataAvailabilityReader)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +805,7 @@ func createNodeImpl(
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityReader, reorgingToBlock)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, daReader, reorgingToBlock)
 		if err != nil {
 			return nil, err
 		}
@@ -804,7 +818,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, dataAvailabilityReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, daReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -816,7 +830,7 @@ func createNodeImpl(
 		if txOpts == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, txOpts, dataAvailabilityService)
+		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, txOpts, daWriter)
 		if err != nil {
 			return nil, err
 		}
@@ -936,8 +950,7 @@ func SetUpDataAvailability(
 	// This function builds up the DataAvailabilityService with the following topology, starting from the leaves.
 	/*
 			      ChainFetchDAS → Bigcache → Redis →
-				       RPC Aggregator
-				       | SignAfterStoreDAS →
+				       SignAfterStoreDAS →
 				              FallbackDAS (if the REST client aggregator was specified)
 				              (primary) → RedundantStorage (if multiple persistent backing stores were specified)
 				                            → S3
@@ -946,8 +959,6 @@ func SetUpDataAvailability(
 				         (fallback only)→ RESTful client aggregator
 
 		          → : X--delegates to-->Y
-		          | : Exclusive OR
-
 	*/
 	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config)
 	if err != nil {
@@ -999,19 +1010,10 @@ func SetUpDataAvailability(
 	}
 
 	var topLevelDas das.DataAvailabilityService
-	// Create the RPC aggregator. None of the the above storage types can be enabled in combination with it.
-	// Its use for read-only purposes will be deprecated when the REST DAS servers have been rolled out.
 	if config.AggregatorConfig.Enable {
-		if topLevelStorageService != nil {
-			return nil, nil, errors.New("If rpc-aggregator is enabled, none of rest-aggregator or any -storage mode can be specified")
-		}
-		rpcAggregator, err := dasrpc.NewRPCAggregatorWithSeqInboxCaller(config.AggregatorConfig, seqInboxCaller)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		topLevelDas = rpcAggregator
-	} else if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
+		panic("Tried to make an aggregator using wrong factory method")
+	}
+	if hasPersistentStorage && (config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "") {
 		_seqInboxCaller := seqInboxCaller
 		if config.DisableSignatureChecking {
 			_seqInboxCaller = nil
@@ -1073,7 +1075,11 @@ type arbNodeLifecycle struct {
 }
 
 func (l arbNodeLifecycle) Start() error {
-	return l.node.Start(context.Background())
+	err := l.node.Start(context.Background())
+	if err != nil {
+		log.Error("failed to start node", "err", err)
+	}
+	return err
 }
 
 func (l arbNodeLifecycle) Stop() error {
@@ -1239,10 +1245,10 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.TxStreamer.StopAndWait()
-	n.ArbInterface.BlockChain().Stop()
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
+	n.ArbInterface.BlockChain().Stop()
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 	}

@@ -47,7 +47,7 @@ RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangl
 
 FROM wasm-base as wasm-bin-builder
     # pinned go version
-RUN curl -L https://golang.org/dl/go1.17.8.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.19.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -126,14 +126,15 @@ RUN apt-get update && apt-get install -y unzip wget
 WORKDIR /workspace/machines
 # Download WAVM machines
 #RUN bash -c 'r=0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v1-rc1/machine.wavm.br'
-RUN bash -c 'r=0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v2.1/machine.wavm.br'
+#RUN bash -c 'r=0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v2.1/machine.wavm.br'
 #RUN bash -c 'r=0x53c288a0ca7100c0f2db8ab19508763a51c7fd1be125d376d940a65378acaee7 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3/machine.wavm.br'
-RUN bash -c 'r=0x588762be2f364be15d323df2aa60ffff60f2b14103b34823b6f7319acd1ae7a3 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3.1/machine.wavm.br'
-RUN bash -c 'r=0xcfba6a883c50a1b4475ab909600fa88fc9cceed9e3ff6f43dccd2d27f6bd57cf && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3.2/machine.wavm.br'
+#RUN bash -c 'r=0x588762be2f364be15d323df2aa60ffff60f2b14103b34823b6f7319acd1ae7a3 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3.1/machine.wavm.br'
+#RUN bash -c 'r=0xcfba6a883c50a1b4475ab909600fa88fc9cceed9e3ff6f43dccd2d27f6bd57cf && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3.2/machine.wavm.br'
 RUN bash -c 'r=0xa24ccdb052d92c5847e8ea3ce722442358db4b00985a9ee737c4e601b6ed9876 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v4/machine.wavm.br'
 RUN bash -c 'r=0x1e09e6d9e35b93f33ed22b2bc8dc10bbcf63fdde5e8a1fb8cc1bcd1a52f14bd0 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v5/machine.wavm.br'
+RUN bash -c 'r=0x3848eff5e0356faf1fc9cafecb789584c5e7f4f8f817694d842ada96613d8bab && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v6/machine.wavm.br'
 
-FROM golang:1.17-bullseye as node-builder
+FROM golang:1.19-bullseye as node-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \

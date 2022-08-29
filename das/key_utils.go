@@ -24,7 +24,7 @@ func DecodeBase64BLSPublicKey(pubKeyEncodedBytes []byte) (*blsSignatures.PublicK
 	if err != nil {
 		return nil, err
 	}
-	pubKey, err := blsSignatures.PublicKeyFromBytes(pubKeyBytes, true)
+	pubKey, err := blsSignatures.PublicKeyFromBytes(pubKeyBytes, false)
 	if err != nil {
 		return nil, err
 	}

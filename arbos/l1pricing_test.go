@@ -4,12 +4,12 @@
 package arbos
 
 import (
-	"errors"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -209,17 +209,28 @@ func TestUpdateTimeUpgradeBehavior(t *testing.T) {
 	arbosSt, err := arbosState.OpenArbosState(evm.StateDB, burner)
 	Require(t, err)
 
-	poster := common.Address{3, 4, 5}
-
 	l1p := arbosSt.L1PricingState()
-
-	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 1, 1, 1, poster, common.Big1, arbmath.UintToBig(10*params.GWei), util.TracingDuringEVM)
-	if !errors.Is(err, l1pricing.ErrInvalidTime) {
-		Fail(t)
-	}
-
-	err = l1p.UpdateForBatchPosterSpending(evm.StateDB, evm, 3, 1, 1, poster, common.Big1, arbmath.UintToBig(10*params.GWei), util.TracingDuringEVM)
+	amount := arbmath.UintToBig(10 * params.GWei)
+	poster := common.Address{3, 4, 5}
+	_, err = l1p.BatchPosterTable().AddPoster(poster, poster)
 	Require(t, err)
+
+	// In the past this would have errored due to an invalid timestamp.
+	// We don't want to error since it'd create noise in the console,
+	// so instead let's check that nothing happened
+	statedb, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		panic("not a statedb")
+	}
+	stateCheck(t, statedb, false, "uh oh, nothing should have happened", func() {
+		Require(t, l1p.UpdateForBatchPosterSpending(
+			evm.StateDB, evm, 1, 1, 1, poster, common.Big1, amount, util.TracingDuringEVM,
+		))
+	})
+
+	Require(t, l1p.UpdateForBatchPosterSpending(
+		evm.StateDB, evm, 3, 1, 1, poster, common.Big1, amount, util.TracingDuringEVM,
+	))
 }
 
 func TestL1PriceEquilibrationUp(t *testing.T) {
@@ -241,15 +252,13 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 	Require(t, err)
 
 	l1p := state.L1PricingState()
-	err = l1p.SetPerUnitReward(0)
-	Require(t, err)
-	err = l1p.SetPricePerUnit(initialL1BasefeeEstimate)
-	Require(t, err)
+	Require(t, l1p.SetPerUnitReward(0))
+	Require(t, l1p.SetPricePerUnit(initialL1BasefeeEstimate))
 
 	bpAddr := common.Address{3, 4, 5, 6}
 	l1PoolAddress := l1pricing.L1PricerFundsPoolAddress
 	for i := 0; i < 10; i++ {
-		unitsToAdd := l1pricing.InitialEquilibrationUnits
+		unitsToAdd := l1pricing.InitialEquilibrationUnitsV6.Uint64()
 		oldUnits, err := l1p.UnitsSinceUpdate()
 		Require(t, err)
 		err = l1p.SetUnitsSinceUpdate(oldUnits + unitsToAdd)
@@ -281,7 +290,7 @@ func _testL1PriceEquilibration(t *testing.T, initialL1BasefeeEstimate *big.Int, 
 	expectedMovement = new(big.Int).Abs(expectedMovement)
 	actualMovement = new(big.Int).Abs(actualMovement)
 	if !_withinOnePercent(expectedMovement, actualMovement) {
-		Fail(t, "Expected vs actual movement are too far apart")
+		Fail(t, "Expected vs actual movement are too far apart", expectedMovement, actualMovement)
 	}
 }
 

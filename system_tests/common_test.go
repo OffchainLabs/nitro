@@ -7,15 +7,16 @@ import (
 	"bytes"
 	"context"
 	"math/big"
+	"net"
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/das"
-
-	"github.com/offchainlabs/nitro/blsSignatures"
-
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
-
+	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -35,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -58,7 +60,13 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 func TransferBalance(
 	t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context,
 ) (*types.Transaction, *types.Receipt) {
-	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
+	return TransferBalanceTo(t, from, l2info.GetAddress(to), amount, l2info, client, ctx)
+}
+
+func TransferBalanceTo(
+	t *testing.T, from string, to common.Address, amount *big.Int, l2info info, client client, ctx context.Context,
+) (*types.Transaction, *types.Receipt) {
+	tx := l2info.PrepareTxTo(from, &to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
 	res, err := EnsureTxSucceeded(ctx, client, tx)
@@ -92,7 +100,58 @@ func SendSignedTxViaL1(
 			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
 		})
 	}
-	receipt, err := WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, delayedTx)
+	Require(t, err)
+	return receipt
+}
+
+func SendUnsignedTxViaL1(
+	t *testing.T,
+	ctx context.Context,
+	l1info *BlockchainTestInfo,
+	l1client arbutil.L1Interface,
+	l2client arbutil.L1Interface,
+	templateTx *types.Transaction,
+) *types.Receipt {
+	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
+	Require(t, err)
+
+	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
+	remapped := util.RemapL1Address(usertxopts.From)
+	nonce, err := l2client.NonceAt(ctx, remapped, nil)
+	Require(t, err)
+
+	unsignedTx := types.NewTx(&types.ArbitrumUnsignedTx{
+		ChainId:   templateTx.ChainId(),
+		From:      remapped,
+		Nonce:     nonce,
+		GasFeeCap: templateTx.GasFeeCap(),
+		Gas:       templateTx.Gas(),
+		To:        templateTx.To(),
+		Value:     templateTx.Value(),
+		Data:      templateTx.Data(),
+	})
+
+	l1tx, err := delayedInboxContract.SendUnsignedTransaction(
+		&usertxopts,
+		arbmath.UintToBig(unsignedTx.Gas()),
+		unsignedTx.GasFeeCap(),
+		arbmath.UintToBig(unsignedTx.Nonce()),
+		*unsignedTx.To(),
+		unsignedTx.Value(),
+		unsignedTx.Data(),
+	)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
+	Require(t, err)
+
+	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
+	for i := 0; i < 30; i++ {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
+		})
+	}
+	receipt, err := EnsureTxSucceeded(ctx, l2client, unsignedTx)
 	Require(t, err)
 	return receipt
 }
@@ -193,17 +252,16 @@ func DeployOnTestL1(
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	config := arbnode.GenerateRollupConfig(false, common.Hash{}, l1info.GetAddress("RollupOwner"), chainId, common.Address{})
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
-		l1info.GetAddress("RollupOwner"),
 		0,
-		common.Hash{},
-		chainId,
 		headerreader.TestConfig,
 		validator.DefaultNitroMachineConfig,
+		config,
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
@@ -454,8 +512,8 @@ func authorizeDASKeyset(
 }
 
 func setupConfigWithDAS(
-	t *testing.T, dasModeString string,
-) (*params.ChainConfig, *arbnode.Config, string, *blsSignatures.PublicKey) {
+	t *testing.T, ctx context.Context, dasModeString string,
+) (*params.ChainConfig, *arbnode.Config, *das.LifecycleManager, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
@@ -478,7 +536,7 @@ func setupConfigWithDAS(
 	dasSignerKey, _, err := das.GenerateAndStoreKeys(dbPath)
 	Require(t, err)
 
-	dasConfig := das.DataAvailabilityConfig{
+	dasConfig := &das.DataAvailabilityConfig{
 		Enable: enableDas,
 		KeyConfig: das.KeyConfig{
 			KeyDir: dbPath,
@@ -493,12 +551,41 @@ func setupConfigWithDAS(
 		},
 		RequestTimeout:           5 * time.Second,
 		L1NodeURL:                "none",
+		SequencerInboxAddress:    "none",
 		PanicOnError:             true,
 		DisableSignatureChecking: true,
 	}
 
-	l1NodeConfigA.DataAvailability = dasConfig
-	return chainConfig, l1NodeConfigA, dbPath, dasSignerKey
+	l1NodeConfigA.DataAvailability = das.DefaultDataAvailabilityConfig
+	var lifecycleManager *das.LifecycleManager
+	if dasModeString != "onchain" {
+		var dasServerStack das.DataAvailabilityService
+		dasServerStack, lifecycleManager, err = arbnode.SetUpDataAvailability(ctx, dasConfig, nil, nil)
+
+		Require(t, err)
+		rpcLis, err := net.Listen("tcp", "localhost:0")
+		Require(t, err)
+		restLis, err := net.Listen("tcp", "localhost:0")
+		Require(t, err)
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, dasServerStack)
+		Require(t, err)
+
+		beConfigA := das.BackendConfig{
+			URL:                 "http://" + rpcLis.Addr().String(),
+			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
+			SignerMask:          1,
+		}
+		l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, beConfigA)
+		l1NodeConfigA.DataAvailability.Enable = true
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig = das.DefaultRestfulClientAggregatorConfig
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Enable = true
+		l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
+		l1NodeConfigA.DataAvailability.L1NodeURL = "none"
+	}
+
+	return chainConfig, l1NodeConfigA, lifecycleManager, dbPath, dasSignerKey
 }
 
 func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duration {
@@ -514,4 +601,14 @@ func getDeadlineTimeout(t *testing.T, defaultTimeout time.Duration) time.Duratio
 	}
 
 	return timeout
+}
+
+func deploySimple(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client,
+) (common.Address, *mocksgen.Simple) {
+	addr, tx, simple, err := mocksgen.DeploySimple(&auth, client)
+	Require(t, err, "could not deploy Simple.sol contract")
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+	return addr, simple
 }

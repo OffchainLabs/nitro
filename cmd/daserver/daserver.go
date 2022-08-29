@@ -24,7 +24,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
-	"github.com/offchainlabs/nitro/das/dasrpc"
 )
 
 type DAServerConfig struct {
@@ -172,7 +171,7 @@ func startup() error {
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort)
 
-		rpcServer, err = dasrpc.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, dasImpl)
+		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, dasImpl)
 		if err != nil {
 			return err
 		}

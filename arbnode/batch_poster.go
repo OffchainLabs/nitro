@@ -43,7 +43,7 @@ type BatchPoster struct {
 	building            *buildingBatch
 	pendingMsgTimestamp time.Time
 	lastBatchCount      uint64
-	das                 das.DataAvailabilityService
+	daWriter            das.DataAvailabilityServiceWriter
 }
 
 type BatchPosterConfig struct {
@@ -105,7 +105,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasMarginBasisPoints: 500,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		inboxContract: inboxContract,
 		transactOpts:  transactOpts,
 		gasRefunder:   common.HexToAddress(config.GasRefunderAddress),
-		das:           das,
+		daWriter:      daWriter,
 	}, nil
 }
 
@@ -415,8 +415,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 		return nil, nil
 	}
 
-	if b.das != nil {
-		cert, err := b.das.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()), []byte{}) // b.das will append signature if enabled
+	if b.daWriter != nil {
+		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
 			if b.config.DisableDasFallbackStoreDataOnChain {

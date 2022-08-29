@@ -55,7 +55,7 @@ interface NodeInterface {
      * Use eth_call to call.
      * Throws if block doesn't exist, or if block number is 0. Use eth_call
      * @param blockNum The L2 block being queried
-     * @return batch The L1 block containing the requested L2 block
+     * @return batch The sequencer batch number containing the requested L2 block
      */
     function findBatchContainingBlock(uint64 blockNum) external view returns (uint64 batch);
 
@@ -123,4 +123,9 @@ interface NodeInterface {
             uint256 amount,
             bytes memory calldataForL1
         );
+
+    // @notice Returns the first block produced using the Nitro codebase
+    // @dev returns 0 for chains like Nova that don't contain classic blocks
+    // @return number the block number
+    function nitroGenesisBlock() external pure returns (uint256 number);
 }

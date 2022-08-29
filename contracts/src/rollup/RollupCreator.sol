@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "../libraries/ArbitrumProxy.sol";
+import "./RollupProxy.sol";
 
 contract RollupCreator is Ownable {
     event RollupCreated(
@@ -59,7 +59,7 @@ contract RollupCreator is Ownable {
         IInbox inbox;
         IRollupEventInbox rollupEventInbox;
         IOutbox outbox;
-        ArbitrumProxy rollup;
+        RollupProxy rollup;
     }
 
     // After this setup:
@@ -104,7 +104,7 @@ contract RollupCreator is Ownable {
             osp
         );
 
-        frame.rollup = new ArbitrumProxy(
+        frame.rollup = new RollupProxy(
             config,
             ContractDependencies({
                 bridge: frame.bridge,
