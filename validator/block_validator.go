@@ -58,7 +58,6 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool   `koanf:"enable"`
-	EnableRuntimeValidator   bool   `koanf:"enable-runtime-validator"`
 	OutputPath               string `koanf:"output-path"`
 	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
 	CurrentModuleRoot        string `koanf:"current-module-root"`
