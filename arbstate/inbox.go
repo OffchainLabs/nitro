@@ -123,11 +123,11 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 		}
 	} else {
 		length := len(payload)
-		var firstByte byte
-		if length > 0 {
-			firstByte = payload[0]
+		if length == 0 {
+			log.Warn("empty sequencer message")
+		} else {
+			log.Warn("unknown sequencer message format", "length", length, "firstByte", payload[0])
 		}
-		log.Warn("unknown sequencer message format", "length", length, "firstByte", firstByte)
 
 	}
 
