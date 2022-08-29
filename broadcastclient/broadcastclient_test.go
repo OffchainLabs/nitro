@@ -58,7 +58,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, arbutil.MessageIndex(i)))
+			Require(t, b.BroadcastSingle(arbstate.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i)))
 		}
 	}()
 

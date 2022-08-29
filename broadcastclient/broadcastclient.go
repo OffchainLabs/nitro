@@ -96,7 +96,9 @@ type BroadcastClient struct {
 
 	retryCount int64
 
-	errorCount                      int
+	// Access atomically
+	errorCount int32
+
 	retrying                        bool
 	shuttingDown                    bool
 	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
@@ -127,8 +129,8 @@ func NewBroadcastClient(
 	}
 }
 
-func (bc *BroadcastClient) GetErrorCount() int {
-	return bc.errorCount
+func (bc *BroadcastClient) GetErrorCount() int32 {
+	return atomic.LoadInt32(&bc.errorCount)
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
@@ -294,7 +296,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 								continue
 							}
 
-							if message.Message.Message.Header.RequestId == nil {
+							if message.Message.Message.Header.RequestId == nil && bc.config.RequireSignature {
 								// Missing request id prevents signature from being checked
 								log.Error("ignoring feed message with missing request id", "sequence_number", message.SequenceNumber)
 								continue
@@ -302,13 +304,13 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							valid, err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
-								bc.errorCount++
+								atomic.AddInt32(&bc.errorCount, 1)
 								continue
 							}
 
 							if !valid {
 								bc.feedErrChan <- errors.Errorf("invalid feed signature for %v", message.SequenceNumber)
-								bc.errorCount++
+								atomic.AddInt32(&bc.errorCount, 1)
 								continue
 							}
 							bc.nextSeqNum = message.SequenceNumber
