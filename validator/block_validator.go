@@ -18,9 +18,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -44,8 +42,6 @@ type BlockValidator struct {
 	lastBlockValidatedMutex sync.Mutex
 	earliestBatchKept       uint64
 	nextBatchKept           uint64 // 1 + the last batch number kept
-	currentWasmModuleRoot   common.Hash
-	pendingWasmModuleRoot   common.Hash
 
 	nextBlockToValidate      uint64
 	nextValidationEntryBlock uint64
@@ -62,6 +58,7 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool   `koanf:"enable"`
+	EnableRuntimeValidator   bool   `koanf:"enable-runtime-validator"`
 	OutputPath               string `koanf:"output-path"`
 	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
 	CurrentModuleRoot        string `koanf:"current-module-root"`
@@ -108,60 +105,28 @@ type validationStatus struct {
 }
 
 func NewBlockValidator(
-	inboxReader InboxReaderInterface,
+	statelessBlockValidator *StatelessBlockValidator,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
-	blockchain *core.BlockChain,
-	db ethdb.Database,
-	config *BlockValidatorConfig,
 	machineLoader *NitroMachineLoader,
-	das arbstate.DataAvailabilityReader,
 	reorgingToBlock *types.Block,
+	config *BlockValidatorConfig,
 ) (*BlockValidator, error) {
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
 	}
-	statelessVal, err := NewStatelessBlockValidator(
-		machineLoader,
-		inboxReader,
-		inbox,
-		streamer,
-		blockchain,
-		db,
-		das,
-	)
-	if err != nil {
-		return nil, err
-	}
 	validator := &BlockValidator{
-		StatelessBlockValidator: statelessVal,
+		StatelessBlockValidator: statelessBlockValidator,
 		sendValidationsChan:     make(chan struct{}, 1),
 		checkProgressChan:       make(chan struct{}, 1),
 		progressChan:            make(chan uint64, 1),
 		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
 	}
-	err = validator.readLastBlockValidatedDbInfo(reorgingToBlock)
+	err := validator.readLastBlockValidatedDbInfo(reorgingToBlock)
 	if err != nil {
 		return nil, err
-	}
-	if config.PendingUpgradeModuleRoot != "" {
-		if config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := machineLoader.GetConfig().ReadLatestWasmModuleRoot()
-			if err != nil {
-				return nil, err
-			}
-			validator.pendingWasmModuleRoot = latest
-		} else {
-			validator.pendingWasmModuleRoot = common.HexToHash(config.PendingUpgradeModuleRoot)
-			if (validator.pendingWasmModuleRoot == common.Hash{}) {
-				return nil, errors.New("pending-upgrade-module-root config value illegal")
-			}
-		}
-		if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true); err != nil {
-			return nil, err
-		}
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
@@ -251,27 +216,13 @@ func (v *BlockValidator) prepareBlock(ctx context.Context, header *types.Header,
 	}
 }
 
-func (v *BlockValidator) getModuleRootsToValidateLocked() []common.Hash {
-	validatingModuleRoots := []common.Hash{v.currentWasmModuleRoot}
-	if (v.currentWasmModuleRoot != v.pendingWasmModuleRoot && v.pendingWasmModuleRoot != common.Hash{}) {
-		validatingModuleRoots = append(validatingModuleRoots, v.pendingWasmModuleRoot)
-	}
-	return validatingModuleRoots
-}
-
-func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
-	v.blockMutex.Lock()
-	defer v.blockMutex.Unlock()
-	return v.getModuleRootsToValidateLocked()
-}
-
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	v.blockMutex.Lock()
 	defer v.blockMutex.Unlock()
 	status := &validationStatus{
 		Status:      validationStatusUnprepared,
 		Entry:       nil,
-		ModuleRoots: v.getModuleRootsToValidateLocked(),
+		ModuleRoots: v.GetModuleRootsToValidate(),
 	}
 	blockNum := block.NumberU64()
 	// It's fine to separately load and then store as we have the blockMutex acquired
@@ -386,7 +337,9 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	v.blockMutex.Lock()
+	v.moduleMutex.Lock()
 	defer v.blockMutex.Unlock()
+	defer v.moduleMutex.Unlock()
 
 	if (hash == common.Hash{}) {
 		return errors.New("trying to set zero as wsmModuleRoot")
@@ -433,9 +386,15 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		duration := time.Since(before)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				log.Info("Validation of block canceled", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "err", err)
+				log.Info(
+					"Validation of block canceled", "blockNr", entry.BlockNumber,
+					"blockHash", entry.BlockHash, "err", err,
+				)
 			} else {
-				log.Error("Validation of block failed", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "err", err)
+				log.Error(
+					"Validation of block failed", "blockNr", entry.BlockNumber,
+					"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "err", err,
+				)
 			}
 			return
 		}
@@ -448,18 +407,27 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 
 		if writeThisBlock {
-			err = v.writeToFile(entry, moduleRoot, entry.StartPosition, entry.EndPosition, entry.Preimages, seqMsg, delayedMsg)
+			err = v.writeToFile(
+				entry, moduleRoot, entry.StartPosition, entry.EndPosition,
+				entry.Preimages, seqMsg, delayedMsg,
+			)
 			if err != nil {
 				log.Error("failed to write file", "err", err)
 			}
 		}
 
 		if !resultValid {
-			log.Error("validation failed", "moduleRoot", moduleRoot, "got", gsEnd, "expected", gsExpected, "expHeader", entry.BlockHeader)
+			log.Error(
+				"validation failed", "moduleRoot", moduleRoot, "got", gsEnd,
+				"expected", gsExpected, "expHeader", entry.BlockHeader,
+			)
 			return
 		}
 
-		log.Info("validation succeeded", "blockNr", entry.BlockNumber, "blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", duration)
+		log.Info(
+			"validation succeeded", "blockNr", entry.BlockNumber,
+			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", duration,
+		)
 	}
 
 	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
