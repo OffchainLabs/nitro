@@ -45,6 +45,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -714,6 +715,7 @@ func createNodeImpl(
 		}
 		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
 	}
+	sigVerifier := signature.NewVerifier(false, nil, bpVerifier)
 	currentMessageCount, err := txStreamer.GetMessageCount()
 	if err != nil {
 		return nil, err
@@ -728,7 +730,7 @@ func createNodeImpl(
 				currentMessageCount,
 				txStreamer,
 				feedErrChan,
-				bpVerifier,
+				sigVerifier,
 			)
 			broadcastClients = append(broadcastClients, client)
 		}

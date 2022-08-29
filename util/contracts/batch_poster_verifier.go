@@ -70,3 +70,21 @@ func (bpv *BatchPosterVerifier) flushCache_locked(ctx context.Context) error {
 	bpv.cacheExpiry = time.Now().Add(batchPosterVerifierLifetime)
 	return nil
 }
+
+func NewMockBatchPosterVerifier(validAddr common.Address) *MockBatchPosterVerifier {
+	return &MockBatchPosterVerifier{
+		validAddr: validAddr,
+	}
+}
+
+type MockBatchPosterVerifier struct {
+	validAddr common.Address
+}
+
+func (bpv *MockBatchPosterVerifier) IsBatchPoster(_ context.Context, addr common.Address) (bool, error) {
+	return addr == bpv.validAddr, nil
+}
+
+type BatchPosterVerifierInterface interface {
+	IsBatchPoster(ctx context.Context, addr common.Address) (bool, error)
+}

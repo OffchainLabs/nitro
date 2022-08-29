@@ -84,7 +84,7 @@ func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber ar
 	confirmedIndex := uint64(confirmedSequenceNumber - firstSequenceNumber)
 
 	if confirmedIndex >= uint64(len(b.messages)) {
-		log.Error("ConfirmedSequenceNumber: ", confirmedSequenceNumber, " is past the end of stored messages, clearing buffer. first sequence number: ", firstSequenceNumber, ", cache length: ", len(b.messages))
+		log.Error("ConfirmedSequenceNumber is past the end of stored messages", "confirmedSequenceNumber", confirmedSequenceNumber, "firstSequenceNumber", firstSequenceNumber, "cacheLength", len(b.messages))
 		b.messages = nil
 		return
 	}
@@ -92,7 +92,7 @@ func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber ar
 	if b.messages[confirmedIndex].SequenceNumber != confirmedSequenceNumber {
 		// Log instead of returning error here so that the message will be sent to downstream
 		// relays to also cause them to be cleared.
-		log.Error("Invariant violation: confirmedSequenceNumber: ", confirmedSequenceNumber, " is not where expected, clearing buffer. first sequence number: ", firstSequenceNumber, ", cache length: ", len(b.messages), "found: ", b.messages[confirmedIndex].SequenceNumber)
+		log.Error("Invariant violation: confirmedSequenceNumber is not where expected, clearing buffer", "confirmedSequenceNumber", confirmedSequenceNumber, "firstSequenceNumber", firstSequenceNumber, "cacheLength", len(b.messages), "foundSequenceNumber", b.messages[confirmedIndex].SequenceNumber)
 		b.messages = nil
 		return
 	}

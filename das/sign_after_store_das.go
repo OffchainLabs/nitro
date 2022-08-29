@@ -12,9 +12,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -24,8 +25,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/pretty"
-
-	flag "github.com/spf13/pflag"
 )
 
 type KeyConfig struct {

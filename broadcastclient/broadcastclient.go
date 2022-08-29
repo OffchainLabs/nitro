@@ -20,23 +20,23 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type FeedConfig struct {
 	Output wsbroadcastserver.BroadcasterConfig `koanf:"output"`
-	Input  BroadcastClientConfig               `koanf:"input"`
+	Input  Config                              `koanf:"input"`
 }
 
 func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	if feedInputEnable {
-		BroadcastClientConfigAddOptions(prefix+".input", f)
+		ConfigAddOptions(prefix+".input", f)
 	}
 	if feedOutputEnable {
 		wsbroadcastserver.BroadcasterConfigAddOptions(prefix+".output", f)
@@ -45,32 +45,32 @@ func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, 
 
 var FeedConfigDefault = FeedConfig{
 	Output: wsbroadcastserver.DefaultBroadcasterConfig,
-	Input:  DefaultBroadcastClientConfig,
+	Input:  DefaultConfig,
 }
 
-type BroadcastClientConfig struct {
+type Config struct {
 	RequireSignature bool          `koanf:"require-signature"`
 	Timeout          time.Duration `koanf:"timeout"`
 	URLs             []string      `koanf:"url"`
 }
 
-func (c *BroadcastClientConfig) Enable() bool {
+func (c *Config) Enable() bool {
 	return len(c.URLs) > 0 && c.URLs[0] != ""
 }
 
-func BroadcastClientConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".require-signature", DefaultBroadcastClientConfig.RequireSignature, "require all feed messages to be signed")
-	f.Duration(prefix+".timeout", DefaultBroadcastClientConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
-	f.StringSlice(prefix+".url", DefaultBroadcastClientConfig.URLs, "URL of sequencer feed source")
+func ConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".require-signature", DefaultConfig.RequireSignature, "require all feed messages to be signed")
+	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
+	f.StringSlice(prefix+".url", DefaultConfig.URLs, "URL of sequencer feed source")
 }
 
-var DefaultBroadcastClientConfig = BroadcastClientConfig{
+var DefaultConfig = Config{
 	RequireSignature: false,
 	URLs:             []string{""},
 	Timeout:          20 * time.Second,
 }
 
-var DefaultTestBroadcastClientConfig = BroadcastClientConfig{
+var DefaultTestConfig = Config{
 	RequireSignature: false,
 	URLs:             []string{""},
 	Timeout:          200 * time.Millisecond,
@@ -80,17 +80,13 @@ type TransactionStreamerInterface interface {
 	AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error
 }
 
-type BatchPosterVerifierInterface interface {
-	IsBatchPoster(ctx context.Context, addr common.Address) (bool, error)
-}
-
 type BroadcastClient struct {
 	stopwaiter.StopWaiter
 
-	config       BroadcastClientConfig
+	config       Config
 	websocketUrl string
 	nextSeqNum   arbutil.MessageIndex
-	bpVerifier   BatchPosterVerifierInterface
+	sigVerifier  *signature.Verifier
 
 	chainId uint64
 
@@ -112,13 +108,13 @@ var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
 var ErrIncorrectChainId = errors.New("incorrect chain id")
 
 func NewBroadcastClient(
-	config BroadcastClientConfig,
+	config Config,
 	websocketUrl string,
 	chainId uint64,
 	currentMessageCount arbutil.MessageIndex,
 	txStreamer TransactionStreamerInterface,
 	feedErrChan chan error,
-	bpVerifier BatchPosterVerifierInterface,
+	sigVerifier *signature.Verifier,
 ) *BroadcastClient {
 	return &BroadcastClient{
 		config:       config,
@@ -127,7 +123,7 @@ func NewBroadcastClient(
 		nextSeqNum:   currentMessageCount,
 		txStreamer:   txStreamer,
 		feedErrChan:  feedErrChan,
-		bpVerifier:   bpVerifier,
+		sigVerifier:  sigVerifier,
 	}
 }
 
@@ -298,6 +294,11 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 								continue
 							}
 
+							if message.Message.Message.Header.RequestId == nil {
+								// Missing request id prevents signature from being checked
+								log.Error("ignoring feed message with missing request id", "sequence_number", message.SequenceNumber)
+								continue
+							}
 							valid, err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
@@ -376,28 +377,17 @@ func (bc *BroadcastClient) StopAndWait() {
 }
 
 func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) (bool, error) {
-	if bc.bpVerifier == nil {
-		// Validating disabled
+	if bc.sigVerifier == nil {
+		// Verifier disabled
 		return true, nil
 	}
-	if message.Signature == nil {
-		if !bc.config.RequireSignature {
-			// Signature missing and not required
-			return true, nil
-		}
-
-		// Required signature missing
-		return false, errors.New("missing required feed signature")
+	if message.Message.Message.Header.RequestId == nil {
+		// Don't need signature if request id is not present
+		return true, nil
 	}
-
-	address, err := message.SigningAddress(bc.chainId)
+	hash, err := message.Hash(bc.chainId)
 	if err != nil {
-		return false, errors.Wrap(err, "unable to extract signing address from feed")
+		return false, errors.Wrapf(err, "error getting message hash for sequence number %v", message.SequenceNumber)
 	}
-	isValid, err := bc.bpVerifier.IsBatchPoster(ctx, address)
-	if err != nil {
-		return false, errors.Wrapf(err, "uanble to check if address %v is batch poster", address)
-	}
-
-	return isValid, nil
+	return bc.sigVerifier.VerifyHash(ctx, message.Signature, hash)
 }

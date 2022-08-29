@@ -12,11 +12,12 @@ import (
 	"os"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"

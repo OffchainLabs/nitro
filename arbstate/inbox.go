@@ -7,9 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"io"
 	"math/big"
+
+	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -21,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/util/hashing"
 	"github.com/offchainlabs/nitro/zeroheavy"
 )
 
@@ -45,9 +45,12 @@ type MessageWithMetadata struct {
 }
 
 var EmptyTestMessageWithMetadata = MessageWithMetadata{
-	Message: &arbos.L1IncomingMessage{
-		Header: &arbos.L1IncomingMessageHeader{},
-	},
+	Message: &arbos.EmptyTestIncomingMessage,
+}
+
+// Message signature is only verified if requestId defined
+var TestMessageWithMetadataAndRequestId = MessageWithMetadata{
+	Message: &arbos.TestIncomingMessageWithRequestId,
 }
 
 func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId uint64) (common.Hash, error) {
@@ -56,12 +59,12 @@ func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId 
 	binary.BigEndian.PutUint64(serializedExtraData[8:16], chainId)
 	binary.BigEndian.PutUint64(serializedExtraData[16:], m.DelayedMessagesRead)
 
-	serializedMessage, err := m.Message.SerializePermissive()
+	serializedMessage, err := m.Message.Serialize()
 	if err != nil {
-		return common.Hash{}, err
+		return common.Hash{}, errors.Wrapf(err, "unable to serialize message %v", sequenceNumber)
 	}
 
-	return hashing.SoliditySHA3(uniquifyingPrefix, serializedExtraData, serializedMessage), nil
+	return crypto.Keccak256Hash(uniquifyingPrefix, serializedExtraData, serializedMessage), nil
 }
 
 type InboxMultiplexer interface {
@@ -280,7 +283,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasRe
 	}
 }
 
-var InvalidL1Message *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
+var InvalidL1Message = &arbos.L1IncomingMessage{
 	Header: &arbos.L1IncomingMessageHeader{
 		Kind: arbos.L1MessageType_Invalid,
 	},

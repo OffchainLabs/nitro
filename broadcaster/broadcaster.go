@@ -5,11 +5,9 @@ package broadcaster
 
 import (
 	"context"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/pkg/errors"
 	"net"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
@@ -55,16 +53,19 @@ type BroadcastFeedMessage struct {
 }
 
 func NewBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex, chainId uint64, dataSigner util.DataSignerFunc) (*BroadcastFeedMessage, error) {
-	hash, err := message.Hash(sequenceNumber, chainId)
-	if err != nil {
-		return nil, err
-	}
-
 	var signature []byte
-	if dataSigner != nil {
-		signature, err = dataSigner(hash.Bytes())
+	// Don't need signature if request id is not present
+	if message.Message.Header.RequestId != nil {
+		hash, err := message.Hash(sequenceNumber, chainId)
 		if err != nil {
 			return nil, err
+		}
+
+		if dataSigner != nil {
+			signature, err = dataSigner(hash.Bytes())
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -75,17 +76,8 @@ func NewBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumbe
 	}, nil
 }
 
-func (m *BroadcastFeedMessage) SigningAddress(chainId uint64) (common.Address, error) {
-	hash, err := m.Message.Hash(m.SequenceNumber, chainId)
-	if err != nil {
-		return common.Address{}, errors.Wrap(err, "unable to generate feed message hash")
-	}
-	sigPublicKey, err := crypto.SigToPub(hash.Bytes(), m.Signature)
-	if err != nil {
-		return common.Address{}, errors.Wrap(err, "unable to recover sequencer feed signing key")
-	}
-
-	return crypto.PubkeyToAddress(*sigPublicKey), nil
+func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
+	return m.Message.Hash(m.SequenceNumber, chainId)
 }
 
 type ConfirmedSequenceNumberMessage struct {

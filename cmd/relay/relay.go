@@ -75,11 +75,6 @@ func startup() error {
 		MaxSendQueue:  relayConfig.Node.Feed.Output.MaxSendQueue,
 	}
 
-	clientConf := broadcastclient.BroadcastClientConfig{
-		Timeout: relayConfig.Node.Feed.Input.Timeout,
-		URLs:    relayConfig.Node.Feed.Input.URLs,
-	}
-
 	defer log.Info("Cleanly shutting down relay")
 
 	sigint := make(chan os.Signal, 1)
@@ -87,7 +82,7 @@ func startup() error {
 
 	// Start up an arbitrum sequencer relay
 	feedErrChan := make(chan error, 10)
-	newRelay := relay.NewRelay(serverConf, clientConf, relayConfig.L2.ChainId, feedErrChan)
+	newRelay := relay.NewRelay(serverConf, relayConfig.Node.Feed.Input, relayConfig.L2.ChainId, feedErrChan)
 	err = newRelay.Start(ctx)
 	if err != nil {
 		return err

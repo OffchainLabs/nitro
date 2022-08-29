@@ -38,7 +38,7 @@ func (q *RelayMessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.Bro
 	return nil
 }
 
-func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadcastclient.BroadcastClientConfig, chainId uint64, feedErrChan chan error) *Relay {
+func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadcastclient.Config, chainId uint64, feedErrChan chan error) *Relay {
 	var broadcastClients []*broadcastclient.BroadcastClient
 
 	q := RelayMessageQueue{make(chan broadcaster.BroadcastFeedMessage, 100)}
