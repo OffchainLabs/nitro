@@ -99,7 +99,7 @@ module.exports = {
       accounts: process.env["MAINNET_PRIVKEY"] ? [process.env["MAINNET_PRIVKEY"]] : [],
     },
     nova: {
-      url: "https://a4ba.arbitrum.io/rpc",
+      url: "https://nova.arbitrum.io/rpc",
       accounts: process.env["MAINNET_PRIVKEY"] ? [process.env["MAINNET_PRIVKEY"]] : [],
     },
     geth: {
