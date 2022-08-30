@@ -148,7 +148,13 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 			log.Warn("sequencer msg decompression failed", "err", err)
 		}
 	} else {
-		log.Warn("unknown sequencer message format")
+		length := len(payload)
+		if length == 0 {
+			log.Warn("empty sequencer message")
+		} else {
+			log.Warn("unknown sequencer message format", "length", length, "firstByte", payload[0])
+		}
+
 	}
 
 	return parsedMsg, nil
