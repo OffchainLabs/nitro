@@ -4,7 +4,7 @@ ArbOS is the Layer 2 EVM hypervisor that facilitates the execution environment o
 
 ## Precompiles
 
-ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This section documents the infrastructure that makes this possible. For more details on specific calls, please refer to the [methods documentation](precompiles.md).
+ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This section documents the infrastructure that makes this possible. For more details on specific calls, please refer to the [methods documentation](./precompiles.md).
 
 A precompile consists of a of solidity interface in [`contracts/src/precompiles/`][nitro_precompiles_dir] and a corresponding golang implementation in [`precompiles/`][precompiles_dir]. Using geth's abi generator, [`solgen/gen.go`][gen_file] generates [`solgen/go/precompilesgen/precompilesgen.go`][precompilesgen_link], which collects the ABI data of the precompiles. The [runtime installer][installer_link] uses this generated file to check the type safety of each precompile's implementer.
 
@@ -34,7 +34,7 @@ An [`L1IncomingMessage`][L1IncomingMessage_link] represents an incoming sequence
 
 ## Retryables
 
-A Retryable is a special message type for creating atomic L1 to L2 messages; for details, see [L1 To L2 Messaging](l1-to-l2-messaging.md).
+A Retryable is a special message type for creating atomic L1 to L2 messages; for details, see [L1 To L2 Messaging](./l1-to-l2-messaging.md).
 
 ## ArbOS State
 
