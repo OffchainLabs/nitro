@@ -76,6 +76,14 @@ func (v *ValidatorWallet) Address() *common.Address {
 	return v.address
 }
 
+// May be zero if the wallet hasn't been deployed yet
+func (v *ValidatorWallet) AddressOrZero() common.Address {
+	if v.address == nil {
+		return common.Address{}
+	}
+	return *v.address
+}
+
 func (v *ValidatorWallet) From() common.Address {
 	if v.auth == nil {
 		return common.Address{}
