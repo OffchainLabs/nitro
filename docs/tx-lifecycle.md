@@ -69,7 +69,7 @@ How are we able to make such bold a claim? A few (related) things:
 - Execution on Arbitrum is fully deterministic; i.e., a current chain state along with new input data is sufficient to compute the new chain state; thus, the moment this input data is available (i.e., when the Sequencer posts a batch), the L2 chain's state can be computed.
 - Arbitrum's fault-proof system is sound; i.e., if any validator (later) tries to deviate from the valid L2 state, an honest validator will ultimately be able challenge this and win. Since we already know that valid state will ultimately win out, we can treat our transaction as L1-finalized now.
 
-### 4. Validator post assertion that includes transaction
+### 4. Validator posts assertion that includes transaction
 
 A staked, active validator will then run the Arbitrum VM over the inputs in the Inbox (just like the Sequencer did earlier, except now only over transactions posted on L1) and make an on-chain assertion about the chain's latest state. Assertions typically get asserted every 30-60 minutes.
 
