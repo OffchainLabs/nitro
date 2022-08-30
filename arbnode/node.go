@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -281,14 +282,39 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer, rollupOwner common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
+func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner common.Address, chainId *big.Int, loserStakeEscrow common.Address) rollupgen.Config {
+	var confirmPeriod uint64
+	if prod {
+		confirmPeriod = 45818
+	} else {
+		confirmPeriod = 20
+	}
+	return rollupgen.Config{
+		ConfirmPeriodBlocks:      confirmPeriod,
+		ExtraChallengeTimeBlocks: 200,
+		StakeToken:               common.Address{},
+		BaseStake:                big.NewInt(params.Ether),
+		WasmModuleRoot:           wasmModuleRoot,
+		Owner:                    rollupOwner,
+		LoserStakeEscrow:         loserStakeEscrow,
+		ChainId:                  chainId,
+		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
+			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
+			FutureBlocks:  big.NewInt(12),
+			DelaySeconds:  big.NewInt(60 * 60 * 24),
+			FutureSeconds: big.NewInt(60 * 60),
+		},
+	}
+}
+
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig, config rollupgen.Config) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
-	if wasmModuleRoot == (common.Hash{}) {
+	if config.WasmModuleRoot == (common.Hash{}) {
 		var err error
-		wasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
+		config.WasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
 		if err != nil {
 			return nil, err
 		}
@@ -299,14 +325,6 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
 
-	var confirmPeriodBlocks uint64 = 20
-	var extraChallengeTimeBlocks uint64 = 200
-	seqInboxParams := rollupgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
-		FutureBlocks:  big.NewInt(12),
-		DelaySeconds:  big.NewInt(60 * 60 * 24),
-		FutureSeconds: big.NewInt(60 * 60),
-	}
 	nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
 	if err != nil {
 		return nil, fmt.Errorf("error getting pending nonce: %w", err)
@@ -314,17 +332,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		rollupgen.Config{
-			ConfirmPeriodBlocks:            confirmPeriodBlocks,
-			ExtraChallengeTimeBlocks:       extraChallengeTimeBlocks,
-			StakeToken:                     common.Address{},
-			BaseStake:                      big.NewInt(params.Ether),
-			WasmModuleRoot:                 wasmModuleRoot,
-			Owner:                          rollupOwner,
-			LoserStakeEscrow:               common.Address{},
-			ChainId:                        chainId,
-			SequencerInboxMaxTimeVariation: seqInboxParams,
-		},
+		config,
 		expectedRollupAddr,
 	)
 	if err != nil {
@@ -565,24 +573,68 @@ var DefaultWasmConfig = WasmConfig{
 	RootPath: "",
 }
 
+func (w *WasmConfig) FindMachineDir() (string, bool) {
+	places := []string{}
+
+	if w.RootPath != "" {
+		places = append(places, w.RootPath)
+	} else {
+		// Check the project dir: <project>/arbnode/node.go => ../../target/machines
+		_, thisFile, _, ok := runtime.Caller(0)
+		if !ok {
+			panic("failed to find root path")
+		}
+		projectDir := filepath.Dir(filepath.Dir(thisFile))
+		projectPath := filepath.Join(filepath.Join(projectDir, "target"), "machines")
+		places = append(places, projectPath)
+
+		// Check the working directory: ./machines
+		workDir, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+		workPath := filepath.Join(workDir, "machines")
+		places = append(places, workPath)
+
+		// Check above the executable: <binary> => ../../machines
+		execfile, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		execPath := filepath.Join(filepath.Dir(filepath.Dir(execfile)), "machines")
+		places = append(places, execPath)
+
+		// Check the default
+		places = append(places, validator.DefaultNitroMachineConfig.RootPath)
+	}
+
+	for _, place := range places {
+		if _, err := os.Stat(place); err == nil {
+			return place, true
+		}
+	}
+	return "", false
+}
+
 type Node struct {
-	Backend                *arbitrum.Backend
-	ArbInterface           *ArbInterface
-	L1Reader               *headerreader.HeaderReader
-	TxStreamer             *TransactionStreamer
-	TxPublisher            TransactionPublisher
-	DeployInfo             *RollupAddresses
-	InboxReader            *InboxReader
-	InboxTracker           *InboxTracker
-	DelayedSequencer       *DelayedSequencer
-	BatchPoster            *BatchPoster
-	BlockValidator         *validator.BlockValidator
-	Staker                 *validator.Staker
-	BroadcastServer        *broadcaster.Broadcaster
-	BroadcastClients       []*broadcastclient.BroadcastClient
-	SeqCoordinator         *SeqCoordinator
-	DASLifecycleManager    *das.LifecycleManager
-	ClassicOutboxRetriever *ClassicOutboxRetriever
+	Backend                 *arbitrum.Backend
+	ArbInterface            *ArbInterface
+	L1Reader                *headerreader.HeaderReader
+	TxStreamer              *TransactionStreamer
+	TxPublisher             TransactionPublisher
+	DeployInfo              *RollupAddresses
+	InboxReader             *InboxReader
+	InboxTracker            *InboxTracker
+	DelayedSequencer        *DelayedSequencer
+	BatchPoster             *BatchPoster
+	BlockValidator          *validator.BlockValidator
+	StatelessBlockValidator *validator.StatelessBlockValidator
+	Staker                  *validator.Staker
+	BroadcastServer         *broadcaster.Broadcaster
+	BroadcastClients        []*broadcastclient.BroadcastClient
+	SeqCoordinator          *SeqCoordinator
+	DASLifecycleManager     *das.LifecycleManager
+	ClassicOutboxRetriever  *ClassicOutboxRetriever
 }
 
 func createNodeImpl(
@@ -725,6 +777,7 @@ func createNodeImpl(
 			nil,
 			nil,
 			nil,
+			nil,
 			broadcastServer,
 			broadcastClients,
 			coordinator,
@@ -784,23 +837,44 @@ func createNodeImpl(
 	txStreamer.SetInboxReader(inboxReader)
 
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
-	if config.Wasm.RootPath != "" {
-		nitroMachineConfig.RootPath = config.Wasm.RootPath
-	} else {
-		execfile, err := os.Executable()
-		if err != nil {
-			panic(err)
-		}
-		targetDir := filepath.Dir(filepath.Dir(execfile))
-		nitroMachineConfig.RootPath = filepath.Join(targetDir, "machines")
-	}
+	machinesPath, foundMachines := config.Wasm.FindMachineDir()
+	nitroMachineConfig.RootPath = machinesPath
 	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
 
 	var blockValidator *validator.BlockValidator
-	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(arbDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, daReader, reorgingToBlock)
+	var statelessBlockValidator *validator.StatelessBlockValidator
+
+	if !foundMachines && config.BlockValidator.Enable {
+		return nil, fmt.Errorf("Failed to find machines %v", machinesPath)
+	} else if !foundMachines {
+		log.Warn("Failed to find machines", "path", machinesPath)
+	} else {
+		statelessBlockValidator, err = validator.NewStatelessBlockValidator(
+			nitroMachineLoader,
+			inboxReader,
+			inboxTracker,
+			txStreamer,
+			l2BlockChain,
+			rawdb.NewTable(arbDb, blockValidatorPrefix),
+			daReader,
+			&config.BlockValidator,
+		)
 		if err != nil {
 			return nil, err
+		}
+
+		if config.BlockValidator.Enable {
+			blockValidator, err = validator.NewBlockValidator(
+				statelessBlockValidator,
+				inboxTracker,
+				txStreamer,
+				nitroMachineLoader,
+				reorgingToBlock,
+				&config.BlockValidator,
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -849,6 +923,7 @@ func createNodeImpl(
 		delayedSequencer,
 		batchPoster,
 		blockValidator,
+		statelessBlockValidator,
 		staker,
 		broadcastServer,
 		broadcastClients,
@@ -1105,11 +1180,16 @@ func CreateNode(
 			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator},
 			Public:    false,
 		})
+	}
+	if currentNode.StatelessBlockValidator != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "arbdebug",
 			Version:   "1.0",
-			Service:   &BlockValidatorDebugAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
-			Public:    false,
+			Service: &BlockValidatorDebugAPI{
+				val:        currentNode.StatelessBlockValidator,
+				blockchain: l2BlockChain,
+			},
+			Public: false,
 		})
 	}
 
