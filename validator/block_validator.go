@@ -43,9 +43,10 @@ type BlockValidator struct {
 	earliestBatchKept       uint64
 	nextBatchKept           uint64 // 1 + the last batch number kept
 
-	nextBlockToValidate      uint64
-	nextValidationEntryBlock uint64
-	globalPosNextSend        GlobalStatePosition
+	nextBlockToValidate       uint64
+	nextValidationEntryBlock  uint64
+	lastBlockValidatedUnknown bool
+	globalPosNextSend         GlobalStatePosition
 
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
@@ -218,12 +219,25 @@ func (v *BlockValidator) prepareBlock(ctx context.Context, header *types.Header,
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	v.blockMutex.Lock()
 	defer v.blockMutex.Unlock()
+	blockNum := block.NumberU64()
+	if blockNum < v.lastBlockValidated {
+		return
+	}
+	if v.lastBlockValidatedUnknown {
+		if block.Hash() == v.lastBlockValidatedHash {
+			v.lastBlockValidated = blockNum
+			v.nextBlockToValidate = blockNum + 1
+			v.lastBlockValidatedUnknown = false
+			log.Info("Block building caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
+			// note: this block is already valid
+		}
+		return
+	}
 	status := &validationStatus{
 		Status:      validationStatusUnprepared,
 		Entry:       nil,
 		ModuleRoots: v.GetModuleRootsToValidate(),
 	}
-	blockNum := block.NumberU64()
 	// It's fine to separately load and then store as we have the blockMutex acquired
 	_, present := v.validationEntries.Load(blockNum)
 	if present {
@@ -467,6 +481,24 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			v.ProcessBatches(v.globalPosNextSend.BatchNumber, [][]byte{seqMsg})
 			seqBatchEntry = seqMsg
 		}
+		v.blockMutex.Lock()
+		if v.lastBlockValidatedUnknown {
+			firstMsgInBatch := arbutil.MessageIndex(0)
+			if v.globalPosNextSend.BatchNumber > 0 {
+				var err error
+				firstMsgInBatch, err = v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber - 1)
+				if err != nil {
+					v.blockMutex.Unlock()
+					log.Error("validator couldnt read message count", "err", err)
+					return
+				}
+			}
+			v.lastBlockValidated = uint64(arbutil.MessageCountToBlockNumber(firstMsgInBatch+arbutil.MessageIndex(v.globalPosNextSend.PosInBatch), v.genesisBlockNum))
+			v.nextBlockToValidate = v.lastBlockValidated + 1
+			v.lastBlockValidatedUnknown = false
+			log.Info("Inbox caught up to staker", "blockNr", v.lastBlockValidated, "blockHash", v.lastBlockValidatedHash)
+		}
+		v.blockMutex.Unlock()
 		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
 		entry, found := v.validationEntries.Load(v.nextBlockToValidate)
@@ -598,6 +630,36 @@ func (v *BlockValidator) progressValidated() {
 			log.Error("failed to write validated entry to database", "err", err)
 		}
 	}
+}
+
+func (v *BlockValidator) AssumeValid(globalState GoGlobalState) error {
+	if v.Started() {
+		return errors.Errorf("cannot handle AssumeValid while running")
+	}
+	v.lastBlockValidatedMutex.Lock()
+	defer v.lastBlockValidatedMutex.Unlock()
+
+	// don't do anything if we already validated past that
+	if v.globalPosNextSend.BatchNumber > globalState.Batch {
+		return nil
+	}
+	if v.globalPosNextSend.BatchNumber == globalState.Batch && v.globalPosNextSend.PosInBatch > globalState.PosInBatch {
+		return nil
+	}
+
+	block := v.blockchain.GetBlockByHash(globalState.BlockHash)
+	if block == nil {
+		v.lastBlockValidatedUnknown = true
+	} else {
+		v.lastBlockValidated = block.NumberU64()
+		v.nextBlockToValidate = v.lastBlockValidated + 1
+	}
+	v.lastBlockValidatedHash = globalState.BlockHash
+	v.globalPosNextSend = GlobalStatePosition{
+		BatchNumber: globalState.Batch,
+		PosInBatch:  globalState.PosInBatch,
+	}
+	return nil
 }
 
 func (v *BlockValidator) LastBlockValidated() uint64 {
