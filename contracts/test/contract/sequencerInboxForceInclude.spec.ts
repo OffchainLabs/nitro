@@ -532,4 +532,13 @@ describe('SequencerInboxForceInclude', async () => {
       0, 0, 0, ethers.constants.AddressZero, 0, "0x"
     )).to.revertedWith("NotForked()");
   });  
+
+  it("should fail to call sendWithdrawalEthToFork", async function () {
+    const {
+      inbox,
+    } = await setupSequencerInbox()
+    await expect(inbox.sendWithdrawalEthToFork(
+      0, 0, 0, 0, ethers.constants.AddressZero
+    )).to.revertedWith("NotForked()");
+  });  
 })

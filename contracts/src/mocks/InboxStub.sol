@@ -155,6 +155,16 @@ contract InboxStub is IInbox {
         revert("NOT_IMPLEMENTED");
     }
 
+    function sendWithdrawalEthToFork(
+        uint256,
+        uint256,
+        uint256,
+        uint256,
+        address
+    ) external returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
     function depositEth() external payable override returns (uint256) {
         revert("NOT_IMPLEMENTED");
     }

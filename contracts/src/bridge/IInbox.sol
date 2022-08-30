@@ -88,6 +88,19 @@ interface IInbox is IDelayedMessageProvider {
     ) external returns (uint256);
 
     /**
+     * @notice Send a message to initiate L2 withdrawal
+     * @dev This method can only be called upon L1 fork and will not alias the caller
+     *      This method will revert if not called from origin
+     */
+    function sendWithdrawalEthToFork(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        uint256 value,
+        address withdrawTo
+    ) external returns (uint256);
+
+    /**
      * @notice Get the L1 fee for submitting a retryable
      * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
      * @dev This formula may change in the future, to future proof your code query this method instead of inlining!!

@@ -35,6 +35,7 @@ import {
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
+import "../precompiles/ArbSys.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
@@ -302,6 +303,33 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     uint256(uint160(to)),
                     value,
                     data
+                )
+            );
+    }
+
+    /// @inheritdoc IInbox
+    function sendWithdrawalEthToFork(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        uint256 value,
+        address withdrawTo
+    ) external whenNotPaused onlyAllowed returns (uint256) {
+        if (!_chainIdChanged()) revert NotForked();
+        // solhint-disable-next-line avoid-tx-origin
+        if (msg.sender != tx.origin) revert NotOrigin();
+        return
+            _deliverMessage(
+                L2_MSG,
+                AddressAliasHelper.undoL1ToL2Alias(msg.sender),
+                abi.encodePacked(
+                    L2MessageType_unsignedEOATx,
+                    gasLimit,
+                    maxFeePerGas,
+                    nonce,
+                    uint256(uint160(address(100))), // ArbSys address
+                    value,
+                    abi.encode(ArbSys.withdrawEth.selector, withdrawTo)
                 )
             );
     }
