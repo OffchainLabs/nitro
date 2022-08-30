@@ -4,7 +4,7 @@ A: No, no, and no!
 
 An Arbitrum Chain's Sequencer(s) and Validators and completely distinct entities, with their own distinct roles.
 
-The Sequencer is the entity granted specific privileges over ordering transactions; once the Sequencer commits to an ordering (by posting a batch on Ethereum), the Sequencer has no say over what happens next (i.e., execution). A malicious/faulty Sequencer can do things like reorder transactions or _temporarily_ delay a transaction's inclusion — things which could be, to be sure, annoying and bad — but can do nothing to compromise the chain's safety.
+The [Sequencer](../sequencer.md) is the entity granted specific privileges over ordering transactions; once the Sequencer commits to an ordering (by posting a batch on Ethereum), it has no say over what happens next (i.e., execution). A malicious/faulty Sequencer can do things like reorder transactions or _temporarily_ delay a transaction's inclusion — things which could be, to be sure, annoying and bad — but can do nothing to compromise the chain's safety.
 
 The _Validators_ are the ones responsible for the safety of the chain; i.e., making staked claims about the chain state, disputing each other, etc.
 
@@ -15,4 +15,4 @@ _**An Arbitrum Rollup chain with a centralized Sequencer could theoretically sti
 
 Which is to say — the more important thing than decentralizing the Sequencer i.e., the thing you ought to care more about — is decentralizing the _Validators_.
 
-Arbitrum One's Validator set is currently whitelisted; overtime, the whitelist will grow and then be removed entirely. For more info see "Mainnet Beta."
+Arbitrum One's Validator set is currently whitelisted; overtime, the whitelist will grow and then be removed entirely. For more info see ["Mainnet Beta"](../mainnet-beta.md).
