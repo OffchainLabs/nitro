@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -33,11 +32,10 @@ type DelayedSequencer struct {
 }
 
 type DelayedSequencerConfig struct {
-	Enable              bool          `koanf:"enable"`
-	FinalizeDistance    int64         `koanf:"finalize-distance" reload:"hot"`
-	TimeAggregate       time.Duration `koanf:"time-aggregate"`
-	RequireFullFinality bool          `koanf:"require-full-finality" reload:"hot"`
-	UseMergeFinality    bool          `koanf:"use-merge-finality" reload:"hot"`
+	Enable              bool  `koanf:"enable"`
+	FinalizeDistance    int64 `koanf:"finalize-distance" reload:"hot"`
+	RequireFullFinality bool  `koanf:"require-full-finality" reload:"hot"`
+	UseMergeFinality    bool  `koanf:"use-merge-finality" reload:"hot"`
 }
 
 type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
@@ -45,7 +43,6 @@ type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
 	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final (ignored when using Merge finality)")
-	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "polling interval for the delayed sequencer")
 	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
 	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
 }
@@ -53,7 +50,6 @@ func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              false,
 	FinalizeDistance:    20,
-	TimeAggregate:       time.Minute,
 	RequireFullFinality: true,
 	UseMergeFinality:    true,
 }
@@ -61,7 +57,6 @@ var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              true,
 	FinalizeDistance:    20,
-	TimeAggregate:       time.Second,
 	RequireFullFinality: true,
 	UseMergeFinality:    true,
 }
