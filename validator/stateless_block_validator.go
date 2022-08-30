@@ -239,8 +239,12 @@ func NewStatelessBlockValidator(
 				return nil, errors.New("pending-upgrade-module-root config value illegal")
 			}
 		}
-		if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true); err != nil {
-			return nil, err
+
+		// the machine will be lazily created if need be later otherwise
+		if config.Enable {
+			if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return validator, nil
