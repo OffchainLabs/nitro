@@ -266,6 +266,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
+                // undoing sender alias here to cancel out the aliasing
                 AddressAliasHelper.undoL1ToL2Alias(msg.sender),
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
@@ -294,6 +295,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return
             _deliverMessage(
                 L2_MSG,
+                // undoing sender alias here to cancel out the aliasing
                 AddressAliasHelper.undoL1ToL2Alias(msg.sender),
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
@@ -321,6 +323,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         return
             _deliverMessage(
                 L2_MSG,
+                // undoing sender alias here to cancel out the aliasing
                 AddressAliasHelper.undoL1ToL2Alias(msg.sender),
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
