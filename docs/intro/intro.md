@@ -51,7 +51,7 @@ For one, Arbitrum transactions are submitted on the L1 in batches; typically, a 
 We really meant it, yes. 
 Different layer 2 protocols emphasize and optimize for different things; Arbitrum was created with Ethereum compatibility as a top priority. This means users can use Arbitrum with all their favorite Ethereum wallets; developers can build and deploy contracts with all their favorite Ethereum libraries and tooling; in fact, most of the time, the experience of using Arbitrum will feel identical to that of using Ethereum (with the important exception of it being much cheaper and faster).
 
-Much development went into achieving this level of Ethereum compatibility. But at its core: the Arbitrum itself uses a fork of [Geth](arbos/geth) — the most widely used Ethereum implementation — with modifications to transform it into a trustless layer 2. This means most of the code running in Arbitrum is identical to the code running in Ethereum. We call this cutting-edge approach Nitro (developers can see the codebase [here](https://github.com/OffchainLabs/nitro)).
+Much development went into achieving this level of Ethereum compatibility. But at its core: the Arbitrum itself uses a fork of [Geth](../arbos/geth) — the most widely used Ethereum implementation — with modifications to transform it into a trustless layer 2. This means most of the code running in Arbitrum is identical to the code running in Ethereum. We call this cutting-edge approach Nitro (developers can see the codebase [here](https://github.com/OffchainLabs/nitro)).
 
 
 #### Q: So it sounds like Arbitrum Rollup is an ideal solution that solves any and all scaling problems…?
