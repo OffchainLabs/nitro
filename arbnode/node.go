@@ -1410,7 +1410,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		TrieCleanNoPrefetch: baseConf.NoPrefetch,
 		TrieDirtyLimit:      baseConf.TrieDirtyCache,
 		TrieDirtyDisabled:   cachingConfig.Archive,
-		TrieTimeLimit:       baseConf.TrieTimeout,
+		TrieTimeLimit:       cachingConfig.TrieTimeLimit,
 		TriesInMemory:       cachingConfig.BlockCount,
 		TrieRetention:       cachingConfig.BlockAge,
 		SnapshotLimit:       baseConf.SnapshotCache,
