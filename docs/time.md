@@ -1,7 +1,7 @@
 # Block Numbers and Time
 
 As in Ethereum, Arbitrum clients submit transactions, and the system (usually) executes those transactions at some later time.
-In Arbitrum Rollup, clients submit transactions by posting messages to the Ethereum chain, either [through the Sequencer](sequencer) or via the chain's [delayed inbox](sequencer).
+In Arbitrum Rollup, clients submit transactions by posting messages to the Ethereum chain, either [through the Sequencer](./sequencer.md) or via the chain's [delayed inbox](./sequencer.md).
 
 Once in the chain's core inbox contract, transactions are processed in order. Generally, some time will elapse between the time when a message is put into the inbox (and timestamped) and the time when the contract processes the message and carries out the transaction requested by the message.
 
@@ -38,7 +38,7 @@ const txnReceipt = await arbitrumProvider.getTransactionReceipt('0x...')
 */
 ```
 
-The Arbitrum block number can also be retrieved within an Arbitrum contract via [ArbSys](precomiles#ArbSys):
+The Arbitrum block number can also be retrieved within an Arbitrum contract via [ArbSys](./arbos/precompiles.md#ArbSys):
 
 ```sol
  ArbSys(100).arbBlockNumber() // returns Arbitrum block number
