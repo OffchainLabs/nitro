@@ -46,7 +46,7 @@ type Sequencer struct {
 	txStreamer      *TransactionStreamer
 	txQueue         chan txQueueItem
 	l1Reader        *headerreader.HeaderReader
-	config          SequencerConfig
+	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
@@ -57,9 +57,9 @@ type Sequencer struct {
 	forwarder      *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfig) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfigFetcher) (*Sequencer, error) {
 	senderWhitelist := make(map[common.Address]struct{})
-	entries := strings.Split(config.SenderWhitelist, ",")
+	entries := strings.Split(config().SenderWhitelist, ",")
 	for _, address := range entries {
 		if len(address) == 0 {
 			continue
@@ -119,7 +119,7 @@ func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transact
 }
 
 func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
-	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config.MaxRevertGasReject {
+	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
 	return nil
@@ -154,7 +154,7 @@ func (s *Sequencer) ForwardTo(url string) error {
 	if s.forwarder != nil {
 		s.forwarder.Disable()
 	}
-	s.forwarder = NewForwarder(url, s.config.ForwardTimeout)
+	s.forwarder = NewForwarder(url, s.config().ForwardTimeout)
 	err := s.forwarder.Initialize(s.GetContext())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)
@@ -261,7 +261,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	l1Timestamp := s.l1Timestamp
 	s.L1BlockAndTimeMutex.Unlock()
 
-	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config.MaxAcceptableTimestampDelta.Seconds()) {
+	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config().MaxAcceptableTimestampDelta.Seconds()) {
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
@@ -372,7 +372,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		nextBlock := time.Now().Add(s.config.MaxBlockSpeed)
+		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
 		s.sequenceTransactions(ctx)
 		// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 		return time.Until(nextBlock)

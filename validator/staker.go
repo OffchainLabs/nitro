@@ -180,7 +180,22 @@ func (s *Staker) Initialize(ctx context.Context) error {
 			return err
 		}
 	}
-	return s.L1Validator.Initialize(ctx)
+	err := s.L1Validator.Initialize(ctx)
+	if err != nil {
+		return err
+	}
+	latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
+	if err != nil {
+		return err
+	}
+	if latestStaked == 0 {
+		return nil
+	}
+	stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
+	if err != nil {
+		return err
+	}
+	return s.blockValidator.AssumeValid(stakedInfo.AfterState().GlobalState)
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
@@ -271,12 +286,8 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	callOpts := s.getCallOpts(ctx)
 	s.builder.ClearTransactions()
 	var rawInfo *StakerInfo
-	walletAddress := s.wallet.Address()
-	var walletAddressOrZero common.Address
-	if walletAddress != nil {
-		walletAddressOrZero = *walletAddress
-	}
-	if walletAddress != nil {
+	walletAddressOrZero := s.wallet.AddressOrZero()
+	if walletAddressOrZero != (common.Address{}) {
 		var err error
 		rawInfo, err = s.rollup.StakerInfo(ctx, walletAddressOrZero)
 		if err != nil {
@@ -375,7 +386,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		stakeIsUnwanted := effectiveStrategy < StakeLatestStrategy
 		if stakeIsTooOutdated || stakeIsUnwanted {
 			// Note: we must have an address if rawInfo != nil
-			_, err = s.rollup.ReturnOldDeposit(s.builder.Auth(ctx), *walletAddress)
+			_, err = s.rollup.ReturnOldDeposit(s.builder.Auth(ctx), walletAddressOrZero)
 			if err != nil {
 				return nil, err
 			}
@@ -388,8 +399,8 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	if walletAddress != nil {
-		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, *walletAddress)
+	if walletAddressOrZero != (common.Address{}) {
+		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, walletAddressOrZero)
 		if err != nil {
 			return nil, err
 		}
