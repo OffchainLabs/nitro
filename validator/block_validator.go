@@ -521,6 +521,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				var err error
 				firstMsgInBatch, err = v.inboxTracker.GetBatchMessageCount(v.globalPosNextSend.BatchNumber - 1)
 				if err != nil {
+					v.blockMutex.Unlock()
 					log.Error("validator couldnt read message count", "err", err)
 					return
 				}
