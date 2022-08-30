@@ -405,7 +405,7 @@ type Config struct {
 	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
 	Wasm                 WasmConfig                     `koanf:"wasm"`
 	Dangerous            DangerousConfig                `koanf:"dangerous"`
-	Pruning              PruningConfig                  `koanf:"pruning"`
+	Caching              CachingConfig                  `koanf:"caching"`
 	Archive              bool                           `koanf:"archive"`
 	TxLookupLimit        uint64                         `koanf:"tx-lookup-limit"`
 }
@@ -434,10 +434,10 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
-	PruningConfigAddOptions(prefix+".pruning", f)
+	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 
-	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.pruning.archive)", prefix)
+	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
 }
 
@@ -459,7 +459,7 @@ var ConfigDefault = Config{
 	Dangerous:            DefaultDangerousConfig,
 	Archive:              false,
 	TxLookupLimit:        40_000_000,
-	Pruning:              DefaultPruningConfig,
+	Caching:              DefaultCachingConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -577,22 +577,25 @@ var DefaultWasmConfig = WasmConfig{
 	RootPath: "",
 }
 
-type PruningConfig struct {
-	Archive    bool          `koanf:"archive"`
-	BlockCount uint64        `koanf:"block-count"`
-	BlockAge   time.Duration `koanf:"block-age"`
+type CachingConfig struct {
+	Archive       bool          `koanf:"archive"`
+	BlockCount    uint64        `koanf:"block-count"`
+	BlockAge      time.Duration `koanf:"block-age"`
+	TrieTimeLimit time.Duration `koanf:"trie-time-limit"`
 }
 
-func PruningConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".archive", DefaultPruningConfig.Archive, "retain past block state")
-	f.Uint64(prefix+".block-count", DefaultPruningConfig.BlockCount, "minimum number of recent blocks to keep in memory")
-	f.Duration(prefix+".block-age", DefaultPruningConfig.BlockAge, "minimum age a block must be to be pruned")
+func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
+	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
+	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age a block must be to be pruned")
+	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
 }
 
-var DefaultPruningConfig = PruningConfig{
-	Archive:    false,
-	BlockCount: 128,
-	BlockAge:   30 * time.Minute,
+var DefaultCachingConfig = CachingConfig{
+	Archive:       false,
+	BlockCount:    128,
+	BlockAge:      30 * time.Minute,
+	TrieTimeLimit: 5 * time.Minute,
 }
 
 type Node struct {
@@ -1293,9 +1296,9 @@ func CreateDefaultStackForTest(dataDir string) (*node.Node, error) {
 	return stack, nil
 }
 
-func DefaultCacheConfigFor(stack *node.Node, pruningConfig *PruningConfig) *core.CacheConfig {
+func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {
 	baseConf := ethconfig.Defaults
-	if pruningConfig.Archive {
+	if cachingConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
 	}
 
@@ -1305,10 +1308,10 @@ func DefaultCacheConfigFor(stack *node.Node, pruningConfig *PruningConfig) *core
 		TrieCleanRejournal:  baseConf.TrieCleanCacheRejournal,
 		TrieCleanNoPrefetch: baseConf.NoPrefetch,
 		TrieDirtyLimit:      baseConf.TrieDirtyCache,
-		TrieDirtyDisabled:   baseConf.NoPruning,
+		TrieDirtyDisabled:   cachingConfig.Archive,
 		TrieTimeLimit:       baseConf.TrieTimeout,
-		TriesInMemory:       pruningConfig.BlockCount,
-		TrieRetention:       pruningConfig.BlockAge,
+		TriesInMemory:       cachingConfig.BlockCount,
+		TrieRetention:       cachingConfig.BlockAge,
 		SnapshotLimit:       baseConf.SnapshotCache,
 		Preimages:           baseConf.Preimages,
 	}
