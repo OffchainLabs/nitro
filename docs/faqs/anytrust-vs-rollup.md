@@ -12,4 +12,4 @@ In what should be the common and happy case, however, in which at least 19 of th
 
 Variants of the AnyTrust model in which the new trust assumption is minmimized are under consideration; stay tuned.
 
-For more, see [Inside AnyTrust](inside-anytrust).
+For more, see [Inside AnyTrust](../inside-anytrust.md).

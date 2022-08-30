@@ -16,4 +16,4 @@ Arbitrum One — the first permissionless Ethereum layer 2 rollup with full Ethe
 
 ..okay, with that out of the way, let's talk about getting started! To get a sense of what's out there, you can check out our [portal page](https://portal.arbitrum.one/), where we showcase some of the dApps, wallets, and infrastructure currently live.
 
-See [Public Chains](public-chains) for more info on getting started.
+See [Public Chains](./public-chains.md) for more info on getting started.
