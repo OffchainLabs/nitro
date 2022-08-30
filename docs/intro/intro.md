@@ -1,7 +1,3 @@
----
-slug: /
----
-
 # A Gentle Introduction to Arbitrum
 
 #### Q: Hello! What’s Arbitrum?
