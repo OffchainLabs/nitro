@@ -371,7 +371,9 @@ func BlockDataForValidation(
 
 	if prevHeader != nil {
 		var blockhash common.Hash
-		blockhash, preimages, readBatchInfo, err = RecordBlockCreation(ctx, blockchain, inboxReader, prevHeader, &msg, producePreimages)
+		blockhash, preimages, readBatchInfo, err = RecordBlockCreation(
+			ctx, blockchain, inboxReader, prevHeader, &msg, producePreimages,
+		)
 		if err != nil {
 			return
 		}
@@ -518,8 +520,14 @@ func (v *StatelessBlockValidator) executeBlock(
 	return mach.GetGlobalState(), delayedMsg, nil
 }
 
+func (v *StatelessBlockValidator) jitBlock(
+	ctx context.Context, entry *validationEntry, moduleRoot common.Hash,
+) (GoGlobalState, []byte, error) {
+	return GoGlobalState{}, nil, errors.New("unimplemented")
+}
+
 func (v *StatelessBlockValidator) ValidateBlock(
-	ctx context.Context, header *types.Header, moduleRoot common.Hash,
+	ctx context.Context, header *types.Header, full bool, moduleRoot common.Hash,
 ) (bool, error) {
 	if header == nil {
 		return false, errors.New("header not found")
@@ -534,7 +542,9 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if err != nil {
 		return false, err
 	}
-	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, false)
+	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(
+		ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, false,
+	)
 	if err != nil {
 		return false, fmt.Errorf("failed to get block data to validate: %w", err)
 	}
@@ -553,7 +563,9 @@ func (v *StatelessBlockValidator) ValidateBlock(
 		return false, fmt.Errorf("failed calculating position for validation: %w", err)
 	}
 
-	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages, readBatchInfo)
+	entry, err := newValidationEntry(
+		prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages, readBatchInfo,
+	)
 	if err != nil {
 		return false, fmt.Errorf("failed to create validation entry %w", err)
 	}
@@ -569,7 +581,12 @@ func (v *StatelessBlockValidator) ValidateBlock(
 		Data:   seqMsg,
 	})
 
-	gsEnd, _, err := v.executeBlock(ctx, entry, moduleRoot)
+	var gsEnd GoGlobalState
+	if full {
+		gsEnd, _, err = v.executeBlock(ctx, entry, moduleRoot)
+	} else {
+		gsEnd, _, err = v.jitBlock(ctx, entry, moduleRoot)
+	}
 	if err != nil {
 		return false, err
 	}

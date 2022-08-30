@@ -58,6 +58,7 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool   `koanf:"enable"`
+	JitValidator             bool   `koanf:"jit-validator"`
 	OutputPath               string `koanf:"output-path"`
 	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
 	CurrentModuleRoot        string `koanf:"current-module-root"`
@@ -67,6 +68,7 @@ type BlockValidatorConfig struct {
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block validator")
+	f.Bool(prefix+".jit-validator", DefaultBlockValidatorConfig.JitValidator, "enable the faster, jit-accelerated block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
@@ -76,6 +78,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
+	JitValidator:             true,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "current",
@@ -85,6 +88,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
+	JitValidator:             false,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "latest",
@@ -358,7 +362,10 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	if v.config.CurrentModuleRoot != "current" {
 		return nil
 	}
-	return fmt.Errorf("unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v", hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot)
+	return fmt.Errorf(
+		"unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v",
+		hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot,
+	)
 }
 
 func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {

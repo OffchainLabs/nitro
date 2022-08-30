@@ -41,7 +41,7 @@ type BlockValidatorDebugAPI struct {
 }
 
 func (a *BlockValidatorDebugAPI) ValidateBlock(
-	ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash,
+	ctx context.Context, blockNum rpc.BlockNumberOrHash, full bool, moduleRootOptional *common.Hash,
 ) (bool, error) {
 	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
 	if err != nil {
@@ -60,7 +60,7 @@ func (a *BlockValidatorDebugAPI) ValidateBlock(
 		}
 		moduleRoot = moduleRoots[0]
 	}
-	return a.val.ValidateBlock(ctx, header, moduleRoot)
+	return a.val.ValidateBlock(ctx, header, full, moduleRoot)
 }
 
 type ArbAPI struct {
