@@ -200,8 +200,9 @@ func main() {
 		}
 	}
 
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
-		l1Reader := headerreader.New(l1Client, nodeConfig.Node.L1Reader)
+		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
 		deployInfo, err := nodeConfig.L1.Rollup.ParseAddresses()
@@ -281,7 +282,6 @@ func main() {
 		}
 	}
 
-	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	feedErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,

@@ -107,7 +107,7 @@ func main() {
 		l1TransactionOpts,
 		sequencerAddress,
 		*authorizevalidators,
-		headerReaderConfig,
+		func() *headerreader.Config { return &headerReaderConfig },
 		machineConfig,
 		arbnode.GenerateRollupConfig(*prod, common.HexToHash(*wasmmoduleroot), ownerAddress, l2ChainId, loserEscrowAddress),
 	)

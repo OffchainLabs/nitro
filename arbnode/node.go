@@ -307,7 +307,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig, config rollupgen.Config) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, machineConfig validator.NitroMachineConfig, config rollupgen.Config) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -393,7 +393,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 type Config struct {
 	RPC                  arbitrum.Config                `koanf:"rpc"`
 	Sequencer            SequencerConfig                `koanf:"sequencer" reload:"hot"`
-	L1Reader             headerreader.Config            `koanf:"l1-reader"`
+	L1Reader             headerreader.Config            `koanf:"l1-reader" reload:"hot"`
 	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
@@ -706,7 +706,7 @@ func createNodeImpl(
 
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
-		l1Reader = headerreader.New(l1client, config.L1Reader)
+		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &config.Get().L1Reader })
 	}
 
 	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
@@ -979,7 +979,7 @@ func SetUpDataAvailabilityWithoutNode(
 		if err != nil {
 			return nil, nil, err
 		}
-		l1Reader = headerreader.New(l1Client, headerreader.DefaultConfig) // TODO: config
+		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
 	}
 	das, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
 	if err != nil {

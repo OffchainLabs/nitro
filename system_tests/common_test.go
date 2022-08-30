@@ -259,7 +259,7 @@ func DeployOnTestL1(
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
 		0,
-		headerreader.TestConfig,
+		func() *headerreader.Config { return &headerreader.TestConfig },
 		validator.DefaultNitroMachineConfig,
 		config,
 	)
