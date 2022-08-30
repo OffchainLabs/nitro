@@ -117,11 +117,11 @@ interface ISequencerInbox is IDelayedMessageProvider {
 
     function addSequencerL2Batch(
         uint256 sequenceNumber,
-        uint256 prevMessageCount,
-        uint256 newMessageCount,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
-        IGasRefunder gasRefunder
+        IGasRefunder gasRefunder,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
     ) external;
 
     // ---------- onlyRollupOrOwner functions ----------
