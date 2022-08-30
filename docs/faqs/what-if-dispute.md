@@ -6,7 +6,7 @@ Nope; once an Arbitrum transaction is included on L1, there is no way it can be 
 
 ## ...okay but if there's a dispute, will my transaction get delayed?
 
-The only thing that a dispute can add delay to is the confirmation of L2-to-L1 messages. All other transactions continue to be processed, even while a dispute is still undergoing. (Additionally: in practice, most L2 to L1 messages represent withdrawals of fungible assets; these can be trustlessly completed _even during a dispute_ via trustless fast "liquidity exit" applications. See [L2 To L1 Messages](.,/arbos/l2-to-l1-messaging.md)).
+The only thing that a dispute can add delay to is the confirmation of L2-to-L1 messages. All other transactions continue to be processed, even while a dispute is still undergoing. (Additionally: in practice, most L2 to L1 messages represent withdrawals of fungible assets; these can be trustlessly completed _even during a dispute_ via trustless fast "liquidity exit" applications. See [L2 To L1 Messages](../arbos/l2-to-l1-messaging.md)).
 
 ## ...okay okay, but if we're just talking about an L2-to-L1 message, and assuming there's no disputes, how long between the time the message is initiated and when I can execute it on L1? Is it exactly one week?
 

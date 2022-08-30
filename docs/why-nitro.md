@@ -6,7 +6,7 @@ Nitro represents the latest step in the evolution of Arbitrum technology; it is 
 
 Viewed from a distance, the Classic and Nitro systems do similar things: both seek to create an execution environment as close to the EVM as possible which operates as a second layer to Ethereum; i.e., safety of the L2 virtual machine’s state updates can be guaranteed and enforced via succinct fraud proofs on Ethereum itself.
 
-In Arbitrum Classic, this was achieved via a custom made virtual machine, which we called the Arbitrum Virtual Machine (or AVM). The implementation of Arbitrum’s L2 state machine— known as [“ArbOS”](./arbos/ArbOS.md) — was effectively a program that gets compiled and uploaded to the AVM; ArbOS includes (among other things) the ability to emulate EVM execution.
+In Arbitrum Classic, this was achieved via a custom made virtual machine, which we called the Arbitrum Virtual Machine (or AVM). The implementation of Arbitrum’s L2 state machine— known as [“ArbOS”](./arbos/arbos.md) — was effectively a program that gets compiled and uploaded to the AVM; ArbOS includes (among other things) the ability to emulate EVM execution.
 
 In Nitro, instead of using the AVM for low-level instructions, we use WebAssembly (Wasm). Since Go code can be compiled down to Wasm, we can implement the ArbOS program in Go, and include within it (as a sub-module) include [Geth itself](./arbos/geth.md), the most widely used Ethereum implementation.
 
