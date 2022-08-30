@@ -8,7 +8,9 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/util"
 )
 
 // Create any storage services that persist to files, database, cloud storage,
@@ -63,7 +65,7 @@ func CreatePersistentStorageService(
 func CreateBatchPosterDAS(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
-	daSigner DasSigner,
+	daSigner util.DataSignerFunc,
 	l1Reader arbutil.L1Interface,
 	sequencerInboxAddr common.Address,
 ) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *LifecycleManager, error) {

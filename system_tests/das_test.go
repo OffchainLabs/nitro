@@ -13,22 +13,19 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
-
-	"github.com/ethereum/go-ethereum/ethclient"
-
-	"github.com/offchainlabs/nitro/blsSignatures"
-
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbnode"
-
-	"github.com/offchainlabs/nitro/das"
 )
 
 func startLocalDASServer(
@@ -297,7 +294,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
 	l1NodeConfigA.DataAvailability.L1NodeURL = "none"
 
-	var daSigner das.DasSigner = func(data []byte) ([]byte, error) {
+	var daSigner = func(data []byte) ([]byte, error) {
 		return crypto.Sign(data, l1info.Accounts["Sequencer"].PrivateKey)
 	}
 
