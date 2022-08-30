@@ -1,7 +1,7 @@
 
 # Running a Node
 
-Note: If you’re interested in accessing an Arbitrum chain, but you don’t want to set up your own node, see our [Node Providers](running_nodes/node_providers) to get RPC access to fully-managed nodes hosted by a third party provider
+Note: If you’re interested in accessing an Arbitrum chain, but you don’t want to set up your own node, see our [Node Providers](./node-providers.md) to get RPC access to fully-managed nodes hosted by a third party provider
 
 ### Required Artifacts
 
