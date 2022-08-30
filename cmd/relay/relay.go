@@ -46,7 +46,7 @@ func startup() error {
 	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
 		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
 		printSampleUsage()
-		if !strings.Contains(err.Error(), "help requested") {
+		if err != nil && !strings.Contains(err.Error(), "help requested") {
 			fmt.Printf("%s\n", err.Error())
 		}
 

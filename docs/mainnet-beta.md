@@ -1,6 +1,6 @@
 # What is "Mainnet Beta"?
 
-Arbitrum One — the first permissionless Ethereum layer 2 rollup with full Ethereum smart contract functionality — is [live on mainnet](https://offchain.medium.com/mainnet-for-everyone-27ce0f67c85e) — as is [Nova](https://medium.com/offchainlabs/its-time-for-a-new-dawn-nova-is-open-to-the-public-a081df1e4ad2), our first [AnyTrust](inside_anytrust) chain! We're sure you're (almost) as excited as we are; here's what you need to know before using the system:
+Arbitrum One — the first permissionless Ethereum layer 2 rollup with full Ethereum smart contract functionality — is [live on mainnet](https://offchain.medium.com/mainnet-for-everyone-27ce0f67c85e) — as is [Nova](https://medium.com/offchainlabs/its-time-for-a-new-dawn-nova-is-open-to-the-public-a081df1e4ad2), our first [AnyTrust](./inside-anytrust.md) chain! We're sure you're (almost) as excited as we are; here's what you need to know before using the system:
 
 ### Some Words of Caution
 
@@ -16,4 +16,4 @@ Arbitrum One — the first permissionless Ethereum layer 2 rollup with full Ethe
 
 ..okay, with that out of the way, let's talk about getting started! To get a sense of what's out there, you can check out our [portal page](https://portal.arbitrum.one/), where we showcase some of the dApps, wallets, and infrastructure currently live.
 
-See Public Chains for more info on getting started.
+See [Public Chains](./public-chains.md) for more info on getting started.

@@ -258,10 +258,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         // solhint-disable-next-line avoid-tx-origin
         if (AddressUpgradeable.isContract(msg.sender) || tx.origin != msg.sender) {
             // isContract check fails if this function is called during a contract's constructor.
-            // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
-            // If the caller is an EOA, we adjust the address.
-            // This is needed because unsigned messages to the L2 (such as retryables)
-            // have the L1 sender address mapped.
             dest = AddressAliasHelper.applyL1ToL2Alias(msg.sender);
         }
 

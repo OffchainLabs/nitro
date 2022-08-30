@@ -65,9 +65,12 @@ func TestRPC(t *testing.T) {
 
 	backendsJsonByte, err := json.Marshal([]BackendConfig{beConfig})
 	testhelpers.RequireImpl(t, err)
-	aggConf := AggregatorConfig{
-		AssumedHonest: 1,
-		Backends:      string(backendsJsonByte),
+	aggConf := DataAvailabilityConfig{
+		AggregatorConfig: AggregatorConfig{
+			AssumedHonest: 1,
+			Backends:      string(backendsJsonByte),
+		},
+		RequestTimeout: 5 * time.Second,
 	}
 	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil)
 	testhelpers.RequireImpl(t, err)
@@ -76,14 +79,14 @@ func TestRPC(t *testing.T) {
 	cert, err := rpcAgg.Store(ctx, msg, 0, nil)
 	testhelpers.RequireImpl(t, err)
 
-	retrievedMessage, err := rpcAgg.GetByHash(ctx, cert.DataHash)
+	retrievedMessage, err := storageService.GetByHash(ctx, cert.DataHash)
 	testhelpers.RequireImpl(t, err)
 
 	if !bytes.Equal(msg, retrievedMessage) {
 		testhelpers.FailImpl(t, "failed to retrieve correct message")
 	}
 
-	retrievedMessage, err = rpcAgg.GetByHash(ctx, cert.DataHash)
+	retrievedMessage, err = storageService.GetByHash(ctx, cert.DataHash)
 	testhelpers.RequireImpl(t, err)
 
 	if !bytes.Equal(msg, retrievedMessage) {
