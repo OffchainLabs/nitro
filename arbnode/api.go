@@ -36,11 +36,13 @@ func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (commo
 }
 
 type BlockValidatorDebugAPI struct {
-	val        *validator.BlockValidator
+	val        *validator.StatelessBlockValidator
 	blockchain *core.BlockChain
 }
 
-func (a *BlockValidatorDebugAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash) (bool, error) {
+func (a *BlockValidatorDebugAPI) ValidateBlock(
+	ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash,
+) (bool, error) {
 	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
 	if err != nil {
 		return false, err
