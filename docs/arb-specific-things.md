@@ -37,7 +37,7 @@ Etc.
 
 ## Precompiles
 
-Arbitrum chains include a number of special precompiles not present on Ethereum; see [Common Precompiles](./arbos/common-precomiles.md) / [All Precompiles](./arbos/precompiles.md).
+Arbitrum chains include a number of special precompiles not present on Ethereum; see [Common Precompiles](./arbos/common-precompiles.md) / [All Precompiles](./arbos/precompiles.md).
 
 Of particular note is the [ArbAddressTable](./arbos/precompiles.md#ArbAddressTable), which allows contracts to map addresses to integers, saving calldata / fees for addresses expected to be reused as parameters; see [Arb Address Table tutorial](https://github.com/OffchainLabs/arbitrum-tutorials/tree/master/packages/address-table) for example usage.
 
