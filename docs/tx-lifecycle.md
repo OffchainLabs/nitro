@@ -4,9 +4,9 @@ As an introduction to the various components that compromise the Arbitrum protoc
 
 We'll also intersperse it with "finality checks," explaining what guarantees the client has over their transaction's finality (i.e., assurances that their transaction's result is guaranteed and won't later be altered) over the course of a transaction's various stages.
 
-This overview will be focused on the Arbitrum Rollup protocol; see [Inside AnyTrust](inside_anytrust) for differences in the Arbitrum AnyTrust protocol. Also, for convenience/simplicity, we'll be describing the system in its final form in terms of things like permissionless validation and contract upgradeability; for the current state of the Arbitrum Mainnet chains, see "Mainnet Beta."
+This overview will be focused on the Arbitrum Rollup protocol; see [Inside AnyTrust](./inside-anytrust.md) for differences in the Arbitrum AnyTrust protocol. Also, for convenience/simplicity, we'll be describing the system in its final form in terms of things like permissionless validation and contract upgradability; for the current state of the Arbitrum Mainnet chains, see ["Mainnet Beta"](./mainnet-beta.md).
 
-For clarity on any terminology that may be unfamiliar see, "glossary."
+For clarity on any terminology that may be unfamiliar, see our [glossary](./intro/glossary.md).
 
 ### 1. Sequencer receives transaction
 
@@ -22,9 +22,9 @@ Alternatively, a client can send a message to the Sequencer by signing and publi
 
 **See**:
 
-- [Retryables](arbos/ArbOS#retryables)
-- "The Sequencer"
-- "Token Bridge"
+- [Retryables](./arbos/l1-to-l2-messaging.md)
+- [The Sequencer](./sequencer.md)
+- [Token Bridge](./asset-bridging.md)
 
 ### 2. Sequencer orders transaction (off-chain)
 
@@ -36,9 +36,9 @@ Upon receiving a transaction, the Sequencer will:
 
 **See**:
 
-- [ArbOS](arbos/ArbOS)
-- [Geth](arbos/ArbOS)
-- [L1 pricing](arbos/L1_Pricing) / [L2 Gas](Gas)
+- [ArbOS](./arbos/ArbOS.md)
+- [Geth](./arbos/geth.md)
+- [L1 pricing](./arbos/l1-pricing.md) / [L2 Gas](./arbos/gas.md)
 
 #### ~ ~ ~ FINALITY CHECK: Trusted / Soft Confirmation ~ ~ ~
 
@@ -56,7 +56,7 @@ Even if the Sequencer never includes our transaction in a batch, the client can 
 
 **See:**
 
-- "The Sequencer / Censorship Resistance."
+- ["The Sequencer / Censorship Resistance."](./sequencer.md)
 
 #### ~ ~ ~ FINALITY CHECK: Ethereum-Equivalent Finality! ~ ~ ~
 
@@ -75,15 +75,15 @@ A staked, active validator will then run the Arbitrum VM over the inputs in the 
 
 **See**:
 
-- [ArbOS](arbos/ArbOS)
-- [Geth](arbos/ArbOS)
-- [L1 pricing](arbos/L1_Pricing) / [L2 Gas](Gas)
+- [ArbOS](./arbos/ArbOS.md)
+- [Geth](./arbos/geth.md)
+- [L1 pricing](./arbos/l1-pricing.md) / [L2 Gas](./arbos/gas.md)
 
 Note that RBlock assertions include claims about the state of the Outbox; if our transaction triggered any L2 to L1 messages, a RBlock will include an update to the Outbox to reflect its inclusion.
 
 **See**:
 
-- "The Outbox"
+- [The Outbox](./arbos/l2-to-l1-messaging.md)
 
 #### 4a. RBlock is valid / goes unchallenged
 
@@ -97,14 +97,14 @@ A dispute consists of two staked validators dissecting their disagreement down t
 
 **See:**
 
-- [Challenges](proving/ChallengeManager)
-- [Wasm/WAVM](proving/WASMToWAVM)
+- [Challenges](./proving/challenge-manager.md)
+- [Wasm/WAVM](./proving/wasm-to-wavm.md)
 
-L1 contracts also keep track of the tree of all assertions; i.e., how many stakers are in disagreement, who is currently disputing with whom, etc. We refer to this level of Arbitrum's design architecture as its "rollup protocol."
+L1 contracts also keep track of the tree of all assertions; i.e., how many stakers are in disagreement, who is currently disputing with whom, etc. We refer to this level of Arbitrum's design architecture as its "assertion tree protocol."
 
 **See:**
 
-- "Rollup Protocol"
+- [Assertion Tree Protocol](./assertion-tree.md)
 
 #### ~ ~ ~ FINALITY CHECK: STILL THE SAME Ethereum-Equivalent Finality! ~ ~ ~
 
