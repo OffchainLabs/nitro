@@ -36,7 +36,7 @@ Upon receiving a transaction, the Sequencer will:
 
 **See**:
 
-- [ArbOS](./arbos/ArbOS.md)
+- [ArbOS](./arbos/arbos.md)
 - [Geth](./arbos/geth.md)
 - [L1 pricing](./arbos/l1-pricing.md) / [L2 Gas](./arbos/gas.md)
 
@@ -75,7 +75,7 @@ A staked, active validator will then run the Arbitrum VM over the inputs in the 
 
 **See**:
 
-- [ArbOS](./arbos/ArbOS.md)
+- [ArbOS](./arbos/arbos.md)
 - [Geth](./arbos/geth.md)
 - [L1 pricing](./arbos/l1-pricing.md) / [L2 Gas](./arbos/gas.md)
 
