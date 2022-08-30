@@ -69,9 +69,9 @@ How are we able to make such bold a claim? A few (related) things:
 - Execution on Arbitrum is fully deterministic; i.e., a current chain state along with new input data is sufficient to compute the new chain state; thus, the moment this input data is available (i.e., when the Sequencer posts a batch), the L2 chain's state can be computed.
 - Arbitrum's fault-proof system is sound; i.e., if any validator (later) tries to deviate from the valid L2 state, an honest validator will ultimately be able challenge this and win. Since we already know that valid state will ultimately win out, we can treat our transaction as L1-finalized now.
 
-### 4. Validator asserts RBlock that includes transaction
+### 4. Validator post assertion that includes transaction
 
-A staked, active validator will then run the Arbitrum VM over the inputs in the Inbox (just like the Sequencer did earlier, except now only over transactions posted on L1) and make an on-chain assertion about the chain's latest state, i.e., a rollup block or "RBlock." RBlocks typically get asserted every 30-60 minutes.
+A staked, active validator will then run the Arbitrum VM over the inputs in the Inbox (just like the Sequencer did earlier, except now only over transactions posted on L1) and make an on-chain assertion about the chain's latest state. Assertions typically get asserted every 30-60 minutes.
 
 **See**:
 
@@ -79,19 +79,19 @@ A staked, active validator will then run the Arbitrum VM over the inputs in the 
 - [Geth](./arbos/geth.md)
 - [L1 pricing](./arbos/l1-pricing.md) / [L2 Gas](./arbos/gas.md)
 
-Note that RBlock assertions include claims about the state of the Outbox; if our transaction triggered any L2 to L1 messages, a RBlock will include an update to the Outbox to reflect its inclusion.
+Note that assertions include claims about the state of the Outbox; if our transaction triggered any L2 to L1 messages, an assertion will include an update to the Outbox to reflect its inclusion.
 
 **See**:
 
 - [The Outbox](./arbos/l2-to-l1-messaging.md)
 
-#### 4a. RBlock is valid / goes unchallenged
+#### 4a. Assertion is valid / goes unchallenged
 
-In the happy / common case, the validator asserted a valid RBlock, and over the course of the dispute window — 1 week on Arbitrum One — no other validators challenge it.
+In the happy / common case, the validator made a valid assertion, and over the course of the dispute window — 1 week on Arbitrum One — no other validators challenge it.
 
 #### 4b. Assertion is challenged!
 
-If two validators assert different RBlocks, only (at most) one of them can be valid, so they are put into a dispute.
+If two validators claim different state-hashes in their assertions, only (at most) one of them can be valid, so they are put into a dispute.
 
 A dispute consists of two staked validators dissecting their disagreement down to a single L2 block, and then dissecting the sequence of VM instructions within this block down to a single OPCODE, then finally, executing this single operation. The underlying VM the Arbitrum uses is Wasm, or, more precicelsy, "WAVM." This is all refereed by contracts on L1.
 
@@ -110,10 +110,10 @@ L1 contracts also keep track of the tree of all assertions; i.e., how many stake
 
 Remember in phase 3 when said that once the L1 has committed to inputs, we can guarantee the L2 output? We meant it! Even during a dispute, Arbitrum nodes continue to execute and active validators continue to make assertions on the valid leaf in the state-tree; nothing that can happen in phase 4 has any effect on the L1-level finality we've already locked in at phase 3.
 
-### 5. RBlock is confirmed on L1
+### 5. Assertion is confirmed on L1
 
-Once any and all disputes have been resolved and sufficient time has passed, our RBlock can be confirmed on L1 (any Ethereum account on L1 can confirm it). Upon confirmation, the Outbox root on L1 gets updated.
+Once any and all disputes have been resolved and sufficient time has passed, our assertion can be confirmed on L1 (any Ethereum account on L1 can confirm it). Upon confirmation, the Outbox root on L1 gets updated.
 
 #### ~ ~ ~ FINALITY CHECK: L2 to L1 Messages Executable on L1 ~ ~ ~
 
-If our client's transaction didn't include any L2 to L1 messages (e.g., withdrawals), phase 5 has no material affect on their transaction. If it did include an L2 to L1 transaction, it is only after confirmation that the message can be executed in the Outbox. Note that even before phase 5, the client has L1 finality on the _result_ of their L2 to L1 message, they just can't execute it yet; i.e., they're have a guarantee that they'll eventually be able to, e.g., finalize their withdrawal, they just can't actually claim their funds on L1 until the RBlock is confirmed.
+If our client's transaction didn't include any L2 to L1 messages (e.g., withdrawals), phase 5 has no material affect on their transaction. If it did include an L2 to L1 transaction, it is only after confirmation that the message can be executed in the Outbox. Note that even before phase 5, the client has L1 finality on the _result_ of their L2 to L1 message, they just can't execute it yet; i.e., they're have a guarantee that they'll eventually be able to, e.g., finalize their withdrawal, they just can't actually claim their funds on L1 until the assertion is confirmed.

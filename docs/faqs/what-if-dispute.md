@@ -17,6 +17,6 @@ The variability of the dispute window comes from the unpredictability of POW blo
 The "padding on both ends" involves three events that have to occur between a client receiving their transaction receipt from a Sequencer and their L2 to L1 message being executable. After getting their receipt,
 
 1. The Sequencer posts their transaction in a batch (usually within a few minutes, though the Sequencer will wait a bit longer if the L1 is congested). Then,
-1. A validator includes their transaction in an RBlock (usually within the hour).
-   Then, after the ~week long dispute window passes, the RBlock is confirmable, and
-1. Somebody (anybody) confirms the RBlock on L1. (usually within ~15 minutes)
+1. A validator includes their transaction in an assertion (usually within the hour).
+   Then, after the ~week long dispute window passes, the assertion is confirmable, and
+1. Somebody (anybody) confirms the assertion on L1. (usually within ~15 minutes)

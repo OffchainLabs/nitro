@@ -33,22 +33,22 @@
 
 ## Proving Fraud
 
-- **RBlock**: An assertion by an Arbitrum validator that represents a claim about an Arbitrum chain's state.
+- **Assertion**: A staked claim by an Arbitrum validator about an Arbitrum chain's state.
 
 - **L2 Block**: Data structure that represents a group of L2 transactions (analogous to L1 blocks).
 
 - **Challenge**: When two stakers disagree about the correct verdict on an assertion, those stakers can be put in a challenge. The challenge is refereed by the contracts on L1. Eventually one staker wins the challenge. The loser forfeits their stake. Half of the loser's stake is given to the winner, and the other half is burned.
 
-- **Confirmation**: The final decision by an Arbitrum chain to accept an RBlock as being a settled part of the chain's history. Once an assertion is confirmed, any L2 to L1 messages (i.e., withdrawals) can be executed.
+- **Confirmation**: The final decision by an Arbitrum chain to accept an assertion as being a settled part of the chain's history. Once an assertion is confirmed, any L2 to L1 messages (i.e., withdrawals) can be executed.
 
-- **Challenge Period**: Window of time (1 week on Arbitrum One) over which an asserted RBlock can be challenged, and after which the RBlock can be confirmed.
+- **Challenge Period**: Window of time (1 week on Arbitrum One) over which an asserted assertion can be challenged, and after which the assertion can be confirmed.
 
 - **Dissection**: Process by which two challenging parties interactively narrow down their disagreement to a single computational step.
 
 - **One Step Proof**: Final step in a challenge; a single operation of the L2 VM (Wasm) is executed on L1, and the validity of its state transition is verified.
 
 
-- **Staker**: A party who deposits a stake, in ETH, to vouch for a particular RBlock in an Arbitrum Chain. A party who stakes on a false RBlock can expect to lose their stake. An honest staker can recover their stake once the node they are staked on has been confirmed.
+- **Staker**: A party who deposits a stake, in ETH, to vouch for a particular assertion in an Arbitrum Chain. A party who stakes on a false assertion can expect to lose their stake. An honest staker can recover their stake once the node they are staked on has been confirmed.
 
 
 - **Active Validator**: A party who makes staked, disputable assertions about the state of the Arbitrum chain; i.e., proposing state updates or challenging the validity of assertions. (Not to be confused with the Sequencer)

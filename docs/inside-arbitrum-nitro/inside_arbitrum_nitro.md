@@ -206,33 +206,33 @@ The key security property of the rollup protocol is that any one honest validato
 
 ### The Rollup Chain
 
-The rollup protocol tracks a chain of rollup blocks---we'll call these "RBlocks" for clarity. They're not the same as Layer 1 Ethereum blocks, and also not the same as Layer 2 Nitro blocks. You can think of the RBlocks as forming a separate chain, which the Arbitrum rollup protocol manages and oversees.
+The rollup protocol tracks a chain of claims about the chain's state---we'll call these assertions. They're not the same as Layer 1 Ethereum blocks, and also not the same as Layer 2 Nitro blocks. You can think of the assertions as forming a separate chain, which the Arbitrum rollup protocol manages and oversees.
 
-Validators can propose RBlocks. New RBlocks will be _unresolved_ at first. Eventually every RBlock will be _resolved_, by being either _confirmed_ or _rejected_. The confirmed RBlocks make up the confirmed history of the chain.
+Validators can propose assertions. New assertions will be _unresolved_ at first. Eventually every assertion will be _resolved_, by being either _confirmed_ or _rejected_. The confirmed assertions make up the confirmed history of the chain.
 
-Each RBlock contains:
+Each assertion contains:
 
-- the RBlock number
-- the predecessor RBlock number: RBlock number of the last RBlock before this one that is (claimed to be) correct
+- the assertion number
+- the predecessor assertion number: assertion number of the last assertion before this one that is (claimed to be) correct
 - the number of L2 blocks that have been created in the chain's history
 - the number of inbox messages have been consumed in the chain’s history
 - a hash of the outputs produced over the chain’s history.
 
-Except for the RBlock number, the contents of the RBlock are all just claims by the RBlock's proposer. Arbitrum doesn’t know at first whether any of these fields are correct. If all of these fields are correct, the protocol should eventually confirm the RBlock. If one or more of these fields are incorrect, the protocol should eventually reject the RBlock.
+Except for the assertion number, the contents of the assertion are all just claims by the assertion's proposer. Arbitrum doesn’t know at first whether any of these fields are correct. If all of these fields are correct, the protocol should eventually confirm the assertion. If one or more of these fields are incorrect, the protocol should eventually reject the assertion.
 
-An RBlock is implicitly claiming that its predecessor RBlock is correct. This implies, transitively, that an RBlock implicitly claims the correctness of a complete history of the chain: a sequence of ancestor RBlock that reaches all the way back to the birth of the chain.
+An assertion is implicitly claiming that its predecessor assertion is correct. This implies, transitively, that an assertion implicitly claims the correctness of a complete history of the chain: a sequence of ancestor assertion that reaches all the way back to the birth of the chain.
 
-An RBlock is also implicitly claiming that its older siblings (older RBlocks with the same predecessor), if there are any, are incorrect. If two RBlocks are siblings, and the older sibling is correct, then the younger sibling is considered incorrect, even if everything else in the younger sibling is true.
+An assertion is also implicitly claiming that its older siblings (older assertions with the same predecessor), if there are any, are incorrect. If two assertions are siblings, and the older sibling is correct, then the younger sibling is considered incorrect, even if everything else in the younger sibling is true.
 
-The RBlock is assigned a deadline, which says how long other validators have to respond to it. If you’re a validator, and you agree that an RBlock is correct, you don’t need to do anything. If you disagree with an RBlock, you can post another RBlock with a different result, and you’ll probably end up in a challenge against the first RBlock's staker. (More on challenges below.)
+The assertion is assigned a deadline, which says how long other validators have to respond to it. If you’re a validator, and you agree that an assertion is correct, you don’t need to do anything. If you disagree with an assertion, you can post another assertion with a different result, and you’ll probably end up in a challenge against the first assertion's staker. (More on challenges below.)
 
 In the normal case, the rollup chain will look like this:
 
 ![img](https://lh3.googleusercontent.com/vv118kJMXj76PG6J-Jv4BC9KTpe72mdfD1uWoqhKXvKKfPWHW6wMMCvJ9KKQx_VXIw34XfzT4yfyNVtQVstYRczLk6kLKvBv8Pbl-0MjSzGxz1Z_8T5Y_6UcDMWpy7_D9PxQYKdT)
 
-On the left, representing an earlier part of the chain’s history, we have confirmed RBlocks. These have been fully accepted and recorded by the Layer 1 contracts that manage the chain. The newest of the confirmed RBlocks, RBlock 94, is called the “latest confirmed RBlock.” On the right, we see a set of newer proposed RBlocks. The protocol can’t yet confirm or reject them, because their deadlines haven’t run out yet. The oldest RBlock whose fate has yet to be determined, RBlock 95, is called the “first unresolved RBlock.”
+On the left, representing an earlier part of the chain’s history, we have confirmed assertions. These have been fully accepted and recorded by the Layer 1 contracts that manage the chain. The newest of the confirmed assertions, assertion 94, is called the “latest confirmed assertion.” On the right, we see a set of newer proposed assertions. The protocol can’t yet confirm or reject them, because their deadlines haven’t run out yet. The oldest assertion whose fate has yet to be determined, assertion 95, is called the “first unresolved assertion.”
 
-Notice that a proposed RBlock can build on an earlier proposed RBlock. This allows validators to continue proposing RBlocks without needing to wait for the protocol to confirm the previous one. Normally, all of the proposed RBlocks will be valid, so they will all eventually be accepted.
+Notice that a proposed assertion can build on an earlier proposed assertion. This allows validators to continue proposing assertions without needing to wait for the protocol to confirm the previous one. Normally, all of the proposed assertions will be valid, so they will all eventually be accepted.
 
 Here’s another example of what the chain state might look like, if several validators are being malicious. It’s a contrived example, designed to illustrate a variety of cases that can come up in the protocol, all smashed into a single scenario.
 
@@ -240,63 +240,63 @@ Here’s another example of what the chain state might look like, if several val
 
 There’s a lot going on here, so let’s unpack it.
 
-- RBlock 100 has been confirmed.
-- RBlock 101 claimed to be a correct successor to RBlock 100, but 101 was rejected (hence the X drawn in it).
-- RBlock 102 was eventually confirmed as the correct successor to 100.
-- RBlock 103 was confirmed and is now the latest confirmed RBlock.
-- RBlock 104 was proposed as a successor to RBlock 103, and 105 was proposed as a successor to 104. 104 was rejected as incorrect, and as a consequence 105 was rejected because its predecessor was rejected.
-- RBlock 106 is unresolved. It claims to be a correct successor to RBlock 103 but the protocol hasn’t yet decided whether to confirm or reject it. It is the first unresolved RBlock.
-- RBlocks 107 and 108 claim to chain from 106. They are also unresolved. If 106 is rejected, they will be automatically rejected too.
-- RBlock 109 disagrees with RBlock 106, because they both claim the same predecessor. At least one of them will eventually be rejected, but the protocol hasn’t yet resolved them.
-- RBlock 110 claims to follow 109. It is unresolved. If 109 is rejected, 110 will be automatically rejected too.
-- RBlock 111 claims to follow 105. 111 will inevitably be rejected because its predecessor has already been rejected. But it hasn’t been rejected yet, because the protocol resolves RBlocks in RBlock number order, so the protocol will have to resolve 106 through 110, in order, before it can resolve 111. After 110 has been resolved, 111 can be rejected immediately.
+- assertion 100 has been confirmed.
+- assertion 101 claimed to be a correct successor to assertion 100, but 101 was rejected (hence the X drawn in it).
+- assertion 102 was eventually confirmed as the correct successor to 100.
+- assertion 103 was confirmed and is now the latest confirmed assertion.
+- assertion 104 was proposed as a successor to assertion 103, and 105 was proposed as a successor to 104. 104 was rejected as incorrect, and as a consequence 105 was rejected because its predecessor was rejected.
+- assertion 106 is unresolved. It claims to be a correct successor to assertion 103 but the protocol hasn’t yet decided whether to confirm or reject it. It is the first unresolved assertion.
+- assertions 107 and 108 claim to chain from 106. They are also unresolved. If 106 is rejected, they will be automatically rejected too.
+- assertion 109 disagrees with assertion 106, because they both claim the same predecessor. At least one of them will eventually be rejected, but the protocol hasn’t yet resolved them.
+- assertion 110 claims to follow 109. It is unresolved. If 109 is rejected, 110 will be automatically rejected too.
+- assertion 111 claims to follow 105. 111 will inevitably be rejected because its predecessor has already been rejected. But it hasn’t been rejected yet, because the protocol resolves assertions in assertion number order, so the protocol will have to resolve 106 through 110, in order, before it can resolve 111. After 110 has been resolved, 111 can be rejected immediately.
 
-Again: this sort of thing is very unlikely in practice. In this diagram, at least four parties must have staked on wrong RBlocks, and when the dust settles at least four parties will have lost their stakes. The protocol handles these cases correctly, of course, but they’re rare corner cases. This diagram is designed to illustrate the variety of situations that are possible in principle, and how the protocol would deal with them.
+Again: this sort of thing is very unlikely in practice. In this diagram, at least four parties must have staked on wrong assertions, and when the dust settles at least four parties will have lost their stakes. The protocol handles these cases correctly, of course, but they’re rare corner cases. This diagram is designed to illustrate the variety of situations that are possible in principle, and how the protocol would deal with them.
 
 ### Staking
 
 At any given time, some validators will be stakers, and some will not. Stakers deposit funds that are held by the Arbitrum Layer 1 contracts and will be confiscated if the staker loses a challenge. Nitro chains accept stakes in ETH.
 
-A single stake can cover a chain of RBlocks. Every staker is staked on the latest confirmed RBlock; and if you’re staked on an RBlock, you can also stake on one successor of that RBlock. So you might be staked on a sequence of RBlocks that represent a single coherent claim about the correct history of the chain. A single stake suffices to commit you to that sequence of RBlocks.
+A single stake can cover a chain of assertions. Every staker is staked on the latest confirmed assertion; and if you’re staked on an assertion, you can also stake on one successor of that assertion. So you might be staked on a sequence of assertions that represent a single coherent claim about the correct history of the chain. A single stake suffices to commit you to that sequence of assertions.
 
-In order to create a new RBlock, you must be a staker, and you must already be staked on the predecessor of the new RBlock you’re creating. The stake requirement for RBlock creation ensures that anyone who creates a new RBlock has something to lose if that RBlock is eventually rejected.
+In order to create a new assertion, you must be a staker, and you must already be staked on the predecessor of the new assertion you’re creating. The stake requirement for assertion creation ensures that anyone who creates a new assertion has something to lose if that assertion is eventually rejected.
 
 The protocol keeps track of the current required stake amount. Normally this will equal the base stake amount, which is a parameter of the Nitro chain. But if the chain has been slow to make progress lately, the required stake will increase, as described in more detail below.
 
 The rules for staking are as follows:
 
-- If you’re not staked, you can stake on the latest confirmed RBlock. When doing this, you deposit the current minimum stake amount.
-- If you’re staked on an RBlock, you can also add your stake to any one successor of that RBlock. (The protocol tracks the maximum RBlock number you’re staked on, and lets you add your stake to any successor of that RBlock, updating your maximum to that successor.) This doesn’t require you to place a new stake.
-  - A special case of adding your stake to a successor RBlock is when you create a new RBlock as a successor to an RBlock you’re already staked on.
-- If you’re staked only on the latest confirmed RBlock (and possibly earlier RBlocks), you or anyone else can ask to have your stake refunded. Your staked funds will be returned to you, and you will no longer be a staker.
-- If you lose a challenge, your stake is removed from all RBlocks and you forfeit your staked funds.
+- If you’re not staked, you can stake on the latest confirmed assertion. When doing this, you deposit the current minimum stake amount.
+- If you’re staked on an assertion, you can also add your stake to any one successor of that assertion. (The protocol tracks the maximum assertion number you’re staked on, and lets you add your stake to any successor of that assertion, updating your maximum to that successor.) This doesn’t require you to place a new stake.
+  - A special case of adding your stake to a successor assertion is when you create a new assertion as a successor to an assertion you’re already staked on.
+- If you’re staked only on the latest confirmed assertion (and possibly earlier assertions), you or anyone else can ask to have your stake refunded. Your staked funds will be returned to you, and you will no longer be a staker.
+- If you lose a challenge, your stake is removed from all assertions and you forfeit your staked funds.
 
-Notice that once you are staked on an RBlock, there is no way to unstake. You are committed to that RBlock. Eventually one of two things will happen: that RBlock will be confirmed, or you will lose your stake. The only way to get your stake back is to wait until all of the RBlocks you are staked on are confirmed.
+Notice that once you are staked on an assertion, there is no way to unstake. You are committed to that assertion. Eventually one of two things will happen: that assertion will be confirmed, or you will lose your stake. The only way to get your stake back is to wait until all of the assertions you are staked on are confirmed.
 
 #### Setting the current minimum stake amount
 
-One detail we deferred earlier is how the current minimum stake amount is set. Normally, this is just equal to the base stake amount, which is a parameter of the Nitro chain. However, if the chain has been slow to make progress in confirming RBlocks, the stake requirement will escalate temporarily. Specifically, the base stake amount is multiplied by a factor that is exponential in the time since the deadline of the first unresolved RBlock passed. This ensures that if malicious parties are placing false stakes to try to delay progress (despite the fact that they’re losing those stakes), the stake requirement goes up so that the cost of such a delay attack increases exponentially. As RBlock resolution starts advancing again, the stake requirement will go back down.
+One detail we deferred earlier is how the current minimum stake amount is set. Normally, this is just equal to the base stake amount, which is a parameter of the Nitro chain. However, if the chain has been slow to make progress in confirming assertions, the stake requirement will escalate temporarily. Specifically, the base stake amount is multiplied by a factor that is exponential in the time since the deadline of the first unresolved assertion passed. This ensures that if malicious parties are placing false stakes to try to delay progress (despite the fact that they’re losing those stakes), the stake requirement goes up so that the cost of such a delay attack increases exponentially. As assertion resolution starts advancing again, the stake requirement will go back down.
 
-### Rules for Confirming or Rejecting RBlocks
+### Rules for Confirming or Rejecting assertions
 
-The rules for resolving RBlocks are fairly simple.
+The rules for resolving assertions are fairly simple.
 
-The first unresolved RBlock can be confirmed if:
+The first unresolved assertion can be confirmed if:
 
-- the RBlock's predecessor is the latest confirmed RBlock, and
-- the RBlock's deadline has passed, and
+- the assertion's predecessor is the latest confirmed assertion, and
+- the assertion's deadline has passed, and
 - there is at least one staker, and
-- all stakers are staked on the RBlock.
+- all stakers are staked on the assertion.
 
-The first unresolved RBlock can be rejected if:
+The first unresolved assertion can be rejected if:
 
-- the RBlock's predecessor has been rejected, or
+- the assertion's predecessor has been rejected, or
 - all of the following are true:
-  - the RBlock's deadline has passed, and
+  - the assertion's deadline has passed, and
   - there is at least one staker, and
-  - no staker is staked on the RBlock.
+  - no staker is staked on the assertion.
 
-A consequence of these rules is that once the first unresolved RBlock's deadline has passed (and assuming there is at least one staker staked on something other than the latest confirmed RBlock), the only way the RBlock can be unresolvable is if at least one staker is staked on it and at least one staker is staked on a different RBlock with the same predecessor. If this happens, the two stakers are disagreeing about which RBlock is correct. It’s time for a challenge, to resolve the disagreement.
+A consequence of these rules is that once the first unresolved assertion's deadline has passed (and assuming there is at least one staker staked on something other than the latest confirmed assertion), the only way the assertion can be unresolvable is if at least one staker is staked on it and at least one staker is staked on a different assertion with the same predecessor. If this happens, the two stakers are disagreeing about which assertion is correct. It’s time for a challenge, to resolve the disagreement.
 
 ## Challenges
 
@@ -304,11 +304,11 @@ Suppose the rollup chain looks like this:
 
 ![img](https://lh4.googleusercontent.com/kAZY9H73dqcHvboFDby9nrtbYZrbsHCYtE5X9NIZQsvcz58vV0WUWUq1xsYKzYWQSc1nPZ8W86LLX0lD3y-ctEaG2ISa2Wpz2pYxTzW09P1UvqSDuoqkHlGDYLLMTzLqX4rlP8Ca)
 
-RBlocks 93 and 95 are siblings (they both have 92 as predecessor). Alice is staked on 93 and Bob is staked on 95.
+assertions 93 and 95 are siblings (they both have 92 as predecessor). Alice is staked on 93 and Bob is staked on 95.
 
-At this point we know that Alice and Bob disagree about the correctness of RBlock 93, with Alice committed to 93 being correct and Bob committed to 93 being incorrect. (Bob is staked on 95, and 95 implicitly claims that 92 is the last correct RBlock before it, which implies that 93 must be incorrect.)
+At this point we know that Alice and Bob disagree about the correctness of assertion 93, with Alice committed to 93 being correct and Bob committed to 93 being incorrect. (Bob is staked on 95, and 95 implicitly claims that 92 is the last correct assertion before it, which implies that 93 must be incorrect.)
 
-Whenever two stakers are staked on sibling RBlocks, and neither of those stakers is already in a challenge, anyone can start a challenge between the two. The rollup protocol will record the challenge and referee it, eventually declaring a winner and confiscating the loser’s stake. The loser will be removed as a staker.
+Whenever two stakers are staked on sibling assertions, and neither of those stakers is already in a challenge, anyone can start a challenge between the two. The rollup protocol will record the challenge and referee it, eventually declaring a winner and confiscating the loser’s stake. The loser will be removed as a staker.
 
 The challenge is a game in which Alice and Bob alternate moves, with an Ethereum contract as the referee. Alice, the defender, moves first.
 
@@ -318,7 +318,7 @@ We’ll describe the dissection part of the protocol twice. First, we’ll give 
 
 ### Dissection Protocol: Simplified Version
 
-Alice is defending the claim that starting with the state in the predecessor RBlock, the state of the Virtual Machine can advance to the state specified in RBlock A. Essentially she is claiming that the Virtual Machine can execute N instructions, and that that execution will consume M inbox messages and transform the hash of outputs from H’ to H.
+Alice is defending the claim that starting with the state in the predecessor assertion, the state of the Virtual Machine can advance to the state specified in assertion A. Essentially she is claiming that the Virtual Machine can execute N instructions, and that that execution will consume M inbox messages and transform the hash of outputs from H’ to H.
 
 Alice’s first move requires her to dissect her claims about intermediate states between the beginning (0 instructions executed) and the end (N instructions executed). So we require Alice to divide her claim in half, and post the state at the half-way point, after N/2 instructions have been executed.
 
@@ -340,7 +340,7 @@ To prove (2), observe that if Alice’s initial claim is incorrect, this can onl
 
 The real dissection protocol is conceptually similar to the simplified one described above, but with several changes that improve efficiency or deal with necessary corner cases. Here is a list of the differences.
 
-**Dissection over L2 blocks, then over instructions:** Alice's assertion is over an RBlock, which asserts the result of creating some number of Layer 2 Nitro blocks. Dissection first occurs over these Layer 2 blocks, to narrow the dispute down to a dispute about a single Layer 2 Nitro block. At this point, the dispute transforms into a dispute about a single execution of the State Transition Function or in other words about the execution of a sequence of WAVM instructions. The protocol then executes the recursive dissection sub-protocol again, this time over WAVM instructions, to narrow the dispute to a single instruction. The dispute concludes with a one-step proof of a single instruction (or a party failing to act and losing by timeout).
+**Dissection over L2 blocks, then over instructions:** Alice's assertion is over an assertion, which asserts the result of creating some number of Layer 2 Nitro blocks. Dissection first occurs over these Layer 2 blocks, to narrow the dispute down to a dispute about a single Layer 2 Nitro block. At this point, the dispute transforms into a dispute about a single execution of the State Transition Function or in other words about the execution of a sequence of WAVM instructions. The protocol then executes the recursive dissection sub-protocol again, this time over WAVM instructions, to narrow the dispute to a single instruction. The dispute concludes with a one-step proof of a single instruction (or a party failing to act and losing by timeout).
 
 **K-way dissection:** Rather than dividing a claim into two segments of size N/2, we divide it into K segments of size N/K. This requires posting K-1 intermediate claims, at points evenly spaced through the claimed execution. This reduces the number of rounds by a factor of log(K)/log(2).
 
@@ -368,9 +368,9 @@ Being a validator is permissionless--anyone can do it. Offchain Labs provides op
 
 Every validator can choose their own approach, but we expect validators to follow three common strategies.
 
-- The _active validator_ strategy tries to advance the state of the chain by proposing new RBlocks. An active validator is always staked, because creating an RBlock requires being staked. A chain really only needs one honest active validator; any more is an inefficient use of resources. For the Arbitrum One chain, Offchain Labs runs an active validator.
-- The _defensive validator_ strategy watches the rollup protocol operate. If only correct RBlocks are proposed, this strategy doesn't stake. But if an incorrect RBlock is proposed, this strategy intervenes by posting a correct RBlock or staking on a correct RBlock that another party has posted. This strategy avoids staking when things are going well, but if someone is dishonest it stakes in order to defend the correct outcome.
-- The _watchtower validator_ strategy never stakes. It simply watches the rollup protocol and if an incorrect RBlock is proposed, it raises the alarm (by whatever means it chooses) so that others can intervene. This strategy assumes that other parties who are willing to stake will be willing to intervene in order to take some of the dishonest proposer’s stake, and that that can happen before the dishonest RBlock’s deadline expires. (In practice this will allow several days for a response.)
+- The _active validator_ strategy tries to advance the state of the chain by proposing new assertions. An active validator is always staked, because creating an assertion requires being staked. A chain really only needs one honest active validator; any more is an inefficient use of resources. For the Arbitrum One chain, Offchain Labs runs an active validator.
+- The _defensive validator_ strategy watches the rollup protocol operate. If only correct assertions are proposed, this strategy doesn't stake. But if an incorrect assertion is proposed, this strategy intervenes by posting a correct assertion or staking on a correct assertion that another party has posted. This strategy avoids staking when things are going well, but if someone is dishonest it stakes in order to defend the correct outcome.
+- The _watchtower validator_ strategy never stakes. It simply watches the rollup protocol and if an incorrect assertion is proposed, it raises the alarm (by whatever means it chooses) so that others can intervene. This strategy assumes that other parties who are willing to stake will be willing to intervene in order to take some of the dishonest proposer’s stake, and that that can happen before the dishonest assertion’s deadline expires. (In practice this will allow several days for a response.)
 
 Under normal conditions, validators using the defensive and watchtower strategies won’t do anything except observe. A malicious actor who is considering whether to try cheating won’t be able to tell how many defensive and watchtower validators are operating incognito. Perhaps some defensive validators will announce themselves, but others probably won’t, so a would-be attacker will always have to worry that defenders are waiting to emerge.
 
@@ -487,11 +487,11 @@ NitroGas (so-called to avoid confusion with Layer 1 Ethereum gas) is used by Arb
 
 ### The Speed Limit
 
-The security of Nitro chains depends on the assumption that when one validator creates an RBlock, other validators will check it, and respond with a correct RBlock and a challenge if it is wrong. This requires that the other validators have the time and resources to check each RBlock quickly enough to issue a timely challenge. The Arbitrum protocol takes this into account in setting deadlines for RBlocks.
+The security of Nitro chains depends on the assumption that when one validator creates an assertion, other validators will check it, and respond with a correct assertion and a challenge if it is wrong. This requires that the other validators have the time and resources to check each assertion quickly enough to issue a timely challenge. The Arbitrum protocol takes this into account in setting deadlines for assertions.
 
-This sets an effective speed limit on execution of a Nitro chain: in the long run the chain cannot make progress faster than a validator can emulate its execution. If RBlocks are published at a rate faster than the speed limit, their deadlines will get farther and farther in the future. Due to the limit, enforced by the rollup protocol contracts, on how far in the future a deadline can be, this will eventually cause new RBlocks to be slowed down, thereby enforcing the effective speed limit.
+This sets an effective speed limit on execution of a Nitro chain: in the long run the chain cannot make progress faster than a validator can emulate its execution. If assertions are published at a rate faster than the speed limit, their deadlines will get farther and farther in the future. Due to the limit, enforced by the rollup protocol contracts, on how far in the future a deadline can be, this will eventually cause new assertions to be slowed down, thereby enforcing the effective speed limit.
 
-Being able to set the speed limit accurately depends on being able to estimate the time required to validate an RBlock, with some accuracy. Any uncertainty in estimating validation time will force us to set the speed limit lower, to be safe. And we do not want to set the speed limit lower, so we try to enable accurate estimation.
+Being able to set the speed limit accurately depends on being able to estimate the time required to validate an assertion, with some accuracy. Any uncertainty in estimating validation time will force us to set the speed limit lower, to be safe. And we do not want to set the speed limit lower, so we try to enable accurate estimation.
 
 ### Fees
 
