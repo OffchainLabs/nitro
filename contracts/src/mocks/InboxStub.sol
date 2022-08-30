@@ -155,7 +155,7 @@ contract InboxStub is IInbox {
         revert("NOT_IMPLEMENTED");
     }
 
-    function sendWithdrawalEthToFork(
+    function sendWithdrawEthToFork(
         uint256,
         uint256,
         uint256,

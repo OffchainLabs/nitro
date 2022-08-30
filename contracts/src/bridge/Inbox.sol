@@ -308,7 +308,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     /// @inheritdoc IInbox
-    function sendWithdrawalEthToFork(
+    function sendWithdrawEthToFork(
         uint256 gasLimit,
         uint256 maxFeePerGas,
         uint256 nonce,
