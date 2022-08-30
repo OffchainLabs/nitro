@@ -4,17 +4,20 @@
 package genericconf
 
 import (
+	"time"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
 
 type ConfConfig struct {
-	Dump      bool     `koanf:"dump"`
-	EnvPrefix string   `koanf:"env-prefix"`
-	File      []string `koanf:"file"`
-	S3        S3Config `koanf:"s3"`
-	String    string   `koanf:"string"`
+	Dump           bool          `koanf:"dump"`
+	EnvPrefix      string        `koanf:"env-prefix"`
+	File           []string      `koanf:"file"`
+	S3             S3Config      `koanf:"s3"`
+	String         string        `koanf:"string"`
+	ReloadInterval time.Duration `koanf:"reload-interval" reload:"hot"`
 }
 
 func ConfConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -23,14 +26,16 @@ func ConfConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".file", ConfConfigDefault.File, "name of configuration file")
 	S3ConfigAddOptions(prefix+".s3", f)
 	f.String(prefix+".string", ConfConfigDefault.String, "configuration as JSON string")
+	f.Duration(prefix+".reload-interval", ConfConfigDefault.ReloadInterval, "how often to reload configuration (0=disable periodic reloading)")
 }
 
 var ConfConfigDefault = ConfConfig{
-	Dump:      false,
-	EnvPrefix: "",
-	File:      nil,
-	S3:        DefaultS3Config,
-	String:    "",
+	Dump:           false,
+	EnvPrefix:      "",
+	File:           nil,
+	S3:             DefaultS3Config,
+	String:         "",
+	ReloadInterval: 0,
 }
 
 type S3Config struct {
