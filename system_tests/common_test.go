@@ -480,8 +480,9 @@ func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, acc
 	return balance
 }
 
-func requireClose(t *testing.T, s *node.Node) {
-	Require(t, s.Close())
+func requireClose(t *testing.T, s *node.Node, text ...interface{}) {
+	t.Helper()
+	Require(t, s.Close(), text...)
 }
 
 func authorizeDASKeyset(
@@ -500,15 +501,15 @@ func authorizeDASKeyset(
 	}
 	wr := bytes.NewBuffer([]byte{})
 	err := keyset.Serialize(wr)
-	Require(t, err)
+	Require(t, err, "unable to serialize DAS keyset")
 	keysetBytes := wr.Bytes()
 	sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
-	Require(t, err)
+	Require(t, err, "unable to create sequencer inbox")
 	trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
-	Require(t, err)
+	Require(t, err, "unable to set valid keyset")
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
-	Require(t, err)
+	Require(t, err, "unable to ensure transaction success for setting valid keyset")
 }
 
 func setupConfigWithDAS(
