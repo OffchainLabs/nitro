@@ -5,13 +5,14 @@ The following is a summary of changes in the upcoming Arbitrum One chain's Nitro
 
 It reflects the current state of Nitro and should be considered a living document; things might change before launch.
 
-_Last Updated 5 Aug 2022_
+_Last Updated 31 Aug 2022_
 
 ## Cool New Stuff
 
 For starters, here's a sampling of exciting perks dapps with get with the Nitro upgrade:
 
 - **Ethereum L1 Gas Compatibility 🥳**:  gas pricing and accounting for EVM operations is be perfectly in line with L1; no more ArbGas.
+    - Although in Nitro L2 opcodes are now priced the exact same as Eth L1 - you still have to pay for the L1 calldata (which gets represented as L2 gas units). Your transactions' gas used won't be the same as Eth L1 but during contract execution the opcode cost and `gasleft` interactions are now better aligned with Eth L1. Read more [here](https://medium.com/offchainlabs/understanding-arbitrum-2-dimensional-fees-fd1d582596c9).
 
 - **Safer Retryable tickets 🥳**: Retryable tickets' submission cost is collected in the L1 Inbox contract; if the submission cost is too low, the transaction will simply revert on the L1 side, eliminating the [failure mode](https://developer.offchainlabs.com/docs/l1_l2_messages#important-note-about-base-submission-fee) in which a retryable ticket fails to get created.
 
@@ -32,6 +33,7 @@ For starters, here's a sampling of exciting perks dapps with get with the Nitro 
 #### Dapps
 
 - **Gas Accounting**: it is now consistent with the L1 EVM, L2 gas usage will change due to different accounting from ArbGas. Any hard-coded gas values should be changed accordingly (the same applies to any gas amount used in conjuntion with `gasleft`). That said, you shouldn't be hard-coding any gas values just like in Ethereum, since both the L1 and L2 gas schedule may change in the future.
+    - Although in Nitro L2 opcodes are now priced the exact same as Eth L1 - you still have to pay for the L1 calldata (which gets represented as L2 gas units). Your transactions' gas used won't be the same as Eth L1 but during contract execution the opcode cost and `gasleft` interactions are now better aligned with Eth L1. Read more [here](https://medium.com/offchainlabs/understanding-arbitrum-2-dimensional-fees-fd1d582596c9).
 
 - **No more storage gas**: there is no more concept of a separate pool of storage gas, and opcodes are priced identically to the L1 EVM.
 
