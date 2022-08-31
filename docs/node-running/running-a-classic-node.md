@@ -1,6 +1,6 @@
 # Running a Classic Node
 
-Note: If you’re interested in accessing the Arbitrum network but you don’t want to setup your own node, see our Node Providers to get RPC access to fully-managed nodes hosted by a third party provider
+Note: If you’re interested in accessing the Arbitrum network but you don’t want to setup your own node, see our [Node Providers](./node-providers.md) to get RPC access to fully-managed nodes hosted by a third party provider
 
 ### Do You Need To Run A Classic Node?
 
