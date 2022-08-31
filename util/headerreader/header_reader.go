@@ -187,6 +187,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 	ticker := time.NewTicker(s.config().PollInterval)
 	nextSubscribeErr := time.Now().Add(-time.Second)
 	var errChannel <-chan error
+	pollOnlyOverride := false
 	for {
 		if clientSubscription != nil {
 			errChannel = clientSubscription.Err()
@@ -205,12 +206,12 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 			} else {
 				s.possiblyBroadcast(h)
 			}
-			if !s.config().PollOnly && clientSubscription == nil {
+			if (!s.config().PollOnly || pollOnlyOverride) && clientSubscription == nil {
 				clientSubscription, err = s.client.SubscribeNewHead(ctx, inputChannel)
 				if err != nil {
 					clientSubscription = nil
 					if errors.Is(err, rpc.ErrNotificationsUnsupported) {
-						s.config().PollOnly = true // XXX HERE BE DRAGONS
+						pollOnlyOverride = true
 					} else if time.Now().After(nextSubscribeErr) {
 						log.Warn("failed subscribing to header", "err", err)
 						nextSubscribeErr = time.Now().Add(s.config().SubscribeErrInterval)
