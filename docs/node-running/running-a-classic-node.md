@@ -22,7 +22,7 @@ on pre-Nitro blocks.
 
 ### Required Artifacts
 
-- Latest Docker Image: offchainlabs/arb-node:v1.4.4-7b84e5e
+- Latest Docker Image: offchainlabs/arb-node:v1.4.5-e97c1a4
 
 ### Required parameters
 
@@ -30,10 +30,6 @@ on pre-Nitro blocks.
   - Must provide standard Ethereum node RPC endpoint.
 - `--node.chain-id=<L2 Chain ID>`
   - Must use `42161` for Arbitrum One, or `421611` for Arbitrum Rinkeby Testnet
-- `--l2.disable-upstream`
-  - Classic nodes cannot communicate with Nitro sequencer, so disable all
-  sequencer connections.  This is on by default for Rinkeby, and next version of
-  classic node will enable this by default for mainnet as well
 
 ### Important ports
 
@@ -45,11 +41,11 @@ on pre-Nitro blocks.
 - When running docker image, an external volume should be mounted to persist the database across restarts. The mount point should be `/home/user/.arbitrum/mainnet` or `/home/user/.arbitrum/rinkeby` depending on what chain you are connecting to.
 - Here is an example of how to run arb-node for mainnet (only good for archive requests on pre-Nitro blocks, so probably want to enable archive as well):
   ```
-  docker run --rm -it  -v /some/local/dir/arbitrum-mainnet/:/home/user/.arbitrum/mainnet -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/arb-node:v1.4.4-7b84e5e --l1.url=https://l1-node:8545 --node.chain-id=42161 --l2.disable-upstream
+  docker run --rm -it  -v /some/local/dir/arbitrum-mainnet/:/home/user/.arbitrum/mainnet -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/arb-node:v1.4.5-e97c1a4 --l1.url=https://l1-node:8545 --node.chain-id=42161 --l2.disable-upstream
   ```
 - Here is an example of how to run arb-node for rinkeby (only good for archive requests on pre-Nitro blocks, so probably want to enable archive as well):
   ```
-  docker run --rm -it  -v /some/local/dir/arbitrum-rinkeby/:/home/user/.arbitrum/rinkeby -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/arb-node:v1.4.4-7b84e5e --l1.url=https://l1-rinkeby-node:8545 --node.chain-id=421611
+  docker run --rm -it  -v /some/local/dir/arbitrum-rinkeby/:/home/user/.arbitrum/rinkeby -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/arb-node:v1.4.5-e97c1a4 --l1.url=https://l1-rinkeby-node:8545 --node.chain-id=421611
   ```
 
 ### Note on permissions
