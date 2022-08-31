@@ -201,23 +201,18 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         );
         // Reformat the stack to prevent "Stack too deep"
         uint256 sequenceNumber_ = sequenceNumber;
-        TimeBounds memory timeBounds_ = timeBounds;
-        bytes32 dataHash_ = dataHash;
         uint256 dataLength = data.length;
-        uint256 afterDelayedMessagesRead_ = afterDelayedMessagesRead;
-        uint256 prevMessageCount_ = prevMessageCount;
-        uint256 newMessageCount_ = newMessageCount;
         (
             uint256 seqMessageIndex,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(
-                dataHash_,
-                afterDelayedMessagesRead_,
+                dataHash,
+                afterDelayedMessagesRead,
                 dataLength,
-                prevMessageCount_,
-                newMessageCount_
+                prevMessageCount,
+                newMessageCount
             );
         if (seqMessageIndex != sequenceNumber_ && sequenceNumber_ != ~uint256(0))
             revert BadSequencerNumber(seqMessageIndex, sequenceNumber_);
@@ -227,7 +222,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             afterAcc,
             delayedAcc,
             totalDelayedMessagesRead,
-            timeBounds_,
+            timeBounds,
             BatchDataLocation.TxInput
         );
     }
@@ -239,45 +234,32 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         IGasRefunder gasRefunder,
         uint256 prevMessageCount,
         uint256 newMessageCount
-    ) external override refundsGas(gasRefunder) {
+    ) external refundsGas(gasRefunder) {
         if (!isBatchPoster[msg.sender] && msg.sender != address(rollup)) revert NotBatchPoster();
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
             afterDelayedMessagesRead
         );
-        uint256 seqMessageIndex;
-        {
-            // Reformat the stack to prevent "Stack too deep"
-            uint256 sequenceNumber_ = sequenceNumber;
-            TimeBounds memory timeBounds_ = timeBounds;
-            bytes32 dataHash_ = dataHash;
-            uint256 afterDelayedMessagesRead_ = afterDelayedMessagesRead;
-            uint256 prevMessageCount_ = prevMessageCount;
-            uint256 newMessageCount_ = newMessageCount;
-            // we set the calldata length posted to 0 here since the caller isn't the origin
-            // of the tx, so they might have not paid tx input cost for the calldata
-            bytes32 beforeAcc;
-            bytes32 delayedAcc;
-            bytes32 afterAcc;
-            (seqMessageIndex, beforeAcc, delayedAcc, afterAcc) = addSequencerL2BatchImpl(
-                dataHash_,
-                afterDelayedMessagesRead_,
-                0,
-                prevMessageCount_,
-                newMessageCount_
-            );
-            if (seqMessageIndex != sequenceNumber_ && sequenceNumber_ != ~uint256(0))
-                revert BadSequencerNumber(seqMessageIndex, sequenceNumber_);
-            emit SequencerBatchDelivered(
-                seqMessageIndex,
-                beforeAcc,
-                afterAcc,
-                delayedAcc,
-                totalDelayedMessagesRead,
-                timeBounds_,
-                BatchDataLocation.SeparateBatchEvent
-            );
-        }
+        // we set the calldata length posted to 0 here since the caller isn't the origin
+        // of the tx, so they might have not paid tx input cost for the calldata
+        (uint256 seqMessageIndex, bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+            dataHash,
+            afterDelayedMessagesRead,
+            0,
+            prevMessageCount,
+            newMessageCount
+        );
+        if (seqMessageIndex != sequenceNumber && sequenceNumber != ~uint256(0))
+            revert BadSequencerNumber(seqMessageIndex, sequenceNumber);
+        emit SequencerBatchDelivered(
+            seqMessageIndex,
+            beforeAcc,
+            afterAcc,
+            delayedAcc,
+            totalDelayedMessagesRead,
+            timeBounds,
+            BatchDataLocation.SeparateBatchEvent
+        );
         emit SequencerBatchData(seqMessageIndex, data);
     }
 
