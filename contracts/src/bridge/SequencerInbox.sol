@@ -242,13 +242,18 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         );
         // we set the calldata length posted to 0 here since the caller isn't the origin
         // of the tx, so they might have not paid tx input cost for the calldata
-        (uint256 seqMessageIndex, bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            dataHash,
-            afterDelayedMessagesRead,
-            0,
-            prevMessageCount,
-            newMessageCount
-        );
+        (
+            uint256 seqMessageIndex,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(
+                dataHash,
+                afterDelayedMessagesRead,
+                0,
+                prevMessageCount,
+                newMessageCount
+            );
         if (seqMessageIndex != sequenceNumber && sequenceNumber != ~uint256(0))
             revert BadSequencerNumber(seqMessageIndex, sequenceNumber);
         emit SequencerBatchDelivered(
