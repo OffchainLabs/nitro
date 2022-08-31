@@ -11,6 +11,8 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
   - Use the parameter `--init.url="https://snapshot.arbitrum.io/mainnet/nitro.tar"` on first startup to initialize Nitro database
   - If running more than one node, easiest to manually download image from https://snapshot.arbitrum.io/mainnet/nitro.tar and host it locally for your nodes
   - Or use `--init.url="file:///path/to/snapshot/in/container/nitro.tar"` to use a local snapshot archive
+  - sha256 checksum: `a609773c6103435b8a04d32c63f42bb5fa0dc8fc38a2acee4d2ab2d05880205c`
+  - size: 33.5573504 GB
 
 - Rinkeby Nitro Genesis Database Snapshot
   - Use the parameter `--init.url="https://snapshot.arbitrum.io/rinkeby/nitro.tar"` on first startup to initialize Nitro database
