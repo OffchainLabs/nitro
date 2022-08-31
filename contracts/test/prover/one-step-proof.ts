@@ -16,7 +16,7 @@ async function sendTestMessages() {
     const buf = fs.readFileSync(path);
     await inbox.sendL2MessageFromOrigin(buf, gasOpts);
     // Don't use the FromOrigin variant as the stub will fail to create a batch posting report
-    await seqInbox.addSequencerL2Batch(msgNum, 0, 0, buf, 0, ethers.constants.AddressZero, gasOpts);
+    await seqInbox.addSequencerL2Batch(msgNum, buf, 0, ethers.constants.AddressZero, 0, 0, gasOpts);
   }
 }
 
