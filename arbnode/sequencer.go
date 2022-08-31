@@ -71,7 +71,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 	}
 	return &Sequencer{
 		txStreamer:      txStreamer,
-		txQueue:         make(chan txQueueItem, 128),
+		txQueue:         make(chan txQueueItem, config().QueueSize),
 		l1Reader:        l1Reader,
 		config:          config,
 		senderWhitelist: senderWhitelist,
@@ -172,7 +172,7 @@ func (s *Sequencer) DontForward() {
 	s.forwarder = nil
 }
 
-var ErrQueueFull error = errors.New("queue full")
+var ErrQueueFull error = errors.New("sequencer pending tx pool full, please try again")
 var ErrNoSequencer error = errors.New("sequencer temporarily not available")
 
 func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {

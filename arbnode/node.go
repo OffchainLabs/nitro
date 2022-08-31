@@ -537,6 +537,7 @@ type SequencerConfig struct {
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
 	ForwardTimeout              time.Duration            `koanf:"forward-timeout"`
+	QueueSize                   int                      `koanf:"queue-size"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -548,6 +549,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
 	ForwardTimeout:              time.Second * 30,
+	QueueSize:                   1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
@@ -558,6 +560,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxAcceptableTimestampDelta: time.Hour,
 	SenderWhitelist:             "",
 	ForwardTimeout:              time.Second * 2,
+	QueueSize:                   128,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -568,6 +571,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	f.Duration(prefix+".forward-timeout", DefaultSequencerConfig.ForwardTimeout, "timeout when forwarding to a different sequencer")
+	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
