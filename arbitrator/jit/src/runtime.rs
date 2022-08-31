@@ -11,14 +11,14 @@ pub fn go_debug(x: u32) {
     println!("go debug: {x}")
 }
 
-pub fn runtime_reset_memory_data_view(_: u32) {}
+pub fn reset_memory_data_view(_: u32) {}
 
-pub fn runtime_wasm_exit(env: &WasmEnvArc, sp: u32) {
+pub fn wasm_exit(env: &WasmEnvArc, sp: u32) {
     let sp = GoStack::new(sp, env);
     std::process::exit(sp.read_u32(0) as i32);
 }
 
-pub fn runtime_wasm_write(env: &WasmEnvArc, sp: u32) {
+pub fn wasm_write(env: &WasmEnvArc, sp: u32) {
     let sp = GoStack::new(sp, env);
     let fd = sp.read_u64(0);
     let ptr = sp.read_u64(1);
@@ -35,20 +35,20 @@ pub fn runtime_wasm_write(env: &WasmEnvArc, sp: u32) {
     }
 }
 
-pub fn runtime_nanotime1(env: &WasmEnvArc, sp: u32) {
+pub fn nanotime1(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new_with_env(sp, env);
     env.time += env.time_interval;
     sp.write_u64(0, env.time);
 }
 
-pub fn runtime_walltime(env: &WasmEnvArc, sp: u32) {
+pub fn walltime(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new_with_env(sp, env);
     env.time += env.time_interval;
     sp.write_u64(0, env.time / 1_000_000_000);
     sp.write_u32(1, (env.time % 1_000_000_000) as u32);
 }
 
-pub fn runtime_schedule_timeout_event(env: &WasmEnvArc, sp: u32) {
+pub fn schedule_timeout_event(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new_with_env(sp, env);
     let mut time = sp.read_u64(0);
     time = time.saturating_mul(1_000_000); // milliseconds to nanoseconds
@@ -63,7 +63,7 @@ pub fn runtime_schedule_timeout_event(env: &WasmEnvArc, sp: u32) {
     sp.write_u32(1, id);
 }
 
-pub fn runtime_clear_timeout_event(env: &WasmEnvArc, sp: u32) {
+pub fn clear_timeout_event(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new_with_env(sp, env);
 
     let id = sp.read_u32(0);
@@ -72,7 +72,7 @@ pub fn runtime_clear_timeout_event(env: &WasmEnvArc, sp: u32) {
     }
 }
 
-pub fn runtime_get_random_data(env: &WasmEnvArc, sp: u32) {
+pub fn get_random_data(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new_with_env(sp, env);
 
     let mut ptr = u32::try_from(sp.read_u64(0)).expect("Go getRandomData pointer not a u32");
