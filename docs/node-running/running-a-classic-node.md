@@ -4,7 +4,7 @@ Note: If you’re interested in accessing the Arbitrum network but you don’t w
 
 ### Do You Need To Run A Classic Node?
 
-Arbitrum One and Arbitrum Rinkeby testnet have both been upgraded to Nitro.
+Arbitrum One and Arbitrum Rinkeby testnet have both been upgraded to Nitro, the latest Arbitrum tech stack; "Arbitrum Classic" is our term for the old, pre-Nitro tech stack.
 The Nitro node databases have the raw data of all blocks, including pre-Nitro
 blocks.  However, Nitro nodes cannot execute anything on pre-Nitro blocks.
 
