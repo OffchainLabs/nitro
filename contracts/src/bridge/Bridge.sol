@@ -6,6 +6,7 @@ pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
+import "../libraries/AddressAliasHelper.sol";
 
 import {
     NotContract,
@@ -194,7 +195,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
             prevAcc,
             msg.sender,
             kind,
-            sender,
+            AddressAliasHelper.applyL1ToL2Alias(sender),
             messageDataHash,
             baseFeeL1,
             blockTimestamp
