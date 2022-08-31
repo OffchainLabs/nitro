@@ -184,7 +184,6 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	ticker := time.NewTicker(s.config().PollInterval)
 	nextSubscribeErr := time.Now().Add(-time.Second)
 	var errChannel <-chan error
 	pollOnlyOverride := false
@@ -194,10 +193,12 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		} else {
 			errChannel = nil
 		}
+		timer := time.NewTimer(s.config().PollInterval)
 		select {
 		case h := <-inputChannel:
 			s.possiblyBroadcast(h)
-		case <-ticker.C:
+			timer.Stop()
+		case <-timer.C:
 			h, err := s.client.HeaderByNumber(ctx, nil)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
@@ -224,7 +225,9 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 			}
 			clientSubscription = nil
 			log.Warn("error in subscription to headers", "err", err)
+			timer.Stop()
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		}
 		s.logIfHeaderIsOld()
