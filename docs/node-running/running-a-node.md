@@ -62,7 +62,7 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 - `--init.url="https://snapshot.arbitrum.io/rinkeby/nitro.tar"`
   - URL to download genesis database from. Only needed when starting Rinkeby Testnet without database
 - `--node.rpc.classic-redirect=<classic node RPC>`
-  - If set, will redirect archive requests for pre-nitro blocks to the designated RPC, which should be an Arbitrum Classic node with archive database. Only valid for Rinkeby Testnet
+  - If set, will redirect archive requests for pre-nitro blocks to the designated RPC, which should be an Arbitrum Classic node with archive database. Only valid for Arbitrum One or Rinkeby Testnet
 - `--http.api`
   - APIs offered over the HTTP-RPC interface (default `net,web3,eth`)
   - Add `debug` to enable tracing
