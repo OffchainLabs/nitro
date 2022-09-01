@@ -211,18 +211,6 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 	if err != nil {
 		return err
 	}
-	var nextAcc common.Hash
-	if pos > 0 {
-		var err error
-		nextAcc, err = t.GetDelayedAcc(pos - 1)
-		if err != nil {
-			if errors.Is(err, accumulatorNotFound) {
-				return errors.New("missing previous delayed message")
-			} else {
-				return err
-			}
-		}
-	}
 
 	if !hardReorg {
 		// This math is safe to do as we know len(messages) > 0
@@ -234,6 +222,19 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 			}
 		} else if !errors.Is(err, accumulatorNotFound) {
 			return err
+		}
+	}
+
+	var nextAcc common.Hash
+	if pos > 0 {
+		var err error
+		nextAcc, err = t.GetDelayedAcc(pos - 1)
+		if err != nil {
+			if errors.Is(err, accumulatorNotFound) {
+				return errors.New("missing previous delayed message")
+			} else {
+				return err
+			}
 		}
 	}
 
