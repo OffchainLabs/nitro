@@ -36,6 +36,8 @@ Note that supporting calldata compression also requires a more sophisticated mec
 
 The classic AVM achieved a strong degree of EVM compatibility with its ability to handle any EVM opcodes. However, being a distinct VM, the AVM’s internal behavior in some ways diverged with that of the EVM. Most noticeable for smart contract developers was the denomination of “ArbGas”, who’s units didn’t correspond to Ethereum L1 gas; e.g,. a simple transfer takes 21,000 gas on L1 but over 100,000 ArbGas on in the AVM. This meant that contracts that included gas calculation logic that were initially built for L1 had to be modified accordingly to be deployed on L2, and likewise with any client side tooling with similar hardcoded expectations about a chain’s gas. With Nitro, [gas](./arbos/gas.md) on L1 and L2 essentially correspond 1:1.
 
+(Note that transactions have to cover the total cost of both L2 execution and L1 calldata; the value returned by Arbitrum nodes' `eth_estimateGas` RPC — and in turn, the value users will see in their wallets — is calculated to be sufficient to cover this total cost. See [2-D fees](https://medium.com/offchainlabs/understanding-arbitrum-2-dimensional-fees-fd1d582596c9) for more.)
+
 Additionally, node functionality peripheral to execution itself, but still important / expected by much tooling and infrastructure — e.g. support for transaction tracing — is essentially inherited out-of-the-box in Nitro, giving Nitro stronger compatibility with Ethereum not just within its virtual machine, but also with how clients interact with it.
 
 In short, there’s no better way to achieve Ethereum compatibility than to reuse the Ethereum software itself.
