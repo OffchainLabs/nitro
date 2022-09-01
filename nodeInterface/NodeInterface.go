@@ -427,12 +427,12 @@ func (n NodeInterface) messageArgs(
 	evm mech, value huge, to addr, contractCreation bool, data []byte,
 ) arbitrum.TransactionArgs {
 	msg := n.sourceMessage
-	chainid := evm.ChainConfig().ChainID
 	from := msg.From()
 	gas := msg.Gas()
 	nonce := msg.Nonce()
 	maxFeePerGas := msg.GasFeeCap()
 	maxPriorityFeePerGas := msg.GasTipCap()
+	chainid := evm.ChainConfig().ChainID
 
 	args := arbitrum.TransactionArgs{
 		ChainID:              (*hexutil.Big)(chainid),
@@ -453,23 +453,13 @@ func (n NodeInterface) messageArgs(
 func (n NodeInterface) GasEstimateL1Component(
 	c ctx, evm mech, value huge, to addr, contractCreation bool, data []byte,
 ) (uint64, huge, huge, error) {
-	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	if to == types.NodeInterfaceAddress || to == types.NodeInterfaceDebugAddress {
-		return 0, nil, nil, errors.New("cannot estimate virtual contract")
-	}
 
-	backend := node.Backend.APIBackend()
-	gasCap := backend.RPCGasCap()
+	// construct a similar message with a random gas limit to avoid underestimating
 	args := n.messageArgs(evm, value, to, contractCreation, data)
+	randomGas := l1pricing.RandomGas
+	args.Gas = (*hexutil.Uint64)(&randomGas)
 
-	// assign 0 so that PosterDataCost uses its better value
-	zeroGas := hexutil.Uint64(0)
-	args.Gas = &zeroGas
-
-	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
+	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB))
 	if err != nil {
 		return 0, nil, nil, err
 	}
