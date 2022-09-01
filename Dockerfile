@@ -156,7 +156,7 @@ COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
 RUN mkdir -p target/bin && \
-    touch nitro-tag.txt && \
+    touch /nitro-tag.txt && \
     NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM debian:bullseye-slim as nitro-node-slim
