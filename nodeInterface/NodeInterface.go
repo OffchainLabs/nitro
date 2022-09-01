@@ -470,6 +470,8 @@ func (n NodeInterface) GasEstimateComponents(
 
 	pricing := c.State.L1PricingState()
 
+	// Setting the gas will affect the poster data cost
+	args.Gas = &totalRaw
 	msg, err = args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
 	if err != nil {
 		return 0, 0, nil, nil, err
