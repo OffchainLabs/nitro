@@ -200,7 +200,7 @@ func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
 	return data, err
 }
 
-func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error {
+func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool) error {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -221,6 +221,19 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error
 			} else {
 				return err
 			}
+		}
+	}
+
+	if !hardReorg {
+		// This math is safe to do as we know len(messages) > 0
+		haveLastAcc, err := t.GetDelayedAcc(pos + uint64(len(messages)) - 1)
+		if err == nil {
+			if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
+				// We already have these delayed messages
+				return nil
+			}
+		} else if !errors.Is(err, accumulatorNotFound) {
+			return err
 		}
 	}
 
@@ -321,7 +334,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		if err != nil {
 			return err
 		}
-		log.Info("InboxTracker", "sequencerBatchCount", count)
+		log.Warn("InboxTracker delayed message reorg is causing a sequencer batch reorg", "sequencerBatchCount", count)
 		err = deleteStartingAt(t.db, batch, sequencerBatchMetaPrefix, uint64ToKey(count))
 		if err != nil {
 			return err
