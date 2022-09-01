@@ -463,9 +463,7 @@ func (n NodeInterface) GasEstimateL1Component(
 
 	backend := node.Backend.APIBackend()
 	gasCap := backend.RPCGasCap()
-
 	args := n.messageArgs(evm, value, to, contractCreation, data)
-	//args.Gas = ;
 
 	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
 	if err != nil {
@@ -473,13 +471,11 @@ func (n NodeInterface) GasEstimateL1Component(
 	}
 
 	pricing := c.State.L1PricingState()
-	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
-
-	baseFee, err := c.State.L2PricingState().BaseFeeWei()
+	l1BaseFeeEstimate, err := pricing.PricePerUnit()
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	l1BaseFeeEstimate, err := pricing.PricePerUnit()
+	baseFee, err := c.State.L2PricingState().BaseFeeWei()
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -487,6 +483,7 @@ func (n NodeInterface) GasEstimateL1Component(
 	// Compute the fee paid for L1 in L2 terms
 	//   See in GasChargingHook that this does not induce truncation error
 	//
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
 	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
 	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
 	return gasForL1, baseFee, l1BaseFeeEstimate, nil
