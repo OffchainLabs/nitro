@@ -653,7 +653,7 @@ var DefaultCachingConfig = CachingConfig{
 	Archive:       false,
 	BlockCount:    128,
 	BlockAge:      30 * time.Minute,
-	TrieTimeLimit: 5 * time.Minute,
+	TrieTimeLimit: time.Hour,
 }
 
 type Node struct {
