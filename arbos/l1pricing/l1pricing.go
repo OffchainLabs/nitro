@@ -654,6 +654,7 @@ const estimationPaddingBasisPoints = 100
 var randomNonce = binary.BigEndian.Uint64(crypto.Keccak256([]byte("Nonce"))[:8])
 var randomGasTipCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasTipCap"))[:4])
 var randomGasFeeCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasFeeCap"))[:4])
+var RandomGas = uint64(binary.BigEndian.Uint32(crypto.Keccak256([]byte("Gas"))[:4]))
 var randV = arbmath.BigMulByUint(params.ArbitrumOneChainConfig().ChainID, 3)
 var randR = crypto.Keccak256Hash([]byte("R")).Big()
 var randS = crypto.Keccak256Hash([]byte("S")).Big()
@@ -673,11 +674,15 @@ func makeFakeTxForMessage(message core.Message) *types.Transaction {
 	if gasFeeCap.Sign() == 0 {
 		gasFeeCap = randomGasFeeCap
 	}
+	gas := message.Gas()
+	if gas == 0 {
+		gas = RandomGas
+	}
 	return types.NewTx(&types.DynamicFeeTx{
 		Nonce:      nonce,
 		GasTipCap:  gasTipCap,
 		GasFeeCap:  gasFeeCap,
-		Gas:        message.Gas(),
+		Gas:        gas,
 		To:         message.To(),
 		Value:      message.Value(),
 		Data:       message.Data(),
