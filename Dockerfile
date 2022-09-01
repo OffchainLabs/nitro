@@ -145,7 +145,8 @@ ENV NITRO_MODIFIED=$modified
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
-COPY go.mod go.sum .nitro-tag.txt ./
+COPY .nitro-tag.txt /nitro-tag.txt
+COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 RUN go mod download
