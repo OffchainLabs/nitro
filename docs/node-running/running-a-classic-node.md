@@ -39,23 +39,25 @@ on pre-Nitro blocks.
 ### Putting it all together
 
 - When running docker image, an external volume should be mounted to persist the database across restarts. The mount point should be `/home/user/.arbitrum/mainnet` or `/home/user/.arbitrum/rinkeby` depending on what chain you are connecting to.
-- Here is an example of how to run arb-node for mainnet (only good for archive requests on pre-Nitro blocks, so probably want to enable archive as well):
-  ```
+  - Here is an example of how to run arb-node for mainnet (only good for archive requests on pre-Nitro blocks, so probably want to enable archive as well):
+  ```shell
   docker run --rm -it  -v /some/local/dir/arbitrum-mainnet/:/home/user/.arbitrum/mainnet -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/arb-node:v1.4.5-e97c1a4 --l1.url=https://l1-node:8545 --node.chain-id=42161 --l2.disable-upstream
   ```
-- Here is an example of how to run arb-node for rinkeby (only good for archive requests on pre-Nitro blocks, so probably want to enable archive as well):
-  ```
+  - Here is an example of how to run arb-node for rinkeby (only good for archive requests on pre-Nitro blocks, so probably want to enable archive as well):
+  ```shell
   docker run --rm -it  -v /some/local/dir/arbitrum-rinkeby/:/home/user/.arbitrum/rinkeby -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/arb-node:v1.4.5-e97c1a4 --l1.url=https://l1-rinkeby-node:8545 --node.chain-id=421611
   ```
 
 ### Note on permissions
 
 - The Docker image is configured to run as non-root UID 1000. This means if you are running in Linux and you are getting permission errors when trying to run the docker image, run this command to allow all users to update the persistent folders
-  ```
+  - For mainnet:
+  ```shell
   mkdir /some/local/dir/arbitrum-mainnet
   chmod -fR 777 /some/local/dir/arbitrum-mainnet
   ```
-  ```
+  - For Rinkeby:
+  ```shell
   mkdir /some/local/dir/arbitrum-rinkeby
   chmod -fR 777 /some/local/dir/arbitrum-rinkeby
   ```
