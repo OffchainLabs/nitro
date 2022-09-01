@@ -335,7 +335,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		if err != nil {
 			return err
 		}
-		log.Warn("InboxTracker delayed message reorg is causing a sequencer batch reorg", "sequencerBatchCount", count)
+		log.Warn("InboxTracker delayed message reorg is causing a sequencer batch reorg", "sequencerBatchCount", count, "delayedCount", newDelayedCount)
 		err = deleteStartingAt(t.db, batch, sequencerBatchMetaPrefix, uint64ToKey(count))
 		if err != nil {
 			return err
