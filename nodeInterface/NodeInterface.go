@@ -465,6 +465,10 @@ func (n NodeInterface) GasEstimateL1Component(
 	gasCap := backend.RPCGasCap()
 	args := n.messageArgs(evm, value, to, contractCreation, data)
 
+	// assign 0 so that PosterDataCost uses its better value
+	zeroGas := hexutil.Uint64(0)
+	args.Gas = &zeroGas
+
 	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
 	if err != nil {
 		return 0, nil, nil, err
