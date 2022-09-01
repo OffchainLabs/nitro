@@ -4,12 +4,14 @@
 package l1pricing
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
@@ -645,27 +647,59 @@ func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Add
 	return am.BigMulByUint(pricePerUnit, units), units
 }
 
-const TxFixedCostEstimate = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
+// We don't have the full tx in gas estimation, so we assume it might be a bit bigger in practice.
+const estimationPaddingUnits = 16 * params.TxDataNonZeroGasEIP2028
+const estimationPaddingBasisPoints = 100
+
+var randomNonce = binary.BigEndian.Uint64(crypto.Keccak256([]byte("Nonce"))[:8])
+var randomGasTipCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasTipCap"))[:4])
+var randomGasFeeCap = new(big.Int).SetBytes(crypto.Keccak256([]byte("GasFeeCap"))[:4])
+var randV = arbmath.BigMulByUint(params.ArbitrumOneChainConfig().ChainID, 3)
+var randR = crypto.Keccak256Hash([]byte("R")).Big()
+var randS = crypto.Keccak256Hash([]byte("S")).Big()
+
+// The returned tx will be invalid, likely for a number of reasons such as an invalid signature.
+// It's only used to check how large it is after brotli level 0 compression.
+func makeFakeTxForMessage(message core.Message) *types.Transaction {
+	nonce := message.Nonce()
+	if nonce == 0 {
+		nonce = randomNonce
+	}
+	gasTipCap := message.GasTipCap()
+	if gasTipCap.Sign() == 0 {
+		gasTipCap = randomGasTipCap
+	}
+	gasFeeCap := message.GasFeeCap()
+	if gasFeeCap.Sign() == 0 {
+		gasFeeCap = randomGasFeeCap
+	}
+	return types.NewTx(&types.DynamicFeeTx{
+		Nonce:      nonce,
+		GasTipCap:  gasTipCap,
+		GasFeeCap:  gasFeeCap,
+		Gas:        message.Gas(),
+		To:         message.To(),
+		Value:      message.Value(),
+		Data:       message.Data(),
+		AccessList: message.AccessList(),
+		V:          randV,
+		R:          randR,
+		S:          randS,
+	})
+}
 
 func (ps *L1PricingState) PosterDataCost(message core.Message, poster common.Address) (*big.Int, uint64) {
-	if tx := message.UnderlyingTransaction(); tx != nil {
+	tx := message.UnderlyingTransaction()
+	if tx != nil {
 		return ps.GetPosterInfo(tx, poster)
 	}
 
-	if poster != BatchPosterAddress {
-		return common.Big0, 0
-	}
-
-	byteCount, err := byteCountAfterBrotli0(message.Data())
-	if err != nil {
-		panic(fmt.Sprintf("failed to compress tx: %v", err))
-	}
-
-	// Approximate the l1 fee charged for posting this tx's calldata
-	l1Bytes := byteCount + TxFixedCostEstimate
+	// Otherwise, we don't have an underlying transaction, so we're likely in gas estimation.
+	// We'll instead make a fake tx from the message info we do have, and then pad our cost a bit to be safe.
+	tx = makeFakeTxForMessage(message)
+	units := ps.getPosterUnitsWithoutCache(tx, poster)
+	units = arbmath.UintMulByBips(units+estimationPaddingUnits, arbmath.OneInBips+estimationPaddingBasisPoints)
 	pricePerUnit, _ := ps.PricePerUnit()
-
-	units := l1Bytes * params.TxDataNonZeroGasEIP2028
 	return am.BigMulByUint(pricePerUnit, units), units
 }
 
