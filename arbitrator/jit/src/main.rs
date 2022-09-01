@@ -5,6 +5,8 @@ use crate::gostack::WasmEnvArc;
 
 use wasmer::{imports, Function, Instance, Module, Store, Value};
 
+use std::time::Instant;
+
 mod arbcompress;
 mod gostack;
 mod runtime;
@@ -13,7 +15,8 @@ mod test;
 mod wavmio;
 
 fn main() {
-    let wasm = std::fs::read("../../target/machines/latest/replay.wasm").unwrap();
+    //let wasm = std::fs::read("../../target/machines/latest/replay.wasm").unwrap();
+    let wasm = std::fs::read("./programs/print/print.wasm").unwrap();
     let env = WasmEnvArc::default();
 
     let store = Store::default();
@@ -88,7 +91,12 @@ fn main() {
 
     env.lock().memory = Some(memory);
 
-    let add_one = instance.exports.get_function("run").unwrap();
-    let result = add_one.call(&[Value::I32(0), Value::I32(0)]).unwrap();
-    assert_eq!(result[0], Value::I32(0));
+    let now = Instant::now();
+    let main = instance.exports.get_function("run").unwrap();
+    let _ = match main.call(&[Value::I32(0), Value::I32(0)]) {
+        Ok(_) => panic!("failed to exit"),
+        Err(outcome) => outcome,
+    };
+    //assert_eq!(result[0], Value::I32(0));
+    println!("Completed in {}ms", now.elapsed().as_millis());
 }

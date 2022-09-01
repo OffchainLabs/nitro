@@ -4,8 +4,15 @@
 use crate::gostack::{GoStack, TimeoutInfo, WasmEnvArc};
 
 use rand::RngCore;
+use thiserror::Error;
 
 use std::io::Write;
+
+#[derive(Error, Debug)]
+pub enum WasmError {
+    #[error("program exited with status code `{0}`")]
+    Exit(u32),
+}
 
 pub fn go_debug(x: u32) {
     println!("go debug: {x}")
@@ -13,9 +20,9 @@ pub fn go_debug(x: u32) {
 
 pub fn reset_memory_data_view(_: u32) {}
 
-pub fn wasm_exit(env: &WasmEnvArc, sp: u32) {
+pub fn wasm_exit(env: &WasmEnvArc, sp: u32) -> Result<(), WasmError> {
     let sp = GoStack::new_sans_env(sp, env);
-    std::process::exit(sp.read_u32(0) as i32);
+    Err(WasmError::Exit(sp.read_u32(0)))
 }
 
 pub fn wasm_write(env: &WasmEnvArc, sp: u32) {
