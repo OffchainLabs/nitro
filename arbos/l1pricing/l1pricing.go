@@ -664,11 +664,11 @@ func makeFakeTxForMessage(message core.Message) *types.Transaction {
 		nonce = randomNonce
 	}
 	gasTipCap := message.GasTipCap()
-	if nonce == 0 {
+	if gasTipCap.Sign() == 0 {
 		gasTipCap = randomGasTipCap
 	}
 	gasFeeCap := message.GasFeeCap()
-	if nonce == 0 {
+	if gasFeeCap.Sign() == 0 {
 		gasFeeCap = randomGasFeeCap
 	}
 	return types.NewTx(&types.DynamicFeeTx{
