@@ -1,6 +1,8 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::syscall::{js_value, DynamicObjectPool, JsValue, PendingEvent};
+
 use parking_lot::{Mutex, MutexGuard};
 use rand_pcg::Pcg32;
 use wasmer::{Memory, MemoryView, WasmPtr, WasmerEnv};
@@ -19,13 +21,13 @@ pub struct GoStack {
 
 #[allow(dead_code)]
 impl GoStack {
-    pub fn new(start: u32, env: &WasmEnvArc) -> Self {
+    pub fn new_sans_env(start: u32, env: &WasmEnvArc) -> Self {
         let memory = env.lock().memory.clone().unwrap();
         Self { start, memory }
     }
 
-    pub fn new_with_env(start: u32, env: &WasmEnvArc) -> (Self, MutexGuard<WasmEnv>) {
-        let sp = GoStack::new(start, env);
+    pub fn new(start: u32, env: &WasmEnvArc) -> (Self, MutexGuard<WasmEnv>) {
+        let sp = GoStack::new_sans_env(start, env);
         let env = env.lock();
         (sp, env)
     }
@@ -35,17 +37,29 @@ impl GoStack {
     }
 
     pub fn read_u8(&self, arg: u32) -> u8 {
-        let ptr: WasmPtr<u8> = WasmPtr::new(self.offset(arg));
-        ptr.deref(&self.memory).unwrap().get()
+        self.read_u8_ptr(self.offset(arg))
     }
 
     pub fn read_u32(&self, arg: u32) -> u32 {
-        let ptr: WasmPtr<u32> = WasmPtr::new(self.offset(arg));
-        ptr.deref(&self.memory).unwrap().get()
+        self.read_u32_ptr(self.offset(arg))
     }
 
     pub fn read_u64(&self, arg: u32) -> u64 {
-        let ptr: WasmPtr<u64> = WasmPtr::new(self.offset(arg));
+        self.read_u64_ptr(self.offset(arg))
+    }
+
+    pub fn read_u8_ptr(&self, ptr: u32) -> u8 {
+        let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
+        ptr.deref(&self.memory).unwrap().get()
+    }
+
+    pub fn read_u32_ptr(&self, ptr: u32) -> u32 {
+        let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
+        ptr.deref(&self.memory).unwrap().get()
+    }
+
+    pub fn read_u64_ptr(&self, ptr: u32) -> u64 {
+        let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(&self.memory).unwrap().get()
     }
 
@@ -76,7 +90,7 @@ impl GoStack {
         ptr.deref(&self.memory).unwrap().set(x);
     }
 
-    pub fn read_slice(&self, ptr: u64, len: u32) -> Vec<u8> {
+    pub fn read_slice(&self, ptr: u64, len: u64) -> Vec<u8> {
         let ptr = u32::try_from(ptr).expect("Go pointer not a u32") as usize;
         let len = u32::try_from(len).expect("length isn't a u32") as usize;
         unsafe { self.memory.data_unchecked()[ptr..ptr + len].to_vec() }
@@ -87,6 +101,16 @@ impl GoStack {
         let view: MemoryView<u8> = self.memory.view();
         let view = view.subarray(ptr, ptr + src.len() as u32);
         unsafe { view.copy_from(src) }
+    }
+
+    pub fn read_value_slice(&self, mut ptr: u64, len: u64) -> Vec<JsValue> {
+        let mut values = Vec::new();
+        for _ in 0..len {
+            let p = u32::try_from(ptr).expect("Go pointer not a u32");
+            values.push(js_value(self.read_u64_ptr(p)));
+            ptr += 8;
+        }
+        values
     }
 }
 
@@ -102,6 +126,10 @@ pub struct WasmEnv {
     pub timeouts: TimeoutState,
     /// Deterministic source of random data
     pub rng: Pcg32,
+    ///
+    pub js_object_pool: DynamicObjectPool,
+    ///
+    pub js_pending_event: Option<PendingEvent>,
 }
 
 impl Default for WasmEnv {
@@ -112,6 +140,8 @@ impl Default for WasmEnv {
             time_interval: 10_000_000,
             timeouts: TimeoutState::default(),
             rng: Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7),
+            js_object_pool: DynamicObjectPool::default(),
+            js_pending_event: None,
         }
     }
 }

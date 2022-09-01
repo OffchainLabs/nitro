@@ -42,6 +42,7 @@ fn main() {
             "runtime.wasmWrite" => func!(runtime::wasm_write),
             "runtime.nanotime1" => func!(runtime::nanotime1),
             "runtime.walltime" => func!(runtime::walltime),
+            "runtime.walltime1" => func!(runtime::walltime1),
             "runtime.scheduleTimeoutEvent" => func!(runtime::schedule_timeout_event),
             "runtime.clearTimeoutEvent" => func!(runtime::clear_timeout_event),
             "runtime.getRandomData" => func!(runtime::get_random_data),
