@@ -658,6 +658,8 @@ var randV = arbmath.BigMulByUint(params.ArbitrumOneChainConfig().ChainID, 3)
 var randR = crypto.Keccak256Hash([]byte("R")).Big()
 var randS = crypto.Keccak256Hash([]byte("S")).Big()
 
+// The returned tx will be invalid, likely for a number of reasons such as an invalid signature.
+// It's only used to check how large it is after brotli level 0 compression.
 func makeFakeTxForMessage(message core.Message) *types.Transaction {
 	nonce := message.Nonce()
 	if nonce == 0 {
