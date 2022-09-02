@@ -15,8 +15,8 @@ mod test;
 mod wavmio;
 
 fn main() {
-    //let wasm = std::fs::read("../../target/machines/latest/replay.wasm").unwrap();
-    let wasm = std::fs::read("./programs/time/time.wasm").unwrap();
+    let wasm = std::fs::read("../../target/machines/latest/replay.wasm").unwrap();
+    //let wasm = std::fs::read("./programs/time/time.wasm").unwrap();
     let env = WasmEnvArc::default();
 
     let store = Store::default();

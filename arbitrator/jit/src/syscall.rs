@@ -32,7 +32,7 @@ pub struct DynamicObjectPool {
 }
 
 impl DynamicObjectPool {
-    pub fn insert(&mut self, object: DynamicObject) -> u32 {
+    fn insert(&mut self, object: DynamicObject) -> u32 {
         let id = self
             .free_ids
             .pop()
@@ -41,15 +41,15 @@ impl DynamicObjectPool {
         id
     }
 
-    pub fn get(&self, id: u32) -> Option<&DynamicObject> {
+    fn get(&self, id: u32) -> Option<&DynamicObject> {
         self.objects.get(&id)
     }
 
-    pub fn get_mut(&mut self, id: u32) -> Option<&mut DynamicObject> {
+    fn get_mut(&mut self, id: u32) -> Option<&mut DynamicObject> {
         self.objects.get_mut(&id)
     }
 
-    pub fn remove(&mut self, id: u32) -> Option<DynamicObject> {
+    fn remove(&mut self, id: u32) -> Option<DynamicObject> {
         let res = self.objects.remove(&id);
         if res.is_some() {
             self.free_ids.push(id);
@@ -59,7 +59,7 @@ impl DynamicObjectPool {
 }
 
 #[derive(Debug, Clone)]
-pub enum DynamicObject {
+enum DynamicObject {
     Uint8Array(Vec<u8>),
     FunctionWrapper(JsValue, JsValue),
     PendingEvent(PendingEvent),
@@ -82,7 +82,7 @@ pub enum JsValue {
 }
 
 impl JsValue {
-    pub fn assume_num_or_object(self) -> GoValue {
+    fn assume_num_or_object(self) -> GoValue {
         match self {
             JsValue::Undefined => GoValue::Undefined,
             JsValue::Number(x) => GoValue::Number(x),
@@ -119,7 +119,7 @@ pub enum GoValue {
 }
 
 impl GoValue {
-    pub fn encode(self) -> u64 {
+    fn encode(self) -> u64 {
         let (ty, id): (u32, u32) = match self {
             GoValue::Undefined => return 0,
             GoValue::Number(mut f) => {
