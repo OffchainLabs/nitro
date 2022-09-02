@@ -394,7 +394,7 @@ type Config struct {
 	RPC                  arbitrum.Config                `koanf:"rpc"`
 	Sequencer            SequencerConfig                `koanf:"sequencer" reload:"hot"`
 	L1Reader             headerreader.Config            `koanf:"l1-reader" reload:"hot"`
-	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
+	InboxReader          InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
