@@ -6,7 +6,7 @@ The state of an Arbitrum chain is confirmed back on Ethereum via "assertions," a
 
 In the happy / common case, all outstanding assertions will be valid; i.e., a valid assertion will build on another valid assertion, which builds on another valid assertion, and so on. After the dispute period (~ 1 week) passes and an assertion goes unchallenged, it can be confirmed back on L1.
 
-If, however, two or more conflicting assertions exists, the Assertion Tree bifurcates into multiple branches:
+If, however, two or more conflicting assertions exist, the Assertion Tree bifurcates into multiple branches:
 
 ![img](assertionTree.png)
 

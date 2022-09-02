@@ -53,7 +53,7 @@ The Arbitrum block number can also be retrieved within an Arbitrum contract via 
 | Arbitrum Block number (from RPCs) | 370000   | 370005   | 370006   | 370008   | 370012  | 370015  |
 
 _**L2 `block.number`:** updated to sync with L1 `block.number` ~ every minute; thus over time, it will, like the L1 `block.number`, average to ~15 seconds per block._
-_**Arbitrum Block number from RPCs:** note that this can be updated multipe times per L1 block (this lets the sequencer give sub-L1-block-time tx receipts.)_
+_**Arbitrum Block number from RPCs:** note that this can be updated multiple times per L1 block (this lets the sequencer give sub-L1-block-time tx receipts.)_
 
 
 
