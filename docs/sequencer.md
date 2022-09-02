@@ -19,7 +19,7 @@ Alternatively, a user can submit their L2 message to the Sequencer by posting it
 
 In sum — in either happy case, the user first delivers their message to the Sequencer, who in turn ensures that it arrives in the core Inbox.
 
-## Unhappy/Uncommon Case: Sequencer Isn’t Doing It’s Job
+## Unhappy/Uncommon Case: Sequencer Isn’t Doing Its Job
 
 Now let’s suppose the Sequencer, for whatever reason, is entirely failing to carry out its task of submitting messages. A user can still get their transaction included in two steps:
 

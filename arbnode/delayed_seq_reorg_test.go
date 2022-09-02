@@ -44,7 +44,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 			},
 		},
 	}
-	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed})
+	err = tracker.AddDelayedMessages([]*DelayedInboxMessage{initMsgDelayed, userDelayed}, false)
 	Require(t, err)
 
 	serializedInitMsgBatch := make([]byte, 40)
