@@ -1,10 +1,14 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::syscall::{DynamicObjectPool, JsValue, PendingEvent};
+use crate::{
+    syscall::{DynamicObjectPool, JsValue, PendingEvent},
+    wavmio::Bytes32,
+};
 
 use parking_lot::{Mutex, MutexGuard};
 use rand_pcg::Pcg32;
+use thiserror::Error;
 use wasmer::{Memory, MemoryView, WasmPtr, WasmerEnv};
 
 use std::{
@@ -114,6 +118,24 @@ impl GoStack {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum Escape {
+    #[error("program exited with status code `{0}`")]
+    Exit(u32),
+    #[error("jit failed with `{0}`")]
+    Failure(String),
+    #[error("hostio failed with `{0}`")]
+    HostIO(String),
+}
+
+pub type MaybeEscape = Result<(), Escape>;
+
+impl Escape {
+    pub fn hostio(message: &str) -> MaybeEscape {
+        Err(Self::HostIO(message.to_owned()))
+    }
+}
+
 #[derive(Clone, WasmerEnv)]
 pub struct WasmEnv {
     /// Mechanism for reading and writing the module's memory
@@ -132,6 +154,10 @@ pub struct WasmEnv {
     pub js_pending_event: Option<PendingEvent>,
     /// Future events that Go has scheduled after the next up
     pub js_future_events: VecDeque<PendingEvent>,
+    ///
+    pub small_globals: Vec<u64>,
+    ///
+    pub large_globals: Vec<Bytes32>,
 }
 
 impl Default for WasmEnv {
@@ -145,6 +171,8 @@ impl Default for WasmEnv {
             js_object_pool: DynamicObjectPool::default(),
             js_pending_event: None,
             js_future_events: VecDeque::new(),
+            small_globals: vec![],
+            large_globals: vec![],
         }
     }
 }

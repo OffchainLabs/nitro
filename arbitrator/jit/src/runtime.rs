@@ -1,20 +1,11 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::gostack::{GoStack, TimeoutInfo, WasmEnvArc};
+use crate::gostack::{Escape, GoStack, MaybeEscape, TimeoutInfo, WasmEnvArc};
 
 use rand::RngCore;
-use thiserror::Error;
 
 use std::io::Write;
-
-#[derive(Error, Debug)]
-pub enum Escape {
-    #[error("program exited with status code `{0}`")]
-    Exit(u32),
-    #[error("jit failed with `{0}`")]
-    Failure(String),
-}
 
 pub fn go_debug(x: u32) {
     println!("go debug: {x}")
@@ -22,7 +13,7 @@ pub fn go_debug(x: u32) {
 
 pub fn reset_memory_data_view(_: u32) {}
 
-pub fn wasm_exit(env: &WasmEnvArc, sp: u32) -> Result<(), Escape> {
+pub fn wasm_exit(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let sp = GoStack::new_sans_env(sp, env);
     Err(Escape::Exit(sp.read_u32(0)))
 }
