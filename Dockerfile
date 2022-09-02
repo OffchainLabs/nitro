@@ -136,6 +136,12 @@ RUN bash -c 'r=0x3848eff5e0356faf1fc9cafecb789584c5e7f4f8f817694d842ada96613d8ba
 
 FROM golang:1.19-bullseye as node-builder
 WORKDIR /workspace
+ARG version=""
+ARG datetime=""
+ARG modified=""
+ENV NITRO_VERSION=$version
+ENV NITRO_DATETIME=$datetime
+ENV NITRO_MODIFIED=$modified
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
@@ -150,6 +156,7 @@ COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
 RUN mkdir -p target/bin
+COPY .nitro-tag.txt /nitro-tag.txt
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM debian:bullseye-slim as nitro-node-slim
@@ -164,13 +171,14 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     ca-certificates \
     wabt && \
     /usr/sbin/update-ca-certificates && \
-    useradd -ms /bin/bash user && \
+    useradd -s /bin/bash user && \
     mkdir -p /home/user/l1keystore && \
     mkdir -p /home/user/.arbitrum/local/nitro && \
     chown -R user:user /home/user && \
     chmod -R 555 /home/user/target/machines && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    nitro --version
 
 USER user
 WORKDIR /home/user/
@@ -187,7 +195,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     node-ws vim-tiny python3 \
     dnsutils && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    nitro --version
 
 USER user
 
@@ -208,7 +217,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     adduser user sudo && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* && \
+    nitro --version
 
 USER user
 

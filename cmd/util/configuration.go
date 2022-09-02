@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package util
 
 import (
@@ -17,6 +20,14 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
+
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+)
+
+var (
+	version  = ""
+	datetime = ""
+	modified = ""
 )
 
 func ApplyOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
@@ -105,7 +116,31 @@ func loadS3Variables(k *koanf.Koanf) error {
 	}), nil)
 }
 
+var ErrVersion = errors.New("configuration: version requested")
+
+func GetVersion() (string, string) {
+	return genericconf.GetVersion(version, datetime, modified)
+}
+
+func HandleError(err error, usage func(string)) {
+	vcsRevision, vcsTime := GetVersion()
+	fmt.Printf("version: %v, time: %v\n", vcsRevision, vcsTime)
+	if err != nil && errors.Is(err, ErrVersion) {
+		// Already printed version, just exit
+		return
+	}
+	usage(os.Args[0])
+	if err != nil && !errors.Is(err, flag.ErrHelp) {
+		fmt.Printf("%s\n", err.Error())
+	}
+}
+
 func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
+	for _, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			return nil, ErrVersion
+		}
+	}
 	if err := f.Parse(args); err != nil {
 		return nil, err
 	}
