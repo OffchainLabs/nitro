@@ -157,19 +157,19 @@ pub struct WasmEnv {
     pub js_object_pool: DynamicObjectPool,
     /// The event Go will execute next
     pub js_pending_event: Option<PendingEvent>,
-    /// Future events that Go has scheduled after the next up
+    /// Future events that Go has scheduled after the next one up
     pub js_future_events: VecDeque<PendingEvent>,
-    ///
+    /// An ordered list of the 8-byte globals
     pub small_globals: Vec<u64>,
-    ///
+    /// An ordered list of the 32-byte globals
     pub large_globals: Vec<Bytes32>,
-    ///
+    /// An oracle allowing the prover to reverse keccak256
     pub preimages: Oracle,
-    ///
+    /// The sequencer inbox's messages
     pub sequencer_messages: Inbox,
-    ///
+    /// The delayed inbox's messages
     pub delayed_messages: Inbox,
-    ///
+    /// The first inbox message number knowably out of bounds
     pub first_too_far: u64,
 }
 
