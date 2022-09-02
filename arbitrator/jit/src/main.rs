@@ -131,6 +131,8 @@ fn main() {
     match escape {
         Some(Escape::Exit(0)) => println!("Completed in {elapsed}ms"),
         Some(Escape::Exit(x)) => println!("Failed in {elapsed}ms with exit code {x}"),
+        Some(Escape::Failure(err)) => println!("Jit failed with {err} in {elapsed}ms"),
+        Some(Escape::HostIO(err)) => println!("Hostio failed with {err} in {elapsed}ms"),
         _ => println!("Execution ended prematurely"),
     }
 }
