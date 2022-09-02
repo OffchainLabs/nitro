@@ -12,7 +12,7 @@ use thiserror::Error;
 use wasmer::{Memory, MemoryView, WasmPtr, WasmerEnv};
 
 use std::{
-    collections::{BTreeSet, BinaryHeap, VecDeque},
+    collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque},
     ops::Deref,
     sync::Arc,
 };
@@ -25,15 +25,17 @@ pub struct GoStack {
 
 #[allow(dead_code)]
 impl GoStack {
-    pub fn new_sans_env(start: u32, env: &WasmEnvArc) -> Self {
-        let memory = env.lock().memory.clone().unwrap();
-        Self { start, memory }
-    }
-
     pub fn new(start: u32, env: &WasmEnvArc) -> (Self, MutexGuard<WasmEnv>) {
-        let sp = GoStack::new_sans_env(start, env);
+        let memory = env.lock().memory.clone().unwrap();
+        let sp = Self { start, memory };
         let env = env.lock();
         (sp, env)
+    }
+
+    /// Returns the memory size, in bytes.
+    /// note: wasmer measures memory in 65536-byte pages.
+    pub fn memory_size(&self) -> u64 {
+        self.memory.size().0 as u64 * 65536
     }
 
     fn offset(&self, arg: u32) -> u32 {
@@ -136,6 +138,9 @@ impl Escape {
     }
 }
 
+pub type Inbox = BTreeMap<u64, Vec<u8>>;
+pub type Oracle = BTreeMap<[u8; 32], Vec<u8>>;
+
 #[derive(Clone, WasmerEnv)]
 pub struct WasmEnv {
     /// Mechanism for reading and writing the module's memory
@@ -158,6 +163,14 @@ pub struct WasmEnv {
     pub small_globals: Vec<u64>,
     ///
     pub large_globals: Vec<Bytes32>,
+    ///
+    pub preimages: Oracle,
+    ///
+    pub sequencer_messages: Inbox,
+    ///
+    pub delayed_messages: Inbox,
+    ///
+    pub first_too_far: u64,
 }
 
 impl Default for WasmEnv {
@@ -173,6 +186,10 @@ impl Default for WasmEnv {
             js_future_events: VecDeque::new(),
             small_globals: vec![],
             large_globals: vec![],
+            preimages: Oracle::new(),
+            sequencer_messages: Inbox::new(),
+            delayed_messages: Inbox::new(),
+            first_too_far: 0,
         }
     }
 }

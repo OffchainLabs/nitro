@@ -544,6 +544,7 @@ name = "jit"
 version = "0.1.0"
 dependencies = [
  "eyre",
+ "hex",
  "parking_lot",
  "rand",
  "rand_pcg",

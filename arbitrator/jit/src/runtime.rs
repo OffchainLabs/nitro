@@ -14,12 +14,12 @@ pub fn go_debug(x: u32) {
 pub fn reset_memory_data_view(_: u32) {}
 
 pub fn wasm_exit(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let sp = GoStack::new_sans_env(sp, env);
+    let (sp, _) = GoStack::new(sp, env);
     Err(Escape::Exit(sp.read_u32(0)))
 }
 
 pub fn wasm_write(env: &WasmEnvArc, sp: u32) {
-    let sp = GoStack::new_sans_env(sp, env);
+    let (sp, _) = GoStack::new(sp, env);
     let fd = sp.read_u64(0);
     let ptr = sp.read_u64(1);
     let len = sp.read_u32(2);
