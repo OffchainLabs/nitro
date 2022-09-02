@@ -215,7 +215,11 @@ func main() {
 		return
 	}
 
-	if nodeConfig.Node.Archive && nodeConfig.Node.TxLookupLimit != 0 {
+	if nodeConfig.Node.Archive {
+		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
+		nodeConfig.Node.Caching.Archive = true
+	}
+	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
 	}
@@ -247,7 +251,7 @@ func main() {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
 	if err != nil {
 		util.HandleError(err, printSampleUsage)
 		return
