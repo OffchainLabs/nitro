@@ -8,7 +8,8 @@ use crate::gostack::{Escape, GoStack, Inbox, MaybeEscape, WasmEnv, WasmEnvArc};
 pub type Bytes32 = [u8; 32];
 
 pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, env);
+    let (sp, mut env) = GoStack::new(sp, env);
+    ready_hostio(&mut *env);
 
     let global = sp.read_u64(0) as u32 as usize;
     let out_ptr = sp.read_u64(1);
@@ -29,6 +30,7 @@ pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
+    ready_hostio(&mut *env);
 
     let global = sp.read_u64(0) as u32 as usize;
     let src_ptr = sp.read_u64(1);
@@ -50,7 +52,9 @@ pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 }
 
 pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, env);
+    let (sp, mut env) = GoStack::new(sp, env);
+    ready_hostio(&mut *env);
+
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get(global) {
         Some(global) => sp.write_u64(1, *global),
@@ -61,6 +65,8 @@ pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
+    ready_hostio(&mut *env);
+
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get_mut(global) {
         Some(global) => *global = sp.read_u64(1),
@@ -70,13 +76,17 @@ pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 }
 
 pub fn read_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, env);
+    let (sp, mut env) = GoStack::new(sp, env);
+    ready_hostio(&mut *env);
+
     let inbox = &env.sequencer_messages;
     inbox_message_impl(&sp, &env, inbox, "wavmio.readInboxMessage")
 }
 
 pub fn read_delayed_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, env);
+    let (sp, mut env) = GoStack::new(sp, env);
+    ready_hostio(&mut *env);
+
     let inbox = &env.delayed_messages;
     inbox_message_impl(&sp, &env, inbox, "wavmio.readDelayedInboxMessage")
 }
@@ -171,4 +181,8 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     sp.write_slice(out_ptr, &read);
     sp.write_u64(7, read.len() as u64);
     Ok(())
+}
+
+fn ready_hostio(_env: &mut WasmEnv) {
+    // TODO: add fork loop
 }

@@ -28,37 +28,6 @@ const BROTLI_RES_SUCCESS: u32 = 1;
 pub fn brotli_compress(env: &WasmEnvArc, sp: u32) {
     let (sp, _) = GoStack::new(sp, env);
 
-    //(inBuf []byte, outBuf []byte) int
-    let in_buf_ptr = sp.read_u64(0);
-    let in_buf_len = sp.read_u64(1);
-    let out_buf_ptr = sp.read_u64(3);
-    let out_buf_len = sp.read_u64(4);
-    let output_arg = 6;
-
-    let in_slice = sp.read_slice(in_buf_ptr, in_buf_len);
-    let mut output = vec![0u8; out_buf_len as usize];
-    let mut output_len = out_buf_len as usize;
-
-    let res = unsafe {
-        BrotliDecoderDecompress(
-            in_buf_len as usize,
-            in_slice.as_ptr(),
-            &mut output_len,
-            output.as_mut_ptr(),
-        )
-    };
-
-    if (res != BROTLI_RES_SUCCESS) || (output_len as u64 > out_buf_len) {
-        sp.write_u64(output_arg, u64::MAX);
-        return;
-    }
-    sp.write_slice(out_buf_ptr, &output[..output_len]);
-    sp.write_u64(output_arg, output_len as u64);
-}
-
-pub fn brotli_decompress(env: &WasmEnvArc, sp: u32) {
-    let (sp, _) = GoStack::new(sp, env);
-
     //(inBuf []byte, outBuf []byte, level int, windowSize int) int
     let in_buf_ptr = sp.read_u64(0);
     let in_buf_len = sp.read_u64(1);
@@ -77,6 +46,37 @@ pub fn brotli_decompress(env: &WasmEnvArc, sp: u32) {
             level,
             windowsize,
             BROTLI_MODE_GENERIC,
+            in_buf_len as usize,
+            in_slice.as_ptr(),
+            &mut output_len,
+            output.as_mut_ptr(),
+        )
+    };
+
+    if (res != BROTLI_RES_SUCCESS) || (output_len as u64 > out_buf_len) {
+        sp.write_u64(output_arg, u64::MAX);
+        return;
+    }
+    sp.write_slice(out_buf_ptr, &output[..output_len]);
+    sp.write_u64(output_arg, output_len as u64);
+}
+
+pub fn brotli_decompress(env: &WasmEnvArc, sp: u32) {
+    let (sp, _) = GoStack::new(sp, env);
+
+    //(inBuf []byte, outBuf []byte) int
+    let in_buf_ptr = sp.read_u64(0);
+    let in_buf_len = sp.read_u64(1);
+    let out_buf_ptr = sp.read_u64(3);
+    let out_buf_len = sp.read_u64(4);
+    let output_arg = 6;
+
+    let in_slice = sp.read_slice(in_buf_ptr, in_buf_len);
+    let mut output = vec![0u8; out_buf_len as usize];
+    let mut output_len = out_buf_len as usize;
+
+    let res = unsafe {
+        BrotliDecoderDecompress(
             in_buf_len as usize,
             in_slice.as_ptr(),
             &mut output_len,

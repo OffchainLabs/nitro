@@ -4,15 +4,20 @@
 use crate::{
     syscall::{DynamicObjectPool, JsValue, PendingEvent},
     wavmio::Bytes32,
+    Opts,
 };
 
+use eyre::{bail, Result, WrapErr};
 use parking_lot::{Mutex, MutexGuard};
 use rand_pcg::Pcg32;
+use sha3::{Digest, Keccak256};
 use thiserror::Error;
 use wasmer::{Memory, MemoryView, WasmPtr, WasmerEnv};
 
 use std::{
     collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque},
+    fs::File,
+    io::{BufReader, ErrorKind, Read},
     ops::Deref,
     sync::Arc,
 };
@@ -201,6 +206,74 @@ impl Deref for WasmEnvArc {
     type Target = Mutex<WasmEnv>;
     fn deref(&self) -> &Self::Target {
         &*self.0
+    }
+}
+
+impl WasmEnvArc {
+    pub fn cli(opts: &Opts) -> Result<Self> {
+        let mut env = WasmEnv::default();
+
+        let mut inbox_position = opts.inbox_position;
+        let mut delayed_position = opts.delayed_inbox_position;
+
+        for path in &opts.inbox {
+            let mut msg = vec![];
+            File::open(path)?.read_to_end(&mut msg)?;
+            env.sequencer_messages.insert(inbox_position, msg);
+            inbox_position += 1;
+        }
+        for path in &opts.delayed_inbox {
+            let mut msg = vec![];
+            File::open(path)?.read_to_end(&mut msg)?;
+            env.delayed_messages.insert(delayed_position, msg);
+            delayed_position += 1;
+        }
+
+        if let Some(path) = &opts.preimages {
+            let mut file = BufReader::new(File::open(path)?);
+            let mut preimages = Vec::new();
+            let filename = path.to_string_lossy();
+            loop {
+                let mut size_buf = [0u8; 8];
+                match file.read_exact(&mut size_buf) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == ErrorKind::UnexpectedEof => break,
+                    Err(err) => bail!("Failed to parse {filename}: {}", err),
+                }
+                let size = u64::from_le_bytes(size_buf) as usize;
+                let mut buf = vec![0u8; size];
+                file.read_exact(&mut buf)?;
+                preimages.push(buf);
+            }
+            for preimage in preimages {
+                let mut hasher = Keccak256::new();
+                hasher.update(&preimage);
+                let hash = hasher.finalize().into();
+                env.preimages.insert(hash, preimage);
+            }
+        }
+
+        fn parse_hex(arg: &Option<String>, name: &str) -> Result<Bytes32> {
+            match arg {
+                Some(arg) => {
+                    let mut arg = arg.as_str();
+                    if arg.starts_with("0x") {
+                        arg = &arg[2..];
+                    }
+                    let mut bytes32 = Bytes32::default();
+                    hex::decode_to_slice(arg, &mut bytes32)
+                        .wrap_err_with(|| format!("failed to parse {} contents", name))?;
+                    Ok(bytes32)
+                }
+                None => Ok(Bytes32::default()),
+            }
+        }
+
+        let last_block_hash = parse_hex(&opts.last_block_hash, "--last-block-hash")?;
+        let last_send_root = parse_hex(&opts.last_send_root, "--last-send-root")?;
+        env.small_globals = vec![opts.inbox_position, opts.position_within_message];
+        env.large_globals = vec![last_block_hash, last_send_root];
+        Ok(Self(Arc::new(Mutex::new(env))))
     }
 }
 

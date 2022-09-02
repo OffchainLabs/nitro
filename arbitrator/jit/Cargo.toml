@@ -11,3 +11,6 @@ rand = { version = "0.8.4", default-features = false }
 rand_pcg = { version = "0.3.1", default-features = false }
 thiserror = "1.0.33"
 hex = "0.4.3"
+structopt = "0.3.26"
+sha3 = "0.9.1"
+libc = "0.2.132"
