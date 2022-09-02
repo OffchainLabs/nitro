@@ -1,9 +1,9 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::gostack::WasmEnvArc;
+use crate::{gostack::WasmEnvArc, runtime::Escape};
 
-use wasmer::{imports, Function, Instance, Module, Store, Value};
+use wasmer::{imports, Function, Instance, Module, RuntimeError, Store, Value};
 
 use std::time::Instant;
 
@@ -16,7 +16,7 @@ mod wavmio;
 
 fn main() {
     //let wasm = std::fs::read("../../target/machines/latest/replay.wasm").unwrap();
-    let wasm = std::fs::read("./programs/print/print.wasm").unwrap();
+    let wasm = std::fs::read("./programs/time/time.wasm").unwrap();
     let env = WasmEnvArc::default();
 
     let store = Store::default();
@@ -93,10 +93,44 @@ fn main() {
 
     let now = Instant::now();
     let main = instance.exports.get_function("run").unwrap();
-    let _ = match main.call(&[Value::I32(0), Value::I32(0)]) {
-        Ok(_) => panic!("failed to exit"),
-        Err(outcome) => outcome,
-    };
-    //assert_eq!(result[0], Value::I32(0));
-    println!("Completed in {}ms", now.elapsed().as_millis());
+    let resume = instance.exports.get_function("resume").unwrap();
+
+    let mut escape;
+
+    fn check_outcome(outcome: Result<Box<[Value]>, RuntimeError>) -> Option<Escape> {
+        let outcome = match outcome {
+            Ok(outcome) => {
+                println!("Go returned values {:?}", outcome);
+                return None;
+            }
+            Err(outcome) => outcome,
+        };
+        Some(match outcome.downcast() {
+            Ok(escape) => escape,
+            Err(outcome) => Escape::Failure(format!("unknown runtime error: {}", outcome)),
+        })
+    }
+
+    let outcome = main.call(&[Value::I32(0), Value::I32(0)]);
+    escape = check_outcome(outcome);
+
+    if escape.is_none() {
+        while let Some(event) = env.lock().js_future_events.pop_front() {
+            if let Some(issue) = &env.lock().js_pending_event {
+                println!("Go runtime overwriting pending event {:?}", issue);
+            }
+            env.lock().js_pending_event = Some(event);
+            escape = check_outcome(resume.call(&[]));
+            if escape.is_some() {
+                break;
+            }
+        }
+    }
+
+    let elapsed = now.elapsed().as_millis();
+    match escape {
+        Some(Escape::Exit(0)) => println!("Completed in {elapsed}ms"),
+        Some(Escape::Exit(x)) => println!("Failed in {elapsed}ms with exit code {x}"),
+        _ => println!("Execution ended prematurely"),
+    }
 }

@@ -1,14 +1,14 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::syscall::{js_value, DynamicObjectPool, JsValue, PendingEvent};
+use crate::syscall::{DynamicObjectPool, JsValue, PendingEvent};
 
 use parking_lot::{Mutex, MutexGuard};
 use rand_pcg::Pcg32;
 use wasmer::{Memory, MemoryView, WasmPtr, WasmerEnv};
 
 use std::{
-    collections::{BTreeSet, BinaryHeap},
+    collections::{BTreeSet, BinaryHeap, VecDeque},
     ops::Deref,
     sync::Arc,
 };
@@ -107,7 +107,7 @@ impl GoStack {
         let mut values = Vec::new();
         for _ in 0..len {
             let p = u32::try_from(ptr).expect("Go pointer not a u32");
-            values.push(js_value(self.read_u64_ptr(p)));
+            values.push(JsValue::new(self.read_u64_ptr(p)));
             ptr += 8;
         }
         values
@@ -126,10 +126,12 @@ pub struct WasmEnv {
     pub timeouts: TimeoutState,
     /// Deterministic source of random data
     pub rng: Pcg32,
-    ///
+    /// A collection of js objects
     pub js_object_pool: DynamicObjectPool,
-    ///
+    /// The event Go will execute next
     pub js_pending_event: Option<PendingEvent>,
+    /// Future events that Go has scheduled after the next up
+    pub js_future_events: VecDeque<PendingEvent>,
 }
 
 impl Default for WasmEnv {
@@ -142,6 +144,7 @@ impl Default for WasmEnv {
             rng: Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7),
             js_object_pool: DynamicObjectPool::default(),
             js_pending_event: None,
+            js_future_events: VecDeque::new(),
         }
     }
 }

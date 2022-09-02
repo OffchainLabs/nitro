@@ -4,8 +4,9 @@
 use crate::gostack::{GoStack, WasmEnv, WasmEnvArc};
 
 use parking_lot::MutexGuard;
+use rand::RngCore;
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Write};
 
 const ZERO_ID: u32 = 1;
 const NULL_ID: u32 = 2;
@@ -88,21 +89,21 @@ impl JsValue {
             JsValue::Ref(x) => GoValue::Object(x),
         }
     }
-}
 
-pub fn js_value(repr: u64) -> JsValue {
-    if repr == 0 {
-        return JsValue::Undefined;
-    }
-    let float = f64::from_bits(repr);
-    if float.is_nan() && repr != f64::NAN.to_bits() {
-        let id = repr as u32;
-        if id == ZERO_ID {
-            return JsValue::Number(0.);
+    pub fn new(repr: u64) -> Self {
+        if repr == 0 {
+            return Self::Undefined;
         }
-        return JsValue::Ref(id);
+        let float = f64::from_bits(repr);
+        if float.is_nan() && repr != f64::NAN.to_bits() {
+            let id = repr as u32;
+            if id == ZERO_ID {
+                return Self::Number(0.);
+            }
+            return Self::Ref(id);
+        }
+        Self::Number(float)
     }
-    JsValue::Number(float)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -159,7 +160,7 @@ fn get_field(env: &mut MutexGuard<WasmEnv>, source: u32, field: &[u8]) -> GoValu
             _ => {
                 let field = String::from_utf8_lossy(field);
                 eprintln!(
-                    "Go attempting to access unimplemented unknown JS value {:?} field {field}",
+                    "Go trying to access unimplemented unknown JS value {:?} field {field}",
                     source
                 );
                 GoValue::Undefined
@@ -191,9 +192,7 @@ fn get_field(env: &mut MutexGuard<WasmEnv>, source: u32, field: &[u8]) -> GoValu
         },
         _ => {
             let field = String::from_utf8_lossy(field);
-            eprintln!(
-                "Go attempting to access unimplemented unknown JS value {source} field {field}",
-            );
+            eprintln!("Go trying to access unimplemented unknown JS value {source} field {field}");
             GoValue::Undefined
         }
     }
@@ -203,21 +202,21 @@ pub fn js_finalize_ref(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new(sp, env);
     let pool = &mut env.js_object_pool;
 
-    let val = js_value(sp.read_u64(0));
+    let val = JsValue::new(sp.read_u64(0));
     match val {
         JsValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
         JsValue::Ref(x) => {
             if pool.remove(x).is_none() {
-                eprintln!("Go attempting to finalize unknown ref {}", x);
+                eprintln!("Go trying to finalize unknown ref {}", x);
             }
         }
-        val => eprintln!("Go attempting to finalize {:?}", val),
+        val => eprintln!("Go trying to finalize {:?}", val),
     }
 }
 
 pub fn js_value_get(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new(sp, env);
-    let source = js_value(sp.read_u64(0));
+    let source = JsValue::new(sp.read_u64(0));
     let field_ptr = sp.read_u64(1);
     let field_len = sp.read_u64(2);
     let field = sp.read_slice(field_ptr, field_len.into());
@@ -225,7 +224,7 @@ pub fn js_value_get(env: &WasmEnvArc, sp: u32) {
         JsValue::Ref(id) => get_field(&mut env, id, &field),
         val => {
             let field = String::from_utf8_lossy(&field);
-            eprintln!("Go attempting to read field {:?} . {field}", val);
+            eprintln!("Go trying to read field {:?} . {field}", val);
             GoValue::Null
         }
     };
@@ -236,10 +235,10 @@ pub fn js_value_set(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new(sp, env);
     use JsValue::*;
 
-    let source = js_value(sp.read_u64(0));
+    let source = JsValue::new(sp.read_u64(0));
     let field_ptr = sp.read_u64(1);
     let field_len = sp.read_u64(2);
-    let new_value = js_value(sp.read_u64(3));
+    let new_value = JsValue::new(sp.read_u64(3));
     let field = sp.read_slice(field_ptr, field_len);
     if source == Ref(GO_ID) && &field == b"_pendingEvent" && new_value == Ref(NULL_ID) {
         env.js_pending_event = None;
@@ -270,7 +269,7 @@ pub fn js_value_index(env: &WasmEnvArc, sp: u32) {
         }};
     }
 
-    let source = match js_value(sp.read_u64(0)) {
+    let source = match JsValue::new(sp.read_u64(0)) {
         JsValue::Ref(x) => env.js_object_pool.get(x),
         val => fail!("Go attempted to index into {:?}", val),
     };
@@ -292,6 +291,130 @@ pub fn js_value_index(env: &WasmEnvArc, sp: u32) {
 
 pub fn js_value_call(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new(sp, env);
+    let env = &mut *env;
+    let rng = &mut env.rng;
+    let pool = &mut env.js_object_pool;
+    let events = &mut env.js_future_events;
+    use JsValue::*;
+
+    let object = JsValue::new(sp.read_u64(0));
+    let method_name_ptr = sp.read_u64(1);
+    let method_name_len = sp.read_u64(2);
+    let method_name = sp.read_slice(method_name_ptr, method_name_len);
+    let args_ptr = sp.read_u64(3);
+    let args_len = sp.read_u64(4);
+    let args = sp.read_value_slice(args_ptr, args_len);
+    let name = String::from_utf8_lossy(&method_name);
+
+    macro_rules! fail {
+        ($text:expr $(,$args:expr)*) => {{
+            eprintln!($text $(,$args)*);
+            sp.write_u64(6, GoValue::Null.encode());
+            sp.write_u8(7, 1);
+            return
+        }};
+    }
+
+    let value = match (object, method_name.as_slice()) {
+        (Ref(GO_ID), b"_makeFuncWrapper") => {
+            let arg = match args.get(0) {
+                Some(arg) => arg,
+                None => fail!(
+                    "Go trying to call Go._makeFuncWrapper with bad args {:?}",
+                    args
+                ),
+            };
+            let ref_id = pool.insert(DynamicObject::FunctionWrapper(*arg, object));
+            GoValue::Function(ref_id)
+        }
+        (Ref(FS_ID), b"write") => {
+            let args_len = std::cmp::min(6, args.len());
+
+            match &args.as_slice()[..args_len] {
+                &[Number(fd), Ref(buf_id), Number(offset), Number(length), Ref(NULL_ID), Ref(callback_id)] =>
+                {
+                    let buf = match pool.get(buf_id) {
+                        Some(DynamicObject::Uint8Array(x)) => x,
+                        x => fail!("Go trying to call fs.write with bad buffer {:?}", x),
+                    };
+                    let (func_id, this) = match pool.get(callback_id) {
+                        Some(DynamicObject::FunctionWrapper(f, t)) => (f, t),
+                        x => fail!("Go trying to call fs.write with bad buffer {:?}", x),
+                    };
+
+                    let mut offset = offset as usize;
+                    let mut length = length as usize;
+                    if offset > buf.len() {
+                        eprintln!(
+                            "Go trying to call fs.write with offset {offset} >= buf.len() {length}"
+                        );
+                        offset = buf.len();
+                    }
+                    if offset + length > buf.len() {
+                        eprintln!(
+                            "Go trying to call fs.write with offset {offset} + length {length} >= buf.len() {}",
+                            buf.len(),
+                        );
+                        length = buf.len() - offset;
+                    }
+                    if fd == 1. {
+                        let stdout = std::io::stdout();
+                        let mut stdout = stdout.lock();
+                        stdout.write_all(&buf[offset..(offset + length)]).unwrap();
+                    } else if fd == 2. {
+                        let stderr = std::io::stderr();
+                        let mut stderr = stderr.lock();
+                        stderr.write_all(&buf[offset..(offset + length)]).unwrap();
+                    } else {
+                        eprintln!("Go trying to write to unknown FD {}", fd);
+                    }
+
+                    events.push_back(PendingEvent {
+                        id: *func_id,
+                        this: *this,
+                        args: vec![
+                            GoValue::Null,                  // no error
+                            GoValue::Number(length as f64), // amount written
+                        ],
+                    });
+
+                    GoValue::Null
+                }
+                _ => fail!("Go trying to call fs.write with bad args {:?}", args),
+            }
+        }
+        (Ref(CRYPTO_ID), b"getRandomValues") => {
+            let name = "crypto.getRandomValues";
+
+            let id = match args.get(0) {
+                Some(Ref(x)) => x,
+                _ => fail!("Go trying to call {name} with bad args {:?}", args),
+            };
+
+            let buf = match pool.get_mut(*id) {
+                Some(DynamicObject::Uint8Array(buf)) => buf,
+                Some(x) => fail!("Go trying to call {name} on bad object {:?}", x),
+                None => fail!("Go trying to call {name} on unknown reference {id}"),
+            };
+
+            rng.fill_bytes(buf.as_mut_slice());
+            GoValue::Undefined
+        }
+        (Ref(obj_id), _) => {
+            let value = match pool.get(obj_id) {
+                Some(value) => value,
+                None => fail!("Go trying to call method {name} for unknown object - id {obj_id}"),
+            };
+            match value {
+                DynamicObject::Date => GoValue::Number(0.0),
+                _ => fail!("Go trying to call unknown method {name} for date object"),
+            }
+        }
+        _ => fail!("Go trying to call unknown method {:?} . {name}", object),
+    };
+
+    sp.write_u64(6, value.encode());
+    sp.write_u8(7, 1);
 }
 
 pub fn js_value_new(env: &WasmEnvArc, sp: u32) {
@@ -321,7 +444,7 @@ pub fn js_value_new(env: &WasmEnvArc, sp: u32) {
             sp.write_u8(5, 1);
             return;
         }
-        _ => eprintln!("Go attempting to construct unimplemented JS value {class}"),
+        _ => eprintln!("Go trying to construct unimplemented JS value {class}"),
     }
     sp.write_u64(4, GoValue::Null.encode());
     sp.write_u8(5, 0);
@@ -330,7 +453,7 @@ pub fn js_value_new(env: &WasmEnvArc, sp: u32) {
 pub fn js_value_length(env: &WasmEnvArc, sp: u32) {
     let (sp, env) = GoStack::new(sp, env);
 
-    let source = match js_value(sp.read_u64(0)) {
+    let source = match JsValue::new(sp.read_u64(0)) {
         JsValue::Ref(x) => env.js_object_pool.get(x),
         _ => None,
     };
@@ -352,7 +475,7 @@ pub fn js_copy_bytes_to_go(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new(sp, env);
     let dest_ptr = sp.read_u64(0);
     let dest_len = sp.read_u64(1);
-    let src_val = js_value(sp.read_u64(3));
+    let src_val = JsValue::new(sp.read_u64(3));
 
     match src_val {
         JsValue::Ref(src_id) => match env.js_object_pool.get_mut(src_id) {
@@ -371,12 +494,12 @@ pub fn js_copy_bytes_to_go(env: &WasmEnvArc, sp: u32) {
             }
             source => {
                 eprintln!(
-                    "Go attempting to copy bytes from unsupported source {:?}",
+                    "Go trying to copy bytes from unsupported source {:?}",
                     source,
                 );
             }
         },
-        _ => eprintln!("Go attempting to copy bytes from {:?}", src_val),
+        _ => eprintln!("Go trying to copy bytes from {:?}", src_val),
     }
 
     sp.write_u8(5, 0);
@@ -385,7 +508,7 @@ pub fn js_copy_bytes_to_go(env: &WasmEnvArc, sp: u32) {
 pub fn js_copy_bytes_to_js(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new(sp, env);
 
-    match js_value(sp.read_u64(0)) {
+    match JsValue::new(sp.read_u64(0)) {
         JsValue::Ref(dest_id) => {
             let src_ptr = sp.read_u64(1);
             let src_len = sp.read_u64(2);
@@ -406,13 +529,10 @@ pub fn js_copy_bytes_to_js(env: &WasmEnvArc, sp: u32) {
                     sp.write_u8(5, 1);
                     return;
                 }
-                dest => eprintln!(
-                    "Go attempting to copy bytes into unsupported target {:?}",
-                    dest,
-                ),
+                dest => eprintln!("Go trying to copy bytes into unsupported target {:?}", dest),
             }
         }
-        value => eprintln!("Go attempting to copy bytes into {:?}", value),
+        value => eprintln!("Go trying to copy bytes into {:?}", value),
     }
 
     sp.write_u64(4, GoValue::Null.encode());

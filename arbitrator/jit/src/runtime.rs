@@ -9,9 +9,11 @@ use thiserror::Error;
 use std::io::Write;
 
 #[derive(Error, Debug)]
-pub enum WasmError {
+pub enum Escape {
     #[error("program exited with status code `{0}`")]
     Exit(u32),
+    #[error("jit failed with `{0}`")]
+    Failure(String),
 }
 
 pub fn go_debug(x: u32) {
@@ -20,9 +22,9 @@ pub fn go_debug(x: u32) {
 
 pub fn reset_memory_data_view(_: u32) {}
 
-pub fn wasm_exit(env: &WasmEnvArc, sp: u32) -> Result<(), WasmError> {
+pub fn wasm_exit(env: &WasmEnvArc, sp: u32) -> Result<(), Escape> {
     let sp = GoStack::new_sans_env(sp, env);
-    Err(WasmError::Exit(sp.read_u32(0)))
+    Err(Escape::Exit(sp.read_u32(0)))
 }
 
 pub fn wasm_write(env: &WasmEnvArc, sp: u32) {
