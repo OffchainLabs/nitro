@@ -125,12 +125,12 @@ func GetVersion() (string, string) {
 func HandleError(err error, usage func(string)) {
 	vcsRevision, vcsTime := GetVersion()
 	fmt.Printf("version: %v, time: %v\n", vcsRevision, vcsTime)
-	if errors.Is(err, ErrVersion) {
+	if err != nil && errors.Is(err, ErrVersion) {
 		// Already printed version, just exit
 		return
 	}
 	usage(os.Args[0])
-	if !errors.Is(err, flag.ErrHelp) {
+	if err != nil && !errors.Is(err, flag.ErrHelp) {
 		fmt.Printf("%s\n", err.Error())
 	}
 }

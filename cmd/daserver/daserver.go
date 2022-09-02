@@ -130,7 +130,7 @@ func startup() error {
 		return nil
 	}
 	if !(serverConfig.EnableRPC || serverConfig.EnableREST) {
-		util.HandleError(err, printSampleUsage)
+		util.HandleError(nil, printSampleUsage)
 		fmt.Printf("Please specify at least one of --enable-rest or --enable-rpc\n")
 		return nil
 	}
