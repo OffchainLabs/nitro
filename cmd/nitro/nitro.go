@@ -118,15 +118,10 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
 	args := os.Args[1:]
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
 	if err != nil {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
-		printSampleUsage(os.Args[0])
-		if !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+		util.HandleError(err, printSampleUsage)
 
 		return
 	}
@@ -135,6 +130,7 @@ func main() {
 		panic(err)
 	}
 
+	vcsRevision, vcsTime := util.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
@@ -213,7 +209,11 @@ func main() {
 		return
 	}
 
-	if nodeConfig.Node.Archive && nodeConfig.Node.TxLookupLimit != 0 {
+	if nodeConfig.Node.Archive {
+		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
+		nodeConfig.Node.Caching.Archive = true
+	}
+	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
 	}
@@ -245,10 +245,9 @@ func main() {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
 	if err != nil {
-		printSampleUsage(os.Args[0])
-		fmt.Printf("%s\n", err.Error())
+		util.HandleError(err, printSampleUsage)
 		return
 	}
 

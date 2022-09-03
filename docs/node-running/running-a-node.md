@@ -41,16 +41,21 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 
   - Note that is important that `/some/local/dir/arbitrum` already exists, otherwise the directory might be created with `root` as owner, and the docker container won't be able to write to it.
 
-  ```
+  ```shell
   docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/nitro-node:v2.0.1-c48b8be --l1.url https://l1-node:8545 --l2.chain-id=<L2ChainId> --http.api=net,web3,eth,debug --http.corsdomain=* --http.addr=0.0.0.0 --http.vhosts=*
   ```
 
   - Note that if you are running L1 node on localhost, you may need to add `--network host` right after `docker run` to use docker host-based networking
 
+  - When shutting down docker image, it is important to allow for a graceful shutdown so that the current state can be saved to disk.  Here is an example of how to do a graceful shutdown of all docker images currently running
+  ```shell
+  docker stop --time=300 $(docker ps -aq)
+  ```
+
 ### Note on permissions
 
 - The Docker image is configured to run as non-root UID 1000. This means if you are running in Linux or OSX and you are getting permission errors when trying to run the docker image, run this command to allow all users to update the persistent folders
-  ```
+  ```shell
   mkdir /data/arbitrum
   chmod -fR 777 /data/arbitrum
   ```
@@ -90,10 +95,10 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 - When running more than one node, you want to run a single arb-relay per datacenter, which will reduce ingress fees and improve stability
 - The arb-relay is in the same docker image.
 - Here is an example of how to run nitro-relay for Arbitrum One:
-  ```
+  ```shell
   docker run --rm -it  -p 0.0.0.0:9642:9642 --entrypoint relay offchainlabs/nitro-node:v2.0.1-c48b8be --node.feed.output.addr=0.0.0.0 --node.feed.input.url=wss://arb1.arbitrum.io/feed
   ```
 - Here is an example of how to run nitro-node for Arbitrum One with custom relay:
-  ```
+  ```shell
   docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/nitro-node:v2.0.1-c48b8be --l1.url=https://l1-mainnet-node:8545 --l2.chain-id=42161 --http.api=net,web3,eth,debug --http.corsdomain=* --http.addr=0.0.0.0 --http.vhosts=* --node.feed.input.url=ws://local-relay-address:9642
   ```
