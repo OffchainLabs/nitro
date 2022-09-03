@@ -392,7 +392,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 
 type Config struct {
 	RPC                  arbitrum.Config                `koanf:"rpc"`
-	Sequencer            SequencerConfig                `koanf:"sequencer"`
+	Sequencer            SequencerConfig                `koanf:"sequencer" reload:"hot"`
 	L1Reader             headerreader.Config            `koanf:"l1-reader"`
 	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
@@ -406,9 +406,18 @@ type Config struct {
 	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
 	Wasm                 WasmConfig                     `koanf:"wasm"`
 	Dangerous            DangerousConfig                `koanf:"dangerous"`
+	Caching              CachingConfig                  `koanf:"caching"`
 	Archive              bool                           `koanf:"archive"`
 	TxLookupLimit        uint64                         `koanf:"tx-lookup-limit"`
 }
+
+func (c *Config) Get() *Config {
+	return c
+}
+
+func (c *Config) Start(context.Context) {}
+
+func (c *Config) StopAndWait() {}
 
 func (c *Config) ForwardingTarget() string {
 	if c.ForwardingTargetImpl == "null" {
@@ -434,8 +443,11 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
-	f.Bool(prefix+".archive", ConfigDefault.Archive, "retain past block state")
+	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
+
+	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
+	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
 }
 
 var ConfigDefault = Config{
@@ -456,6 +468,7 @@ var ConfigDefault = Config{
 	Dangerous:            DefaultDangerousConfig,
 	Archive:              false,
 	TxLookupLimit:        40_000_000,
+	Caching:              DefaultCachingConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -524,13 +537,16 @@ func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type SequencerConfig struct {
 	Enable                      bool                     `koanf:"enable"`
-	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed"`
+	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
 	ForwardTimeout              time.Duration            `koanf:"forward-timeout"`
+	QueueSize                   int                      `koanf:"queue-size"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
+
+type SequencerConfigFetcher func() *SequencerConfig
 
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
@@ -538,6 +554,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
 	ForwardTimeout:              time.Second * 30,
+	QueueSize:                   1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
@@ -548,6 +565,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxAcceptableTimestampDelta: time.Hour,
 	SenderWhitelist:             "",
 	ForwardTimeout:              time.Second * 2,
+	QueueSize:                   128,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -558,6 +576,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	f.Duration(prefix+".forward-timeout", DefaultSequencerConfig.ForwardTimeout, "timeout when forwarding to a different sequencer")
+	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -616,6 +635,27 @@ func (w *WasmConfig) FindMachineDir() (string, bool) {
 	return "", false
 }
 
+type CachingConfig struct {
+	Archive       bool          `koanf:"archive"`
+	BlockCount    uint64        `koanf:"block-count"`
+	BlockAge      time.Duration `koanf:"block-age"`
+	TrieTimeLimit time.Duration `koanf:"trie-time-limit"`
+}
+
+func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".archive", DefaultCachingConfig.Archive, "retain past block state")
+	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
+	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age a block must be to be pruned")
+	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
+}
+
+var DefaultCachingConfig = CachingConfig{
+	Archive:       false,
+	BlockCount:    128,
+	BlockAge:      30 * time.Minute,
+	TrieTimeLimit: time.Hour,
+}
+
 type Node struct {
 	Backend                 *arbitrum.Backend
 	ArbInterface            *ArbInterface
@@ -635,6 +675,13 @@ type Node struct {
 	SeqCoordinator          *SeqCoordinator
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
+	configFetcher           ConfigFetcher
+}
+
+type ConfigFetcher interface {
+	Get() *Config
+	Start(context.Context)
+	StopAndWait()
 }
 
 func createNodeImpl(
@@ -642,7 +689,7 @@ func createNodeImpl(
 	stack *node.Node,
 	chainDb ethdb.Database,
 	arbDb ethdb.Database,
-	config *Config,
+	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
@@ -650,6 +697,7 @@ func createNodeImpl(
 	daSigner das.DasSigner,
 	feedErrChan chan error,
 ) (*Node, error) {
+	config := configFetcher.Get()
 	var reorgingToBlock *types.Block
 
 	l2Config := l2BlockChain.Config()
@@ -705,13 +753,14 @@ func createNodeImpl(
 		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
 			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 		}
+		sequencerConfigFetcher := func() *SequencerConfig { return &configFetcher.Get().Sequencer }
 		if config.L1Reader.Enable {
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
-			sequencer, err = NewSequencer(txStreamer, l1Reader, config.Sequencer)
+			sequencer, err = NewSequencer(txStreamer, l1Reader, sequencerConfigFetcher)
 		} else {
-			sequencer, err = NewSequencer(txStreamer, nil, config.Sequencer)
+			sequencer, err = NewSequencer(txStreamer, nil, sequencerConfigFetcher)
 		}
 		if err != nil {
 			return nil, err
@@ -783,6 +832,7 @@ func createNodeImpl(
 			coordinator,
 			nil,
 			classicOutbox,
+			configFetcher,
 		}, nil
 	}
 
@@ -930,6 +980,7 @@ func createNodeImpl(
 		coordinator,
 		dasLifecycleManager,
 		classicOutbox,
+		configFetcher,
 	}, nil
 }
 
@@ -1160,7 +1211,7 @@ func CreateNode(
 	stack *node.Node,
 	chainDb ethdb.Database,
 	arbDb ethdb.Database,
-	config *Config,
+	configFetcher ConfigFetcher,
 	l2BlockChain *core.BlockChain,
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
@@ -1168,7 +1219,7 @@ func CreateNode(
 	daSigner das.DasSigner,
 	feedErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, config, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1199,6 +1250,7 @@ func CreateNode(
 		Service:   &ArbAPI{currentNode.TxPublisher},
 		Public:    false,
 	})
+	config := configFetcher.Get()
 	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
@@ -1288,10 +1340,16 @@ func (n *Node) Start(ctx context.Context) error {
 	for _, client := range n.BroadcastClients {
 		client.Start(ctx)
 	}
+	if n.configFetcher != nil {
+		n.configFetcher.Start(ctx)
+	}
 	return nil
 }
 
 func (n *Node) StopAndWait() {
+	if n.configFetcher != nil {
+		n.configFetcher.StopAndWait()
+	}
 	for _, client := range n.BroadcastClients {
 		client.StopAndWait()
 	}
@@ -1318,10 +1376,10 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.TxStreamer.StopAndWait()
+	n.ArbInterface.BlockChain().Stop()
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
-	n.ArbInterface.BlockChain().Stop()
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 	}
@@ -1343,9 +1401,9 @@ func CreateDefaultStackForTest(dataDir string) (*node.Node, error) {
 	return stack, nil
 }
 
-func DefaultCacheConfigFor(stack *node.Node, archiveMode bool) *core.CacheConfig {
+func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {
 	baseConf := ethconfig.Defaults
-	if archiveMode {
+	if cachingConfig.Archive {
 		baseConf = ethconfig.ArchiveDefaults
 	}
 
@@ -1355,8 +1413,10 @@ func DefaultCacheConfigFor(stack *node.Node, archiveMode bool) *core.CacheConfig
 		TrieCleanRejournal:  baseConf.TrieCleanCacheRejournal,
 		TrieCleanNoPrefetch: baseConf.NoPrefetch,
 		TrieDirtyLimit:      baseConf.TrieDirtyCache,
-		TrieDirtyDisabled:   baseConf.NoPruning,
-		TrieTimeLimit:       baseConf.TrieTimeout,
+		TrieDirtyDisabled:   cachingConfig.Archive,
+		TrieTimeLimit:       cachingConfig.TrieTimeLimit,
+		TriesInMemory:       cachingConfig.BlockCount,
+		TrieRetention:       cachingConfig.BlockAge,
 		SnapshotLimit:       baseConf.SnapshotCache,
 		Preimages:           baseConf.Preimages,
 	}

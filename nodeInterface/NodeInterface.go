@@ -423,30 +423,16 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 	return send, root, hashes32, nil
 }
 
-func (n NodeInterface) GasEstimateComponents(
-	c ctx, evm mech, value huge, to addr, contractCreation bool, data []byte,
-) (uint64, uint64, huge, huge, error) {
-	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
-	if err != nil {
-		return 0, 0, nil, nil, err
-	}
-
-	if to == types.NodeInterfaceAddress || to == types.NodeInterfaceDebugAddress {
-		return 0, 0, nil, nil, errors.New("cannot estimate virtual contract")
-	}
-
+func (n NodeInterface) messageArgs(
+	evm mech, value huge, to addr, contractCreation bool, data []byte,
+) arbitrum.TransactionArgs {
 	msg := n.sourceMessage
-	context := n.context
-	chainid := evm.ChainConfig().ChainID
-	backend := node.Backend.APIBackend()
-	gasCap := backend.RPCGasCap()
-	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
-
 	from := msg.From()
 	gas := msg.Gas()
 	nonce := msg.Nonce()
 	maxFeePerGas := msg.GasFeeCap()
 	maxPriorityFeePerGas := msg.GasTipCap()
+	chainid := evm.ChainConfig().ChainID
 
 	args := arbitrum.TransactionArgs{
 		ChainID:              (*hexutil.Big)(chainid),
@@ -461,6 +447,58 @@ func (n NodeInterface) GasEstimateComponents(
 	if !contractCreation {
 		args.To = &to
 	}
+	return args
+}
+
+func (n NodeInterface) GasEstimateL1Component(
+	c ctx, evm mech, value huge, to addr, contractCreation bool, data []byte,
+) (uint64, huge, huge, error) {
+
+	// construct a similar message with a random gas limit to avoid underestimating
+	args := n.messageArgs(evm, value, to, contractCreation, data)
+	randomGas := l1pricing.RandomGas
+	args.Gas = (*hexutil.Uint64)(&randomGas)
+
+	msg, err := args.ToMessage(randomGas, n.header, evm.StateDB.(*state.StateDB))
+	if err != nil {
+		return 0, nil, nil, err
+	}
+
+	pricing := c.State.L1PricingState()
+	l1BaseFeeEstimate, err := pricing.PricePerUnit()
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	baseFee, err := c.State.L2PricingState().BaseFeeWei()
+	if err != nil {
+		return 0, nil, nil, err
+	}
+
+	// Compute the fee paid for L1 in L2 terms
+	//   See in GasChargingHook that this does not induce truncation error
+	//
+	feeForL1, _ := pricing.PosterDataCost(msg, l1pricing.BatchPosterAddress)
+	feeForL1 = arbmath.BigMulByBips(feeForL1, arbos.GasEstimationL1PricePadding)
+	gasForL1 := arbmath.BigDiv(feeForL1, baseFee).Uint64()
+	return gasForL1, baseFee, l1BaseFeeEstimate, nil
+}
+
+func (n NodeInterface) GasEstimateComponents(
+	c ctx, evm mech, value huge, to addr, contractCreation bool, data []byte,
+) (uint64, uint64, huge, huge, error) {
+	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, 0, nil, nil, err
+	}
+	if to == types.NodeInterfaceAddress || to == types.NodeInterfaceDebugAddress {
+		return 0, 0, nil, nil, errors.New("cannot estimate virtual contract")
+	}
+
+	context := n.context
+	backend := node.Backend.APIBackend()
+	gasCap := backend.RPCGasCap()
+	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
+	args := n.messageArgs(evm, value, to, contractCreation, data)
 
 	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, gasCap)
 	if err != nil {
@@ -470,7 +508,9 @@ func (n NodeInterface) GasEstimateComponents(
 
 	pricing := c.State.L1PricingState()
 
-	msg, err = args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
+	// Setting the gas will affect the poster data cost
+	args.Gas = &totalRaw
+	msg, err := args.ToMessage(gasCap, n.header, evm.StateDB.(*state.StateDB))
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}

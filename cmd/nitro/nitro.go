@@ -11,7 +11,9 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,7 +41,9 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -114,14 +118,10 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
-	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
+	args := os.Args[1:]
+	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
 	if err != nil {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
-		printSampleUsage(os.Args[0])
-		if !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+		util.HandleError(err, printSampleUsage)
 
 		return
 	}
@@ -130,6 +130,7 @@ func main() {
 		panic(err)
 	}
 
+	vcsRevision, vcsTime := util.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
@@ -214,7 +215,11 @@ func main() {
 		return
 	}
 
-	if nodeConfig.Node.Archive && nodeConfig.Node.TxLookupLimit != 0 {
+	if nodeConfig.Node.Archive {
+		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
+		nodeConfig.Node.Caching.Archive = true
+	}
+	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
 	}
@@ -246,10 +251,9 @@ func main() {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
 	if err != nil {
-		printSampleUsage(os.Args[0])
-		fmt.Printf("%s\n", err.Error())
+		util.HandleError(err, printSampleUsage)
 		return
 	}
 
@@ -276,13 +280,14 @@ func main() {
 		}
 	}
 
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	feedErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
 		chainDb,
 		arbDb,
-		&nodeConfig.Node,
+		&NodeConfigFetcher{liveNodeConfig},
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
@@ -337,12 +342,12 @@ func main() {
 }
 
 type NodeConfig struct {
-	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	Node          arbnode.Config                  `koanf:"node"`
+	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
-	LogLevel      int                             `koanf:"log-level"`
-	LogType       string                          `koanf:"log-type"`
+	LogLevel      int                             `koanf:"log-level" reload:"hot"`
+	LogType       string                          `koanf:"log-type" reload:"hot"`
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
@@ -391,6 +396,40 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	c.L2.ResolveDirectoryNames(c.Persistent.Chain)
 
 	return nil
+}
+
+func (c *NodeConfig) ShallowClone() *NodeConfig {
+	config := &NodeConfig{}
+	*config = *c
+	return config
+}
+
+func (c *NodeConfig) CanReload(new *NodeConfig) error {
+	var check func(node, other reflect.Value, path string)
+	var err error
+
+	check = func(node, value reflect.Value, path string) {
+		if node.Kind() != reflect.Struct {
+			return
+		}
+
+		for i := 0; i < node.NumField(); i++ {
+			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
+			dot := path + "." + node.Type().Field(i).Name
+
+			first := node.Field(i).Interface()
+			other := value.Field(i).Interface()
+
+			if !hot && !reflect.DeepEqual(first, other) {
+				err = fmt.Errorf("Illegal change to %v%v%v", colors.Red, dot, colors.Clear)
+			} else {
+				check(node.Field(i), value.Field(i), dot)
+			}
+		}
+	}
+
+	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
+	return err
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
@@ -621,4 +660,97 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain": "goerli-anytrust",
 	}, "."), nil)
+}
+
+type LiveNodeConfig struct {
+	stopwaiter.StopWaiter
+
+	mutex  sync.RWMutex
+	args   []string
+	config *NodeConfig
+}
+
+func (c *LiveNodeConfig) get() *NodeConfig {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.config
+}
+
+func (c *LiveNodeConfig) set(config *NodeConfig) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if err := c.config.CanReload(config); err != nil {
+		return err
+	}
+	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
+		return err
+	}
+	c.config = config
+	return nil
+}
+
+func (c *LiveNodeConfig) Start(ctxIn context.Context) {
+	c.StopWaiter.Start(ctxIn)
+
+	sigusr1 := make(chan os.Signal, 1)
+	signal.Notify(sigusr1, syscall.SIGUSR1)
+
+	c.LaunchThread(func(ctx context.Context) {
+		for {
+			reloadInterval := c.config.Conf.ReloadInterval
+			if reloadInterval == 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-sigusr1:
+					log.Info("Configuration reload triggered by SIGUSR1.")
+				}
+			} else {
+				timer := time.NewTimer(reloadInterval)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-sigusr1:
+					timer.Stop()
+					log.Info("Configuration reload triggered by SIGUSR1.")
+				case <-timer.C:
+				}
+			}
+			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
+			if err != nil {
+				log.Error("error parsing live config", "error", err.Error())
+				continue
+			}
+			err = c.set(nodeConfig)
+			if err != nil {
+				log.Error("error updating live config", "error", err.Error())
+				continue
+			}
+		}
+	})
+}
+
+func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
+	return &LiveNodeConfig{
+		args:   args,
+		config: config,
+	}
+}
+
+type NodeConfigFetcher struct {
+	*LiveNodeConfig
+}
+
+func (f *NodeConfigFetcher) Get() *arbnode.Config {
+	return &f.LiveNodeConfig.get().Node
+}
+
+func (f *NodeConfigFetcher) Start(ctx context.Context) {
+	f.LiveNodeConfig.Start(ctx)
+}
+
+func (f *NodeConfigFetcher) StopAndWait() {
+	f.LiveNodeConfig.StopAndWait()
 }
