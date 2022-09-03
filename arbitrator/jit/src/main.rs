@@ -12,6 +12,7 @@ mod arbcompress;
 mod gostack;
 mod machine;
 mod runtime;
+mod socket;
 mod syscall;
 mod test;
 mod wavmio;
@@ -72,11 +73,11 @@ fn main() {
     escape = check_outcome(outcome);
 
     if escape.is_none() {
-        while let Some(event) = env.lock().js_future_events.pop_front() {
-            if let Some(issue) = &env.lock().js_pending_event {
+        while let Some(event) = env.lock().js_state.future_events.pop_front() {
+            if let Some(issue) = &env.lock().js_state.pending_event {
                 println!("Go runtime overwriting pending event {:?}", issue);
             }
-            env.lock().js_pending_event = Some(event);
+            env.lock().js_state.pending_event = Some(event);
             escape = check_outcome(resume.call(&[]));
             if escape.is_some() {
                 break;
@@ -91,6 +92,7 @@ fn main() {
         Some(Escape::Exit(x)) => println!("Failed in {elapsed}ms with exit code {x}"),
         Some(Escape::Failure(err)) => println!("Jit failed with {err} in {elapsed}ms"),
         Some(Escape::HostIO(err)) => println!("Hostio failed with {err} in {elapsed}ms"),
+        Some(Escape::SocketError(err)) => println!("Socket failed with {err} in {elapsed}ms"),
         _ => println!("Execution ended prematurely"),
     }
 }

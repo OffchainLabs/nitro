@@ -6,7 +6,10 @@ use crate::gostack::{GoStack, WasmEnv, WasmEnvArc};
 use parking_lot::MutexGuard;
 use rand::RngCore;
 
-use std::{collections::BTreeMap, io::Write};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    io::Write,
+};
 
 const ZERO_ID: u32 = 1;
 const NULL_ID: u32 = 2;
@@ -25,8 +28,18 @@ const FS_CONSTANTS_ID: u32 = 200;
 
 const DYNAMIC_OBJECT_ID_BASE: u32 = 10000;
 
+#[derive(Clone, Default)]
+pub struct JsRuntimeState {
+    /// A collection of js objects
+    pool: DynamicObjectPool,
+    /// The event Go will execute next
+    pub pending_event: Option<PendingEvent>,
+    /// Future events that Go has scheduled after the next one up
+    pub future_events: VecDeque<PendingEvent>,
+}
+
 #[derive(Clone, Default, Debug)]
-pub struct DynamicObjectPool {
+struct DynamicObjectPool {
     objects: BTreeMap<u32, DynamicObject>,
     free_ids: Vec<u32>,
 }
@@ -149,12 +162,12 @@ impl GoValue {
 fn get_field(env: &mut MutexGuard<WasmEnv>, source: u32, field: &[u8]) -> GoValue {
     use DynamicObject::*;
 
-    if let Some(source) = env.js_object_pool.get(source) {
+    if let Some(source) = env.js_state.pool.get(source) {
         return match (source, field) {
             (PendingEvent(event), b"id" | b"this") => event.id.assume_num_or_object(),
             (PendingEvent(event), b"args") => {
                 let args = ValueArray(event.args.clone());
-                let id = env.js_object_pool.insert(args);
+                let id = env.js_state.pool.insert(args);
                 GoValue::Object(id)
             }
             _ => {
@@ -182,10 +195,10 @@ fn get_field(env: &mut MutexGuard<WasmEnv>, source: u32, field: &[u8]) -> GoValu
             FS_CONSTANTS_ID,
             b"O_WRONLY" | b"O_RDWR" | b"O_CREAT" | b"O_TRUNC" | b"O_APPEND" | b"O_EXCL",
         ) => GoValue::Number(-1.),
-        (GO_ID, b"_pendingEvent") => match &mut env.js_pending_event {
+        (GO_ID, b"_pendingEvent") => match &mut env.js_state.pending_event {
             Some(event) => {
                 let event = PendingEvent(event.clone());
-                let id = env.js_object_pool.insert(event);
+                let id = env.js_state.pool.insert(event);
                 GoValue::Object(id)
             }
             None => GoValue::Null,
@@ -200,7 +213,7 @@ fn get_field(env: &mut MutexGuard<WasmEnv>, source: u32, field: &[u8]) -> GoValu
 
 pub fn js_finalize_ref(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new(sp, env);
-    let pool = &mut env.js_object_pool;
+    let pool = &mut env.js_state.pool;
 
     let val = JsValue::new(sp.read_u64(0));
     match val {
@@ -241,11 +254,11 @@ pub fn js_value_set(env: &WasmEnvArc, sp: u32) {
     let new_value = JsValue::new(sp.read_u64(3));
     let field = sp.read_slice(field_ptr, field_len);
     if source == Ref(GO_ID) && &field == b"_pendingEvent" && new_value == Ref(NULL_ID) {
-        env.js_pending_event = None;
+        env.js_state.pending_event = None;
         return;
     }
     if let Ref(id) = source {
-        let source = env.js_object_pool.get(id);
+        let source = env.js_state.pool.get(id);
         if let Some(DynamicObject::PendingEvent(_)) = source {
             if field == b"result" {
                 return;
@@ -270,7 +283,7 @@ pub fn js_value_index(env: &WasmEnvArc, sp: u32) {
     }
 
     let source = match JsValue::new(sp.read_u64(0)) {
-        JsValue::Ref(x) => env.js_object_pool.get(x),
+        JsValue::Ref(x) => env.js_state.pool.get(x),
         val => fail!("Go attempted to index into {:?}", val),
     };
     let index = match u32::try_from(sp.read_u64(1)) {
@@ -292,9 +305,9 @@ pub fn js_value_index(env: &WasmEnvArc, sp: u32) {
 pub fn js_value_call(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new(sp, env);
     let env = &mut *env;
-    let rng = &mut env.rng;
-    let pool = &mut env.js_object_pool;
-    let events = &mut env.js_future_events;
+    let rng = &mut env.go_state.rng;
+    let pool = &mut env.js_state.pool;
+    let events = &mut env.js_state.future_events;
     use JsValue::*;
 
     let object = JsValue::new(sp.read_u64(0));
@@ -419,7 +432,7 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) {
 
 pub fn js_value_new(env: &WasmEnvArc, sp: u32) {
     let (sp, mut env) = GoStack::new(sp, env);
-    let pool = &mut env.js_object_pool;
+    let pool = &mut env.js_state.pool;
 
     let class = sp.read_u32(0);
     let args_ptr = sp.read_u64(1);
@@ -454,7 +467,7 @@ pub fn js_value_length(env: &WasmEnvArc, sp: u32) {
     let (sp, env) = GoStack::new(sp, env);
 
     let source = match JsValue::new(sp.read_u64(0)) {
-        JsValue::Ref(x) => env.js_object_pool.get(x),
+        JsValue::Ref(x) => env.js_state.pool.get(x),
         _ => None,
     };
     let length = match source {
@@ -478,7 +491,7 @@ pub fn js_copy_bytes_to_go(env: &WasmEnvArc, sp: u32) {
     let src_val = JsValue::new(sp.read_u64(3));
 
     match src_val {
-        JsValue::Ref(src_id) => match env.js_object_pool.get_mut(src_id) {
+        JsValue::Ref(src_id) => match env.js_state.pool.get_mut(src_id) {
             Some(DynamicObject::Uint8Array(buf)) => {
                 let src_len = buf.len() as u64;
                 if src_len != dest_len {
@@ -513,7 +526,7 @@ pub fn js_copy_bytes_to_js(env: &WasmEnvArc, sp: u32) {
             let src_ptr = sp.read_u64(1);
             let src_len = sp.read_u64(2);
 
-            match env.js_object_pool.get_mut(dest_id) {
+            match env.js_state.pool.get_mut(dest_id) {
                 Some(DynamicObject::Uint8Array(buf)) => {
                     let dest_len = buf.len() as u64;
                     if buf.len() as u64 != src_len {

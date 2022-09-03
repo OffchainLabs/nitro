@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    syscall::{DynamicObjectPool, JsValue, PendingEvent},
+    syscall::{JsRuntimeState, JsValue},
     wavmio::Bytes32,
     Opts,
 };
@@ -15,9 +15,10 @@ use thiserror::Error;
 use wasmer::{Memory, MemoryView, WasmPtr, WasmerEnv};
 
 use std::{
-    collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque},
+    collections::{BTreeMap, BTreeSet, BinaryHeap},
     fs::File,
-    io::{BufReader, ErrorKind, Read},
+    io::{self, BufReader, ErrorKind, Read},
+    net::TcpStream,
     ops::Deref,
     sync::Arc,
 };
@@ -133,11 +134,17 @@ pub enum Escape {
     Failure(String),
     #[error("hostio failed with `{0}`")]
     HostIO(String),
+    #[error("hostio socket failed with `{0}`")]
+    SocketError(#[from] io::Error),
 }
 
 pub type MaybeEscape = Result<(), Escape>;
 
 impl Escape {
+    pub fn exit(code: u32) -> MaybeEscape {
+        Err(Self::Exit(code))
+    }
+
     pub fn hostio(message: &str) -> MaybeEscape {
         Err(Self::HostIO(message.to_owned()))
     }
@@ -146,24 +153,14 @@ impl Escape {
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Oracle = BTreeMap<[u8; 32], Vec<u8>>;
 
-#[derive(Clone, WasmerEnv)]
+#[derive(Clone, Default, WasmerEnv)]
 pub struct WasmEnv {
     /// Mechanism for reading and writing the module's memory
     pub memory: Option<Memory>,
-    /// An increasing clock used when Go asks for time, measured in nanoseconds
-    pub time: u64,
-    /// The amount of time advanced each check. Currently 10 milliseconds
-    pub time_interval: u64,
-    /// The state of Go's timeouts
-    pub timeouts: TimeoutState,
-    /// Deterministic source of random data
-    pub rng: Pcg32,
-    /// A collection of js objects
-    pub js_object_pool: DynamicObjectPool,
-    /// The event Go will execute next
-    pub js_pending_event: Option<PendingEvent>,
-    /// Future events that Go has scheduled after the next one up
-    pub js_future_events: VecDeque<PendingEvent>,
+    /// Go's general runtime state
+    pub go_state: GoRuntimeState,
+    /// The state of Go's js runtime
+    pub js_state: JsRuntimeState,
     /// An ordered list of the 8-byte globals
     pub small_globals: Vec<u64>,
     /// An ordered list of the 32-byte globals
@@ -176,27 +173,10 @@ pub struct WasmEnv {
     pub delayed_messages: Inbox,
     /// The first inbox message number knowably out of bounds
     pub first_too_far: u64,
-}
-
-impl Default for WasmEnv {
-    fn default() -> Self {
-        Self {
-            memory: None,
-            time: 0,
-            time_interval: 10_000_000,
-            timeouts: TimeoutState::default(),
-            rng: Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7),
-            js_object_pool: DynamicObjectPool::default(),
-            js_pending_event: None,
-            js_future_events: VecDeque::new(),
-            small_globals: vec![],
-            large_globals: vec![],
-            preimages: Oracle::new(),
-            sequencer_messages: Inbox::new(),
-            delayed_messages: Inbox::new(),
-            first_too_far: 0,
-        }
-    }
+    /// Whether to create child processes to handle execution
+    pub forks: bool,
+    /// Mechanism for asking for preimages and returning results
+    pub socket: Arc<Option<BufReader<TcpStream>>>,
 }
 
 #[derive(Clone, Default, WasmerEnv)]
@@ -274,6 +254,29 @@ impl WasmEnvArc {
         env.small_globals = vec![opts.inbox_position, opts.position_within_message];
         env.large_globals = vec![last_block_hash, last_send_root];
         Ok(Self(Arc::new(Mutex::new(env))))
+    }
+}
+
+#[derive(Clone)]
+pub struct GoRuntimeState {
+    /// An increasing clock used when Go asks for time, measured in nanoseconds
+    pub time: u64,
+    /// The amount of time advanced each check. Currently 10 milliseconds
+    pub time_interval: u64,
+    /// The state of Go's timeouts
+    pub timeouts: TimeoutState,
+    /// Deterministic source of random data
+    pub rng: Pcg32,
+}
+
+impl Default for GoRuntimeState {
+    fn default() -> Self {
+        Self {
+            time: 0,
+            time_interval: 10_000_000,
+            timeouts: TimeoutState::default(),
+            rng: Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7),
+        }
     }
 }
 

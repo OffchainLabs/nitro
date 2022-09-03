@@ -1,15 +1,25 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use std::{
+    io,
+    io::{BufReader, ErrorKind},
+    net::TcpStream,
+    sync::Arc,
+};
+
 use parking_lot::MutexGuard;
 
-use crate::gostack::{Escape, GoStack, Inbox, MaybeEscape, WasmEnv, WasmEnvArc};
+use crate::{
+    gostack::{Escape, GoStack, Inbox, MaybeEscape, WasmEnv, WasmEnvArc},
+    socket,
+};
 
 pub type Bytes32 = [u8; 32];
 
 pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env);
+    ready_hostio(&mut *env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     let out_ptr = sp.read_u64(1);
@@ -30,7 +40,7 @@ pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env);
+    ready_hostio(&mut *env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     let src_ptr = sp.read_u64(1);
@@ -53,7 +63,7 @@ pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env);
+    ready_hostio(&mut *env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get(global) {
@@ -65,7 +75,7 @@ pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env);
+    ready_hostio(&mut *env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get_mut(global) {
@@ -77,7 +87,7 @@ pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn read_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env);
+    ready_hostio(&mut *env)?;
 
     let inbox = &env.sequencer_messages;
     inbox_message_impl(&sp, &env, inbox, "wavmio.readInboxMessage")
@@ -85,7 +95,7 @@ pub fn read_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn read_delayed_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env);
+    ready_hostio(&mut *env)?;
 
     let inbox = &env.delayed_messages;
     inbox_message_impl(&sp, &env, inbox, "wavmio.readDelayedInboxMessage")
@@ -183,6 +193,63 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-fn ready_hostio(_env: &mut WasmEnv) {
-    // TODO: add fork loop
+fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
+    if !env.forks {
+        return Ok(());
+    }
+
+    let stdin = io::stdin();
+    let mut port = String::new();
+
+    loop {
+        if let Err(error) = stdin.read_line(&mut port) {
+            return match error.kind() {
+                ErrorKind::UnexpectedEof => Escape::exit(0),
+                error => Escape::hostio(&format!("Error reading stdin: {error}")),
+            };
+        }
+
+        unsafe {
+            match libc::fork() {
+                -1 => return Escape::hostio("Failed to fork"),
+                0 => break,                // we're the child process
+                _ => port = String::new(), // we're the parent process
+            }
+        }
+    }
+
+    let address = format!("127.0.0.1:{port}");
+    let socket = TcpStream::connect(&address)?;
+
+    let mut reader = BufReader::new(socket);
+    let stream = &mut reader;
+
+    let inbox_position = socket::read_u64(stream)?;
+    let position_within_message = socket::read_u64(stream)?;
+    let last_block_hash = socket::read_bytes32(stream)?;
+    let last_send_root = socket::read_bytes32(stream)?;
+
+    env.small_globals = vec![inbox_position, position_within_message];
+    env.large_globals = vec![last_block_hash, last_send_root];
+
+    env.sequencer_messages.clear();
+    env.delayed_messages.clear();
+
+    let mut inbox_position = inbox_position;
+    let mut delayed_position = socket::read_u64(stream)?;
+
+    while socket::read_u8(stream)? == 1 {
+        let message = socket::read_bytes(stream)?;
+        env.sequencer_messages.insert(inbox_position, message);
+        inbox_position += 1;
+    }
+    while socket::read_u8(stream)? == 1 {
+        let message = socket::read_bytes(stream)?;
+        env.delayed_messages.insert(delayed_position, message);
+        delayed_position += 1;
+    }
+
+    env.socket = Arc::new(Some(reader));
+    env.forks = false;
+    Ok(())
 }
