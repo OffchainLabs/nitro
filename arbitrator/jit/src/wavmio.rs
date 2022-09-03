@@ -3,9 +3,8 @@
 
 use std::{
     io,
-    io::{BufReader, ErrorKind},
+    io::{BufReader, BufWriter, ErrorKind},
     net::TcpStream,
-    sync::Arc,
 };
 
 use parking_lot::MutexGuard;
@@ -151,7 +150,7 @@ fn inbox_message_impl(
 }
 
 pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, env);
+    let (sp, mut env) = GoStack::new(sp, env);
     let name = "wavmio.resolvePreImage";
 
     let hash_ptr = sp.read_u64(0);
@@ -174,12 +173,17 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
     let hash = sp.read_slice(hash_ptr, hash_len);
     let hash: &[u8; 32] = &hash.try_into().unwrap();
+
+    if let Some((socket, reader)) = &mut env.process.socket {
+        // 
+    }
+
     let preimage = match env.preimages.get(hash) {
         Some(preimage) => preimage,
-        None => error!(
-            "Missing requested preimage for hash {} in {name}",
-            hex::encode(hash)
-        ),
+        None => {
+            let hash = hex::encode(hash);
+            error!("Missing requested preimage for hash {hash} in {name}",)
+        }
     };
     let offset = match u32::try_from(offset) {
         Ok(offset) => offset as usize,
@@ -194,7 +198,7 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
-    if !env.forks {
+    if !env.process.forks {
         return Ok(());
     }
 
@@ -221,7 +225,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let address = format!("127.0.0.1:{port}");
     let socket = TcpStream::connect(&address)?;
 
-    let mut reader = BufReader::new(socket);
+    let mut reader = BufReader::new(socket.try_clone()?);
     let stream = &mut reader;
 
     let inbox_position = socket::read_u64(stream)?;
@@ -249,7 +253,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         delayed_position += 1;
     }
 
-    env.socket = Arc::new(Some(reader));
-    env.forks = false;
+    env.process.socket = Some((socket, reader));
+    env.process.forks = false;
     Ok(())
 }

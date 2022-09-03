@@ -3,7 +3,8 @@
 
 use std::{
     io,
-    io::{BufReader, Read},
+    io::{BufReader, Read, Write},
+    net::TcpStream,
 };
 
 use crate::wavmio::Bytes32;
@@ -28,4 +29,13 @@ pub fn read_bytes<T: Read>(reader: &mut BufReader<T>) -> Result<Vec<u8>, io::Err
     let mut buf = vec![0; size as usize];
     reader.read_exact(&mut buf)?;
     Ok(buf)
+}
+
+pub fn write_u8(mut writer: TcpStream, data: u8) -> Result<(), io::Error> {
+    let buf = [data, 1];
+    writer.write_all(&buf)
+}
+
+pub fn write_bytes32(mut writer: TcpStream, data: &Bytes32) -> Result<(), io::Error> {
+    writer.write_all(data)
 }

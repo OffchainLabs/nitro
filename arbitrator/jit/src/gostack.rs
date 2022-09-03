@@ -153,7 +153,7 @@ impl Escape {
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Oracle = BTreeMap<[u8; 32], Vec<u8>>;
 
-#[derive(Clone, Default, WasmerEnv)]
+#[derive(Default)]
 pub struct WasmEnv {
     /// Mechanism for reading and writing the module's memory
     pub memory: Option<Memory>,
@@ -173,10 +173,8 @@ pub struct WasmEnv {
     pub delayed_messages: Inbox,
     /// The first inbox message number knowably out of bounds
     pub first_too_far: u64,
-    /// Whether to create child processes to handle execution
-    pub forks: bool,
-    /// Mechanism for asking for preimages and returning results
-    pub socket: Arc<Option<BufReader<TcpStream>>>,
+    /// The purpose and connections of this process
+    pub process: ProcessEnv,
 }
 
 #[derive(Clone, Default, WasmerEnv)]
@@ -307,4 +305,12 @@ pub struct TimeoutState {
     pub times: BinaryHeap<TimeoutInfo>,
     pub pending_ids: BTreeSet<u32>,
     pub next_id: u32,
+}
+
+#[derive(Default)]
+pub struct ProcessEnv {
+    /// Whether to create child processes to handle execution
+    pub forks: bool,
+    /// Mechanism for asking for preimages and returning results
+    pub socket: Option<(TcpStream, BufReader<TcpStream>)>,
 }
