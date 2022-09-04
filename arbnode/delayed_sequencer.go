@@ -89,16 +89,17 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 		return nil
 	}
 
-	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(d.config().FinalizeDistance))
+	config := d.config()
+	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(config.FinalizeDistance))
 	if finalized.Sign() < 0 {
 		finalized.SetInt64(0)
 	}
 
 	// Once the merge is live, we can directly query for the latest finalized block number
-	if lastBlockHeader.Difficulty.Sign() == 0 && d.config().UseMergeFinality {
+	if lastBlockHeader.Difficulty.Sign() == 0 && config.UseMergeFinality {
 		var header *types.Header
 		var err error
-		if d.config().RequireFullFinality {
+		if config.RequireFullFinality {
 			header, err = d.l1Reader.LatestFinalizedHeader()
 		} else {
 			header, err = d.l1Reader.LatestSafeHeader()
