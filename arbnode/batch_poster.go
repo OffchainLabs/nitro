@@ -33,12 +33,11 @@ import (
 
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader      *headerreader.HeaderReader
-	inbox         *InboxTracker
-	streamer      *TransactionStreamer
-	config        BatchPosterConfigFetcher
-	inboxContract *bridgegen.SequencerInbox
-	// gasRefunder         common.Address
+	l1Reader            *headerreader.HeaderReader
+	inbox               *InboxTracker
+	streamer            *TransactionStreamer
+	config              BatchPosterConfigFetcher
+	inboxContract       *bridgegen.SequencerInbox
 	transactOpts        *bind.TransactOpts
 	building            *buildingBatch
 	pendingMsgTimestamp time.Time
@@ -123,8 +122,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		config:        configFetcher,
 		inboxContract: inboxContract,
 		transactOpts:  transactOpts,
-		//		gasRefunder:   common.HexToAddress(config.GasRefunderAddress),
-		daWriter: daWriter,
+		daWriter:      daWriter,
 	}, nil
 }
 
