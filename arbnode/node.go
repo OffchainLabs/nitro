@@ -396,7 +396,7 @@ type Config struct {
 	L1Reader             headerreader.Config            `koanf:"l1-reader" reload:"hot"`
 	InboxReader          InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
+	BatchPoster          BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
 	PreCheckTxs          bool                           `koanf:"pre-check-txs"`
 	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
@@ -917,7 +917,7 @@ func createNodeImpl(
 		if txOpts == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, txOpts, daWriter)
+		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo.SequencerInbox, txOpts, daWriter)
 		if err != nil {
 			return nil, err
 		}
