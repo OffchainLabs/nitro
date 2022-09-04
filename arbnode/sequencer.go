@@ -57,15 +57,16 @@ type Sequencer struct {
 	forwarder      *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfigFetcher) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
+	config := configFetcher()
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	senderWhitelist := make(map[common.Address]struct{})
-	entries := strings.Split(config().SenderWhitelist, ",")
+	entries := strings.Split(config.SenderWhitelist, ",")
 	for _, address := range entries {
 		if len(address) == 0 {
 			continue
-		}
-		if !common.IsHexAddress(address) {
-			return nil, fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
 		}
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
@@ -73,7 +74,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		txStreamer:      txStreamer,
 		txQueue:         make(chan txQueueItem, 128),
 		l1Reader:        l1Reader,
-		config:          config,
+		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
 		l1BlockNumber:   0,
 		l1Timestamp:     0,

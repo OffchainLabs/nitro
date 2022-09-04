@@ -540,6 +540,19 @@ type SequencerConfig struct {
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
+func (c *SequencerConfig) Validate() error {
+	entries := strings.Split(c.SenderWhitelist, ",")
+	for _, address := range entries {
+		if len(address) == 0 {
+			continue
+		}
+		if !common.IsHexAddress(address) {
+			return fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
+		}
+	}
+	return nil
+}
+
 type SequencerConfigFetcher func() *SequencerConfig
 
 var DefaultSequencerConfig = SequencerConfig{
