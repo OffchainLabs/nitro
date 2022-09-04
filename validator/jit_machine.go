@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/pkg/errors"
 )
 
@@ -34,7 +33,7 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash) (*JitMa
 	}
 
 	binary := filepath.Join(config.getMachinePath(moduleRoot), config.ProverBinPath)
-	process := exec.Command(jitBinary, "--binary", binary, "--forks", "--cranelift")
+	process := exec.Command(jitBinary, "--binary", binary, "--forks")
 	stdin, err := process.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -45,8 +44,6 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash) (*JitMa
 		return nil, err
 	}
 
-	colors.PrintBlue("Created: ", jitBinary)
-
 	machine := &JitMachine{
 		binary:  binary,
 		process: process,
@@ -55,30 +52,29 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash) (*JitMa
 	return machine, nil
 }
 
-func (machine *JitMachine) prove(entry *validationEntry, delayed []byte) (GoGlobalState, error) {
-	empty := GoGlobalState{}
+func (machine *JitMachine) prove(
+	entry *validationEntry, resolver GoPreimageResolver, delayed []byte,
+) (GoGlobalState, error) {
+	state := GoGlobalState{}
 
-	timeout := time.Now().Add(10 * time.Second)
-
+	timeout := time.Now().Add(60 * time.Second)
 	tcp, err := net.ListenTCP("tcp", &net.TCPAddr{})
 	if err != nil {
-		return empty, err
+		return state, err
 	}
 	tcp.SetDeadline(timeout)
 	defer tcp.Close()
 	address := fmt.Sprintf("%v\n", tcp.Addr().String())
 
 	// Tell the spawner process about the new tcp port
-	colors.PrintBlue("Writing to standard in ", address)
 	if _, err := machine.stdin.Write([]byte(address)); err != nil {
-		return empty, err
+		return state, err
 	}
 
 	// Wait for the forked process to connect
-	colors.PrintBlue("Waiting for tcp on ", address)
 	conn, err := tcp.Accept()
 	if err != nil {
-		return empty, err
+		return state, err
 	}
 	conn.SetReadDeadline(timeout)
 	conn.SetWriteDeadline(timeout)
@@ -86,7 +82,6 @@ func (machine *JitMachine) prove(entry *validationEntry, delayed []byte) (GoGlob
 
 	// Tell the new process about the global state
 	gsStart := entry.start()
-	colors.PrintBlue("Sending global state")
 
 	writeExact := func(data []byte) error {
 		_, err := conn.Write(data)
@@ -107,16 +102,16 @@ func (machine *JitMachine) prove(entry *validationEntry, delayed []byte) (GoGlob
 
 	// send global state
 	if err := writeUint64(gsStart.Batch); err != nil {
-		return empty, err
+		return state, err
 	}
 	if err := writeUint64(gsStart.PosInBatch); err != nil {
-		return empty, err
+		return state, err
 	}
 	if err := writeExact(gsStart.BlockHash[:]); err != nil {
-		return empty, err
+		return state, err
 	}
 	if err := writeExact(gsStart.SendRoot[:]); err != nil {
-		return empty, err
+		return state, err
 	}
 
 	const successByte = 0x0
@@ -132,38 +127,38 @@ func (machine *JitMachine) prove(entry *validationEntry, delayed []byte) (GoGlob
 	// send inbox
 	for _, batch := range entry.BatchInfo {
 		if err := writeExact(another); err != nil {
-			return empty, err
+			return state, err
 		}
 		if err := writeUint64(batch.Number); err != nil {
-			return empty, err
+			return state, err
 		}
 		if err := writeBytes(batch.Data); err != nil {
-			return empty, err
+			return state, err
 		}
 	}
-	if _, err := conn.Write(success); err != nil {
-		return empty, err
+	if err := writeExact(success); err != nil {
+		return state, err
 	}
 
 	// send delayed inbox
 	if entry.HasDelayedMsg {
 		if err := writeExact(another); err != nil {
-			return empty, err
+			return state, err
 		}
 		if err := writeUint64(entry.DelayedMsgNr); err != nil {
-			return empty, err
+			return state, err
 		}
 		if err := writeBytes(delayed); err != nil {
-			return empty, err
+			return state, err
 		}
 	}
-	if _, err := conn.Write(ready); err != nil {
-		return empty, err
+	if err := writeExact(ready); err != nil {
+		return state, err
 	}
 
 	read := func(count uint64) ([]byte, error) {
 		slice := make([]byte, count)
-		_, err := conn.Read(slice)
+		_, err := io.ReadFull(conn, slice)
 		if err != nil {
 			return nil, err
 		}
@@ -176,44 +171,69 @@ func (machine *JitMachine) prove(entry *validationEntry, delayed []byte) (GoGlob
 		}
 		return binary.BigEndian.Uint64(slice), nil
 	}
+	readHash := func() (common.Hash, error) {
+		slice, err := read(32)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		return common.BytesToHash(slice), nil
+	}
 
 	for {
 		kind, err := read(1)
 		if err != nil {
-			return empty, err
+			return state, err
 		}
 		switch kind[0] {
 		case preimageByte:
-			colors.PrintBlue("Got preimage request")
-			hash, err := read(32)
+			hash, err := readHash()
 			if err != nil {
-				return empty, err
+				return state, err
 			}
-			colors.PrintBlue("Supplying preimage 0x", common.Bytes2Hex(hash), " ", len(hash))
-			_ = hash
+			preimage, err := resolver(hash)
+			if err != nil {
+				log.Error("Failed to resolve preimage for jit", "hash", hash)
+				if err := writeUint8(failureByte); err != nil {
+					return state, err
+				}
+				continue
+			}
 
-			// no hash found
-			if err := writeUint8(0x01); err != nil {
-				return empty, err
+			// send the preimage
+			if err := writeUint8(successByte); err != nil {
+				return state, err
 			}
+			if err := writeBytes(preimage); err != nil {
+				return state, err
+			}
+
 		case failureByte:
-			colors.PrintRed("Machine failed")
 			length, err := readUint64()
 			if err != nil {
-				return empty, err
+				return state, err
 			}
 			message, err := read(length)
 			if err != nil {
-				return empty, err
+				return state, err
 			}
 			log.Error("Jit Machine Failure", "message", string(message))
-			return empty, errors.New(string(message))
+			return state, errors.New(string(message))
 		case successByte:
-			colors.PrintMint("Got success")
+			if state.Batch, err = readUint64(); err != nil {
+				return state, err
+			}
+			if state.PosInBatch, err = readUint64(); err != nil {
+				return state, err
+			}
+			if state.BlockHash, err = readHash(); err != nil {
+				return state, err
+			}
+			state.SendRoot, err = readHash()
+			return state, err
 		default:
 			message := "inter-process communication failure"
 			log.Error("Jit Machine Failure", "message", message)
-			return empty, errors.New("inter-process communication failure")
+			return state, errors.New("inter-process communication failure")
 		}
 	}
 }

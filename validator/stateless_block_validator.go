@@ -403,14 +403,13 @@ func BlockDataForValidation(
 	return
 }
 
-func SetMachinePreimageResolver(
+func NewMachinePreimageResolver(
 	ctx context.Context,
-	mach *ArbitratorMachine,
 	preimages map[common.Hash][]byte,
 	batchInfo []BatchInfo,
 	bc *core.BlockChain,
 	das arbstate.DataAvailabilityReader,
-) error {
+) (GoPreimageResolver, error) {
 	recordNewPreimages := true
 	if preimages == nil {
 		preimages = make(map[common.Hash][]byte)
@@ -422,19 +421,21 @@ func SetMachinePreimageResolver(
 			if das == nil {
 				log.Error("No DAS configured, but sequencer message found with DAS header")
 				if bc.Config().ArbitrumChainParams.DataAvailabilityCommittee {
-					return errors.New("processing data availability chain without DAS configured")
+					return nil, errors.New("processing data availability chain without DAS configured")
 				}
 			} else {
-				_, err := arbstate.RecoverPayloadFromDasBatch(ctx, batch.Number, batch.Data, das, preimages, arbstate.KeysetValidate)
+				_, err := arbstate.RecoverPayloadFromDasBatch(
+					ctx, batch.Number, batch.Data, das, preimages, arbstate.KeysetValidate,
+				)
 				if err != nil {
-					return err
+					return nil, err
 				}
 			}
 		}
 	}
 
 	db := bc.StateCache().TrieDB()
-	return mach.SetPreimageResolver(func(hash common.Hash) ([]byte, error) {
+	resolver := func(hash common.Hash) ([]byte, error) {
 		// Check if it's a known preimage
 		if preimage, ok := preimages[hash]; ok {
 			return preimage, nil
@@ -458,7 +459,8 @@ func SetMachinePreimageResolver(
 			preimages[hash] = preimage
 		}
 		return preimage, err
-	})
+	}
+	return resolver, nil
 }
 
 func (v *StatelessBlockValidator) executeBlock(
@@ -472,8 +474,11 @@ func (v *StatelessBlockValidator) executeBlock(
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 	mach := basemachine.Clone()
-	err = SetMachinePreimageResolver(ctx, mach, entry.Preimages, entry.BatchInfo, v.blockchain, v.daService)
+	resolver, err := NewMachinePreimageResolver(ctx, entry.Preimages, entry.BatchInfo, v.blockchain, v.daService)
 	if err != nil {
+		return GoGlobalState{}, nil, err
+	}
+	if err := mach.SetPreimageResolver(resolver); err != nil {
 		return GoGlobalState{}, nil, err
 	}
 	err = mach.SetGlobalState(gsStart)
@@ -552,7 +557,11 @@ func (v *StatelessBlockValidator) jitBlock(
 		}
 	}
 
-	state, err := machine.prove(entry, delayed)
+	resolver, err := NewMachinePreimageResolver(ctx, entry.Preimages, entry.BatchInfo, v.blockchain, v.daService)
+	if err != nil {
+		return empty, nil, err
+	}
+	state, err := machine.prove(entry, resolver, delayed)
 	return state, delayed, err
 }
 

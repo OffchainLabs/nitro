@@ -3,7 +3,7 @@
 
 use std::{
     io,
-    io::{BufReader, ErrorKind},
+    io::{BufReader, ErrorKind, Write, BufWriter},
     net::TcpStream,
     time::Instant,
 };
@@ -193,13 +193,16 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     // see if Go has the preimage
     if preimage.is_none() {
         if let Some((writer, reader)) = &mut env.process.socket {
-            println!("Requesting 0x{} {}", hex::encode(hash), hash.len());
             socket::write_u8(writer, socket::PREIMAGE)?;
             socket::write_bytes32(writer, hash)?;
+            writer.flush()?;
+
             if socket::read_u8(reader)? == socket::SUCCESS {
                 temporary = socket::read_bytes(reader)?;
+                env.process.last_preimage = Some((hash.clone(), temporary.clone()));
                 preimage = Some(&temporary);
             }
+            
         }
     }
 
@@ -246,9 +249,8 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
                 error => Escape::hostio(format!("Error reading stdin: {error}")),
             };
         }
-
+        
         address.pop();  // pop the newline
-
         println!("Child will connect to {address}");
 
         unsafe {
@@ -260,8 +262,10 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         }
     }
 
+    env.process.timestamp = Instant::now();
     println!("Connecting to {address}");
     let socket = TcpStream::connect(&address)?;
+    socket.set_nodelay(true)?;
 
     let mut reader = BufReader::new(socket.try_clone()?);
     let stream = &mut reader;
@@ -289,7 +293,8 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         return Escape::hostio("failed to parse global state");
     }
 
-    env.process.socket = Some((socket, reader));
+    let writer = BufWriter::new(socket);
+    env.process.socket = Some((writer, reader));
     env.process.forks = false;
     Ok(())
 }

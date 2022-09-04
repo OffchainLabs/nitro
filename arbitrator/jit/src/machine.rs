@@ -17,8 +17,8 @@ use wasmer_compiler_llvm::LLVM;
 use std::{
     collections::BTreeMap,
     fs::File,
-    io,
-    io::{BufReader, ErrorKind, Read},
+    io::{self, Write},
+    io::{BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
     ops::Deref,
     sync::Arc,
@@ -261,6 +261,7 @@ impl WasmEnvArc {
         if let Some(error) = error {
             check!(socket::write_u8(writer, socket::FAILURE));
             check!(socket::write_bytes(writer, &error.into_bytes()));
+            check!(writer.flush());
             return;
         }
 
@@ -269,6 +270,7 @@ impl WasmEnvArc {
         check!(socket::write_u64(writer, env.small_globals[1]));
         check!(socket::write_bytes32(writer, &env.large_globals[0]));
         check!(socket::write_bytes32(writer, &env.large_globals[1]));
+        check!(writer.flush());
     }
 }
 
@@ -276,13 +278,14 @@ pub struct ProcessEnv {
     /// Whether to create child processes to handle execution
     pub forks: bool,
     /// Mechanism for asking for preimages and returning results
-    pub socket: Option<(TcpStream, BufReader<TcpStream>)>,
+    pub socket: Option<(BufWriter<TcpStream>, BufReader<TcpStream>)>,
     /// The last preimage received over the socket
     pub last_preimage: Option<([u8; 32], Vec<u8>)>,
     /// A timestamp that helps with printing at various moments
     pub timestamp: Instant,
     /// Whether the machine has reached the first wavmio instruction
     pub reached_wavmio: bool,
+    pub count: u128,
 }
 
 impl Default for ProcessEnv {
@@ -293,6 +296,7 @@ impl Default for ProcessEnv {
             last_preimage: None,
             timestamp: Instant::now(),
             reached_wavmio: false,
+            count: 0,
         }
     }
 }
