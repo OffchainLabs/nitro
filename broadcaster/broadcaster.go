@@ -5,6 +5,7 @@ package broadcaster
 
 import (
 	"context"
+	"fmt"
 	"net"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -52,30 +53,6 @@ type BroadcastFeedMessage struct {
 	Signature      []byte                       `json:"signature"`
 }
 
-func NewBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex, chainId uint64, dataSigner util.DataSignerFunc) (*BroadcastFeedMessage, error) {
-	var signature []byte
-	// Don't need signature if request id is not present
-	if message.Message.Header.RequestId != nil {
-		hash, err := message.Hash(sequenceNumber, chainId)
-		if err != nil {
-			return nil, err
-		}
-
-		if dataSigner != nil {
-			signature, err = dataSigner(hash.Bytes())
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return &BroadcastFeedMessage{
-		SequenceNumber: sequenceNumber,
-		Message:        message,
-		Signature:      signature,
-	}, nil
-}
-
 func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
 	return m.Message.Hash(m.SequenceNumber, chainId)
 }
@@ -94,8 +71,41 @@ func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64
 	}
 }
 
+func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
+	var signature []byte
+	// Don't need signature if request id is not present
+	log.Info("*** creating broadcastFeedMessage", "sequenceNumber", sequenceNumber)
+	if message.Message.Header.RequestId == nil {
+		log.Info("requestId nil")
+	}
+	if b.dataSigner == nil {
+		log.Info("dataSigner nil")
+	}
+	if message.Message.Header.RequestId != nil && b.dataSigner != nil {
+		hash, err := message.Hash(sequenceNumber, b.chainId)
+		if err != nil {
+			return nil, err
+		}
+		signature, err = b.dataSigner(hash.Bytes())
+		if err != nil {
+			return nil, err
+		}
+		if len(signature) == 0 {
+			log.Error("missing signature", "sequenceNumber", sequenceNumber)
+			return nil, fmt.Errorf("missing signature for feed message sequence number %v", sequenceNumber)
+		}
+		log.Error("**** Signature created", "sequenceNumber", sequenceNumber, "signature", signature)
+	}
+
+	return &BroadcastFeedMessage{
+		SequenceNumber: sequenceNumber,
+		Message:        message,
+		Signature:      signature,
+	}, nil
+}
+
 func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) error {
-	bfm, err := NewBroadcastFeedMessage(msg, seq, b.chainId, b.dataSigner)
+	bfm, err := b.newBroadcastFeedMessage(msg, seq)
 	if err != nil {
 		return err
 	}
@@ -115,10 +125,6 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *BroadcastFeedMessage) {
 	}
 
 	b.server.Broadcast(bm)
-}
-
-func (b *Broadcaster) Broadcast(msg BroadcastMessage) {
-	b.server.Broadcast(msg)
 }
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {

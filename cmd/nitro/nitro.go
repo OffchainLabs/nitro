@@ -160,25 +160,26 @@ func main() {
 		}
 	}
 
-	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner util.DataSignerFunc
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
-	if nodeConfig.Node.L1Reader.Enable || setupNeedsKey {
+	validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+	if nodeConfig.Node.Sequencer.Enable || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorNeedsKey {
+		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+		if err != nil {
+			fmt.Printf("%v\n", err.Error())
+			return
+		}
+	}
+
+	var rollupAddrs arbnode.RollupAddresses
+	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
 		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
 		if err != nil {
-			panic(err)
-		}
-
-		validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
-		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey || setupNeedsKey {
-			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
-			if err != nil {
-				fmt.Printf("%v\n", err.Error())
-				return
-			}
+			fmt.Printf("error getting rollup addresses: %v\n", err.Error())
+			return
 		}
 	} else if l1Client != nil {
 		// Don't need l1Client anymore
