@@ -41,6 +41,8 @@ pub struct Opts {
     preimages: Option<PathBuf>,
     #[structopt(long)]
     cranelift: bool,
+    #[structopt(long)]
+    forks: bool,
 }
 
 fn main() {

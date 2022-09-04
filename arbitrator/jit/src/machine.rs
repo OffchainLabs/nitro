@@ -175,6 +175,7 @@ impl Deref for WasmEnvArc {
 impl WasmEnvArc {
     pub fn cli(opts: &Opts) -> Result<Self> {
         let mut env = WasmEnv::default();
+        env.process.forks = opts.forks;
 
         let mut inbox_position = opts.inbox_position;
         let mut delayed_position = opts.delayed_inbox_position;

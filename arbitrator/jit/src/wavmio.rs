@@ -193,7 +193,8 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     // see if Go has the preimage
     if preimage.is_none() {
         if let Some((writer, reader)) = &mut env.process.socket {
-            socket::write_u8(writer, socket::REQUEST_PREIMAGE)?;
+            println!("Requesting 0x{} {}", hex::encode(hash), hash.len());
+            socket::write_u8(writer, socket::PREIMAGE)?;
             socket::write_bytes32(writer, hash)?;
             if socket::read_u8(reader)? == socket::SUCCESS {
                 temporary = socket::read_bytes(reader)?;
@@ -245,6 +246,10 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
                 error => Escape::hostio(format!("Error reading stdin: {error}")),
             };
         }
+
+        address.pop();  // pop the newline
+
+        println!("Child will connect to {address}");
 
         unsafe {
             match libc::fork() {
