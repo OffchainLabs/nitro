@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{gostack::WasmEnvArc, machine::Escape};
+use crate::machine::{Escape, WasmEnvArc};
 
 use structopt::StructOpt;
 use wasmer::{RuntimeError, Value};

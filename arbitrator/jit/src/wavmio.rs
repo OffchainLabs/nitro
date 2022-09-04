@@ -12,8 +12,8 @@ use parking_lot::MutexGuard;
 
 use crate::{
     color,
-    gostack::{GoStack, Inbox, WasmEnv, WasmEnvArc},
-    machine::{Escape, MaybeEscape},
+    gostack::GoStack,
+    machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvArc},
     socket,
 };
 
@@ -224,7 +224,6 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
-
     if env.process.reached_wavmio == false {
         let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
         println!("Created the machine in {}.", color::pink(time));
@@ -250,7 +249,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         unsafe {
             match libc::fork() {
                 -1 => return Escape::hostio("Failed to fork"),
-                0 => break,                // we're the child process
+                0 => break,                   // we're the child process
                 _ => address = String::new(), // we're the parent process
             }
         }

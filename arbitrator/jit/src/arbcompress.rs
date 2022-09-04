@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::gostack::{GoStack, WasmEnvArc};
+use crate::{gostack::GoStack, machine::WasmEnvArc};
 
 extern "C" {
     pub fn BrotliDecoderDecompress(

@@ -2,8 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    gostack::{GoStack, TimeoutInfo, WasmEnvArc},
-    machine::{Escape, MaybeEscape},
+    gostack::{GoStack, TimeoutInfo},
+    machine::{Escape, MaybeEscape, WasmEnvArc},
 };
 
 use rand::RngCore;

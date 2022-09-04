@@ -1,7 +1,10 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::gostack::{GoStack, WasmEnv, WasmEnvArc};
+use crate::{
+    gostack::GoStack,
+    machine::{WasmEnv, WasmEnvArc},
+};
 
 use parking_lot::MutexGuard;
 use rand::RngCore;
