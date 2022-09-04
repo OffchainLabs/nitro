@@ -5,12 +5,15 @@ use std::{
     io,
     io::{BufReader, ErrorKind},
     net::TcpStream,
+    time::Instant,
 };
 
 use parking_lot::MutexGuard;
 
 use crate::{
-    gostack::{Escape, GoStack, Inbox, MaybeEscape, WasmEnv, WasmEnvArc},
+    color,
+    gostack::{GoStack, Inbox, WasmEnv, WasmEnvArc},
+    machine::{Escape, MaybeEscape},
     socket,
 };
 
@@ -221,15 +224,23 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
+
+    if env.process.reached_wavmio == false {
+        let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
+        println!("Created the machine in {}.", color::pink(time));
+        env.process.timestamp = Instant::now();
+        env.process.reached_wavmio = true;
+    }
+
     if !env.process.forks {
         return Ok(());
     }
 
     let stdin = io::stdin();
-    let mut port = String::new();
+    let mut address = String::new();
 
     loop {
-        if let Err(error) = stdin.read_line(&mut port) {
+        if let Err(error) = stdin.read_line(&mut address) {
             return match error.kind() {
                 ErrorKind::UnexpectedEof => Escape::exit(0),
                 error => Escape::hostio(format!("Error reading stdin: {error}")),
@@ -240,12 +251,12 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
             match libc::fork() {
                 -1 => return Escape::hostio("Failed to fork"),
                 0 => break,                // we're the child process
-                _ => port = String::new(), // we're the parent process
+                _ => address = String::new(), // we're the parent process
             }
         }
     }
 
-    let address = format!("127.0.0.1:{port}");
+    println!("Connecting to {address}");
     let socket = TcpStream::connect(&address)?;
 
     let mut reader = BufReader::new(socket.try_clone()?);

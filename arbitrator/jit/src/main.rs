@@ -1,12 +1,12 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::gostack::{Escape, WasmEnvArc};
+use crate::{gostack::WasmEnvArc, machine::Escape};
 
 use structopt::StructOpt;
 use wasmer::{RuntimeError, Value};
 
-use std::{path::PathBuf, time::Instant};
+use std::path::PathBuf;
 
 mod arbcompress;
 mod color;
@@ -39,6 +39,8 @@ pub struct Opts {
     delayed_inbox: Vec<PathBuf>,
     #[structopt(long)]
     preimages: Option<PathBuf>,
+    #[structopt(long)]
+    cranelift: bool,
 }
 
 fn main() {
@@ -48,9 +50,9 @@ fn main() {
         Ok(env) => env,
         Err(err) => panic!("{}", err),
     };
+
     let (instance, env) = machine::create(&opts, env);
 
-    let now = Instant::now();
     let main = instance.exports.get_function("run").unwrap();
     let resume = instance.exports.get_function("resume").unwrap();
 
@@ -64,6 +66,20 @@ fn main() {
             }
             Err(outcome) => outcome,
         };
+
+        let trace = outcome.trace();
+        if trace.len() > 0 {
+            println!("backtrace:");
+        }
+        for frame in trace {
+            let module = frame.module_name();
+            let name = match frame.function_name() {
+                Some(name) => name,
+                None => "??",
+            };
+
+            println!("  in {} of {}", color::red(name), color::red(module));
+        }
         Some(match outcome.downcast() {
             Ok(escape) => escape,
             Err(outcome) => Escape::Failure(format!("unknown runtime error: {}", outcome)),
@@ -87,7 +103,7 @@ fn main() {
     }
 
     let user = env.lock().process.socket.is_none();
-    let time = format!("{}ms", now.elapsed().as_millis());
+    let time = format!("{}ms", env.lock().process.timestamp.elapsed().as_millis());
     let time = color::when(user, time, color::PINK);
     let hash = color::when(user, hex::encode(env.lock().large_globals[0]), color::PINK);
     let (success, message) = match escape {

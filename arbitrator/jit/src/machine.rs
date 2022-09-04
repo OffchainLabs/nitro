@@ -3,7 +3,12 @@
 
 use crate::{arbcompress, gostack::WasmEnvArc, runtime, syscall, wavmio, Opts};
 
-use wasmer::{imports, Function, Instance, Module, Store};
+use thiserror::Error;
+use wasmer::{imports, Function, Instance, Module, Store, Universal};
+use wasmer_compiler_cranelift::Cranelift;
+use wasmer_compiler_llvm::LLVM;
+
+use std::{io, io::BufReader, net::TcpStream, time::Instant};
 
 pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
     let file = &opts.binary;
@@ -13,7 +18,12 @@ pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
         Err(err) => panic!("failed to read {}: {err}", file.to_string_lossy()),
     };
 
-    let store = Store::default();
+    let engine = match opts.cranelift {
+        true => Universal::new(Cranelift::new()).engine(),
+        false => Universal::new(LLVM::new()).engine(),
+    };
+
+    let store = Store::new(&engine);
     let module = match Module::new(&store, &wasm) {
         Ok(module) => module,
         Err(err) => panic!("{}", err),
@@ -84,4 +94,53 @@ pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
     };
     env.lock().memory = Some(memory);
     (instance, env)
+}
+
+#[derive(Error, Debug)]
+pub enum Escape {
+    #[error("program exited with status code `{0}`")]
+    Exit(u32),
+    #[error("jit failed with `{0}`")]
+    Failure(String),
+    #[error("hostio failed with `{0}`")]
+    HostIO(String),
+    #[error("hostio socket failed with `{0}`")]
+    SocketError(#[from] io::Error),
+}
+
+pub type MaybeEscape = Result<(), Escape>;
+
+impl Escape {
+    pub fn exit(code: u32) -> MaybeEscape {
+        Err(Self::Exit(code))
+    }
+
+    pub fn hostio<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
+        Err(Self::HostIO(format!("{}", message.as_ref())))
+    }
+}
+
+pub struct ProcessEnv {
+    /// Whether to create child processes to handle execution
+    pub forks: bool,
+    /// Mechanism for asking for preimages and returning results
+    pub socket: Option<(TcpStream, BufReader<TcpStream>)>,
+    /// The last preimage received over the socket
+    pub last_preimage: Option<([u8; 32], Vec<u8>)>,
+    /// A timestamp that helps with printing at various moments
+    pub timestamp: Instant,
+    /// Whether the machine has reached the first wavmio instruction
+    pub reached_wavmio: bool,
+}
+
+impl Default for ProcessEnv {
+    fn default() -> Self {
+        Self {
+            forks: false,
+            socket: None,
+            last_preimage: None,
+            timestamp: Instant::now(),
+            reached_wavmio: false,
+        }
+    }
 }

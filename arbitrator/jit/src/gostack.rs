@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
+    machine::ProcessEnv,
     socket,
     syscall::{JsRuntimeState, JsValue},
     wavmio::Bytes32,
@@ -12,14 +13,12 @@ use eyre::{bail, Result, WrapErr};
 use parking_lot::{Mutex, MutexGuard};
 use rand_pcg::Pcg32;
 use sha3::{Digest, Keccak256};
-use thiserror::Error;
 use wasmer::{Memory, MemoryView, WasmPtr, WasmerEnv};
 
 use std::{
     collections::{BTreeMap, BTreeSet, BinaryHeap},
     fs::File,
-    io::{self, BufReader, ErrorKind, Read},
-    net::TcpStream,
+    io::{BufReader, ErrorKind, Read},
     ops::Deref,
     sync::Arc,
 };
@@ -124,30 +123,6 @@ impl GoStack {
             ptr += 8;
         }
         values
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum Escape {
-    #[error("program exited with status code `{0}`")]
-    Exit(u32),
-    #[error("jit failed with `{0}`")]
-    Failure(String),
-    #[error("hostio failed with `{0}`")]
-    HostIO(String),
-    #[error("hostio socket failed with `{0}`")]
-    SocketError(#[from] io::Error),
-}
-
-pub type MaybeEscape = Result<(), Escape>;
-
-impl Escape {
-    pub fn exit(code: u32) -> MaybeEscape {
-        Err(Self::Exit(code))
-    }
-
-    pub fn hostio<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
-        Err(Self::HostIO(format!("{}", message.as_ref())))
     }
 }
 
@@ -336,14 +311,4 @@ pub struct TimeoutState {
     pub times: BinaryHeap<TimeoutInfo>,
     pub pending_ids: BTreeSet<u32>,
     pub next_id: u32,
-}
-
-#[derive(Default)]
-pub struct ProcessEnv {
-    /// Whether to create child processes to handle execution
-    pub forks: bool,
-    /// Mechanism for asking for preimages and returning results
-    pub socket: Option<(TcpStream, BufReader<TcpStream>)>,
-    /// The last preimage received over the socket
-    pub last_preimage: Option<([u8; 32], Vec<u8>)>,
 }
