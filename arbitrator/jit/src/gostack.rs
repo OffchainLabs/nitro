@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
+    socket,
     syscall::{JsRuntimeState, JsValue},
     wavmio::Bytes32,
     Opts,
@@ -145,8 +146,8 @@ impl Escape {
         Err(Self::Exit(code))
     }
 
-    pub fn hostio(message: &str) -> MaybeEscape {
-        Err(Self::HostIO(message.to_owned()))
+    pub fn hostio<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
+        Err(Self::HostIO(format!("{}", message.as_ref())))
     }
 }
 
@@ -162,9 +163,9 @@ pub struct WasmEnv {
     /// The state of Go's js runtime
     pub js_state: JsRuntimeState,
     /// An ordered list of the 8-byte globals
-    pub small_globals: Vec<u64>,
+    pub small_globals: [u64; 2],
     /// An ordered list of the 32-byte globals
-    pub large_globals: Vec<Bytes32>,
+    pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
     pub preimages: Oracle,
     /// The sequencer inbox's messages
@@ -249,9 +250,39 @@ impl WasmEnvArc {
 
         let last_block_hash = parse_hex(&opts.last_block_hash, "--last-block-hash")?;
         let last_send_root = parse_hex(&opts.last_send_root, "--last-send-root")?;
-        env.small_globals = vec![opts.inbox_position, opts.position_within_message];
-        env.large_globals = vec![last_block_hash, last_send_root];
+        env.small_globals = [opts.inbox_position, opts.position_within_message];
+        env.large_globals = [last_block_hash, last_send_root];
         Ok(Self(Arc::new(Mutex::new(env))))
+    }
+
+    pub fn send_results(self, error: Option<String>) {
+        let env = &mut *self.lock();
+
+        let writer = match &mut env.process.socket {
+            Some((writer, _)) => writer,
+            None => return,
+        };
+
+        macro_rules! check {
+            ($expr:expr) => {{
+                if let Err(comms_error) = $expr {
+                    eprintln!("Failed to send results to Go: {comms_error}");
+                    panic!("Communication failure");
+                }
+            }};
+        }
+
+        if let Some(error) = error {
+            check!(socket::write_u8(writer, socket::EXIT_FAILED));
+            check!(socket::write_bytes(writer, &error.into_bytes()));
+            return;
+        }
+
+        check!(socket::write_u8(writer, socket::EXIT_SUCCESS));
+        check!(socket::write_u64(writer, env.small_globals[0]));
+        check!(socket::write_u64(writer, env.small_globals[1]));
+        check!(socket::write_bytes32(writer, &env.large_globals[0]));
+        check!(socket::write_bytes32(writer, &env.large_globals[1]));
     }
 }
 
@@ -313,4 +344,6 @@ pub struct ProcessEnv {
     pub forks: bool,
     /// Mechanism for asking for preimages and returning results
     pub socket: Option<(TcpStream, BufReader<TcpStream>)>,
+    /// The last preimage received over the socket
+    pub last_preimage: Option<([u8; 32], Vec<u8>)>,
 }

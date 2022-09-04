@@ -3,7 +3,7 @@
 
 use std::{
     io,
-    io::{BufReader, BufWriter, ErrorKind},
+    io::{BufReader, ErrorKind},
     net::TcpStream,
 };
 
@@ -151,6 +151,8 @@ fn inbox_message_impl(
 
 pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
+    let env = &mut *env;
+
     let name = "wavmio.resolvePreImage";
 
     let hash_ptr = sp.read_u64(0);
@@ -173,17 +175,36 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
     let hash = sp.read_slice(hash_ptr, hash_len);
     let hash: &[u8; 32] = &hash.try_into().unwrap();
+    let hash_hex = hex::encode(hash);
 
-    if let Some((socket, reader)) = &mut env.process.socket {
-        // 
+    let mut preimage = None;
+    let temporary; // makes the borrow checker happy
+
+    // see if we've cached the preimage
+    if let Some((key, cached)) = &env.process.last_preimage {
+        if key == hash {
+            preimage = Some(cached);
+        }
     }
 
-    let preimage = match env.preimages.get(hash) {
-        Some(preimage) => preimage,
-        None => {
-            let hash = hex::encode(hash);
-            error!("Missing requested preimage for hash {hash} in {name}",)
+    // see if Go has the preimage
+    if preimage.is_none() {
+        if let Some((writer, reader)) = &mut env.process.socket {
+            socket::write_u8(writer, socket::REQUEST_PREIMAGE)?;
+            socket::write_bytes32(writer, hash)?;
+            temporary = socket::read_bytes(reader)?;
+            preimage = Some(&temporary);
         }
+    }
+
+    // see if this is a known preimage
+    if preimage.is_none() {
+        preimage = env.preimages.get(hash);
+    }
+
+    let preimage = match preimage {
+        Some(preimage) => preimage,
+        None => error!("Missing requested preimage for hash {hash_hex} in {name}"),
     };
     let offset = match u32::try_from(offset) {
         Ok(offset) => offset as usize,
@@ -209,7 +230,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         if let Err(error) = stdin.read_line(&mut port) {
             return match error.kind() {
                 ErrorKind::UnexpectedEof => Escape::exit(0),
-                error => Escape::hostio(&format!("Error reading stdin: {error}")),
+                error => Escape::hostio(format!("Error reading stdin: {error}")),
             };
         }
 
@@ -233,24 +254,25 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let last_block_hash = socket::read_bytes32(stream)?;
     let last_send_root = socket::read_bytes32(stream)?;
 
-    env.small_globals = vec![inbox_position, position_within_message];
-    env.large_globals = vec![last_block_hash, last_send_root];
+    env.small_globals = [inbox_position, position_within_message];
+    env.large_globals = [last_block_hash, last_send_root];
 
     env.sequencer_messages.clear();
     env.delayed_messages.clear();
 
-    let mut inbox_position = inbox_position;
-    let mut delayed_position = socket::read_u64(stream)?;
-
-    while socket::read_u8(stream)? == 1 {
+    while socket::read_u8(stream)? == socket::ANOTHER {
+        let position = socket::read_u64(stream)?;
         let message = socket::read_bytes(stream)?;
-        env.sequencer_messages.insert(inbox_position, message);
-        inbox_position += 1;
+        env.sequencer_messages.insert(position, message);
     }
-    while socket::read_u8(stream)? == 1 {
+    while socket::read_u8(stream)? == socket::ANOTHER {
+        let position = socket::read_u64(stream)?;
         let message = socket::read_bytes(stream)?;
-        env.delayed_messages.insert(delayed_position, message);
-        delayed_position += 1;
+        env.delayed_messages.insert(position, message);
+    }
+
+    if socket::read_u8(stream)? != socket::READY {
+        return Escape::hostio("failed to parse global state");
     }
 
     env.process.socket = Some((socket, reader));

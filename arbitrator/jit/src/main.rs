@@ -9,6 +9,7 @@ use wasmer::{RuntimeError, Value};
 use std::{path::PathBuf, time::Instant};
 
 mod arbcompress;
+mod color;
 mod gostack;
 mod machine;
 mod runtime;
@@ -85,14 +86,25 @@ fn main() {
         }
     }
 
-    let block_hash = hex::encode(env.lock().large_globals[0]);
-    let elapsed = now.elapsed().as_millis();
-    match escape {
-        Some(Escape::Exit(0)) => println!("Completed in {elapsed}ms with block hash {block_hash}"),
-        Some(Escape::Exit(x)) => println!("Failed in {elapsed}ms with exit code {x}"),
-        Some(Escape::Failure(err)) => println!("Jit failed with {err} in {elapsed}ms"),
-        Some(Escape::HostIO(err)) => println!("Hostio failed with {err} in {elapsed}ms"),
-        Some(Escape::SocketError(err)) => println!("Socket failed with {err} in {elapsed}ms"),
-        _ => println!("Execution ended prematurely"),
-    }
+    let user = env.lock().process.socket.is_none();
+    let time = format!("{}ms", now.elapsed().as_millis());
+    let time = color::when(user, time, color::PINK);
+    let hash = color::when(user, hex::encode(env.lock().large_globals[0]), color::PINK);
+    let (success, message) = match escape {
+        Some(Escape::Exit(0)) => (true, format!("Completed in {time} with hash {hash}.")),
+        Some(Escape::Exit(x)) => (false, format!("Failed in {time} with exit code {x}.")),
+        Some(Escape::Failure(err)) => (false, format!("Jit failed with {err} in {time}.")),
+        Some(Escape::HostIO(err)) => (false, format!("Hostio failed with {err} in {time}.")),
+        Some(Escape::SocketError(err)) => (false, format!("Socket failed with {err} in {time}.")),
+        None => (false, format!("Machine exited prematurely")),
+    };
+
+    println!("{message}");
+
+    let error = match success {
+        true => None,
+        false => Some(message),
+    };
+
+    env.send_results(error);
 }
