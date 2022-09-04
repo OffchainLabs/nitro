@@ -177,6 +177,7 @@ impl WasmEnvArc {
     pub fn cli(opts: &Opts) -> Result<Self> {
         let mut env = WasmEnv::default();
         env.process.forks = opts.forks;
+        env.process.debug = opts.debug;
 
         let mut inbox_position = opts.inbox_position;
         let mut delayed_position = opts.delayed_inbox_position;
@@ -277,6 +278,8 @@ impl WasmEnvArc {
 pub struct ProcessEnv {
     /// Whether to create child processes to handle execution
     pub forks: bool,
+    /// Whether to print debugging info
+    pub debug: bool,
     /// Mechanism for asking for preimages and returning results
     pub socket: Option<(BufWriter<TcpStream>, BufReader<TcpStream>)>,
     /// The last preimage received over the socket
@@ -285,18 +288,17 @@ pub struct ProcessEnv {
     pub timestamp: Instant,
     /// Whether the machine has reached the first wavmio instruction
     pub reached_wavmio: bool,
-    pub count: u128,
 }
 
 impl Default for ProcessEnv {
     fn default() -> Self {
         Self {
             forks: false,
+            debug: false,
             socket: None,
             last_preimage: None,
             timestamp: Instant::now(),
             reached_wavmio: false,
-            count: 0,
         }
     }
 }

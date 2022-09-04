@@ -43,6 +43,8 @@ pub struct Opts {
     cranelift: bool,
     #[structopt(long)]
     forks: bool,
+    #[structopt(long)]
+    debug: bool,
 }
 
 fn main() {
@@ -118,7 +120,9 @@ fn main() {
         None => (false, format!("Machine exited prematurely")),
     };
 
-    println!("{message}");
+    if opts.debug {
+        println!("{message}");
+    }
 
     let error = match success {
         true => None,

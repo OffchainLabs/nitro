@@ -228,9 +228,13 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
+    let debug = env.process.debug;
+        
     if env.process.reached_wavmio == false {
-        let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
-        println!("Created the machine in {}.", color::pink(time));
+        if debug {
+            let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
+            println!("Created the machine in {}.", color::pink(time));
+        }
         env.process.timestamp = Instant::now();
         env.process.reached_wavmio = true;
     }
@@ -251,7 +255,9 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         }
         
         address.pop();  // pop the newline
-        println!("Child will connect to {address}");
+        if debug {
+            println!("Child will connect to {address}");
+        }
 
         unsafe {
             match libc::fork() {
@@ -263,7 +269,9 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     }
 
     env.process.timestamp = Instant::now();
-    println!("Connecting to {address}");
+    if debug {
+        println!("Connecting to {address}");
+    }
     let socket = TcpStream::connect(&address)?;
     socket.set_nodelay(true)?;
 

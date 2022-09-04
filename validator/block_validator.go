@@ -59,6 +59,7 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool   `koanf:"enable"`
+	ArbitratorValidator      bool   `koanf:"arbitrator-validator"`
 	JitValidator             bool   `koanf:"jit-validator"`
 	OutputPath               string `koanf:"output-path"`
 	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
@@ -68,7 +69,8 @@ type BlockValidatorConfig struct {
 }
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block validator")
+	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
+	f.Bool(prefix+".arbitrator-validator", DefaultBlockValidatorConfig.ArbitratorValidator, "enable the complete, arbitrator block validator")
 	f.Bool(prefix+".jit-validator", DefaultBlockValidatorConfig.JitValidator, "enable the faster, jit-accelerated block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
@@ -79,6 +81,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
+	ArbitratorValidator:      false,
 	JitValidator:             false,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
@@ -89,6 +92,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
+	ArbitratorValidator:      false,
 	JitValidator:             false,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
@@ -401,47 +405,73 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	})
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
-		before := time.Now()
-		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, moduleRoot)
-		duration := time.Since(before)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				log.Info(
-					"Validation of block canceled", "blockNr", entry.BlockNumber,
-					"blockHash", entry.BlockHash, "err", err,
-				)
-			} else {
+
+		check := func(gsEnd GoGlobalState, delayed []byte, jit bool, err error) bool {
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					log.Info(
+						"Validation of block canceled", "blockNr", entry.BlockNumber,
+						"blockHash", entry.BlockHash, "jit", jit, "err", err,
+					)
+				} else {
+					log.Error(
+						"Validation of block failed", "blockNr", entry.BlockNumber,
+						"blockHash", entry.BlockHash, "moduleRoot", moduleRoot,
+						"jit", jit, "err", err,
+					)
+				}
+				return false
+			}
+
+			gsExpected := entry.expectedEnd()
+			resultValid := gsEnd == gsExpected
+
+			if !resultValid {
 				log.Error(
-					"Validation of block failed", "blockNr", entry.BlockNumber,
-					"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "err", err,
+					"validation failed", "moduleRoot", moduleRoot, "got", gsEnd,
+					"expected", gsExpected, "expHeader", entry.BlockHeader, "jit", jit,
 				)
 			}
-			return
-		}
-		gsExpected := entry.expectedEnd()
-		resultValid := gsEnd == gsExpected
 
-		writeThisBlock := false
-		if !resultValid {
-			writeThisBlock = true
+			return resultValid
+		}
+
+		var err error
+		var duration time.Duration
+		var delayed []byte
+		var gsEnd GoGlobalState
+		writeThisBlock := false // we write the block if either fail
+
+		if v.config.ArbitratorValidator {
+			before := time.Now()
+			gsEnd, delayed, err = v.executeBlock(ctx, entry, moduleRoot)
+			duration = time.Since(before)
+			success := check(gsEnd, delayed, false, err)
+			writeThisBlock = writeThisBlock || !success
+			if err != nil {
+				return
+			}
+		}
+
+		if v.config.JitValidator {
+			before := time.Now()
+			gsEnd, delayed, err = v.jitBlock(ctx, entry, moduleRoot)
+			duration = time.Since(before)
+			success := check(gsEnd, delayed, true, err)
+			writeThisBlock = writeThisBlock || !success
+			if err != nil {
+				return
+			}
 		}
 
 		if writeThisBlock {
-			err = v.writeToFile(
+			err := v.writeToFile(
 				entry, moduleRoot, entry.StartPosition, entry.EndPosition,
-				entry.Preimages, seqMsg, delayedMsg,
+				entry.Preimages, seqMsg, delayed,
 			)
 			if err != nil {
 				log.Error("failed to write file", "err", err)
 			}
-		}
-
-		if !resultValid {
-			log.Error(
-				"validation failed", "moduleRoot", moduleRoot, "got", gsEnd,
-				"expected", gsExpected, "expHeader", entry.BlockHeader,
-			)
-			return
 		}
 
 		log.Info(
