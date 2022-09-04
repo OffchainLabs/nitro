@@ -195,7 +195,12 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return s.blockValidator.AssumeValid(stakedInfo.AfterState().GlobalState)
+
+	if s.blockValidator != nil {
+		return s.blockValidator.AssumeValid(stakedInfo.AfterState().GlobalState)
+	}
+
+	return nil
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
