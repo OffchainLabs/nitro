@@ -79,7 +79,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
-	JitValidator:             true,
+	JitValidator:             false,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "current",
@@ -846,8 +846,13 @@ func (v *BlockValidator) Initialize() error {
 			return errors.New("current-module-root config value illegal")
 		}
 	}
-	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true); err != nil {
+	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, false); err != nil {
 		return err
+	}
+	if v.config.JitValidator {
+		if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, true); err != nil {
+			return err
+		}
 	}
 
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)

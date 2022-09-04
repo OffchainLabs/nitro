@@ -55,6 +55,7 @@ fn main() {
 
     let (instance, env) = machine::create(&opts, env);
 
+    // TODO: consider switching to a recursive event-loop impl
     let main = instance.exports.get_function("run").unwrap();
     let resume = instance.exports.get_function("resume").unwrap();
 

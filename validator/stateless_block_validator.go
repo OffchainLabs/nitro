@@ -26,14 +26,15 @@ import (
 )
 
 type StatelessBlockValidator struct {
-	MachineLoader   *NitroMachineLoader
-	inboxReader     InboxReaderInterface
-	inboxTracker    InboxTrackerInterface
-	streamer        TransactionStreamerInterface
-	blockchain      *core.BlockChain
-	db              ethdb.Database
-	daService       arbstate.DataAvailabilityReader
-	genesisBlockNum uint64
+	MachineLoader    *NitroMachineLoader
+	JitMachineLoader *NitroMachineLoader
+	inboxReader      InboxReaderInterface
+	inboxTracker     InboxTrackerInterface
+	streamer         TransactionStreamerInterface
+	blockchain       *core.BlockChain
+	db               ethdb.Database
+	daService        arbstate.DataAvailabilityReader
+	genesisBlockNum  uint64
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
@@ -242,7 +243,12 @@ func NewStatelessBlockValidator(
 
 		// the machine will be lazily created if need be later otherwise
 		if config.Enable {
-			if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true); err != nil {
+			if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true, false); err != nil {
+				return nil, err
+			}
+		}
+		if config.JitValidator {
+			if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true, true); err != nil {
 				return nil, err
 			}
 		}
@@ -527,7 +533,27 @@ func (v *StatelessBlockValidator) executeBlock(
 func (v *StatelessBlockValidator) jitBlock(
 	ctx context.Context, entry *validationEntry, moduleRoot common.Hash,
 ) (GoGlobalState, []byte, error) {
-	return GoGlobalState{}, nil, errors.New("unimplemented")
+	empty := GoGlobalState{}
+
+	machine, err := v.MachineLoader.GetJitMachine(ctx, moduleRoot, true)
+	if err != nil {
+		return empty, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
+	}
+
+	var delayed []byte
+	if entry.HasDelayedMsg {
+		delayed, err = v.inboxTracker.GetDelayedMessageBytes(entry.DelayedMsgNr)
+		if err != nil {
+			log.Error(
+				"error while trying to read delayed msg for jitting",
+				"err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.BlockNumber,
+			)
+			return empty, nil, errors.New("error while trying to read delayed msg for proving")
+		}
+	}
+
+	state, err := machine.prove(entry, delayed)
+	return state, delayed, err
 }
 
 func (v *StatelessBlockValidator) ValidateBlock(

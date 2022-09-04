@@ -274,9 +274,6 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     env.small_globals = [inbox_position, position_within_message];
     env.large_globals = [last_block_hash, last_send_root];
 
-    env.sequencer_messages.clear();
-    env.delayed_messages.clear();
-
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;
         let message = socket::read_bytes(stream)?;
