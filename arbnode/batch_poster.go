@@ -60,6 +60,16 @@ type BatchPosterConfig struct {
 	GasMarginBasisPoints               uint64        `koanf:"gas-margin-basis-points" reload:"hot"`
 }
 
+func (c *BatchPosterConfig) Validate() error {
+	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
+		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
+	}
+	if c.MaxBatchSize <= 40 {
+		return errors.New("MaxBatchSize too small")
+	}
+	return nil
+}
+
 type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -106,20 +116,19 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasMarginBasisPoints: 500,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, configFetcher BatchPosterConfigFetcher, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config BatchPosterConfigFetcher, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
-	config := configFetcher()
-	if len(config.GasRefunderAddress) > 0 && !common.IsHexAddress(config.GasRefunderAddress) { // TODO(magic) validate also on config change (or even better - each time config is parsed)
-		return nil, fmt.Errorf("invalid gas refunder address \"%v\"", config.GasRefunderAddress)
+	if err = config().Validate(); err != nil {
+		return nil, err
 	}
 	return &BatchPoster{
 		l1Reader:      l1Reader,
 		inbox:         inbox,
 		streamer:      streamer,
-		config:        configFetcher,
+		config:        config,
 		inboxContract: inboxContract,
 		transactOpts:  transactOpts,
 		daWriter:      daWriter,
