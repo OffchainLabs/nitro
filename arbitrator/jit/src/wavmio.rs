@@ -192,8 +192,10 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
         if let Some((writer, reader)) = &mut env.process.socket {
             socket::write_u8(writer, socket::REQUEST_PREIMAGE)?;
             socket::write_bytes32(writer, hash)?;
-            temporary = socket::read_bytes(reader)?;
-            preimage = Some(&temporary);
+            if socket::read_u8(reader)? == socket::SUCCESS {
+                temporary = socket::read_bytes(reader)?;
+                preimage = Some(&temporary);
+            }
         }
     }
 

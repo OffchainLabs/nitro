@@ -273,12 +273,12 @@ impl WasmEnvArc {
         }
 
         if let Some(error) = error {
-            check!(socket::write_u8(writer, socket::EXIT_FAILED));
+            check!(socket::write_u8(writer, socket::FAILURE));
             check!(socket::write_bytes(writer, &error.into_bytes()));
             return;
         }
 
-        check!(socket::write_u8(writer, socket::EXIT_SUCCESS));
+        check!(socket::write_u8(writer, socket::SUCCESS));
         check!(socket::write_u64(writer, env.small_globals[0]));
         check!(socket::write_u64(writer, env.small_globals[1]));
         check!(socket::write_bytes32(writer, &env.large_globals[0]));

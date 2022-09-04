@@ -9,8 +9,8 @@ use std::{
 
 use crate::wavmio::Bytes32;
 
-pub const EXIT_SUCCESS: u8 = 0x0;
-pub const EXIT_FAILED: u8 = 0x1;
+pub const SUCCESS: u8 = 0x0;
+pub const FAILURE: u8 = 0x1;
 pub const REQUEST_PREIMAGE: u8 = 0x02;
 pub const ANOTHER: u8 = 0x03;
 pub const READY: u8 = 0x04;
