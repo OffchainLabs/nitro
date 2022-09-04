@@ -10,10 +10,9 @@ import (
 	"math"
 	"math/big"
 	"os"
-	"strings"
-
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -410,6 +409,19 @@ type Config struct {
 	Dangerous            DangerousConfig                `koanf:"dangerous"`
 	Archive              bool                           `koanf:"archive"`
 	TxLookupLimit        uint64                         `koanf:"tx-lookup-limit"`
+}
+
+func (c *Config) Validate() error {
+	if err := c.Sequencer.Validate(); err != nil {
+		return err
+	}
+	if err := c.InboxReader.Validate(); err != nil {
+		return err
+	}
+	if err := c.BatchPoster.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *Config) Get() *Config {

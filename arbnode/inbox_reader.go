@@ -105,7 +105,7 @@ type InboxReader struct {
 }
 
 func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
-	err := config().Validate() // TODO(magic) validate config also on config change (?)
+	err := config().Validate()
 	if err != nil {
 		return nil, err
 	}

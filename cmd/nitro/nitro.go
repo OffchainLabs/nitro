@@ -433,6 +433,10 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 	return err
 }
 
+func (c *NodeConfig) Validate() error {
+	return c.Node.Validate()
+}
+
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
@@ -585,6 +589,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	nodeConfig.L1.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.L2.DevWallet = genericconf.WalletConfigDefault
 
+	err = nodeConfig.Validate()
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
