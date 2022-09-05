@@ -58,15 +58,20 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable                   bool   `koanf:"enable"`
-	ArbitratorValidator      bool   `koanf:"arbitrator-validator"`
-	JitValidator             bool   `koanf:"jit-validator"`
-	JitValidatorCranelift    bool   `koanf:"jit-validator-cranelift"`
-	OutputPath               string `koanf:"output-path"`
-	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
-	CurrentModuleRoot        string `koanf:"current-module-root"`
-	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
-	StorePreimages           bool   `koanf:"store-preimages"`
+	Enable                   bool                          `koanf:"enable"`
+	ArbitratorValidator      bool                          `koanf:"arbitrator-validator"`
+	JitValidator             bool                          `koanf:"jit-validator"`
+	JitValidatorCranelift    bool                          `koanf:"jit-validator-cranelift"`
+	OutputPath               string                        `koanf:"output-path"`
+	ConcurrentRunsLimit      int                           `koanf:"concurrent-runs-limit"`
+	CurrentModuleRoot        string                        `koanf:"current-module-root"`
+	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"`
+	StorePreimages           bool                          `koanf:"store-preimages"`
+	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
+}
+
+type BlockValidatorDangerousConfig struct {
+	ResetBlockValidation bool `koanf:"reset-block-validation"`
 }
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -79,6 +84,11 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".store-preimages", DefaultBlockValidatorConfig.StorePreimages, "store preimages of running machines (higher memory cost, better debugging, potentially better performance)")
+	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
+}
+
+func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
@@ -91,18 +101,24 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
+	Dangerous:                DefaultBlockValidatorDangerousConfig,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	ArbitratorValidator:      false,
 	JitValidator:             false,
-	JitValidatorCranelift:    false,
+	JitValidatorCranelift:    true,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
+	Dangerous:                DefaultBlockValidatorDangerousConfig,
+}
+
+var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
+	ResetBlockValidation: false,
 }
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
@@ -154,7 +170,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 		return err
 	}
 
-	if !exists {
+	if !exists || v.config.Dangerous.ResetBlockValidation {
 		// The db contains no validation info; start from the beginning.
 		// TODO: this skips validating the genesis block.
 		atomic.StoreUint64(&v.lastBlockValidated, v.genesisBlockNum)

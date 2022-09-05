@@ -27,7 +27,7 @@ type JitMachine struct {
 
 func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
 
-	jitBinary := filepath.FromSlash("./arbitrator/target/release/jit")
+	jitBinary := filepath.FromSlash("./target/bin/jit")
 	if _, err := os.Stat(jitBinary); err != nil {
 		return nil, err
 	}
