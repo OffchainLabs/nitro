@@ -93,12 +93,10 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-RUN mkdir arbitrator/prover/src && \
+RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
+    echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib
-RUN mkdir arbitrator/jit/src && \
-    echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
-    cargo build --manifest-path arbitrator/Cargo.toml --release --jit
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/jit arbitrator/jit
