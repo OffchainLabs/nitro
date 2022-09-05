@@ -27,7 +27,10 @@ type JitMachine struct {
 
 func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
 
-	jitBinary := filepath.FromSlash("./target/bin/jit")
+	jitBinary, err := exec.LookPath("jit")
+	if err != nil {
+		jitBinary = filepath.FromSlash("./target/bin/jit")
+	}
 	if _, err := os.Stat(jitBinary); err != nil {
 		return nil, err
 	}

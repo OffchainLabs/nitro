@@ -35,7 +35,6 @@ pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
         Err(err) => panic!("failed to read {}: {err}", file.to_string_lossy()),
     };
 
-    // TODO: enable deterministic floating point
     let engine = match opts.cranelift {
         true => {
             let mut compiler = Cranelift::new();
