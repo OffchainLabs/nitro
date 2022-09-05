@@ -75,7 +75,7 @@ fn main() {
                 println!("  in {} of {}", color::red(name), color::red(module));
             }
             Some(Escape::from(outcome))
-        },
+        }
     };
 
     let user = env.lock().process.socket.is_none();

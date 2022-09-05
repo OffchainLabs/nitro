@@ -10,10 +10,7 @@ use crate::{
 use parking_lot::MutexGuard;
 use rand::RngCore;
 
-use std::{
-    collections::BTreeMap,
-    io::Write,
-};
+use std::{collections::BTreeMap, io::Write};
 
 const ZERO_ID: u32 = 1;
 const NULL_ID: u32 = 2;
