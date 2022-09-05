@@ -242,7 +242,7 @@ func NewStatelessBlockValidator(
 		}
 
 		// the machine will be lazily created if need be later otherwise
-		if config.Enable {
+		if config.ArbitratorValidator {
 			if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true, false); err != nil {
 				return nil, err
 			}

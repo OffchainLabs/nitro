@@ -33,7 +33,11 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash) (*JitMa
 	}
 
 	binary := filepath.Join(config.getMachinePath(moduleRoot), config.ProverBinPath)
-	process := exec.Command(jitBinary, "--binary", binary, "--forks")
+	invocation := []string{"--binary", binary, "--forks"}
+	if config.JitCranelift {
+		invocation = append(invocation, "--cranelift")
+	}
+	process := exec.Command(jitBinary, invocation...)
 	stdin, err := process.StdinPipe()
 	if err != nil {
 		return nil, err

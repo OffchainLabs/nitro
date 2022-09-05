@@ -886,15 +886,21 @@ func createNodeImpl(
 	}
 	txStreamer.SetInboxReader(inboxReader)
 
+	blockValidatorConf := config.BlockValidator
+	if blockValidatorConf.Enable && !(blockValidatorConf.ArbitratorValidator || blockValidatorConf.JitValidator) {
+		return nil, errors.New("Block validator enabled without either of arbitrator-validator or jit-validator")
+	}
+
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
 	machinesPath, foundMachines := config.Wasm.FindMachineDir()
 	nitroMachineConfig.RootPath = machinesPath
+	nitroMachineConfig.JitCranelift = blockValidatorConf.JitValidatorCranelift
 	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
 
 	var blockValidator *validator.BlockValidator
 	var statelessBlockValidator *validator.StatelessBlockValidator
 
-	if !foundMachines && config.BlockValidator.Enable {
+	if !foundMachines && blockValidatorConf.Enable {
 		return nil, fmt.Errorf("Failed to find machines %v", machinesPath)
 	} else if !foundMachines {
 		log.Warn("Failed to find machines", "path", machinesPath)
@@ -913,7 +919,7 @@ func createNodeImpl(
 			return nil, err
 		}
 
-		if config.BlockValidator.Enable {
+		if blockValidatorConf.Enable {
 			blockValidator, err = validator.NewBlockValidator(
 				statelessBlockValidator,
 				inboxTracker,

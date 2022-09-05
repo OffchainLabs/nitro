@@ -30,6 +30,9 @@ type NitroMachineConfig struct {
 	UntilHostIoStatePath string
 	ProverBinPath        string
 
+	// Used for jit validator only
+	JitCranelift bool
+
 	// Used for debugging only
 	LibraryPaths []string
 }
@@ -39,6 +42,7 @@ var DefaultNitroMachineConfig = NitroMachineConfig{
 	WavmBinaryPath:       "machine.wavm.br",
 	UntilHostIoStatePath: "until-host-io-state.bin",
 
+	JitCranelift:  DefaultBlockValidatorConfig.JitValidatorCranelift,
 	ProverBinPath: "replay.wasm",
 	LibraryPaths:  []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
 }

@@ -61,6 +61,7 @@ type BlockValidatorConfig struct {
 	Enable                   bool   `koanf:"enable"`
 	ArbitratorValidator      bool   `koanf:"arbitrator-validator"`
 	JitValidator             bool   `koanf:"jit-validator"`
+	JitValidatorCranelift    bool   `koanf:"jit-validator-cranelift"`
 	OutputPath               string `koanf:"output-path"`
 	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
 	CurrentModuleRoot        string `koanf:"current-module-root"`
@@ -72,6 +73,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	f.Bool(prefix+".arbitrator-validator", DefaultBlockValidatorConfig.ArbitratorValidator, "enable the complete, arbitrator block validator")
 	f.Bool(prefix+".jit-validator", DefaultBlockValidatorConfig.JitValidator, "enable the faster, jit-accelerated block validator")
+	f.Bool(prefix+".jit-validator-cranelift", DefaultBlockValidatorConfig.JitValidatorCranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
@@ -83,6 +85,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	ArbitratorValidator:      false,
 	JitValidator:             false,
+	JitValidatorCranelift:    false,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "current",
@@ -94,6 +97,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	ArbitratorValidator:      false,
 	JitValidator:             false,
+	JitValidatorCranelift:    false,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "latest",
