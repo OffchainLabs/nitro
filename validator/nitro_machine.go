@@ -155,12 +155,14 @@ type NitroMachineLoader struct {
 	config       NitroMachineConfig
 	machinesLock sync.Mutex
 	machines     map[nitroMachineRequest]*loaderMachineStatus
+	fatalErrChan chan error
 }
 
-func NewNitroMachineLoader(config NitroMachineConfig) *NitroMachineLoader {
+func NewNitroMachineLoader(config NitroMachineConfig, fatalErrChan chan error) *NitroMachineLoader {
 	return &NitroMachineLoader{
-		config:   config,
-		machines: make(map[nitroMachineRequest]*loaderMachineStatus),
+		config:       config,
+		machines:     make(map[nitroMachineRequest]*loaderMachineStatus),
+		fatalErrChan: fatalErrChan,
 	}
 }
 
@@ -191,6 +193,8 @@ func (l *NitroMachineLoader) createMachineImpl(
 		jit:         jit,
 	}
 
+	config := l.config
+
 	// Fast path: check if we already have the machine
 	l.machinesLock.Lock()
 	machine, ok := l.machines[machineRequest]
@@ -204,16 +208,16 @@ func (l *NitroMachineLoader) createMachineImpl(
 	realModuleRoot := moduleRoot
 	if moduleRoot == (common.Hash{}) {
 		var err error
-		realModuleRoot, err = l.config.ReadLatestWasmModuleRoot()
+		realModuleRoot, err = config.ReadLatestWasmModuleRoot()
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		_, err := os.Stat(filepath.Join(l.config.getMachinePath(moduleRoot), l.config.WavmBinaryPath))
+		_, err := os.Stat(filepath.Join(config.getMachinePath(moduleRoot), config.WavmBinaryPath))
 		if errors.Is(err, os.ErrNotExist) {
 			// Attempt to load the latest module root instead (maybe it's what we're looking for).
 			originalErr := err
-			realModuleRoot, err = l.config.ReadLatestWasmModuleRoot()
+			realModuleRoot, err = config.ReadLatestWasmModuleRoot()
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					// Be nice and return the original error, as it's clarifies what went wrong.
@@ -260,7 +264,7 @@ func (l *NitroMachineLoader) createMachineImpl(
 
 		go func() {
 			if jit {
-				machine.jitMachine, machine.err = createJitMachine(l.config, moduleRoot)
+				machine.jitMachine, machine.err = createJitMachine(config, moduleRoot, l.fatalErrChan)
 				machine.signalReady()
 				return
 			}
@@ -270,10 +274,10 @@ func (l *NitroMachineLoader) createMachineImpl(
 					machine.err = err
 					machine.signalReady()
 				} else {
-					machine.createHostIoMachineInternal(l.config, moduleRoot, zeroStep)
+					machine.createHostIoMachineInternal(config, moduleRoot, zeroStep)
 				}
 			} else {
-				machine.createZeroStepMachineInternal(l.config, moduleRoot, realModuleRoot)
+				machine.createZeroStepMachineInternal(config, moduleRoot, realModuleRoot)
 			}
 		}()
 	}

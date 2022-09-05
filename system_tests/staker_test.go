@@ -72,11 +72,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	nodeBGenesis := l2nodeB.Backend.APIBackend().CurrentHeader().Hash()
 	if faultyStaker {
 		if nodeAGenesis == nodeBGenesis {
-			t.Fatal("node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
+			Fail(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
 		}
 	} else {
 		if nodeAGenesis != nodeBGenesis {
-			t.Fatal("node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+			Fail(t, "node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
 		}
 	}
 
@@ -128,7 +128,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	} else {
 		valConfig.Strategy = "MakeNodes"
 	}
-	nitroMachineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig)
+	fatalErrChan := l2nodeA.BlockValidator.FatalErrChan
+	nitroMachineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig, fatalErrChan)
 	stakerA, err := validator.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletA,

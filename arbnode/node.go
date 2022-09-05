@@ -695,7 +695,7 @@ func createNodeImpl(
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
-	feedErrChan chan error,
+	fatalErrChan chan error,
 ) (*Node, error) {
 	config := configFetcher.Get()
 	var reorgingToBlock *types.Block
@@ -731,7 +731,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, feedErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, fatalErrChan)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -807,7 +807,7 @@ func createNodeImpl(
 				currentMessageCount,
 				config.Feed.Input.Timeout,
 				txStreamer,
-				feedErrChan,
+				fatalErrChan,
 			)
 			broadcastClients = append(broadcastClients, client)
 		}
@@ -895,7 +895,7 @@ func createNodeImpl(
 	machinesPath, foundMachines := config.Wasm.FindMachineDir()
 	nitroMachineConfig.RootPath = machinesPath
 	nitroMachineConfig.JitCranelift = blockValidatorConf.JitValidatorCranelift
-	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
+	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig, fatalErrChan)
 
 	var blockValidator *validator.BlockValidator
 	var statelessBlockValidator *validator.StatelessBlockValidator
@@ -914,6 +914,7 @@ func createNodeImpl(
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
 			&config.BlockValidator,
+			fatalErrChan,
 		)
 		if err != nil {
 			return nil, err
@@ -1223,9 +1224,9 @@ func CreateNode(
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
-	feedErrChan chan error,
+	fatalErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, daSigner, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}

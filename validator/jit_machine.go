@@ -25,7 +25,7 @@ type JitMachine struct {
 	stdin   io.WriteCloser
 }
 
-func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash) (*JitMachine, error) {
+func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
 
 	jitBinary := filepath.FromSlash("./arbitrator/target/release/jit")
 	if _, err := os.Stat(jitBinary); err != nil {
@@ -44,9 +44,11 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash) (*JitMa
 	}
 	process.Stdout = os.Stdout
 	process.Stderr = os.Stderr
-	if err := process.Start(); err != nil {
-		return nil, err
-	}
+	go func() {
+		if err := process.Run(); err != nil {
+			fatalErrChan <- fmt.Errorf("Lost jit block validator process: %w", err)
+		}
+	}()
 
 	machine := &JitMachine{
 		binary:  binary,
@@ -66,7 +68,9 @@ func (machine *JitMachine) prove(
 	if err != nil {
 		return state, err
 	}
-	tcp.SetDeadline(timeout)
+	if err := tcp.SetDeadline(timeout); err != nil {
+		return state, err
+	}
 	defer tcp.Close()
 	address := fmt.Sprintf("%v\n", tcp.Addr().String())
 
@@ -80,8 +84,12 @@ func (machine *JitMachine) prove(
 	if err != nil {
 		return state, err
 	}
-	conn.SetReadDeadline(timeout)
-	conn.SetWriteDeadline(timeout)
+	if err := conn.SetReadDeadline(timeout); err != nil {
+		return state, err
+	}
+	if err := conn.SetWriteDeadline(timeout); err != nil {
+		return state, err
+	}
 	defer conn.Close()
 
 	// Tell the new process about the global state
