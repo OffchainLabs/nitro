@@ -192,7 +192,7 @@ ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
 FROM nitro-node-slim as nitro-node
 USER root
-COPY --from=node-prover-export /workspace/target/bin/jit /usr/local/bin/
+COPY --from=prover-export /workspace/target/bin/jit /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/daserver  /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/datool    /usr/local/bin/
 RUN export DEBIAN_FRONTEND=noninteractive && \
