@@ -12,11 +12,13 @@ func (q *Queue[T]) Push(item T) {
 	q.slice = append(q.slice, item)
 }
 
-// If cap(slice) >= len(slice)*shrinkRatio, shrink the slice capacity back down to its length
+// If cap(slice) >= len(slice)*shrinkRatio && cap(slice) >= shrinkMinimum,
+// shrink the slice capacity back down to its length by re-allocating it.
 const shrinkRatio = 8
+const shrinkMinimum = 512
 
 func (q *Queue[T]) shrink() {
-	if cap(q.slice) >= len(q.slice)*shrinkRatio {
+	if cap(q.slice) >= len(q.slice)*shrinkRatio && cap(q.slice) >= shrinkMinimum {
 		oldSlice := q.slice
 		q.slice = make([]T, len(oldSlice))
 		copy(q.slice, oldSlice)
