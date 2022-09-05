@@ -17,15 +17,15 @@ import (
 
 type TxPreChecker struct {
 	TransactionPublisher
-	bc         *core.BlockChain
-	strictness uint
+	bc            *core.BlockChain
+	getStrictness func() uint
 }
 
-func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, strictness uint) *TxPreChecker {
+func NewTxPreChecker(publisher TransactionPublisher, bc *core.BlockChain, getStrictness func() uint) *TxPreChecker {
 	return &TxPreChecker{
 		TransactionPublisher: publisher,
 		bc:                   bc,
-		strictness:           strictness,
+		getStrictness:        getStrictness,
 	}
 }
 
@@ -95,7 +95,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	if err != nil {
 		return err
 	}
-	err = PreCheckTx(c.bc.Config(), block.Header(), statedb, arbos, tx, c.strictness)
+	err = PreCheckTx(c.bc.Config(), block.Header(), statedb, arbos, tx, c.getStrictness())
 	if err != nil {
 		return err
 	}

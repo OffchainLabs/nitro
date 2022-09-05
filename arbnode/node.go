@@ -398,7 +398,7 @@ type Config struct {
 	DelayedSequencer       DelayedSequencerConfig         `koanf:"delayed-sequencer"`
 	BatchPoster            BatchPosterConfig              `koanf:"batch-poster"`
 	ForwardingTargetImpl   string                         `koanf:"forwarding-target"`
-	TxPreCheckerStrictness uint                           `koanf:"tx-pre-checker-strictness"`
+	TxPreCheckerStrictness uint                           `koanf:"tx-pre-checker-strictness" reload:"hot"`
 	BlockValidator         validator.BlockValidatorConfig `koanf:"block-validator"`
 	Feed                   broadcastclient.FeedConfig     `koanf:"feed"`
 	Validator              validator.L1ValidatorConfig    `koanf:"validator"`
@@ -785,7 +785,7 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
-	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, config.TxPreCheckerStrictness)
+	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, func() uint { return configFetcher.Get().TxPreCheckerStrictness })
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {
 		return nil, err
