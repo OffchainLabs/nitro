@@ -52,7 +52,7 @@ impl DynamicObjectPool {
         let id = self
             .free_ids
             .pop()
-            .unwrap_or_else(|| DYNAMIC_OBJECT_ID_BASE + self.objects.len() as u32);
+            .unwrap_or(DYNAMIC_OBJECT_ID_BASE + self.objects.len() as u32);
         self.objects.insert(id, object);
         id
     }
@@ -235,7 +235,7 @@ pub fn js_value_get(env: &WasmEnvArc, sp: u32) {
     let source = JsValue::new(sp.read_u64(0));
     let field_ptr = sp.read_u64(1);
     let field_len = sp.read_u64(2);
-    let field = sp.read_slice(field_ptr, field_len.into());
+    let field = sp.read_slice(field_ptr, field_len);
     let value = match source {
         JsValue::Ref(id) => get_field(&mut env, id, &field),
         val => {

@@ -147,7 +147,7 @@ fn inbox_message_impl(
 
     let len = std::cmp::min(32, message.len().saturating_sub(offset)) as usize;
     let read = message.get(offset..(offset + len)).unwrap_or_default();
-    sp.write_slice(out_ptr, &read);
+    sp.write_slice(out_ptr, read);
     sp.write_u64(5, read.len() as u64);
     Ok(())
 }
@@ -199,7 +199,7 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
             if socket::read_u8(reader)? == socket::SUCCESS {
                 temporary = socket::read_bytes(reader)?;
-                env.process.last_preimage = Some((hash.clone(), temporary.clone()));
+                env.process.last_preimage = Some((*hash, temporary.clone()));
                 preimage = Some(&temporary);
             }
         }
@@ -221,7 +221,7 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
     let len = std::cmp::min(32, preimage.len().saturating_sub(offset)) as usize;
     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-    sp.write_slice(out_ptr, &read);
+    sp.write_slice(out_ptr, read);
     sp.write_u64(7, read.len() as u64);
     Ok(())
 }
@@ -229,7 +229,7 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let debug = env.process.debug;
 
-    if env.process.reached_wavmio == false {
+    if !env.process.reached_wavmio {
         if debug {
             let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
             println!("Created the machine in {}.", color::pink(time));

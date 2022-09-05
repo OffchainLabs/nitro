@@ -37,24 +37,20 @@ pub fn read_bytes<T: Read>(reader: &mut BufReader<T>) -> Result<Vec<u8>, io::Err
     Ok(buf)
 }
 
-#[must_use]
 pub fn write_u8(writer: &mut BufWriter<TcpStream>, data: u8) -> Result<(), io::Error> {
     let buf = [data; 1];
     writer.write_all(&buf)
 }
 
-#[must_use]
 pub fn write_u64(writer: &mut BufWriter<TcpStream>, data: u64) -> Result<(), io::Error> {
     let buf = data.to_be_bytes();
     writer.write_all(&buf)
 }
 
-#[must_use]
 pub fn write_bytes32(writer: &mut BufWriter<TcpStream>, data: &Bytes32) -> Result<(), io::Error> {
     writer.write_all(data)
 }
 
-#[must_use]
 pub fn write_bytes(writer: &mut BufWriter<TcpStream>, data: &[u8]) -> Result<(), io::Error> {
     write_u64(writer, data.len() as u64)?;
     writer.write_all(data)

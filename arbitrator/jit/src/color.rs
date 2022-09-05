@@ -5,18 +5,18 @@
 
 use std::fmt;
 
-pub const RED: &'static str = "\x1b[31;1m";
-pub const BLUE: &'static str = "\x1b[34;1m";
-pub const YELLOW: &'static str = "\x1b[33;1m";
-pub const PINK: &'static str = "\x1b[38;5;161;1m";
-pub const MINT: &'static str = "\x1b[38;5;48;1m";
-pub const GREY: &'static str = "\x1b[90m";
-pub const RESET: &'static str = "\x1b[0;0m";
+pub const RED: &str = "\x1b[31;1m";
+pub const BLUE: &str = "\x1b[34;1m";
+pub const YELLOW: &str = "\x1b[33;1m";
+pub const PINK: &str = "\x1b[38;5;161;1m";
+pub const MINT: &str = "\x1b[38;5;48;1m";
+pub const GREY: &str = "\x1b[90m";
+pub const RESET: &str = "\x1b[0;0m";
 
-pub const LIME: &'static str = "\x1b[38;5;119;1m";
-pub const LAVENDER: &'static str = "\x1b[38;5;183;1m";
-pub const MAROON: &'static str = "\x1b[38;5;124;1m";
-pub const ORANGE: &'static str = "\x1b[38;5;202;1m";
+pub const LIME: &str = "\x1b[38;5;119;1m";
+pub const LAVENDER: &str = "\x1b[38;5;183;1m";
+pub const MAROON: &str = "\x1b[38;5;124;1m";
+pub const ORANGE: &str = "\x1b[38;5;202;1m";
 
 pub fn color<S: fmt::Display>(color: &str, text: S) -> String {
     format!("{}{}{}", color, text, RESET)

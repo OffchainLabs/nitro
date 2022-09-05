@@ -144,7 +144,7 @@ impl Escape {
     }
 
     pub fn hostio<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
-        Err(Self::HostIO(format!("{}", message.as_ref())))
+        Err(Self::HostIO(message.as_ref().to_string()))
     }
 }
 

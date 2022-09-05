@@ -61,8 +61,6 @@ fn main() {
     let main = instance.exports.get_function("run").unwrap();
     let resume = instance.exports.get_function("resume").unwrap();
 
-    let mut escape;
-
     fn check_outcome(outcome: Result<Box<[Value]>, RuntimeError>) -> Option<Escape> {
         let outcome = match outcome {
             Ok(outcome) => {
@@ -73,26 +71,22 @@ fn main() {
         };
 
         let trace = outcome.trace();
-        if trace.len() > 0 {
+        if !trace.is_empty() {
             println!("backtrace:");
         }
         for frame in trace {
             let module = frame.module_name();
-            let name = match frame.function_name() {
-                Some(name) => name,
-                None => "??",
-            };
-
+            let name = frame.function_name().unwrap_or("??");
             println!("  in {} of {}", color::red(name), color::red(module));
         }
         Some(match outcome.downcast() {
             Ok(escape) => escape,
-            Err(outcome) => Escape::Failure(format!("unknown runtime error: {}", outcome)),
+            Err(outcome) => Escape::Failure(format!("unknown runtime error: {outcome}")),
         })
     }
 
     let outcome = main.call(&[Value::I32(0), Value::I32(0)]);
-    escape = check_outcome(outcome);
+    let mut escape = check_outcome(outcome);
 
     if escape.is_none() {
         while let Some(event) = env.lock().js_state.future_events.pop_front() {
@@ -117,7 +111,7 @@ fn main() {
         Some(Escape::Failure(err)) => (false, format!("Jit failed with {err} in {time}.")),
         Some(Escape::HostIO(err)) => (false, format!("Hostio failed with {err} in {time}.")),
         Some(Escape::SocketError(err)) => (false, format!("Socket failed with {err} in {time}.")),
-        None => (false, format!("Machine exited prematurely")),
+        None => (false, "Machine exited prematurely".to_owned()),
     };
 
     if opts.debug {
