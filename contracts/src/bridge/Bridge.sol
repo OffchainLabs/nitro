@@ -53,6 +53,9 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
     IOwnable public rollup;
     address public sequencerInbox;
 
+    // `sequencerReportedSubMessageCount` used to live here but moved to the sequencer inbox
+    uint256 private storageGap;
+
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
     function initialize(IOwnable rollup_) external initializer onlyDelegated {
