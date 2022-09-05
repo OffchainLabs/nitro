@@ -94,6 +94,10 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 			return errors.New("transaction sender is not on the whitelist")
 		}
 	}
+	if tx.Type() >= types.ArbitrumDepositTxType {
+		// Should be unreachable due to UnmarshalBinary not accepting Arbitrum internal txs
+		return types.ErrTxTypeNotSupported
+	}
 
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
