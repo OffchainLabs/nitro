@@ -5,6 +5,7 @@ package arbnode
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -43,7 +44,7 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	}
 	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number), tx)
 	if err != nil {
-		return core.ErrInvalidSender
+		return err
 	}
 	baseFee := header.BaseFee
 	if strictness < TxPreCheckerStrictnessLikelyCompatible {
@@ -53,11 +54,11 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 		}
 	}
 	if arbmath.BigLessThan(tx.GasFeeCap(), baseFee) {
-		return core.ErrUnderpriced
+		return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", core.ErrFeeCapTooLow, sender, tx.GasFeeCap(), header.BaseFee)
 	}
 	stateNonce := statedb.GetNonce(sender)
 	if tx.Nonce() < stateNonce {
-		return core.ErrNonceTooLow
+		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooLow, sender, tx.Nonce(), stateNonce)
 	}
 	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), true)
 	if err != nil {
@@ -72,10 +73,10 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	balance := statedb.GetBalance(sender)
 	cost := tx.Cost()
 	if arbmath.BigLessThan(balance, cost) {
-		return core.ErrInsufficientFunds
+		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
 	if strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
-		return core.ErrNonceTooHigh
+		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooHigh, sender, tx.Nonce(), stateNonce)
 	}
 	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress)
 	dataGas := arbmath.BigDiv(dataCost, header.BaseFee)

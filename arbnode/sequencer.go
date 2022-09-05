@@ -117,7 +117,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 }
 
 func (s *Sequencer) preTxFilter(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction) error {
-	return PreCheckTx(chainConfig, header, statedb, arbos, tx, TxPreCheckerStrictnessFullValidation)
+	return nil
 }
 
 func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
@@ -319,6 +319,10 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 			// Attempt to re-queue the transaction.
 			s.requeueOrFail(queueItem, core.ErrGasLimitReached)
 			continue
+		}
+		if errors.Is(err, core.ErrIntrinsicGas) {
+			// Strip additional information, as it's incorrect due to L1 data gas.
+			err = core.ErrIntrinsicGas
 		}
 		queueItem.returnResult(err)
 	}
