@@ -5,7 +5,6 @@ package broadcaster
 
 import (
 	"context"
-	"fmt"
 	"net"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -74,13 +73,6 @@ func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64
 func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
 	var signature []byte
 	// Don't need signature if request id is not present
-	log.Info("*** creating broadcastFeedMessage", "sequenceNumber", sequenceNumber)
-	if message.Message.Header.RequestId == nil {
-		log.Info("requestId nil")
-	}
-	if b.dataSigner == nil {
-		log.Info("dataSigner nil")
-	}
 	if message.Message.Header.RequestId != nil && b.dataSigner != nil {
 		hash, err := message.Hash(sequenceNumber, b.chainId)
 		if err != nil {
@@ -90,11 +82,6 @@ func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetada
 		if err != nil {
 			return nil, err
 		}
-		if len(signature) == 0 {
-			log.Error("missing signature", "sequenceNumber", sequenceNumber)
-			return nil, fmt.Errorf("missing signature for feed message sequence number %v", sequenceNumber)
-		}
-		log.Error("**** Signature created", "sequenceNumber", sequenceNumber, "signature", signature)
 	}
 
 	return &BroadcastFeedMessage{
