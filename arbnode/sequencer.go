@@ -96,6 +96,10 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 			return errors.New("transaction sender is not on the whitelist")
 		}
 	}
+	if tx.Type() >= types.ArbitrumDepositTxType {
+		// Should be unreachable due to UnmarshalBinary not accepting Arbitrum internal txs
+		return types.ErrTxTypeNotSupported
+	}
 
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
@@ -203,7 +207,7 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	return true
 }
 
-func (s *Sequencer) sequenceTransactions(ctx context.Context) {
+func (s *Sequencer) sequenceTransactions(ctx context.Context) bool {
 	var txes types.Transactions
 	var queueItems []txQueueItem
 	var totalBatchSize int
@@ -213,7 +217,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 			select {
 			case queueItem = <-s.txQueue:
 			case <-ctx.Done():
-				return
+				return false
 			}
 		} else {
 			done := false
@@ -254,7 +258,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	}
 
 	if s.forwardIfSet(queueItems) {
-		return
+		return false
 	}
 
 	timestamp := time.Now().Unix()
@@ -270,7 +274,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 			"l1Timestamp", l1Timestamp,
 			"localTimestamp", timestamp,
 		)
-		return
+		return false
 	}
 
 	header := &arbos.L1IncomingMessageHeader{
@@ -296,23 +300,27 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		// we changed roles
 		// forward if we have where to
 		if s.forwardIfSet(queueItems) {
-			return
+			return false
 		}
 		// try to add back to queue otherwise
 		for _, item := range queueItems {
 			s.requeueOrFail(item, ErrNoSequencer)
 		}
-		return
+		return false
 	}
 	if err != nil {
 		log.Warn("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
 		}
-		return
+		return false
 	}
 
+	madeBlock := false
 	for i, err := range hooks.TxErrors {
+		if err == nil {
+			madeBlock = true
+		}
 		queueItem := queueItems[i]
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
@@ -326,6 +334,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		}
 		queueItem.returnResult(err)
 	}
+	return madeBlock
 }
 
 func (s *Sequencer) updateLatestL1Block(header *types.Header) {
@@ -379,9 +388,14 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
-		s.sequenceTransactions(ctx)
-		// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
-		return time.Until(nextBlock)
+		madeBlock := s.sequenceTransactions(ctx)
+		if madeBlock {
+			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
+			return time.Until(nextBlock)
+		} else {
+			// If we didn't make a block, try again immediately.
+			return 0
+		}
 	})
 
 	return nil
