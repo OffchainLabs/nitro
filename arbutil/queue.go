@@ -20,7 +20,7 @@ const shrinkMinimum = 512
 func (q *Queue[T]) shrink() {
 	if cap(q.slice) >= len(q.slice)*shrinkRatio && cap(q.slice) >= shrinkMinimum {
 		oldSlice := q.slice
-		q.slice = make([]T, len(oldSlice)*2)
+		q.slice = make([]T, len(oldSlice), len(oldSlice)*2)
 		copy(q.slice, oldSlice)
 	}
 }
