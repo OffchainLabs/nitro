@@ -109,21 +109,21 @@ interface ISequencerInbox is IDelayedMessageProvider {
     // ---------- BatchPoster functions ----------
 
     function addSequencerL2BatchFromOrigin(
-        uint256 sequenceNumber,
+        uint256 expectedSequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder,
-        uint256 prevMessageCount,
-        uint64 newMessageCount
+        uint256 expectedUntrustedMessageCount,
+        uint64 newUntrustedMessageCount
     ) external;
 
     function addSequencerL2Batch(
-        uint256 sequenceNumber,
+        uint256 expectedSequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder,
-        uint256 prevMessageCount,
-        uint64 newMessageCount
+        uint256 expectedUntrustedMessageCount,
+        uint64 newUntrustedMessageCount
     ) external;
 
     // ---------- onlyRollupOrOwner functions ----------

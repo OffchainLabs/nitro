@@ -93,7 +93,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     }
 
     modifier validateBatchOrder(
-        uint256 sequenceNumber,
+        uint256 expectedSequenceNumber,
         uint256 expectedUntrustedMessageCount,
         uint64 newUntrustedMessageCount
     ) {
@@ -108,11 +108,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
         _;
 
-        if(sequenceNumber != SKIP_POST_MSG_COUNT) {
+        if(expectedSequenceNumber != SKIP_POST_MSG_COUNT) {
             // Validate correct batch index was added
             uint256 newCount = bridge.sequencerMessageCount() - 1;
-            if (newCount != sequenceNumber) {
-                revert BadSequencerNumber(newCount, sequenceNumber);
+            if (newCount != expectedSequenceNumber) {
+                revert BadSequencerNumber(newCount, expectedSequenceNumber);
             }
         }
     }
@@ -221,16 +221,16 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     /// @inheritdoc ISequencerInbox
     function addSequencerL2BatchFromOrigin(
-        uint256 sequenceNumber,
+        uint256 expectedSequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder,
-        uint256 prevMessageCount,
-        uint64 newMessageCount
+        uint256 expectedUntrustedMessageCount,
+        uint64 newUntrustedMessageCount
     )
         external
         refundsGas(gasRefunder)
-        validateBatchOrder(sequenceNumber, prevMessageCount, newMessageCount)
+        validateBatchOrder(expectedSequenceNumber, expectedUntrustedMessageCount, newUntrustedMessageCount)
     {
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
@@ -267,17 +267,17 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     /// @inheritdoc ISequencerInbox
     function addSequencerL2Batch(
-        uint256 sequenceNumber,
+        uint256 expectedSequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder,
-        uint256 prevMessageCount,
-        uint64 newMessageCount
+        uint256 expectedUntrustedMessageCount,
+        uint64 newUntrustedMessageCount
     )
         external
         override
         refundsGas(gasRefunder)
-        validateBatchOrder(sequenceNumber, prevMessageCount, newMessageCount)
+        validateBatchOrder(expectedSequenceNumber, expectedUntrustedMessageCount, newUntrustedMessageCount)
     {
         if (!isBatchPoster[msg.sender] && msg.sender != address(rollup)) revert NotBatchPoster();
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
