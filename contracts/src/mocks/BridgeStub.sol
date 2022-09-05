@@ -5,7 +5,6 @@
 pragma solidity ^0.8.0;
 
 import "./InboxStub.sol";
-import {BadSequencerMessageNumber} from "../libraries/Error.sol";
 
 import "../bridge/IBridge.sol";
 
@@ -29,7 +28,6 @@ contract BridgeStub is IBridge {
     bytes32[] public override sequencerInboxAccs;
 
     address public sequencerInbox;
-    uint256 public override sequencerReportedSubMessageCount;
 
     function setSequencerInbox(address _sequencerInbox) external override {
         sequencerInbox = _sequencerInbox;
@@ -63,9 +61,7 @@ contract BridgeStub is IBridge {
 
     function enqueueSequencerMessage(
         bytes32 dataHash,
-        uint256 afterDelayedMessagesRead,
-        uint256 prevMessageCount,
-        uint256 newMessageCount
+        uint256 afterDelayedMessagesRead
     )
         external
         returns (
@@ -75,14 +71,6 @@ contract BridgeStub is IBridge {
             bytes32 acc
         )
     {
-        if (
-            sequencerReportedSubMessageCount != prevMessageCount &&
-            prevMessageCount != 0 &&
-            sequencerReportedSubMessageCount != 0
-        ) {
-            revert BadSequencerMessageNumber(sequencerReportedSubMessageCount, prevMessageCount);
-        }
-        sequencerReportedSubMessageCount = newMessageCount;
         seqMessageIndex = sequencerInboxAccs.length;
         if (sequencerInboxAccs.length > 0) {
             beforeAcc = sequencerInboxAccs[sequencerInboxAccs.length - 1];

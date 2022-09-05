@@ -52,8 +52,6 @@ interface IBridge {
 
     function allowedOutboxes(address outbox) external view returns (bool);
 
-    function sequencerReportedSubMessageCount() external view returns (uint256);
-
     /**
      * @dev Enqueue a message in the delayed inbox accumulator.
      *      These messages are later sequenced in the SequencerInbox, either
@@ -79,9 +77,7 @@ interface IBridge {
 
     function enqueueSequencerMessage(
         bytes32 dataHash,
-        uint256 afterDelayedMessagesRead,
-        uint256 prevMessageCount,
-        uint256 newMessageCount
+        uint256 afterDelayedMessagesRead
     )
         external
         returns (

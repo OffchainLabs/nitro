@@ -112,7 +112,9 @@ interface ISequencerInbox is IDelayedMessageProvider {
         uint256 sequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
-        IGasRefunder gasRefunder
+        IGasRefunder gasRefunder,
+        uint256 prevMessageCount,
+        uint64 newMessageCount
     ) external;
 
     function addSequencerL2Batch(
@@ -121,10 +123,16 @@ interface ISequencerInbox is IDelayedMessageProvider {
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder,
         uint256 prevMessageCount,
-        uint256 newMessageCount
+        uint64 newMessageCount
     ) external;
 
     // ---------- onlyRollupOrOwner functions ----------
+
+    /**
+     * @notice Allows the value of untrusted msg count to be updated
+     * @param newUntrustedMessageCount updated value to be set
+     */
+    function setUntrustedMessageCount(uint64 newUntrustedMessageCount) external;
 
     /**
      * @notice Set max delay for sequencer inbox

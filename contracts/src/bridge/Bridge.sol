@@ -13,8 +13,7 @@ import {
     NotDelayedInbox,
     NotSequencerInbox,
     NotOutbox,
-    InvalidOutboxSet,
-    BadSequencerMessageNumber
+    InvalidOutboxSet
 } from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./Messages.sol";
@@ -53,8 +52,6 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
 
     IOwnable public rollup;
     address public sequencerInbox;
-
-    uint256 public override sequencerReportedSubMessageCount;
 
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
@@ -99,9 +96,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
 
     function enqueueSequencerMessage(
         bytes32 dataHash,
-        uint256 afterDelayedMessagesRead,
-        uint256 prevMessageCount,
-        uint256 newMessageCount
+        uint256 afterDelayedMessagesRead
     )
         external
         onlySequencerInbox
@@ -112,14 +107,6 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
             bytes32 acc
         )
     {
-        if (
-            sequencerReportedSubMessageCount != prevMessageCount &&
-            prevMessageCount != 0 &&
-            sequencerReportedSubMessageCount != 0
-        ) {
-            revert BadSequencerMessageNumber(sequencerReportedSubMessageCount, prevMessageCount);
-        }
-        sequencerReportedSubMessageCount = newMessageCount;
         seqMessageIndex = sequencerInboxAccs.length;
         if (sequencerInboxAccs.length > 0) {
             beforeAcc = sequencerInboxAccs[sequencerInboxAccs.length - 1];
@@ -264,10 +251,6 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
             allowedOutboxList.pop();
             delete allowedOutboxesMap[outbox];
         }
-    }
-
-    function setSequencerReportedSubMessageCount(uint256 newMsgCount) external onlyRollupOrOwner {
-        sequencerReportedSubMessageCount = newMsgCount;
     }
 
     function delayedMessageCount() external view override returns (uint256) {

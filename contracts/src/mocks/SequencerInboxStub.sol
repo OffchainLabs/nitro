@@ -19,13 +19,22 @@ contract SequencerInboxStub is SequencerInbox {
     }
 
     function addInitMessage() external {
+        // this replicates the rollup admin's call
+        // connectedContracts.sequencerInbox.addSequencerL2Batch(
+        //     0,
+        //     "",
+        //     1,
+        //     IGasRefunder(address(0)),
+        //     Uint64SyncLib.toUint64SyncVal(0),
+        //     Uint64SyncLib.toUint64SyncVal(1)
+        // );
         (bytes32 dataHash, TimeBounds memory timeBounds) = formEmptyDataHash(0);
         (
             uint256 sequencerMessageCount,
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, 0, 0, 0, 1);
+        ) = addSequencerL2BatchImpl(dataHash, 0, 0);
         emit SequencerBatchDelivered(
             sequencerMessageCount,
             beforeAcc,

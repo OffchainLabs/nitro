@@ -9,6 +9,8 @@ import {
     HadZeroInit,
     NotOrigin,
     DataTooLarge,
+    BadSequencerMessageNumber,
+    NotRollupOrOwner,
     NotRollup,
     DelayedBackwards,
     DelayedTooFar,
@@ -56,8 +58,79 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     mapping(bytes32 => DasKeySetInfo) public dasKeySetInfo;
 
+    /**
+     * @notice magic value used to skip validation against untrustedMessageCount
+     * @dev this is never a valid value for untrustedMessageCount since its bigger than uint64
+     */
+    uint256 constant public SKIP_UNTRUSTED_MSG_COUNT = uint256(type(uint64).max) + 1;
+
+    /**
+     * @notice magic value used to skip validation against the msg count after including a batch
+     */
+    uint256 constant public SKIP_POST_MSG_COUNT = type(uint256).max;
+
+    /**
+     * @notice This value should not be trusted since it can be arbitrarily set by the sequencer
+     * or rollup admin.
+     * @dev It is used to help validate/coordinate multiple messages initiated by multiple offchain batch posters.
+     * They might have slightly different views of the chain and this helps ensure invalid state isn't posted.
+     */
+    uint64 public untrustedMessageCount;
+
+    modifier onlyRollupOrOwner() {
+        if (msg.sender != address(rollup)) {
+            address rollupOwner = rollup.owner();
+            if (msg.sender != rollupOwner) {
+                revert NotRollupOrOwner(msg.sender, address(rollup), rollupOwner);
+            }
+        }
+        _;
+    }
+
     modifier onlyRollupOwner() {
         if (msg.sender != rollup.owner()) revert NotOwner(msg.sender, address(rollup));
+        _;
+    }
+
+    modifier validateBatchOrder(
+        uint256 sequenceNumber,
+        uint256 expectedUntrustedMessageCount,
+        uint64 newUntrustedMessageCount
+    ) {
+        if (expectedUntrustedMessageCount != SKIP_UNTRUSTED_MSG_COUNT) {
+            // This is used to help validate/coordinate multiple messages initiated by multiple offchain batch posters.
+            // They might have slightly different views of the chain and this helps ensure invalid state isn't posted.
+            if(expectedUntrustedMessageCount != untrustedMessageCount) {
+                revert BadSequencerMessageNumber(untrustedMessageCount, expectedUntrustedMessageCount);
+            }
+            untrustedMessageCount = newUntrustedMessageCount;
+        }
+
+        _;
+
+        if(sequenceNumber != SKIP_POST_MSG_COUNT) {
+            // Validate correct batch index was added
+            uint256 newCount = bridge.sequencerMessageCount() - 1;
+            if (newCount != sequenceNumber) {
+                revert BadSequencerNumber(newCount, sequenceNumber);
+            }
+        }
+    }
+
+    modifier validateSequencerBatchData(bytes calldata data) {
+        // validate data
+        uint256 fullDataLen = HEADER_LENGTH + data.length;
+        if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
+        if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
+            revert DataNotAuthenticated();
+        }
+        // the first byte is used to identify the type of batch data
+        // das batches expect to have the type byte set, followed by the keyset (so they should have at least 33 bytes)
+        if (data.length >= 33 && data[0] & 0x80 != 0) {
+            // we skip the first byte, then read the next 32 bytes for the keyset
+            bytes32 dasKeysetHash = bytes32(data[1:33]);
+            if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
+        }
         _;
     }
 
@@ -124,10 +197,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             _totalDelayedMessagesRead
         );
         uint256 __totalDelayedMessagesRead = _totalDelayedMessagesRead;
-        uint256 prevSeqMsgCount = bridge.sequencerReportedSubMessageCount();
-        uint256 newSeqMsgCount = prevSeqMsgCount +
-            _totalDelayedMessagesRead -
-            totalDelayedMessagesRead;
+        // this skips `validateSequencerBatchData` since no sequencer batch is actually added here
         (
             uint256 seqMessageIndex,
             bytes32 beforeAcc,
@@ -136,9 +206,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         ) = addSequencerL2BatchImpl(
                 dataHash,
                 __totalDelayedMessagesRead,
-                0,
-                prevSeqMsgCount,
-                newSeqMsgCount
+                0
             );
         emit SequencerBatchDelivered(
             seqMessageIndex,
@@ -151,47 +219,19 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         );
     }
 
-    /// @dev Deprecated in favor of the variant specifying message counts for consistency
-    function addSequencerL2BatchFromOrigin(
-        uint256 sequenceNumber,
-        bytes calldata data,
-        uint256 afterDelayedMessagesRead,
-        IGasRefunder gasRefunder
-    ) external refundsGas(gasRefunder) {
-        // solhint-disable-next-line avoid-tx-origin
-        if (msg.sender != tx.origin) revert NotOrigin();
-        if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
-        (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
-            data,
-            afterDelayedMessagesRead
-        );
-        (
-            uint256 seqMessageIndex,
-            bytes32 beforeAcc,
-            bytes32 delayedAcc,
-            bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead, data.length, 0, 0);
-        if (seqMessageIndex != sequenceNumber)
-            revert BadSequencerNumber(seqMessageIndex, sequenceNumber);
-        emit SequencerBatchDelivered(
-            sequenceNumber,
-            beforeAcc,
-            afterAcc,
-            delayedAcc,
-            totalDelayedMessagesRead,
-            timeBounds,
-            BatchDataLocation.TxInput
-        );
-    }
-
+    /// @inheritdoc ISequencerInbox
     function addSequencerL2BatchFromOrigin(
         uint256 sequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder,
         uint256 prevMessageCount,
-        uint256 newMessageCount
-    ) external refundsGas(gasRefunder) {
+        uint64 newMessageCount
+    )
+        external
+        refundsGas(gasRefunder)
+        validateBatchOrder(sequenceNumber, prevMessageCount, newMessageCount)
+    {
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
@@ -200,13 +240,10 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             afterDelayedMessagesRead
         );
         // Reformat the stack to prevent "Stack too deep"
-        uint256 sequenceNumber_ = sequenceNumber;
         TimeBounds memory timeBounds_ = timeBounds;
         bytes32 dataHash_ = dataHash;
         uint256 dataLength = data.length;
         uint256 afterDelayedMessagesRead_ = afterDelayedMessagesRead;
-        uint256 prevMessageCount_ = prevMessageCount;
-        uint256 newMessageCount_ = newMessageCount;
         (
             uint256 seqMessageIndex,
             bytes32 beforeAcc,
@@ -215,12 +252,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         ) = addSequencerL2BatchImpl(
                 dataHash_,
                 afterDelayedMessagesRead_,
-                dataLength,
-                prevMessageCount_,
-                newMessageCount_
+                dataLength
             );
-        if (seqMessageIndex != sequenceNumber_ && sequenceNumber_ != ~uint256(0))
-            revert BadSequencerNumber(seqMessageIndex, sequenceNumber_);
         emit SequencerBatchDelivered(
             seqMessageIndex,
             beforeAcc,
@@ -232,14 +265,20 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         );
     }
 
+    /// @inheritdoc ISequencerInbox
     function addSequencerL2Batch(
         uint256 sequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder,
         uint256 prevMessageCount,
-        uint256 newMessageCount
-    ) external override refundsGas(gasRefunder) {
+        uint64 newMessageCount
+    )
+        external
+        override
+        refundsGas(gasRefunder)
+        validateBatchOrder(sequenceNumber, prevMessageCount, newMessageCount)
+    {
         if (!isBatchPoster[msg.sender] && msg.sender != address(rollup)) revert NotBatchPoster();
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
@@ -248,12 +287,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         uint256 seqMessageIndex;
         {
             // Reformat the stack to prevent "Stack too deep"
-            uint256 sequenceNumber_ = sequenceNumber;
             TimeBounds memory timeBounds_ = timeBounds;
             bytes32 dataHash_ = dataHash;
             uint256 afterDelayedMessagesRead_ = afterDelayedMessagesRead;
-            uint256 prevMessageCount_ = prevMessageCount;
-            uint256 newMessageCount_ = newMessageCount;
             // we set the calldata length posted to 0 here since the caller isn't the origin
             // of the tx, so they might have not paid tx input cost for the calldata
             bytes32 beforeAcc;
@@ -262,12 +298,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             (seqMessageIndex, beforeAcc, delayedAcc, afterAcc) = addSequencerL2BatchImpl(
                 dataHash_,
                 afterDelayedMessagesRead_,
-                0,
-                prevMessageCount_,
-                newMessageCount_
+                0
             );
-            if (seqMessageIndex != sequenceNumber_ && sequenceNumber_ != ~uint256(0))
-                revert BadSequencerNumber(seqMessageIndex, sequenceNumber_);
             emit SequencerBatchDelivered(
                 seqMessageIndex,
                 beforeAcc,
@@ -279,22 +311,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             );
         }
         emit SequencerBatchData(seqMessageIndex, data);
-    }
-
-    modifier validateBatchData(bytes calldata data) {
-        uint256 fullDataLen = HEADER_LENGTH + data.length;
-        if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
-        if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
-            revert DataNotAuthenticated();
-        }
-        // the first byte is used to identify the type of batch data
-        // das batches expect to have the type byte set, followed by the keyset (so they should have at least 33 bytes)
-        if (data.length >= 33 && data[0] & 0x80 != 0) {
-            // we skip the first byte, then read the next 32 bytes for the keyset
-            bytes32 dasKeysetHash = bytes32(data[1:33]);
-            if (!dasKeySetInfo[dasKeysetHash].isValidKeyset) revert NoSuchKeyset(dasKeysetHash);
-        }
-        _;
     }
 
     function packHeader(uint256 afterDelayedMessagesRead)
@@ -318,7 +334,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     function formDataHash(bytes calldata data, uint256 afterDelayedMessagesRead)
         internal
         view
-        validateBatchData(data)
+        validateSequencerBatchData(data)
         returns (bytes32, TimeBounds memory)
     {
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
@@ -338,9 +354,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     function addSequencerL2BatchImpl(
         bytes32 dataHash,
         uint256 afterDelayedMessagesRead,
-        uint256 calldataLengthPosted,
-        uint256 prevMessageCount,
-        uint256 newMessageCount
+        uint256 calldataLengthPosted
     )
         internal
         returns (
@@ -355,9 +369,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
         (seqMessageIndex, beforeAcc, delayedAcc, acc) = bridge.enqueueSequencerMessage(
             dataHash,
-            afterDelayedMessagesRead,
-            prevMessageCount,
-            newMessageCount
+            afterDelayedMessagesRead
         );
 
         totalDelayedMessagesRead = afterDelayedMessagesRead;
@@ -429,6 +441,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         dasKeySetInfo[ksHash].isValidKeyset = false;
         emit InvalidateKeyset(ksHash);
         emit OwnerFunctionCalled(3);
+    }
+
+    /// @inheritdoc ISequencerInbox
+    function setUntrustedMessageCount(uint64 newUntrustedMessageCount) external onlyRollupOrOwner {
+        untrustedMessageCount = newUntrustedMessageCount;
+        emit OwnerFunctionCalled(4);
     }
 
     function isValidKeysetHash(bytes32 ksHash) external view returns (bool) {
