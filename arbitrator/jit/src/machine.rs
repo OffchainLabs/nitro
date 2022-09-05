@@ -11,7 +11,8 @@ use parking_lot::Mutex;
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
 use wasmer::{
-    imports, CompilerConfig, Function, Instance, Memory, Module, Store, Universal, WasmerEnv,
+    imports, CompilerConfig, Function, Instance, LazyInit, Memory, Module, NativeFunc, Store,
+    Universal, WasmerEnv,
 };
 use wasmer_compiler_cranelift::Cranelift;
 use wasmer_compiler_llvm::LLVM;
@@ -134,6 +135,8 @@ pub enum Escape {
     HostIO(String),
     #[error("hostio socket failed with `{0}`")]
     SocketError(#[from] io::Error),
+    #[error("`{0}`")]
+    Wrapped(Box<Escape>),
 }
 
 pub type MaybeEscape = Result<(), Escape>;
@@ -145,6 +148,10 @@ impl Escape {
 
     pub fn hostio<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
         Err(Self::HostIO(message.as_ref().to_string()))
+    }
+
+    pub fn failure<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
+        Err(Self::Failure(message.as_ref().to_string()))
     }
 }
 
@@ -176,12 +183,16 @@ pub struct WasmEnv {
 }
 
 #[derive(Clone, Default, WasmerEnv)]
-pub struct WasmEnvArc(Arc<Mutex<WasmEnv>>);
+pub struct WasmEnvArc {
+    env: Arc<Mutex<WasmEnv>>,
+    #[wasmer(export(name = "resume"))]
+    resume: LazyInit<NativeFunc<(), ()>>,
+}
 
 impl Deref for WasmEnvArc {
     type Target = Mutex<WasmEnv>;
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &*self.env
     }
 }
 
@@ -251,7 +262,9 @@ impl WasmEnvArc {
         let last_send_root = parse_hex(&opts.last_send_root, "--last-send-root")?;
         env.small_globals = [opts.inbox_position, opts.position_within_message];
         env.large_globals = [last_block_hash, last_send_root];
-        Ok(Self(Arc::new(Mutex::new(env))))
+        let env = Arc::new(Mutex::new(env));
+        let resume = LazyInit::new();
+        Ok(Self { env, resume })
     }
 
     pub fn send_results(self, error: Option<String>) {

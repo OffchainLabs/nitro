@@ -2,8 +2,9 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
+    color,
     gostack::GoStack,
-    machine::{WasmEnv, WasmEnvArc},
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvArc},
 };
 
 use parking_lot::MutexGuard;
@@ -305,7 +306,11 @@ pub fn js_value_index(env: &WasmEnvArc, sp: u32) {
     sp.write_u64(2, value.encode());
 }
 
-pub fn js_value_call(env: &WasmEnvArc, sp: u32) {
+pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
+    let resume = match env.resume_ref() {
+        Some(resume) => resume,
+        None => return Escape::failure(format!("wasmer failed to bind {}", color::red("resume"))),
+    };
     let (sp, mut env) = GoStack::new(sp, env);
     let env = &mut *env;
     let rng = &mut env.go_state.rng;
@@ -327,7 +332,7 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) {
             eprintln!($text $(,$args)*);
             sp.write_u64(6, GoValue::Null.encode());
             sp.write_u8(7, 1);
-            return
+            return Ok(())
         }};
     }
 
@@ -431,6 +436,7 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) {
 
     sp.write_u64(6, value.encode());
     sp.write_u8(7, 1);
+    Ok(())
 }
 
 pub fn js_value_new(env: &WasmEnvArc, sp: u32) {

@@ -189,7 +189,7 @@ $(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover
 	install arbitrator/target/release/libprover.a $@
 
-+$(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib arbitrator/jit/src/*.rs arbitrator/jit/*.rs arbitrator/jit/Cargo.toml
+$(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib arbitrator/jit/src/*.rs arbitrator/jit/*.rs arbitrator/jit/Cargo.toml
 	mkdir -p `dirname $(arbitrator_jit)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin jit
 	install arbitrator/target/release/jit $@
