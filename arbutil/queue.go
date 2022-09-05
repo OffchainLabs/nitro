@@ -1,0 +1,39 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+package arbutil
+
+// A queue of an arbitrary type backed by a slice which is shrinked when it grows too large
+type Queue[T any] struct {
+	slice []T
+}
+
+func (q *Queue[T]) Push(item T) {
+	q.slice = append(q.slice, item)
+}
+
+// If cap(slice) >= len(slice)*shrinkRatio, shrink the slice capacity back down to its length
+const shrinkRatio = 8
+
+func (q *Queue[T]) shrink() {
+	if cap(q.slice) >= len(q.slice)*shrinkRatio {
+		oldSlice := q.slice
+		q.slice = make([]T, len(oldSlice))
+		copy(q.slice, oldSlice)
+	}
+}
+
+func (q *Queue[T]) Pop() T {
+	var empty T
+	if len(q.slice) == 0 {
+		return empty
+	}
+	item := q.slice[0]
+	q.slice = q.slice[1:]
+	q.shrink()
+	return item
+}
+
+func (q *Queue[T]) Len() int {
+	return len(q.slice)
+}
