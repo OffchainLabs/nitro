@@ -10,7 +10,9 @@ use eyre::{bail, Result, WrapErr};
 use parking_lot::Mutex;
 use sha3::{Digest, Keccak256};
 use thiserror::Error;
-use wasmer::{imports, Function, Instance, Memory, Module, Store, Universal, WasmerEnv};
+use wasmer::{
+    imports, CompilerConfig, Function, Instance, Memory, Module, Store, Universal, WasmerEnv,
+};
 use wasmer_compiler_cranelift::Cranelift;
 use wasmer_compiler_llvm::LLVM;
 
@@ -35,8 +37,17 @@ pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
 
     // TODO: enable deterministic floating point
     let engine = match opts.cranelift {
-        true => Universal::new(Cranelift::new()).engine(),
-        false => Universal::new(LLVM::new()).engine(),
+        true => {
+            let mut compiler = Cranelift::new();
+            compiler.canonicalize_nans(true);
+            Universal::new(compiler).engine()
+        }
+        false => {
+            let mut compiler = LLVM::new();
+            compiler.canonicalize_nans(true);
+            compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+            Universal::new(compiler).engine()
+        }
     };
 
     let store = Store::new(&engine);
