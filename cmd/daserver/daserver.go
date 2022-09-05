@@ -140,12 +140,15 @@ func startup() error {
 	log.Root().SetHandler(glogger)
 
 	if serverConfig.Metrics {
+		if len(serverConfig.MetricsServer.Addr) == 0 {
+			fmt.Printf("Metrics is enabled, but missing --metrics-server.addr")
+			return nil
+		}
+
 		go metrics.CollectProcessMetrics(serverConfig.MetricsServer.UpdateInterval)
 
-		if serverConfig.MetricsServer.Addr != "" {
-			address := fmt.Sprintf("%v:%v", serverConfig.MetricsServer.Addr, serverConfig.MetricsServer.Port)
-			exp.Setup(address)
-		}
+		address := fmt.Sprintf("%v:%v", serverConfig.MetricsServer.Addr, serverConfig.MetricsServer.Port)
+		exp.Setup(address)
 	}
 
 	sigint := make(chan os.Signal, 1)
