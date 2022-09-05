@@ -59,10 +59,7 @@ contract BridgeStub is IBridge {
             );
     }
 
-    function enqueueSequencerMessage(
-        bytes32 dataHash,
-        uint256 afterDelayedMessagesRead
-    )
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         external
         returns (
             uint256 seqMessageIndex,

@@ -62,12 +62,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
      * @notice magic value used to skip validation against untrustedMessageCount
      * @dev this is never a valid value for untrustedMessageCount since its bigger than uint64
      */
-    uint256 constant public SKIP_UNTRUSTED_MSG_COUNT = uint256(type(uint64).max) + 1;
+    uint256 public constant SKIP_UNTRUSTED_MSG_COUNT = uint256(type(uint64).max) + 1;
 
     /**
      * @notice magic value used to skip validation against the msg count after including a batch
      */
-    uint256 constant public SKIP_POST_MSG_COUNT = type(uint256).max;
+    uint256 public constant SKIP_POST_MSG_COUNT = type(uint256).max;
 
     /**
      * @notice This value should not be trusted since it can be arbitrarily set by the sequencer
@@ -100,15 +100,18 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (expectedUntrustedMessageCount != SKIP_UNTRUSTED_MSG_COUNT) {
             // This is used to help validate/coordinate multiple messages initiated by multiple offchain batch posters.
             // They might have slightly different views of the chain and this helps ensure invalid state isn't posted.
-            if(expectedUntrustedMessageCount != untrustedMessageCount) {
-                revert BadSequencerMessageNumber(untrustedMessageCount, expectedUntrustedMessageCount);
+            if (expectedUntrustedMessageCount != untrustedMessageCount) {
+                revert BadSequencerMessageNumber(
+                    untrustedMessageCount,
+                    expectedUntrustedMessageCount
+                );
             }
             untrustedMessageCount = newUntrustedMessageCount;
         }
 
         _;
 
-        if(expectedSequenceNumber != SKIP_POST_MSG_COUNT) {
+        if (expectedSequenceNumber != SKIP_POST_MSG_COUNT) {
             // Validate correct batch index was added
             uint256 newCount = bridge.sequencerMessageCount() - 1;
             if (newCount != expectedSequenceNumber) {
@@ -203,11 +206,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(
-                dataHash,
-                __totalDelayedMessagesRead,
-                0
-            );
+        ) = addSequencerL2BatchImpl(dataHash, __totalDelayedMessagesRead, 0);
         emit SequencerBatchDelivered(
             seqMessageIndex,
             beforeAcc,
@@ -230,7 +229,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     )
         external
         refundsGas(gasRefunder)
-        validateBatchOrder(expectedSequenceNumber, expectedUntrustedMessageCount, newUntrustedMessageCount)
+        validateBatchOrder(
+            expectedSequenceNumber,
+            expectedUntrustedMessageCount,
+            newUntrustedMessageCount
+        )
     {
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
@@ -249,11 +252,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(
-                dataHash_,
-                afterDelayedMessagesRead_,
-                dataLength
-            );
+        ) = addSequencerL2BatchImpl(dataHash_, afterDelayedMessagesRead_, dataLength);
         emit SequencerBatchDelivered(
             seqMessageIndex,
             beforeAcc,
@@ -277,7 +276,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         external
         override
         refundsGas(gasRefunder)
-        validateBatchOrder(expectedSequenceNumber, expectedUntrustedMessageCount, newUntrustedMessageCount)
+        validateBatchOrder(
+            expectedSequenceNumber,
+            expectedUntrustedMessageCount,
+            newUntrustedMessageCount
+        )
     {
         if (!isBatchPoster[msg.sender] && msg.sender != address(rollup)) revert NotBatchPoster();
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(

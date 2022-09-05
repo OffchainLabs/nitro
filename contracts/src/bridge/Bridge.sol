@@ -94,10 +94,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         _;
     }
 
-    function enqueueSequencerMessage(
-        bytes32 dataHash,
-        uint256 afterDelayedMessagesRead
-    )
+    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         external
         onlySequencerInbox
         returns (
