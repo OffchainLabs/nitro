@@ -39,7 +39,7 @@ type StatelessBlockValidator struct {
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
 	pendingWasmModuleRoot common.Hash
-	FatalErrChan          chan error
+	fatalErrChan          chan error
 }
 
 type BlockValidatorRegistrer interface {
@@ -228,7 +228,7 @@ func NewStatelessBlockValidator(
 		db:              db,
 		daService:       das,
 		genesisBlockNum: genesisBlockNum,
-		FatalErrChan:    fatalErrChan,
+		fatalErrChan:    fatalErrChan,
 	}
 	if config.PendingUpgradeModuleRoot != "" {
 		if config.PendingUpgradeModuleRoot == "latest" {

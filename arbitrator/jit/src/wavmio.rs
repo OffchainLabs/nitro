@@ -3,7 +3,7 @@
 
 use std::{
     io,
-    io::{BufReader, ErrorKind, Write, BufWriter},
+    io::{BufReader, BufWriter, ErrorKind, Write},
     net::TcpStream,
     time::Instant,
 };
@@ -202,7 +202,6 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
                 env.process.last_preimage = Some((hash.clone(), temporary.clone()));
                 preimage = Some(&temporary);
             }
-            
         }
     }
 
@@ -229,7 +228,7 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let debug = env.process.debug;
-        
+
     if env.process.reached_wavmio == false {
         if debug {
             let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
@@ -257,8 +256,8 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
                 error => Escape::hostio(format!("Error reading stdin: {error}")),
             };
         }
-        
-        address.pop();  // pop the newline
+
+        address.pop(); // pop the newline
         if debug {
             println!("Child will connect to {address}");
         }
