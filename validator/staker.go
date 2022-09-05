@@ -55,6 +55,7 @@ type L1ValidatorConfig struct {
 	Enable                   bool              `koanf:"enable"`
 	Strategy                 string            `koanf:"strategy"`
 	StakerInterval           time.Duration     `koanf:"staker-interval"`
+	MakeAssertionInterval    time.Duration     `koanf:"make-assertion-interval"`
 	L1PostingStrategy        L1PostingStrategy `koanf:"posting-strategy"`
 	DisableChallenge         bool              `koanf:"disable-challenge"`
 	TargetMachineCount       int               `koanf:"target-machine-count"`
@@ -67,6 +68,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                   false,
 	Strategy:                 "Watchtower",
 	StakerInterval:           time.Minute,
+	MakeAssertionInterval:    time.Hour,
 	L1PostingStrategy:        L1PostingStrategy{},
 	DisableChallenge:         false,
 	TargetMachineCount:       4,
@@ -79,6 +81,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultL1ValidatorConfig.Enable, "enable validator")
 	f.String(prefix+".strategy", DefaultL1ValidatorConfig.Strategy, "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
+	f.Duration(prefix+".make-assertion-interval", DefaultL1ValidatorConfig.MakeAssertionInterval, "if configured with the makeNodes strategy, how often to create new assertions (bypassed in case of a dispute)")
 	L1PostingStrategyAddOptions(prefix+".posting-strategy", f)
 	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
 	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
@@ -177,7 +180,27 @@ func (s *Staker) Initialize(ctx context.Context) error {
 			return err
 		}
 	}
-	return s.L1Validator.Initialize(ctx)
+	err := s.L1Validator.Initialize(ctx)
+	if err != nil {
+		return err
+	}
+	latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
+	if err != nil {
+		return err
+	}
+	if latestStaked == 0 {
+		return nil
+	}
+	stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
+	if err != nil {
+		return err
+	}
+
+	if s.blockValidator != nil {
+		return s.blockValidator.AssumeValid(stakedInfo.AfterState().GlobalState)
+	}
+
+	return nil
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
@@ -268,12 +291,8 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	callOpts := s.getCallOpts(ctx)
 	s.builder.ClearTransactions()
 	var rawInfo *StakerInfo
-	walletAddress := s.wallet.Address()
-	var walletAddressOrZero common.Address
-	if walletAddress != nil {
-		walletAddressOrZero = *walletAddress
-	}
-	if walletAddress != nil {
+	walletAddressOrZero := s.wallet.AddressOrZero()
+	if walletAddressOrZero != (common.Address{}) {
 		var err error
 		rawInfo, err = s.rollup.StakerInfo(ctx, walletAddressOrZero)
 		if err != nil {
@@ -372,7 +391,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		stakeIsUnwanted := effectiveStrategy < StakeLatestStrategy
 		if stakeIsTooOutdated || stakeIsUnwanted {
 			// Note: we must have an address if rawInfo != nil
-			_, err = s.rollup.ReturnOldDeposit(s.builder.Auth(ctx), *walletAddress)
+			_, err = s.rollup.ReturnOldDeposit(s.builder.Auth(ctx), walletAddressOrZero)
 			if err != nil {
 				return nil, err
 			}
@@ -385,8 +404,8 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	if walletAddress != nil {
-		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, *walletAddress)
+	if walletAddressOrZero != (common.Address{}) {
+		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, walletAddressOrZero)
 		if err != nil {
 			return nil, err
 		}
@@ -475,7 +494,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 
 func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiveStrategy StakerStrategy) error {
 	active := effectiveStrategy >= StakeLatestStrategy
-	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy)
+	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, s.config.MakeAssertionInterval)
 	if err != nil {
 		return err
 	}

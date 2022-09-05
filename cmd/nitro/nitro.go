@@ -11,7 +11,9 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,7 +41,9 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -114,14 +118,10 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
-	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
+	args := os.Args[1:]
+	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
 	if err != nil {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
-		printSampleUsage(os.Args[0])
-		if !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+		util.HandleError(err, printSampleUsage)
 
 		return
 	}
@@ -130,6 +130,7 @@ func main() {
 		panic(err)
 	}
 
+	vcsRevision, vcsTime := util.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
@@ -214,7 +215,11 @@ func main() {
 		return
 	}
 
-	if nodeConfig.Node.Archive && nodeConfig.Node.TxLookupLimit != 0 {
+	if nodeConfig.Node.Archive {
+		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
+		nodeConfig.Node.Caching.Archive = true
+	}
+	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
 	}
@@ -230,6 +235,7 @@ func main() {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
+	stackConf.Version = vcsRevision
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
@@ -246,10 +252,10 @@ func main() {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
 	if err != nil {
-		printSampleUsage(os.Args[0])
-		fmt.Printf("%s\n", err.Error())
+		util.HandleError(err, printSampleUsage)
+		return
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
@@ -275,13 +281,14 @@ func main() {
 		}
 	}
 
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	feedErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
 		chainDb,
 		arbDb,
-		&nodeConfig.Node,
+		&NodeConfigFetcher{liveNodeConfig},
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
@@ -336,12 +343,12 @@ func main() {
 }
 
 type NodeConfig struct {
-	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	Node          arbnode.Config                  `koanf:"node"`
+	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
-	LogLevel      int                             `koanf:"log-level"`
-	LogType       string                          `koanf:"log-type"`
+	LogLevel      int                             `koanf:"log-level" reload:"hot"`
+	LogType       string                          `koanf:"log-type" reload:"hot"`
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
@@ -390,6 +397,40 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	c.L2.ResolveDirectoryNames(c.Persistent.Chain)
 
 	return nil
+}
+
+func (c *NodeConfig) ShallowClone() *NodeConfig {
+	config := &NodeConfig{}
+	*config = *c
+	return config
+}
+
+func (c *NodeConfig) CanReload(new *NodeConfig) error {
+	var check func(node, other reflect.Value, path string)
+	var err error
+
+	check = func(node, value reflect.Value, path string) {
+		if node.Kind() != reflect.Struct {
+			return
+		}
+
+		for i := 0; i < node.NumField(); i++ {
+			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
+			dot := path + "." + node.Type().Field(i).Name
+
+			first := node.Field(i).Interface()
+			other := value.Field(i).Interface()
+
+			if !hot && !reflect.DeepEqual(first, other) {
+				err = fmt.Errorf("Illegal change to %v%v%v", colors.Red, dot, colors.Clear)
+			} else {
+				check(node.Field(i), value.Field(i), dot)
+			}
+		}
+	}
+
+	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
+	return err
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
@@ -465,9 +506,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		case 0:
 			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
 		case 42161:
-			return nil, nil, nil, nil, nil, errors.New("mainnet not supported yet")
+			if err := applyArbitrumOneParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+			chainFound = true
 		case 42170:
-			if err := applyArbitrumNovaRollupParameters(k); err != nil {
+			if err := applyArbitrumNovaParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
 			chainFound = true
@@ -544,7 +588,23 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyArbitrumNovaRollupParameters(k *koanf.Koanf) error {
+func applyArbitrumOneParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain":                   "arb1",
+		"node.forwarding-target":             "https://arb1.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://arb1.arbitrum.io/feed",
+		"l1.rollup.bridge":                   "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
+		"l1.rollup.inbox":                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+		"l1.rollup.rollup":                   "0x5ef0d09d1e6204141b4d37530808ed19f60fba35",
+		"l1.rollup.sequencer-inbox":          "0x1c479675ad559dc151f6ec7ed3fbf8cee79582b6",
+		"l1.rollup.validator-utils":          "0x9e40625f52829cf04bc4839f186d621ee33b0e67",
+		"l1.rollup.validator-wallet-creator": "0x960953f7c69cd2bc2322db9223a815c680ccc7ea",
+		"l1.rollup.deployed-at":              15411056,
+		"l2.chain-id":                        42161,
+	}, "."), nil)
+}
+
+func applyArbitrumNovaParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                                       "nova",
 		"node.forwarding-target":                                 "https://nova.arbitrum.io/rpc",
@@ -587,7 +647,7 @@ func applyArbitrumRollupRinkebyTestnetParameters(k *koanf.Koanf) error {
 		"node.forwarding-target":             "https://rinkeby.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://rinkeby.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0x85c720444e436e1f9407e0c3895d3fe149f41168",
-		"l1.rollup.inbox":                    "0xd394acec33ca1c7fc14212b41892bd82deddda94",
+		"l1.rollup.inbox":                    "0x578BAde599406A8fE3d24Fd7f7211c0911F5B29e",
 		"l1.rollup.rollup":                   "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
 		"l1.rollup.sequencer-inbox":          "0x957c9c64f7c2ce091e56af3f33ab20259096355f",
 		"l1.rollup.validator-utils":          "0x0ea7372338a589e7f0b00e463a53aa464ef04e17",
@@ -601,4 +661,97 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain": "goerli-anytrust",
 	}, "."), nil)
+}
+
+type LiveNodeConfig struct {
+	stopwaiter.StopWaiter
+
+	mutex  sync.RWMutex
+	args   []string
+	config *NodeConfig
+}
+
+func (c *LiveNodeConfig) get() *NodeConfig {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.config
+}
+
+func (c *LiveNodeConfig) set(config *NodeConfig) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if err := c.config.CanReload(config); err != nil {
+		return err
+	}
+	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
+		return err
+	}
+	c.config = config
+	return nil
+}
+
+func (c *LiveNodeConfig) Start(ctxIn context.Context) {
+	c.StopWaiter.Start(ctxIn)
+
+	sigusr1 := make(chan os.Signal, 1)
+	signal.Notify(sigusr1, syscall.SIGUSR1)
+
+	c.LaunchThread(func(ctx context.Context) {
+		for {
+			reloadInterval := c.config.Conf.ReloadInterval
+			if reloadInterval == 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-sigusr1:
+					log.Info("Configuration reload triggered by SIGUSR1.")
+				}
+			} else {
+				timer := time.NewTimer(reloadInterval)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-sigusr1:
+					timer.Stop()
+					log.Info("Configuration reload triggered by SIGUSR1.")
+				case <-timer.C:
+				}
+			}
+			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
+			if err != nil {
+				log.Error("error parsing live config", "error", err.Error())
+				continue
+			}
+			err = c.set(nodeConfig)
+			if err != nil {
+				log.Error("error updating live config", "error", err.Error())
+				continue
+			}
+		}
+	})
+}
+
+func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
+	return &LiveNodeConfig{
+		args:   args,
+		config: config,
+	}
+}
+
+type NodeConfigFetcher struct {
+	*LiveNodeConfig
+}
+
+func (f *NodeConfigFetcher) Get() *arbnode.Config {
+	return &f.LiveNodeConfig.get().Node
+}
+
+func (f *NodeConfigFetcher) Start(ctx context.Context) {
+	f.LiveNodeConfig.Start(ctx)
+}
+
+func (f *NodeConfigFetcher) StopAndWait() {
+	f.LiveNodeConfig.StopAndWait()
 }

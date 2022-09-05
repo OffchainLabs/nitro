@@ -96,6 +96,31 @@ interface NodeInterface {
         );
 
     /**
+     * @notice Estimates a transaction's l1 costs.
+     * @dev Use eth_call to call.
+     *      This method is exactly like gasEstimateComponents, but doesn't include the l2 component
+     *      so that the l1 component can be known even when the tx may fail.
+     * @param data the tx's calldata. Everything else like "From" and "Gas" are copied over
+     * @param to the tx's "To" (ignored when contractCreation is true)
+     * @param contractCreation whether "To" is omitted
+     * @return gasEstimateForL1 an estimate of the amount of gas needed for the l1 component of this tx
+     * @return baseFee the l2 base fee
+     * @return l1BaseFeeEstimate ArbOS's l1 estimate of the l1 base fee
+     */
+    function gasEstimateL1Component(
+        address to,
+        bool contractCreation,
+        bytes calldata data
+    )
+        external
+        payable
+        returns (
+            uint64 gasEstimateForL1,
+            uint256 baseFee,
+            uint256 l1BaseFeeEstimate
+        );
+
+    /**
      * @notice Returns the proof necessary to redeem a message
      * @param batchNum index of outbox entry (i.e., outgoing messages Merkle root) in array of outbox entries
      * @param index index of outgoing message in outbox entry
