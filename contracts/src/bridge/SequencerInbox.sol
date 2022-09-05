@@ -117,7 +117,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         }
     }
 
-    modifier validateSequencerBatchData(bytes calldata data) {
+    modifier validateBatchData(bytes calldata data) {
         // validate data
         uint256 fullDataLen = HEADER_LENGTH + data.length;
         if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
@@ -197,7 +197,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             _totalDelayedMessagesRead
         );
         uint256 __totalDelayedMessagesRead = _totalDelayedMessagesRead;
-        // this skips `validateSequencerBatchData` since no sequencer batch is actually added here
+        // this skips `validateBatchData` since no sequencer batch is actually added here
         (
             uint256 seqMessageIndex,
             bytes32 beforeAcc,
@@ -334,7 +334,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     function formDataHash(bytes calldata data, uint256 afterDelayedMessagesRead)
         internal
         view
-        validateSequencerBatchData(data)
+        validateBatchData(data)
         returns (bytes32, TimeBounds memory)
     {
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
