@@ -243,6 +243,10 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         return Ok(());
     }
 
+    unsafe {
+        libc::signal(libc::SIGCHLD, libc::SIG_IGN); // avoid making zombies
+    }
+
     let stdin = io::stdin();
     let mut address = String::new();
 
