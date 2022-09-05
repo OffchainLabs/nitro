@@ -40,12 +40,14 @@ pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
         true => {
             let mut compiler = Cranelift::new();
             compiler.canonicalize_nans(true);
+            compiler.enable_verifier();
             Universal::new(compiler).engine()
         }
         false => {
             let mut compiler = LLVM::new();
             compiler.canonicalize_nans(true);
             compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+            compiler.enable_verifier();
             Universal::new(compiler).engine()
         }
     };
