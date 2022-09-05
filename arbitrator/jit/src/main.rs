@@ -4,7 +4,7 @@
 use crate::machine::{Escape, WasmEnvArc};
 
 use structopt::StructOpt;
-use wasmer::{RuntimeError, Value};
+use wasmer::Value;
 
 use std::path::PathBuf;
 
@@ -57,49 +57,26 @@ fn main() {
 
     let (instance, env) = machine::create(&opts, env);
 
-    // TODO: consider switching to a recursive event-loop impl
     let main = instance.exports.get_function("run").unwrap();
-    let resume = instance.exports.get_function("resume").unwrap();
-
-    fn check_outcome(outcome: Result<Box<[Value]>, RuntimeError>) -> Option<Escape> {
-        let outcome = match outcome {
-            Ok(outcome) => {
-                println!("Go returned values {:?}", outcome);
-                return None;
-            }
-            Err(outcome) => outcome,
-        };
-
-        let trace = outcome.trace();
-        if !trace.is_empty() {
-            println!("backtrace:");
-        }
-        for frame in trace {
-            let module = frame.module_name();
-            let name = frame.function_name().unwrap_or("??");
-            println!("  in {} of {}", color::red(name), color::red(module));
-        }
-        Some(match outcome.downcast() {
-            Ok(escape) => escape,
-            Err(outcome) => Escape::Failure(format!("unknown runtime error: {outcome}")),
-        })
-    }
-
     let outcome = main.call(&[Value::I32(0), Value::I32(0)]);
-    let mut escape = check_outcome(outcome);
-
-    if escape.is_none() {
-        while let Some(event) = env.lock().js_state.future_events.pop_front() {
-            if let Some(issue) = &env.lock().js_state.pending_event {
-                println!("Go runtime overwriting pending event {:?}", issue);
-            }
-            env.lock().js_state.pending_event = Some(event);
-            escape = check_outcome(resume.call(&[]));
-            if escape.is_some() {
-                break;
-            }
+    let escape = match outcome {
+        Ok(outcome) => {
+            println!("Go returned values {:?}", outcome);
+            None
         }
-    }
+        Err(outcome) => {
+            let trace = outcome.trace();
+            if !trace.is_empty() {
+                println!("backtrace:");
+            }
+            for frame in trace {
+                let module = frame.module_name();
+                let name = frame.function_name().unwrap_or("??");
+                println!("  in {} of {}", color::red(name), color::red(module));
+            }
+            Some(Escape::from(outcome))
+        },
+    };
 
     let user = env.lock().process.socket.is_none();
     let time = format!("{}ms", env.lock().process.timestamp.elapsed().as_millis());

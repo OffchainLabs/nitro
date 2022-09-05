@@ -33,8 +33,12 @@ impl GoStack {
         self.memory.size().0 as u64 * 65536
     }
 
+    pub fn relative_offset(&self, arg: u32) -> u32 {
+        (arg + 1) * 8
+    }
+
     fn offset(&self, arg: u32) -> u32 {
-        self.start + (arg + 1) * 8
+        self.start + self.relative_offset(arg)
     }
 
     pub fn read_u8(&self, arg: u32) -> u8 {

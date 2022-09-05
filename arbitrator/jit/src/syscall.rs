@@ -11,7 +11,7 @@ use parking_lot::MutexGuard;
 use rand::RngCore;
 
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::BTreeMap,
     io::Write,
 };
 
@@ -38,8 +38,6 @@ pub struct JsRuntimeState {
     pool: DynamicObjectPool,
     /// The event Go will execute next
     pub pending_event: Option<PendingEvent>,
-    /// Future events that Go has scheduled after the next one up
-    pub future_events: VecDeque<PendingEvent>,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -311,11 +309,14 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
         Some(resume) => resume,
         None => return Escape::failure(format!("wasmer failed to bind {}", color::red("resume"))),
     };
-    let (sp, mut env) = GoStack::new(sp, env);
-    let env = &mut *env;
+    let get_stack_pointer = match env.get_stack_pointer_ref() {
+        Some(resume) => resume,
+        None => return Escape::failure(format!("wasmer failed to bind {}", color::red("getsp"))),
+    };
+    let (sp, mut env_lock) = GoStack::new(sp, env);
+    let env = &mut *env_lock;
     let rng = &mut env.go_state.rng;
     let pool = &mut env.js_state.pool;
-    let events = &mut env.js_state.future_events;
     use JsValue::*;
 
     let object = JsValue::new(sp.read_u64(0));
@@ -390,7 +391,7 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
                         eprintln!("Go trying to write to unknown FD {}", fd);
                     }
 
-                    events.push_back(PendingEvent {
+                    env.js_state.pending_event = Some(PendingEvent {
                         id: *func_id,
                         this: *this,
                         args: vec![
@@ -399,7 +400,15 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
                         ],
                     });
 
-                    GoValue::Null
+                    // recursively call into wasmer
+                    std::mem::drop(env_lock);
+                    resume.call()?;
+
+                    // the stack pointer has changed, so we'll need to write our return results elsewhere
+                    let pointer = get_stack_pointer.call()? as u32;
+                    sp.write_u64_ptr(pointer + sp.relative_offset(6), GoValue::Null.encode());
+                    sp.write_u8_ptr(pointer + sp.relative_offset(7), 1);
+                    return Ok(());
                 }
                 _ => fail!("Go trying to call fs.write with bad args {:?}", args),
             }
