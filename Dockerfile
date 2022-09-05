@@ -92,14 +92,20 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y make
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
+COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 RUN mkdir arbitrator/prover/src && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib
+RUN mkdir arbitrator/jit/src && \
+    echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
+    cargo build --manifest-path arbitrator/Cargo.toml --release --jit
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/jit arbitrator/jit
 RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
 
 FROM scratch as prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -163,7 +169,6 @@ FROM debian:bullseye-slim as nitro-node-slim
 WORKDIR /home/user
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/jit   /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
 USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
@@ -187,8 +192,9 @@ ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
 FROM nitro-node-slim as nitro-node
 USER root
-COPY --from=node-builder /workspace/target/bin/daserver /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/datool /usr/local/bin/
+COPY --from=node-prover-export /workspace/target/bin/jit /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/datool    /usr/local/bin/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
@@ -205,7 +211,8 @@ FROM nitro-node as nitro-node-dev
 USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
-COPY --from=node-builder /workspace/target/bin/deploy /usr/local/bin/
+COPY --from=prover-export /workspace/target/bin/jit                       /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/deploy                     /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
 COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
