@@ -74,7 +74,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 	}
 	return &Sequencer{
 		txStreamer:      txStreamer,
-		txQueue:         make(chan txQueueItem, config().QueueSize),
+		txQueue:         make(chan txQueueItem, config.QueueSize),
 		l1Reader:        l1Reader,
 		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
