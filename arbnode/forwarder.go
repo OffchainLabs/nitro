@@ -91,10 +91,6 @@ func NewForwarder(target string, config *ForwarderConfig) *TxForwarder {
 	}
 }
 
-func (f *TxForwarder) IsTarget(url string) bool {
-	return atomic.LoadInt32(&f.enabled) != 0 && f.target == url
-}
-
 func (f *TxForwarder) ctxWithTimeout(inctx context.Context) (context.Context, context.CancelFunc) {
 	if f.timeout == time.Duration(0) {
 		return context.WithCancel(inctx)

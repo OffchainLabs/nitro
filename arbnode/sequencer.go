@@ -157,11 +157,11 @@ func (s *Sequencer) ForwardTarget() string {
 func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
-	if s.forwarder.IsTarget(url) {
-		log.Warn("attempted to update sequencer forward target with existing target", "url", url)
-		return nil
-	}
 	if s.forwarder != nil {
+		if s.forwarder.target == url {
+			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
+			return nil
+		}
 		s.forwarder.Disable()
 	}
 	s.forwarder = NewForwarder(url, &s.config().Forwarder)
