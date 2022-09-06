@@ -21,7 +21,7 @@ use structopt::StructOpt;
 
 #[derive(StructOpt)]
 #[structopt(name = "arbitrator-prover")]
-pub struct Opts {
+struct Opts {
     binary: PathBuf,
     #[structopt(short, long)]
     libraries: Vec<PathBuf>,

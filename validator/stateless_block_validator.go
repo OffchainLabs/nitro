@@ -26,15 +26,14 @@ import (
 )
 
 type StatelessBlockValidator struct {
-	MachineLoader    *NitroMachineLoader
-	JitMachineLoader *NitroMachineLoader
-	inboxReader      InboxReaderInterface
-	inboxTracker     InboxTrackerInterface
-	streamer         TransactionStreamerInterface
-	blockchain       *core.BlockChain
-	db               ethdb.Database
-	daService        arbstate.DataAvailabilityReader
-	genesisBlockNum  uint64
+	MachineLoader   *NitroMachineLoader
+	inboxReader     InboxReaderInterface
+	inboxTracker    InboxTrackerInterface
+	streamer        TransactionStreamerInterface
+	blockchain      *core.BlockChain
+	db              ethdb.Database
+	daService       arbstate.DataAvailabilityReader
+	genesisBlockNum uint64
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
