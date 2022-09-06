@@ -400,7 +400,7 @@ type Config struct {
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
 	PreCheckTxs          bool                           `koanf:"pre-check-txs"`
-	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
+	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
 	Validator            validator.L1ValidatorConfig    `koanf:"validator"`
 	SeqCoordinator       SeqCoordinatorConfig           `koanf:"seq-coordinator"`
@@ -904,7 +904,7 @@ func createNodeImpl(
 			l2BlockChain,
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
-			&config.BlockValidator,
+			&config.Get().BlockValidator,
 		)
 		if err != nil {
 			return nil, err
@@ -917,7 +917,7 @@ func createNodeImpl(
 				txStreamer,
 				nitroMachineLoader,
 				reorgingToBlock,
-				&config.BlockValidator,
+				func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
 			)
 			if err != nil {
 				return nil, err

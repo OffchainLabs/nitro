@@ -47,9 +47,8 @@ type BlockValidator struct {
 	nextValidationEntryBlock uint64
 	globalPosNextSend        GlobalStatePosition
 
-	config                   *BlockValidatorConfig
+	config                   BlockValidatorConfigFetcher
 	atomicValidationsRunning int32
-	concurrentRunsLimit      int32
 
 	sendValidationsChan chan struct{}
 	checkProgressChan   chan struct{}
@@ -58,12 +57,14 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                   bool   `koanf:"enable"`
-	OutputPath               string `koanf:"output-path"`
-	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
-	CurrentModuleRoot        string `koanf:"current-module-root"`
-	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
-	StorePreimages           bool   `koanf:"store-preimages"`
+	OutputPath               string `koanf:"output-path" reload:"hot"`
+	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit" reload:"hot"`
+	CurrentModuleRoot        string `koanf:"current-module-root"`          // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`  // TODO(magic) requires StatelessBlockValidator recreation on hot reload
+	StorePreimages           bool   `koanf:"store-preimages" reload:"hot"` // TODO verify if hot reloading is safe
 }
+
+type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block validator")
@@ -109,18 +110,13 @@ func NewBlockValidator(
 	streamer TransactionStreamerInterface,
 	machineLoader *NitroMachineLoader,
 	reorgingToBlock *types.Block,
-	config *BlockValidatorConfig,
+	config BlockValidatorConfigFetcher,
 ) (*BlockValidator, error) {
-	concurrent := config.ConcurrentRunsLimit
-	if concurrent == 0 {
-		concurrent = runtime.NumCPU()
-	}
 	validator := &BlockValidator{
 		StatelessBlockValidator: statelessBlockValidator,
 		sendValidationsChan:     make(chan struct{}, 1),
 		checkProgressChan:       make(chan struct{}, 1),
 		progressChan:            make(chan uint64, 1),
-		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
 	}
 	err := validator.readLastBlockValidatedDbInfo(reorgingToBlock)
@@ -197,7 +193,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 }
 
 func (v *BlockValidator) prepareBlock(ctx context.Context, header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
-	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, v.config.StorePreimages)
+	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, v.config().StorePreimages)
 	if err != nil {
 		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
 		return
@@ -241,7 +237,7 @@ var launchTime = time.Now().Format("2006_01_02__15_04")
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
 	machConf := v.MachineLoader.GetConfig()
-	outDirPath := filepath.Join(machConf.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
+	outDirPath := filepath.Join(machConf.RootPath, v.config().OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0755)
 	if err != nil {
 		return err
@@ -355,7 +351,7 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 		v.currentWasmModuleRoot = hash
 		return nil
 	}
-	if v.config.CurrentModuleRoot != "current" {
+	if v.config().CurrentModuleRoot != "current" {
 		return nil
 	}
 	return fmt.Errorf("unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v", hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot)
@@ -436,9 +432,13 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 func (v *BlockValidator) sendValidations(ctx context.Context) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
+	concurrentRunsLimit := (int32)(v.config().ConcurrentRunsLimit)
+	if concurrentRunsLimit == 0 {
+		concurrentRunsLimit = (int32)(runtime.NumCPU())
+	}
 	var batchCount uint64
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
-		if atomic.LoadInt32(&v.atomicValidationsRunning) >= v.concurrentRunsLimit {
+		if atomic.LoadInt32(&v.atomicValidationsRunning) >= concurrentRunsLimit {
 			return
 		}
 		if batchCount <= v.globalPosNextSend.BatchNumber {
@@ -760,7 +760,8 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 
 // Must be called after SetCurrentWasmModuleRoot sets the current one
 func (v *BlockValidator) Initialize() error {
-	switch v.config.CurrentModuleRoot {
+	currentModuleRoot := v.config().CurrentModuleRoot
+	switch currentModuleRoot {
 	case "latest":
 		latest, err := v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
 		if err != nil {
@@ -772,7 +773,7 @@ func (v *BlockValidator) Initialize() error {
 			return errors.New("wasmModuleRoot set to 'current' - but info not set from chain")
 		}
 	default:
-		v.currentWasmModuleRoot = common.HexToHash(v.config.CurrentModuleRoot)
+		v.currentWasmModuleRoot = common.HexToHash(currentModuleRoot)
 		if (v.currentWasmModuleRoot == common.Hash{}) {
 			return errors.New("current-module-root config value illegal")
 		}
