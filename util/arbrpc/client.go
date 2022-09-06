@@ -24,6 +24,10 @@ func DialTransport(ctx context.Context, rawUrl string, transport *http.Transport
 		rpcClient, err = rpc.DialHTTPWithClient(rawUrl, client)
 	case "ws", "wss":
 		rpcClient, err = rpc.DialWebsocket(ctx, rawUrl, "")
+	case "stdio":
+		return rpc.DialStdIO(ctx)
+	case "":
+		return rpc.DialIPC(ctx, rawUrl)
 	default:
 		return nil, fmt.Errorf("no known transport for scheme %q in URL %s", u.Scheme, rawUrl)
 	}
