@@ -13,7 +13,8 @@ import {
     NotDelayedInbox,
     NotSequencerInbox,
     NotOutbox,
-    InvalidOutboxSet
+    InvalidOutboxSet,
+    BadSequencerMessageNumber
 } from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./Messages.sol";
@@ -52,6 +53,8 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
 
     IOwnable public rollup;
     address public sequencerInbox;
+
+    uint256 public override sequencerReportedSubMessageCount;
 
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
@@ -94,7 +97,12 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         _;
     }
 
-    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+    function enqueueSequencerMessage(
+        bytes32 dataHash,
+        uint256 afterDelayedMessagesRead,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
+    )
         external
         onlySequencerInbox
         returns (
@@ -104,6 +112,14 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
             bytes32 acc
         )
     {
+        if (
+            sequencerReportedSubMessageCount != prevMessageCount &&
+            prevMessageCount != 0 &&
+            sequencerReportedSubMessageCount != 0
+        ) {
+            revert BadSequencerMessageNumber(sequencerReportedSubMessageCount, prevMessageCount);
+        }
+        sequencerReportedSubMessageCount = newMessageCount;
         seqMessageIndex = sequencerInboxAccs.length;
         if (sequencerInboxAccs.length > 0) {
             beforeAcc = sequencerInboxAccs[sequencerInboxAccs.length - 1];
@@ -250,7 +266,11 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         }
     }
 
-    function delayedMessageCount() external view returns (uint256) {
+    function setSequencerReportedSubMessageCount(uint256 newMsgCount) external onlyRollupOrOwner {
+        sequencerReportedSubMessageCount = newMsgCount;
+    }
+
+    function delayedMessageCount() external view override returns (uint256) {
         return delayedInboxAccs.length;
     }
 

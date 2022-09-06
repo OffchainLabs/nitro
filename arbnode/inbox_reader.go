@@ -473,7 +473,7 @@ func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages)
+	err := r.tracker.AddDelayedMessages(delayedMessages, r.config.HardReorg)
 	if err != nil {
 		return false, err
 	}
