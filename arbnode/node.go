@@ -398,6 +398,7 @@ type Config struct {
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
+	Forwarder            ForwarderConfig                `koanf:"forwarder"`
 	PreCheckTxs          bool                           `koanf:"pre-check-txs"`
 	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
 	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
@@ -435,6 +436,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	f.Bool(prefix+".pre-check-txs", ConfigDefault.PreCheckTxs, "if true, verify basic state transition requirements of incoming RPC transactions before processing them")
 	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
@@ -541,7 +543,7 @@ type SequencerConfig struct {
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
-	ForwardTimeout              time.Duration            `koanf:"forward-timeout"`
+	Forwarder                   ForwarderConfig          `koanf:"forwarder"`
 	QueueSize                   int                      `koanf:"queue-size"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
@@ -553,7 +555,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxBlockSpeed:               time.Millisecond * 100,
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
-	ForwardTimeout:              time.Second * 30,
+	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
@@ -564,7 +566,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxRevertGasReject:          params.TxGas + 10000,
 	MaxAcceptableTimestampDelta: time.Hour,
 	SenderWhitelist:             "",
-	ForwardTimeout:              time.Second * 2,
+	Forwarder:                   DefaultTestForwarderConfig,
 	QueueSize:                   128,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
@@ -575,7 +577,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
-	f.Duration(prefix+".forward-timeout", DefaultSequencerConfig.ForwardTimeout, "timeout when forwarding to a different sequencer")
+	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
@@ -773,7 +775,7 @@ func createNodeImpl(
 		if config.ForwardingTarget() == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.ForwardingTarget(), time.Duration(0))
+			txPublisher = NewForwarder(config.ForwardingTarget(), &config.Forwarder)
 		}
 	}
 	if config.SeqCoordinator.Enable {
