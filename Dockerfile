@@ -1,11 +1,14 @@
-FROM emscripten/emsdk:3.1.7 as brotli-wasm-builder
+FROM debian:bullseye-slim as brotli-wasm-builder
 WORKDIR /workspace
+RUN apt-get update && \
+    apt-get install -y cmake make git lbzip2 python3 xz-utils && \
+    git clone https://github.com/emscripten-core/emsdk.git && \
+    cd emsdk && \
+    ./emsdk install 3.1.7 && \
+    ./emsdk activate 3.1.7
 COPY build-brotli.sh .
 COPY brotli brotli
-RUN apt-get update && \
-    apt-get install -y cmake make git && \
-    # pinned emsdk 3.1.7 (in docker image)
-    ./build-brotli.sh -w -t install/
+RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./build-brotli.sh -w -t install/
 
 FROM scratch as brotli-wasm-export
 COPY --from=brotli-wasm-builder /workspace/install/ /

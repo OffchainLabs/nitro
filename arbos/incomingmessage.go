@@ -350,6 +350,10 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		if err := newTx.UnmarshalBinary(readBytes); err != nil {
 			return nil, err
 		}
+		if newTx.Type() >= types.ArbitrumDepositTxType {
+			// Should be unreachable due to UnmarshalBinary not accepting Arbitrum internal txs
+			return nil, types.ErrTxTypeNotSupported
+		}
 		return types.Transactions{newTx}, nil
 	case L2MessageKind_Heartbeat:
 		if timestamp >= HeartbeatsDisabledAt {
