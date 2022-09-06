@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type RollupAddresses struct {
@@ -401,7 +402,7 @@ type Config struct {
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
 	PreCheckTxs          bool                           `koanf:"pre-check-txs"`
 	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
-	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
+	Feed                 broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
 	Validator            validator.L1ValidatorConfig    `koanf:"validator"`
 	SeqCoordinator       SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
@@ -728,7 +729,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, feedErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Get().Feed.Output }, l2ChainId, feedErrChan)
 	}
 
 	var l1Reader *headerreader.HeaderReader

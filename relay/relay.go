@@ -45,7 +45,7 @@ func (q *RelayMessageQueue) AddBroadcastMessages(pos arbutil.MessageIndex, messa
 	return nil
 }
 
-func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadcastclient.BroadcastClientConfig, chainId uint64, feedErrChan chan error) *Relay {
+func NewRelay(serverConf wsbroadcastserver.BroadcasterConfigFetcher, clientConf broadcastclient.BroadcastClientConfig, chainId uint64, feedErrChan chan error) *Relay {
 	var broadcastClients []*broadcastclient.BroadcastClient
 
 	q := RelayMessageQueue{make(chan broadcastFeedMessage, 100)}

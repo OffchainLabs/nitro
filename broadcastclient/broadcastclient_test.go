@@ -23,14 +23,14 @@ func TestReceiveMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
 
 	messageCount := 1000
 	clientCount := 2
 	chainId := uint64(9742)
 
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -119,12 +119,12 @@ func TestServerClientDisconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-	settings.Ping = 1 * time.Second
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Ping = 1 * time.Second
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -172,12 +172,12 @@ func TestServerClientIncorrectChainId(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-	settings.Ping = 1 * time.Second
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Ping = 1 * time.Second
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -202,13 +202,13 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-	settings.Ping = 50 * time.Second
-	settings.ClientTimeout = 150 * time.Second
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Ping = 50 * time.Second
+	config.ClientTimeout = 150 * time.Second
 
 	feedErrChan := make(chan error, 10)
 	chainId := uint64(8742)
-	b1 := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b1 := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan)
 
 	Require(t, b1.Initialize())
 	Require(t, b1.Start(ctx))
@@ -237,11 +237,11 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	*/
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
 
 	feedErrChan := make(chan error, 10)
 	chainId := uint64(8744)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))

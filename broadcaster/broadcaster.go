@@ -51,10 +51,10 @@ type ConfirmedSequenceNumberMessage struct {
 	SequenceNumber arbutil.MessageIndex `json:"sequenceNumber"`
 }
 
-func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64, feedErrChan chan error) *Broadcaster {
+func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer()
 	return &Broadcaster{
-		server:        wsbroadcastserver.NewWSBroadcastServer(settings, catchupBuffer, chainId, feedErrChan),
+		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan),
 		catchupBuffer: catchupBuffer,
 	}
 }

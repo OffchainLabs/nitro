@@ -85,7 +85,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	relayClientConf := *newBroadcastClientConfigTest(port)
 
 	feedErrChan := make(chan error, 10)
-	currentRelay := relay.NewRelay(relayServerConf, relayClientConf, chainId, feedErrChan)
+	currentRelay := relay.NewRelay(func() *wsbroadcastserver.BroadcasterConfig { return &relayServerConf }, relayClientConf, chainId, feedErrChan)
 	err = currentRelay.Start(ctx)
 	Require(t, err)
 	defer currentRelay.StopAndWait()
