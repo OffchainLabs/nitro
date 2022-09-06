@@ -162,9 +162,10 @@ func main() {
 
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner util.DataSignerFunc
+	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
 	validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
-	if nodeConfig.Node.Sequencer.Enable || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorNeedsKey {
+	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorNeedsKey {
 		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 		if err != nil {
 			fmt.Printf("%v\n", err.Error())
