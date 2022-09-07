@@ -19,6 +19,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/simple_hmac"
 )
 
 const messagesPerRound = 20
@@ -102,11 +103,14 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	coordConfig := TestSeqCoordinatorConfig
 	coordConfig.LockoutDuration = time.Millisecond * 100
 	coordConfig.LockoutSpare = time.Millisecond * 10
-	coordConfig.Dangerous.DisableSignatureVerification = true
+	coordConfig.Signing.Dangerous.DisableSignatureVerification = true
+	coordConfig.Signing.SigningKey = ""
 	testData := CoordinatorTestData{
 		testStartRound: -1,
 		sequencer:      make([]string, messagesPerRound),
 	}
+	nullSigner, err := simple_hmac.NewSimpleHmac(&coordConfig.Signing)
+	Require(t, err)
 
 	redisUrl := os.Getenv("TEST_REDIS")
 	if redisUrl == "" {
@@ -123,6 +127,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		coordinator := &SeqCoordinator{
 			client: redis.NewClient(redisOptions),
 			config: config,
+			signer: nullSigner,
 		}
 		go coordinatorTestThread(ctx, coordinator, &testData)
 	}

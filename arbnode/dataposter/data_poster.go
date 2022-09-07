@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/simple_hmac"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
@@ -41,11 +42,12 @@ type QueueStorage[Item any] interface {
 }
 
 type DataPosterConfig struct {
-	RedisUrl          string        `koanf:"redis-url"`
-	ReplacementTimes  string        `koanf:"replacement-times"`
-	L1LookBehind      uint64        `koanf:"l1-look-behind"`
-	MaxFeeCapGwei     float64       `koanf:"max-fee-cap-gwei"`
-	MaxFeeCapDoubling time.Duration `koanf:"max-fee-cap-doubling"`
+	RedisUrl          string                       `koanf:"redis-url"`
+	RedisSigner       simple_hmac.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes  string                       `koanf:"replacement-times"`
+	L1LookBehind      uint64                       `koanf:"l1-look-behind"`
+	MaxFeeCapGwei     float64                      `koanf:"max-fee-cap-gwei"`
+	MaxFeeCapDoubling time.Duration                `koanf:"max-fee-cap-doubling"`
 }
 
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -54,6 +56,7 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
 	f.Float64(prefix+".max-fee-cap-gwei", DefaultDataPosterConfig.MaxFeeCapGwei, "the maximum fee cap to use, doubled every max-fee-cap-doubling")
 	f.Duration(prefix+".max-fee-cap-doubling", DefaultDataPosterConfig.MaxFeeCapDoubling, "after this duration, double the fee cap (repeats)")
+	simple_hmac.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -67,6 +70,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:  "1s,2s,5s,10s,20s,30s,1m,5m",
 	RedisUrl:          "",
+	RedisSigner:       simple_hmac.TestSimpleHmacConfig,
 	L1LookBehind:      0,
 	MaxFeeCapGwei:     100.,
 	MaxFeeCapDoubling: 5 * time.Second,
@@ -120,7 +124,7 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 		queue = NewSliceStorage[queuedTransaction[Meta]]()
 	} else {
 		var err error
-		queue, err = NewRedisStorage[queuedTransaction[Meta]](config.RedisUrl, "data-poster.queue")
+		queue, err = NewRedisStorage[queuedTransaction[Meta]](config.RedisUrl, "data-poster.queue", &config.RedisSigner)
 		if err != nil {
 			return nil, err
 		}
