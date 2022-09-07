@@ -8,6 +8,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type StopWaiterSafe struct {
@@ -75,7 +77,19 @@ func (s *StopWaiterSafe) StopOnly() {
 // Stopping multiple times, even before start, will work
 func (s *StopWaiterSafe) StopAndWait() {
 	s.StopOnly()
-	s.wg.Wait()
+	timer := time.NewTimer(60 * time.Second)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		s.wg.Wait()
+	}()
+	select {
+	case <-timer.C:
+		log.Warn("StopWaiter taking more then 60 seconds to stop")
+	case <-stopped:
+		return
+	}
+	<-stopped
 }
 
 func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
