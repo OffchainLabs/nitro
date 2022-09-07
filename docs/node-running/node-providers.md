@@ -44,6 +44,6 @@ GetBlock’s pricing for Arbitrum starts from \$6 for 500K requests. Also, GetBl
 
 ## [Chainstack](https://chainstack.com/)
 
-Chainstack currently supports the Arbitrum Goerli testnet, with support for Arbitrum One Mainnet (including Archive node support) coming soon.
+Chainstack currently supports the Arbitrum Goerli testnet and Arbitrum One Mainnet (including Archive node support).
 
 See [documentation](https://chainstack.com/build-better-with-arbitrum/) for more info.

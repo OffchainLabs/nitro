@@ -399,7 +399,7 @@ type Config struct {
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
 	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
 	Forwarder            ForwarderConfig                `koanf:"forwarder"`
-	PreCheckTxs          bool                           `koanf:"pre-check-txs"`
+	TxPreCheckerStrictness uint                           `koanf:"tx-pre-checker-strictness" reload:"hot"`
 	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
 	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
 	Validator            validator.L1ValidatorConfig    `koanf:"validator"`
@@ -437,7 +437,10 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
-	f.Bool(prefix+".pre-check-txs", ConfigDefault.PreCheckTxs, "if true, verify basic state transition requirements of incoming RPC transactions before processing them")
+	txPreCheckerDescription := "how strict to be when checking txs before forwarding them. 0 = accept anything, " +
+		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, " +
+		"30 = full validation which may reject txs that would succeed"
+	f.Uint(prefix+".tx-pre-checker-strictness", ConfigDefault.TxPreCheckerStrictness, txPreCheckerDescription)
 	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
@@ -453,24 +456,24 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 }
 
 var ConfigDefault = Config{
-	RPC:                  arbitrum.DefaultConfig,
-	Sequencer:            DefaultSequencerConfig,
-	L1Reader:             headerreader.DefaultConfig,
-	InboxReader:          DefaultInboxReaderConfig,
-	DelayedSequencer:     DefaultDelayedSequencerConfig,
-	BatchPoster:          DefaultBatchPosterConfig,
-	ForwardingTargetImpl: "",
-	PreCheckTxs:          false,
-	BlockValidator:       validator.DefaultBlockValidatorConfig,
-	Feed:                 broadcastclient.FeedConfigDefault,
-	Validator:            validator.DefaultL1ValidatorConfig,
-	SeqCoordinator:       DefaultSeqCoordinatorConfig,
-	DataAvailability:     das.DefaultDataAvailabilityConfig,
-	Wasm:                 DefaultWasmConfig,
-	Dangerous:            DefaultDangerousConfig,
-	Archive:              false,
-	TxLookupLimit:        40_000_000,
-	Caching:              DefaultCachingConfig,
+	RPC:                    arbitrum.DefaultConfig,
+	Sequencer:              DefaultSequencerConfig,
+	L1Reader:               headerreader.DefaultConfig,
+	InboxReader:            DefaultInboxReaderConfig,
+	DelayedSequencer:       DefaultDelayedSequencerConfig,
+	BatchPoster:            DefaultBatchPosterConfig,
+	ForwardingTargetImpl:   "",
+	TxPreCheckerStrictness: TxPreCheckerStrictnessNone,
+	BlockValidator:         validator.DefaultBlockValidatorConfig,
+	Feed:                   broadcastclient.FeedConfigDefault,
+	Validator:              validator.DefaultL1ValidatorConfig,
+	SeqCoordinator:         DefaultSeqCoordinatorConfig,
+	DataAvailability:       das.DefaultDataAvailabilityConfig,
+	Wasm:                   DefaultWasmConfig,
+	Dangerous:              DefaultDangerousConfig,
+	Archive:                false,
+	TxLookupLimit:          40_000_000,
+	Caching:                DefaultCachingConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -784,9 +787,7 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
-	if config.PreCheckTxs {
-		txPublisher = NewTxPreChecker(txPublisher, l2BlockChain)
-	}
+	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, func() uint { return configFetcher.Get().TxPreCheckerStrictness })
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {
 		return nil, err
