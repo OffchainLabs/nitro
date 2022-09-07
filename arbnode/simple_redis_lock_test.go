@@ -6,13 +6,12 @@ package arbnode
 import (
 	"context"
 	"math/rand"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
 func prepareTrue() bool  { return true }
@@ -23,7 +22,6 @@ const test_threads = 10
 const test_release_frac = 5
 const test_delay = time.Millisecond
 const test_redisKey_prefix = "__TEMP_SimpleRedisLockTest__"
-const test_redis_default_url = "redis://localhost:6379/0"
 
 func attemptLock(ctx context.Context, s *SimpleRedisLock, flag *int32, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -48,17 +46,12 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 	defer cancel()
 
 	redisKey := test_redisKey_prefix + redisKeySuffix
-	redisUrl := os.Getenv("TEST_REDIS")
-	if redisUrl == "" {
-		redisUrl = test_redis_default_url
-	}
-	redisOptions, err := redis.ParseURL(redisUrl)
+	redisUrl := redisutil.GetTestRedisURL(t)
+	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	Require(t, err)
-	redisClient := redis.NewClient(redisOptions)
 	Require(t, redisClient.Del(ctx, redisKey).Err())
 
 	conf := &SimpleRedisLockConfig{
-		RedisUrl:        redisUrl,
 		LockoutDuration: test_delay * test_attempts * 10,
 		RefreshDuration: test_delay * 2,
 		Key:             redisKey,
@@ -70,9 +63,9 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 		var err error
 		var lock *SimpleRedisLock
 		if chosen < 0 || chosen == i {
-			lock, err = NewSimpleRedisLock(conf, prepareTrue)
+			lock, err = NewSimpleRedisLock(redisClient, conf, prepareTrue)
 		} else {
-			lock, err = NewSimpleRedisLock(conf, prepareFalse)
+			lock, err = NewSimpleRedisLock(redisClient, conf, prepareFalse)
 		}
 		if err != nil {
 			t.Fatal(err)

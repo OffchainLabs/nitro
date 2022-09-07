@@ -491,6 +491,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
 
+	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
 		txes,
@@ -550,7 +551,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	for _, receipt := range receipts {
 		logs = append(logs, receipt.Logs...)
 	}
-	status, err := s.bc.WriteBlockAndSetHead(block, receipts, logs, statedb, true)
+	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, time.Since(startTime))
 	if err != nil {
 		return err
 	}
@@ -753,6 +754,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			return err
 		}
 
+		startTime := time.Now()
 		block, receipts, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
@@ -773,7 +775,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		for _, receipt := range receipts {
 			logs = append(logs, receipt.Logs...)
 		}
-		status, err := s.bc.WriteBlockAndSetHead(block, receipts, logs, statedb, true)
+		status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, time.Since(startTime))
 		if err != nil {
 			return err
 		}

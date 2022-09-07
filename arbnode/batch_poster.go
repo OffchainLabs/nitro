@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/redisutil"
 
 	"github.com/andybalholm/brotli"
 	"github.com/pkg/errors"
@@ -66,6 +67,7 @@ type BatchPosterConfig struct {
 	DASRetentionPeriod                 time.Duration               `koanf:"das-retention-period"`
 	GasRefunderAddress                 string                      `koanf:"gas-refunder-address"`
 	DataPoster                         dataposter.DataPosterConfig `koanf:"data-poster"`
+	RedisUrl                           string                      `koanf:"redis-url"`
 	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas"`
 }
@@ -81,6 +83,7 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
+	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 }
@@ -124,7 +127,11 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	if err != nil {
 		return nil, err
 	}
-	redisLock, err := NewSimpleRedisLock(&config.RedisLock, func() bool { return syncMonitor.Synced() })
+	redisClient, err := redisutil.RedisClientFromURL(config.RedisUrl)
+	if err != nil {
+		return nil, err
+	}
+	redisLock, err := NewSimpleRedisLock(redisClient, &config.RedisLock, func() bool { return syncMonitor.Synced() })
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +148,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		daWriter:     daWriter,
 		redisLock:    redisLock,
 	}
-	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisLock, &config.DataPoster, b.getBatchPosterPosition)
+	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisClient, redisLock, &config.DataPoster, b.getBatchPosterPosition)
 	if err != nil {
 		return nil, err
 	}

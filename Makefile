@@ -13,6 +13,23 @@ else
  ORDER_ONLY_PREDICATE:=
 endif
 
+
+ifneq ($(origin NITRO_VERSION),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util.version=$(NITRO_VERSION)
+endif
+
+ifneq ($(origin NITRO_DATETIME),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util.datetime=$(NITRO_DATETIME)
+endif
+
+ifneq ($(origin NITRO_MODIFIED),undefined)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util.modified=$(NITRO_MODIFIED)
+endif
+
+ifneq ($(origin GOLANG_LDFLAGS),undefined)
+ GOLANG_PARAMS = -ldflags="$(GOLANG_LDFLAGS)"
+endif
+
 precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
 precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 
@@ -138,22 +155,22 @@ docker:
 # regular build rules
 
 $(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(CURDIR)/cmd/nitro"
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/nitro"
 
 $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(CURDIR)/cmd/deploy"
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/deploy"
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(CURDIR)/cmd/relay"
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/relay"
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(CURDIR)/cmd/daserver"
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/daserver"
 
 $(output_root)/bin/datool: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(CURDIR)/cmd/datool"
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/datool"
 
 $(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
-	go build -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
+	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/seq-coordinator-invalidate"
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen

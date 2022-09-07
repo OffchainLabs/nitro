@@ -29,6 +29,10 @@ func IntMulByBips(value int64, bips Bips) int64 {
 	return value * int64(bips) / int64(OneInBips)
 }
 
+func UintMulByBips(value uint64, bips Bips) uint64 {
+	return value * uint64(bips) / uint64(OneInBips)
+}
+
 func SaturatingCastToBips(value uint64) Bips {
 	return Bips(SaturatingCast(value))
 }

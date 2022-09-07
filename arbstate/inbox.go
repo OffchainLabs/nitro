@@ -122,7 +122,13 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 			log.Warn("sequencer msg decompression failed", "err", err)
 		}
 	} else {
-		log.Warn("unknown sequencer message format")
+		length := len(payload)
+		if length == 0 {
+			log.Warn("empty sequencer message")
+		} else {
+			log.Warn("unknown sequencer message format", "length", length, "firstByte", payload[0])
+		}
+
 	}
 
 	return parsedMsg, nil
@@ -144,6 +150,11 @@ func RecoverPayloadFromDasBatch(
 	version := cert.Version
 	recordPreimage := func(key common.Hash, value []byte) {
 		preimages[key] = value
+	}
+
+	if version >= 2 {
+		log.Error("Your node software is probably out of date", "certificateVersion", version)
+		return nil, nil
 	}
 
 	getByHash := func(ctx context.Context, hash common.Hash) ([]byte, error) {
@@ -170,12 +181,6 @@ func RecoverPayloadFromDasBatch(
 				"hash", hash, "err", ErrHashMismatch, "version", version,
 			)
 			return nil, ErrHashMismatch
-		case version >= 2:
-			log.Error(
-				"Committee signed unsuported certificate format",
-				"version", version, "hash", hash, "payload", preimage,
-			)
-			panic("node software out of date")
 		}
 		return preimage, nil
 	}

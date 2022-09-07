@@ -17,9 +17,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/simple_hmac"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
@@ -41,24 +43,23 @@ type QueueStorage[Item any] interface {
 }
 
 type DataPosterConfig struct {
-	RedisUrl          string        `koanf:"redis-url"`
-	ReplacementTimes  string        `koanf:"replacement-times"`
-	L1LookBehind      uint64        `koanf:"l1-look-behind"`
-	MaxFeeCapGwei     float64       `koanf:"max-fee-cap-gwei"`
-	MaxFeeCapDoubling time.Duration `koanf:"max-fee-cap-doubling"`
+	RedisSigner       simple_hmac.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes  string                       `koanf:"replacement-times"`
+	L1LookBehind      uint64                       `koanf:"l1-look-behind"`
+	MaxFeeCapGwei     float64                      `koanf:"max-fee-cap-gwei"`
+	MaxFeeCapDoubling time.Duration                `koanf:"max-fee-cap-doubling"`
 }
 
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".redis-url", DefaultDataPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
 	f.Float64(prefix+".max-fee-cap-gwei", DefaultDataPosterConfig.MaxFeeCapGwei, "the maximum fee cap to use, doubled every max-fee-cap-doubling")
 	f.Duration(prefix+".max-fee-cap-doubling", DefaultDataPosterConfig.MaxFeeCapDoubling, "after this duration, double the fee cap (repeats)")
+	simple_hmac.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:  "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
-	RedisUrl:          "",
 	L1LookBehind:      2,
 	MaxFeeCapGwei:     100.,
 	MaxFeeCapDoubling: 2 * time.Hour,
@@ -66,7 +67,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:  "1s,2s,5s,10s,20s,30s,1m,5m",
-	RedisUrl:          "",
+	RedisSigner:       simple_hmac.TestSimpleHmacConfig,
 	L1LookBehind:      0,
 	MaxFeeCapGwei:     100.,
 	MaxFeeCapDoubling: 5 * time.Second,
@@ -96,7 +97,7 @@ type AttemptLocker interface {
 	AttemptLock(context.Context) bool
 }
 
-func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisLock AttemptLocker, config *DataPosterConfig, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config *DataPosterConfig, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
 	for _, s := range strings.Split(config.ReplacementTimes, ",") {
@@ -116,11 +117,11 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 	// To avoid special casing "don't replace again", replace in 10 years
 	replacementTimes = append(replacementTimes, time.Hour*24*365*10)
 	var queue QueueStorage[queuedTransaction[Meta]]
-	if config.RedisUrl == "" {
+	if redisClient == nil {
 		queue = NewSliceStorage[queuedTransaction[Meta]]()
 	} else {
 		var err error
-		queue, err = NewRedisStorage[queuedTransaction[Meta]](config.RedisUrl, "data-poster.queue")
+		queue, err = NewRedisStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config.RedisSigner)
 		if err != nil {
 			return nil, err
 		}
