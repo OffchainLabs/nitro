@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
@@ -44,14 +43,6 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 		redisClient.Del(ctx, fmt.Sprintf("%s%d", arbnode.MESSAGE_KEY_PREFIX, msg))
 	}
 	redisClient.Del(ctx, arbnode.CHOSENSEQ_KEY, arbnode.MSG_COUNT_KEY)
-}
-
-func getTestRedisUrl() string {
-	redisUrl := os.Getenv("TEST_REDIS")
-	if redisUrl == "" {
-		redisUrl = arbnode.TestSeqCoordinatorConfig.RedisUrl
-	}
-	return redisUrl
 }
 
 func TestRedisSeqCoordinatorPriorities(t *testing.T) {
