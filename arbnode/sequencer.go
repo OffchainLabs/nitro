@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -29,7 +30,7 @@ import (
 )
 
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
-const maxTxDataSize uint64 = 112065
+const maxTxDataSize = 112065
 
 type txQueueItem struct {
 	tx         *types.Transaction
@@ -47,6 +48,7 @@ type Sequencer struct {
 
 	txStreamer      *TransactionStreamer
 	txQueue         chan txQueueItem
+	txRetryQueue    arbutil.Queue[txQueueItem]
 	l1Reader        *headerreader.HeaderReader
 	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
@@ -178,7 +180,6 @@ func (s *Sequencer) DontForward() {
 	s.forwarder = nil
 }
 
-var ErrQueueFull error = errors.New("sequencer pending tx pool full, please try again")
 var ErrNoSequencer error = errors.New("sequencer temporarily not available")
 
 func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
@@ -213,7 +214,9 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) bool {
 	var totalBatchSize int
 	for {
 		var queueItem txQueueItem
-		if len(txes) == 0 {
+		if s.txRetryQueue.Len() > 0 {
+			queueItem = s.txRetryQueue.Pop()
+		} else if len(txes) == 0 {
 			select {
 			case queueItem = <-s.txQueue:
 			case <-ctx.Done():
@@ -240,16 +243,15 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) bool {
 			queueItem.returnResult(err)
 			continue
 		}
-		if len(txBytes) > int(maxTxDataSize) {
+		if len(txBytes) > maxTxDataSize {
 			// This tx is too large
 			queueItem.returnResult(core.ErrOversizedData)
 			continue
 		}
-		if totalBatchSize+len(txBytes) > int(maxTxDataSize) {
-			// This tx would be too large to add to this batch.
-			// Attempt to put it back in the queue, but error if the queue is full.
-			// Then, end the batch here.
-			s.requeueOrFail(queueItem, ErrQueueFull)
+		if totalBatchSize+len(txBytes) > maxTxDataSize {
+			// This tx would be too large to add to this batch
+			s.txRetryQueue.Push(queueItem)
+			// End the batch here to put this tx in the next one
 			break
 		}
 		totalBatchSize += len(txBytes)
@@ -324,9 +326,11 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) bool {
 		queueItem := queueItems[i]
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
-			// Attempt to re-queue the transaction.
-			s.requeueOrFail(queueItem, core.ErrGasLimitReached)
-			continue
+			if madeBlock && !errors.Is(err, arbos.ErrMaxGasLimitReached) {
+				// There was already an earlier tx in the block; retry in a fresh block.
+				s.txRetryQueue.Push(queueItem)
+				continue
+			}
 		}
 		if errors.Is(err, core.ErrIntrinsicGas) {
 			// Strip additional information, as it's incorrect due to L1 data gas.
