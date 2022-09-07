@@ -80,7 +80,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type SequencingHooks struct {
 	TxErrors               []error
 	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*arbosState.ArbosState, *types.Transaction, common.Address) error
+	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error
 	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
@@ -88,7 +88,7 @@ func noopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*arbosState.ArbosState, *types.Transaction, common.Address) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error {
 			return nil
 		},
 		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
@@ -228,12 +228,12 @@ func ProduceBlockAdvanced(
 				return nil, nil, core.ErrGasLimitReached
 			}
 
-			sender, err = signer.Sender(tx)
-			if err != nil {
+			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx); err != nil {
 				return nil, nil, err
 			}
 
-			if err := hooks.PreTxFilter(state, tx, sender); err != nil {
+			sender, err = signer.Sender(tx)
+			if err != nil {
 				return nil, nil, err
 			}
 
