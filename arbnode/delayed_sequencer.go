@@ -32,7 +32,7 @@ type DelayedSequencer struct {
 }
 
 type DelayedSequencerConfig struct {
-	Enable              bool  `koanf:"enable"`
+	Enable              bool  `koanf:"enable" reload:"hot"`
 	FinalizeDistance    int64 `koanf:"finalize-distance" reload:"hot"`
 	RequireFullFinality bool  `koanf:"require-full-finality" reload:"hot"`
 	UseMergeFinality    bool  `koanf:"use-merge-finality" reload:"hot"`
@@ -90,6 +90,10 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 	}
 
 	config := d.config()
+	if !config.Enable {
+		return nil
+	}
+
 	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(config.FinalizeDistance))
 	if finalized.Sign() < 0 {
 		finalized.SetInt64(0)

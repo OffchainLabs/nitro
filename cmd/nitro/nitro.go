@@ -299,6 +299,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	liveNodeConfig.setOnReloadHook(func(old *NodeConfig, new *NodeConfig) error {
+		return currentNode.OnConfigReload(&old.Node, &new.Node)
+	})
+
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
@@ -320,6 +324,7 @@ func main() {
 			panic(fmt.Sprintf("Failed to register the GraphQL service: %v", err))
 		}
 	}
+
 	if err := stack.Start(); err != nil {
 		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
@@ -671,12 +676,19 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	}, "."), nil)
 }
 
+type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
+
+func noopOnReloadHook(old *NodeConfig, new *NodeConfig) error {
+	return nil
+}
+
 type LiveNodeConfig struct {
 	stopwaiter.StopWaiter
 
-	mutex  sync.RWMutex
-	args   []string
-	config *NodeConfig
+	mutex        sync.RWMutex
+	args         []string
+	config       *NodeConfig
+	onReloadHook OnReloadHook
 }
 
 func (c *LiveNodeConfig) get() *NodeConfig {
@@ -694,6 +706,10 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	}
 	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
 		return err
+	}
+	if err := c.onReloadHook(c.config, config); err != nil {
+		// TODO(magic) panic? return err? only log the error?
+		log.Error("Failed to execute onReloadHook", "err", err)
 	}
 	c.config = config
 	return nil
@@ -741,10 +757,18 @@ func (c *LiveNodeConfig) Start(ctxIn context.Context) {
 	})
 }
 
+func (c *LiveNodeConfig) setOnReloadHook(hook OnReloadHook) {
+	// setting the hook doesn't block others from reading the config
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	c.onReloadHook = hook
+}
+
 func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
 	return &LiveNodeConfig{
-		args:   args,
-		config: config,
+		args:         args,
+		config:       config,
+		onReloadHook: noopOnReloadHook,
 	}
 }
 

@@ -414,6 +414,9 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
+	if !c.DelayedSequencer.Enable && c.Sequencer.Enable {
+		log.Warn("sequencer and l1 reader, without delayed sequencer")
+	}
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
@@ -704,6 +707,7 @@ type Node struct {
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	configFetcher           ConfigFetcher
+	ctx                     context.Context
 }
 
 type ConfigFetcher interface {
@@ -861,6 +865,7 @@ func createNodeImpl(
 			nil,
 			classicOutbox,
 			configFetcher,
+			ctx,
 		}, nil
 	}
 
@@ -986,7 +991,7 @@ func createNodeImpl(
 			return nil, err
 		}
 	} else if config.Sequencer.Enable {
-		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
+		log.Warn("sequencer and l1 reader, without delayed sequencer")
 	}
 
 	return &Node{
@@ -1009,7 +1014,24 @@ func createNodeImpl(
 		dasLifecycleManager,
 		classicOutbox,
 		configFetcher,
+		ctx,
 	}, nil
+}
+
+func (n *Node) OnConfigReload(old *Config, new *Config) error {
+	if old.DelayedSequencer.Enable != new.DelayedSequencer.Enable {
+		if new.DelayedSequencer.Enable {
+			delayedSequencer, err := NewDelayedSequencer(n.L1Reader, n.InboxReader, n.TxStreamer, n.SeqCoordinator, func() *DelayedSequencerConfig { return &(n.configFetcher.Get().DelayedSequencer) })
+			if err != nil {
+				return err
+			}
+			n.DelayedSequencer = delayedSequencer
+			n.DelayedSequencer.Start(n.ctx)
+		} else {
+			n.DelayedSequencer.StopAndWait()
+		}
+	}
+	return nil
 }
 
 type L1ReaderCloser struct {
