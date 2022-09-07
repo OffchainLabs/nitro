@@ -91,7 +91,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:                   brotli.DefaultCompression,
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
 	GasRefunderAddress:                 "",
-	ExtraBatchGas:                      10_000,
+	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
 }
 
@@ -391,11 +391,11 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 }
 
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
-	// Here we set seqNum to MaxUint256, and prevMsgNum and nextMsgNum to 0,
-	// because it disables the smart contracts' consistency checks.
+	// Here we set seqNum to MaxUint256, and prevMsgNum to 0, because it disables the smart contracts' consistency checks.
+	// However, we set nextMsgNum to 1 because it is necessary for a correct estimation for the final to be non-zero.
 	// Because we're likely estimating against older state, this might not be the actual next message,
 	// but the gas used should be the same.
-	data, err := b.encodeAddBatch(abi.MaxUint256, 0, 0, sequencerMessage, delayedMessages)
+	data, err := b.encodeAddBatch(abi.MaxUint256, 0, 1, sequencerMessage, delayedMessages)
 	if err != nil {
 		return 0, err
 	}
