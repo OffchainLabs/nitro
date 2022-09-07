@@ -391,25 +391,25 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 }
 
 type Config struct {
-	RPC                  arbitrum.Config                `koanf:"rpc"`
-	Sequencer            SequencerConfig                `koanf:"sequencer" reload:"hot"`
-	L1Reader             headerreader.Config            `koanf:"l1-reader"`
-	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
-	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
-	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
-	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
-	Forwarder            ForwarderConfig                `koanf:"forwarder"`
+	RPC                    arbitrum.Config                `koanf:"rpc"`
+	Sequencer              SequencerConfig                `koanf:"sequencer" reload:"hot"`
+	L1Reader               headerreader.Config            `koanf:"l1-reader"`
+	InboxReader            InboxReaderConfig              `koanf:"inbox-reader"`
+	DelayedSequencer       DelayedSequencerConfig         `koanf:"delayed-sequencer"`
+	BatchPoster            BatchPosterConfig              `koanf:"batch-poster"`
+	ForwardingTargetImpl   string                         `koanf:"forwarding-target"`
+	Forwarder              ForwarderConfig                `koanf:"forwarder"`
 	TxPreCheckerStrictness uint                           `koanf:"tx-pre-checker-strictness" reload:"hot"`
-	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
-	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
-	Validator            validator.L1ValidatorConfig    `koanf:"validator"`
-	SeqCoordinator       SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
-	Wasm                 WasmConfig                     `koanf:"wasm"`
-	Dangerous            DangerousConfig                `koanf:"dangerous"`
-	Caching              CachingConfig                  `koanf:"caching"`
-	Archive              bool                           `koanf:"archive"`
-	TxLookupLimit        uint64                         `koanf:"tx-lookup-limit"`
+	BlockValidator         validator.BlockValidatorConfig `koanf:"block-validator"`
+	Feed                   broadcastclient.FeedConfig     `koanf:"feed"`
+	Validator              validator.L1ValidatorConfig    `koanf:"validator"`
+	SeqCoordinator         SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	DataAvailability       das.DataAvailabilityConfig     `koanf:"data-availability"`
+	Wasm                   WasmConfig                     `koanf:"wasm"`
+	Dangerous              DangerousConfig                `koanf:"dangerous"`
+	Caching                CachingConfig                  `koanf:"caching"`
+	Archive                bool                           `koanf:"archive"`
+	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
 }
 
 func (c *Config) Get() *Config {
