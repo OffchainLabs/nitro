@@ -10,15 +10,14 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/simple_hmac"
 )
 
@@ -112,20 +111,14 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	nullSigner, err := simple_hmac.NewSimpleHmac(&coordConfig.Signing)
 	Require(t, err)
 
-	redisUrl := os.Getenv("TEST_REDIS")
-	if redisUrl == "" {
-		redisUrl = coordConfig.RedisUrl
-	}
-	redisOptions, err := redis.ParseURL(redisUrl)
+	redisClient, err := redisutil.RedisClientFromURL(redisutil.GetTestRedisURL(t))
 	Require(t, err)
-
-	redisClient := redis.NewClient(redisOptions)
 
 	for i := 0; i < NumOfThreads; i++ {
 		config := coordConfig
 		config.MyUrl = fmt.Sprint(i)
 		coordinator := &SeqCoordinator{
-			client: redis.NewClient(redisOptions),
+			client: redisClient,
 			config: config,
 			signer: nullSigner,
 		}

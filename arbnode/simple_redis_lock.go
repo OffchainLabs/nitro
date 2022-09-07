@@ -28,7 +28,6 @@ type SimpleRedisLock struct {
 }
 
 type SimpleRedisLockConfig struct {
-	RedisUrl        string        `koanf:"redis-url"`
 	MyId            string        `koanf:"my-id"`
 	LockoutDuration time.Duration `koanf:"lockout-duration"`
 	RefreshDuration time.Duration `koanf:"refresh-duration"`
@@ -37,25 +36,14 @@ type SimpleRedisLockConfig struct {
 }
 
 func RedisLockConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".redis-url", DefaultRedisLockConfig.RedisUrl, "URL of redis server for coordination")
-	f.String(prefix+".my-id", DefaultRedisLockConfig.RedisUrl, "this node's id prefix when acquiring the lock (optional)")
+	f.String(prefix+".my-id", "", "this node's id prefix when acquiring the lock (optional)")
 	f.Duration(prefix+".lockout-duration", DefaultRedisLockConfig.LockoutDuration, "how long lock is held")
 	f.Duration(prefix+".refresh-duration", DefaultRedisLockConfig.RefreshDuration, "how long between consecutive calls to redis")
 	f.String(prefix+".key", prefix+".simple-lock-key", "key for lock")
 	f.Bool(prefix+".background-lock", DefaultRedisLockConfig.BackgroundLock, "should node always try grabing lock in background")
 }
 
-func NewSimpleRedisLock(config *SimpleRedisLockConfig, readyToLock func() bool) (*SimpleRedisLock, error) {
-	var client redis.UniversalClient
-	if config.RedisUrl == "" {
-		client = nil
-	} else {
-		redisOptions, err := redis.ParseURL(config.RedisUrl)
-		if err != nil {
-			return nil, err
-		}
-		client = redis.NewClient(redisOptions)
-	}
+func NewSimpleRedisLock(client redis.UniversalClient, config *SimpleRedisLockConfig, readyToLock func() bool) (*SimpleRedisLock, error) {
 	randBig, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
 	if err != nil {
 		return nil, err
@@ -69,7 +57,6 @@ func NewSimpleRedisLock(config *SimpleRedisLockConfig, readyToLock func() bool) 
 }
 
 var DefaultRedisLockConfig = SimpleRedisLockConfig{
-	RedisUrl:        "",
 	LockoutDuration: time.Minute,
 	RefreshDuration: time.Second * 10,
 	Key:             "",

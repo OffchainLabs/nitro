@@ -4,8 +4,11 @@
 //go:build !redistest
 // +build !redistest
 
-package arbtest
+package redisutil
 
-func getTestRedisUrl() string {
+import "testing"
+
+// t param is used to make sure this is only called in tests
+func GetTestRedisURL(t *testing.T) string {
 	return ""
 }

@@ -6,20 +6,7 @@
 
 package arbtest
 
-import (
-	"os"
-	"testing"
-
-	"github.com/offchainlabs/nitro/arbnode"
-)
-
-func getTestRedisUrl() string {
-	redisUrl := os.Getenv("TEST_REDIS")
-	if redisUrl == "" {
-		redisUrl = arbnode.TestSeqCoordinatorConfig.RedisUrl
-	}
-	return redisUrl
-}
+import "testing"
 
 func TestRedisBatchPosterParallel(t *testing.T) {
 	TestBatchPosterParallel(t)
