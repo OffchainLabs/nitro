@@ -18,8 +18,10 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -121,7 +123,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+func (s *Sequencer) preTxFilter(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction) error {
 	return nil
 }
 
@@ -330,6 +332,10 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) bool {
 				s.txRetryQueue.Push(queueItem)
 				continue
 			}
+		}
+		if errors.Is(err, core.ErrIntrinsicGas) {
+			// Strip additional information, as it's incorrect due to L1 data gas.
+			err = core.ErrIntrinsicGas
 		}
 		queueItem.returnResult(err)
 	}
