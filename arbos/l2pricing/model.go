@@ -10,8 +10,10 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-const InitialSpeedLimitPerSecond = 1000000
-const InitialPerBlockGasLimit uint64 = 20 * 1000000
+const InitialSpeedLimitPerSecondV0 = 1000000
+const InitialPerBlockGasLimitV0 uint64 = 20 * 1000000
+const InitialSpeedLimitPerSecondV6 = 7000000
+const InitialPerBlockGasLimitV6 uint64 = 32 * 1000000
 const InitialMinimumBaseFeeWei = params.GWei / 10
 const InitialBaseFeeWei = InitialMinimumBaseFeeWei
 const InitialGasPoolSeconds = 10 * 60

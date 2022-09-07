@@ -94,7 +94,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 	}
 }
 
-func TestSeqCoordinatorAtomic(t *testing.T) {
+func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	NumOfThreads := 10
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

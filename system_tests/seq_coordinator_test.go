@@ -54,7 +54,7 @@ func getTestRedisUrl() string {
 	return redisUrl
 }
 
-func TestSeqCoordinatorPriorities(t *testing.T) {
+func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -273,7 +273,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 
 }
 
-func TestSeqCoordinatorMessageSync(t *testing.T) {
+func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -328,7 +328,7 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	}
 }
 
-func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
+func TestRedisSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

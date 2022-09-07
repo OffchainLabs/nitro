@@ -49,7 +49,7 @@ type BatchPoster struct {
 	seqInboxAddr common.Address
 	gasRefunder  common.Address
 	building     *buildingBatch
-	das          das.DataAvailabilityService
+	daWriter     das.DataAvailabilityServiceWriter
 	dataPoster   *dataposter.DataPoster[batchPosterPosition]
 	redisLock    *SimpleRedisLock
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
@@ -112,7 +112,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	DataPoster:           dataposter.TestDataPosterConfig,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
@@ -138,8 +138,8 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		seqInboxABI:  seqInboxABI,
 		seqInboxAddr: contractAddress,
 		gasRefunder:  common.HexToAddress(config.GasRefunderAddress),
+		daWriter:     daWriter,
 		redisLock:    redisLock,
-		das:          das,
 	}
 	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisLock, &config.DataPoster, b.getBatchPosterPosition)
 	if err != nil {
@@ -492,8 +492,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 		return nil
 	}
 
-	if b.das != nil {
-		cert, err := b.das.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()), []byte{}) // b.das will append signature if enabled
+	if b.daWriter != nil {
+		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
 			if b.config.DisableDasFallbackStoreDataOnChain {

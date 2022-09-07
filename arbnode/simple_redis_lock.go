@@ -2,7 +2,9 @@ package arbnode
 
 import (
 	"context"
-	"math/rand"
+	"crypto/rand"
+	"math"
+	"math/big"
 	"strconv"
 	"sync"
 	"time"
@@ -39,7 +41,7 @@ func RedisLockConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".my-id", DefaultRedisLockConfig.RedisUrl, "this node's id prefix when acquiring the lock (optional)")
 	f.Duration(prefix+".lockout-duration", DefaultRedisLockConfig.LockoutDuration, "how long lock is held")
 	f.Duration(prefix+".refresh-duration", DefaultRedisLockConfig.RefreshDuration, "how long between consecutive calls to redis")
-	f.String(prefix+".key", prefix+"simple-lock", "key for lock")
+	f.String(prefix+".key", prefix+".simple-lock-key", "key for lock")
 	f.Bool(prefix+".background-lock", DefaultRedisLockConfig.BackgroundLock, "should node always try grabing lock in background")
 }
 
@@ -54,8 +56,12 @@ func NewSimpleRedisLock(config *SimpleRedisLockConfig, readyToLock func() bool) 
 		}
 		client = redis.NewClient(redisOptions)
 	}
+	randBig, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
+	if err != nil {
+		return nil, err
+	}
 	return &SimpleRedisLock{
-		myId:        config.MyId + "-" + strconv.FormatInt(rand.Int63(), 16), // unique even if config is not
+		myId:        config.MyId + "-" + strconv.FormatInt(randBig.Int64(), 16), // unique even if config is not
 		client:      client,
 		config:      config,
 		readyToLock: readyToLock,
