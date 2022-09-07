@@ -220,7 +220,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 				// We already have these delayed messages
 				return nil
 			}
-		} else if !errors.Is(err, accumulatorNotFound) {
+		} else if !errors.Is(err, AccumulatorNotFoundErr) {
 			return err
 		}
 	}
