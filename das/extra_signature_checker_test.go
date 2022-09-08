@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 type StubSignatureCheckDAS struct {
@@ -62,7 +62,7 @@ func TestExtraSignatureCheck(t *testing.T) {
 
 	privateKey, err := crypto.LoadECDSA(keyDir + "/ecdsa")
 	Require(t, err)
-	signer := util.DataSignerFromPrivateKey(privateKey)
+	signer := signature.DataSignerFromPrivateKey(privateKey)
 
 	var da DataAvailabilityServiceWriter = &StubSignatureCheckDAS{keyDir}
 	da, err = NewStoreSigningDAS(da, signer)

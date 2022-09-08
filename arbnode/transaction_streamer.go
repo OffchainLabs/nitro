@@ -255,13 +255,18 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 	if len(feedMessages) == 0 {
 		return nil
 	}
-	pos := feedMessages[0].SequenceNumber
+	startingSeqNum := feedMessages[0].SequenceNumber
 	var messages []arbstate.MessageWithMetadata
+	endingSeqNum := startingSeqNum
 	for _, feedMessage := range feedMessages {
+		if endingSeqNum != feedMessage.SequenceNumber {
+			return fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, endingSeqNum)
+		}
 		if feedMessage.Message.Message == nil || feedMessage.Message.Message.Header == nil {
 			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
 		}
 		messages = append(messages, feedMessage.Message)
+		endingSeqNum++
 	}
 
 	s.insertionMutex.Lock()
@@ -272,13 +277,13 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 		return err
 	}
 
-	if currentMessageCount >= pos {
+	if currentMessageCount >= startingSeqNum {
 		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
 		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
-		return s.addMessagesAndEndBatchImpl(pos, false, messages, nil)
+		return s.addMessagesAndEndBatchImpl(startingSeqNum, false, messages, nil)
 	} else {
 		broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
-		if len(s.broadcasterQueuedMessages) > 0 && broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == pos {
+		if len(s.broadcasterQueuedMessages) > 0 && broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == startingSeqNum {
 			s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 		} else {
 			if len(s.broadcasterQueuedMessages) > 0 {
@@ -286,11 +291,11 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 					"broadcaster queue jumped positions",
 					"queuedMessages", len(s.broadcasterQueuedMessages),
 					"expectedNextPos", broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
-					"gotPos", pos,
+					"gotPos", startingSeqNum,
 				)
 			}
 			s.broadcasterQueuedMessages = messages
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(pos))
+			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(startingSeqNum))
 		}
 	}
 

@@ -9,8 +9,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -52,7 +50,6 @@ func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadca
 	}
 
 	dataSignerErr := func([]byte) ([]byte, error) {
-		log.Crit("relay attempted to sign feed message")
 		return nil, errors.New("relay attempted to sign feed message")
 	}
 	return &Relay{

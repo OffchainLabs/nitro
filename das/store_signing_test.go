@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 func TestStoreSigning(t *testing.T) {
@@ -23,7 +23,7 @@ func TestStoreSigning(t *testing.T) {
 	weirdMessage := []byte("The quick brown fox jumped over the lazy dog.")
 	timeout := uint64(time.Now().Unix())
 
-	signer := util.DataSignerFromPrivateKey(privateKey)
+	signer := signature.DataSignerFromPrivateKey(privateKey)
 	sig, err := applyDasSigner(signer, weirdMessage, timeout)
 	Require(t, err)
 

@@ -71,7 +71,7 @@ var DefaultConfig = Config{
 }
 
 var DefaultTestConfig = Config{
-	RequireSignature: false,
+	RequireSignature: true,
 	URLs:             []string{""},
 	Timeout:          200 * time.Millisecond,
 }
@@ -296,11 +296,6 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 								continue
 							}
 
-							if message.Message.Message.Header.RequestId == nil && bc.config.RequireSignature {
-								// Missing request id prevents signature from being checked
-								log.Error("ignoring feed message with missing request id", "sequence_number", message.SequenceNumber)
-								continue
-							}
 							valid, err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)

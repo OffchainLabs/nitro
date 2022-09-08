@@ -39,7 +39,7 @@ func (v *Verifier) VerifyData(ctx context.Context, signature []byte, data ...[]b
 }
 
 func (v *Verifier) VerifyClosure(ctx context.Context, signature []byte, getHash func() common.Hash) (bool, error) {
-	if signature == nil {
+	if len(signature) == 0 {
 		if !v.requireSignature {
 			// Signature missing and not required
 			return true, nil

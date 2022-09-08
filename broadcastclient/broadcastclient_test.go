@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -40,7 +39,7 @@ func TestReceiveMessages(t *testing.T) {
 	Require(t, err)
 	publicKey := privateKey.Public()
 	sequencerAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
-	dataSigner := util.DataSignerFromPrivateKey(privateKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	feedErrChan := make(chan error, 10)
 	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
@@ -80,7 +79,7 @@ func TestInvalidSignature(t *testing.T) {
 	Require(t, err)
 	publicKey := privateKey.Public()
 	_ = crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
-	dataSigner := util.DataSignerFromPrivateKey(privateKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	feedErrChan := make(chan error, 10)
 	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)

@@ -25,10 +25,10 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 func startLocalDASServer(
@@ -297,7 +297,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigA.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
 	l1NodeConfigA.DataAvailability.L1NodeURL = "none"
 
-	dataSigner := util.DataSignerFromPrivateKey(l1info.Accounts["Sequencer"].PrivateKey)
+	dataSigner := signature.DataSignerFromPrivateKey(l1info.Accounts["Sequencer"].PrivateKey)
 
 	Require(t, err)
 

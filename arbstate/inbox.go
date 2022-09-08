@@ -59,7 +59,7 @@ func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId 
 	binary.BigEndian.PutUint64(serializedExtraData[8:16], chainId)
 	binary.BigEndian.PutUint64(serializedExtraData[16:], m.DelayedMessagesRead)
 
-	serializedMessage, err := m.Message.Serialize()
+	serializedMessage, err := rlp.EncodeToBytes(m.Message)
 	if err != nil {
 		return common.Hash{}, errors.Wrapf(err, "unable to serialize message %v", sequenceNumber)
 	}

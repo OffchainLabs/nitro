@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -23,7 +22,7 @@ func TestVerifier(t *testing.T) {
 	Require(t, err)
 	publicKey := privateKey.Public()
 	signingAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
-	dataSigner := util.DataSignerFromPrivateKey(privateKey)
+	dataSigner := DataSignerFromPrivateKey(privateKey)
 
 	authorizedAddresses := make([]common.Address, 0)
 	authorizedAddresses = append(authorizedAddresses, signingAddr)
@@ -80,7 +79,7 @@ func TestVerifierBatchPoster(t *testing.T) {
 	Require(t, err)
 	publicKey := privateKey.Public()
 	signingAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
-	dataSigner := util.DataSignerFromPrivateKey(privateKey)
+	dataSigner := DataSignerFromPrivateKey(privateKey)
 
 	bpVerifier := contracts.NewMockBatchPosterVerifier(signingAddr)
 	verifier := NewVerifier(true, nil, bpVerifier)

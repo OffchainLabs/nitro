@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -25,7 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dastree"
-	flag "github.com/spf13/pflag"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 func main() {
@@ -136,7 +138,7 @@ func startClientStore(args []string) error {
 				return err
 			}
 		}
-		signer := util.DataSignerFromPrivateKey(privateKey)
+		signer := signature.DataSignerFromPrivateKey(privateKey)
 
 		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
 		if err != nil {

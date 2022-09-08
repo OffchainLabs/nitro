@@ -43,6 +43,7 @@ import (
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -56,7 +57,7 @@ func initLog(logType string, logLevel log.Lvl) error {
 	logFormat, err := genericconf.ParseLogType(logType)
 	if err != nil {
 		flag.Usage()
-		return fmt.Errorf("Error parsing log type: %w", err)
+		return fmt.Errorf("error parsing log type: %w", err)
 	}
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(logLevel)
@@ -161,7 +162,7 @@ func main() {
 	}
 
 	var l1TransactionOpts *bind.TransactOpts
-	var dataSigner util.DataSignerFunc
+	var dataSigner signature.DataSignerFunc
 	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
 	validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
@@ -424,7 +425,7 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 			other := value.Field(i).Interface()
 
 			if !hot && !reflect.DeepEqual(first, other) {
-				err = fmt.Errorf("Illegal change to %v%v%v", colors.Red, dot, colors.Clear)
+				err = fmt.Errorf("illegal change to %v%v%v", colors.Red, dot, colors.Clear)
 			} else {
 				check(node.Field(i), value.Field(i), dot)
 			}

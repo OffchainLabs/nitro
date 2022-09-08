@@ -12,7 +12,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -20,7 +20,7 @@ type Broadcaster struct {
 	server        *wsbroadcastserver.WSBroadcastServer
 	catchupBuffer *SequenceNumberCatchupBuffer
 	chainId       uint64
-	dataSigner    util.DataSignerFunc
+	dataSigner    signature.DataSignerFunc
 }
 
 /*
@@ -60,7 +60,7 @@ type ConfirmedSequenceNumberMessage struct {
 	SequenceNumber arbutil.MessageIndex `json:"sequenceNumber"`
 }
 
-func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64, feedErrChan chan error, dataSigner util.DataSignerFunc) *Broadcaster {
+func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer()
 	return &Broadcaster{
 		server:        wsbroadcastserver.NewWSBroadcastServer(settings, catchupBuffer, chainId, feedErrChan),
@@ -71,14 +71,13 @@ func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64
 }
 
 func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
-	var signature []byte
-	// Don't need signature if request id is not present
-	if message.Message.Header.RequestId != nil && b.dataSigner != nil {
+	var messageSignature []byte
+	if b.dataSigner != nil {
 		hash, err := message.Hash(sequenceNumber, b.chainId)
 		if err != nil {
 			return nil, err
 		}
-		signature, err = b.dataSigner(hash.Bytes())
+		messageSignature, err = b.dataSigner(hash.Bytes())
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +86,7 @@ func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetada
 	return &BroadcastFeedMessage{
 		SequenceNumber: sequenceNumber,
 		Message:        message,
-		Signature:      signature,
+		Signature:      messageSignature,
 	}, nil
 }
 

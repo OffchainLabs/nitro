@@ -13,14 +13,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 var uniquifyingPrefix = []byte("Arbitrum Nitro DAS API Store:")
 
-func applyDasSigner(signer util.DataSignerFunc, data []byte, timeout uint64) ([]byte, error) {
+func applyDasSigner(signer signature.DataSignerFunc, data []byte, timeout uint64) ([]byte, error) {
 	return signer(dasStoreHash(data, timeout))
 }
 
@@ -40,11 +40,11 @@ func dasStoreHash(data []byte, timeout uint64) []byte {
 
 type StoreSigningDAS struct {
 	DataAvailabilityServiceWriter
-	signer util.DataSignerFunc
+	signer signature.DataSignerFunc
 	addr   common.Address
 }
 
-func NewStoreSigningDAS(inner DataAvailabilityServiceWriter, signer util.DataSignerFunc) (DataAvailabilityServiceWriter, error) {
+func NewStoreSigningDAS(inner DataAvailabilityServiceWriter, signer signature.DataSignerFunc) (DataAvailabilityServiceWriter, error) {
 	sig, err := applyDasSigner(signer, []byte{}, 0)
 	if err != nil {
 		return nil, err

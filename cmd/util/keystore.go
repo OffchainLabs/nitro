@@ -4,7 +4,6 @@
 package util
 
 import (
-	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 	"strings"
@@ -19,17 +18,10 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
-type DataSignerFunc func([]byte) ([]byte, error)
-
-func DataSignerFromPrivateKey(privateKey *ecdsa.PrivateKey) DataSignerFunc {
-	return func(data []byte) ([]byte, error) {
-		return crypto.Sign(data, privateKey)
-	}
-}
-
-func OpenWallet(description string, walletConfig *genericconf.WalletConfig, chainId *big.Int) (*bind.TransactOpts, DataSignerFunc, error) {
+func OpenWallet(description string, walletConfig *genericconf.WalletConfig, chainId *big.Int) (*bind.TransactOpts, signature.DataSignerFunc, error) {
 	if walletConfig.PrivateKey != "" {
 		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
 		if err != nil {

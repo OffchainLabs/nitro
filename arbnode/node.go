@@ -37,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
@@ -700,7 +699,7 @@ func createNodeImpl(
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
-	dataSigner util.DataSignerFunc,
+	dataSigner signature.DataSignerFunc,
 	feedErrChan chan error,
 ) (*Node, error) {
 	config := configFetcher.Get()
@@ -810,7 +809,7 @@ func createNodeImpl(
 		}
 		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
 	}
-	sigVerifier := signature.NewVerifier(false, nil, bpVerifier)
+	sigVerifier := signature.NewVerifier(config.Feed.Input.RequireSignature, nil, bpVerifier)
 	currentMessageCount, err := txStreamer.GetMessageCount()
 	if err != nil {
 		return nil, err
@@ -1234,7 +1233,7 @@ func CreateNode(
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
-	dataSigner util.DataSignerFunc,
+	dataSigner signature.DataSignerFunc,
 	feedErrChan chan error,
 ) (*Node, error) {
 	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, dataSigner, feedErrChan)
