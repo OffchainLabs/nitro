@@ -890,7 +890,7 @@ func createNodeImpl(
 	blockValidatorConf := &config.BlockValidator
 	if blockValidatorConf.Enable && !(blockValidatorConf.ArbitratorValidator || blockValidatorConf.JitValidator) {
 		log.Warn("No block-by-block validator configured. Enabling the JIT block validator")
-		blockValidatorConf.ArbitratorValidator = true
+		blockValidatorConf.JitValidator = true
 	}
 
 	nitroMachineConfig := validator.DefaultNitroMachineConfig

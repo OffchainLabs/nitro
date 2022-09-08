@@ -94,7 +94,7 @@ func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	ArbitratorValidator:      false,
-	JitValidator:             false,
+	JitValidator:             true,
 	JitValidatorCranelift:    false,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
