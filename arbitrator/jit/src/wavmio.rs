@@ -8,8 +8,6 @@ use std::{
     time::Instant,
 };
 
-use parking_lot::MutexGuard;
-
 use crate::{
     color,
     gostack::GoStack,
@@ -92,7 +90,7 @@ pub fn read_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     ready_hostio(&mut *env)?;
 
     let inbox = &env.sequencer_messages;
-    inbox_message_impl(&sp, &env, inbox, "wavmio.readInboxMessage")
+    inbox_message_impl(&sp, inbox, "wavmio.readInboxMessage")
 }
 
 pub fn read_delayed_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
@@ -100,17 +98,12 @@ pub fn read_delayed_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     ready_hostio(&mut *env)?;
 
     let inbox = &env.delayed_messages;
-    inbox_message_impl(&sp, &env, inbox, "wavmio.readDelayedInboxMessage")
+    inbox_message_impl(&sp, inbox, "wavmio.readDelayedInboxMessage")
 }
 
 /// Reads an inbox message
 /// note: the order of the checks is very important.
-fn inbox_message_impl(
-    sp: &GoStack,
-    env: &MutexGuard<WasmEnv>,
-    inbox: &Inbox,
-    name: &str,
-) -> MaybeEscape {
+fn inbox_message_impl(sp: &GoStack, inbox: &Inbox, name: &str) -> MaybeEscape {
     let msg_num = sp.read_u64(0);
     let offset = sp.read_u64(1);
     let out_ptr = sp.read_u64(2);
@@ -128,13 +121,9 @@ fn inbox_message_impl(
         }};
     }
 
-    let too_far = env.first_too_far;
     let message = match inbox.get(&msg_num) {
         Some(message) => message,
-        None => match msg_num < too_far {
-            true => error!("missing inbox message {msg_num} of {too_far} in {name}"),
-            false => error!("message {msg_num} of {too_far} too far in {name}"),
-        },
+        None => error!("missing inbox message {msg_num} in {name}"),
     };
 
     if out_ptr + 32 > sp.memory_size() {

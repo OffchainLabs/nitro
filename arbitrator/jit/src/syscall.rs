@@ -102,6 +102,10 @@ impl JsValue {
         }
     }
 
+    /// Creates a JS runtime value from its native 64-bit floating point representation.
+    /// The JS runtime stores handles to references in the NaN bits.
+    /// Native 0 is the value called "undefined", and actual 0 is a special-cased NaN.
+    /// Anything else that's not a NaN is the Number class.
     pub fn new(repr: u64) -> Self {
         if repr == 0 {
             return Self::Undefined;
@@ -307,7 +311,7 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
         None => return Escape::failure(format!("wasmer failed to bind {}", color::red("resume"))),
     };
     let get_stack_pointer = match env.get_stack_pointer_ref() {
-        Some(resume) => resume,
+        Some(get_stack_pointer) => get_stack_pointer,
         None => return Escape::failure(format!("wasmer failed to bind {}", color::red("getsp"))),
     };
     let (sp, mut env_lock) = GoStack::new(sp, env);
@@ -347,6 +351,7 @@ pub fn js_value_call(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
             GoValue::Function(ref_id)
         }
         (Ref(FS_ID), b"write") => {
+            // ignore any args after the 6th, and slice no more than than the number of args we have
             let args_len = std::cmp::min(6, args.len());
 
             match &args.as_slice()[..args_len] {

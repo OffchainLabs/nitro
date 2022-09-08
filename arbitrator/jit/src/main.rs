@@ -102,3 +102,9 @@ fn main() {
 
     env.send_results(error);
 }
+
+// require a usize be at least 32 bits wide
+#[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
+compile_error!(
+    "Unsupported target pointer width (only 32 bit and 64 bit architectures are supported)"
+);

@@ -183,8 +183,6 @@ pub struct WasmEnv {
     pub sequencer_messages: Inbox,
     /// The delayed inbox's messages
     pub delayed_messages: Inbox,
-    /// The first inbox message number knowably out of bounds
-    pub first_too_far: u64,
     /// The purpose and connections of this process
     pub process: ProcessEnv,
 }
