@@ -730,7 +730,7 @@ func createNodeImpl(
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
-	feedErrChan chan error,
+	fatalErrChan chan error,
 ) (*Node, error) {
 	config := configFetcher.Get()
 	var reorgingToBlock *types.Block
@@ -766,7 +766,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Get().Feed.Output }, l2ChainId, feedErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Get().Feed.Output }, l2ChainId, fatalErrChan)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -840,7 +840,7 @@ func createNodeImpl(
 				currentMessageCount,
 				config.Feed.Input.Timeout,
 				txStreamer,
-				feedErrChan,
+				fatalErrChan,
 			)
 			broadcastClients = append(broadcastClients, client)
 		}
@@ -920,15 +920,22 @@ func createNodeImpl(
 	}
 	txStreamer.SetInboxReader(inboxReader)
 
+	blockValidatorConf := &config.BlockValidator
+	if blockValidatorConf.Enable && !(blockValidatorConf.ArbitratorValidator || blockValidatorConf.JitValidator) {
+		log.Warn("No block-by-block validator configured. Enabling the JIT block validator")
+		blockValidatorConf.JitValidator = true
+	}
+
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
 	machinesPath, foundMachines := config.Wasm.FindMachineDir()
 	nitroMachineConfig.RootPath = machinesPath
-	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
+	nitroMachineConfig.JitCranelift = blockValidatorConf.JitValidatorCranelift
+	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig, fatalErrChan)
 
 	var blockValidator *validator.BlockValidator
 	var statelessBlockValidator *validator.StatelessBlockValidator
 
-	if !foundMachines && config.BlockValidator.Enable {
+	if !foundMachines && blockValidatorConf.Enable {
 		return nil, fmt.Errorf("Failed to find machines %v", machinesPath)
 	} else if !foundMachines {
 		log.Warn("Failed to find machines", "path", machinesPath)
@@ -942,12 +949,13 @@ func createNodeImpl(
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
 			&config.Get().BlockValidator,
+			fatalErrChan,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		if config.BlockValidator.Enable {
+		if blockValidatorConf.Enable {
 			blockValidator, err = validator.NewBlockValidator(
 				statelessBlockValidator,
 				inboxTracker,
@@ -1254,9 +1262,9 @@ func CreateNode(
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
 	daSigner das.DasSigner,
-	feedErrChan chan error,
+	fatalErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, daSigner, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1271,7 +1279,7 @@ func CreateNode(
 	}
 	if currentNode.StatelessBlockValidator != nil {
 		apis = append(apis, rpc.API{
-			Namespace: "arbdebug",
+			Namespace: "arbvalidator",
 			Version:   "1.0",
 			Service: &BlockValidatorDebugAPI{
 				val:        currentNode.StatelessBlockValidator,
