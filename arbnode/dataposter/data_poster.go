@@ -135,6 +135,7 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 		metadataRetriever: metadataRetriever,
 		queue:             queue,
 		redisLock:         redisLock,
+		errorCount:        make(map[uint64]int),
 	}, nil
 }
 
@@ -181,6 +182,10 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big
 	elapsed := time.Since(dataCreatedAt)
 	maxFeeCap := new(big.Int).SetUint64(uint64(p.config.MaxFeeCapGwei * params.GWei))
 	maxFeeCapDoublings := int64(elapsed / p.config.MaxFeeCapDoubling)
+	// in tests, this could get way too big
+	if maxFeeCapDoublings > 8 {
+		maxFeeCapDoublings = 8
+	}
 	multiplier := new(big.Int).Exp(big.NewInt(2), big.NewInt(maxFeeCapDoublings), nil)
 	maxFeeCap.Mul(maxFeeCap, multiplier)
 	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
