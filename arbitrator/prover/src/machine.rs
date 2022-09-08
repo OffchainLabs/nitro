@@ -1941,7 +1941,8 @@ impl Machine {
                             }
                         }
                     } else {
-                        if msg_num < self.first_too_far || inbox_identifier == InboxIdentifier::Delayed {
+                        let delayed = inbox_identifier == InboxIdentifier::Delayed;
+                        if msg_num < self.first_too_far || delayed {
                             eprintln!("{} {msg_num}", Color::red("Missing inbox message"));
                             self.eprint_backtrace();
                             bail!(
