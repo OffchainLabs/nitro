@@ -1171,6 +1171,7 @@ impl Machine {
         // find the first inbox index that's out of bounds
         let first_too_far = inbox_contents
             .iter()
+            .filter(|((kind, _), _)| kind == &InboxIdentifier::Sequencer)
             .map(|((_, index), _)| *index + 1)
             .max()
             .unwrap_or(0);
@@ -1940,7 +1941,7 @@ impl Machine {
                             }
                         }
                     } else {
-                        if msg_num < self.first_too_far {
+                        if msg_num < self.first_too_far || inbox_identifier == InboxIdentifier::Delayed {
                             eprintln!("{} {msg_num}", Color::red("Missing inbox message"));
                             self.eprint_backtrace();
                             bail!(
@@ -2360,7 +2361,7 @@ impl Machine {
 
     pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {
         self.inbox_contents.insert((identifier, index), data);
-        if index >= self.first_too_far {
+        if index >= self.first_too_far && identifier == InboxIdentifier::Sequencer {
             self.first_too_far = index + 1
         }
     }
