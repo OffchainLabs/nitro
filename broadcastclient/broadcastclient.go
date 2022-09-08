@@ -299,11 +299,13 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							valid, err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
+								bc.feedErrChan <- errors.Wrapf(err, "error validating feed signature %v", message.SequenceNumber)
 								atomic.AddInt32(&bc.errorCount, 1)
 								continue
 							}
 
 							if !valid {
+								log.Error("invalid feed signature", "sequence number", message.SequenceNumber)
 								bc.feedErrChan <- errors.Errorf("invalid feed signature for %v", message.SequenceNumber)
 								atomic.AddInt32(&bc.errorCount, 1)
 								continue
@@ -374,12 +376,8 @@ func (bc *BroadcastClient) StopAndWait() {
 }
 
 func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) (bool, error) {
-	if bc.sigVerifier == nil {
+	if !bc.config.RequireSignature && bc.sigVerifier == nil {
 		// Verifier disabled
-		return true, nil
-	}
-	if message.Message.Message.Header.RequestId == nil {
-		// Don't need signature if request id is not present
 		return true, nil
 	}
 	hash, err := message.Hash(bc.chainId)
