@@ -757,10 +757,8 @@ func (c *LiveNodeConfig) Start(ctxIn context.Context) {
 	})
 }
 
+// setOnReloadHook is NOT thread-safe and supports setting only one hook
 func (c *LiveNodeConfig) setOnReloadHook(hook OnReloadHook) {
-	// setting the hook doesn't block others from reading the config
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
 	c.onReloadHook = hook
 }
 
