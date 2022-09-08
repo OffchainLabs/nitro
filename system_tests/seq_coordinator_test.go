@@ -148,7 +148,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	}
 
 	nodeForwardTarget := func(nodeNum int) int {
-		fwTarget := nodes[nodeNum].n.TxPublisher.(*arbnode.Sequencer).ForwardTarget()
+		fwTarget := nodes[nodeNum].n.TxPublisher.(*arbnode.TxPreChecker).TransactionPublisher.(*arbnode.Sequencer).ForwardTarget()
 		if fwTarget == "" {
 			return -1
 		}

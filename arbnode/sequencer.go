@@ -12,13 +12,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -27,7 +30,7 @@ import (
 )
 
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
-const maxTxDataSize uint64 = 112065
+const maxTxDataSize = 112065
 
 type txQueueItem struct {
 	tx         *types.Transaction
@@ -45,6 +48,7 @@ type Sequencer struct {
 
 	txStreamer      *TransactionStreamer
 	txQueue         chan txQueueItem
+	txRetryQueue    arbutil.Queue[txQueueItem]
 	l1Reader        *headerreader.HeaderReader
 	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
@@ -94,6 +98,10 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 			return errors.New("transaction sender is not on the whitelist")
 		}
 	}
+	if tx.Type() >= types.ArbitrumDepositTxType {
+		// Should be unreachable due to UnmarshalBinary not accepting Arbitrum internal txs
+		return types.ErrTxTypeNotSupported
+	}
 
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
@@ -114,7 +122,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+func (s *Sequencer) preTxFilter(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction) error {
 	return nil
 }
 
@@ -172,7 +180,6 @@ func (s *Sequencer) DontForward() {
 	s.forwarder = nil
 }
 
-var ErrQueueFull error = errors.New("sequencer pending tx pool full, please try again")
 var ErrNoSequencer error = errors.New("sequencer temporarily not available")
 
 func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
@@ -201,17 +208,19 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	return true
 }
 
-func (s *Sequencer) sequenceTransactions(ctx context.Context) {
+func (s *Sequencer) sequenceTransactions(ctx context.Context) bool {
 	var txes types.Transactions
 	var queueItems []txQueueItem
 	var totalBatchSize int
 	for {
 		var queueItem txQueueItem
-		if len(txes) == 0 {
+		if s.txRetryQueue.Len() > 0 {
+			queueItem = s.txRetryQueue.Pop()
+		} else if len(txes) == 0 {
 			select {
 			case queueItem = <-s.txQueue:
 			case <-ctx.Done():
-				return
+				return false
 			}
 		} else {
 			done := false
@@ -234,16 +243,15 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 			queueItem.returnResult(err)
 			continue
 		}
-		if len(txBytes) > int(maxTxDataSize) {
+		if len(txBytes) > maxTxDataSize {
 			// This tx is too large
 			queueItem.returnResult(core.ErrOversizedData)
 			continue
 		}
-		if totalBatchSize+len(txBytes) > int(maxTxDataSize) {
-			// This tx would be too large to add to this batch.
-			// Attempt to put it back in the queue, but error if the queue is full.
-			// Then, end the batch here.
-			s.requeueOrFail(queueItem, ErrQueueFull)
+		if totalBatchSize+len(txBytes) > maxTxDataSize {
+			// This tx would be too large to add to this batch
+			s.txRetryQueue.Push(queueItem)
+			// End the batch here to put this tx in the next one
 			break
 		}
 		totalBatchSize += len(txBytes)
@@ -252,7 +260,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	}
 
 	if s.forwardIfSet(queueItems) {
-		return
+		return false
 	}
 
 	timestamp := time.Now().Unix()
@@ -268,7 +276,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 			"l1Timestamp", l1Timestamp,
 			"localTimestamp", timestamp,
 		)
-		return
+		return false
 	}
 
 	header := &arbos.L1IncomingMessageHeader{
@@ -294,32 +302,43 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		// we changed roles
 		// forward if we have where to
 		if s.forwardIfSet(queueItems) {
-			return
+			return false
 		}
 		// try to add back to queue otherwise
 		for _, item := range queueItems {
 			s.requeueOrFail(item, ErrNoSequencer)
 		}
-		return
+		return false
 	}
 	if err != nil {
 		log.Warn("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
 		}
-		return
+		return false
 	}
 
+	madeBlock := false
 	for i, err := range hooks.TxErrors {
+		if err == nil {
+			madeBlock = true
+		}
 		queueItem := queueItems[i]
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
-			// Attempt to re-queue the transaction.
-			s.requeueOrFail(queueItem, core.ErrGasLimitReached)
-			continue
+			if madeBlock && !errors.Is(err, arbos.ErrMaxGasLimitReached) {
+				// There was already an earlier tx in the block; retry in a fresh block.
+				s.txRetryQueue.Push(queueItem)
+				continue
+			}
+		}
+		if errors.Is(err, core.ErrIntrinsicGas) {
+			// Strip additional information, as it's incorrect due to L1 data gas.
+			err = core.ErrIntrinsicGas
 		}
 		queueItem.returnResult(err)
 	}
+	return madeBlock
 }
 
 func (s *Sequencer) updateLatestL1Block(header *types.Header) {
@@ -373,9 +392,14 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
-		s.sequenceTransactions(ctx)
-		// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
-		return time.Until(nextBlock)
+		madeBlock := s.sequenceTransactions(ctx)
+		if madeBlock {
+			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
+			return time.Until(nextBlock)
+		} else {
+			// If we didn't make a block, try again immediately.
+			return 0
+		}
 	})
 
 	return nil
