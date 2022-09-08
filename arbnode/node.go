@@ -986,13 +986,10 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
-	if config.DelayedSequencer.Enable {
-		delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
-		if err != nil {
-			return nil, err
-		}
-	} else if config.Sequencer.Enable {
-		log.Warn("sequencer and l1 reader, without delayed sequencer")
+	// always create DelayedSequencer, it won't do anything if it is disabled
+	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	if err != nil {
+		return nil, err
 	}
 
 	return &Node{
@@ -1020,18 +1017,7 @@ func createNodeImpl(
 }
 
 func (n *Node) OnConfigReload(old *Config, new *Config) error {
-	if old.DelayedSequencer.Enable != new.DelayedSequencer.Enable {
-		if new.DelayedSequencer.Enable {
-			delayedSequencer, err := NewDelayedSequencer(n.L1Reader, n.InboxReader, n.TxStreamer, n.SeqCoordinator, func() *DelayedSequencerConfig { return &(n.configFetcher.Get().DelayedSequencer) })
-			if err != nil {
-				return err
-			}
-			n.DelayedSequencer = delayedSequencer
-			n.DelayedSequencer.Start(n.ctx)
-		} else {
-			n.DelayedSequencer.StopAndWait()
-		}
-	}
+	// TODO
 	return nil
 }
 
