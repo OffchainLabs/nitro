@@ -887,9 +887,10 @@ func createNodeImpl(
 	}
 	txStreamer.SetInboxReader(inboxReader)
 
-	blockValidatorConf := config.BlockValidator
+	blockValidatorConf := &config.BlockValidator
 	if blockValidatorConf.Enable && !(blockValidatorConf.ArbitratorValidator || blockValidatorConf.JitValidator) {
-		return nil, errors.New("Block validator enabled without either of arbitrator-validator or jit-validator")
+		log.Warn("No block-by-block validator configured. Enabling the JIT block validator")
+		blockValidatorConf.ArbitratorValidator = true
 	}
 
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
@@ -914,7 +915,7 @@ func createNodeImpl(
 			l2BlockChain,
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
-			&config.BlockValidator,
+			blockValidatorConf,
 			fatalErrChan,
 		)
 		if err != nil {
@@ -928,7 +929,7 @@ func createNodeImpl(
 				txStreamer,
 				nitroMachineLoader,
 				reorgingToBlock,
-				&config.BlockValidator,
+				blockValidatorConf,
 			)
 			if err != nil {
 				return nil, err

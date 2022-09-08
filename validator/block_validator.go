@@ -426,7 +426,13 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 
-		check := func(gsEnd GoGlobalState, delayed []byte, jit bool, err error) bool {
+		type replay = func(context.Context, *validationEntry, common.Hash) (GoGlobalState, []byte, error)
+		var delayedMsg []byte
+
+		validate := func(replay replay, jit bool) bool {
+			gsEnd, delayed, err := replay(ctx, entry, moduleRoot)
+			delayedMsg = delayed
+
 			if err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					log.Info(
@@ -452,42 +458,23 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 					"expected", gsExpected, "expHeader", entry.BlockHeader, "jit", jit,
 				)
 			}
-
 			return resultValid
 		}
 
-		var err error
-		var duration time.Duration
-		var delayed []byte
-		var gsEnd GoGlobalState
+		before := time.Now()
 		writeThisBlock := false // we write the block if either fail
 
 		if v.config.ArbitratorValidator {
-			before := time.Now()
-			gsEnd, delayed, err = v.executeBlock(ctx, entry, moduleRoot)
-			duration = time.Since(before)
-			success := check(gsEnd, delayed, false, err)
-			writeThisBlock = writeThisBlock || !success
-			if err != nil {
-				return
-			}
+			writeThisBlock = writeThisBlock || !validate(v.executeBlock, false)
 		}
-
 		if v.config.JitValidator {
-			before := time.Now()
-			gsEnd, delayed, err = v.jitBlock(ctx, entry, moduleRoot)
-			duration = time.Since(before)
-			success := check(gsEnd, delayed, true, err)
-			writeThisBlock = writeThisBlock || !success
-			if err != nil {
-				return
-			}
+			writeThisBlock = writeThisBlock || !validate(v.jitBlock, true)
 		}
 
 		if writeThisBlock {
 			err := v.writeToFile(
 				entry, moduleRoot, entry.StartPosition, entry.EndPosition,
-				entry.Preimages, seqMsg, delayed,
+				entry.Preimages, seqMsg, delayedMsg,
 			)
 			if err != nil {
 				log.Error("failed to write file", "err", err)
@@ -496,7 +483,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 
 		log.Info(
 			"validation succeeded", "blockNr", entry.BlockNumber,
-			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", duration,
+			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", time.Since(before),
 		)
 	}
 
@@ -896,8 +883,10 @@ func (v *BlockValidator) Initialize() error {
 			return errors.New("current-module-root config value illegal")
 		}
 	}
-	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, false); err != nil {
-		return err
+	if v.config.ArbitratorValidator {
+		if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, false); err != nil {
+			return err
+		}
 	}
 	if v.config.JitValidator {
 		if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, true); err != nil {
