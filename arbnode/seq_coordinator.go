@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/simple_hmac"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -99,8 +100,8 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Enable:          false,
-	RedisUrl:        "redis://localhost:6379/0",
-	LockoutDuration: time.Millisecond * 500,
+	RedisUrl:        redisutil.DefaultTestRedisURL,
+	LockoutDuration: time.Second * 2,
 	LockoutSpare:    time.Millisecond * 10,
 	SeqNumDuration:  time.Minute * 10,
 	UpdateInterval:  time.Millisecond * 10,
@@ -112,7 +113,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 }
 
 func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
-	redisOptions, err := redis.ParseURL(config.RedisUrl)
+	redisClient, err := redisutil.RedisClientFromURL(config.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +127,7 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, conf
 	coordinator := &SeqCoordinator{
 		streamer:  streamer,
 		sequencer: sequencer,
-		client:    redis.NewClient(redisOptions),
+		client:    redisClient,
 		config:    config,
 		signer:    signer,
 	}
@@ -134,12 +135,7 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, conf
 	return coordinator, nil
 }
 
-func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisUrl string, keyConfig string, msgIndex arbutil.MessageIndex) error {
-	redisOptions, err := redis.ParseURL(redisUrl)
-	if err != nil {
-		return err
-	}
-	r := redis.NewClient(redisOptions)
+func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
 	signerConfig := simple_hmac.DefaultSimpleHmacConfig
 	if keyConfig == "" {
 		signerConfig.Dangerous.DisableSignatureVerification = true
@@ -154,7 +150,7 @@ func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisUrl st
 	binary.BigEndian.PutUint64(msgIndexBytes[:], uint64(msgIndex))
 	msg := []byte(INVALID_VAL)
 	signed := signer.SignMessage(msgIndexBytes[:], msg)
-	r.Set(ctx, messageKeyFor(msgIndex), signed, DefaultSeqCoordinatorConfig.SeqNumDuration)
+	redisClient.Set(ctx, messageKeyFor(msgIndex), signed, DefaultSeqCoordinatorConfig.SeqNumDuration)
 	return nil
 }
 

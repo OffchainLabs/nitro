@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/redisutil"
 
 	"github.com/andybalholm/brotli"
 	"github.com/pkg/errors"
@@ -50,6 +51,7 @@ type BatchPoster struct {
 	building     *buildingBatch
 	daWriter     das.DataAvailabilityServiceWriter
 	dataPoster   *dataposter.DataPoster[batchPosterPosition]
+	redisLock    *SimpleRedisLock
 	firstAccErr  time.Time // first time a continuous missing accumulator occurred
 }
 
@@ -64,6 +66,8 @@ type BatchPosterConfig struct {
 	DASRetentionPeriod                 time.Duration               `koanf:"das-retention-period"`
 	GasRefunderAddress                 string                      `koanf:"gas-refunder-address"`
 	DataPoster                         dataposter.DataPosterConfig `koanf:"data-poster"`
+	RedisUrl                           string                      `koanf:"redis-url"`
+	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas"`
 }
 
@@ -78,6 +82,8 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
+	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
+	RedisLockConfigAddOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 }
 
@@ -120,6 +126,14 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	if err != nil {
 		return nil, err
 	}
+	redisClient, err := redisutil.RedisClientFromURL(config.RedisUrl)
+	if err != nil {
+		return nil, err
+	}
+	redisLock, err := NewSimpleRedisLock(redisClient, &config.RedisLock, func() bool { return len(streamer.SyncProgressMap()) == 0 })
+	if err != nil {
+		return nil, err
+	}
 	b := &BatchPoster{
 		l1Reader:     l1Reader,
 		inbox:        inbox,
@@ -130,8 +144,9 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		seqInboxAddr: contractAddress,
 		gasRefunder:  common.HexToAddress(config.GasRefunderAddress),
 		daWriter:     daWriter,
+		redisLock:    redisLock,
 	}
-	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, &config.DataPoster, b.getBatchPosterPosition)
+	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisClient, redisLock, &config.DataPoster, b.getBatchPosterPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -526,8 +541,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.dataPoster.Start(ctxIn)
+	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
+		if !b.redisLock.AttemptLock(ctx) {
+			b.building = nil
+			return b.config.BatchPollDelay
+		}
 		err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
 			b.building = nil
@@ -554,4 +574,5 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 func (b *BatchPoster) StopAndWait() {
 	b.StopWaiter.StopAndWait()
 	b.dataPoster.StopAndWait()
+	b.redisLock.StopAndWait()
 }

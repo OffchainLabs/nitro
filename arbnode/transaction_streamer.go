@@ -803,47 +803,75 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 }
 
 func (s *TransactionStreamer) SyncProgressMap() map[string]interface{} {
+	syncing := false
 	res := make(map[string]interface{})
-
-	msgCount, err := s.GetMessageCount()
-	if err != nil {
-		res["msgCountError"] = err.Error()
-		return res
-	}
 
 	batchSeen := s.inboxReader.GetLastSeenBatchCount()
 	_, batchProcessed := s.inboxReader.GetLastReadBlockAndBatchCount()
+
+	if (batchSeen == 0) || // error or not yet read inbox
+		(batchProcessed < batchSeen) { // unprocessed inbox messages
+		syncing = true
+	}
+	res["batchSeen"] = batchSeen
+	res["batchProcessed"] = batchProcessed
+
 	broadcasterQueuedMessagesPos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+
+	if broadcasterQueuedMessagesPos != 0 { // unprocessed feed
+		syncing = true
+	}
+	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
 
 	lastBlockNum := s.bc.CurrentHeader().Number.Uint64()
 	lastBuiltMessage, err := s.BlockNumberToMessageCount(lastBlockNum)
 	if err != nil {
 		res["blockMessageToMessageCountError"] = err.Error()
-		return res
+		syncing = true
+	} else {
+		res["blockNum"] = lastBlockNum
 	}
+	res["messageOfLastBlock"] = lastBuiltMessage
 
 	processedMetadata, err := s.inboxReader.Tracker().GetBatchMetadata(batchProcessed - 1)
-
 	if err != nil {
 		res["batchMetadataError"] = err.Error()
-		return res
+		syncing = true
+	} else {
+		res["messageOfProcessedBatch"] = processedMetadata.MessageCount
+		if lastBuiltMessage < processedMetadata.MessageCount { // block building not caught with inbox
+			syncing = true
+		}
 	}
 
-	if (batchSeen > 0) && // read inbox without error
-		(batchProcessed >= batchSeen) && // up to date in inbox messages
-		(broadcasterQueuedMessagesPos == 0) && // no unprocessed feed
-		(processedMetadata.MessageCount <= lastBuiltMessage) && // built blocks for entire inbox
-		(msgCount <= lastBuiltMessage+20) { // TODO: configurable gap
-		return res
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		res["msgCountError"] = err.Error()
+		syncing = true
+	} else {
+		res["msgCount"] = msgCount
+		if lastBuiltMessage+20 < msgCount { // TODO: configurable gap
+			syncing = true
+		}
 	}
 
-	res["msgCount"] = msgCount
-	res["batchSeen"] = batchSeen
-	res["batchProcessed"] = batchProcessed
-	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
-	res["blockNum"] = lastBlockNum
-	res["messageOfLastBlock"] = lastBuiltMessage
-	res["messageOfProcessedBatch"] = processedMetadata.MessageCount
+	if s.coordinator != nil {
+		coordinatorMessageCount, err := s.coordinator.GetRemoteMsgCount(s.GetContext()) //NOTE: this creates a remote call
+		if err != nil {
+			res["coordinatorMsgCountError"] = err.Error()
+			syncing = true
+		} else {
+			res["coordinatorMessageCount"] = coordinatorMessageCount
+			if msgCount+20 < coordinatorMessageCount { // TODO: configurable gap
+				syncing = true
+			}
+		}
+	}
+
+	if !syncing {
+		return make(map[string]interface{})
+	}
+
 	return res
 }
 

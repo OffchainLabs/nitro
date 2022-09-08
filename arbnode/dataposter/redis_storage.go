@@ -21,16 +21,11 @@ type RedisStorage[Item any] struct {
 	key    string
 }
 
-func NewRedisStorage[Item any](redisUrl string, key string, signerConf *simple_hmac.SimpleHmacConfig) (*RedisStorage[Item], error) {
-	redisOptions, err := redis.ParseURL(redisUrl)
-	if err != nil {
-		return nil, err
-	}
+func NewRedisStorage[Item any](client redis.UniversalClient, key string, signerConf *simple_hmac.SimpleHmacConfig) (*RedisStorage[Item], error) {
 	signer, err := simple_hmac.NewSimpleHmac(signerConf)
 	if err != nil {
 		return nil, err
 	}
-	client := redis.NewClient(redisOptions)
 	return &RedisStorage[Item]{client, signer, key}, nil
 }
 
