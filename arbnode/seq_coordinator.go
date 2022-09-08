@@ -56,23 +56,17 @@ type SeqCoordinator struct {
 }
 
 type SeqCoordinatorConfig struct {
-	Enable                bool                          `koanf:"enable"`
-	ChosenHealthcheckAddr string                        `koanf:"chosen-healthcheck-addr"`
-	RedisUrl              string                        `koanf:"redis-url"`
-	LockoutDuration       time.Duration                 `koanf:"lockout-duration"`
-	LockoutSpare          time.Duration                 `koanf:"lockout-spare"`
-	SeqNumDuration        time.Duration                 `koanf:"seq-num-duration"`
-	UpdateInterval        time.Duration                 `koanf:"update-interval"`
-	RetryInterval         time.Duration                 `koanf:"retry-interval"`
-	AllowedMsgLag         arbutil.MessageIndex          `koanf:"allowed-msg-lag"`
-	MaxMsgPerPoll         arbutil.MessageIndex          `koanf:"msg-per-poll"`
-	MyUrl                 string                        `koanf:"my-url"`
-	Signing               simple_hmac.SimpleHmacConfig  `koanf:"signer"`
-	Dangerous             SeqCoordinatorDangerousConfig `koanf:"dangerous"`
-}
-
-type SeqCoordinatorDangerousConfig struct {
-	DisableSignatureVerification bool `koanf:"disable-signature-verification"`
+	Enable                bool                         `koanf:"enable"`
+	ChosenHealthcheckAddr string                       `koanf:"chosen-healthcheck-addr"`
+	RedisUrl              string                       `koanf:"redis-url"`
+	LockoutDuration       time.Duration                `koanf:"lockout-duration"`
+	LockoutSpare          time.Duration                `koanf:"lockout-spare"`
+	SeqNumDuration        time.Duration                `koanf:"seq-num-duration"`
+	UpdateInterval        time.Duration                `koanf:"update-interval"`
+	RetryInterval         time.Duration                `koanf:"retry-interval"`
+	MaxMsgPerPoll         arbutil.MessageIndex         `koanf:"msg-per-poll"`
+	MyUrl                 string                       `koanf:"my-url"`
+	Signing               simple_hmac.SimpleHmacConfig `koanf:"signer"`
 }
 
 func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
