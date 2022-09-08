@@ -414,7 +414,7 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
-	if !c.DelayedSequencer.Enable && c.Sequencer.Enable {
+	if c.L1Reader.Enable && c.Sequencer.Enable && !c.DelayedSequencer.Enable {
 		log.Warn("sequencer and l1 reader, without delayed sequencer")
 	}
 	if err := c.Sequencer.Validate(); err != nil {
