@@ -30,7 +30,7 @@ type SyncMonitorConfig struct {
 var DefaultSyncMonitorConfig = SyncMonitorConfig{
 	BlockBuildLag:               20,
 	BlockBuildSequencerInboxLag: 0,
-	CoordinatorMsgLag:           200,
+	CoordinatorMsgLag:           15,
 }
 
 func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
