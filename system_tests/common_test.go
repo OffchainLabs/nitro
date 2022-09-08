@@ -319,7 +319,7 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	feedErrChan := make(chan error, 10)
+	fatalErrChan := make(chan error, 10)
 	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
@@ -339,14 +339,17 @@ func createTestNodeOnL1WithConfig(
 	}
 
 	var err error
-	currentNode, err = arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+	currentNode, err = arbnode.CreateNode(
+		ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client,
+		addresses, sequencerTxOptsPtr, nil, fatalErrChan,
+	)
 	Require(t, err)
 
 	Require(t, l2stack.Start())
 
 	l2client = ClientForStack(t, l2stack)
 
-	StartWatchChanErr(t, ctx, feedErrChan, l2stack)
+	StartWatchChanErr(t, ctx, fatalErrChan, l2stack)
 
 	return
 }

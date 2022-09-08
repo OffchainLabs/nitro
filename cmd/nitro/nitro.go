@@ -193,6 +193,7 @@ func main() {
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
+			nodeConfig.Node.BlockValidator.ArbitratorValidator = true
 		}
 	}
 
@@ -282,7 +283,7 @@ func main() {
 	}
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
-	feedErrChan := make(chan error, 10)
+	fatalErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
@@ -294,7 +295,7 @@ func main() {
 		&rollupAddrs,
 		l1TransactionOpts,
 		daSigner,
-		feedErrChan,
+		fatalErrChan,
 	)
 	if err != nil {
 		panic(err)
@@ -328,8 +329,8 @@ func main() {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	select {
-	case err := <-feedErrChan:
-		log.Error("shutting down because broadcaster stopped", "err", err)
+	case err := <-fatalErrChan:
+		log.Error("shutting down due to fatal error", "err", err)
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
