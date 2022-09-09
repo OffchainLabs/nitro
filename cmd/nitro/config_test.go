@@ -86,7 +86,7 @@ func TestReloads(t *testing.T) {
 	testUnsafe()
 	update.L2.ChainID++
 	testUnsafe()
-	update.Node.Sequencer.ForwardTimeout++
+	update.Node.Sequencer.Forwarder.ConnectionTimeout++
 	testUnsafe()
 }
 
