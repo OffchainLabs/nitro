@@ -271,7 +271,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let stream = &mut reader;
 
     if socket::read_u8(stream)? == socket::READY {
-        return Escape::exit(0)
+        return Escape::exit(0);
     }
 
     let inbox_position = socket::read_u64(stream)?;
