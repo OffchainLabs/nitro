@@ -42,6 +42,7 @@ type Config struct {
 	PollInterval         time.Duration `koanf:"poll-interval"`
 	SubscribeErrInterval time.Duration `koanf:"subscribe-err-interval"`
 	TxTimeout            time.Duration `koanf:"tx-timeout"`
+	OldHeaderTimeout     time.Duration `koanf:"old-header-timeout"`
 }
 
 var DefaultConfig = Config{
@@ -50,6 +51,7 @@ var DefaultConfig = Config{
 	PollInterval:         15 * time.Second,
 	SubscribeErrInterval: 5 * time.Minute,
 	TxTimeout:            5 * time.Minute,
+	OldHeaderTimeout:     5 * time.Minute,
 }
 
 func AddOptions(prefix string, f *flag.FlagSet) {
@@ -57,13 +59,15 @@ func AddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".poll-only", DefaultConfig.PollOnly, "do not attempt to subscribe to header events")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval when polling endpoint")
 	f.Duration(prefix+".tx-timeout", DefaultConfig.TxTimeout, "timeout when waiting for a transaction")
+	f.Duration(prefix+".old-header-timeout", DefaultConfig.OldHeaderTimeout, "warns if the latest l1 block is at least this old")
 }
 
 var TestConfig = Config{
-	Enable:       true,
-	PollOnly:     false,
-	PollInterval: time.Millisecond * 10,
-	TxTimeout:    time.Second * 5,
+	Enable:           true,
+	PollOnly:         false,
+	PollInterval:     time.Millisecond * 10,
+	TxTimeout:        time.Second * 5,
+	OldHeaderTimeout: 5 * time.Minute,
 }
 
 func New(client arbutil.L1Interface, config Config) *HeaderReader {
@@ -238,9 +242,12 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	if storedHeader == nil {
 		return
 	}
-	headerTime := time.Unix(int64(storedHeader.Time), 0)
-	if time.Since(headerTime) >= 5*time.Minute {
-		log.Warn("latest L1 block is at least 5 minutes old", "l1Block", storedHeader.Number, "l1Timestamp", headerTime)
+	headerTime := time.Since(time.Unix(int64(storedHeader.Time), 0))
+	if headerTime >= s.config.OldHeaderTimeout {
+		log.Warn(
+			"latest L1 block is old", "l1Block", storedHeader.Number,
+			"l1Timestamp", headerTime, "age", headerTime,
+		)
 	}
 }
 
