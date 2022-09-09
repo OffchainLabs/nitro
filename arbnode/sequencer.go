@@ -138,11 +138,11 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func (s *Sequencer) preTxFilter(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction) error {
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+func (s *Sequencer) postTxFilter(_ *arbosState.ArbosState, _ *types.Transaction, _ common.Address, dataGas uint64, result *core.ExecutionResult) error {
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
@@ -176,9 +176,13 @@ func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
+		if s.forwarder.target == url {
+			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
+			return nil
+		}
 		s.forwarder.Disable()
 	}
-	s.forwarder = NewForwarder(url, s.config().ForwardTimeout)
+	s.forwarder = NewForwarder(url, &s.config().Forwarder)
 	err := s.forwarder.Initialize(s.GetContext())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)
@@ -196,7 +200,7 @@ func (s *Sequencer) DontForward() {
 	s.forwarder = nil
 }
 
-var ErrNoSequencer error = errors.New("sequencer temporarily not available")
+var ErrNoSequencer = errors.New("sequencer temporarily not available")
 
 func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
 	select {
