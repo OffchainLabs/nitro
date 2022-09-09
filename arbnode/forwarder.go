@@ -17,8 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
-
-	"github.com/offchainlabs/nitro/util/arbrpc"
 )
 
 type ForwarderConfig struct {
@@ -138,7 +136,7 @@ func (f *TxForwarder) Initialize(inctx context.Context) error {
 	}
 	ctx, cancelFunc := f.ctxWithTimeout(inctx)
 	defer cancelFunc()
-	rpcClient, err := arbrpc.DialTransport(ctx, f.target, f.transport)
+	rpcClient, err := rpc.DialTransport(ctx, f.target, f.transport)
 	if err != nil {
 		return err
 	}
