@@ -60,8 +60,9 @@ type L1ValidatorConfig struct {
 	DisableChallenge         bool              `koanf:"disable-challenge"`
 	TargetMachineCount       int               `koanf:"target-machine-count"`
 	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
-	Dangerous                DangerousConfig   `koanf:"dangerous"`
 	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
+	GasRefunderAddress       string            `koanf:"gas-refunder-address"`
+	Dangerous                DangerousConfig   `koanf:"dangerous"`
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
@@ -73,8 +74,9 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	DisableChallenge:         false,
 	TargetMachineCount:       4,
 	ConfirmationBlocks:       12,
-	Dangerous:                DefaultDangerousConfig,
 	OnlyCreateWalletContract: false,
+	GasRefunderAddress:       "",
+	Dangerous:                DefaultDangerousConfig,
 }
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -86,8 +88,9 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
 	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
-	DangerousConfigAddOptions(prefix+".dangerous", f)
 	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
+	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
+	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
 type DangerousConfig struct {
@@ -154,6 +157,9 @@ func NewStaker(
 	strategy, err := stakerStrategyFromString(config.Strategy)
 	if err != nil {
 		return nil, err
+	}
+	if len(config.GasRefunderAddress) > 0 && !common.IsHexAddress(config.GasRefunderAddress) {
+		return nil, errors.New("invalid validator gas refunder address")
 	}
 	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, das, inboxTracker, txStreamer, blockValidator)
@@ -400,7 +406,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				return nil, err
 			}
 			log.Info("removing old stake and withdrawing funds")
-			return s.wallet.ExecuteTransactions(ctx, s.builder)
+			return s.wallet.ExecuteTransactions(ctx, s.builder, common.HexToAddress(s.config.GasRefunderAddress))
 		}
 	}
 
@@ -447,7 +453,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if info.StakerInfo == nil && info.StakeExists {
 		log.Info("staking to execute transactions")
 	}
-	return s.wallet.ExecuteTransactions(ctx, s.builder)
+	return s.wallet.ExecuteTransactions(ctx, s.builder, common.HexToAddress(s.config.GasRefunderAddress))
 }
 
 func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {

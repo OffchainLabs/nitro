@@ -46,6 +46,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	conf.InboxReader.HardReorg = true
 	if validator {
 		conf.BlockValidator.Enable = true
+		conf.BlockValidator.ArbitratorValidator = true
 		conf.BlockValidator.ConcurrentRunsLimit = 16
 	}
 	l2Info, arbNode, _, l2stack, l1Info, l1backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, false, conf, params.ArbitrumDevTestChainConfig())
