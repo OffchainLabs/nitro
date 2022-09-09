@@ -94,6 +94,14 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 var ErrRetrySequencer = errors.New("please retry transaction")
 
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	forwarder := s.GetForwarder()
+	if forwarder != nil {
+		err := forwarder.PublishTransaction(ctx, tx)
+		if !errors.Is(err, ErrNoSequencer) {
+			return err
+		}
+	}
+
 	if len(s.senderWhitelist) > 0 {
 		signer := types.LatestSigner(s.txStreamer.bc.Config())
 		sender, err := types.Sender(signer, tx)
@@ -198,10 +206,14 @@ func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
 	}
 }
 
-func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
+func (s *Sequencer) GetForwarder() *TxForwarder {
 	s.forwarderMutex.Lock()
-	forwarder := s.forwarder
-	s.forwarderMutex.Unlock()
+	defer s.forwarderMutex.Unlock()
+	return s.forwarder
+}
+
+func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
+	forwarder := s.GetForwarder()
 	if forwarder == nil {
 		return false
 	}
