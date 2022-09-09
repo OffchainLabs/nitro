@@ -1039,4 +1039,8 @@ describe("ArbRollup", () => {
   it("should fail the onlyValidator check", async function () {
     await expect(rollupUser.withdrawStakerFunds()).to.revertedWith("NOT_VALIDATOR");
   });
+
+  it("should fail to call removeWhitelistAfterFork", async function () {
+    await expect(rollupUser.removeWhitelistAfterFork()).to.revertedWith("CHAIN_ID_NOT_CHANGED");
+  });
 });
