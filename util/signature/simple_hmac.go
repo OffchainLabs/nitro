@@ -1,4 +1,4 @@
-package simple_hmac
+package signature
 
 import (
 	"crypto/subtle"

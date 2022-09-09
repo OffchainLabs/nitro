@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/simple_hmac"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 const messagesPerRound = 20
@@ -108,7 +108,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		testStartRound: -1,
 		sequencer:      make([]string, messagesPerRound),
 	}
-	nullSigner, err := simple_hmac.NewSimpleHmac(&coordConfig.Signing)
+	nullSigner, err := signature.NewSimpleHmac(&coordConfig.Signing)
 	Require(t, err)
 
 	redisClient, err := redisutil.RedisClientFromURL(redisutil.GetTestRedisURL(t))

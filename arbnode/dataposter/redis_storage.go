@@ -11,18 +11,18 @@ import (
 
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/nitro/util/simple_hmac"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 // Requires that Item is RLP encodable/decodable
 type RedisStorage[Item any] struct {
 	client redis.UniversalClient
-	signer *simple_hmac.SimpleHmac
+	signer *signature.SimpleHmac
 	key    string
 }
 
-func NewRedisStorage[Item any](client redis.UniversalClient, key string, signerConf *simple_hmac.SimpleHmacConfig) (*RedisStorage[Item], error) {
-	signer, err := simple_hmac.NewSimpleHmac(signerConf)
+func NewRedisStorage[Item any](client redis.UniversalClient, key string, signerConf *signature.SimpleHmacConfig) (*RedisStorage[Item], error) {
+	signer, err := signature.NewSimpleHmac(signerConf)
 	if err != nil {
 		return nil, err
 	}

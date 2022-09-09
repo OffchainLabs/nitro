@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/simple_hmac"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -43,7 +43,7 @@ type SeqCoordinator struct {
 	streamer  *TransactionStreamer
 	sequencer *Sequencer
 	client    redis.UniversalClient
-	signer    *simple_hmac.SimpleHmac
+	signer    *signature.SimpleHmac
 	config    SeqCoordinatorConfig
 
 	prevChosenSequencer string
@@ -56,17 +56,17 @@ type SeqCoordinator struct {
 }
 
 type SeqCoordinatorConfig struct {
-	Enable                bool                         `koanf:"enable"`
-	ChosenHealthcheckAddr string                       `koanf:"chosen-healthcheck-addr"`
-	RedisUrl              string                       `koanf:"redis-url"`
-	LockoutDuration       time.Duration                `koanf:"lockout-duration"`
-	LockoutSpare          time.Duration                `koanf:"lockout-spare"`
-	SeqNumDuration        time.Duration                `koanf:"seq-num-duration"`
-	UpdateInterval        time.Duration                `koanf:"update-interval"`
-	RetryInterval         time.Duration                `koanf:"retry-interval"`
-	MaxMsgPerPoll         arbutil.MessageIndex         `koanf:"msg-per-poll"`
-	MyUrl                 string                       `koanf:"my-url"`
-	Signing               simple_hmac.SimpleHmacConfig `koanf:"signer"`
+	Enable                bool                       `koanf:"enable"`
+	ChosenHealthcheckAddr string                     `koanf:"chosen-healthcheck-addr"`
+	RedisUrl              string                     `koanf:"redis-url"`
+	LockoutDuration       time.Duration              `koanf:"lockout-duration"`
+	LockoutSpare          time.Duration              `koanf:"lockout-spare"`
+	SeqNumDuration        time.Duration              `koanf:"seq-num-duration"`
+	UpdateInterval        time.Duration              `koanf:"update-interval"`
+	RetryInterval         time.Duration              `koanf:"retry-interval"`
+	MaxMsgPerPoll         arbutil.MessageIndex       `koanf:"msg-per-poll"`
+	MyUrl                 string                     `koanf:"my-url"`
+	Signing               signature.SimpleHmacConfig `koanf:"signer"`
 }
 
 func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -80,7 +80,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
 	f.Uint16(prefix+".msg-per-poll", uint16(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrl, "url for this sequencer if it is the chosen")
-	simple_hmac.SimpleHmacConfigAddOptions(prefix+".signer", f)
+	signature.SimpleHmacConfigAddOptions(prefix+".signer", f)
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -106,7 +106,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:   time.Millisecond * 3,
 	MaxMsgPerPoll:   20,
 	MyUrl:           INVALID_URL,
-	Signing:         simple_hmac.TestSimpleHmacConfig,
+	Signing:         signature.TestSimpleHmacConfig,
 }
 
 func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
@@ -114,7 +114,7 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync
 	if err != nil {
 		return nil, err
 	}
-	signer, err := simple_hmac.NewSimpleHmac(&config.Signing)
+	signer, err := signature.NewSimpleHmac(&config.Signing)
 	if err != nil {
 		return nil, err
 	}
@@ -134,13 +134,13 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync
 }
 
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
-	signerConfig := simple_hmac.DefaultSimpleHmacConfig
+	signerConfig := signature.DefaultSimpleHmacConfig
 	if keyConfig == "" {
 		signerConfig.Dangerous.DisableSignatureVerification = true
 	} else {
 		signerConfig.SigningKey = keyConfig
 	}
-	signer, err := simple_hmac.NewSimpleHmac(&signerConfig)
+	signer, err := signature.NewSimpleHmac(&signerConfig)
 	if err != nil {
 		return err
 	}
