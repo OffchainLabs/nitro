@@ -141,6 +141,25 @@ func main() {
 		nodeConfig.Node.L1Reader.Enable = true
 	}
 
+	if nodeConfig.Node.Sequencer.Enable {
+		if nodeConfig.Node.ForwardingTarget() != "" {
+			flag.Usage()
+			panic("forwarding-target set when sequencer enabled")
+		}
+		if nodeConfig.Node.L1Reader.Enable && nodeConfig.Node.InboxReader.HardReorg {
+			panic("hard reorgs cannot safely be enabled with sequencer mode enabled")
+		}
+	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
+		flag.Usage()
+		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
+	}
+
+	if nodeConfig.Node.SeqCoordinator.Enable {
+		if nodeConfig.Node.SeqCoordinator.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Dangerous.DisableSignatureVerification {
+			panic("sequencer coordinator enabled, but signing key unset, and signature verification isn't disabled")
+		}
+	}
+
 	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
 	var daSigner func([]byte) ([]byte, error)

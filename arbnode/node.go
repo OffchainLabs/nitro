@@ -414,21 +414,6 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
-	if c.Sequencer.Enable {
-		if c.ForwardingTarget() != "" {
-			return errors.New("forwarding-target set when sequencer enabled")
-		}
-		if c.L1Reader.Enable && c.InboxReader.HardReorg {
-			return errors.New("hard reorgs cannot safely be enabled with sequencer mode enabled")
-		}
-	} else if c.ForwardingTargetImpl == "" {
-		return errors.New("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
-	}
-	if c.SeqCoordinator.Enable {
-		if c.SeqCoordinator.SigningKey == "" && !c.SeqCoordinator.Dangerous.DisableSignatureVerification {
-			return errors.New("sequencer coordinator enabled, but signing key unset, and signature verification isn't disabled")
-		}
-	}
 	if c.L1Reader.Enable && c.Sequencer.Enable && !c.DelayedSequencer.Enable {
 		log.Warn("sequencer and l1 reader, without delayed sequencer")
 	}
