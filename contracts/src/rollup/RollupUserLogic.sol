@@ -20,7 +20,7 @@ abstract contract AbsRollupUserLogic is
     using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
-        require(isValidator[msg.sender] || _chainIdChanged(), "NOT_VALIDATOR");
+        require(isValidator[msg.sender] || validatorWhitelistDisabled, "NOT_VALIDATOR");
         _;
     }
 
@@ -28,6 +28,12 @@ abstract contract AbsRollupUserLogic is
 
     function _chainIdChanged() internal view returns (bool) {
         return deployTimeChainId != block.chainid;
+    }
+
+    function removeWhitelistAfterFork() external {
+        require(!validatorWhitelistDisabled, "WHITELIST_DISABLED");
+        require(_chainIdChanged(), "CHAIN_ID_NOT_CHANGED");
+        validatorWhitelistDisabled = true;
     }
 
     function isERC20Enabled() public view override returns (bool) {

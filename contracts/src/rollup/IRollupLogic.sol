@@ -15,6 +15,8 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address stakeToken) external view;
 
+    function removeWhitelistAfterFork() external;
+
     function isERC20Enabled() external view returns (bool);
 
     function rejectNextNode(address stakerAddress) external;
