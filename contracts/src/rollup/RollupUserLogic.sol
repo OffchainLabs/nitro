@@ -44,6 +44,12 @@ abstract contract AbsRollupUserLogic is
         validatorWhitelistDisabled = true;
     }
 
+    function removeWhitelistAfterValidatorAfk() external {
+        require(!validatorWhitelistDisabled, "WHITELIST_DISABLED");
+        require(_validatorIsAfk(), "VALIDATOR_NOT_AFK");
+        validatorWhitelistDisabled = true;
+    }
+
     function isERC20Enabled() public view override returns (bool) {
         return stakeToken != address(0);
     }

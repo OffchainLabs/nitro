@@ -1043,4 +1043,8 @@ describe("ArbRollup", () => {
   it("should fail to call removeWhitelistAfterFork", async function () {
     await expect(rollupUser.removeWhitelistAfterFork()).to.revertedWith("CHAIN_ID_NOT_CHANGED");
   });
+
+  it("should fail to call removeWhitelistAfterValidatorAfk", async function () {
+    await expect(rollupUser.removeWhitelistAfterValidatorAfk()).to.revertedWith("VALIDATOR_NOT_AFK");
+  });
 });
