@@ -54,17 +54,18 @@ func main() {
 	arbstate.RequireHookedGeth()
 	nodeInterface.RequireVirtualContracts()
 
-	l1ChainID := big.NewInt(1337)
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	largeBalance := arbmath.UintToBig(1e19)
+	l1ChainId := big.NewInt(1337)
+	l2ChainId := chainConfig.ChainID
 
 	authKey, authAddr := keypair(0)
 	sequencerKey, sequencerAddr := keypair(1)
 	colors.PrintBlue("Auth: ", authAddr)
 	colors.PrintBlue("Sequencer: ", sequencerAddr)
 
-	l1Auth, err := bind.NewKeyedTransactorWithChainID(authKey, l1ChainID)
+	l1Auth, err := bind.NewKeyedTransactorWithChainID(authKey, l1ChainId)
 	Require(err)
 	l2Auth, err := bind.NewKeyedTransactorWithChainID(authKey, chainConfig.ChainID)
 	Require(err)
@@ -118,9 +119,17 @@ func main() {
 	Require(err)
 	l1client := ethclient.NewClient(l1rpcClient)
 
+	fatalErrChan := make(chan error, 10)
+	go func() {
+		err := <-fatalErrChan
+		panic(fmt.Sprintf("Encountered fatal error: %v", err))
+	}()
+
+	cranelift := false
 	machineConfig := validator.DefaultNitroMachineConfig
 	machineConfig.RootPath = machinePath
-	machineLoader := validator.NewNitroMachineLoader(machineConfig)
+	machineConfig.JitCranelift = cranelift
+	machineLoader := validator.NewNitroMachineLoader(machineConfig, fatalErrChan)
 	moduleRoot, err := machineConfig.ReadLatestWasmModuleRoot()
 	Require(err)
 
@@ -129,12 +138,10 @@ func main() {
 		l1client,
 		l1Auth,
 		sequencerAddr,
-		l1Auth.From,
 		0,
-		moduleRoot,
-		chainConfig.ChainID,
 		headerreader.TestConfig,
-		validator.DefaultNitroMachineConfig,
+		machineConfig,
+		arbnode.GenerateRollupConfig(false, moduleRoot, l1Auth.From, l2ChainId, common.Address{}),
 	)
 	Require(err)
 
@@ -155,7 +162,7 @@ func main() {
 	)
 	Require(err)
 
-	sequencerOpts, err := bind.NewKeyedTransactorWithChainID(sequencerKey, l1ChainID)
+	sequencerOpts, err := bind.NewKeyedTransactorWithChainID(sequencerKey, l1ChainId)
 	Require(err)
 	feedErrChan := make(chan error, 10)
 	node, err := arbnode.CreateNode(
@@ -214,6 +221,12 @@ func main() {
 		return confs != 0
 	})
 
+	validatorConf := validator.DefaultBlockValidatorConfig
+	validatorConf.Enable = false
+	validatorConf.ArbitratorValidator = false
+	validatorConf.JitValidator = false
+	validatorConf.JitValidatorCranelift = cranelift
+
 	prover, err := validator.NewStatelessBlockValidator(
 		machineLoader,
 		node.InboxReader,
@@ -222,36 +235,59 @@ func main() {
 		l2Blockchain,
 		rawdb.NewMemoryDatabase(),
 		nil,
+		&validatorConf,
+		fatalErrChan,
 	)
 	Require(err)
 
-	start := time.Now()
 	header := l2Blockchain.GetHeaderByHash(receipt.BlockHash)
-	valid, err := prover.ValidateBlock(ctx, header, common.Hash{})
-	Require(err)
-	if !valid {
-		panic("Failed to validate block")
-	}
-	delay := time.Since(start)
-
-	println()
 	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), false, true, true)
 	Require(err)
 	gasUsed := receipt.GasUsed - receipt.GasUsedForL1 - intrinsic
-	fmt.Printf(
-		"Validated block of %v%v%v gas in %v%v%v\n",
-		colors.Pink, gasUsed, colors.Clear,
-		colors.Pink, delay, colors.Clear,
-	)
-	gasPerSecond := float64(gasUsed) / delay.Seconds()
-	coresNeeded := float64(speedLimit.Uint64()) / gasPerSecond
 
-	fmt.Printf(
-		"Validated @ %v%.2f%v gas/s,\nso %v%.2f%v cores are needed for a %v%v%v gas/s speed limit\n",
-		colors.Pink, gasPerSecond, colors.Clear,
-		colors.Pink, coresNeeded, colors.Clear,
-		colors.Pink, speedLimit, colors.Clear,
-	)
+	measure := func(kind string, jit bool) {
+		start := time.Now()
+		if jit {
+			_, err = prover.MachineLoader.GetJitMachine(ctx, moduleRoot, true)
+		} else {
+			_, err = prover.MachineLoader.GetMachine(ctx, moduleRoot, true)
+		}
+		if err != nil {
+			panic(fmt.Sprintf("Failed to create %v machine: %v", kind, err))
+		}
+		fmt.Printf(
+			"Created %v machine in %v\n",
+			colors.PinkStr("%v", kind),
+			colors.PinkStr("%v", time.Since(start)),
+		)
+
+		start = time.Now()
+		valid, err := prover.ValidateBlock(ctx, header, !jit, moduleRoot)
+		Require(err)
+		if !valid {
+			panic(fmt.Sprintf("%v validation failed", kind))
+		}
+		delay := time.Since(start)
+
+		fmt.Printf(
+			"Validated block of %v gas with %v in %v\n",
+			colors.PinkStr("%v", gasUsed),
+			colors.PinkStr("%v", kind),
+			colors.PinkStr("%v", delay),
+		)
+		gasPerSecond := float64(gasUsed) / delay.Seconds()
+		coresNeeded := float64(speedLimit.Uint64()) / gasPerSecond
+
+		fmt.Printf(
+			"Validated @ %v gas/s,\nso %v cores are needed for a %v gas/s speed limit\n\n",
+			colors.PinkStr("%.2f", gasPerSecond),
+			colors.PinkStr("%.2f", coresNeeded),
+			colors.PinkStr("%v", speedLimit),
+		)
+	}
+
+	measure("JIT", true)
+	measure("Arbitrator", false)
 }
 
 func keypair(seed byte) (*ecdsa.PrivateKey, common.Address) {

@@ -189,7 +189,7 @@ func (l *NitroMachineLoader) createMachineImpl(
 ) (*loaderMachineStatus, error) {
 	machineRequest := nitroMachineRequest{
 		moduleRoot:  moduleRoot,
-		untilHostIo: untilHostIo,
+		untilHostIo: untilHostIo || jit, // jit always waits until hostio
 		jit:         jit,
 	}
 
@@ -264,8 +264,10 @@ func (l *NitroMachineLoader) createMachineImpl(
 
 		go func() {
 			if jit {
-				machine.jitMachine, machine.err = createJitMachine(config, moduleRoot, l.fatalErrChan)
-				machine.signalReady()
+				// createJitMachine will signal the channel when ready
+				machine.jitMachine, machine.err = createJitMachine(
+					config, moduleRoot, machine.chanSignal, l.fatalErrChan,
+				)
 				return
 			}
 			if untilHostIo {

@@ -270,6 +270,10 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let mut reader = BufReader::new(socket.try_clone()?);
     let stream = &mut reader;
 
+    if socket::read_u8(stream)? == socket::READY {
+        return Escape::exit(0)
+    }
+
     let inbox_position = socket::read_u64(stream)?;
     let position_within_message = socket::read_u64(stream)?;
     let last_block_hash = socket::read_bytes32(stream)?;

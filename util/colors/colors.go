@@ -48,3 +48,8 @@ func PrintYellow(args ...interface{}) {
 	fmt.Print(args...)
 	println(Clear)
 }
+
+func PinkStr(format string, args ...interface{}) string {
+	str := fmt.Sprintf(format, args...)
+	return fmt.Sprintf("%v%v%v", Pink, str, Clear)
+}

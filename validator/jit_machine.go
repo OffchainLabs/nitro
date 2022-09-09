@@ -25,7 +25,9 @@ type JitMachine struct {
 	stdin   io.WriteCloser
 }
 
-func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+func createJitMachine(
+	config NitroMachineConfig, moduleRoot common.Hash, signal chan struct{}, fatalErrChan chan error,
+) (*JitMachine, error) {
 
 	jitBinary, err := exec.LookPath("jit")
 	if err != nil {
@@ -58,7 +60,66 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 		process: process,
 		stdin:   stdin,
 	}
+
+	go func() {
+		conn, closer, err := machine.listen(10 * time.Minute)
+		defer closer()
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("Failed to create machine: %w", err)
+			close(signal)
+			return
+		}
+
+		// signal that we'd like the machine to exit immediately
+		const readyByte = 0x4
+		if _, err = conn.Write([]byte{readyByte}); err != nil {
+			fatalErrChan <- fmt.Errorf("Failed to create machine: %w", err)
+		}
+
+		close(signal)
+	}()
+
 	return machine, nil
+}
+
+func (machine *JitMachine) listen(timeout time.Duration) (net.Conn, func(), error) {
+
+	closer := func() {}
+
+	deadline := time.Now().Add(timeout)
+	tcp, err := net.ListenTCP("tcp", &net.TCPAddr{})
+	if err != nil {
+		return nil, closer, err
+	}
+	if err := tcp.SetDeadline(deadline); err != nil {
+		return nil, closer, err
+	}
+	closer = func() {
+		tcp.Close()
+	}
+
+	// Tell the spawner process about the new tcp port
+	address := fmt.Sprintf("%v\n", tcp.Addr().String())
+	if _, err := machine.stdin.Write([]byte(address)); err != nil {
+		return nil, closer, err
+	}
+
+	// Wait for the forked process to connect
+	conn, err := tcp.Accept()
+	if err != nil {
+		return nil, closer, err
+	}
+	if err := conn.SetReadDeadline(deadline); err != nil {
+		return nil, closer, err
+	}
+	if err := conn.SetWriteDeadline(deadline); err != nil {
+		return nil, closer, err
+	}
+	closer = func() {
+		conn.Close()
+		tcp.Close()
+	}
+	return conn, closer, nil
 }
 
 func (machine *JitMachine) prove(
@@ -66,34 +127,11 @@ func (machine *JitMachine) prove(
 ) (GoGlobalState, error) {
 	state := GoGlobalState{}
 
-	timeout := time.Now().Add(60 * time.Second)
-	tcp, err := net.ListenTCP("tcp", &net.TCPAddr{})
+	conn, closer, err := machine.listen(60 * time.Second)
+	defer closer()
 	if err != nil {
 		return state, err
 	}
-	if err := tcp.SetDeadline(timeout); err != nil {
-		return state, err
-	}
-	defer tcp.Close()
-	address := fmt.Sprintf("%v\n", tcp.Addr().String())
-
-	// Tell the spawner process about the new tcp port
-	if _, err := machine.stdin.Write([]byte(address)); err != nil {
-		return state, err
-	}
-
-	// Wait for the forked process to connect
-	conn, err := tcp.Accept()
-	if err != nil {
-		return state, err
-	}
-	if err := conn.SetReadDeadline(timeout); err != nil {
-		return state, err
-	}
-	if err := conn.SetWriteDeadline(timeout); err != nil {
-		return state, err
-	}
-	defer conn.Close()
 
 	// Tell the new process about the global state
 	gsStart := entry.start()
@@ -115,6 +153,17 @@ func (machine *JitMachine) prove(
 		return writeExact(data)
 	}
 
+	const successByte = 0x0
+	const failureByte = 0x1
+	const preimageByte = 0x2
+	const anotherByte = 0x3
+	const readyByte = 0x4
+
+	// signal that we'd like to validate
+	if err := writeUint8(successByte); err != nil {
+		return state, err
+	}
+
 	// send global state
 	if err := writeUint64(gsStart.Batch); err != nil {
 		return state, err
@@ -128,12 +177,6 @@ func (machine *JitMachine) prove(
 	if err := writeExact(gsStart.SendRoot[:]); err != nil {
 		return state, err
 	}
-
-	const successByte = 0x0
-	const failureByte = 0x1
-	const preimageByte = 0x2
-	const anotherByte = 0x3
-	const readyByte = 0x4
 
 	success := []byte{successByte}
 	another := []byte{anotherByte}
