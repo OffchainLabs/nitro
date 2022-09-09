@@ -92,7 +92,7 @@ type BroadcastClient struct {
 	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
 	idleTimeout                     time.Duration
 	txStreamer                      TransactionStreamerInterface
-	feedErrChan                     chan error
+	fatalErrChan                    chan error
 }
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
@@ -104,7 +104,7 @@ func NewBroadcastClient(
 	currentMessageCount arbutil.MessageIndex,
 	idleTimeout time.Duration,
 	txStreamer TransactionStreamerInterface,
-	feedErrChan chan error,
+	fatalErrChan chan error,
 ) *BroadcastClient {
 	return &BroadcastClient{
 		websocketUrl: websocketUrl,
@@ -112,7 +112,8 @@ func NewBroadcastClient(
 		nextSeqNum:   currentMessageCount,
 		idleTimeout:  idleTimeout,
 		txStreamer:   txStreamer,
-		feedErrChan:  feedErrChan}
+		fatalErrChan: fatalErrChan,
+	}
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
@@ -121,7 +122,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 			if errors.Is(err, ErrIncorrectChainId) || errors.Is(err, ErrIncorrectFeedServerVersion) {
-				bc.feedErrChan <- err
+				bc.fatalErrChan <- err
 				return
 			}
 			if err == nil {

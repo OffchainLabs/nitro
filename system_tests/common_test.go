@@ -252,17 +252,16 @@ func DeployOnTestL1(
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	config := arbnode.GenerateRollupConfig(false, common.Hash{}, l1info.GetAddress("RollupOwner"), chainId, common.Address{})
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
 		&l1TransactionOpts,
 		l1info.GetAddress("Sequencer"),
-		l1info.GetAddress("RollupOwner"),
 		0,
-		common.Hash{},
-		chainId,
 		headerreader.TestConfig,
 		validator.DefaultNitroMachineConfig,
+		config,
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
@@ -320,7 +319,7 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	feedErrChan := make(chan error, 10)
+	fatalErrChan := make(chan error, 10)
 	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
@@ -340,14 +339,17 @@ func createTestNodeOnL1WithConfig(
 	}
 
 	var err error
-	currentNode, err = arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
+	currentNode, err = arbnode.CreateNode(
+		ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client,
+		addresses, sequencerTxOptsPtr, nil, fatalErrChan,
+	)
 	Require(t, err)
 
 	Require(t, l2stack.Start())
 
 	l2client = ClientForStack(t, l2stack)
 
-	StartWatchChanErr(t, ctx, feedErrChan, l2stack)
+	StartWatchChanErr(t, ctx, fatalErrChan, l2stack)
 
 	return
 }
@@ -481,8 +483,9 @@ func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, acc
 	return balance
 }
 
-func requireClose(t *testing.T, s *node.Node) {
-	Require(t, s.Close())
+func requireClose(t *testing.T, s *node.Node, text ...interface{}) {
+	t.Helper()
+	Require(t, s.Close(), text...)
 }
 
 func authorizeDASKeyset(
@@ -501,15 +504,15 @@ func authorizeDASKeyset(
 	}
 	wr := bytes.NewBuffer([]byte{})
 	err := keyset.Serialize(wr)
-	Require(t, err)
+	Require(t, err, "unable to serialize DAS keyset")
 	keysetBytes := wr.Bytes()
 	sequencerInbox, err := bridgegen.NewSequencerInbox(l1info.Accounts["SequencerInbox"].Address, l1client)
-	Require(t, err)
+	Require(t, err, "unable to create sequencer inbox")
 	trOps := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	tx, err := sequencerInbox.SetValidKeyset(&trOps, keysetBytes)
-	Require(t, err)
+	Require(t, err, "unable to set valid keyset")
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
-	Require(t, err)
+	Require(t, err, "unable to ensure transaction success for setting valid keyset")
 }
 
 func setupConfigWithDAS(

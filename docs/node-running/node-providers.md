@@ -22,7 +22,6 @@ For a full guide of how to use an Arbitrum node on QuickNode, see the [QuickNode
 
 [Quicknode](https://www.quicknode.com/accounts/new-signup) provides 10 million API credits per month for Arbitrum for free.
 
-
 ## [Moralis](https://moralis.io/)
 
 Moralis allows Arbitrum users and developers to connect to both Arbitrum One (Mainnet) and Rinkeby testnet. To do so, you need to create an account and choose the node you wish to connect to. You will then be presented with a pair of URLs (Arbitrum Mainnet and Testnet) with which you can interact with directly in the command line or point your [wallet's](https://portal.arbitrum.one/#wallets) RPC endpoints to them. For full guide and more explanation, see the [Moralis's documentation](https://moralis.io/full-guide-how-to-connect-to-arbitrum-nodes/).
@@ -42,3 +41,9 @@ GetBlock is a service that provides instant API connection to full nodes of many
 For detailed steps on how to set up an Arbitrum node, check [GetBlock’s documentation](https://getblock.io/docs/)
 
 GetBlock’s pricing for Arbitrum starts from \$6 for 500K requests. Also, GetBlock offers a free plan for testing.
+
+## [Chainstack](https://chainstack.com/)
+
+Chainstack currently supports the Arbitrum Goerli testnet and Arbitrum One Mainnet (including Archive node support).
+
+See [documentation](https://chainstack.com/build-better-with-arbitrum/) for more info.

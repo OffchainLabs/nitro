@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package das
 
 import (
@@ -65,9 +68,12 @@ func TestRPC(t *testing.T) {
 
 	backendsJsonByte, err := json.Marshal([]BackendConfig{beConfig})
 	testhelpers.RequireImpl(t, err)
-	aggConf := AggregatorConfig{
-		AssumedHonest: 1,
-		Backends:      string(backendsJsonByte),
+	aggConf := DataAvailabilityConfig{
+		AggregatorConfig: AggregatorConfig{
+			AssumedHonest: 1,
+			Backends:      string(backendsJsonByte),
+		},
+		RequestTimeout: 5 * time.Second,
 	}
 	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil)
 	testhelpers.RequireImpl(t, err)

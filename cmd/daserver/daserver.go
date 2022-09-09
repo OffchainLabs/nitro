@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -68,8 +67,7 @@ func main() {
 	}
 }
 
-func printSampleUsage() {
-	progname := os.Args[0]
+func printSampleUsage(progname string) {
 	fmt.Printf("\n")
 	fmt.Printf("Sample usage:                  %s --help \n", progname)
 }
@@ -126,20 +124,14 @@ func startup() error {
 	// Some different defaults to DAS config in a node.
 	das.DefaultDataAvailabilityConfig.Enable = true
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
-		printSampleUsage()
-		if !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+		util.HandleError(err, printSampleUsage)
 		return nil
 	}
 	if !(serverConfig.EnableRPC || serverConfig.EnableREST) {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
+		util.HandleError(nil, printSampleUsage)
 		fmt.Printf("Please specify at least one of --enable-rest or --enable-rpc\n")
-		printSampleUsage()
 		return nil
 	}
 
@@ -148,12 +140,15 @@ func startup() error {
 	log.Root().SetHandler(glogger)
 
 	if serverConfig.Metrics {
+		if len(serverConfig.MetricsServer.Addr) == 0 {
+			fmt.Printf("Metrics is enabled, but missing --metrics-server.addr")
+			return nil
+		}
+
 		go metrics.CollectProcessMetrics(serverConfig.MetricsServer.UpdateInterval)
 
-		if serverConfig.MetricsServer.Addr != "" {
-			address := fmt.Sprintf("%v:%v", serverConfig.MetricsServer.Addr, serverConfig.MetricsServer.Port)
-			exp.Setup(address)
-		}
+		address := fmt.Sprintf("%v:%v", serverConfig.MetricsServer.Addr, serverConfig.MetricsServer.Port)
+		exp.Setup(address)
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -167,9 +162,10 @@ func startup() error {
 		return err
 	}
 
+	vcsRevision, vcsTime := util.GetVersion()
 	var rpcServer *http.Server
 	if serverConfig.EnableRPC {
-		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort)
+		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
 		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, dasImpl)
 		if err != nil {
@@ -179,7 +175,7 @@ func startup() error {
 
 	var restServer *das.RestfulDasServer
 	if serverConfig.EnableREST {
-		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort)
+		log.Info("Starting REST server", "addr", serverConfig.RESTAddr, "port", serverConfig.RESTPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
 		restServer, err = das.NewRestfulDasServer(serverConfig.RESTAddr, serverConfig.RESTPort, serverConfig.RESTServerTimeouts, dasImpl)
 		if err != nil {

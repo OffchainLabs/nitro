@@ -11,13 +11,12 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	grab "github.com/cavaliergopher/grab/v3"
-	extract "github.com/codeclysm/extract/v3"
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/pkg/errors"
@@ -27,30 +26,24 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
-	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -121,249 +114,14 @@ func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.W
 	return devAddr, nil
 }
 
-func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
-	if initConfig.Url == "" {
-		return "", nil
-	}
-	if strings.HasPrefix(initConfig.Url, "file:") {
-		return initConfig.Url[5:], nil
-	}
-	grabclient := grab.NewClient()
-	log.Info("Downloading initial database", "url", initConfig.Url)
-	fmt.Println()
-	printTicker := time.NewTicker(time.Second)
-	defer printTicker.Stop()
-	attempt := 0
-	for {
-		attempt++
-		req, err := grab.NewRequest(initConfig.DownloadPath, initConfig.Url)
-		if err != nil {
-			panic(err)
-		}
-		resp := grabclient.Do(req.WithContext(ctx))
-		firstPrintTime := time.Now().Add(time.Second * 2)
-	updateLoop:
-		for {
-			select {
-			case <-printTicker.C:
-				if time.Now().After(firstPrintTime) {
-					bps := resp.BytesPerSecond()
-					if bps == 0 {
-						bps = 1 // avoid division by zero
-					}
-					done := resp.BytesComplete()
-					total := resp.Size()
-					timeRemaining := (time.Second * time.Duration(total-done)) / time.Duration(bps)
-					timeRemaining = timeRemaining.Truncate(time.Millisecond * 10)
-					fmt.Printf("\033[2K\r  transferred %v / %v bytes (%.2f%%) [%.2fMbps, %s remaining]",
-						done,
-						total,
-						resp.Progress()*100,
-						bps*8/1000000,
-						timeRemaining.String())
-				}
-			case <-resp.Done:
-				if err := resp.Err(); err != nil {
-					fmt.Printf("\033[2K\r  attempt %d failed: %v", attempt, err)
-					break updateLoop
-				}
-				fmt.Printf("\n")
-				log.Info("Download done", "filename", resp.Filename, "duration", resp.Duration())
-				fmt.Println()
-				return resp.Filename, nil
-			case <-ctx.Done():
-				return "", ctx.Err()
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(initConfig.DownloadPoll):
-		}
-	}
-}
-
-func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) error {
-	statedb, err := blockChain.State()
-	if err != nil {
-		return err
-	}
-	currentArbosState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
-	if err != nil {
-		return err
-	}
-	chainId, err := currentArbosState.ChainId()
-	if err != nil {
-		return err
-	}
-	if chainId.Cmp(expectedChainId) != 0 {
-		return fmt.Errorf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", expectedChainId, chainId)
-	}
-	return nil
-}
-
-func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig) (ethdb.Database, *core.BlockChain, error) {
-	if !config.Init.Force {
-		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
-			if chainConfig := arbnode.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
-				readOnlyDb.Close()
-				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
-				if err != nil {
-					return nil, nil, err
-				}
-				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
-				if err != nil {
-					return nil, nil, err
-				}
-				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
-				if err != nil {
-					return nil, nil, err
-				}
-				return chainDb, l2BlockChain, nil
-			}
-			readOnlyDb.Close()
-		}
-	}
-
-	initFile, err := downloadInit(ctx, &config.Init)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if initFile != "" {
-		reader, err := os.Open(initFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("couln't open init '%v' archive: %w", initFile, err)
-		}
-		stat, err := reader.Stat()
-		if err != nil {
-			return nil, nil, err
-		}
-		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
-		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
-		}
-	}
-
-	var initDataReader statetransfer.InitDataReader = nil
-
-	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if config.Init.ImportFile != "" {
-		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error reading import file: %w", err)
-		}
-	}
-	if config.Init.Empty {
-		if initDataReader != nil {
-			return nil, nil, errors.New("multiple init methods supplied")
-		}
-		initData := statetransfer.ArbosInitializationInfo{
-			NextBlockNumber: 0,
-		}
-		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
-	}
-	if config.Init.DevInit {
-		if initDataReader != nil {
-			return nil, nil, errors.New("multiple init methods supplied")
-		}
-		initData := statetransfer.ArbosInitializationInfo{
-			NextBlockNumber: config.Init.DevInitBlockNum,
-			Accounts: []statetransfer.AccountInitializationInfo{
-				{
-					Addr:       common.HexToAddress(config.Init.DevInitAddr),
-					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-					Nonce:      0,
-				},
-			},
-		}
-		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
-	}
-
-	var chainConfig *params.ChainConfig
-
-	var l2BlockChain *core.BlockChain
-	txIndexWg := sync.WaitGroup{}
-	if initDataReader == nil {
-		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
-		if chainConfig == nil {
-			return nil, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
-		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
-		if err != nil {
-			panic(err)
-		}
-		genesisBlockNr := chainConfig.ArbitrumChainParams.GenesisBlockNum
-		genesisBlock := l2BlockChain.GetBlockByNumber(genesisBlockNr)
-		if genesisBlock != nil {
-			log.Info("loaded genesis block from database", "number", genesisBlockNr, "hash", genesisBlock.Hash())
-		} else {
-			// The node will probably die later, but might as well not kill it here?
-			log.Error("database missing genesis block", "number", genesisBlockNr)
-		}
-		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
-	} else {
-		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
-		if err != nil {
-			panic(err)
-		}
-		chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNr)
-		if err != nil {
-			panic(err)
-		}
-		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
-		ancients, err := chainDb.Ancients()
-		if err != nil {
-			panic(err)
-		}
-		if ancients < genesisBlockNr {
-			panic(fmt.Sprint(genesisBlockNr, " pre-init blocks required, but only ", ancients, " found"))
-		}
-		if ancients > genesisBlockNr {
-			storedGenHash := rawdb.ReadCanonicalHash(chainDb, genesisBlockNr)
-			storedGenBlock := rawdb.ReadBlock(chainDb, storedGenHash, genesisBlockNr)
-			if storedGenBlock.Header().Root == (common.Hash{}) {
-				panic(fmt.Errorf("Attempting to init genesis block %x, but this block is in database with no state root", genesisBlockNr))
-			}
-			log.Warn("Re-creating genesis though it seems to exist in database", "blockNr", genesisBlockNr)
-		}
-		log.Info("Initializing", "ancients", ancients, "genesisBlockNr", genesisBlockNr)
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, &config.Node, config.Init.AccountsPerSync)
-		if err != nil {
-			panic(err)
-		}
-	}
-	txIndexWg.Wait()
-	err = chainDb.Sync()
-	if err != nil {
-		panic(err)
-	}
-
-	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return chainDb, l2BlockChain, nil
-}
-
 func main() {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
-	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
+	args := os.Args[1:]
+	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
 	if err != nil {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
-		printSampleUsage(os.Args[0])
-		if !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+		util.HandleError(err, printSampleUsage)
 
 		return
 	}
@@ -372,6 +130,7 @@ func main() {
 		panic(err)
 	}
 
+	vcsRevision, vcsTime := util.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
@@ -434,6 +193,7 @@ func main() {
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
+			nodeConfig.Node.BlockValidator.ArbitratorValidator = true
 		}
 	}
 
@@ -456,7 +216,11 @@ func main() {
 		return
 	}
 
-	if nodeConfig.Node.Archive && nodeConfig.Node.TxLookupLimit != 0 {
+	if nodeConfig.Node.Archive {
+		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
+		nodeConfig.Node.Caching.Archive = true
+	}
+	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
 	}
@@ -472,6 +236,7 @@ func main() {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
+	stackConf.Version = vcsRevision
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
@@ -488,10 +253,10 @@ func main() {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
 	if err != nil {
-		printSampleUsage(os.Args[0])
-		fmt.Printf("%s\n", err.Error())
+		util.HandleError(err, printSampleUsage)
+		return
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
@@ -517,19 +282,20 @@ func main() {
 		}
 	}
 
-	feedErrChan := make(chan error, 10)
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
+	fatalErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
 		chainDb,
 		arbDb,
-		&nodeConfig.Node,
+		&NodeConfigFetcher{liveNodeConfig},
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
 		l1TransactionOpts,
 		daSigner,
-		feedErrChan,
+		fatalErrChan,
 	)
 	if err != nil {
 		panic(err)
@@ -563,8 +329,8 @@ func main() {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	select {
-	case err := <-feedErrChan:
-		log.Error("shutting down because broadcaster stopped", "err", err)
+	case err := <-fatalErrChan:
+		log.Error("shutting down due to fatal error", "err", err)
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
@@ -577,54 +343,13 @@ func main() {
 	}
 }
 
-type InitConfig struct {
-	Force           bool          `koanf:"force"`
-	Url             string        `koanf:"url"`
-	DownloadPath    string        `koanf:"download-path"`
-	DownloadPoll    time.Duration `koanf:"download-poll"`
-	DevInit         bool          `koanf:"dev-init"`
-	DevInitAddr     string        `koanf:"dev-init-address"`
-	DevInitBlockNum uint64        `koanf:"dev-init-blocknum"`
-	Empty           bool          `koanf:"empty"`
-	AccountsPerSync uint          `koanf:"accounts-per-sync"`
-	ImportFile      string        `koanf:"import-file"`
-	ThenQuit        bool          `koanf:"then-quit"`
-}
-
-var InitConfigDefault = InitConfig{
-	Force:           false,
-	Url:             "",
-	DownloadPath:    "/tmp/",
-	DownloadPoll:    time.Minute,
-	DevInit:         false,
-	DevInitAddr:     "",
-	DevInitBlockNum: 0,
-	ImportFile:      "",
-	AccountsPerSync: 100000,
-	ThenQuit:        false,
-}
-
-func InitConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".force", InitConfigDefault.Force, "if true: in case database exists init code will be reexecuted and genesis block compared to database")
-	f.String(prefix+".url", InitConfigDefault.Url, "url to download initializtion data - will poll if download fails")
-	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")
-	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
-	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
-	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddr, "Address of dev-account. Leave empty to use the dev-wallet.")
-	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
-	f.Bool(prefix+".empty", InitConfigDefault.DevInit, "init with empty state")
-	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
-	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
-	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
-}
-
 type NodeConfig struct {
-	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	Node          arbnode.Config                  `koanf:"node"`
+	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
-	LogLevel      int                             `koanf:"log-level"`
-	LogType       string                          `koanf:"log-type"`
+	LogLevel      int                             `koanf:"log-level" reload:"hot"`
+	LogType       string                          `koanf:"log-type" reload:"hot"`
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
@@ -673,6 +398,40 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	c.L2.ResolveDirectoryNames(c.Persistent.Chain)
 
 	return nil
+}
+
+func (c *NodeConfig) ShallowClone() *NodeConfig {
+	config := &NodeConfig{}
+	*config = *c
+	return config
+}
+
+func (c *NodeConfig) CanReload(new *NodeConfig) error {
+	var check func(node, other reflect.Value, path string)
+	var err error
+
+	check = func(node, value reflect.Value, path string) {
+		if node.Kind() != reflect.Struct {
+			return
+		}
+
+		for i := 0; i < node.NumField(); i++ {
+			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
+			dot := path + "." + node.Type().Field(i).Name
+
+			first := node.Field(i).Interface()
+			other := value.Field(i).Interface()
+
+			if !hot && !reflect.DeepEqual(first, other) {
+				err = fmt.Errorf("Illegal change to %v%v%v", colors.Red, dot, colors.Clear)
+			} else {
+				check(node.Field(i), value.Field(i), dot)
+			}
+		}
+	}
+
+	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
+	return err
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
@@ -748,9 +507,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		case 0:
 			return nil, nil, nil, nil, nil, errors.New("must specify --l2.chain-id to choose rollup")
 		case 42161:
-			return nil, nil, nil, nil, nil, errors.New("mainnet not supported yet")
+			if err := applyArbitrumOneParameters(k); err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+			chainFound = true
 		case 42170:
-			if err := applyArbitrumNovaRollupParameters(k); err != nil {
+			if err := applyArbitrumNovaParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
 			chainFound = true
@@ -827,7 +589,23 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
-func applyArbitrumNovaRollupParameters(k *koanf.Koanf) error {
+func applyArbitrumOneParameters(k *koanf.Koanf) error {
+	return k.Load(confmap.Provider(map[string]interface{}{
+		"persistent.chain":                   "arb1",
+		"node.forwarding-target":             "https://arb1.arbitrum.io/rpc",
+		"node.feed.input.url":                "wss://arb1.arbitrum.io/feed",
+		"l1.rollup.bridge":                   "0x8315177ab297ba92a06054ce80a67ed4dbd7ed3a",
+		"l1.rollup.inbox":                    "0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f",
+		"l1.rollup.rollup":                   "0x5ef0d09d1e6204141b4d37530808ed19f60fba35",
+		"l1.rollup.sequencer-inbox":          "0x1c479675ad559dc151f6ec7ed3fbf8cee79582b6",
+		"l1.rollup.validator-utils":          "0x9e40625f52829cf04bc4839f186d621ee33b0e67",
+		"l1.rollup.validator-wallet-creator": "0x960953f7c69cd2bc2322db9223a815c680ccc7ea",
+		"l1.rollup.deployed-at":              15411056,
+		"l2.chain-id":                        42161,
+	}, "."), nil)
+}
+
+func applyArbitrumNovaParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain":                                       "nova",
 		"node.forwarding-target":                                 "https://nova.arbitrum.io/rpc",
@@ -870,7 +648,7 @@ func applyArbitrumRollupRinkebyTestnetParameters(k *koanf.Koanf) error {
 		"node.forwarding-target":             "https://rinkeby.arbitrum.io/rpc",
 		"node.feed.input.url":                "wss://rinkeby.arbitrum.io/feed",
 		"l1.rollup.bridge":                   "0x85c720444e436e1f9407e0c3895d3fe149f41168",
-		"l1.rollup.inbox":                    "0xd394acec33ca1c7fc14212b41892bd82deddda94",
+		"l1.rollup.inbox":                    "0x578BAde599406A8fE3d24Fd7f7211c0911F5B29e",
 		"l1.rollup.rollup":                   "0x71c6093c564eddcfaf03481c3f59f88849f1e644",
 		"l1.rollup.sequencer-inbox":          "0x957c9c64f7c2ce091e56af3f33ab20259096355f",
 		"l1.rollup.validator-utils":          "0x0ea7372338a589e7f0b00e463a53aa464ef04e17",
@@ -886,59 +664,95 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	}, "."), nil)
 }
 
-func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
-	var transactions types.Transactions
-	blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
-	reReadNumber := rawdb.ReadHeaderNumber(chainDb, blockHash)
-	if reReadNumber == nil {
-		return false
+type LiveNodeConfig struct {
+	stopwaiter.StopWaiter
+
+	mutex  sync.RWMutex
+	args   []string
+	config *NodeConfig
+}
+
+func (c *LiveNodeConfig) get() *NodeConfig {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.config
+}
+
+func (c *LiveNodeConfig) set(config *NodeConfig) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if err := c.config.CanReload(config); err != nil {
+		return err
 	}
-	for ; ; lastBlock-- {
-		blockHash := rawdb.ReadCanonicalHash(chainDb, lastBlock)
-		block := rawdb.ReadBlock(chainDb, blockHash, lastBlock)
-		transactions = block.Transactions()
-		if len(transactions) == 0 {
-			if lastBlock == 0 {
-				return true
+	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
+		return err
+	}
+	c.config = config
+	return nil
+}
+
+func (c *LiveNodeConfig) Start(ctxIn context.Context) {
+	c.StopWaiter.Start(ctxIn)
+
+	sigusr1 := make(chan os.Signal, 1)
+	signal.Notify(sigusr1, syscall.SIGUSR1)
+
+	c.LaunchThread(func(ctx context.Context) {
+		for {
+			reloadInterval := c.config.Conf.ReloadInterval
+			if reloadInterval == 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-sigusr1:
+					log.Info("Configuration reload triggered by SIGUSR1.")
+				}
+			} else {
+				timer := time.NewTimer(reloadInterval)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-sigusr1:
+					timer.Stop()
+					log.Info("Configuration reload triggered by SIGUSR1.")
+				case <-timer.C:
+				}
 			}
-			continue
+			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
+			if err != nil {
+				log.Error("error parsing live config", "error", err.Error())
+				continue
+			}
+			err = c.set(nodeConfig)
+			if err != nil {
+				log.Error("error updating live config", "error", err.Error())
+				continue
+			}
 		}
-		entry := rawdb.ReadTxLookupEntry(chainDb, transactions[len(transactions)-1].Hash())
-		return (entry != nil)
+	})
+}
+
+func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
+	return &LiveNodeConfig{
+		args:   args,
+		config: config,
 	}
 }
 
-func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, txIndexWg *sync.WaitGroup) {
-	lastBlock := chainConfig.ArbitrumChainParams.GenesisBlockNum
-	if lastBlock == 0 {
-		// no Tx, no need to update index
-		return
-	}
+type NodeConfigFetcher struct {
+	*LiveNodeConfig
+}
 
-	lastBlock -= 1
-	if testTxIndexUpdated(chainDb, lastBlock) {
-		return
-	}
+func (f *NodeConfigFetcher) Get() *arbnode.Config {
+	return &f.LiveNodeConfig.get().Node
+}
 
-	txIndexWg.Add(1)
-	log.Info("writing Tx lookup entries")
+func (f *NodeConfigFetcher) Start(ctx context.Context) {
+	f.LiveNodeConfig.Start(ctx)
+}
 
-	go func() {
-		batch := chainDb.NewBatch()
-		for blockNum := uint64(0); blockNum <= lastBlock; blockNum++ {
-			blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
-			block := rawdb.ReadBlock(chainDb, blockHash, blockNum)
-			rawdb.WriteTxLookupEntriesByBlock(batch, block)
-			rawdb.WriteHeaderNumber(batch, block.Header().Hash(), blockNum)
-			if (batch.ValueSize() >= ethdb.IdealBatchSize) || blockNum == lastBlock {
-				err := batch.Write()
-				if err != nil {
-					panic(err)
-				}
-				batch.Reset()
-			}
-		}
-		txIndexWg.Done()
-		log.Info("Tx lookup entries written")
-	}()
+func (f *NodeConfigFetcher) StopAndWait() {
+	f.LiveNodeConfig.StopAndWait()
 }
