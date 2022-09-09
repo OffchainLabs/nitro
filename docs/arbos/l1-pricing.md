@@ -50,4 +50,6 @@ A second term is added to the L1 Gas Basefee, based on the derivative of the sur
 
 ## Getting L1 Fee Info 
 
-The L1 gas basefee can be queried via [`ArbGasInfo.getL1BaseFeeEstimate`](../arbos/precompiles.md). To estimate the L1 fee a transaction will use, the [`NodeInterface.gasEstimateComponents`](../arbos/gas.md) or [`NodeInterface.gasEstimateL1Component`](../arbos/gas.md) method can be used. Arbitrum transaction receipts include a `gasUsedForL1` field, showing the amount of gas used on L1 in units of L2 gas.
+The L1 gas basefee can be queried via [`ArbGasInfo.getL1BaseFeeEstimate`](precompiles.md). To estimate the L1 fee a transaction will use, the [`NodeInterface.gasEstimateComponents`](gas.md) or [`NodeInterface.gasEstimateL1Component`](gas.md) method can be used.
+
+ Arbitrum transaction receipts include a `gasUsedForL1` field, showing the amount of gas used on L1 in units of L2 gas.
