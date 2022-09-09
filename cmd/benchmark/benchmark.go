@@ -133,13 +133,16 @@ func main() {
 	moduleRoot, err := machineConfig.ReadLatestWasmModuleRoot()
 	Require(err)
 
+	headerReaderConfig := headerreader.TestConfig
+	headerReaderConfig.OldHeaderTimeout = 20 * time.Minute
+
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
 		l1Auth,
 		sequencerAddr,
 		0,
-		headerreader.TestConfig,
+		headerReaderConfig,
 		machineConfig,
 		arbnode.GenerateRollupConfig(false, moduleRoot, l1Auth.From, l2ChainId, common.Address{}),
 	)
