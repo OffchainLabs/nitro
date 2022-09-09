@@ -20,7 +20,7 @@ abstract contract AbsRollupUserLogic is
     using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
-        require(isValidator[msg.sender] || _chainIdChanged() || _validatorIsAfk(), "NOT_VALIDATOR");
+        require(isValidator[msg.sender] || validatorWhitelistDisabled, "NOT_VALIDATOR");
         _;
     }
 
@@ -36,6 +36,12 @@ abstract contract AbsRollupUserLogic is
         // TODO: what is the max time validators can be afk?
         if (latestNode.createdAtBlock + confirmPeriodBlocks * 2 < block.number) return true;
         return false;
+    }
+
+    function removeWhitelistAfterFork() external {
+        require(!validatorWhitelistDisabled, "WHITELIST_DISABLED");
+        require(_chainIdChanged(), "CHAIN_ID_NOT_CHANGED");
+        validatorWhitelistDisabled = true;
     }
 
     function isERC20Enabled() public view override returns (bool) {

@@ -62,11 +62,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         _;
     }
 
-    uint256 internal constant FORK_DELAY_BLOCKS = 1;
-    uint256 internal constant FORK_FUTURE_BLOCKS = 1;
-    uint256 internal constant FORK_DELAY_SECONDS = 1;
-    uint256 internal constant FORK_FUTURE_SECONDS = 1;
-
     uint256 internal immutable deployTimeChainId = block.chainid;
 
     function _chainIdChanged() internal view returns (bool) {
@@ -100,10 +95,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     /// @inheritdoc ISequencerInbox
     function removeDelayAfterFork() external {
         if (!_chainIdChanged()) revert NotForked();
-        maxTimeVariation.delayBlocks = FORK_DELAY_BLOCKS;
-        maxTimeVariation.futureBlocks = FORK_FUTURE_BLOCKS;
-        maxTimeVariation.delaySeconds = FORK_DELAY_SECONDS;
-        maxTimeVariation.futureSeconds = FORK_FUTURE_SECONDS;
+        maxTimeVariation = ISequencerInbox.MaxTimeVariation({
+            delayBlocks: 1,
+            futureBlocks: 1,
+            delaySeconds: 1,
+            futureSeconds: 1
+        });
     }
 
     /// @inheritdoc ISequencerInbox
