@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,12 +34,18 @@ import (
 const maxTxDataSize = 112065
 
 type txQueueItem struct {
-	tx         *types.Transaction
-	resultChan chan<- error
-	ctx        context.Context
+	tx             *types.Transaction
+	resultChan     chan<- error
+	returnedResult bool
+	ctx            context.Context
 }
 
 func (i *txQueueItem) returnResult(err error) {
+	if i.returnedResult {
+		log.Error("attempting to return result to already finished queue item", "err", err)
+		return
+	}
+	i.returnedResult = true
 	i.resultChan <- err
 	close(i.resultChan)
 }
@@ -108,6 +115,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	queueItem := txQueueItem{
 		tx,
 		resultChan,
+		false,
 		ctx,
 	}
 	select {
@@ -209,10 +217,28 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	return true
 }
 
-func (s *Sequencer) sequenceTransactions(ctx context.Context) bool {
+var sequencerInternalError = errors.New("sequencer internal error")
+
+func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var txes types.Transactions
 	var queueItems []txQueueItem
 	var totalBatchSize int
+
+	defer func() {
+		panic := recover()
+		if panic != nil {
+			log.Error("sequencer block creation panicked", "panic", panic, "backtrace", string(debug.Stack()))
+			// Return an internal error to any queue items we were trying to process
+			for _, item := range queueItems {
+				if !item.returnedResult {
+					item.returnResult(sequencerInternalError)
+				}
+			}
+			// Wait for the MaxBlockSpeed until attempting to create a block again
+			returnValue = true
+		}
+	}()
+
 	for {
 		var queueItem txQueueItem
 		if s.txRetryQueue.Len() > 0 {
@@ -393,7 +419,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
-		madeBlock := s.sequenceTransactions(ctx)
+		madeBlock := s.createBlock(ctx)
 		if madeBlock {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 			return time.Until(nextBlock)
