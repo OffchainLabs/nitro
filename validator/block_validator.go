@@ -58,39 +58,67 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable                   bool   `koanf:"enable"`
-	OutputPath               string `koanf:"output-path"`
-	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
-	CurrentModuleRoot        string `koanf:"current-module-root"`
-	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
-	StorePreimages           bool   `koanf:"store-preimages"`
+	Enable                   bool                          `koanf:"enable"`
+	ArbitratorValidator      bool                          `koanf:"arbitrator-validator"`
+	JitValidator             bool                          `koanf:"jit-validator"`
+	JitValidatorCranelift    bool                          `koanf:"jit-validator-cranelift"`
+	OutputPath               string                        `koanf:"output-path"`
+	ConcurrentRunsLimit      int                           `koanf:"concurrent-runs-limit"`
+	CurrentModuleRoot        string                        `koanf:"current-module-root"`
+	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"`
+	StorePreimages           bool                          `koanf:"store-preimages"`
+	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
+}
+
+type BlockValidatorDangerousConfig struct {
+	ResetBlockValidation bool `koanf:"reset-block-validation"`
 }
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block validator")
+	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
+	f.Bool(prefix+".arbitrator-validator", DefaultBlockValidatorConfig.ArbitratorValidator, "enable the complete, arbitrator block validator")
+	f.Bool(prefix+".jit-validator", DefaultBlockValidatorConfig.JitValidator, "enable the faster, jit-accelerated block validator")
+	f.Bool(prefix+".jit-validator-cranelift", DefaultBlockValidatorConfig.JitValidatorCranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".store-preimages", DefaultBlockValidatorConfig.StorePreimages, "store preimages of running machines (higher memory cost, better debugging, potentially better performance)")
+	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
+}
+
+func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
+	ArbitratorValidator:      false,
+	JitValidator:             true,
+	JitValidatorCranelift:    false,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
+	Dangerous:                DefaultBlockValidatorDangerousConfig,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
+	ArbitratorValidator:      false,
+	JitValidator:             false,
+	JitValidatorCranelift:    true,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
+	Dangerous:                DefaultBlockValidatorDangerousConfig,
+}
+
+var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
+	ResetBlockValidation: false,
 }
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
@@ -142,7 +170,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 		return err
 	}
 
-	if !exists {
+	if !exists || v.config.Dangerous.ResetBlockValidation {
 		// The db contains no validation info; start from the beginning.
 		// TODO: this skips validating the genesis block.
 		atomic.StoreUint64(&v.lastBlockValidated, v.genesisBlockNum)
@@ -372,7 +400,10 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	if v.config.CurrentModuleRoot != "current" {
 		return nil
 	}
-	return fmt.Errorf("unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v", hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot)
+	return fmt.Errorf(
+		"unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v",
+		hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot,
+	)
 }
 
 func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
@@ -394,33 +425,54 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	})
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
-		before := time.Now()
-		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, moduleRoot)
-		duration := time.Since(before)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				log.Info(
-					"Validation of block canceled", "blockNr", entry.BlockNumber,
-					"blockHash", entry.BlockHash, "err", err,
-				)
-			} else {
+
+		type replay = func(context.Context, *validationEntry, common.Hash) (GoGlobalState, []byte, error)
+		var delayedMsg []byte
+
+		validate := func(replay replay, jit bool) bool {
+			gsEnd, delayed, err := replay(ctx, entry, moduleRoot)
+			delayedMsg = delayed
+
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					log.Info(
+						"Validation of block canceled", "blockNr", entry.BlockNumber,
+						"blockHash", entry.BlockHash, "jit", jit, "err", err,
+					)
+				} else {
+					log.Error(
+						"Validation of block failed", "blockNr", entry.BlockNumber,
+						"blockHash", entry.BlockHash, "moduleRoot", moduleRoot,
+						"jit", jit, "err", err,
+					)
+				}
+				return false
+			}
+
+			gsExpected := entry.expectedEnd()
+			resultValid := gsEnd == gsExpected
+
+			if !resultValid {
 				log.Error(
-					"Validation of block failed", "blockNr", entry.BlockNumber,
-					"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "err", err,
+					"validation failed", "moduleRoot", moduleRoot, "got", gsEnd,
+					"expected", gsExpected, "expHeader", entry.BlockHeader, "jit", jit,
 				)
 			}
-			return
+			return resultValid
 		}
-		gsExpected := entry.expectedEnd()
-		resultValid := gsEnd == gsExpected
 
-		writeThisBlock := false
-		if !resultValid {
-			writeThisBlock = true
+		before := time.Now()
+		writeThisBlock := false // we write the block if either fail
+
+		if v.config.ArbitratorValidator {
+			writeThisBlock = writeThisBlock || !validate(v.executeBlock, false)
+		}
+		if v.config.JitValidator {
+			writeThisBlock = writeThisBlock || !validate(v.jitBlock, true)
 		}
 
 		if writeThisBlock {
-			err = v.writeToFile(
+			err := v.writeToFile(
 				entry, moduleRoot, entry.StartPosition, entry.EndPosition,
 				entry.Preimages, seqMsg, delayedMsg,
 			)
@@ -429,17 +481,9 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 			}
 		}
 
-		if !resultValid {
-			log.Error(
-				"validation failed", "moduleRoot", moduleRoot, "got", gsEnd,
-				"expected", gsExpected, "expHeader", entry.BlockHeader,
-			)
-			return
-		}
-
 		log.Info(
 			"validation succeeded", "blockNr", entry.BlockNumber,
-			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", duration,
+			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", time.Since(before),
 		)
 	}
 
@@ -839,8 +883,15 @@ func (v *BlockValidator) Initialize() error {
 			return errors.New("current-module-root config value illegal")
 		}
 	}
-	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true); err != nil {
-		return err
+	if v.config.ArbitratorValidator {
+		if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, false); err != nil {
+			return err
+		}
+	}
+	if v.config.JitValidator {
+		if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, true); err != nil {
+			return err
+		}
 	}
 
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)

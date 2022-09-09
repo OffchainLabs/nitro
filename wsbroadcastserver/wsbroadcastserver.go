@@ -100,16 +100,16 @@ type WSBroadcastServer struct {
 	clientManager *ClientManager
 	catchupBuffer CatchupBuffer
 	chainId       uint64
-	feedErrChan   chan error
+	fatalErrChan  chan error
 }
 
-func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer, chainId uint64, feedErrChan chan error) *WSBroadcastServer {
+func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
 	return &WSBroadcastServer{
 		settings:      settings,
 		started:       false,
 		catchupBuffer: catchupBuffer,
 		chainId:       chainId,
-		feedErrChan:   feedErrChan,
+		fatalErrChan:  fatalErrChan,
 	}
 }
 
@@ -320,7 +320,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		s.acceptDescMutex.Unlock()
 		if err != nil {
 			log.Warn("error in poller.Resume", "err", err)
-			s.feedErrChan <- errors.Wrap(err, "error in poller.Resume")
+			s.fatalErrChan <- errors.Wrap(err, "error in poller.Resume")
 			return
 		}
 	})

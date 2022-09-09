@@ -81,9 +81,9 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y make && \
     cargo install --force cbindgen
 COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
-COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/jit arbitrator/jit
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
 FROM scratch as prover-header-export
@@ -93,17 +93,27 @@ FROM rust:1.61-slim-bullseye as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-10-dev
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-12 main' && \
+    apt-get update && \
+    apt-get install -y llvm-12-dev libclang-common-12-dev
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
-RUN mkdir arbitrator/prover/src && \
+COPY arbitrator/jit/Cargo.toml arbitrator/jit/
+RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
+    echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
-    cargo build --manifest-path arbitrator/Cargo.toml --release --lib
+    cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
+    rm arbitrator/jit/src/lib.rs
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/jit arbitrator/jit
+COPY --from=brotli-library-export / target/
 RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
 
 FROM scratch as prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -190,8 +200,9 @@ ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
 FROM nitro-node-slim as nitro-node
 USER root
-COPY --from=node-builder /workspace/target/bin/daserver /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/datool /usr/local/bin/
+COPY --from=prover-export /bin/jit                        /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
@@ -208,8 +219,9 @@ FROM nitro-node as nitro-node-dev
 USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
-COPY --from=node-builder /workspace/target/bin/deploy /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
+COPY --from=prover-export /bin/jit                                         /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
 COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
