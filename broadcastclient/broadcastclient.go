@@ -299,14 +299,14 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							valid, err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
-								bc.feedErrChan <- errors.Wrapf(err, "error validating feed signature %v", message.SequenceNumber)
+								bc.fatalErrChan <- errors.Wrapf(err, "error validating feed signature %v", message.SequenceNumber)
 								atomic.AddInt32(&bc.errorCount, 1)
 								continue
 							}
 
 							if !valid {
 								log.Error("invalid feed signature", "sequence number", message.SequenceNumber)
-								bc.feedErrChan <- errors.Errorf("invalid feed signature for %v", message.SequenceNumber)
+								bc.fatalErrChan <- errors.Errorf("invalid feed signature for %v", message.SequenceNumber)
 								atomic.AddInt32(&bc.errorCount, 1)
 								continue
 							}
