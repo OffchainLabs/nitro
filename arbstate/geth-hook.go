@@ -68,6 +68,9 @@ func init() {
 	}
 
 	core.RenderRPCError = func(data []byte) error {
+		if len(data) < 4 {
+			return nil
+		}
 		var id [4]byte
 		copy(id[:], data[:4])
 		errABI, found := precompileErrors[id]
