@@ -80,12 +80,14 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	Require(t, err)
 	chainId := bigChainId.Uint64()
 
-	relayServerConf := *newBroadcasterConfigTest()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
-	relayClientConf := *newBroadcastClientConfigTest(port)
+	feedConfig := broadcastclient.FeedConfig{
+		Input:  *newBroadcastClientConfigTest(port),
+		Output: *newBroadcasterConfigTest(),
+	}
 
 	feedErrChan := make(chan error, 10)
-	currentRelay := relay.NewRelay(relayServerConf, relayClientConf, chainId, feedErrChan)
+	currentRelay := relay.NewRelay(feedConfig, chainId, feedErrChan)
 	err = currentRelay.Start(ctx)
 	Require(t, err)
 	defer currentRelay.StopAndWait()

@@ -133,6 +133,16 @@ func (s *WSBroadcastServer) Initialize() error {
 }
 
 func (s *WSBroadcastServer) Start(ctx context.Context) error {
+	// Prepare handshake header writer from http.Header mapping.
+	header := ws.HandshakeHeaderHTTP(http.Header{
+		HTTPHeaderFeedServerVersion: []string{strconv.Itoa(FeedServerVersion)},
+		HTTPHeaderChainId:           []string{strconv.FormatUint(s.chainId, 10)},
+	})
+
+	return s.StartWithHeader(ctx, header)
+}
+
+func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
 	s.startMutex.Lock()
 	defer s.startMutex.Unlock()
 	if s.started {
@@ -149,12 +159,6 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	handle := func(conn net.Conn) {
 
 		safeConn := deadliner{conn, s.settings.IOTimeout}
-
-		// Prepare handshake header writer from http.Header mapping.
-		header := ws.HandshakeHeaderHTTP(http.Header{
-			HTTPHeaderFeedServerVersion: []string{strconv.Itoa(FeedServerVersion)},
-			HTTPHeaderChainId:           []string{strconv.FormatUint(s.chainId, 10)},
-		})
 
 		var feedClientVersionSeen bool
 		var requestedSeqNum arbutil.MessageIndex

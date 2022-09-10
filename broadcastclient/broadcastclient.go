@@ -49,9 +49,11 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type Config struct {
-	RequireSignature bool          `koanf:"require-signature"`
-	Timeout          time.Duration `koanf:"timeout"`
-	URLs             []string      `koanf:"url"`
+	RequireChainId     bool          `koanf:"require-chain-id"`
+	RequireFeedVersion bool          `koanf:"require-feed-version"`
+	RequireSignature   bool          `koanf:"require-signature"`
+	Timeout            time.Duration `koanf:"timeout"`
+	URLs               []string      `koanf:"url"`
 }
 
 func (c *Config) Enable() bool {
@@ -59,15 +61,19 @@ func (c *Config) Enable() bool {
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
+	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
 	f.Bool(prefix+".require-signature", DefaultConfig.RequireSignature, "require all feed messages to be signed")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
 	f.StringSlice(prefix+".url", DefaultConfig.URLs, "URL of sequencer feed source")
 }
 
 var DefaultConfig = Config{
-	RequireSignature: false,
-	URLs:             []string{""},
-	Timeout:          20 * time.Second,
+	RequireChainId:     false,
+	RequireFeedVersion: false,
+	RequireSignature:   false,
+	URLs:               []string{""},
+	Timeout:            20 * time.Second,
 }
 
 var DefaultTestConfig = Config{
@@ -96,9 +102,6 @@ type BroadcastClient struct {
 
 	retryCount int64
 
-	// Access atomically
-	errorCount int32
-
 	retrying                        bool
 	shuttingDown                    bool
 	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
@@ -108,6 +111,9 @@ type BroadcastClient struct {
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
 var ErrIncorrectChainId = errors.New("incorrect chain id")
+var ErrInvalidFeedSignature = errors.New("invalid feed signature")
+var ErrMissingChainId = errors.New("missing chain id")
+var ErrMissingFeedServerVersion = errors.New("missing feed server version")
 
 func NewBroadcastClient(
 	config Config,
@@ -129,16 +135,15 @@ func NewBroadcastClient(
 	}
 }
 
-func (bc *BroadcastClient) GetErrorCount() int32 {
-	return atomic.LoadInt32(&bc.errorCount)
-}
-
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn)
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
-			if errors.Is(err, ErrIncorrectChainId) || errors.Is(err, ErrIncorrectFeedServerVersion) {
+			if errors.Is(err, ErrMissingChainId) ||
+				errors.Is(err, ErrIncorrectChainId) ||
+				errors.Is(err, ErrMissingFeedServerVersion) ||
+				errors.Is(err, ErrIncorrectFeedServerVersion) {
 				bc.fatalErrChan <- err
 				return
 			}
@@ -170,6 +175,8 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	})
 
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
+	var foundChainId bool
+	var foundFeedServerVersion bool
 	var chainId uint64
 	var feedServerVersion uint64
 	timeoutDialer := ws.Dialer{
@@ -178,6 +185,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 			headerName := string(key)
 			headerValue := string(value)
 			if headerName == wsbroadcastserver.HTTPHeaderFeedServerVersion {
+				foundFeedServerVersion = true
 				feedServerVersion, err = strconv.ParseUint(headerValue, 0, 64)
 				if err != nil {
 					return err
@@ -193,6 +201,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 					return ErrIncorrectFeedServerVersion
 				}
 			} else if headerName == wsbroadcastserver.HTTPHeaderChainId {
+				foundChainId = true
 				chainId, err = strconv.ParseUint(headerValue, 0, 64)
 				if err != nil {
 					return err
@@ -221,8 +230,25 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	}
 
 	conn, br, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
+	if errors.Is(err, ErrIncorrectFeedServerVersion) || errors.Is(err, ErrIncorrectChainId) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, errors.Wrap(err, "broadcast client unable to connect")
+	}
+	if !foundChainId {
+		err := conn.Close()
+		if err != nil {
+			return nil, errors.Wrap(err, "error closing connection when missing chain id")
+		}
+		return nil, ErrMissingChainId
+	}
+	if !foundFeedServerVersion {
+		err := conn.Close()
+		if err != nil {
+			return nil, errors.Wrap(err, "error closing connection when missing feed server version")
+		}
+		return nil, ErrMissingFeedServerVersion
 	}
 
 	var earlyFrameData io.Reader
@@ -300,14 +326,12 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
 								bc.fatalErrChan <- errors.Wrapf(err, "error validating feed signature %v", message.SequenceNumber)
-								atomic.AddInt32(&bc.errorCount, 1)
 								continue
 							}
 
 							if !valid {
 								log.Error("invalid feed signature", "sequence number", message.SequenceNumber)
-								bc.fatalErrChan <- errors.Errorf("invalid feed signature for %v", message.SequenceNumber)
-								atomic.AddInt32(&bc.errorCount, 1)
+								bc.fatalErrChan <- ErrInvalidFeedSignature
 								continue
 							}
 							bc.nextSeqNum = message.SequenceNumber

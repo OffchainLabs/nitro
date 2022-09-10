@@ -6,11 +6,16 @@ package broadcastclient
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gobwas/ws"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -37,8 +42,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
-	publicKey := privateKey.Public()
-	sequencerAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	feedErrChan := make(chan error, 10)
@@ -76,12 +80,10 @@ func TestInvalidSignature(t *testing.T) {
 
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
-	publicKey := privateKey.Public()
-	_ = crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
-	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+	fatalErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(settings, chainId, fatalErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -100,7 +102,7 @@ func TestInvalidSignature(t *testing.T) {
 		chainId,
 		0,
 		ts,
-		feedErrChan,
+		fatalErrChan,
 		&badSequencerAddr,
 	)
 	broadcastClient.Start(ctx)
@@ -111,20 +113,19 @@ func TestInvalidSignature(t *testing.T) {
 		}
 	}()
 
-	counter := 0
 	for {
-		timer := time.NewTimer(100 * time.Millisecond)
+		timer := time.NewTimer(1 * time.Second)
 		select {
-		case <-timer.C:
-			if counter > 10 {
-				t.Error("no feed errors detected")
-				return
-			}
-			if broadcastClient.GetErrorCount() > 0 {
+		case err := <-fatalErrChan:
+			if errors.Is(err, ErrInvalidFeedSignature) {
 				t.Log("feed error found as expected")
 				return
 			}
-			counter++
+			t.Errorf("unexpected error occurred: %v", err)
+			return
+		case <-timer.C:
+			t.Error("no feed errors detected")
+			return
 		case <-ctx.Done():
 			timer.Stop()
 			return
@@ -211,8 +212,7 @@ func TestServerClientDisconnect(t *testing.T) {
 
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
-	publicKey := privateKey.Public()
-	sequencerAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	chainId := uint64(8742)
@@ -262,7 +262,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	}
 }
 
-func TestServerClientIncorrectChainId(t *testing.T) {
+func TestServerIncorrectChainId(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -272,8 +272,7 @@ func TestServerClientIncorrectChainId(t *testing.T) {
 
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
-	publicKey := privateKey.Public()
-	sequencerAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	chainId := uint64(8742)
@@ -290,8 +289,107 @@ func TestServerClientIncorrectChainId(t *testing.T) {
 	badBroadcastClient.Start(ctx)
 	badTimer := time.NewTimer(5 * time.Second)
 	select {
-	case <-badFeedErrChan:
-		// Got expected error
+	case err := <-feedErrChan:
+		// Got unexpected error
+		t.Errorf("Unexpected error %v", err)
+		badTimer.Stop()
+	case err := <-badFeedErrChan:
+		if !errors.Is(err, ErrIncorrectChainId) {
+			// Got unexpected error
+			t.Errorf("Unexpected error %v", err)
+		}
+		badTimer.Stop()
+	case <-badTimer.C:
+		t.Fatal("Client channel did not send error as expected")
+	}
+}
+
+func TestServerMissingChainId(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	settings.Ping = 1 * time.Second
+
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
+	chainId := uint64(8742)
+	feedErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+
+	header := ws.HandshakeHeaderHTTP(http.Header{
+		wsbroadcastserver.HTTPHeaderFeedServerVersion: []string{strconv.Itoa(wsbroadcastserver.FeedServerVersion)},
+	})
+
+	Require(t, b.Initialize())
+	Require(t, b.StartWithHeader(ctx, header))
+	defer b.StopAndWait()
+
+	ts := NewDummyTransactionStreamer(chainId, nil)
+	badFeedErrChan := make(chan error, 10)
+	badBroadcastClient := newTestBroadcastClient(DefaultTestConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
+	badBroadcastClient.Start(ctx)
+	badTimer := time.NewTimer(5 * time.Second)
+	select {
+	case err := <-feedErrChan:
+		// Got unexpected error
+		t.Errorf("Unexpected error %v", err)
+		badTimer.Stop()
+	case err := <-badFeedErrChan:
+		if !errors.Is(err, ErrMissingChainId) {
+			// Got unexpected error
+			t.Errorf("Unexpected error %v", err)
+		}
+		badTimer.Stop()
+	case <-badTimer.C:
+		t.Fatal("Client channel did not send error as expected")
+	}
+}
+
+func TestServerMissingFeedServerVersion(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	settings.Ping = 1 * time.Second
+
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
+	chainId := uint64(8742)
+	feedErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+
+	header := ws.HandshakeHeaderHTTP(http.Header{
+		wsbroadcastserver.HTTPHeaderChainId: []string{strconv.FormatUint(chainId, 10)},
+	})
+
+	Require(t, b.Initialize())
+	Require(t, b.StartWithHeader(ctx, header))
+	defer b.StopAndWait()
+
+	ts := NewDummyTransactionStreamer(chainId, nil)
+	badFeedErrChan := make(chan error, 10)
+	badBroadcastClient := newTestBroadcastClient(DefaultTestConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
+	badBroadcastClient.Start(ctx)
+	badTimer := time.NewTimer(5 * time.Second)
+	select {
+	case err := <-feedErrChan:
+		// Got unexpected error
+		t.Errorf("Unexpected error %v", err)
+		badTimer.Stop()
+	case err := <-badFeedErrChan:
+		if !errors.Is(err, ErrMissingFeedServerVersion) {
+			// Got unexpected error
+			t.Errorf("Unexpected error %v", err)
+		}
 		badTimer.Stop()
 	case <-badTimer.C:
 		t.Fatal("Client channel did not send error as expected")
@@ -309,8 +407,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
-	publicKey := privateKey.Public()
-	sequencerAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	feedErrChan := make(chan error, 10)
@@ -354,8 +451,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
-	publicKey := privateKey.Public()
-	sequencerAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	feedErrChan := make(chan error, 10)
@@ -466,10 +562,6 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uin
 		if !gotMsg {
 			t.Errorf("client %d did not receive second batch item\n", clientIndex)
 		}
-		if broadcastClient.GetErrorCount() > 0 {
-			t.Errorf("client %d encountered %d errors\n", clientIndex, broadcastClient.GetErrorCount())
-		}
-
 	}()
 }
 

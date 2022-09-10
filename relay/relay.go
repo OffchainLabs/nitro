@@ -13,7 +13,6 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Relay struct {
@@ -36,15 +35,15 @@ func (q *RelayMessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.Bro
 	return nil
 }
 
-func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadcastclient.Config, chainId uint64, feedErrChan chan error) *Relay {
+func NewRelay(feedConfig broadcastclient.FeedConfig, chainId uint64, feedErrChan chan error) *Relay {
 	var broadcastClients []*broadcastclient.BroadcastClient
 
 	q := RelayMessageQueue{make(chan broadcaster.BroadcastFeedMessage, 100)}
 
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, 10)
 
-	for _, address := range clientConf.URLs {
-		client := broadcastclient.NewBroadcastClient(clientConf, address, chainId, 0, &q, feedErrChan, nil)
+	for _, address := range feedConfig.Input.URLs {
+		client := broadcastclient.NewBroadcastClient(feedConfig.Input, address, chainId, 0, &q, feedErrChan, nil)
 		client.ConfirmedSequenceNumberListener = confirmedSequenceNumberListener
 		broadcastClients = append(broadcastClients, client)
 	}
@@ -53,7 +52,7 @@ func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadca
 		return nil, errors.New("relay attempted to sign feed message")
 	}
 	return &Relay{
-		broadcaster:                 broadcaster.NewBroadcaster(serverConf, chainId, feedErrChan, dataSignerErr),
+		broadcaster:                 broadcaster.NewBroadcaster(feedConfig.Output, chainId, feedErrChan, dataSignerErr),
 		broadcastClients:            broadcastClients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,

@@ -31,21 +31,23 @@ func NewVerifier(requireSignature bool, authorizedAddresses []common.Address, bp
 }
 
 func (v *Verifier) VerifyHash(ctx context.Context, signature []byte, hash common.Hash) (bool, error) {
-	return v.VerifyClosure(ctx, signature, func() common.Hash { return hash })
+	return v.verifyClosure(ctx, signature, func() common.Hash { return hash })
 }
 
 func (v *Verifier) VerifyData(ctx context.Context, signature []byte, data ...[]byte) (bool, error) {
-	return v.VerifyClosure(ctx, signature, func() common.Hash { return crypto.Keccak256Hash(data...) })
+	return v.verifyClosure(ctx, signature, func() common.Hash { return crypto.Keccak256Hash(data...) })
 }
 
-func (v *Verifier) VerifyClosure(ctx context.Context, signature []byte, getHash func() common.Hash) (bool, error) {
+var ErrMissingFeedSignature = errors.New("missing required feed signature")
+
+func (v *Verifier) verifyClosure(ctx context.Context, signature []byte, getHash func() common.Hash) (bool, error) {
 	if len(signature) == 0 {
 		if !v.requireSignature {
 			// Signature missing and not required
 			return true, nil
 		}
 
-		return false, errors.New("missing required feed signature")
+		return false, ErrMissingFeedSignature
 	}
 
 	var hash = getHash()

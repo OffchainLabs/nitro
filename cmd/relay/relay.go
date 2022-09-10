@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/relay"
-	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func init() {
@@ -58,17 +57,6 @@ func startup() error {
 	vcsRevision, vcsTime := util.GetVersion()
 	log.Info("Running Arbitrum nitro relay", "revision", vcsRevision, "vcs.time", vcsTime)
 
-	serverConf := wsbroadcastserver.BroadcasterConfig{
-		Addr:          relayConfig.Node.Feed.Output.Addr,
-		IOTimeout:     relayConfig.Node.Feed.Output.IOTimeout,
-		Port:          relayConfig.Node.Feed.Output.Port,
-		Ping:          relayConfig.Node.Feed.Output.Ping,
-		ClientTimeout: relayConfig.Node.Feed.Output.ClientTimeout,
-		Queue:         relayConfig.Node.Feed.Output.Queue,
-		Workers:       relayConfig.Node.Feed.Output.Workers,
-		MaxSendQueue:  relayConfig.Node.Feed.Output.MaxSendQueue,
-	}
-
 	defer log.Info("Cleanly shutting down relay")
 
 	sigint := make(chan os.Signal, 1)
@@ -76,7 +64,7 @@ func startup() error {
 
 	// Start up an arbitrum sequencer relay
 	feedErrChan := make(chan error, 10)
-	newRelay := relay.NewRelay(serverConf, relayConfig.Node.Feed.Input, relayConfig.L2.ChainId, feedErrChan)
+	newRelay := relay.NewRelay(relayConfig.Node.Feed, relayConfig.L2.ChainId, feedErrChan)
 	err = newRelay.Start(ctx)
 	if err != nil {
 		return err

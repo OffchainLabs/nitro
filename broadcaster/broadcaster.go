@@ -7,6 +7,8 @@ import (
 	"context"
 	"net"
 
+	"github.com/gobwas/ws"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -138,6 +140,10 @@ func (b *Broadcaster) Initialize() error {
 
 func (b *Broadcaster) Start(ctx context.Context) error {
 	return b.server.Start(ctx)
+}
+
+func (b *Broadcaster) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
+	return b.server.StartWithHeader(ctx, header)
 }
 
 func (b *Broadcaster) StopAndWait() {

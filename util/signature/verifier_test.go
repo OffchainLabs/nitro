@@ -5,8 +5,7 @@ package signature
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -20,8 +19,7 @@ func TestVerifier(t *testing.T) {
 	ctx := context.Background()
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
-	publicKey := privateKey.Public()
-	signingAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
+	signingAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := DataSignerFromPrivateKey(privateKey)
 
 	authorizedAddresses := make([]common.Address, 0)
@@ -58,7 +56,7 @@ func TestMissingRequiredSignature(t *testing.T) {
 	ctx := context.Background()
 	verifier := NewVerifier(true, nil, nil)
 	_, err := verifier.VerifyData(ctx, nil, nil)
-	if !strings.Contains(err.Error(), "missing required feed signature") {
+	if !errors.Is(err, ErrMissingFeedSignature) {
 		t.Error("didn't fail when missing feed signature")
 	}
 }
@@ -77,8 +75,7 @@ func TestVerifierBatchPoster(t *testing.T) {
 	ctx := context.Background()
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
-	publicKey := privateKey.Public()
-	signingAddr := crypto.PubkeyToAddress(*publicKey.(*ecdsa.PublicKey))
+	signingAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := DataSignerFromPrivateKey(privateKey)
 
 	bpVerifier := contracts.NewMockBatchPosterVerifier(signingAddr)
