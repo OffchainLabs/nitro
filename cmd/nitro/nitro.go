@@ -193,7 +193,7 @@ func main() {
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
-			nodeConfig.Node.BlockValidator.ArbitratorValidator = true
+			nodeConfig.Node.BlockValidator.JitValidator = true
 		}
 	}
 
