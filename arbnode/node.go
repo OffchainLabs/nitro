@@ -612,13 +612,15 @@ func (w *WasmConfig) FindMachineDir() (string, bool) {
 		projectPath := filepath.Join(filepath.Join(projectDir, "target"), "machines")
 		places = append(places, projectPath)
 
-		// Check the working directory: ./machines
+		// Check the working directory: ./machines and ./target/machines
 		workDir, err := os.Getwd()
 		if err != nil {
 			panic(err)
 		}
-		workPath := filepath.Join(workDir, "machines")
-		places = append(places, workPath)
+		workPath1 := filepath.Join(workDir, "machines")
+		workPath2 := filepath.Join(filepath.Join(workDir, "target"), "machines")
+		places = append(places, workPath1)
+		places = append(places, workPath2)
 
 		// Check above the executable: <binary> => ../../machines
 		execfile, err := os.Executable()
