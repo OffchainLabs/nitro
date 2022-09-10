@@ -32,6 +32,7 @@ const MSG_COUNT_KEY string = "coordinator.msgCount"            // Only written b
 const PRIORITIES_KEY string = "coordinator.priorities"         // Read only
 const LIVELINESS_KEY_PREFIX string = "coordinator.liveliness." // Per server. Only written by self
 const MESSAGE_KEY_PREFIX string = "coordinator.msg."           // Per Message. Only written by sequencer holding CHOSEN
+const SIGNATURE_KEY_PREFIX string = "coordinator.msg.sig."     // Per Message. Only written by sequencer holding CHOSEN
 const LIVELINESS_VAL string = "OK"
 const INVALID_VAL string = "INVALID"
 const INVALID_URL string = "<?INVALID-URL?>"
@@ -147,8 +148,12 @@ func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient
 	var msgIndexBytes [8]byte
 	binary.BigEndian.PutUint64(msgIndexBytes[:], uint64(msgIndex))
 	msg := []byte(INVALID_VAL)
-	signed := signer.SignMessage(msgIndexBytes[:], msg)
-	redisClient.Set(ctx, messageKeyFor(msgIndex), signed, DefaultSeqCoordinatorConfig.SeqNumDuration)
+	sig, err := signer.SignMessage(msgIndexBytes[:], msg)
+	if err != nil {
+		return err
+	}
+	redisClient.Set(ctx, messageKeyFor(msgIndex), msg, DefaultSeqCoordinatorConfig.SeqNumDuration)
+	redisClient.Set(ctx, messageSigKeyFor(msgIndex), sig, DefaultSeqCoordinatorConfig.SeqNumDuration)
 	return nil
 }
 
@@ -192,6 +197,10 @@ func messageKeyFor(pos arbutil.MessageIndex) string {
 	return fmt.Sprintf("%s%d", MESSAGE_KEY_PREFIX, pos)
 }
 
+func messageSigKeyFor(pos arbutil.MessageIndex) string {
+	return fmt.Sprintf("%s%d", SIGNATURE_KEY_PREFIX, pos)
+}
+
 func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 	cmders, err := pipe.Exec(ctx)
 	if err != nil {
@@ -205,22 +214,55 @@ func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 	return nil
 }
 
+func (c *SeqCoordinator) msgCountToSignedBytes(msgCount arbutil.MessageIndex) ([]byte, error) {
+	var msgCountBytes [8]byte
+	binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCount))
+	sig, err := c.signer.SignMessage(nil, msgCountBytes[:])
+	if err != nil {
+		return nil, err
+	}
+	return append(msgCountBytes[:], sig...), nil
+}
+
+func (c *SeqCoordinator) signedBytesToMsgCount(data []byte) (arbutil.MessageIndex, error) {
+	if len(data) < 8 {
+		return 0, errors.New("msgcount value too short")
+	}
+	valid, err := c.signer.VerifySignature(nil, data[:8], data[8:])
+	if err != nil {
+		return 0, err
+	}
+	if !valid {
+		return 0, errors.New("inavlid signature")
+	}
+	return arbutil.MessageIndex(binary.BigEndian.Uint64(data[:8])), nil
+}
+
 func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
 	var messageData *string
+	var messageSigData *string
 	if lastmsg != nil {
 		msgBytes, err := json.Marshal(lastmsg)
 		if err != nil {
 			return err
 		}
-
-		msgBytes = c.signer.SignMessage(arbmath.UintToBytes(uint64(msgCountToWrite-1)), msgBytes)
+		msgSig, err := c.signer.SignMessage(arbmath.UintToBytes(uint64(msgCountToWrite-1)), msgBytes)
+		if err != nil {
+			return err
+		}
 		messageString := string(msgBytes)
+		sigString := string(msgSig)
 		messageData = &messageString
+		messageSigData = &sigString
+	}
+	msgCountMsg, err := c.msgCountToSignedBytes(msgCountToWrite)
+	if err != nil {
+		return nil
 	}
 	c.chosenUpdateMutex.Lock()
 	defer c.chosenUpdateMutex.Unlock()
 	lockoutUntil := time.Now().Add(c.config.LockoutDuration)
-	err := c.client.Watch(ctx, func(tx *redis.Tx) error {
+	err = c.client.Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.Get(ctx, CHOSENSEQ_KEY).Result()
 		var wasEmpty bool
 		if errors.Is(err, redis.Nil) {
@@ -249,13 +291,12 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		if wasEmpty {
 			pipe.Set(ctx, CHOSENSEQ_KEY, c.config.MyUrl, initialDuration)
 		}
-		var msgCountBytes [8]byte
-		binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCountToWrite))
-		pipe.Set(ctx, MSG_COUNT_KEY, c.signer.SignMessage(nil, msgCountBytes[:]), c.config.SeqNumDuration)
+		pipe.Set(ctx, MSG_COUNT_KEY, msgCountMsg, c.config.SeqNumDuration)
 		myLivelinessKey := livelinessKeyFor(c.config.MyUrl)
 		pipe.Set(ctx, myLivelinessKey, LIVELINESS_VAL, initialDuration)
 		if messageData != nil {
 			pipe.Set(ctx, messageKeyFor(msgCountToWrite-1), *messageData, c.config.SeqNumDuration)
+			pipe.Set(ctx, messageSigKeyFor(msgCountToWrite-1), *messageSigData, c.config.SeqNumDuration)
 		}
 		pipe.PExpireAt(ctx, CHOSENSEQ_KEY, lockoutUntil)
 		pipe.PExpireAt(ctx, myLivelinessKey, lockoutUntil)
@@ -284,15 +325,7 @@ func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmda
 	if err != nil {
 		return 0, err
 	}
-	resBytes := []byte(resStr)
-	resBytes, err = c.signer.VerifyMessageSignature(nil, []byte(resBytes))
-	if err != nil {
-		return 0, err
-	}
-	if len(resBytes) != 8 {
-		return 0, fmt.Errorf("unexpected msg count value length %v", len(resBytes))
-	}
-	return arbutil.MessageIndex(binary.BigEndian.Uint64(resBytes)), nil
+	return c.signedBytesToMsgCount([]byte(resStr))
 }
 
 func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
@@ -469,9 +502,17 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			break
 		}
 		rsBytes := []byte(resString)
-		rsBytes, msgReadErr = c.signer.VerifyMessageSignature(arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
+		var sigString string
+		sigString, msgReadErr = c.client.Get(ctx, messageSigKeyFor(msgToRead)).Result()
 		if msgReadErr != nil {
-			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr)
+			log.Warn("coordinator failed reading sig", "pos", msgToRead, "err", msgReadErr)
+			break
+		}
+		sigBytes := []byte(sigString)
+		var valid bool
+		valid, msgReadErr = c.signer.VerifySignature(arbmath.UintToBytes(uint64(msgToRead)), rsBytes, sigBytes)
+		if msgReadErr != nil || !valid {
+			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "valid", valid, "err", msgReadErr)
 			break
 		}
 		var message arbstate.MessageWithMetadata

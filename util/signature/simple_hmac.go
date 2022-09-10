@@ -106,40 +106,33 @@ func loadSigningKey(keyConfig string) (*common.Hash, error) {
 }
 
 // On success, extracts the message from the message+signature data passed in, and returns it
-func (h *SimpleHmac) VerifyMessageSignature(prefix []byte, data []byte) ([]byte, error) {
-	if len(data) < 32 {
-		return nil, errors.New("data is too short to contain message signature")
-	}
-	msg := data[32:]
+func (h *SimpleHmac) VerifySignature(prefix []byte, msg []byte, sig []byte) (bool, error) {
 	if h.config.Dangerous.DisableSignatureVerification {
-		return msg, nil
+		return true, nil
 	}
-	var haveHmac common.Hash
-	copy(haveHmac[:], data[:32])
+	if len(sig) != 32 {
+		return false, errors.New("signature must be exactly 32 bytes")
+	}
 
 	expectHmac := crypto.Keccak256Hash(h.signingKey[:], prefix, msg)
-	if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
-		return msg, nil
+	if subtle.ConstantTimeCompare(expectHmac[:], sig) == 1 {
+		return true, nil
 	}
 
 	if h.fallbackVerificationKey != nil {
 		expectHmac = crypto.Keccak256Hash(h.fallbackVerificationKey[:], prefix, msg)
-		if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
-			return msg, nil
+		if subtle.ConstantTimeCompare(expectHmac[:], sig) == 1 {
+			return true, nil
 		}
 	}
 
-	if haveHmac == (common.Hash{}) {
-		return nil, errors.New("no HMAC signature present but signature verification is enabled")
-	} else {
-		return nil, errors.New("HMAC signature doesn't match expected value(s)")
-	}
+	return false, nil
 }
 
-func (h *SimpleHmac) SignMessage(prefix []byte, msg []byte) []byte {
+func (h *SimpleHmac) SignMessage(prefix []byte, msg []byte) ([]byte, error) {
 	var hmac [32]byte
 	if h.signingKey != nil {
 		hmac = crypto.Keccak256Hash(h.signingKey[:], prefix, msg)
 	}
-	return append(hmac[:], msg...)
+	return hmac[:], nil
 }

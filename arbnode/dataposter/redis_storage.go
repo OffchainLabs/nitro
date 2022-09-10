@@ -29,6 +29,30 @@ func NewRedisStorage[Item any](client redis.UniversalClient, key string, signerC
 	return &RedisStorage[Item]{client, signer, key}, nil
 }
 
+func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
+	if len(sig) != 32 {
+		return nil, errors.New("data is too short to contain message signature")
+	}
+	return append(sig, msg...), nil
+}
+
+func (s *RedisStorage[Item]) PeelVerifySignature(prefix []byte, data []byte) ([]byte, error) {
+	if len(data) < 32 {
+		return nil, errors.New("data is too short to contain message signature")
+	}
+	sign := make([]byte, 32)
+	msg := make([]byte, len(data)-32)
+
+	valid, err := s.signer.VerifySignature(prefix, msg, sign)
+	if err != nil {
+		return nil, err
+	}
+	if !valid {
+		return nil, errors.New("invalid signature")
+	}
+	return msg, nil
+}
+
 func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
 	query := redis.ZRangeArgs{
 		Key:     s.key,
@@ -43,7 +67,7 @@ func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 	var items []*Item
 	for _, itemString := range itemStrings {
 		var item Item
-		data, err := s.signer.VerifyMessageSignature(nil, []byte(itemString))
+		data, err := s.PeelVerifySignature(nil, []byte(itemString))
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +97,7 @@ func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	var ret *Item
 	if len(itemStrings) > 0 {
 		var item Item
-		data, err := s.signer.VerifyMessageSignature(nil, []byte(itemStrings[0]))
+		data, err := s.PeelVerifySignature(nil, []byte(itemStrings[0]))
 		if err != nil {
 			return nil, err
 		}
@@ -119,7 +143,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 			if prevItem == nil {
 				return fmt.Errorf("%w: tried to insert new item at index %v but an item exists there", StorageRaceErr, index)
 			}
-			verifiedItem, err := s.signer.VerifyMessageSignature(nil, []byte(haveItems[0]))
+			verifiedItem, err := s.PeelVerifySignature(nil, []byte(haveItems[0]))
 			if err != nil {
 				return fmt.Errorf("failed to validate item already in redis at index%v: %w", index, err)
 			}
@@ -141,9 +165,17 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		if err != nil {
 			return err
 		}
+		sig, err := s.signer.SignMessage(nil, newItemEncoded)
+		if err != nil {
+			return err
+		}
+		signedItem, err := joinHmacMsg(newItemEncoded, sig)
+		if err != nil {
+			return err
+		}
 		err = pipe.ZAdd(ctx, s.key, &redis.Z{
 			Score:  float64(index),
-			Member: string(s.signer.SignMessage(nil, newItemEncoded)),
+			Member: string(signedItem),
 		}).Err()
 		if err != nil {
 			return err
