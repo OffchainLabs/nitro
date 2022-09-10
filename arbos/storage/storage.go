@@ -442,12 +442,28 @@ func (sto *Storage) OpenStorageBackedBigInt(offset uint64) StorageBackedBigInt {
 }
 
 func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
-	value, err := sbbi.StorageSlot.Get()
-	return value.Big(), err
+	asHash, err := sbbi.StorageSlot.Get()
+	asBig := new(big.Int).SetBytes(asHash[1:])
+	if asHash[0] != 0 {
+		asBig = new(big.Int).Neg(asBig)
+	}
+	return asBig, err
 }
 
 func (sbbi *StorageBackedBigInt) Set(val *big.Int) error {
-	return sbbi.StorageSlot.Set(common.BigToHash(val))
+	asBytes := val.Bytes()
+	if len(asBytes) > 31 {
+		panic("overflow in StorageBackedBigInt.Set")
+	}
+	asHash := common.BytesToHash(asBytes)
+	if val.Sign() < 0 {
+		asHash[0] = 1
+	}
+	return sbbi.StorageSlot.Set(asHash)
+}
+
+func (sbbi *StorageBackedBigInt) Set_preVersion7(val *big.Int) error {
+	return sbbi.Set(new(big.Int).Abs(val))
 }
 
 func (sbbi *StorageBackedBigInt) SetByUint(val uint64) error {

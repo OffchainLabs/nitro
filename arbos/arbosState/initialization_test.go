@@ -6,6 +6,7 @@ package arbosState
 import (
 	"bytes"
 	"encoding/json"
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -76,7 +77,7 @@ func pseudorandomRetryableInitForTesting(prand *testhelpers.PseudoRandomDataSour
 		Timeout:     prand.GetUint64(),
 		From:        prand.GetAddress(),
 		To:          prand.GetAddress(),
-		Callvalue:   prand.GetHash().Big(),
+		Callvalue:   new(big.Int).SetBytes(prand.GetHash().Bytes()[1:]),
 		Beneficiary: prand.GetAddress(),
 		Calldata:    prand.GetData(256),
 	}
