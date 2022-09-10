@@ -350,6 +350,53 @@ func TestServerMissingChainId(t *testing.T) {
 	}
 }
 
+func TestServerIncorrectFeedServerVersion(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	settings.Ping = 1 * time.Second
+
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
+	chainId := uint64(8742)
+	feedErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+
+	header := ws.HandshakeHeaderHTTP(http.Header{
+		wsbroadcastserver.HTTPHeaderChainId:           []string{strconv.FormatUint(chainId, 10)},
+		wsbroadcastserver.HTTPHeaderFeedServerVersion: []string{strconv.Itoa(wsbroadcastserver.FeedServerVersion + 1)},
+	})
+
+	Require(t, b.Initialize())
+	Require(t, b.StartWithHeader(ctx, header))
+	defer b.StopAndWait()
+
+	ts := NewDummyTransactionStreamer(chainId, nil)
+	badFeedErrChan := make(chan error, 10)
+	badBroadcastClient := newTestBroadcastClient(DefaultTestConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
+	badBroadcastClient.Start(ctx)
+	badTimer := time.NewTimer(5 * time.Second)
+	select {
+	case err := <-feedErrChan:
+		// Got unexpected error
+		t.Errorf("Unexpected error %v", err)
+		badTimer.Stop()
+	case err := <-badFeedErrChan:
+		if !errors.Is(err, ErrIncorrectFeedServerVersion) {
+			// Got unexpected error
+			t.Errorf("Unexpected error %v", err)
+		}
+		badTimer.Stop()
+	case <-badTimer.C:
+		t.Fatal("Client channel did not send error as expected")
+	}
+}
+
 func TestServerMissingFeedServerVersion(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
