@@ -76,6 +76,14 @@ func (v *ValidatorWallet) Address() *common.Address {
 	return v.address
 }
 
+// May be zero if the wallet hasn't been deployed yet
+func (v *ValidatorWallet) AddressOrZero() common.Address {
+	if v.address == nil {
+		return common.Address{}
+	}
+	return *v.address
+}
+
 func (v *ValidatorWallet) From() common.Address {
 	if v.auth == nil {
 		return common.Address{}
@@ -87,12 +95,12 @@ func (v *ValidatorWallet) RollupAddress() common.Address {
 	return v.rollupAddress
 }
 
-func (v *ValidatorWallet) executeTransaction(ctx context.Context, tx *types.Transaction) (*types.Transaction, error) {
+func (v *ValidatorWallet) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
 	oldAuthValue := v.auth.Value
 	v.auth.Value = tx.Value()
 	defer (func() { v.auth.Value = oldAuthValue })()
 
-	return v.con.ExecuteTransaction(v.auth, tx.Data(), *tx.To(), tx.Value())
+	return v.con.ExecuteTransactionWithGasRefunder(v.auth, gasRefunder, tx.Data(), *tx.To(), tx.Value())
 }
 
 func (v *ValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {
@@ -142,7 +150,7 @@ func combineTxes(txes []*types.Transaction) ([][]byte, []common.Address, []*big.
 }
 
 // Not thread safe! Don't call this from multiple threads at the same time.
-func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *ValidatorTxBuilder) (*types.Transaction, error) {
+func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *ValidatorTxBuilder, gasRefunder common.Address) (*types.Transaction, error) {
 	txes := builder.transactions
 	if len(txes) == 0 {
 		return nil, nil
@@ -154,7 +162,7 @@ func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *Vali
 	}
 
 	if len(txes) == 1 {
-		arbTx, err := v.executeTransaction(ctx, txes[0])
+		arbTx, err := v.executeTransaction(ctx, txes[0], gasRefunder)
 		if err != nil {
 			return nil, err
 		}
@@ -186,7 +194,7 @@ func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *Vali
 	}
 	defer (func() { v.auth.Value = oldAuthValue })()
 
-	arbTx, err := v.con.ExecuteTransactions(v.auth, data, dest, amount)
+	arbTx, err := v.con.ExecuteTransactionsWithGasRefunder(v.auth, gasRefunder, data, dest, amount)
 	if err != nil {
 		return nil, err
 	}

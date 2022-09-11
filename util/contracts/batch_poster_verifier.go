@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package das
+package contracts
 
 import (
 	"context"
@@ -69,4 +69,22 @@ func (bpv *BatchPosterVerifier) flushCache_locked(ctx context.Context) error {
 	bpv.cache = make(map[common.Address]bool)
 	bpv.cacheExpiry = time.Now().Add(batchPosterVerifierLifetime)
 	return nil
+}
+
+func NewMockBatchPosterVerifier(validAddr common.Address) *MockBatchPosterVerifier {
+	return &MockBatchPosterVerifier{
+		validAddr: validAddr,
+	}
+}
+
+type MockBatchPosterVerifier struct {
+	validAddr common.Address
+}
+
+func (bpv *MockBatchPosterVerifier) IsBatchPoster(_ context.Context, addr common.Address) (bool, error) {
+	return addr == bpv.validAddr, nil
+}
+
+type BatchPosterVerifierInterface interface {
+	IsBatchPoster(ctx context.Context, addr common.Address) (bool, error)
 }

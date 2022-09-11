@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -19,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/relay"
-	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func init() {
@@ -32,8 +30,7 @@ func main() {
 	}
 }
 
-func printSampleUsage() {
-	progname := os.Args[0]
+func printSampleUsage(progname string) {
 	fmt.Printf("\n")
 	fmt.Printf("Sample usage:                  %s --node.feed.input.url=<L1 RPC> --l2.chain-id=<L2 chain id> \n", progname)
 }
@@ -41,14 +38,9 @@ func printSampleUsage() {
 func startup() error {
 	ctx := context.Background()
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
 	relayConfig, err := ParseRelay(ctx, os.Args[1:])
 	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
-		printSampleUsage()
-		if err != nil && !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+		util.HandleError(err, printSampleUsage)
 
 		return nil
 	}
@@ -62,23 +54,8 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(relayConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
+	vcsRevision, vcsTime := util.GetVersion()
 	log.Info("Running Arbitrum nitro relay", "revision", vcsRevision, "vcs.time", vcsTime)
-
-	serverConf := wsbroadcastserver.BroadcasterConfig{
-		Addr:          relayConfig.Node.Feed.Output.Addr,
-		IOTimeout:     relayConfig.Node.Feed.Output.IOTimeout,
-		Port:          relayConfig.Node.Feed.Output.Port,
-		Ping:          relayConfig.Node.Feed.Output.Ping,
-		ClientTimeout: relayConfig.Node.Feed.Output.ClientTimeout,
-		Queue:         relayConfig.Node.Feed.Output.Queue,
-		Workers:       relayConfig.Node.Feed.Output.Workers,
-		MaxSendQueue:  relayConfig.Node.Feed.Output.MaxSendQueue,
-	}
-
-	clientConf := broadcastclient.BroadcastClientConfig{
-		Timeout: relayConfig.Node.Feed.Input.Timeout,
-		URLs:    relayConfig.Node.Feed.Input.URLs,
-	}
 
 	defer log.Info("Cleanly shutting down relay")
 
@@ -87,7 +64,7 @@ func startup() error {
 
 	// Start up an arbitrum sequencer relay
 	feedErrChan := make(chan error, 10)
-	newRelay := relay.NewRelay(serverConf, clientConf, relayConfig.L2.ChainId, feedErrChan)
+	newRelay := relay.NewRelay(relayConfig.Node.Feed, relayConfig.L2.ChainId, feedErrChan)
 	err = newRelay.Start(ctx)
 	if err != nil {
 		return err

@@ -1033,7 +1033,7 @@ describe("ArbRollup", () => {
   });
 
   it("should fail the batch poster check", async function () {
-    await expect(sequencerInbox.addSequencerL2Batch(0, "0x", 0, ethers.constants.AddressZero)).to.revertedWith("NotBatchPoster()");
+    await expect(sequencerInbox.addSequencerL2Batch(0, "0x", 0, ethers.constants.AddressZero, 0, 0)).to.revertedWith("NotBatchPoster()");
   });
 
   it("should fail the onlyValidator check", async function () {

@@ -11,7 +11,9 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,7 +41,10 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -52,7 +57,7 @@ func initLog(logType string, logLevel log.Lvl) error {
 	logFormat, err := genericconf.ParseLogType(logType)
 	if err != nil {
 		flag.Usage()
-		return fmt.Errorf("Error parsing log type: %w", err)
+		return fmt.Errorf("error parsing log type: %w", err)
 	}
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(logLevel)
@@ -114,14 +119,10 @@ func main() {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	vcsRevision, vcsTime := genericconf.GetVersion()
-	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, os.Args[1:])
+	args := os.Args[1:]
+	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
 	if err != nil {
-		fmt.Printf("\nrevision: %v, vcs.time: %v\n", vcsRevision, vcsTime)
-		printSampleUsage(os.Args[0])
-		if !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+		util.HandleError(err, printSampleUsage)
 
 		return
 	}
@@ -130,6 +131,7 @@ func main() {
 		panic(err)
 	}
 
+	vcsRevision, vcsTime := util.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
@@ -159,25 +161,27 @@ func main() {
 		}
 	}
 
-	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
-	var daSigner func([]byte) ([]byte, error)
+	var dataSigner signature.DataSignerFunc
+	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
-	if nodeConfig.Node.L1Reader.Enable || setupNeedsKey {
+	validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorNeedsKey {
+		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+		if err != nil {
+			fmt.Printf("%v\n", err.Error())
+			return
+		}
+	}
+
+	var rollupAddrs arbnode.RollupAddresses
+	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
 		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
 		if err != nil {
-			panic(err)
-		}
-
-		validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
-		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey || setupNeedsKey {
-			l1TransactionOpts, daSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
-			if err != nil {
-				fmt.Printf("%v\n", err.Error())
-				return
-			}
+			fmt.Printf("error getting rollup addresses: %v\n", err.Error())
+			return
 		}
 	} else if l1Client != nil {
 		// Don't need l1Client anymore
@@ -214,7 +218,11 @@ func main() {
 		return
 	}
 
-	if nodeConfig.Node.Archive && nodeConfig.Node.TxLookupLimit != 0 {
+	if nodeConfig.Node.Archive {
+		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
+		nodeConfig.Node.Caching.Archive = true
+	}
+	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
 	}
@@ -230,6 +238,7 @@ func main() {
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
+	stackConf.Version = vcsRevision
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
@@ -246,10 +255,9 @@ func main() {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive))
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
 	if err != nil {
-		printSampleUsage(os.Args[0])
-		fmt.Printf("%s\n", err.Error())
+		util.HandleError(err, printSampleUsage)
 		return
 	}
 
@@ -276,19 +284,20 @@ func main() {
 		}
 	}
 
-	feedErrChan := make(chan error, 10)
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
+	fatalErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
 		stack,
 		chainDb,
 		arbDb,
-		&nodeConfig.Node,
+		&NodeConfigFetcher{liveNodeConfig},
 		l2BlockChain,
 		l1Client,
 		&rollupAddrs,
 		l1TransactionOpts,
-		daSigner,
-		feedErrChan,
+		dataSigner,
+		fatalErrChan,
 	)
 	if err != nil {
 		panic(err)
@@ -322,8 +331,8 @@ func main() {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	select {
-	case err := <-feedErrChan:
-		log.Error("shutting down because broadcaster stopped", "err", err)
+	case err := <-fatalErrChan:
+		log.Error("shutting down due to fatal error", "err", err)
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
@@ -337,12 +346,12 @@ func main() {
 }
 
 type NodeConfig struct {
-	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	Node          arbnode.Config                  `koanf:"node"`
+	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
 	L2            conf.L2Config                   `koanf:"l2"`
-	LogLevel      int                             `koanf:"log-level"`
-	LogType       string                          `koanf:"log-type"`
+	LogLevel      int                             `koanf:"log-level" reload:"hot"`
+	LogType       string                          `koanf:"log-type" reload:"hot"`
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
@@ -391,6 +400,40 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	c.L2.ResolveDirectoryNames(c.Persistent.Chain)
 
 	return nil
+}
+
+func (c *NodeConfig) ShallowClone() *NodeConfig {
+	config := &NodeConfig{}
+	*config = *c
+	return config
+}
+
+func (c *NodeConfig) CanReload(new *NodeConfig) error {
+	var check func(node, other reflect.Value, path string)
+	var err error
+
+	check = func(node, value reflect.Value, path string) {
+		if node.Kind() != reflect.Struct {
+			return
+		}
+
+		for i := 0; i < node.NumField(); i++ {
+			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
+			dot := path + "." + node.Type().Field(i).Name
+
+			first := node.Field(i).Interface()
+			other := value.Field(i).Interface()
+
+			if !hot && !reflect.DeepEqual(first, other) {
+				err = fmt.Errorf("illegal change to %v%v%v", colors.Red, dot, colors.Clear)
+			} else {
+				check(node.Field(i), value.Field(i), dot)
+			}
+		}
+	}
+
+	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
+	return err
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
@@ -621,4 +664,97 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	return k.Load(confmap.Provider(map[string]interface{}{
 		"persistent.chain": "goerli-anytrust",
 	}, "."), nil)
+}
+
+type LiveNodeConfig struct {
+	stopwaiter.StopWaiter
+
+	mutex  sync.RWMutex
+	args   []string
+	config *NodeConfig
+}
+
+func (c *LiveNodeConfig) get() *NodeConfig {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.config
+}
+
+func (c *LiveNodeConfig) set(config *NodeConfig) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if err := c.config.CanReload(config); err != nil {
+		return err
+	}
+	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
+		return err
+	}
+	c.config = config
+	return nil
+}
+
+func (c *LiveNodeConfig) Start(ctxIn context.Context) {
+	c.StopWaiter.Start(ctxIn)
+
+	sigusr1 := make(chan os.Signal, 1)
+	signal.Notify(sigusr1, syscall.SIGUSR1)
+
+	c.LaunchThread(func(ctx context.Context) {
+		for {
+			reloadInterval := c.config.Conf.ReloadInterval
+			if reloadInterval == 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-sigusr1:
+					log.Info("Configuration reload triggered by SIGUSR1.")
+				}
+			} else {
+				timer := time.NewTimer(reloadInterval)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-sigusr1:
+					timer.Stop()
+					log.Info("Configuration reload triggered by SIGUSR1.")
+				case <-timer.C:
+				}
+			}
+			nodeConfig, _, _, _, _, err := ParseNode(ctx, c.args)
+			if err != nil {
+				log.Error("error parsing live config", "error", err.Error())
+				continue
+			}
+			err = c.set(nodeConfig)
+			if err != nil {
+				log.Error("error updating live config", "error", err.Error())
+				continue
+			}
+		}
+	})
+}
+
+func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
+	return &LiveNodeConfig{
+		args:   args,
+		config: config,
+	}
+}
+
+type NodeConfigFetcher struct {
+	*LiveNodeConfig
+}
+
+func (f *NodeConfigFetcher) Get() *arbnode.Config {
+	return &f.LiveNodeConfig.get().Node
+}
+
+func (f *NodeConfigFetcher) Start(ctx context.Context) {
+	f.LiveNodeConfig.Start(ctx)
+}
+
+func (f *NodeConfigFetcher) StopAndWait() {
+	f.LiveNodeConfig.StopAndWait()
 }
