@@ -168,7 +168,7 @@ func (rds *RestfulDasServer) GetByHashHandler(w http.ResponseWriter, r *http.Req
 
 	responseData, err := rds.storage.GetByHash(r.Context(), common.BytesToHash(hashBytes[:32]))
 	if err != nil {
-		log.Warn("Unable to find data", "path", requestPath, "err", err)
+		log.Warn("Unable to find data", "path", requestPath, "err", err, "remoteAddr", r.RemoteAddr)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}

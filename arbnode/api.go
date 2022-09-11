@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -36,17 +37,26 @@ func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (commo
 }
 
 type BlockValidatorDebugAPI struct {
-	val        *validator.BlockValidator
+	val        *validator.StatelessBlockValidator
 	blockchain *core.BlockChain
 }
 
-func (a *BlockValidatorDebugAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash) (bool, error) {
+type ValidateBlockResult struct {
+	Valid   bool   `json:"valid"`
+	Latency string `json:"latency"`
+}
+
+func (a *BlockValidatorDebugAPI) ValidateBlock(
+	ctx context.Context, blockNum rpc.BlockNumberOrHash, full bool, moduleRootOptional *common.Hash,
+) (ValidateBlockResult, error) {
+	result := ValidateBlockResult{}
+
 	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
 	if err != nil {
-		return false, err
+		return result, err
 	}
 	if !a.blockchain.Config().IsArbitrumNitro(header.Number) {
-		return false, types.ErrUseFallback
+		return result, types.ErrUseFallback
 	}
 	var moduleRoot common.Hash
 	if moduleRootOptional != nil {
@@ -54,11 +64,15 @@ func (a *BlockValidatorDebugAPI) RevalidateBlock(ctx context.Context, blockNum r
 	} else {
 		moduleRoots := a.val.GetModuleRootsToValidate()
 		if len(moduleRoots) == 0 {
-			return false, errors.New("no current WasmModuleRoot configured, must provide parameter")
+			return result, errors.New("no current WasmModuleRoot configured, must provide parameter")
 		}
 		moduleRoot = moduleRoots[0]
 	}
-	return a.val.ValidateBlock(ctx, header, moduleRoot)
+	start_time := time.Now()
+	valid, err := a.val.ValidateBlock(ctx, header, full, moduleRoot)
+	result.Valid = valid
+	result.Latency = fmt.Sprintf("%vms", time.Since(start_time).Milliseconds())
+	return result, err
 }
 
 type ArbAPI struct {
