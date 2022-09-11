@@ -236,14 +236,14 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	if err != nil {
 		return nil, errors.Wrap(err, "broadcast client unable to connect")
 	}
-	if !foundChainId {
+	if bc.config.RequireChainId && !foundChainId {
 		err := conn.Close()
 		if err != nil {
 			return nil, errors.Wrap(err, "error closing connection when missing chain id")
 		}
 		return nil, ErrMissingChainId
 	}
-	if !foundFeedServerVersion {
+	if bc.config.RequireFeedVersion && !foundFeedServerVersion {
 		err := conn.Close()
 		if err != nil {
 			return nil, errors.Wrap(err, "error closing connection when missing feed server version")

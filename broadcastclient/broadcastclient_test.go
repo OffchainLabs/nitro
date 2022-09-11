@@ -113,23 +113,21 @@ func TestInvalidSignature(t *testing.T) {
 		}
 	}()
 
-	for {
-		timer := time.NewTimer(1 * time.Second)
-		select {
-		case err := <-fatalErrChan:
-			if errors.Is(err, ErrInvalidFeedSignature) {
-				t.Log("feed error found as expected")
-				return
-			}
-			t.Errorf("unexpected error occurred: %v", err)
-			return
-		case <-timer.C:
-			t.Error("no feed errors detected")
-			return
-		case <-ctx.Done():
-			timer.Stop()
+	timer := time.NewTimer(1 * time.Second)
+	select {
+	case err := <-fatalErrChan:
+		if errors.Is(err, ErrInvalidFeedSignature) {
+			t.Log("feed error found as expected")
 			return
 		}
+		t.Errorf("unexpected error occurred: %v", err)
+		return
+	case <-timer.C:
+		t.Error("no feed errors detected")
+		return
+	case <-ctx.Done():
+		timer.Stop()
+		return
 	}
 }
 
@@ -329,9 +327,12 @@ func TestServerMissingChainId(t *testing.T) {
 	Require(t, b.StartWithHeader(ctx, header))
 	defer b.StopAndWait()
 
+	clientConfig := DefaultTestConfig
+	clientConfig.RequireChainId = true
+
 	ts := NewDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
-	badBroadcastClient := newTestBroadcastClient(DefaultTestConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
+	badBroadcastClient := newTestBroadcastClient(clientConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
 	badBroadcastClient.Start(ctx)
 	badTimer := time.NewTimer(5 * time.Second)
 	select {
@@ -422,9 +423,12 @@ func TestServerMissingFeedServerVersion(t *testing.T) {
 	Require(t, b.StartWithHeader(ctx, header))
 	defer b.StopAndWait()
 
+	clientConfig := DefaultTestConfig
+	clientConfig.RequireFeedVersion = true
+
 	ts := NewDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
-	badBroadcastClient := newTestBroadcastClient(DefaultTestConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
+	badBroadcastClient := newTestBroadcastClient(clientConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
 	badBroadcastClient.Start(ctx)
 	badTimer := time.NewTimer(5 * time.Second)
 	select {
