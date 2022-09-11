@@ -55,6 +55,7 @@ COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
+COPY ./arbutil ./arbutil
 COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/replay ./cmd/replay
 COPY ./das/dastree ./das/dastree
