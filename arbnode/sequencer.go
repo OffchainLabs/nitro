@@ -7,18 +7,22 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -27,15 +31,21 @@ import (
 )
 
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
-const maxTxDataSize uint64 = 112065
+const maxTxDataSize = 112065
 
 type txQueueItem struct {
-	tx         *types.Transaction
-	resultChan chan<- error
-	ctx        context.Context
+	tx             *types.Transaction
+	resultChan     chan<- error
+	returnedResult bool
+	ctx            context.Context
 }
 
 func (i *txQueueItem) returnResult(err error) {
+	if i.returnedResult {
+		log.Error("attempting to return result to already finished queue item", "err", err)
+		return
+	}
+	i.returnedResult = true
 	i.resultChan <- err
 	close(i.resultChan)
 }
@@ -45,8 +55,9 @@ type Sequencer struct {
 
 	txStreamer      *TransactionStreamer
 	txQueue         chan txQueueItem
+	txRetryQueue    arbutil.Queue[txQueueItem]
 	l1Reader        *headerreader.HeaderReader
-	config          SequencerConfig
+	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
@@ -57,9 +68,9 @@ type Sequencer struct {
 	forwarder      *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfig) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfigFetcher) (*Sequencer, error) {
 	senderWhitelist := make(map[common.Address]struct{})
-	entries := strings.Split(config.SenderWhitelist, ",")
+	entries := strings.Split(config().SenderWhitelist, ",")
 	for _, address := range entries {
 		if len(address) == 0 {
 			continue
@@ -71,7 +82,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 	}
 	return &Sequencer{
 		txStreamer:      txStreamer,
-		txQueue:         make(chan txQueueItem, 128),
+		txQueue:         make(chan txQueueItem, config().QueueSize),
 		l1Reader:        l1Reader,
 		config:          config,
 		senderWhitelist: senderWhitelist,
@@ -83,6 +94,14 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 var ErrRetrySequencer = errors.New("please retry transaction")
 
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	forwarder := s.GetForwarder()
+	if forwarder != nil {
+		err := forwarder.PublishTransaction(ctx, tx)
+		if !errors.Is(err, ErrNoSequencer) {
+			return err
+		}
+	}
+
 	if len(s.senderWhitelist) > 0 {
 		signer := types.LatestSigner(s.txStreamer.bc.Config())
 		sender, err := types.Sender(signer, tx)
@@ -94,11 +113,16 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 			return errors.New("transaction sender is not on the whitelist")
 		}
 	}
+	if tx.Type() >= types.ArbitrumDepositTxType {
+		// Should be unreachable due to UnmarshalBinary not accepting Arbitrum internal txs
+		return types.ErrTxTypeNotSupported
+	}
 
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
 		tx,
 		resultChan,
+		false,
 		ctx,
 	}
 	select {
@@ -114,12 +138,12 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction) error {
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
-	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config.MaxRevertGasReject {
+func (s *Sequencer) postTxFilter(_ *arbosState.ArbosState, _ *types.Transaction, _ common.Address, dataGas uint64, result *core.ExecutionResult) error {
+	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
 	return nil
@@ -152,9 +176,13 @@ func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
+		if s.forwarder.target == url {
+			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
+			return nil
+		}
 		s.forwarder.Disable()
 	}
-	s.forwarder = NewForwarder(url, s.config.ForwardTimeout)
+	s.forwarder = NewForwarder(url, &s.config().Forwarder)
 	err := s.forwarder.Initialize(s.GetContext())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)
@@ -172,8 +200,7 @@ func (s *Sequencer) DontForward() {
 	s.forwarder = nil
 }
 
-var ErrQueueFull error = errors.New("queue full")
-var ErrNoSequencer error = errors.New("sequencer temporarily not available")
+var ErrNoSequencer = errors.New("sequencer temporarily not available")
 
 func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
 	select {
@@ -183,10 +210,14 @@ func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
 	}
 }
 
-func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
+func (s *Sequencer) GetForwarder() *TxForwarder {
 	s.forwarderMutex.Lock()
-	forwarder := s.forwarder
-	s.forwarderMutex.Unlock()
+	defer s.forwarderMutex.Unlock()
+	return s.forwarder
+}
+
+func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
+	forwarder := s.GetForwarder()
 	if forwarder == nil {
 		return false
 	}
@@ -201,17 +232,37 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	return true
 }
 
-func (s *Sequencer) sequenceTransactions(ctx context.Context) {
+var sequencerInternalError = errors.New("sequencer internal error")
+
+func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var txes types.Transactions
 	var queueItems []txQueueItem
 	var totalBatchSize int
+
+	defer func() {
+		panic := recover()
+		if panic != nil {
+			log.Error("sequencer block creation panicked", "panic", panic, "backtrace", string(debug.Stack()))
+			// Return an internal error to any queue items we were trying to process
+			for _, item := range queueItems {
+				if !item.returnedResult {
+					item.returnResult(sequencerInternalError)
+				}
+			}
+			// Wait for the MaxBlockSpeed until attempting to create a block again
+			returnValue = true
+		}
+	}()
+
 	for {
 		var queueItem txQueueItem
-		if len(txes) == 0 {
+		if s.txRetryQueue.Len() > 0 {
+			queueItem = s.txRetryQueue.Pop()
+		} else if len(txes) == 0 {
 			select {
 			case queueItem = <-s.txQueue:
 			case <-ctx.Done():
-				return
+				return false
 			}
 		} else {
 			done := false
@@ -234,16 +285,15 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 			queueItem.returnResult(err)
 			continue
 		}
-		if len(txBytes) > int(maxTxDataSize) {
+		if len(txBytes) > maxTxDataSize {
 			// This tx is too large
 			queueItem.returnResult(core.ErrOversizedData)
 			continue
 		}
-		if totalBatchSize+len(txBytes) > int(maxTxDataSize) {
-			// This tx would be too large to add to this batch.
-			// Attempt to put it back in the queue, but error if the queue is full.
-			// Then, end the batch here.
-			s.requeueOrFail(queueItem, ErrQueueFull)
+		if totalBatchSize+len(txBytes) > maxTxDataSize {
+			// This tx would be too large to add to this batch
+			s.txRetryQueue.Push(queueItem)
+			// End the batch here to put this tx in the next one
 			break
 		}
 		totalBatchSize += len(txBytes)
@@ -252,7 +302,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	}
 
 	if s.forwardIfSet(queueItems) {
-		return
+		return false
 	}
 
 	timestamp := time.Now().Unix()
@@ -261,14 +311,14 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	l1Timestamp := s.l1Timestamp
 	s.L1BlockAndTimeMutex.Unlock()
 
-	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config.MaxAcceptableTimestampDelta.Seconds()) {
+	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config().MaxAcceptableTimestampDelta.Seconds()) {
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
 			"l1Timestamp", l1Timestamp,
 			"localTimestamp", timestamp,
 		)
-		return
+		return false
 	}
 
 	header := &arbos.L1IncomingMessageHeader{
@@ -294,32 +344,43 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		// we changed roles
 		// forward if we have where to
 		if s.forwardIfSet(queueItems) {
-			return
+			return false
 		}
 		// try to add back to queue otherwise
 		for _, item := range queueItems {
 			s.requeueOrFail(item, ErrNoSequencer)
 		}
-		return
+		return false
 	}
 	if err != nil {
 		log.Warn("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
 		}
-		return
+		return false
 	}
 
+	madeBlock := false
 	for i, err := range hooks.TxErrors {
+		if err == nil {
+			madeBlock = true
+		}
 		queueItem := queueItems[i]
 		if errors.Is(err, core.ErrGasLimitReached) {
 			// There's not enough gas left in the block for this tx.
-			// Attempt to re-queue the transaction.
-			s.requeueOrFail(queueItem, core.ErrGasLimitReached)
-			continue
+			if madeBlock && !errors.Is(err, arbos.ErrMaxGasLimitReached) {
+				// There was already an earlier tx in the block; retry in a fresh block.
+				s.txRetryQueue.Push(queueItem)
+				continue
+			}
+		}
+		if errors.Is(err, core.ErrIntrinsicGas) {
+			// Strip additional information, as it's incorrect due to L1 data gas.
+			err = core.ErrIntrinsicGas
 		}
 		queueItem.returnResult(err)
 	}
+	return madeBlock
 }
 
 func (s *Sequencer) updateLatestL1Block(header *types.Header) {
@@ -372,10 +433,15 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		nextBlock := time.Now().Add(s.config.MaxBlockSpeed)
-		s.sequenceTransactions(ctx)
-		// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
-		return time.Until(nextBlock)
+		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
+		madeBlock := s.createBlock(ctx)
+		if madeBlock {
+			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
+			return time.Until(nextBlock)
+		} else {
+			// If we didn't make a block, try again immediately.
+			return 0
+		}
 	})
 
 	return nil

@@ -47,3 +47,9 @@ After allocating funds and paying what is owed, the L1 Pricer adjusts the L1 Gas
 The algorithm first computes the surplus (funds in the `L1PricerFundsPool`, minus total funds due), which might be negative. If the surplus is positive, the L1 Gas Basefee is reduced, so that the amount collected over a fixed future interval will be reduced by exactly the surplus. If the surplus is negative, the Basefee is increased so that the shortfall will be eliminated over the same fixed future interval.
 
 A second term is added to the L1 Gas Basefee, based on the derivative of the surplus (surplus at present, minus the surplus after the previous batch posting report was processed). This term, which is multiplied by a smoothing factor to reduce fluctuations, will reduce the Basefee is the surplus is increasing, and increase the Basefee is the surplus is shrinking.
+
+## Getting L1 Fee Info 
+
+The L1 gas basefee can be queried via [`ArbGasInfo.getL1BaseFeeEstimate`](precompiles.md). To estimate the L1 fee a transaction will use, the [`NodeInterface.gasEstimateComponents`](gas.md) or [`NodeInterface.gasEstimateL1Component`](gas.md) method can be used.
+
+ Arbitrum transaction receipts include a `gasUsedForL1` field, showing the amount of gas used on L1 in units of L2 gas.

@@ -46,6 +46,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	conf.InboxReader.HardReorg = true
 	if validator {
 		conf.BlockValidator.Enable = true
+		conf.BlockValidator.ArbitratorValidator = true
 		conf.BlockValidator.ConcurrentRunsLimit = 16
 	}
 	l2Info, arbNode, _, l2stack, l1Info, l1backend, l1Client, l1stack := createTestNodeOnL1WithConfig(t, ctx, false, conf, params.ArbitrumDevTestChainConfig())
@@ -219,7 +220,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			seqOpts.Nonce = big.NewInt(int64(seqNonce))
 			var tx *types.Transaction
 			if i%5 == 0 {
-				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
+				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
 			} else {
 				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
 			}

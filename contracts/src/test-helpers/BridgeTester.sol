@@ -64,6 +64,7 @@ contract BridgeTester is Initializable, DelegateCallAware, IBridge {
     bytes32[] public override delayedInboxAccs;
 
     bytes32[] public override sequencerInboxAccs;
+    uint256 public override sequencerReportedSubMessageCount;
 
     address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
@@ -85,7 +86,12 @@ contract BridgeTester is Initializable, DelegateCallAware, IBridge {
         return allowedOutboxesMap[outbox].allowed;
     }
 
-    function enqueueSequencerMessage(bytes32 dataHash, uint256 afterDelayedMessagesRead)
+    function enqueueSequencerMessage(
+        bytes32 dataHash,
+        uint256 afterDelayedMessagesRead,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
+    )
         external
         returns (
             uint256 seqMessageIndex,

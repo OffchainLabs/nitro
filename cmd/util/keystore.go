@@ -18,9 +18,10 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
-func OpenWallet(description string, walletConfig *genericconf.WalletConfig, chainId *big.Int) (*bind.TransactOpts, func([]byte) ([]byte, error), error) {
+func OpenWallet(description string, walletConfig *genericconf.WalletConfig, chainId *big.Int) (*bind.TransactOpts, signature.DataSignerFunc, error) {
 	if walletConfig.PrivateKey != "" {
 		privateKey, err := crypto.HexToECDSA(walletConfig.PrivateKey)
 		if err != nil {

@@ -122,7 +122,9 @@ interface ISequencerInbox is IDelayedMessageProvider {
         uint256 sequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
-        IGasRefunder gasRefunder
+        IGasRefunder gasRefunder,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
     ) external;
 
     // ---------- onlyRollupOrOwner functions ----------

@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package main
 
 import (
@@ -281,6 +284,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			log.Warn("Re-creating genesis though it seems to exist in database", "blockNr", genesisBlockNr)
 		}
 		log.Info("Initializing", "ancients", ancients, "genesisBlockNr", genesisBlockNr)
+		if config.Init.ThenQuit {
+			cacheConfig.SnapshotWait = true
+		}
 		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, &config.Node, config.Init.AccountsPerSync)
 		if err != nil {
 			panic(err)
