@@ -42,6 +42,7 @@ type BroadcasterConfig struct {
 	Workers        int           `koanf:"workers"`
 	MaxSendQueue   int           `koanf:"max-send-queue"`
 	RequireVersion bool          `koanf:"require-version"`
+	DisableSigning bool          `koanf:"disable-signing"`
 }
 
 func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -55,6 +56,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".workers", DefaultBroadcasterConfig.Workers, "number of threads to reserve for HTTP to WS upgrade")
 	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
 	f.Bool(prefix+".require-version", DefaultBroadcasterConfig.RequireVersion, "don't connect if client version not present")
+	f.Bool(prefix+".disable-signing", DefaultBroadcasterConfig.DisableSigning, "don't sign feed messages")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -68,6 +70,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	Workers:        100,
 	MaxSendQueue:   4096,
 	RequireVersion: false,
+	DisableSigning: true,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
@@ -81,6 +84,7 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	Workers:        100,
 	MaxSendQueue:   4096,
 	RequireVersion: false,
+	DisableSigning: false,
 }
 
 type WSBroadcastServer struct {
@@ -129,6 +133,16 @@ func (s *WSBroadcastServer) Initialize() error {
 }
 
 func (s *WSBroadcastServer) Start(ctx context.Context) error {
+	// Prepare handshake header writer from http.Header mapping.
+	header := ws.HandshakeHeaderHTTP(http.Header{
+		HTTPHeaderFeedServerVersion: []string{strconv.Itoa(FeedServerVersion)},
+		HTTPHeaderChainId:           []string{strconv.FormatUint(s.chainId, 10)},
+	})
+
+	return s.StartWithHeader(ctx, header)
+}
+
+func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
 	s.startMutex.Lock()
 	defer s.startMutex.Unlock()
 	if s.started {
@@ -145,12 +159,6 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	handle := func(conn net.Conn) {
 
 		safeConn := deadliner{conn, s.settings.IOTimeout}
-
-		// Prepare handshake header writer from http.Header mapping.
-		header := ws.HandshakeHeaderHTTP(http.Header{
-			HTTPHeaderFeedServerVersion: []string{strconv.Itoa(FeedServerVersion)},
-			HTTPHeaderChainId:           []string{strconv.FormatUint(s.chainId, 10)},
-		})
 
 		var feedClientVersionSeen bool
 		var requestedSeqNum arbutil.MessageIndex

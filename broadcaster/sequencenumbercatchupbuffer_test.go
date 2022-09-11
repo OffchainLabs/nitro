@@ -45,7 +45,7 @@ func createDummyBroadcastMessagesImpl(seqNums []arbutil.MessageIndex, length int
 	for _, seqNum := range seqNums {
 		broadcastMessage := &BroadcastFeedMessage{
 			SequenceNumber: seqNum,
-			Message:        arbstate.MessageWithMetadata{},
+			Message:        arbstate.EmptyTestMessageWithMetadata,
 		}
 		broadcastMessages = append(broadcastMessages, broadcastMessage)
 	}
