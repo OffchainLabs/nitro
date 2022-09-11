@@ -2,10 +2,15 @@
 for CONTRACTNAME in Bridge Inbox Outbox RollupCore RollupUserLogic RollupAdminLogic SequencerInbox ChallengeManager
 do
     echo "Checking storage change of $CONTRACTNAME"
-    yarn sol2uml storage ./ -c "$CONTRACTNAME" -o "./test/storage/$CONTRACTNAME-new.svg"
-    diff "./test/storage/$CONTRACTNAME-current.svg" "./test/storage/$CONTRACTNAME-new.svg"
+    [ -f "./test/storage/$CONTRACTNAME.svg" ] && mv "./test/storage/$CONTRACTNAME.svg" "./test/storage/$CONTRACTNAME-old.svg"
+    yarn sol2uml storage ./ -c "$CONTRACTNAME" -o "./test/storage/$CONTRACTNAME.svg"
+    diff "./test/storage/$CONTRACTNAME-old.svg" "./test/storage/$CONTRACTNAME.svg"
     if [[ $? != "0" ]]
     then
-        exit 1
+        CHANGED=1
     fi
 done
+if [[ $CHANGED == 1 ]]
+then
+    exit 1
+fi
