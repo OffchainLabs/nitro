@@ -58,7 +58,7 @@ jobs:
         run: rustup target add wasm32-wasi wasm32-unknown-unknown
 
       - name: Cache Rust intermediate build products
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/
@@ -74,7 +74,7 @@ jobs:
 
       - name: Cache wabt build
         id: cache-wabt
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/wabt-prefix
           key: ${{ runner.os }}-wabt-${{ env.WABT_VERSION }}
@@ -92,7 +92,7 @@ jobs:
           make install
 
       - name: Cache cbrotli
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         id: cache-cbrotli
         with:
           path: |
