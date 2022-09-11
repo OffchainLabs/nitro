@@ -20,6 +20,7 @@ solgen/go/
 contracts/deployments/
 contracts/test/prover/proofs/*.json
 contracts/test/prover/spec-proofs/*.json
+contracts/test/storage/*-new.svg
 .make/
 /cmd/statetransfer/statetransfer
 /reproducible-wasm/*.wasm
