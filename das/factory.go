@@ -8,7 +8,9 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 // Create any storage services that persist to files, database, cloud storage,
@@ -63,7 +65,7 @@ func CreatePersistentStorageService(
 func CreateBatchPosterDAS(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
-	daSigner DasSigner,
+	dataSigner signature.DataSignerFunc,
 	l1Reader arbutil.L1Interface,
 	sequencerInboxAddr common.Address,
 ) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *LifecycleManager, error) {
@@ -88,9 +90,9 @@ func CreateBatchPosterDAS(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if daSigner != nil {
+	if dataSigner != nil {
 		// In some tests the batch poster does not sign Store requests
-		daWriter, err = NewStoreSigningDAS(daWriter, daSigner)
+		daWriter, err = NewStoreSigningDAS(daWriter, dataSigner)
 		if err != nil {
 			return nil, nil, nil, err
 		}
