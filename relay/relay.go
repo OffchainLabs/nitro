@@ -52,7 +52,7 @@ func NewRelay(feedConfig broadcastclient.FeedConfig, chainId uint64, feedErrChan
 		return nil, errors.New("relay attempted to sign feed message")
 	}
 	return &Relay{
-		broadcaster:                 broadcaster.NewBroadcaster(feedConfig.Output, chainId, feedErrChan, dataSignerErr),
+		broadcaster:                 broadcaster.NewBroadcaster(func() *wsbroadcastserver.Config { return &feedConfig.Output }, chainId, feedErrChan, dataSignerErr),
 		broadcastClients:            broadcastClients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,
