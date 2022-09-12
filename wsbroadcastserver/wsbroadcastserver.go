@@ -37,7 +37,7 @@ type BroadcasterConfig struct {
 	IOTimeout      time.Duration `koanf:"io-timeout" reload:"hot"`
 	Port           string        `koanf:"port"` // TODO(magic) needs tcp server restart on change
 	Ping           time.Duration `koanf:"ping" reload:"hot"`
-	ClientTimeout  time.Duration `koanf:"client-timeout" relaod:"hot"`
+	ClientTimeout  time.Duration `koanf:"client-timeout" reload:"hot"`
 	Queue          int           `koanf:"queue"`   // TODO(magic) ClientManager.pool needs to be recreated on change
 	Workers        int           `koanf:"workers"` // TODO(magic) ClientManager.pool needs to be recreated on change
 	MaxSendQueue   int           `koanf:"max-send-queue" reload:"hot"`
