@@ -160,7 +160,7 @@ type buildingBatch struct {
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxBatchSize*2))
-	if config.MaxBatchSize <= 40 { // TODO should be validated earlier, not to panic e.g. on config reload
+	if config.MaxBatchSize <= 40 {
 		panic("MaxBatchSize too small")
 	}
 	return &batchSegments{
