@@ -210,7 +210,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 			} else {
 				s.possiblyBroadcast(h)
 			}
-			if (!s.config().PollOnly || pollOnlyOverride) && clientSubscription == nil {
+			if !(s.config().PollOnly || pollOnlyOverride) && clientSubscription == nil {
 				clientSubscription, err = s.client.SubscribeNewHead(ctx, inputChannel)
 				if err != nil {
 					clientSubscription = nil
