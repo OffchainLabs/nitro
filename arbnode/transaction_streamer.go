@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -34,8 +35,9 @@ import (
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
-	db ethdb.Database
-	bc *core.BlockChain
+	db      ethdb.Database
+	bc      *core.BlockChain
+	chainId uint64
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
 	createBlocksMutex  sync.Mutex // cannot be acquired while reorgMutex is held
@@ -57,13 +59,18 @@ type TransactionStreamer struct {
 	inboxReader     *InboxReader
 }
 
-func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastServer *broadcaster.Broadcaster) (*TransactionStreamer, error) {
+func NewTransactionStreamer(
+	db ethdb.Database,
+	bc *core.BlockChain,
+	broadcastServer *broadcaster.Broadcaster,
+) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 db,
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
+		chainId:            bc.Config().ChainID.Uint64(),
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -211,15 +218,19 @@ func dbKey(prefix []byte, pos uint64) []byte {
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error) {
+func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbstate.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, uint64(seqNum))
 	data, err := s.db.Get(key)
 	if err != nil {
-		return arbstate.MessageWithMetadata{}, err
+		return nil, err
 	}
 	var message arbstate.MessageWithMetadata
 	err = rlp.DecodeBytes(data, &message)
-	return message, err
+	if err != nil {
+		return nil, err
+	}
+
+	return &message, nil
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
@@ -240,12 +251,22 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, 
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
-	for i, message := range messages {
-		msgPos := pos + arbutil.MessageIndex(i)
-		if message.Message == nil || message.Message.Header == nil {
-			return fmt.Errorf("invalid feed message at sequence number %v", msgPos)
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+	if len(feedMessages) == 0 {
+		return nil
+	}
+	startingSeqNum := feedMessages[0].SequenceNumber
+	var messages []arbstate.MessageWithMetadata
+	endingSeqNum := startingSeqNum
+	for _, feedMessage := range feedMessages {
+		if endingSeqNum != feedMessage.SequenceNumber {
+			return fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, endingSeqNum)
 		}
+		if feedMessage.Message.Message == nil || feedMessage.Message.Message.Header == nil {
+			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
+		}
+		messages = append(messages, feedMessage.Message)
+		endingSeqNum++
 	}
 
 	s.insertionMutex.Lock()
@@ -256,13 +277,13 @@ func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, mes
 		return err
 	}
 
-	if currentMessageCount >= pos {
+	if currentMessageCount >= startingSeqNum {
 		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
 		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
-		return s.addMessagesAndEndBatchImpl(pos, false, messages, nil)
+		return s.addMessagesAndEndBatchImpl(startingSeqNum, false, messages, nil)
 	} else {
 		broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
-		if len(s.broadcasterQueuedMessages) > 0 && broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == pos {
+		if len(s.broadcasterQueuedMessages) > 0 && broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == startingSeqNum {
 			s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 		} else {
 			if len(s.broadcasterQueuedMessages) > 0 {
@@ -270,11 +291,11 @@ func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, mes
 					"broadcaster queue jumped positions",
 					"queuedMessages", len(s.broadcasterQueuedMessages),
 					"expectedNextPos", broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
-					"gotPos", pos,
+					"gotPos", startingSeqNum,
 				)
 			}
 			s.broadcasterQueuedMessages = messages
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(pos))
+			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(startingSeqNum))
 		}
 	}
 
@@ -542,7 +563,9 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	}
 
 	if s.broadcastServer != nil {
-		s.broadcastServer.BroadcastSingle(msgWithMeta, pos)
+		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
+			return err
+		}
 	}
 
 	// Only write the block after we've written the messages, so if the node dies in the middle of this,
@@ -610,7 +633,9 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 
 	for i, msg := range messagesWithMeta {
 		if s.broadcastServer != nil {
-			s.broadcastServer.BroadcastSingle(msg, pos+arbutil.MessageIndex(i))
+			if err := s.broadcastServer.BroadcastSingle(msg, pos+arbutil.MessageIndex(i)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -784,7 +809,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 
 		if s.validator != nil {
-			s.validator.NewBlock(block, lastBlockHeader, msg)
+			s.validator.NewBlock(block, lastBlockHeader, *msg)
 		}
 
 		s.latestBlockAndMessageMutex.Lock()
