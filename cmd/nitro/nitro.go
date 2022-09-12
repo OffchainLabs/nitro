@@ -43,6 +43,7 @@ import (
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -56,7 +57,7 @@ func initLog(logType string, logLevel log.Lvl) error {
 	logFormat, err := genericconf.ParseLogType(logType)
 	if err != nil {
 		flag.Usage()
-		return fmt.Errorf("Error parsing log type: %w", err)
+		return fmt.Errorf("error parsing log type: %w", err)
 	}
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(logLevel)
@@ -154,25 +155,33 @@ func main() {
 		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
-	var rollupAddrs arbnode.RollupAddresses
+	if nodeConfig.Node.SeqCoordinator.Enable {
+		if nodeConfig.Node.SeqCoordinator.Signing.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Signing.Dangerous.DisableSignatureVerification {
+			panic("sequencer coordinator enabled, but signing key unset, and signature verification isn't disabled")
+		}
+	}
+
 	var l1TransactionOpts *bind.TransactOpts
-	var daSigner func([]byte) ([]byte, error)
+	var dataSigner signature.DataSignerFunc
+	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
-	if nodeConfig.Node.L1Reader.Enable || setupNeedsKey {
+	validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorNeedsKey {
+		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+		if err != nil {
+			fmt.Printf("%v\n", err.Error())
+			return
+		}
+	}
+
+	var rollupAddrs arbnode.RollupAddresses
+	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
 		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
 		if err != nil {
-			panic(err)
-		}
-
-		validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
-		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey || setupNeedsKey {
-			l1TransactionOpts, daSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
-			if err != nil {
-				fmt.Printf("%v\n", err.Error())
-				return
-			}
+			fmt.Printf("error getting rollup addresses: %v\n", err.Error())
+			return
 		}
 	} else if l1Client != nil {
 		// Don't need l1Client anymore
@@ -187,7 +196,6 @@ func main() {
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
-			nodeConfig.Node.BlockValidator.ArbitratorValidator = true
 		}
 	}
 
@@ -288,7 +296,7 @@ func main() {
 		l1Client,
 		&rollupAddrs,
 		l1TransactionOpts,
-		daSigner,
+		dataSigner,
 		fatalErrChan,
 	)
 	if err != nil {
@@ -417,7 +425,7 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 			other := value.Field(i).Interface()
 
 			if !hot && !reflect.DeepEqual(first, other) {
-				err = fmt.Errorf("Illegal change to %v%v%v", colors.Red, dot, colors.Clear)
+				err = fmt.Errorf("illegal change to %v%v%v", colors.Red, dot, colors.Clear)
 			} else {
 				check(node.Field(i), value.Field(i), dot)
 			}

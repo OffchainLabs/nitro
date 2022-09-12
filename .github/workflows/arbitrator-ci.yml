@@ -58,7 +58,7 @@ jobs:
         run: rustup target add wasm32-wasi wasm32-unknown-unknown
 
       - name: Cache Rust intermediate build products
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/bin/
@@ -74,7 +74,7 @@ jobs:
 
       - name: Cache wabt build
         id: cache-wabt
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/wabt-prefix
           key: ${{ runner.os }}-wabt-${{ env.WABT_VERSION }}
@@ -92,7 +92,7 @@ jobs:
           make install
 
       - name: Cache cbrotli
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         id: cache-cbrotli
         with:
           path: |
@@ -101,8 +101,8 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
-          restore-keys: ${{ runner.os }}-brotli-
+          key: ${{ runner.os }}-brotli-2-${{ hashFiles('build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          restore-keys: ${{ runner.os }}-brotli-2-
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -118,6 +118,7 @@ jobs:
           # The cache folder will be placed in the build directory,
           #  so make sure it doesn't conflict with anything!
           actions-cache-folder: 'emsdk-cache'
+          no-cache: true
 
       - name: Build cbrotli-wasm
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
