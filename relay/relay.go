@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Relay struct {
