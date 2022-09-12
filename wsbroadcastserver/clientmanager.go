@@ -199,7 +199,7 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 
 		var clientDeleteList []*ClientConnection
 		for {
-			{
+			func() {
 				pingInterval := time.NewTimer(cm.config().Ping)
 				defer pingInterval.Stop()
 				select {
@@ -222,7 +222,7 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 				case <-pingInterval.C:
 					clientDeleteList = cm.verifyClients()
 				}
-			}
+			}()
 
 			if len(clientDeleteList) > 0 {
 				for _, client := range clientDeleteList {
