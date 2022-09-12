@@ -987,7 +987,7 @@ func createNodeImpl(
 			return nil, err
 		}
 	} else if config.Sequencer.Enable {
-		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
+		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
 
 	return &Node{
