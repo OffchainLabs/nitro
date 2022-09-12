@@ -37,4 +37,22 @@ func TestStorageBackedBigInt(t *testing.T) {
 			t.Fatal(in, out, common.BytesToHash(out.Bytes()))
 		}
 	}
+
+	twoToThe255 := new(big.Int).Lsh(big.NewInt(1), 255)
+	for _, in := range []*big.Int{
+		new(big.Int).Sub(twoToThe255, big.NewInt(1)), // MaxUint256
+		new(big.Int).Neg(twoToThe255),                // MinUint256
+	} {
+		err := sbbi.Set(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := sbbi.Get()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if in.Cmp(out) != 0 {
+			t.Fatal(in, out, common.BytesToHash(out.Bytes()))
+		}
+	}
 }

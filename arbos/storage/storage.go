@@ -441,25 +441,30 @@ func (sto *Storage) OpenStorageBackedBigInt(offset uint64) StorageBackedBigInt {
 	return StorageBackedBigInt{sto.NewSlot(offset)}
 }
 
+var twoToThe256 = new(big.Int).Lsh(big.NewInt(1), 256)
+
 func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
 	asHash, err := sbbi.StorageSlot.Get()
-	asBig := new(big.Int).SetBytes(asHash[1:])
-	if asHash[0] != 0 {
-		asBig = new(big.Int).Neg(asBig)
+	if err != nil {
+		return nil, err
+	}
+	asBig := new(big.Int).SetBytes(asHash[:])
+	if asBig.Bit(255) != 0 {
+		asBig = new(big.Int).Sub(asBig, twoToThe256)
 	}
 	return asBig, err
 }
 
 func (sbbi *StorageBackedBigInt) Set(val *big.Int) error {
-	asBytes := val.Bytes()
-	if len(asBytes) > 31 {
+	if val.Sign() < 0 {
+		val = new(big.Int).Add(val, twoToThe256)
+		if val.Sign() <= 0 {
+			panic("underflow in StorageBackedBigInt.Set")
+		}
+	} else if val.BitLen() > 256 {
 		panic("overflow in StorageBackedBigInt.Set")
 	}
-	asHash := common.BytesToHash(asBytes)
-	if val.Sign() < 0 {
-		asHash[0] = 1
-	}
-	return sbbi.StorageSlot.Set(asHash)
+	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
 
 func (sbbi *StorageBackedBigInt) Set_preVersion7(val *big.Int) error {
