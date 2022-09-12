@@ -63,6 +63,17 @@ type L1IncomingMessage struct {
 	L2msg  []byte                   `json:"l2Msg"`
 }
 
+var EmptyTestIncomingMessage = L1IncomingMessage{
+	Header: &L1IncomingMessageHeader{},
+}
+
+var TestIncomingMessageWithRequestId = L1IncomingMessage{
+	Header: &L1IncomingMessageHeader{
+		RequestId: &common.Hash{},
+		L1BaseFee: big.NewInt(0),
+	},
+}
+
 type L1Info struct {
 	poster        common.Address
 	l1BlockNumber uint64
@@ -94,11 +105,17 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 	if msg.Header.RequestId == nil {
 		return nil, errors.New("cannot serialize L1IncomingMessage without RequestId")
 	}
-	if err := util.HashToWriter(*msg.Header.RequestId, wr); err != nil {
+	requestId := *msg.Header.RequestId
+	if err := util.HashToWriter(requestId, wr); err != nil {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(common.BigToHash(msg.Header.L1BaseFee), wr); err != nil {
+	var l1BaseFeeHash common.Hash
+	if msg.Header.L1BaseFee == nil {
+		return nil, errors.New("cannot serialize L1IncomingMessage without L1BaseFee")
+	}
+	l1BaseFeeHash = common.BigToHash(msg.Header.L1BaseFee)
+	if err := util.HashToWriter(l1BaseFeeHash, wr); err != nil {
 		return nil, err
 	}
 
@@ -113,14 +130,14 @@ func (msg *L1IncomingMessage) Equals(other *L1IncomingMessage) bool {
 	return msg.Header.Equals(other.Header) && bytes.Equal(msg.L2msg, other.L2msg)
 }
 
-func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
+func (h *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
 	// These are all non-pointer types so it's safe to use the == operator
-	return header.Kind == other.Kind &&
-		header.Poster == other.Poster &&
-		header.BlockNumber == other.BlockNumber &&
-		header.Timestamp == other.Timestamp &&
-		header.RequestId == other.RequestId &&
-		header.L1BaseFee == other.L1BaseFee
+	return h.Kind == other.Kind &&
+		h.Poster == other.Poster &&
+		h.BlockNumber == other.BlockNumber &&
+		h.Timestamp == other.Timestamp &&
+		h.RequestId == other.RequestId &&
+		h.L1BaseFee == other.L1BaseFee
 }
 
 func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
@@ -326,11 +343,11 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 	case L2MessageKind_SignedTx:
 		newTx := new(types.Transaction)
 		// Safe to read in its entirety, as all input readers are limited
-		bytes, err := io.ReadAll(rd)
+		readBytes, err := io.ReadAll(rd)
 		if err != nil {
 			return nil, err
 		}
-		if err := newTx.UnmarshalBinary(bytes); err != nil {
+		if err := newTx.UnmarshalBinary(readBytes); err != nil {
 			return nil, err
 		}
 		if newTx.Type() >= types.ArbitrumDepositTxType {

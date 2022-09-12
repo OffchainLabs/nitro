@@ -43,7 +43,9 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -701,7 +703,7 @@ func createNodeImpl(
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
-	daSigner das.DasSigner,
+	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 ) (*Node, error) {
 	config := configFetcher.Get()
@@ -738,7 +740,7 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, fatalErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, fatalErrChan, dataSigner)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -746,6 +748,10 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, config.L1Reader)
 	}
 
+	var sequencerInboxAddr common.Address
+	if deployInfo != nil {
+		sequencerInboxAddr = deployInfo.SequencerInbox
+	}
 	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
 	if err != nil {
 		return nil, err
@@ -799,6 +805,15 @@ func createNodeImpl(
 		return nil, err
 	}
 
+	var bpVerifier *contracts.BatchPosterVerifier
+	if l1client != nil {
+		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(sequencerInboxAddr, l1client)
+		if err != nil {
+			return nil, err
+		}
+		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+	}
+	sigVerifier := signature.NewVerifier(config.Feed.Input.RequireSignature, nil, bpVerifier)
 	currentMessageCount, err := txStreamer.GetMessageCount()
 	if err != nil {
 		return nil, err
@@ -807,12 +822,13 @@ func createNodeImpl(
 	if config.Feed.Input.Enable() {
 		for _, address := range config.Feed.Input.URLs {
 			client := broadcastclient.NewBroadcastClient(
+				config.Feed.Input,
 				address,
 				l2ChainId,
 				currentMessageCount,
-				config.Feed.Input.Timeout,
 				txStreamer,
 				fatalErrChan,
+				sigVerifier,
 			)
 			broadcastClients = append(broadcastClients, client)
 		}
@@ -858,7 +874,7 @@ func createNodeImpl(
 	var dasLifecycleManager *das.LifecycleManager
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
-			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, daSigner, l1client, deployInfo.SequencerInbox)
+			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
@@ -971,7 +987,7 @@ func createNodeImpl(
 			return nil, err
 		}
 	} else if config.Sequencer.Enable {
-		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
+		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
 
 	return &Node{
@@ -1001,7 +1017,7 @@ type L1ReaderCloser struct {
 	l1Reader *headerreader.HeaderReader
 }
 
-func (c *L1ReaderCloser) Close(ctx context.Context) error {
+func (c *L1ReaderCloser) Close(_ context.Context) error {
 	c.l1Reader.StopOnly()
 	return nil
 }
@@ -1010,8 +1026,8 @@ func (c *L1ReaderCloser) String() string {
 	return "l1 reader closer"
 }
 
-// Set up a das.DataAvailabilityService stack without relying on any
-// objects already created for setting up the Node.
+// SetUpDataAvailabilityWithoutNode sets up a das.DataAvailabilityService stack
+// without relying on any objects already created for setting up the Node.
 func SetUpDataAvailabilityWithoutNode(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
@@ -1024,7 +1040,7 @@ func SetUpDataAvailabilityWithoutNode(
 		}
 		l1Reader = headerreader.New(l1Client, headerreader.DefaultConfig) // TODO: config
 	}
-	das, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
+	newDas, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1032,11 +1048,11 @@ func SetUpDataAvailabilityWithoutNode(
 		l1Reader.Start(ctx)
 		lifeCycle.Register(&L1ReaderCloser{l1Reader})
 	}
-	return das, lifeCycle, err
+	return newDas, lifeCycle, err
 }
 
-// Set up a das.DataAvailabilityService stack allowing some dependencies
-// that were created for the Node to be injected.
+// SetUpDataAvailability sets up a das.DataAvailabilityService stack allowing
+// some dependencies that were created for the Node to be injected.
 func SetUpDataAvailability(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
@@ -1068,7 +1084,7 @@ func SetUpDataAvailability(
 			return nil, nil, err
 		}
 		if seqInboxAddress == nil {
-			return nil, nil, errors.New("Must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+			return nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
 		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
 		if err != nil {
@@ -1196,7 +1212,7 @@ func SetUpDataAvailability(
 	}
 
 	if topLevelDas == nil {
-		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled.")
+		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
 	}
 
 	return topLevelDas, dasLifecycleManager, nil
@@ -1229,10 +1245,10 @@ func CreateNode(
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
-	daSigner das.DasSigner,
+	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, daSigner, fatalErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, dataSigner, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1538,6 +1554,6 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 }
 
 // Don't preserve reorg'd out blocks
-func shouldPreserveFalse(header *types.Header) bool {
+func shouldPreserveFalse(_ *types.Header) bool {
 	return false
 }

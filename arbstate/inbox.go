@@ -7,22 +7,25 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"io"
 	"math/big"
 
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/zeroheavy"
-
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/zeroheavy"
 )
+
+var uniquifyingPrefix = []byte("Arbitrum Nitro Feed:")
 
 type InboxBackend interface {
 	PeekSequencerInbox() ([]byte, error)
@@ -39,6 +42,29 @@ type InboxBackend interface {
 type MessageWithMetadata struct {
 	Message             *arbos.L1IncomingMessage `json:"message"`
 	DelayedMessagesRead uint64                   `json:"delayedMessagesRead"`
+}
+
+var EmptyTestMessageWithMetadata = MessageWithMetadata{
+	Message: &arbos.EmptyTestIncomingMessage,
+}
+
+// Message signature is only verified if requestId defined
+var TestMessageWithMetadataAndRequestId = MessageWithMetadata{
+	Message: &arbos.TestIncomingMessageWithRequestId,
+}
+
+func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId uint64) (common.Hash, error) {
+	serializedExtraData := make([]byte, 24)
+	binary.BigEndian.PutUint64(serializedExtraData[:8], uint64(sequenceNumber))
+	binary.BigEndian.PutUint64(serializedExtraData[8:16], chainId)
+	binary.BigEndian.PutUint64(serializedExtraData[16:], m.DelayedMessagesRead)
+
+	serializedMessage, err := rlp.EncodeToBytes(m.Message)
+	if err != nil {
+		return common.Hash{}, errors.Wrapf(err, "unable to serialize message %v", sequenceNumber)
+	}
+
+	return crypto.Keccak256Hash(uniquifyingPrefix, serializedExtraData, serializedMessage), nil
 }
 
 type InboxMultiplexer interface {
@@ -263,7 +289,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasRe
 	}
 }
 
-var InvalidL1Message *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
+var InvalidL1Message = &arbos.L1IncomingMessage{
 	Header: &arbos.L1IncomingMessageHeader{
 		Kind: arbos.L1MessageType_Invalid,
 	},
