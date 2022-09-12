@@ -10,9 +10,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/util/headerreader"
-
 	"github.com/andybalholm/brotli"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -23,11 +20,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -392,7 +392,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
 			haveUsefulMessage = true
 		}
-		success, err := b.building.segments.AddMessage(&msg)
+		success, err := b.building.segments.AddMessage(msg)
 		if err != nil {
 			log.Error("error adding message to batch", "error", err)
 			break
