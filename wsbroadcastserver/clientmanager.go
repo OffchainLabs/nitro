@@ -153,12 +153,12 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 
 	clientDeleteList := make([]*ClientConnection, 0, len(cm.clientPtrMap))
 	for client := range cm.clientPtrMap {
-		if len(client.out) == cm.config().MaxSendQueue {
+		select {
+		case client.out <- buf.Bytes():
+		default:
 			// Queue for client too backed up, disconnect instead of blocking on channel send
 			log.Info("disconnecting because send queue too large", "client", client.Name, "size", len(client.out))
 			clientDeleteList = append(clientDeleteList, client)
-		} else {
-			client.out <- buf.Bytes()
 		}
 	}
 
