@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -558,64 +557,6 @@ var TestDangerousSequencerConfig = DangerousSequencerConfig{
 
 func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
-}
-
-type SequencerConfig struct {
-	Enable                      bool                     `koanf:"enable"`
-	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
-	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject" reload:"hot"`
-	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist             string                   `koanf:"sender-whitelist"`
-	Forwarder                   ForwarderConfig          `koanf:"forwarder"`
-	QueueSize                   int                      `koanf:"queue-size"`
-	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
-}
-
-func (c *SequencerConfig) Validate() error {
-	entries := strings.Split(c.SenderWhitelist, ",")
-	for _, address := range entries {
-		if len(address) == 0 {
-			continue
-		}
-		if !common.IsHexAddress(address) {
-			return fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
-		}
-	}
-	return nil
-}
-
-type SequencerConfigFetcher func() *SequencerConfig
-
-var DefaultSequencerConfig = SequencerConfig{
-	Enable:                      false,
-	MaxBlockSpeed:               time.Millisecond * 100,
-	MaxRevertGasReject:          params.TxGas + 10000,
-	MaxAcceptableTimestampDelta: time.Hour,
-	Forwarder:                   DefaultSequencerForwarderConfig,
-	QueueSize:                   1024,
-	Dangerous:                   DefaultDangerousSequencerConfig,
-}
-
-var TestSequencerConfig = SequencerConfig{
-	Enable:                      true,
-	MaxBlockSpeed:               time.Millisecond * 10,
-	MaxRevertGasReject:          params.TxGas + 10000,
-	MaxAcceptableTimestampDelta: time.Hour,
-	SenderWhitelist:             "",
-	Forwarder:                   DefaultTestForwarderConfig,
-	QueueSize:                   128,
-	Dangerous:                   TestDangerousSequencerConfig,
-}
-
-func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
-	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
-	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
-	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
-	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
-	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
-	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
-	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
 type WasmConfig struct {
