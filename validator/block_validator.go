@@ -96,7 +96,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	ArbitratorValidator:      false,
 	JitValidator:             true,
-	JitValidatorCranelift:    false,
+	JitValidatorCranelift:    true,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "current",
