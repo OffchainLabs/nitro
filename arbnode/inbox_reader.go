@@ -29,7 +29,6 @@ type InboxReaderConfig struct {
 	HardReorg           bool          `koanf:"hard-reorg" reload:"hot"`
 	MinBlocksToRead     uint64        `koanf:"min-blocks-to-read" reload:"hot"`
 	DefaultBlocksToRead uint64        `koanf:"default-blocks-to-read" reload:"hot"`
-	AdjustBlocksToRead  bool          `koanf:"adjust-blocks-to-read"` // TODO: option not used, remove?
 	TargetMessagesRead  uint64        `koanf:"target-messages-read" reload:"hot"`
 	MaxBlocksToRead     uint64        `koanf:"max-blocks-to-read" reload:"hot"`
 }
@@ -40,9 +39,6 @@ func (c *InboxReaderConfig) Validate() error {
 	if c.MaxBlocksToRead == 0 || c.MaxBlocksToRead < c.DefaultBlocksToRead {
 		return errors.New("inbox reader max-blocks-to-read cannot be zero or less than default-blocks-to-read")
 	}
-	if c.AdjustBlocksToRead && c.TargetMessagesRead == 0 {
-		return errors.New("inbox reader target-messages-read cannot be zero if adjust-blocks-to-read is true")
-	}
 	return nil
 }
 
@@ -52,7 +48,6 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
 	f.Uint64(prefix+".min-blocks-to-read", DefaultInboxReaderConfig.MinBlocksToRead, "the minimum number of blocks to read at once (when caught up lowers load on L1)")
 	f.Uint64(prefix+".default-blocks-to-read", DefaultInboxReaderConfig.DefaultBlocksToRead, "the default number of blocks to read at once (will vary based on traffic by default)")
-	f.Bool(prefix+".adjust-blocks-to-read", DefaultInboxReaderConfig.AdjustBlocksToRead, "if the number of blocks read at once should be automatically adjusted based on traffic")
 	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
 	f.Uint64(prefix+".max-blocks-to-read", DefaultInboxReaderConfig.MaxBlocksToRead, "if adjust-blocks-to-read is enabled, the maximum number of blocks to read at once")
 }
@@ -63,7 +58,6 @@ var DefaultInboxReaderConfig = InboxReaderConfig{
 	HardReorg:           false,
 	MinBlocksToRead:     1,
 	DefaultBlocksToRead: 100,
-	AdjustBlocksToRead:  true,
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 }
@@ -74,7 +68,6 @@ var TestInboxReaderConfig = InboxReaderConfig{
 	HardReorg:           false,
 	MinBlocksToRead:     1,
 	DefaultBlocksToRead: 100,
-	AdjustBlocksToRead:  true,
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 }
