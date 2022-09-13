@@ -20,16 +20,31 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-const HTTPHeaderFeedServerVersion = "Arbitrum-Feed-Server-Version"
-const HTTPHeaderFeedClientVersion = "Arbitrum-Feed-Client-Version"
-const HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
-const HTTPHeaderChainId = "Arbitrum-Chain-Id"
-const FeedServerVersion = 2
-const FeedClientVersion = 2
+const (
+	HTTPHeaderFeedServerVersion       = "Arbitrum-Feed-Server-Version"
+	HTTPHeaderFeedClientVersion       = "Arbitrum-Feed-Client-Version"
+	HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
+	HTTPHeaderChainId                 = "Arbitrum-Chain-Id"
+	FeedServerVersion                 = 2
+	FeedClientVersion                 = 2
+)
+
+var (
+	ClientsConnectedGauge        metrics.Gauge
+	ConfirmedSequenceNumberGauge metrics.Gauge
+	LatestSequenceNumberGauge    metrics.Gauge
+)
+
+func RegisterMetrics() {
+	ClientsConnectedGauge = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
+	ConfirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/confirmed", nil)
+	LatestSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/latest", nil)
+}
 
 type BroadcasterConfig struct {
 	Enable         bool          `koanf:"enable"`
@@ -117,6 +132,8 @@ func (s *WSBroadcastServer) Initialize() error {
 	if s.poller != nil {
 		return errors.New("broadcast server already initialized")
 	}
+
+	RegisterMetrics()
 
 	var err error
 	s.poller, err = netpoll.New(nil)
@@ -237,7 +254,9 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client
 				if _, _, err := client.Receive(ctx, s.settings.ClientTimeout); err != nil {
-					log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
+					if !strings.Contains(err.Error(), "ws closed") {
+						log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
+					}
 					s.clientManager.Remove(client)
 					return
 				}
@@ -370,7 +389,7 @@ func (s *WSBroadcastServer) Broadcast(bm interface{}) {
 	s.clientManager.Broadcast(bm)
 }
 
-func (s *WSBroadcastServer) ClientCount() int32 {
+func (s *WSBroadcastServer) ClientCount() int64 {
 	return s.clientManager.ClientCount()
 }
 

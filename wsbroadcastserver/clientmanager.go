@@ -8,7 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
-	"sync/atomic"
+	"strings"
 	"time"
 
 	"github.com/gobwas/ws"
@@ -35,7 +35,6 @@ type ClientManager struct {
 	stopwaiter.StopWaiter
 
 	clientPtrMap  map[*ClientConnection]bool
-	clientCount   int32
 	pool          *gopool.Pool
 	poller        netpoll.Poller
 	broadcastChan chan interface{}
@@ -68,7 +67,7 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 
 	clientConnection.Start(ctx)
 	cm.clientPtrMap[clientConnection] = true
-	atomic.AddInt32(&cm.clientCount, 1)
+	ClientsConnectedGauge.Inc(1)
 
 	return nil
 }
@@ -102,11 +101,11 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 	}
 
 	err = clientConnection.conn.Close()
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 		log.Warn("Failed to close client connection", "err", err)
 	}
 
-	atomic.AddInt32(&cm.clientCount, -1)
+	ClientsConnectedGauge.Dec(1)
 }
 
 func (cm *ClientManager) removeClient(clientConnection *ClientConnection) {
@@ -126,8 +125,8 @@ func (cm *ClientManager) Remove(clientConnection *ClientConnection) {
 	}
 }
 
-func (cm *ClientManager) ClientCount() int32 {
-	return atomic.LoadInt32(&cm.clientCount)
+func (cm *ClientManager) ClientCount() int64 {
+	return ClientsConnectedGauge.Value()
 }
 
 // Broadcast sends batch item to all clients.

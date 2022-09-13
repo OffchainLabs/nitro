@@ -21,6 +21,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -28,6 +29,16 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+var (
+	SourcesConnectedGauge    metrics.Gauge
+	SourcesDisconnectedGauge metrics.Gauge
+)
+
+func RegisterMetrics() {
+	SourcesConnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
+	SourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
+}
 
 type FeedConfig struct {
 	Output wsbroadcastserver.BroadcasterConfig `koanf:"output"`
@@ -137,6 +148,7 @@ func NewBroadcastClient(
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn)
+	RegisterMetrics()
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
@@ -274,6 +286,8 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 
 func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
+		connected := false
+		SourcesDisconnectedGauge.Inc(1)
 		for {
 			select {
 			case <-ctx.Done():
@@ -293,6 +307,11 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				} else {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}
+				if connected {
+					connected = false
+					SourcesConnectedGauge.Dec(1)
+					SourcesDisconnectedGauge.Inc(1)
+				}
 				_ = bc.conn.Close()
 				earlyFrameData = bc.retryConnect(ctx)
 				continue
@@ -306,6 +325,11 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					continue
 				}
 
+				if !connected {
+					connected = true
+					SourcesDisconnectedGauge.Dec(1)
+					SourcesConnectedGauge.Inc(1)
+				}
 				if len(res.Messages) > 0 {
 					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
 				} else if res.ConfirmedSequenceNumberMessage != nil {
