@@ -459,7 +459,7 @@ func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
 func (sbbi *StorageBackedBigInt) Set(val *big.Int) error {
 	if val.Sign() < 0 {
 		val = new(big.Int).Add(val, twoToThe256)
-		if val.BitLen() < 256 { // require that the top bit is set
+		if val.BitLen() < 256 || val.Sign() <= 0 { // require that it's positive and the top bit is set
 			return sbbi.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigInt.Set setting value %v", val))
 		}
 	} else if val.BitLen() >= 256 {

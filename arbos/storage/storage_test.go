@@ -26,9 +26,9 @@ func TestStorageBackedBigInt(t *testing.T) {
 	rawSlot := sto.NewSlot(0)
 
 	twoToThe255 := new(big.Int).Lsh(big.NewInt(1), 255)
+	maxUint256 := new(big.Int).Sub(twoToThe255, big.NewInt(1))
+	minUint256 := new(big.Int).Neg(twoToThe255)
 	for _, in := range []*big.Int{
-		new(big.Int).Sub(twoToThe255, big.NewInt(1)), // MaxUint256
-		new(big.Int).Neg(twoToThe255),                // MinUint256
 		big.NewInt(0),
 		big.NewInt(1),
 		big.NewInt(33),
@@ -36,6 +36,8 @@ func TestStorageBackedBigInt(t *testing.T) {
 		big.NewInt(-1),
 		big.NewInt(-33),
 		big.NewInt(-31591083),
+		maxUint256,
+		minUint256,
 	} {
 		err := sbbi.Set(in)
 		if err != nil {
@@ -77,12 +79,12 @@ func TestStorageBackedBigInt(t *testing.T) {
 		}
 	}
 	for _, in := range []*big.Int{
-		twoToThe255, // MaxUint256 + 1
-		new(big.Int).Sub(big.NewInt(-1), twoToThe255), // MinUint256 - 1
-		new(big.Int).Add(big.NewInt(1), twoToThe255),  // MaxUint256 + 2
-		new(big.Int).Sub(big.NewInt(-2), twoToThe255), // MinUint256 - 2
-		new(big.Int).Mul(big.NewInt(2), twoToThe255),  // MaxUint256 * 2
-		new(big.Int).Mul(big.NewInt(-2), twoToThe255), // MinUint256 * 2
+		new(big.Int).Add(maxUint256, big.NewInt(1)),
+		new(big.Int).Sub(minUint256, big.NewInt(1)),
+		new(big.Int).Mul(maxUint256, big.NewInt(2)),
+		new(big.Int).Mul(minUint256, big.NewInt(2)),
+		new(big.Int).Exp(maxUint256, big.NewInt(1025), nil),
+		new(big.Int).Exp(minUint256, big.NewInt(1025), nil),
 	} {
 		requirePanic(t, in, func() {
 			_ = sbbi.Set(in)
