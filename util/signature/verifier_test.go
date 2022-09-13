@@ -8,7 +8,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -16,15 +15,18 @@ import (
 )
 
 func TestVerifier(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
 	signingAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := DataSignerFromPrivateKey(privateKey)
 
-	authorizedAddresses := make([]common.Address, 0)
-	authorizedAddresses = append(authorizedAddresses, signingAddr)
-	verifier := NewVerifier(true, authorizedAddresses, nil)
+	config := TestingFeedVerifierConfig
+	config.AllowedAddresses = []string{signingAddr.Hex()}
+	verifier, err := NewVerifier(&config, nil)
+	Require(t, err)
 
 	data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
 	hash := crypto.Keccak256Hash(data)
@@ -53,17 +55,27 @@ func TestVerifier(t *testing.T) {
 }
 
 func TestMissingRequiredSignature(t *testing.T) {
-	ctx := context.Background()
-	verifier := NewVerifier(true, nil, nil)
-	_, err := verifier.VerifyData(ctx, nil, nil)
-	if !errors.Is(err, ErrMissingFeedSignature) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	config := TestingFeedVerifierConfig
+	config.Dangerous.AcceptEmpty = false
+	verifier, err := NewVerifier(&config, nil)
+	Require(t, err)
+	_, err = verifier.VerifyData(ctx, nil, nil)
+	if !errors.Is(err, ErrMissingSignature) {
 		t.Error("didn't fail when missing feed signature")
 	}
 }
 
 func TestMissingSignatureAllowed(t *testing.T) {
-	ctx := context.Background()
-	verifier := NewVerifier(false, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	config := TestingFeedVerifierConfig
+	config.Dangerous.AcceptEmpty = true
+	verifier, err := NewVerifier(&config, nil)
+	Require(t, err)
 	verified, err := verifier.VerifyData(ctx, nil, nil)
 	Require(t, err, "error verifying data")
 	if !verified {
@@ -72,14 +84,19 @@ func TestMissingSignatureAllowed(t *testing.T) {
 }
 
 func TestVerifierBatchPoster(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
 	signingAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	dataSigner := DataSignerFromPrivateKey(privateKey)
 
 	bpVerifier := contracts.NewMockBatchPosterVerifier(signingAddr)
-	verifier := NewVerifier(true, nil, bpVerifier)
+	config := TestingFeedVerifierConfig
+	config.AcceptBatchPosters = true
+	verifier, err := NewVerifier(&config, bpVerifier)
+	Require(t, err)
 
 	data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
 	hash := crypto.Keccak256Hash(data)

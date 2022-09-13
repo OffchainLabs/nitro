@@ -5,64 +5,116 @@ package signature
 
 import (
 	"context"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/util/contracts"
-	"github.com/pkg/errors"
+	"errors"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/offchainlabs/nitro/util/contracts"
 )
 
 type Verifier struct {
-	requireSignature bool
-	authorizedMap    map[common.Address]struct{}
-	bpValidator      contracts.BatchPosterVerifierInterface
+	config        *VerifierConfig
+	authorizedMap map[common.Address]struct{}
+	bpValidator   contracts.BatchPosterVerifierInterface
 }
 
-func NewVerifier(requireSignature bool, authorizedAddresses []common.Address, bpValidator contracts.BatchPosterVerifierInterface) *Verifier {
-	authorizedMap := make(map[common.Address]struct{}, len(authorizedAddresses))
-	for _, addr := range authorizedAddresses {
+type VerifierConfig struct {
+	AllowedAddresses   []string                `koanf:"allowed-addresses"`
+	AcceptBatchPosters bool                    `koanf:"accept-batch-posters"`
+	Dangerous          DangerousVerifierConfig `koanf:"dangerous"`
+}
+
+type DangerousVerifierConfig struct {
+	AcceptEmpty bool `koanf:"accept-empty"`
+}
+
+func FeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.StringArray(prefix+".allowed-addresses", DefultFeedVerifierConfig.AllowedAddresses, "a list of allowed addresses")
+	f.Bool(prefix+".accept-batch-posters", DefultFeedVerifierConfig.AcceptBatchPosters, "accept verified message from batch posters")
+	DangerousFeedVerifierConfigAddOptions(prefix+".dangerous", f)
+}
+
+func DangerousFeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".accept-empty", DefultFeedVerifierConfig.Dangerous.AcceptEmpty, "accept empty as valid signature")
+}
+
+var DefultFeedVerifierConfig = VerifierConfig{
+	AllowedAddresses:   []string{},
+	AcceptBatchPosters: true,
+	Dangerous: DangerousVerifierConfig{
+		AcceptEmpty: true,
+	},
+}
+
+var TestingFeedVerifierConfig = VerifierConfig{
+	AllowedAddresses:   []string{},
+	AcceptBatchPosters: false,
+	Dangerous: DangerousVerifierConfig{
+		AcceptEmpty: false,
+	},
+}
+
+func NewVerifier(config *VerifierConfig, bpValidator contracts.BatchPosterVerifierInterface) (*Verifier, error) {
+	authorizedMap := make(map[common.Address]struct{}, len(config.AllowedAddresses))
+	for _, addrString := range config.AllowedAddresses {
+		addr := common.HexToAddress(addrString)
 		authorizedMap[addr] = struct{}{}
 	}
-	return &Verifier{
-		requireSignature: requireSignature,
-		authorizedMap:    authorizedMap,
-		bpValidator:      bpValidator,
+	if bpValidator == nil && config.AcceptBatchPosters {
+		return nil, errors.New("cannot read batch poster addresses")
 	}
+	return &Verifier{
+		config:        config,
+		authorizedMap: authorizedMap,
+		bpValidator:   bpValidator,
+	}, nil
 }
 
 func (v *Verifier) VerifyHash(ctx context.Context, signature []byte, hash common.Hash) (bool, error) {
-	return v.verifyClosure(ctx, signature, func() common.Hash { return hash })
+	return v.verifyClosure(ctx, signature, hash)
 }
 
 func (v *Verifier) VerifyData(ctx context.Context, signature []byte, data ...[]byte) (bool, error) {
-	return v.verifyClosure(ctx, signature, func() common.Hash { return crypto.Keccak256Hash(data...) })
+	return v.verifyClosure(ctx, signature, crypto.Keccak256Hash(data...))
 }
 
-var ErrMissingFeedSignature = errors.New("missing required feed signature")
+var ErrMissingSignature = errors.New("missing required signature")
 
-func (v *Verifier) verifyClosure(ctx context.Context, signature []byte, getHash func() common.Hash) (bool, error) {
-	if len(signature) == 0 {
-		if !v.requireSignature {
+func (v *Verifier) verifyClosureLocal(sig []byte, hash common.Hash) (bool, common.Address, error) {
+	if len(sig) == 0 {
+		if v.config.Dangerous.AcceptEmpty {
 			// Signature missing and not required
-			return true, nil
+			return true, common.Address{}, nil
 		}
-
-		return false, ErrMissingFeedSignature
+		return false, common.Address{}, ErrMissingSignature
 	}
 
-	var hash = getHash()
-
-	sigPublicKey, err := crypto.SigToPub(hash.Bytes(), signature)
+	sigPublicKey, err := crypto.SigToPub(hash.Bytes(), sig)
 	if err != nil {
-		return false, errors.Wrap(err, "unable to recover sequencer feed signing key")
+		return false, common.Address{}, nil
 	}
 
 	addr := crypto.PubkeyToAddress(*sigPublicKey)
+
 	if _, exists := v.authorizedMap[addr]; exists {
-		return true, nil
+		return true, addr, nil
 	}
 
-	if v.bpValidator == nil {
+	return false, addr, nil
+}
+
+func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Hash) (bool, error) {
+	valid, addr, err := v.verifyClosureLocal(sig, hash)
+	if err != nil {
+		return false, err
+	}
+	if valid {
+		return true, nil
+	}
+	if v.bpValidator == nil || !v.config.AcceptBatchPosters {
 		return false, nil
 	}
 

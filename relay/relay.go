@@ -6,9 +6,11 @@ package relay
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -35,17 +37,26 @@ func (q *RelayMessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.Bro
 	return nil
 }
 
-func NewRelay(feedConfig broadcastclient.FeedConfig, chainId uint64, feedErrChan chan error) *Relay {
+func NewRelay(feedConfig broadcastclient.FeedConfig, chainId uint64, feedErrChan chan error) (*Relay, error) {
 	var broadcastClients []*broadcastclient.BroadcastClient
 
 	q := RelayMessageQueue{make(chan broadcaster.BroadcastFeedMessage, 100)}
 
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, 10)
 
+	var lastClientError error
 	for _, address := range feedConfig.Input.URLs {
-		client := broadcastclient.NewBroadcastClient(feedConfig.Input, address, chainId, 0, &q, feedErrChan, nil)
+		client, err := broadcastclient.NewBroadcastClient(feedConfig.Input, address, chainId, 0, &q, feedErrChan, nil)
+		if err != nil {
+			lastClientError = err
+			log.Warn("init broadcast client failed", "address", address, "err", err)
+			continue
+		}
 		client.ConfirmedSequenceNumberListener = confirmedSequenceNumberListener
 		broadcastClients = append(broadcastClients, client)
+	}
+	if len(broadcastClients) == 0 && len(feedConfig.Input.URLs) > 0 {
+		return nil, fmt.Errorf("no broadcast clients initialized. Last error: %w", lastClientError)
 	}
 
 	dataSignerErr := func([]byte) ([]byte, error) {
@@ -56,7 +67,7 @@ func NewRelay(feedConfig broadcastclient.FeedConfig, chainId uint64, feedErrChan
 		broadcastClients:            broadcastClients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,
-	}
+	}, nil
 }
 
 const RECENT_FEED_ITEM_TTL time.Duration = time.Second * 10

@@ -510,6 +510,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Sequencer = TestSequencerConfig
 	config.L1Reader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
+	config.Feed.Input.Verifier.Dangerous.AcceptEmpty = true
 
 	return &config
 }
@@ -753,10 +754,6 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, config.L1Reader)
 	}
 
-	var sequencerInboxAddr common.Address
-	if deployInfo != nil {
-		sequencerInboxAddr = deployInfo.SequencerInbox
-	}
 	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
 	if err != nil {
 		return nil, err
@@ -810,31 +807,35 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	var bpVerifier *contracts.BatchPosterVerifier
-	if l1client != nil {
-		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(sequencerInboxAddr, l1client)
+	var broadcastClients []*broadcastclient.BroadcastClient
+	if config.Feed.Input.Enable() {
+		var bpVerifier *contracts.BatchPosterVerifier
+		if deployInfo != nil && l1client != nil {
+			sequencerInboxAddr := deployInfo.SequencerInbox
+
+			seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(sequencerInboxAddr, l1client)
+			if err != nil {
+				return nil, err
+			}
+			bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		}
+		currentMessageCount, err := txStreamer.GetMessageCount()
 		if err != nil {
 			return nil, err
 		}
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
-	}
-	sigVerifier := signature.NewVerifier(config.Feed.Input.RequireSignature, nil, bpVerifier)
-	currentMessageCount, err := txStreamer.GetMessageCount()
-	if err != nil {
-		return nil, err
-	}
-	var broadcastClients []*broadcastclient.BroadcastClient
-	if config.Feed.Input.Enable() {
 		for _, address := range config.Feed.Input.URLs {
-			client := broadcastclient.NewBroadcastClient(
+			client, err := broadcastclient.NewBroadcastClient(
 				config.Feed.Input,
 				address,
 				l2ChainId,
 				currentMessageCount,
 				txStreamer,
 				fatalErrChan,
-				sigVerifier,
+				bpVerifier,
 			)
+			if err != nil {
+				return nil, err
+			}
 			broadcastClients = append(broadcastClients, client)
 		}
 	}

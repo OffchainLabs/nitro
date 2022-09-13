@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/relay"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -28,6 +29,11 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.Config {
 	return &broadcastclient.Config{
 		URLs:    []string{fmt.Sprintf("ws://localhost:%d/feed", port)},
 		Timeout: 200 * time.Millisecond,
+		Verifier: signature.VerifierConfig{
+			Dangerous: signature.DangerousVerifierConfig{
+				AcceptEmpty: true,
+			},
+		},
 	}
 }
 
@@ -87,7 +93,8 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	}
 
 	feedErrChan := make(chan error, 10)
-	currentRelay := relay.NewRelay(feedConfig, chainId, feedErrChan)
+	currentRelay, err := relay.NewRelay(feedConfig, chainId, feedErrChan)
+	Require(t, err)
 	err = currentRelay.Start(ctx)
 	Require(t, err)
 	defer currentRelay.StopAndWait()

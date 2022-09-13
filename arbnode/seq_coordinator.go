@@ -135,7 +135,7 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync
 }
 
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
-	signerConfig := signature.DefaultSimpleHmacConfig
+	signerConfig := signature.EmptySimpleHmacConfig
 	if keyConfig == "" {
 		signerConfig.Dangerous.DisableSignatureVerification = true
 	} else {

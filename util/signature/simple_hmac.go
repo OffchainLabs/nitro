@@ -57,8 +57,8 @@ func SimpleHmacDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func SimpleHmacConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".signing-key", DefaultSimpleHmacConfig.SigningKey, "a 32-byte (64-character) hex string used to sign messages, or a path to a file containing it")
-	f.String(prefix+".fallback-verification-key", DefaultSimpleHmacConfig.SigningKey, "a fallback key used for message verification")
+	f.String(prefix+".signing-key", EmptySimpleHmacConfig.SigningKey, "a 32-byte (64-character) hex string used to sign messages, or a path to a file containing it")
+	f.String(prefix+".fallback-verification-key", EmptySimpleHmacConfig.SigningKey, "a fallback key used for message verification")
 	SimpleHmacDangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -66,7 +66,7 @@ var DefaultSimpleHmacDangerousConfig = SimpleHmacDangerousConfig{
 	DisableSignatureVerification: false,
 }
 
-var DefaultSimpleHmacConfig = SimpleHmacConfig{
+var EmptySimpleHmacConfig = SimpleHmacConfig{
 	SigningKey:              "",
 	FallbackVerificationKey: "",
 }

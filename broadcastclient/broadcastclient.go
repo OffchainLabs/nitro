@@ -24,6 +24,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -49,11 +50,11 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type Config struct {
-	RequireChainId     bool          `koanf:"require-chain-id"`
-	RequireFeedVersion bool          `koanf:"require-feed-version"`
-	RequireSignature   bool          `koanf:"require-signature"`
-	Timeout            time.Duration `koanf:"timeout"`
-	URLs               []string      `koanf:"url"`
+	RequireChainId     bool                     `koanf:"require-chain-id"`
+	RequireFeedVersion bool                     `koanf:"require-feed-version"`
+	Timeout            time.Duration            `koanf:"timeout"`
+	URLs               []string                 `koanf:"url"`
+	Verifier           signature.VerifierConfig `koanf:"verify"`
 }
 
 func (c *Config) Enable() bool {
@@ -63,23 +64,22 @@ func (c *Config) Enable() bool {
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
 	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
-	f.Bool(prefix+".require-signature", DefaultConfig.RequireSignature, "require all feed messages to be signed")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
 	f.StringSlice(prefix+".url", DefaultConfig.URLs, "URL of sequencer feed source")
+	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
 }
 
 var DefaultConfig = Config{
 	RequireChainId:     false,
 	RequireFeedVersion: false,
-	RequireSignature:   false,
+	Verifier:           signature.DefultFeedVerifierConfig,
 	URLs:               []string{""},
 	Timeout:            20 * time.Second,
 }
 
 var DefaultTestConfig = Config{
-	RequireSignature: true,
-	URLs:             []string{""},
-	Timeout:          200 * time.Millisecond,
+	URLs:    []string{""},
+	Timeout: 200 * time.Millisecond,
 }
 
 type TransactionStreamerInterface interface {
@@ -122,8 +122,12 @@ func NewBroadcastClient(
 	currentMessageCount arbutil.MessageIndex,
 	txStreamer TransactionStreamerInterface,
 	fatalErrChan chan error,
-	sigVerifier *signature.Verifier,
-) *BroadcastClient {
+	bpVerifier contracts.BatchPosterVerifierInterface,
+) (*BroadcastClient, error) {
+	sigVerifier, err := signature.NewVerifier(&config.Verifier, bpVerifier)
+	if err != nil {
+		return nil, err
+	}
 	return &BroadcastClient{
 		config:       config,
 		websocketUrl: websocketUrl,
@@ -132,7 +136,7 @@ func NewBroadcastClient(
 		txStreamer:   txStreamer,
 		fatalErrChan: fatalErrChan,
 		sigVerifier:  sigVerifier,
-	}
+	}, err
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
@@ -400,7 +404,7 @@ func (bc *BroadcastClient) StopAndWait() {
 }
 
 func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) (bool, error) {
-	if !bc.config.RequireSignature && bc.sigVerifier == nil {
+	if !bc.config.Verifier.Dangerous.AcceptEmpty && bc.sigVerifier == nil {
 		// Verifier disabled
 		return true, nil
 	}
