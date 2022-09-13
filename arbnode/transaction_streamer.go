@@ -733,7 +733,12 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lastBlockHeader := s.bc.CurrentBlock().Header()
+	initialLastBlock := s.bc.CurrentBlock()
+	err = s.bc.RecoverState(initialLastBlock)
+	if err != nil {
+		return fmt.Errorf("failed to recover state: %w", err)
+	}
+	lastBlockHeader := initialLastBlock.Header()
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}

@@ -25,6 +25,7 @@
     "build:0.6": "INTERFACE_TESTER_SOLC_VERSION=0.6.9 yarn run build",
     "build:0.7": "INTERFACE_TESTER_SOLC_VERSION=0.7.0 yarn run build",
     "test:compatibility": "yarn run build:0.6 && yarn run build:0.7",
+    "test:storage": "./test/storage/test.bash",
     "postinstall": "patch-package"
   },
   "dependencies": {
@@ -57,5 +58,8 @@
     "ts-node": "^10.4.0",
     "typechain": "^8.0.0",
     "typescript": "^4.5.4"
+  },
+  "optionalDependencies":{
+    "sol2uml": "2.2.0"
   }
 }
