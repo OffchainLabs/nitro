@@ -196,7 +196,10 @@ func (ps *L1PricingState) LastSurplus() (*big.Int, error) {
 	return ps.lastSurplus.Get()
 }
 
-func (ps *L1PricingState) SetLastSurplus(val *big.Int) error {
+func (ps *L1PricingState) SetLastSurplus(val *big.Int, arbosVersion uint64) error {
+	if arbosVersion < 7 {
+		return ps.lastSurplus.Set_preVersion7(val)
+	}
 	return ps.lastSurplus.Set(val)
 }
 
@@ -414,7 +417,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		changeDerivativeBy := am.BigSub(desiredDerivative, actualDerivative)
 		priceChange := am.BigDiv(am.BigMulByUint(changeDerivativeBy, unitsAllocated), allocPlusInert)
 
-		if err := ps.SetLastSurplus(surplus); err != nil {
+		if err := ps.SetLastSurplus(surplus, arbosVersion); err != nil {
 			return err
 		}
 		newPrice := am.BigAdd(price, priceChange)
