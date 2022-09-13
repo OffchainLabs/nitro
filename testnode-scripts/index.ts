@@ -4,7 +4,7 @@ import { stressOptions } from './stress'
 import { redisReadCommand, redisInitCommand } from './redis'
 import { writeConfigCommand } from './config'
 import { printAddressCommand, namedAccountHelpString } from "./accounts";
-import { bridgeFundsCommand, sendL1Command, sendL2Command } from './ethcommands'
+import { bridgeFundsCommand, sendL1Command, sendL2Command, sendRPCCommand } from './ethcommands'
 
 async function main() {
     await Yargs(hideBin(process.argv))
@@ -17,6 +17,7 @@ async function main() {
         .command(bridgeFundsCommand)
         .command(sendL1Command)
         .command(sendL2Command)
+        .command(sendRPCCommand)
         .command(writeConfigCommand)
         .command(printAddressCommand)
         .command(redisReadCommand)

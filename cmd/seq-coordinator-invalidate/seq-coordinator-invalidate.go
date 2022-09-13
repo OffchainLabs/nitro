@@ -12,6 +12,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
 func main() {
@@ -25,7 +26,14 @@ func main() {
 	if err != nil {
 		panic("Failed to parse msg index: " + err.Error())
 	}
-	err = arbnode.StandaloneSeqCoordinatorInvalidateMsgIndex(context.Background(), redisUrl, signingKey, arbutil.MessageIndex(msgIndex))
+	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
+	if err != nil {
+		panic(err)
+	}
+	if redisClient == nil {
+		panic("redis url not defined")
+	}
+	err = arbnode.StandaloneSeqCoordinatorInvalidateMsgIndex(context.Background(), redisClient, signingKey, arbutil.MessageIndex(msgIndex))
 	if err != nil {
 		panic(err)
 	}

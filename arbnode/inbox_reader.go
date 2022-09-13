@@ -355,7 +355,7 @@ func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 				firstBatch := sequencerBatches[0]
 				if firstBatch.SequenceNumber > 0 {
 					haveAcc, err := ir.tracker.GetBatchAcc(firstBatch.SequenceNumber - 1)
-					if errors.Is(err, accumulatorNotFound) {
+					if errors.Is(err, AccumulatorNotFoundErr) {
 						reorgingSequencer = true
 					} else if err != nil {
 						return err
@@ -368,7 +368,7 @@ func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 					for len(sequencerBatches) > 0 {
 						batch := sequencerBatches[0]
 						haveAcc, err := ir.tracker.GetBatchAcc(batch.SequenceNumber)
-						if errors.Is(err, accumulatorNotFound) {
+						if errors.Is(err, AccumulatorNotFoundErr) {
 							// This batch is new
 							break
 						} else if err != nil {
@@ -401,7 +401,7 @@ func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 				}
 				if beforeCount > 0 {
 					haveAcc, err := ir.tracker.GetDelayedAcc(beforeCount - 1)
-					if errors.Is(err, accumulatorNotFound) {
+					if errors.Is(err, AccumulatorNotFoundErr) {
 						reorgingDelayed = true
 					} else if err != nil {
 						return err

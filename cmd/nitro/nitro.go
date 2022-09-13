@@ -155,12 +155,6 @@ func main() {
 		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
-	if nodeConfig.Node.SeqCoordinator.Enable {
-		if nodeConfig.Node.SeqCoordinator.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Dangerous.DisableSignatureVerification {
-			panic("sequencer coordinator enabled, but signing key unset, and signature verification isn't disabled")
-		}
-	}
-
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
