@@ -2,6 +2,9 @@
 
 set -e
 
+NITRO_NODE_VERSION=offchainlabs/nitro-node:v2.0.4-d6a431c-dev
+BLOCKSCOUT_VERSION=offchainlabs/blockscout:v1.0.0-c8db5b1
+
 mydir=`dirname $0`
 cd "$mydir"
 
@@ -32,6 +35,7 @@ validate=false
 detach=false
 blockscout=true
 redundantsequencers=0
+dev_build=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -45,6 +49,10 @@ while [[ $# -gt 0 ]]; do
                     exit 0
                 fi
             fi
+            shift
+            ;;
+        --dev)
+            dev_build=true
             shift
             ;;
         --build)
@@ -92,6 +100,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if $dev_build; then
+  docker tag nitro-node-dev:latest nitro-node-dev-testnode
+  docker tag blockscout:latest blockscout-testnode
+else
+  docker tag $NITRO_NODE_VERSION nitro-node-dev-testnode
+  docker tag $BLOCKSCOUT_VERSION blockscout-testnode
+fi
+
 if $force_init; then
     force_build=true
 fi
@@ -119,6 +135,8 @@ fi
 
 if $force_build; then
     echo == Building..
+    docker build . -t nitro-node-dev --target nitro-node-dev
+    docker build blockscout -t blockscout -f blockscout/docker/Dockerfile
     docker-compose build --no-rm $NODES testnode-scripts
 fi
 
