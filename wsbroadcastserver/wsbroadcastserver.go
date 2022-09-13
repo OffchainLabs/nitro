@@ -35,15 +35,11 @@ const (
 )
 
 var (
-	ClientsConnectedGauge        metrics.Gauge
-	ConfirmedSequenceNumberGauge metrics.Gauge
-	LatestSequenceNumberGauge    metrics.Gauge
+	ClientsConnectedGauge metrics.Gauge
 )
 
 func RegisterMetrics() {
 	ClientsConnectedGauge = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
-	ConfirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/confirmed", nil)
-	LatestSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/latest", nil)
 }
 
 type BroadcasterConfig struct {

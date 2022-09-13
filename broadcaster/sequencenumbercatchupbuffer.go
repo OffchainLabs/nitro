@@ -6,6 +6,7 @@ package broadcaster
 import (
 	"context"
 	"errors"
+	"github.com/ethereum/go-ethereum/metrics"
 	"sync/atomic"
 	"time"
 
@@ -15,12 +16,23 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+var (
+	ConfirmedSequenceNumberGauge metrics.Gauge
+	LatestSequenceNumberGauge    metrics.Gauge
+)
+
+func RegisterMetrics() {
+	ConfirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/confirmed", nil)
+	LatestSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/latest", nil)
+}
+
 type SequenceNumberCatchupBuffer struct {
 	messages     []*BroadcastFeedMessage
 	messageCount int32
 }
 
 func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
+	RegisterMetrics()
 	return &SequenceNumberCatchupBuffer{}
 }
 
@@ -118,18 +130,18 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 
 	if confirmMsg := broadcastMessage.ConfirmedSequenceNumberMessage; confirmMsg != nil {
 		b.deleteConfirmed(confirmMsg.SequenceNumber)
-		wsbroadcastserver.ConfirmedSequenceNumberGauge.Update(int64(confirmMsg.SequenceNumber))
+		ConfirmedSequenceNumberGauge.Update(int64(confirmMsg.SequenceNumber))
 	}
 
 	for _, newMsg := range broadcastMessage.Messages {
 		if len(b.messages) == 0 {
 			// Add to empty list
 			b.messages = append(b.messages, newMsg)
-			wsbroadcastserver.LatestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
+			LatestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
 		} else if expectedSequenceNumber := b.messages[len(b.messages)-1].SequenceNumber + 1; newMsg.SequenceNumber == expectedSequenceNumber {
 			// Next sequence number to add to end of list
 			b.messages = append(b.messages, newMsg)
-			wsbroadcastserver.LatestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
+			LatestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
 		} else if newMsg.SequenceNumber > expectedSequenceNumber {
 			log.Warn(
 				"Message requested to be broadcast has unexpected sequence number; discarding to seqNum from catchup buffer",
@@ -138,7 +150,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 			)
 			b.messages = nil
 			b.messages = append(b.messages, newMsg)
-			wsbroadcastserver.LatestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
+			LatestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
 		} else {
 			log.Info("Skipping already seen message", "seqNum", newMsg.SequenceNumber)
 		}
