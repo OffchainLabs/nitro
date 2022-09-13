@@ -17,14 +17,9 @@ import (
 )
 
 var (
-	ConfirmedSequenceNumberGauge metrics.Gauge
-	LatestSequenceNumberGauge    metrics.Gauge
-)
-
-func RegisterMetrics() {
 	ConfirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/confirmed", nil)
-	LatestSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/latest", nil)
-}
+	LatestSequenceNumberGauge    = metrics.NewRegisteredGauge("arb/feed/sequence-number/latest", nil)
+)
 
 type SequenceNumberCatchupBuffer struct {
 	messages     []*BroadcastFeedMessage
@@ -32,7 +27,6 @@ type SequenceNumberCatchupBuffer struct {
 }
 
 func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
-	RegisterMetrics()
 	return &SequenceNumberCatchupBuffer{}
 }
 

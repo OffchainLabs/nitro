@@ -31,14 +31,9 @@ import (
 )
 
 var (
-	SourcesConnectedGauge    metrics.Gauge
-	SourcesDisconnectedGauge metrics.Gauge
-)
-
-func RegisterMetrics() {
-	SourcesConnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
+	SourcesConnectedGauge    = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
 	SourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
-}
+)
 
 type FeedConfig struct {
 	Output wsbroadcastserver.BroadcasterConfig `koanf:"output"`
@@ -148,7 +143,6 @@ func NewBroadcastClient(
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn)
-	RegisterMetrics()
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)

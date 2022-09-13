@@ -35,12 +35,8 @@ const (
 )
 
 var (
-	ClientsConnectedGauge metrics.Gauge
-)
-
-func RegisterMetrics() {
 	ClientsConnectedGauge = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
-}
+)
 
 type BroadcasterConfig struct {
 	Enable         bool          `koanf:"enable"`
@@ -128,8 +124,6 @@ func (s *WSBroadcastServer) Initialize() error {
 	if s.poller != nil {
 		return errors.New("broadcast server already initialized")
 	}
-
-	RegisterMetrics()
 
 	var err error
 	s.poller, err = netpoll.New(nil)
