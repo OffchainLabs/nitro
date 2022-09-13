@@ -36,9 +36,8 @@ type BatchPoster struct {
 	l1Reader            *headerreader.HeaderReader
 	inbox               *InboxTracker
 	streamer            *TransactionStreamer
-	config              *BatchPosterConfig
+	config              BatchPosterConfigFetcher
 	inboxContract       *bridgegen.SequencerInbox
-	gasRefunder         common.Address
 	transactOpts        *bind.TransactOpts
 	building            *buildingBatch
 	pendingMsgTimestamp time.Time
@@ -48,18 +47,30 @@ type BatchPoster struct {
 
 type BatchPosterConfig struct {
 	Enable                             bool          `koanf:"enable"`
-	DisableDasFallbackStoreDataOnChain bool          `koanf:"disable-das-fallback-store-data-on-chain"`
-	MaxBatchSize                       int           `koanf:"max-size"`
-	MaxBatchPostInterval               time.Duration `koanf:"max-interval"`
-	BatchPollDelay                     time.Duration `koanf:"poll-delay"`
-	PostingErrorDelay                  time.Duration `koanf:"error-delay"`
-	CompressionLevel                   int           `koanf:"compression-level"`
-	DASRetentionPeriod                 time.Duration `koanf:"das-retention-period"`
-	HighGasThreshold                   float32       `koanf:"high-gas-threshold"`
-	HighGasDelay                       time.Duration `koanf:"high-gas-delay"`
-	GasRefunderAddress                 string        `koanf:"gas-refunder-address"`
-	GasMarginBasisPoints               uint64        `koanf:"gas-margin-basis-points"`
+	DisableDasFallbackStoreDataOnChain bool          `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
+	MaxBatchSize                       int           `koanf:"max-size" reload:"hot"`
+	MaxBatchPostInterval               time.Duration `koanf:"max-interval" reload:"hot"`
+	BatchPollDelay                     time.Duration `koanf:"poll-delay" reload:"hot"`
+	PostingErrorDelay                  time.Duration `koanf:"error-delay" reload:"hot"`
+	CompressionLevel                   int           `koanf:"compression-level" reload:"hot"`
+	DASRetentionPeriod                 time.Duration `koanf:"das-retention-period" reload:"hot"`
+	HighGasThreshold                   float32       `koanf:"high-gas-threshold" reload:"hot"`
+	HighGasDelay                       time.Duration `koanf:"high-gas-delay" reload:"hot"`
+	GasRefunderAddress                 string        `koanf:"gas-refunder-address" reload:"hot"`
+	GasMarginBasisPoints               uint64        `koanf:"gas-margin-basis-points" reload:"hot"`
 }
+
+func (c *BatchPosterConfig) Validate() error {
+	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
+		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
+	}
+	if c.MaxBatchSize <= 40 {
+		return errors.New("MaxBatchSize too small")
+	}
+	return nil
+}
+
+type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
@@ -105,13 +116,13 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasMarginBasisPoints: 500,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config BatchPosterConfigFetcher, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
-	if len(config.GasRefunderAddress) > 0 && !common.IsHexAddress(config.GasRefunderAddress) {
-		return nil, fmt.Errorf("invalid gas refunder address \"%v\"", config.GasRefunderAddress)
+	if err = config().Validate(); err != nil {
+		return nil, err
 	}
 	return &BatchPoster{
 		l1Reader:      l1Reader,
@@ -120,7 +131,6 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 		config:        config,
 		inboxContract: inboxContract,
 		transactOpts:  transactOpts,
-		gasRefunder:   common.HexToAddress(config.GasRefunderAddress),
 		daWriter:      daWriter,
 	}, nil
 }
@@ -340,6 +350,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	if err != nil {
 		return nil, err
 	}
+	config := b.config()
 	timeSinceNextMessage := time.Since(b.pendingMsgTimestamp)
 	if !arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum)) {
 		// If it's been under a minute since the last batch was posted, and the inbox tracker is exactly one batch behind,
@@ -359,7 +370,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	}
 	if b.building == nil || b.building.batchSeqNum != batchSeqNum {
 		b.building = &buildingBatch{
-			segments:    newBatchSegments(prevBatchMeta.DelayedMessageCount, b.config),
+			segments:    newBatchSegments(prevBatchMeta.DelayedMessageCount, config),
 			msgCount:    prevBatchMeta.MessageCount,
 			batchSeqNum: batchSeqNum,
 		}
@@ -369,7 +380,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 		return nil, err
 	}
 
-	forcePostBatch := timeSinceNextMessage >= b.config.MaxBatchPostInterval
+	forcePostBatch := timeSinceNextMessage >= config.MaxBatchPostInterval
 	haveUsefulMessage := false
 
 	for b.building.msgCount < msgCount {
@@ -416,10 +427,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	}
 
 	if b.daWriter != nil {
-		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
+		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
-			if b.config.DisableDasFallbackStoreDataOnChain {
+			if config.DisableDasFallbackStoreDataOnChain {
 				return nil, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
 			}
 		} else {
@@ -430,13 +441,13 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 	txOpts := *b.transactOpts
 	txOpts.Context = ctx
 	txOpts.NoSend = true
-	txOpts.GasMargin = b.config.GasMarginBasisPoints
-	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(&txOpts, new(big.Int).SetUint64(batchSeqNum), sequencerMsg, new(big.Int).SetUint64(b.building.segments.delayedMsg), b.gasRefunder)
+	txOpts.GasMargin = config.GasMarginBasisPoints
+	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(&txOpts, new(big.Int).SetUint64(batchSeqNum), sequencerMsg, new(big.Int).SetUint64(b.building.segments.delayedMsg), common.HexToAddress(config.GasRefunderAddress))
 	if err != nil {
 		return nil, err
 	}
-	highGasThreshold := new(big.Int).SetUint64(uint64(b.config.HighGasThreshold * params.GWei))
-	if b.config.HighGasThreshold != 0 && tx.GasFeeCap().Cmp(highGasThreshold) >= 0 && timeSinceNextMessage < b.config.HighGasDelay {
+	highGasThreshold := new(big.Int).SetUint64(uint64(config.HighGasThreshold * params.GWei))
+	if config.HighGasThreshold != 0 && tx.GasFeeCap().Cmp(highGasThreshold) >= 0 && timeSinceNextMessage < config.HighGasDelay {
 		// The gas fee cap abigen recommended is above the high gas threshold. Check if this is necessary:
 		lastHeader, err := b.l1Reader.LastHeader(ctx)
 		if err != nil {
@@ -446,9 +457,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 			log.Info(
 				"not posting batch yet as gas price is high",
 				"baseFee", float32(lastHeader.BaseFee.Uint64())/params.GWei,
-				"highGasThreshold", b.config.HighGasThreshold,
+				"highGasThreshold", config.HighGasThreshold,
 				"timeSinceBatchPosted", timeSinceNextMessage,
-				"highGasDelay", b.config.HighGasDelay,
+				"highGasDelay", config.HighGasDelay,
 			)
 			return nil, nil
 		} else {
@@ -527,13 +538,13 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		batchSeqNum, err := b.inbox.GetBatchCount()
 		if err != nil {
 			log.Error("error getting inbox batch count", "err", err)
-			return b.config.PostingErrorDelay
+			return b.config().PostingErrorDelay
 		}
 		if batchSeqNum != b.lastBatchCount {
 			err := b.recomputePendingMsgTimestamp(ctx, batchSeqNum)
 			if err != nil {
 				log.Error("error getting next message time", "err", err)
-				return b.config.PostingErrorDelay
+				return b.config().PostingErrorDelay
 			}
 			b.lastBatchCount = batchSeqNum
 		}
@@ -541,8 +552,8 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		if err != nil {
 			b.building = nil
 			log.Error("error posting batch", "err", err)
-			return b.config.PostingErrorDelay
+			return b.config().PostingErrorDelay
 		}
-		return b.config.BatchPollDelay
+		return b.config().BatchPollDelay
 	})
 }
