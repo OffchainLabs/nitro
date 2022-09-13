@@ -30,11 +30,18 @@ abstract contract AbsRollupUserLogic is
         return deployTimeChainId != block.chainid;
     }
 
+    /**
+     * @notice Extra number of blocks the validator can remain inactive before considered inactive
+     *         This is 7 days assuming a 13.2 seconds block time
+     */
+    uint256 public constant VALIDATOR_AFK_BLOCKS = 45818;
+
     function _validatorIsAfk() internal view returns (bool) {
         Node memory latestNode = getNodeStorage(latestNodeCreated());
         if (latestNode.createdAtBlock == 0) return false;
-        // TODO: what is the max time validators can be afk?
-        if (latestNode.createdAtBlock + confirmPeriodBlocks * 2 < block.number) return true;
+        if (latestNode.createdAtBlock + confirmPeriodBlocks + VALIDATOR_AFK_BLOCKS < block.number) {
+            return true;
+        }
         return false;
     }
 
