@@ -5,7 +5,7 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 
 ### Required Artifacts
 
-- Latest Docker Image: `offchainlabs/nitro-node:v2.0.3-9779dab`
+- Latest Docker Image: `offchainlabs/nitro-node:v2.0.4-d6a431c`
 
 - Arbitrum One Nitro Genesis Database Snapshot
   - Use the parameter `--init.url="https://snapshot.arbitrum.io/mainnet/nitro.tar"` on first startup to initialize Nitro database
