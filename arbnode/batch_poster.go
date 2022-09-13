@@ -67,7 +67,7 @@ type BatchPosterConfig struct {
 	GasRefunderAddress                 string                      `koanf:"gas-refunder-address" reload:"hot"`
 	DataPoster                         dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
 	RedisUrl                           string                      `koanf:"redis-url"`
-	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-url" reload:"hot"`
+	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 }
 
