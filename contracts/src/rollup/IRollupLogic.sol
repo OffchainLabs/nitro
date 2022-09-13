@@ -219,4 +219,10 @@ interface IRollupAdmin {
      * @param _sequencerInbox new address of sequencer inbox
      */
     function setSequencerInbox(address _sequencerInbox) external;
+
+    /**
+     * @notice set the validatorWhitelistDisabled flag
+     * @param _validatorWhitelistDisabled new value of validatorWhitelistDisabled, i.e. true = disabled
+     */
+    function setValidatorWhitelistDisabled(bool _validatorWhitelistDisabled) external;
 }
