@@ -34,7 +34,7 @@ func TestReceiveMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	brodcasterConfig := wsbroadcastserver.DefaultTestBroadcasterConfig
 
 	messageCount := 1000
 	clientCount := 2
@@ -46,7 +46,7 @@ func TestReceiveMessages(t *testing.T) {
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &brodcasterConfig }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -83,7 +83,7 @@ func TestInvalidSignature(t *testing.T) {
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	fatalErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, fatalErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, fatalErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -205,8 +205,8 @@ func TestServerClientDisconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-	settings.Ping = 1 * time.Second
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Ping = 1 * time.Second
 
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
@@ -215,7 +215,7 @@ func TestServerClientDisconnect(t *testing.T) {
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -265,8 +265,8 @@ func TestServerIncorrectChainId(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-	settings.Ping = 1 * time.Second
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Ping = 1 * time.Second
 
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
@@ -275,7 +275,7 @@ func TestServerIncorrectChainId(t *testing.T) {
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
@@ -317,7 +317,7 @@ func TestServerMissingChainId(t *testing.T) {
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, feedErrChan, dataSigner)
 
 	header := ws.HandshakeHeaderHTTP(http.Header{
 		wsbroadcastserver.HTTPHeaderFeedServerVersion: []string{strconv.Itoa(wsbroadcastserver.FeedServerVersion)},
@@ -366,7 +366,7 @@ func TestServerIncorrectFeedServerVersion(t *testing.T) {
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, feedErrChan, dataSigner)
 
 	header := ws.HandshakeHeaderHTTP(http.Header{
 		wsbroadcastserver.HTTPHeaderChainId:           []string{strconv.FormatUint(chainId, 10)},
@@ -413,7 +413,7 @@ func TestServerMissingFeedServerVersion(t *testing.T) {
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, feedErrChan, dataSigner)
 
 	header := ws.HandshakeHeaderHTTP(http.Header{
 		wsbroadcastserver.HTTPHeaderChainId: []string{strconv.FormatUint(chainId, 10)},
@@ -452,9 +452,9 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-	settings.Ping = 50 * time.Second
-	settings.ClientTimeout = 150 * time.Second
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Ping = 50 * time.Second
+	config.ClientTimeout = 150 * time.Second
 
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
@@ -463,7 +463,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 
 	feedErrChan := make(chan error, 10)
 	chainId := uint64(8742)
-	b1 := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+	b1 := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b1.Initialize())
 	Require(t, b1.Start(ctx))
@@ -507,7 +507,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 
 	feedErrChan := make(chan error, 10)
 	chainId := uint64(8744)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))

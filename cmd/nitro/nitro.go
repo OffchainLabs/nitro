@@ -193,8 +193,9 @@ func main() {
 		}
 	}
 
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
-		l1Reader := headerreader.New(l1Client, nodeConfig.Node.L1Reader)
+		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
 		deployInfo, err := nodeConfig.L1.Rollup.ParseAddresses()
@@ -278,7 +279,6 @@ func main() {
 		}
 	}
 
-	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	fatalErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
@@ -296,6 +296,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	liveNodeConfig.setOnReloadHook(func(old *NodeConfig, new *NodeConfig) error {
+		return currentNode.OnConfigReload(&old.Node, &new.Node)
+	})
+
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
@@ -317,6 +321,7 @@ func main() {
 			panic(fmt.Sprintf("Failed to register the GraphQL service: %v", err))
 		}
 	}
+
 	if err := stack.Start(); err != nil {
 		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
@@ -428,6 +433,10 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 
 	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
 	return err
+}
+
+func (c *NodeConfig) Validate() error {
+	return c.Node.Validate()
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
@@ -582,6 +591,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	nodeConfig.L1.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.L2.DevWallet = genericconf.WalletConfigDefault
 
+	err = nodeConfig.Validate()
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
@@ -660,12 +673,19 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	}, "."), nil)
 }
 
+type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
+
+func noopOnReloadHook(old *NodeConfig, new *NodeConfig) error {
+	return nil
+}
+
 type LiveNodeConfig struct {
 	stopwaiter.StopWaiter
 
-	mutex  sync.RWMutex
-	args   []string
-	config *NodeConfig
+	mutex        sync.RWMutex
+	args         []string
+	config       *NodeConfig
+	onReloadHook OnReloadHook
 }
 
 func (c *LiveNodeConfig) get() *NodeConfig {
@@ -683,6 +703,10 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	}
 	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
 		return err
+	}
+	if err := c.onReloadHook(c.config, config); err != nil {
+		// TODO(magic) panic? return err? only log the error?
+		log.Error("Failed to execute onReloadHook", "err", err)
 	}
 	c.config = config
 	return nil
@@ -730,10 +754,16 @@ func (c *LiveNodeConfig) Start(ctxIn context.Context) {
 	})
 }
 
+// setOnReloadHook is NOT thread-safe and supports setting only one hook
+func (c *LiveNodeConfig) setOnReloadHook(hook OnReloadHook) {
+	c.onReloadHook = hook
+}
+
 func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
 	return &LiveNodeConfig{
-		args:   args,
-		config: config,
+		args:         args,
+		config:       config,
+		onReloadHook: noopOnReloadHook,
 	}
 }
 
