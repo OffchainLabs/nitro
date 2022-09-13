@@ -40,10 +40,10 @@ func (s *RedisStorage[Item]) PeelVerifySignature(data []byte) ([]byte, error) {
 	if len(data) < 32 {
 		return nil, errors.New("data is too short to contain message signature")
 	}
-	sign := make([]byte, 32)
+	sig := make([]byte, 32)
 	msg := make([]byte, len(data)-32)
 
-	valid, err := s.signer.VerifySignature(nil, msg, sign)
+	valid, err := s.signer.VerifySignature(sig, msg)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 		if err != nil {
 			return err
 		}
-		sig, err := s.signer.SignMessage(nil, newItemEncoded)
+		sig, err := s.signer.SignMessage(newItemEncoded)
 		if err != nil {
 			return err
 		}

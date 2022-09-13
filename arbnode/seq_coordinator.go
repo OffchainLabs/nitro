@@ -217,7 +217,7 @@ func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 func (c *SeqCoordinator) msgCountToSignedBytes(msgCount arbutil.MessageIndex) ([]byte, error) {
 	var msgCountBytes [8]byte
 	binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCount))
-	sig, err := c.signer.SignMessage(nil, msgCountBytes[:])
+	sig, err := c.signer.SignMessage(msgCountBytes[:])
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func (c *SeqCoordinator) signedBytesToMsgCount(data []byte) (arbutil.MessageInde
 	if len(data) < 8 {
 		return 0, errors.New("msgcount value too short")
 	}
-	valid, err := c.signer.VerifySignature(nil, data[:8], data[8:])
+	valid, err := c.signer.VerifySignature(data[8:], data[:8])
 	if err != nil {
 		return 0, err
 	}
@@ -503,14 +503,25 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		}
 		rsBytes := []byte(resString)
 		var sigString string
+		var sigBytes []byte
 		sigString, msgReadErr = c.client.Get(ctx, messageSigKeyFor(msgToRead)).Result()
-		if msgReadErr != nil {
+		if errors.Is(msgReadErr, redis.Nil) {
+			// no separate signature. Try reading old-style sig
+			if len(rsBytes) < 32 {
+				log.Warn("signature not found for msg", "pos", msgToRead)
+				msgReadErr = errors.New("signature not found")
+				break
+			}
+			sigBytes = rsBytes[:32]
+			rsBytes = rsBytes[32:]
+		} else if msgReadErr != nil {
 			log.Warn("coordinator failed reading sig", "pos", msgToRead, "err", msgReadErr)
 			break
+		} else {
+			sigBytes = []byte(sigString)
 		}
-		sigBytes := []byte(sigString)
 		var valid bool
-		valid, msgReadErr = c.signer.VerifySignature(arbmath.UintToBytes(uint64(msgToRead)), rsBytes, sigBytes)
+		valid, msgReadErr = c.signer.VerifySignature(sigBytes, arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
 		if msgReadErr != nil || !valid {
 			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "valid", valid, "err", msgReadErr)
 			break
