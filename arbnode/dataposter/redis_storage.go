@@ -36,21 +36,19 @@ func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
 	return append(sig, msg...), nil
 }
 
-func (s *RedisStorage[Item]) PeelVerifySignature(data []byte) ([]byte, error) {
+func (s *RedisStorage[Item]) peelVerifySignature(data []byte) ([]byte, error) {
 	if len(data) < 32 {
 		return nil, errors.New("data is too short to contain message signature")
 	}
-	sig := make([]byte, 32)
-	msg := make([]byte, len(data)-32)
 
-	valid, err := s.signer.VerifySignature(sig, msg)
+	valid, err := s.signer.VerifySignature(data[:32], data[32:])
 	if err != nil {
 		return nil, err
 	}
 	if !valid {
 		return nil, errors.New("invalid signature")
 	}
-	return msg, nil
+	return data[32:], nil
 }
 
 func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*Item, error) {
@@ -67,7 +65,7 @@ func (s *RedisStorage[Item]) GetContents(ctx context.Context, startingIndex uint
 	var items []*Item
 	for _, itemString := range itemStrings {
 		var item Item
-		data, err := s.PeelVerifySignature([]byte(itemString))
+		data, err := s.peelVerifySignature([]byte(itemString))
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +95,7 @@ func (s *RedisStorage[Item]) GetLast(ctx context.Context) (*Item, error) {
 	var ret *Item
 	if len(itemStrings) > 0 {
 		var item Item
-		data, err := s.PeelVerifySignature([]byte(itemStrings[0]))
+		data, err := s.peelVerifySignature([]byte(itemStrings[0]))
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +141,7 @@ func (s *RedisStorage[Item]) Put(ctx context.Context, index uint64, prevItem *It
 			if prevItem == nil {
 				return fmt.Errorf("%w: tried to insert new item at index %v but an item exists there", StorageRaceErr, index)
 			}
-			verifiedItem, err := s.PeelVerifySignature([]byte(haveItems[0]))
+			verifiedItem, err := s.peelVerifySignature([]byte(haveItems[0]))
 			if err != nil {
 				return fmt.Errorf("failed to validate item already in redis at index%v: %w", index, err)
 			}
