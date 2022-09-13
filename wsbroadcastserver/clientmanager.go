@@ -199,30 +199,30 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 
 		var clientDeleteList []*ClientConnection
 		for {
-			func() {
-				pingInterval := time.NewTimer(cm.config().Ping)
-				defer pingInterval.Stop()
-				select {
-				case <-ctx.Done():
-					return
-				case clientAction := <-cm.clientAction:
-					if clientAction.create {
-						err := cm.registerClient(ctx, clientAction.cc)
-						if err != nil {
-							// Log message already output in registerClient
-							cm.removeClientImpl(clientAction.cc)
-						}
-					} else {
-						cm.removeClient(clientAction.cc)
+			pingInterval := time.NewTimer(cm.config().Ping)
+			select {
+			case <-ctx.Done():
+				pingInterval.Stop()
+				return
+			case clientAction := <-cm.clientAction:
+				pingInterval.Stop()
+				if clientAction.create {
+					err := cm.registerClient(ctx, clientAction.cc)
+					if err != nil {
+						// Log message already output in registerClient
+						cm.removeClientImpl(clientAction.cc)
 					}
-				case bm := <-cm.broadcastChan:
-					var err error
-					clientDeleteList, err = cm.doBroadcast(bm)
-					logError(err, "failed to do broadcast")
-				case <-pingInterval.C:
-					clientDeleteList = cm.verifyClients()
+				} else {
+					cm.removeClient(clientAction.cc)
 				}
-			}()
+			case bm := <-cm.broadcastChan:
+				pingInterval.Stop()
+				var err error
+				clientDeleteList, err = cm.doBroadcast(bm)
+				logError(err, "failed to do broadcast")
+			case <-pingInterval.C:
+				clientDeleteList = cm.verifyClients()
+			}
 
 			if len(clientDeleteList) > 0 {
 				for _, client := range clientDeleteList {
