@@ -45,10 +45,12 @@ type QueueStorage[Item any] interface {
 type DataPosterConfig struct {
 	RedisSigner       signature.SimpleHmacConfig `koanf:"redis-signer"`
 	ReplacementTimes  string                     `koanf:"replacement-times"`
-	L1LookBehind      uint64                     `koanf:"l1-look-behind"`
-	MaxFeeCapGwei     float64                    `koanf:"max-fee-cap-gwei"`
-	MaxFeeCapDoubling time.Duration              `koanf:"max-fee-cap-doubling"`
+	L1LookBehind      uint64                     `koanf:"l1-look-behind" reload:"hot"`
+	MaxFeeCapGwei     float64                    `koanf:"max-fee-cap-gwei" reload:"hot"`
+	MaxFeeCapDoubling time.Duration              `koanf:"max-fee-cap-doubling" reload:"hot"`
 }
+
+type DataPosterConfigFetcher func() *DataPosterConfig
 
 func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".replacement-times", DefaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
@@ -80,7 +82,7 @@ type DataPoster[Meta any] struct {
 	client            arbutil.L1Interface
 	auth              *bind.TransactOpts
 	redisLock         AttemptLocker
-	config            *DataPosterConfig
+	config            DataPosterConfigFetcher
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)
 
@@ -97,10 +99,10 @@ type AttemptLocker interface {
 	AttemptLock(context.Context) bool
 }
 
-func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config *DataPosterConfig, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config DataPosterConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
-	for _, s := range strings.Split(config.ReplacementTimes, ",") {
+	for _, s := range strings.Split(config().ReplacementTimes, ",") {
 		t, err := time.ParseDuration(s)
 		if err != nil {
 			return nil, err
@@ -121,7 +123,7 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 		queue = NewSliceStorage[queuedTransaction[Meta]]()
 	} else {
 		var err error
-		queue, err = NewRedisStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config.RedisSigner)
+		queue, err = NewRedisStorage[queuedTransaction[Meta]](redisClient, "data-poster.queue", &config().RedisSigner)
 		if err != nil {
 			return nil, err
 		}
@@ -180,8 +182,9 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big
 	newFeeCap.Add(newFeeCap, newTipCap)
 
 	elapsed := time.Since(dataCreatedAt)
-	maxFeeCap := new(big.Int).SetUint64(uint64(p.config.MaxFeeCapGwei * params.GWei))
-	maxFeeCapDoublings := int64(elapsed / p.config.MaxFeeCapDoubling)
+	config := p.config()
+	maxFeeCap := new(big.Int).SetUint64(uint64(config.MaxFeeCapGwei * params.GWei))
+	maxFeeCapDoublings := int64(elapsed / config.MaxFeeCapDoubling)
 	// in tests, this could get way too big
 	if maxFeeCapDoublings > 8 {
 		maxFeeCapDoublings = 8
@@ -321,7 +324,7 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	p.lastBlock = arbmath.BigSub(header.Number, new(big.Int).SetUint64(p.config.L1LookBehind))
+	p.lastBlock = arbmath.BigSub(header.Number, new(big.Int).SetUint64(p.config().L1LookBehind))
 	nonce, err := p.client.NonceAt(ctx, p.auth.From, p.lastBlock)
 	if err != nil {
 		return err

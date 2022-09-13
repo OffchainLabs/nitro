@@ -57,15 +57,16 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 		Key:             redisKey,
 		BackgroundLock:  backgound,
 	}
+	confFetcher := func() *SimpleRedisLockConfig { return conf }
 
 	locks := make([]*SimpleRedisLock, 0)
 	for i := 0; i < test_threads; i++ {
 		var err error
 		var lock *SimpleRedisLock
 		if chosen < 0 || chosen == i {
-			lock, err = NewSimpleRedisLock(redisClient, conf, prepareTrue)
+			lock, err = NewSimpleRedisLock(redisClient, confFetcher, prepareTrue)
 		} else {
-			lock, err = NewSimpleRedisLock(redisClient, conf, prepareFalse)
+			lock, err = NewSimpleRedisLock(redisClient, confFetcher, prepareFalse)
 		}
 		if err != nil {
 			t.Fatal(err)

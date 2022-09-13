@@ -19,7 +19,7 @@ import (
 type SimpleRedisLock struct {
 	stopwaiter.StopWaiter
 	client      redis.UniversalClient
-	config      *SimpleRedisLockConfig
+	config      SimpleRedisLockConfigFetcher
 	lockedUntil int64
 	mutex       sync.Mutex
 	stopping    bool
@@ -29,11 +29,13 @@ type SimpleRedisLock struct {
 
 type SimpleRedisLockConfig struct {
 	MyId            string        `koanf:"my-id"`
-	LockoutDuration time.Duration `koanf:"lockout-duration"`
-	RefreshDuration time.Duration `koanf:"refresh-duration"`
+	LockoutDuration time.Duration `koanf:"lockout-duration" reload:"hot"`
+	RefreshDuration time.Duration `koanf:"refresh-duration" reload:"hot"`
 	Key             string        `koanf:"key"`
 	BackgroundLock  bool          `koanf:"background-lock"`
 }
+
+type SimpleRedisLockConfigFetcher func() *SimpleRedisLockConfig
 
 func RedisLockConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".my-id", "", "this node's id prefix when acquiring the lock (optional)")
@@ -43,13 +45,13 @@ func RedisLockConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".background-lock", DefaultRedisLockConfig.BackgroundLock, "should node always try grabing lock in background")
 }
 
-func NewSimpleRedisLock(client redis.UniversalClient, config *SimpleRedisLockConfig, readyToLock func() bool) (*SimpleRedisLock, error) {
+func NewSimpleRedisLock(client redis.UniversalClient, config SimpleRedisLockConfigFetcher, readyToLock func() bool) (*SimpleRedisLock, error) {
 	randBig, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
 	if err != nil {
 		return nil, err
 	}
 	return &SimpleRedisLock{
-		myId:        config.MyId + "-" + strconv.FormatInt(randBig.Int64(), 16), // unique even if config is not
+		myId:        config().MyId + "-" + strconv.FormatInt(randBig.Int64(), 16), // unique even if config is not
 		client:      client,
 		config:      config,
 		readyToLock: readyToLock,
@@ -73,10 +75,11 @@ func (l *SimpleRedisLock) attemptLock(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	gotLock := false
+	config := l.config()
 	timeAtStart := time.Now()
 
 	err := l.client.Watch(ctx, func(tx *redis.Tx) error {
-		current, err := tx.Get(ctx, l.config.Key).Result()
+		current, err := tx.Get(ctx, config.Key).Result()
 		if errors.Is(err, redis.Nil) {
 			current = ""
 			err = nil
@@ -88,8 +91,8 @@ func (l *SimpleRedisLock) attemptLock(ctx context.Context) (bool, error) {
 			return nil
 		}
 		pipe := tx.TxPipeline()
-		pipe.Set(ctx, l.config.Key, l.myId, l.config.LockoutDuration)
-		pipe.PExpireAt(ctx, l.config.Key, timeAtStart.Add(l.config.LockoutDuration))
+		pipe.Set(ctx, config.Key, l.myId, config.LockoutDuration)
+		pipe.PExpireAt(ctx, config.Key, timeAtStart.Add(config.LockoutDuration))
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
 			return nil
@@ -99,7 +102,7 @@ func (l *SimpleRedisLock) attemptLock(ctx context.Context) (bool, error) {
 		}
 		gotLock = true
 		return nil
-	}, l.config.Key)
+	}, config.Key)
 
 	if !gotLock {
 		atomicTimeWrite(&l.lockedUntil, time.Time{})
@@ -108,10 +111,10 @@ func (l *SimpleRedisLock) attemptLock(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	if gotLock {
-		if l.config.BackgroundLock {
-			atomicTimeWrite(&l.lockedUntil, timeAtStart.Add(l.config.LockoutDuration))
+		if config.BackgroundLock {
+			atomicTimeWrite(&l.lockedUntil, timeAtStart.Add(config.LockoutDuration))
 		} else {
-			atomicTimeWrite(&l.lockedUntil, timeAtStart.Add(l.config.RefreshDuration))
+			atomicTimeWrite(&l.lockedUntil, timeAtStart.Add(config.RefreshDuration))
 		}
 	}
 	return gotLock, nil
@@ -121,7 +124,7 @@ func (l *SimpleRedisLock) AttemptLock(ctx context.Context) bool {
 	if l.Locked() {
 		return true
 	}
-	if l.config.BackgroundLock {
+	if l.config().BackgroundLock {
 		return false
 	}
 	res, err := l.attemptLock(ctx)
@@ -147,8 +150,9 @@ func (l *SimpleRedisLock) Release(ctx context.Context) {
 		return
 	}
 
+	config := l.config()
 	err := l.client.Watch(ctx, func(tx *redis.Tx) error {
-		current, err := tx.Get(ctx, l.config.Key).Result()
+		current, err := tx.Get(ctx, config.Key).Result()
 		if errors.Is(err, redis.Nil) {
 			return nil
 		}
@@ -159,7 +163,7 @@ func (l *SimpleRedisLock) Release(ctx context.Context) {
 			return nil
 		}
 		pipe := tx.TxPipeline()
-		pipe.Del(ctx, l.config.Key, l.myId)
+		pipe.Del(ctx, config.Key, l.myId)
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
 			return nil
@@ -168,7 +172,7 @@ func (l *SimpleRedisLock) Release(ctx context.Context) {
 			return err
 		}
 		return nil
-	}, l.config.Key)
+	}, config.Key)
 
 	if err != nil {
 		log.Error("release returned error", "err", err)
@@ -177,13 +181,13 @@ func (l *SimpleRedisLock) Release(ctx context.Context) {
 
 func (l *SimpleRedisLock) Start(ctxin context.Context) {
 	l.StopWaiter.Start(ctxin)
-	if l.config.BackgroundLock && l.client != nil {
+	if l.config().BackgroundLock && l.client != nil {
 		l.CallIteratively(func(ctx context.Context) time.Duration {
 			_, err := l.attemptLock(ctx)
 			if err != nil {
 				log.Error("attemptLock returned error", "err", err)
 			}
-			return l.config.RefreshDuration
+			return l.config().RefreshDuration
 		})
 	}
 }

@@ -114,16 +114,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     /// @inheritdoc IInbox
-    function postUpgradeInit(IBridge _bridge) external onlyDelegated onlyProxyOwner {
-        uint8 slotsToWipe = 3;
-        for (uint8 i = 0; i < slotsToWipe; i++) {
-            assembly {
-                sstore(i, 0)
-            }
-        }
-        allowListEnabled = false;
-        bridge = _bridge;
-    }
+    function postUpgradeInit(IBridge) external onlyDelegated onlyProxyOwner {}
 
     /// @inheritdoc IInbox
     function sendL2MessageFromOrigin(bytes calldata messageData)
