@@ -16,10 +16,12 @@ import (
 
 const testStopDelayWarningTimeout = 350 * time.Millisecond
 
+type TestStruct struct{}
+
 func TestStopWaiterStopAndWaitTimeout(t *testing.T) {
 	logHandler := initTestLog(t, log.LvlTrace)
 	sw := StopWaiter{}
-	sw.Start(context.Background())
+	sw.Start(context.Background(), TestStruct{})
 	sw.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
@@ -32,7 +34,7 @@ func TestStopWaiterStopAndWaitTimeout(t *testing.T) {
 	})
 	time.Sleep(50 * time.Millisecond)
 	sw.stopAndWaitImpl(testStopDelayWarningTimeout)
-	if !logHandler.WasLogged(fmt.Sprintf("taking more than %s to stop", testStopDelayWarningTimeout.String())) {
+	if !logHandler.WasLogged(fmt.Sprintf("stopwaiter.TestStruct taking more than %s to stop", testStopDelayWarningTimeout.String())) {
 		testhelpers.FailImpl(t, "Failed to log about hanging on StopAndWait")
 	}
 }

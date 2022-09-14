@@ -210,7 +210,7 @@ func (s *Staker) Initialize(ctx context.Context) error {
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
-	s.StopWaiter.Start(ctxIn)
+	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		err := s.updateBlockValidatorModuleRoot(ctx)

@@ -51,7 +51,7 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		discardAfterTimeout: discardAfterTimeout,
 		dirPath:             dirPath,
 	}
-	if err := ret.stopWaiter.Start(ctx); err != nil {
+	if err := ret.stopWaiter.Start(ctx, ret); err != nil {
 		return nil, err
 	}
 	err = ret.stopWaiter.LaunchThread(func(myCtx context.Context) {
