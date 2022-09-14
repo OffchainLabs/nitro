@@ -21,7 +21,7 @@ type TestStruct struct{}
 func TestStopWaiterStopAndWaitTimeout(t *testing.T) {
 	logHandler := initTestLog(t, log.LvlTrace)
 	sw := StopWaiter{}
-	sw.Start(context.Background(), TestStruct{})
+	sw.Start(context.Background(), &TestStruct{})
 	sw.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
