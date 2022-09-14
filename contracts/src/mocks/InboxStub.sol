@@ -134,6 +134,37 @@ contract InboxStub is IInbox {
         revert("NOT_IMPLEMENTED");
     }
 
+    function sendL1FundedUnsignedTransactionToFork(
+        uint256,
+        uint256,
+        uint256,
+        address,
+        bytes calldata
+    ) external payable returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function sendUnsignedTransactionToFork(
+        uint256,
+        uint256,
+        uint256,
+        address,
+        uint256,
+        bytes calldata
+    ) external returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function sendWithdrawEthToFork(
+        uint256,
+        uint256,
+        uint256,
+        uint256,
+        address
+    ) external returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
     function depositEth() external payable override returns (uint256) {
         revert("NOT_IMPLEMENTED");
     }

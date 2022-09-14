@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Relay struct {
@@ -52,7 +53,7 @@ func NewRelay(feedConfig broadcastclient.FeedConfig, chainId uint64, feedErrChan
 		return nil, errors.New("relay attempted to sign feed message")
 	}
 	return &Relay{
-		broadcaster:                 broadcaster.NewBroadcaster(feedConfig.Output, chainId, feedErrChan, dataSignerErr),
+		broadcaster:                 broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &feedConfig.Output }, chainId, feedErrChan, dataSignerErr),
 		broadcastClients:            broadcastClients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,

@@ -12,6 +12,7 @@ import {
   bridgeFundsCommand,
   sendL1Command,
   sendL2Command,
+  sendRPCCommand,
 } from "./ethcommands";
 
 async function main() {
@@ -25,6 +26,7 @@ async function main() {
     .command(bridgeFundsCommand)
     .command(sendL1Command)
     .command(sendL2Command)
+    .command(sendRPCCommand)
     .command(writeConfigCommand)
     .command(writeAccountsCommand)
     .command(printAddressCommand)

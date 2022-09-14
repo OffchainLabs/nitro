@@ -96,6 +96,12 @@ error RetryableData(
     bytes data
 );
 
+/// @dev Thrown when a L1 chainId fork is detected
+error L1Forked();
+
+/// @dev Thrown when a L1 chainId fork is not detected
+error NotForked();
+
 // Outbox Errors
 
 /// @dev The provided proof was too long
