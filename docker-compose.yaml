@@ -67,7 +67,7 @@ services:
     volumes:
       - "seqdata:/home/user/.arbitrum/local/nitro"
       - "config:/config"
-    command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug --http.corsdomain * --node.seq-coordinator.my-url  ws://sequencer:8548 --graphql.enable --graphql.vhosts * --graphql.corsdomain *
+    command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642  --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://sequencer:8548 --graphql.enable --graphql.vhosts * --graphql.corsdomain *
     depends_on:
       - geth
       - redis
@@ -154,6 +154,40 @@ services:
       - geth
       - redis
 
+  poster_b:
+    pid: host # allow debugging
+    build:
+      context: .
+      target: nitro-node-dev
+    ports:
+      - "127.0.0.1:9147:8547"
+      - "127.0.0.1:9148:8548"
+    volumes:
+      - "poster-data-b:/home/user/.arbitrum/local/nitro"
+      - "l1keystore:/home/user/l1keystore"
+      - "config:/config"
+    command: --conf.file /config/poster_config.json
+    depends_on:
+      - geth
+      - redis
+
+  poster_c:
+    pid: host # allow debugging
+    build:
+      context: .
+      target: nitro-node-dev
+    ports:
+      - "127.0.0.1:9247:8547"
+      - "127.0.0.1:9248:8548"
+    volumes:
+      - "poster-data-c:/home/user/.arbitrum/local/nitro"
+      - "l1keystore:/home/user/l1keystore"
+      - "config:/config"
+    command: --conf.file /config/poster_config.json
+    depends_on:
+      - geth
+      - redis
+
   validator:
     pid: host # allow debugging
     build:
@@ -199,6 +233,8 @@ volumes:
   unsafestaker-data:
   validator-data:
   poster-data:
+  poster-data-b:
+  poster-data-c:
   config:
   postgres-data:
 

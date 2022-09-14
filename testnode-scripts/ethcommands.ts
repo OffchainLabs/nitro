@@ -72,3 +72,18 @@ export const sendL2Command = {
         argv.provider.destroy()
     }
 }
+
+export const sendRPCCommand = {
+    command: "send-rpc",
+    describe: "sends funds to l2 node",
+    builder: {
+        method: { string: true, describe: "rpc method to call", default: "eth_syncing" },
+        url: { string: true, describe: "url to send rpc call", default: "http://sequencer:8547"},
+        params: { array : true, describe: "array of parameter name/values" },
+    },
+    handler: async (argv: any) => {
+        const rpcProvider = new ethers.providers.JsonRpcProvider(argv.url)
+
+        await rpcProvider.send(argv.method, argv.params)
+    }
+}

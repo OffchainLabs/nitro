@@ -15,6 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
@@ -50,7 +51,7 @@ type RedisStorageService struct {
 }
 
 func NewRedisStorageService(redisConfig RedisConfig, baseStorageService StorageService) (StorageService, error) {
-	redisOptions, err := redis.ParseURL(redisConfig.RedisUrl)
+	redisClient, err := redisutil.RedisClientFromURL(redisConfig.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func NewRedisStorageService(redisConfig RedisConfig, baseStorageService StorageS
 		baseStorageService: baseStorageService,
 		redisConfig:        redisConfig,
 		signingKey:         signingKey,
-		client:             redis.NewClient(redisOptions),
+		client:             redisClient,
 	}, nil
 }
 
