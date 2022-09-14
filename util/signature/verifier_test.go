@@ -59,7 +59,7 @@ func TestMissingRequiredSignature(t *testing.T) {
 	defer cancel()
 
 	config := TestingFeedVerifierConfig
-	config.Dangerous.AcceptEmpty = false
+	config.Dangerous.AcceptMissing = false
 	verifier, err := NewVerifier(&config, nil)
 	Require(t, err)
 	_, err = verifier.VerifyData(ctx, nil, nil)
@@ -73,7 +73,7 @@ func TestMissingSignatureAllowed(t *testing.T) {
 	defer cancel()
 
 	config := TestingFeedVerifierConfig
-	config.Dangerous.AcceptEmpty = true
+	config.Dangerous.AcceptMissing = true
 	verifier, err := NewVerifier(&config, nil)
 	Require(t, err)
 	verified, err := verifier.VerifyData(ctx, nil, nil)

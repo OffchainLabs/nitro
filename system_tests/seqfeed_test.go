@@ -31,7 +31,7 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.Config {
 		Timeout: 200 * time.Millisecond,
 		Verifier: signature.VerifierConfig{
 			Dangerous: signature.DangerousVerifierConfig{
-				AcceptEmpty: true,
+				AcceptMissing: true,
 			},
 		},
 	}

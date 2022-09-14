@@ -527,7 +527,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Sequencer = TestSequencerConfig
 	config.L1Reader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
-	config.Feed.Input.Verifier.Dangerous.AcceptEmpty = true
+	config.Feed.Input.Verifier.Dangerous.AcceptMissing = true
 
 	return &config
 }

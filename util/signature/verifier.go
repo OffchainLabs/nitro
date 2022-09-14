@@ -28,7 +28,7 @@ type VerifierConfig struct {
 }
 
 type DangerousVerifierConfig struct {
-	AcceptEmpty bool `koanf:"accept-empty"`
+	AcceptMissing bool `koanf:"accept-missing"`
 }
 
 func FeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -38,14 +38,14 @@ func FeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func DangerousFeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".accept-empty", DefultFeedVerifierConfig.Dangerous.AcceptEmpty, "accept empty as valid signature")
+	f.Bool(prefix+".accept-missing", DefultFeedVerifierConfig.Dangerous.AcceptMissing, "accept empty as valid signature")
 }
 
 var DefultFeedVerifierConfig = VerifierConfig{
 	AllowedAddresses:   []string{},
 	AcceptBatchPosters: true,
 	Dangerous: DangerousVerifierConfig{
-		AcceptEmpty: true,
+		AcceptMissing: true,
 	},
 }
 
@@ -53,7 +53,7 @@ var TestingFeedVerifierConfig = VerifierConfig{
 	AllowedAddresses:   []string{},
 	AcceptBatchPosters: false,
 	Dangerous: DangerousVerifierConfig{
-		AcceptEmpty: false,
+		AcceptMissing: false,
 	},
 }
 
@@ -85,7 +85,7 @@ var ErrMissingSignature = errors.New("missing required signature")
 
 func (v *Verifier) verifyClosureLocal(sig []byte, hash common.Hash) (bool, common.Address, error) {
 	if len(sig) == 0 {
-		if v.config.Dangerous.AcceptEmpty {
+		if v.config.Dangerous.AcceptMissing {
 			// Signature missing and not required
 			return true, common.Address{}, nil
 		}

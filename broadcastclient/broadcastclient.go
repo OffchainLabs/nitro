@@ -404,7 +404,7 @@ func (bc *BroadcastClient) StopAndWait() {
 }
 
 func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) (bool, error) {
-	if !bc.config.Verifier.Dangerous.AcceptEmpty && bc.sigVerifier == nil {
+	if bc.config.Verifier.Dangerous.AcceptMissing && bc.sigVerifier == nil {
 		// Verifier disabled
 		return true, nil
 	}
