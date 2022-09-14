@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -91,6 +92,14 @@ func (s *StopWaiterSafe) StopAndWait() {
 	s.stopAndWaitImpl(stopDelayWarningTimeout)
 }
 
+func getAllStackTraces() string {
+	buf := make([]byte, 64*1024*1024)
+	size := runtime.Stack(buf, true)
+	builder := strings.Builder{}
+	builder.Write(buf[0:size])
+	return builder.String()
+}
+
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) {
 	s.StopOnly()
 	timer := time.NewTimer(warningTimeout)
@@ -101,7 +110,8 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) {
 	}()
 	select {
 	case <-timer.C:
-		log.Warn(fmt.Sprintf("%s taking more than %s to stop", s.name, warningTimeout.String()))
+		traces := getAllStackTraces()
+		log.Warn(fmt.Sprintf("%s taking more than %s to stop.\nstack traces:\n%s", s.name, warningTimeout.String(), traces))
 	case <-stop:
 		return
 	}
