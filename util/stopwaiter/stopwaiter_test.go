@@ -18,7 +18,7 @@ const testStopDelayWarningTimeout = 350 * time.Millisecond
 
 type TestStruct struct{}
 
-func TestStopWaiterStopAndWaitTimeout(t *testing.T) {
+func TestStopWaiterStopAndWaitTimeoutShouldWarn(t *testing.T) {
 	logHandler := initTestLog(t, log.LvlTrace)
 	sw := StopWaiter{}
 	sw.Start(context.Background(), &TestStruct{})
@@ -35,7 +35,28 @@ func TestStopWaiterStopAndWaitTimeout(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	sw.stopAndWaitImpl(testStopDelayWarningTimeout)
 	if !logHandler.WasLogged(fmt.Sprintf("stopwaiter.TestStruct taking more than %s to stop", testStopDelayWarningTimeout.String())) {
-		testhelpers.FailImpl(t, "Failed to log about hanging on StopAndWait")
+		testhelpers.FailImpl(t, "Failed to log about waiting long on StopAndWait")
+	}
+}
+
+func TestStopWaiterStopAndWaitTimeoutShouldNotWarn(t *testing.T) {
+	logHandler := initTestLog(t, log.LvlTrace)
+	sw := StopWaiter{}
+	sw.Start(context.Background(), &TestStruct{})
+	sw.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				time.Sleep(5000 * time.Millisecond)
+			}
+		}
+	})
+	time.Sleep(50 * time.Millisecond)
+	sw.StopAndWait()
+	if logHandler.WasLogged(fmt.Sprintf("stopwaiter.TestStruct taking more than %s to stop", stopDelayWarningTimeout.String())) {
+		testhelpers.FailImpl(t, "Incorrectly logged about waiting long on StopAndWait")
 	}
 }
 
