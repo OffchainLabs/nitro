@@ -135,8 +135,8 @@ fi
 
 if $force_build; then
     echo == Building..
-    docker build . -t nitro-node-dev --target nitro-node-dev
-    docker build blockscout -t blockscout -f blockscout/docker/Dockerfile
+#    docker build . -t nitro-node-dev --target nitro-node-dev
+#    docker build blockscout -t blockscout -f blockscout/docker/Dockerfile
     docker-compose build --no-rm $NODES testnode-scripts
 fi
 
@@ -150,12 +150,8 @@ if $force_init; then
     docker volume prune -f --filter label=com.docker.compose.project=nitro
 
     echo == Generating l1 keys
+    docker-compose run testnode-scripts write-accounts
     docker-compose run --entrypoint sh geth -c "echo passphrase > /root/.ethereum/passphrase"
-    docker-compose run --entrypoint sh geth -c "echo e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2 > /root/.ethereum/tmp-funnelkey"
-    docker-compose run geth account import --password /root/.ethereum/passphrase --keystore /keystore /root/.ethereum/tmp-funnelkey
-    docker-compose run --entrypoint sh geth -c "rm /root/.ethereum/tmp-funnelkey"
-    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
-    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /keystore"
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /config"
 

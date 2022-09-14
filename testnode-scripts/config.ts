@@ -4,7 +4,7 @@ import { namedAccount } from "./accounts";
 
 const path = require("path");
 
-function writeConfigs(argv: any) {
+async function writeConfigs(argv: any) {
   const deployment = JSON.parse(
     fs
       .readFileSync(path.join(consts.configpath, "deployment.json"))
@@ -120,7 +120,7 @@ function writeConfigs(argv: any) {
 export const writeConfigCommand = {
   command: "write-config",
   describe: "writes config files",
-  handler: (argv: any) => {
-    writeConfigs(argv);
+  handler: async (argv: any) => {
+    await writeConfigs(argv);
   },
 };
