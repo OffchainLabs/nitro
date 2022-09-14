@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -32,13 +34,77 @@ import (
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
 const maxTxDataSize = 112065
 
+type SequencerConfig struct {
+	Enable                      bool                     `koanf:"enable"`
+	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
+	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject" reload:"hot"`
+	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
+	SenderWhitelist             string                   `koanf:"sender-whitelist"`
+	Forwarder                   ForwarderConfig          `koanf:"forwarder"`
+	QueueSize                   int                      `koanf:"queue-size"`
+	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
+}
+
+func (c *SequencerConfig) Validate() error {
+	entries := strings.Split(c.SenderWhitelist, ",")
+	for _, address := range entries {
+		if len(address) == 0 {
+			continue
+		}
+		if !common.IsHexAddress(address) {
+			return fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
+		}
+	}
+	return nil
+}
+
+type SequencerConfigFetcher func() *SequencerConfig
+
+var DefaultSequencerConfig = SequencerConfig{
+	Enable:                      false,
+	MaxBlockSpeed:               time.Millisecond * 100,
+	MaxRevertGasReject:          params.TxGas + 10000,
+	MaxAcceptableTimestampDelta: time.Hour,
+	Forwarder:                   DefaultSequencerForwarderConfig,
+	QueueSize:                   1024,
+	Dangerous:                   DefaultDangerousSequencerConfig,
+}
+
+var TestSequencerConfig = SequencerConfig{
+	Enable:                      true,
+	MaxBlockSpeed:               time.Millisecond * 10,
+	MaxRevertGasReject:          params.TxGas + 10000,
+	MaxAcceptableTimestampDelta: time.Hour,
+	SenderWhitelist:             "",
+	Forwarder:                   DefaultTestForwarderConfig,
+	QueueSize:                   128,
+	Dangerous:                   TestDangerousSequencerConfig,
+}
+
+func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
+	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
+	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
+	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
+	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
+	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
+	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
+	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
+}
+
 type txQueueItem struct {
-	tx         *types.Transaction
-	resultChan chan<- error
-	ctx        context.Context
+	tx             *types.Transaction
+	resultChan     chan<- error
+	returnedResult bool
+	ctx            context.Context
 }
 
 func (i *txQueueItem) returnResult(err error) {
+	if i.returnedResult {
+		log.Error("attempting to return result to already finished queue item", "err", err)
+		return
+	}
+	i.returnedResult = true
 	i.resultChan <- err
 	close(i.resultChan)
 }
@@ -61,23 +127,24 @@ type Sequencer struct {
 	forwarder      *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, config SequencerConfigFetcher) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
+	config := configFetcher()
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	senderWhitelist := make(map[common.Address]struct{})
-	entries := strings.Split(config().SenderWhitelist, ",")
+	entries := strings.Split(config.SenderWhitelist, ",")
 	for _, address := range entries {
 		if len(address) == 0 {
 			continue
-		}
-		if !common.IsHexAddress(address) {
-			return nil, fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
 		}
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 	return &Sequencer{
 		txStreamer:      txStreamer,
-		txQueue:         make(chan txQueueItem, config().QueueSize),
+		txQueue:         make(chan txQueueItem, config.QueueSize),
 		l1Reader:        l1Reader,
-		config:          config,
+		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
@@ -87,6 +154,14 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 var ErrRetrySequencer = errors.New("please retry transaction")
 
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	forwarder := s.GetForwarder()
+	if forwarder != nil {
+		err := forwarder.PublishTransaction(ctx, tx)
+		if !errors.Is(err, ErrNoSequencer) {
+			return err
+		}
+	}
+
 	if len(s.senderWhitelist) > 0 {
 		signer := types.LatestSigner(s.txStreamer.bc.Config())
 		sender, err := types.Sender(signer, tx)
@@ -107,6 +182,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	queueItem := txQueueItem{
 		tx,
 		resultChan,
+		false,
 		ctx,
 	}
 	select {
@@ -122,11 +198,11 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func (s *Sequencer) preTxFilter(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction) error {
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
+func (s *Sequencer) postTxFilter(_ *arbosState.ArbosState, _ *types.Transaction, _ common.Address, dataGas uint64, result *core.ExecutionResult) error {
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
@@ -160,9 +236,13 @@ func (s *Sequencer) ForwardTo(url string) error {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
 	if s.forwarder != nil {
+		if s.forwarder.target == url {
+			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
+			return nil
+		}
 		s.forwarder.Disable()
 	}
-	s.forwarder = NewForwarder(url, s.config().ForwardTimeout)
+	s.forwarder = NewForwarder(url, &s.config().Forwarder)
 	err := s.forwarder.Initialize(s.GetContext())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)
@@ -180,7 +260,7 @@ func (s *Sequencer) DontForward() {
 	s.forwarder = nil
 }
 
-var ErrNoSequencer error = errors.New("sequencer temporarily not available")
+var ErrNoSequencer = errors.New("sequencer temporarily not available")
 
 func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
 	select {
@@ -190,10 +270,14 @@ func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
 	}
 }
 
-func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
+func (s *Sequencer) GetForwarder() *TxForwarder {
 	s.forwarderMutex.Lock()
-	forwarder := s.forwarder
-	s.forwarderMutex.Unlock()
+	defer s.forwarderMutex.Unlock()
+	return s.forwarder
+}
+
+func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
+	forwarder := s.GetForwarder()
 	if forwarder == nil {
 		return false
 	}
@@ -208,10 +292,28 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	return true
 }
 
-func (s *Sequencer) sequenceTransactions(ctx context.Context) bool {
+var sequencerInternalError = errors.New("sequencer internal error")
+
+func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var txes types.Transactions
 	var queueItems []txQueueItem
 	var totalBatchSize int
+
+	defer func() {
+		panic := recover()
+		if panic != nil {
+			log.Error("sequencer block creation panicked", "panic", panic, "backtrace", string(debug.Stack()))
+			// Return an internal error to any queue items we were trying to process
+			for _, item := range queueItems {
+				if !item.returnedResult {
+					item.returnResult(sequencerInternalError)
+				}
+			}
+			// Wait for the MaxBlockSpeed until attempting to create a block again
+			returnValue = true
+		}
+	}()
+
 	for {
 		var queueItem txQueueItem
 		if s.txRetryQueue.Len() > 0 {
@@ -392,7 +494,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
-		madeBlock := s.sequenceTransactions(ctx)
+		madeBlock := s.createBlock(ctx)
 		if madeBlock {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 			return time.Until(nextBlock)

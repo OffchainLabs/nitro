@@ -30,8 +30,8 @@ impl GoStack {
         self.0 + (arg + 1) * 8
     }
 
-    pub unsafe fn read_u8(self, arg: usize) -> u32 {
-        wavm_caller_load32(self.offset(arg))
+    pub unsafe fn read_u8(self, arg: usize) -> u8 {
+        wavm_caller_load8(self.offset(arg))
     }
 
     pub unsafe fn read_u32(self, arg: usize) -> u32 {

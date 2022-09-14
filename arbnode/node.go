@@ -43,8 +43,11 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type RollupAddresses struct {
@@ -307,7 +310,7 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.Config, machineConfig validator.NitroMachineConfig, config rollupgen.Config) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, machineConfig validator.NitroMachineConfig, config rollupgen.Config) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
@@ -393,22 +396,40 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 type Config struct {
 	RPC                    arbitrum.Config                `koanf:"rpc"`
 	Sequencer              SequencerConfig                `koanf:"sequencer" reload:"hot"`
-	L1Reader               headerreader.Config            `koanf:"l1-reader"`
-	InboxReader            InboxReaderConfig              `koanf:"inbox-reader"`
-	DelayedSequencer       DelayedSequencerConfig         `koanf:"delayed-sequencer"`
-	BatchPoster            BatchPosterConfig              `koanf:"batch-poster"`
+	L1Reader               headerreader.Config            `koanf:"l1-reader" reload:"hot"`
+	InboxReader            InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer       DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster            BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
 	ForwardingTargetImpl   string                         `koanf:"forwarding-target"`
+	Forwarder              ForwarderConfig                `koanf:"forwarder"`
 	TxPreCheckerStrictness uint                           `koanf:"tx-pre-checker-strictness" reload:"hot"`
-	BlockValidator         validator.BlockValidatorConfig `koanf:"block-validator"`
-	Feed                   broadcastclient.FeedConfig     `koanf:"feed"`
+	BlockValidator         validator.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
+	Feed                   broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
 	Validator              validator.L1ValidatorConfig    `koanf:"validator"`
 	SeqCoordinator         SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability       das.DataAvailabilityConfig     `koanf:"data-availability"`
 	Wasm                   WasmConfig                     `koanf:"wasm"`
+	SyncMonitor            SyncMonitorConfig              `koanf:"sync-monitor"`
 	Dangerous              DangerousConfig                `koanf:"dangerous"`
 	Caching                CachingConfig                  `koanf:"caching"`
 	Archive                bool                           `koanf:"archive"`
 	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
+}
+
+func (c *Config) Validate() error {
+	if c.L1Reader.Enable && c.Sequencer.Enable && !c.DelayedSequencer.Enable {
+		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
+	}
+	if err := c.Sequencer.Validate(); err != nil {
+		return err
+	}
+	if err := c.InboxReader.Validate(); err != nil {
+		return err
+	}
+	if err := c.BatchPoster.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *Config) Get() *Config {
@@ -435,6 +456,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	txPreCheckerDescription := "how strict to be when checking txs before forwarding them. 0 = accept anything, " +
 		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, " +
 		"30 = full validation which may reject txs that would succeed"
@@ -445,6 +467,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
+	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
@@ -468,6 +491,7 @@ var ConfigDefault = Config{
 	SeqCoordinator:         DefaultSeqCoordinatorConfig,
 	DataAvailability:       das.DefaultDataAvailabilityConfig,
 	Wasm:                   DefaultWasmConfig,
+	SyncMonitor:            DefaultSyncMonitorConfig,
 	Dangerous:              DefaultDangerousConfig,
 	Archive:                false,
 	TxLookupLimit:          40_000_000,
@@ -538,51 +562,6 @@ func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
 }
 
-type SequencerConfig struct {
-	Enable                      bool                     `koanf:"enable"`
-	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
-	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
-	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
-	SenderWhitelist             string                   `koanf:"sender-whitelist"`
-	ForwardTimeout              time.Duration            `koanf:"forward-timeout"`
-	QueueSize                   int                      `koanf:"queue-size"`
-	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
-}
-
-type SequencerConfigFetcher func() *SequencerConfig
-
-var DefaultSequencerConfig = SequencerConfig{
-	Enable:                      false,
-	MaxBlockSpeed:               time.Millisecond * 100,
-	MaxRevertGasReject:          params.TxGas + 10000,
-	MaxAcceptableTimestampDelta: time.Hour,
-	ForwardTimeout:              time.Second * 30,
-	QueueSize:                   1024,
-	Dangerous:                   DefaultDangerousSequencerConfig,
-}
-
-var TestSequencerConfig = SequencerConfig{
-	Enable:                      true,
-	MaxBlockSpeed:               time.Millisecond * 10,
-	MaxRevertGasReject:          params.TxGas + 10000,
-	MaxAcceptableTimestampDelta: time.Hour,
-	SenderWhitelist:             "",
-	ForwardTimeout:              time.Second * 2,
-	QueueSize:                   128,
-	Dangerous:                   TestDangerousSequencerConfig,
-}
-
-func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
-	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
-	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
-	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
-	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
-	f.Duration(prefix+".forward-timeout", DefaultSequencerConfig.ForwardTimeout, "timeout when forwarding to a different sequencer")
-	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
-	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
-}
-
 type WasmConfig struct {
 	RootPath string `koanf:"root-path"`
 }
@@ -610,13 +589,15 @@ func (w *WasmConfig) FindMachineDir() (string, bool) {
 		projectPath := filepath.Join(filepath.Join(projectDir, "target"), "machines")
 		places = append(places, projectPath)
 
-		// Check the working directory: ./machines
+		// Check the working directory: ./machines and ./target/machines
 		workDir, err := os.Getwd()
 		if err != nil {
 			panic(err)
 		}
-		workPath := filepath.Join(workDir, "machines")
-		places = append(places, workPath)
+		workPath1 := filepath.Join(workDir, "machines")
+		workPath2 := filepath.Join(filepath.Join(workDir, "target"), "machines")
+		places = append(places, workPath1)
+		places = append(places, workPath2)
 
 		// Check above the executable: <binary> => ../../machines
 		execfile, err := os.Executable()
@@ -678,7 +659,9 @@ type Node struct {
 	SeqCoordinator          *SeqCoordinator
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
+	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
+	ctx                     context.Context
 }
 
 type ConfigFetcher interface {
@@ -697,8 +680,8 @@ func createNodeImpl(
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
-	daSigner das.DasSigner,
-	feedErrChan chan error,
+	dataSigner signature.DataSignerFunc,
+	fatalErrChan chan error,
 ) (*Node, error) {
 	config := configFetcher.Get()
 	var reorgingToBlock *types.Block
@@ -721,6 +704,7 @@ func createNodeImpl(
 		}
 	}
 
+	syncMonitor := NewSyncMonitor(&config.SyncMonitor)
 	var classicOutbox *ClassicOutboxRetriever
 	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
 	if err != nil {
@@ -734,14 +718,18 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output, l2ChainId, feedErrChan)
+		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Get().Feed.Output }, l2ChainId, fatalErrChan, dataSigner)
 	}
 
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
-		l1Reader = headerreader.New(l1client, config.L1Reader)
+		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &config.Get().L1Reader })
 	}
 
+	var sequencerInboxAddr common.Address
+	if deployInfo != nil {
+		sequencerInboxAddr = deployInfo.SequencerInbox
+	}
 	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
 	if err != nil {
 		return nil, err
@@ -776,11 +764,11 @@ func createNodeImpl(
 		if config.ForwardingTarget() == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.ForwardingTarget(), time.Duration(0))
+			txPublisher = NewForwarder(config.ForwardingTarget(), &config.Forwarder)
 		}
 	}
 	if config.SeqCoordinator.Enable {
-		coordinator, err = NewSeqCoordinator(txStreamer, sequencer, config.SeqCoordinator)
+		coordinator, err = NewSeqCoordinator(txStreamer, sequencer, syncMonitor, config.SeqCoordinator)
 		if err != nil {
 			return nil, err
 		}
@@ -790,11 +778,20 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, txStreamer)
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, syncMonitor)
 	if err != nil {
 		return nil, err
 	}
 
+	var bpVerifier *contracts.BatchPosterVerifier
+	if l1client != nil {
+		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(sequencerInboxAddr, l1client)
+		if err != nil {
+			return nil, err
+		}
+		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+	}
+	sigVerifier := signature.NewVerifier(config.Feed.Input.RequireSignature, nil, bpVerifier)
 	currentMessageCount, err := txStreamer.GetMessageCount()
 	if err != nil {
 		return nil, err
@@ -803,12 +800,13 @@ func createNodeImpl(
 	if config.Feed.Input.Enable() {
 		for _, address := range config.Feed.Input.URLs {
 			client := broadcastclient.NewBroadcastClient(
+				config.Feed.Input,
 				address,
 				l2ChainId,
 				currentMessageCount,
-				config.Feed.Input.Timeout,
 				txStreamer,
-				feedErrChan,
+				fatalErrChan,
+				sigVerifier,
 			)
 			broadcastClients = append(broadcastClients, client)
 		}
@@ -833,7 +831,9 @@ func createNodeImpl(
 			coordinator,
 			nil,
 			classicOutbox,
+			syncMonitor,
 			configFetcher,
+			ctx,
 		}, nil
 	}
 
@@ -854,7 +854,7 @@ func createNodeImpl(
 	var dasLifecycleManager *das.LifecycleManager
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
-			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, daSigner, l1client, deployInfo.SequencerInbox)
+			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
@@ -881,21 +881,28 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReader))
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &config.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}
 	txStreamer.SetInboxReader(inboxReader)
 
+	blockValidatorConf := &config.BlockValidator
+	if blockValidatorConf.Enable && !(blockValidatorConf.ArbitratorValidator || blockValidatorConf.JitValidator) {
+		log.Warn("No block-by-block validator configured. Enabling the JIT block validator")
+		blockValidatorConf.JitValidator = true
+	}
+
 	nitroMachineConfig := validator.DefaultNitroMachineConfig
 	machinesPath, foundMachines := config.Wasm.FindMachineDir()
 	nitroMachineConfig.RootPath = machinesPath
-	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
+	nitroMachineConfig.JitCranelift = blockValidatorConf.JitValidatorCranelift
+	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig, fatalErrChan)
 
 	var blockValidator *validator.BlockValidator
 	var statelessBlockValidator *validator.StatelessBlockValidator
 
-	if !foundMachines && config.BlockValidator.Enable {
+	if !foundMachines && blockValidatorConf.Enable {
 		return nil, fmt.Errorf("Failed to find machines %v", machinesPath)
 	} else if !foundMachines {
 		log.Warn("Failed to find machines", "path", machinesPath)
@@ -908,20 +915,21 @@ func createNodeImpl(
 			l2BlockChain,
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
-			&config.BlockValidator,
+			&config.Get().BlockValidator,
+			fatalErrChan,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		if config.BlockValidator.Enable {
+		if blockValidatorConf.Enable {
 			blockValidator, err = validator.NewBlockValidator(
 				statelessBlockValidator,
 				inboxTracker,
 				txStreamer,
 				nitroMachineLoader,
 				reorgingToBlock,
-				&config.BlockValidator,
+				func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
 			)
 			if err != nil {
 				return nil, err
@@ -948,18 +956,15 @@ func createNodeImpl(
 		if txOpts == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, txOpts, daWriter)
+		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, syncMonitor, func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster }, deployInfo.SequencerInbox, txOpts, daWriter)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if config.DelayedSequencer.Enable {
-		delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, &(config.DelayedSequencer))
-		if err != nil {
-			return nil, err
-		}
-	} else if config.Sequencer.Enable {
-		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
+	// always create DelayedSequencer, it won't do anything if it is disabled
+	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+	if err != nil {
+		return nil, err
 	}
 
 	return &Node{
@@ -981,15 +986,22 @@ func createNodeImpl(
 		coordinator,
 		dasLifecycleManager,
 		classicOutbox,
+		syncMonitor,
 		configFetcher,
+		ctx,
 	}, nil
+}
+
+func (n *Node) OnConfigReload(old *Config, new *Config) error {
+	// TODO
+	return nil
 }
 
 type L1ReaderCloser struct {
 	l1Reader *headerreader.HeaderReader
 }
 
-func (c *L1ReaderCloser) Close(ctx context.Context) error {
+func (c *L1ReaderCloser) Close(_ context.Context) error {
 	c.l1Reader.StopOnly()
 	return nil
 }
@@ -998,8 +1010,8 @@ func (c *L1ReaderCloser) String() string {
 	return "l1 reader closer"
 }
 
-// Set up a das.DataAvailabilityService stack without relying on any
-// objects already created for setting up the Node.
+// SetUpDataAvailabilityWithoutNode sets up a das.DataAvailabilityService stack
+// without relying on any objects already created for setting up the Node.
 func SetUpDataAvailabilityWithoutNode(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
@@ -1010,9 +1022,9 @@ func SetUpDataAvailabilityWithoutNode(
 		if err != nil {
 			return nil, nil, err
 		}
-		l1Reader = headerreader.New(l1Client, headerreader.DefaultConfig) // TODO: config
+		l1Reader = headerreader.New(l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
 	}
-	das, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
+	newDas, lifeCycle, err := SetUpDataAvailability(ctx, config, l1Reader, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1020,11 +1032,11 @@ func SetUpDataAvailabilityWithoutNode(
 		l1Reader.Start(ctx)
 		lifeCycle.Register(&L1ReaderCloser{l1Reader})
 	}
-	return das, lifeCycle, err
+	return newDas, lifeCycle, err
 }
 
-// Set up a das.DataAvailabilityService stack allowing some dependencies
-// that were created for the Node to be injected.
+// SetUpDataAvailability sets up a das.DataAvailabilityService stack allowing
+// some dependencies that were created for the Node to be injected.
 func SetUpDataAvailability(
 	ctx context.Context,
 	config *das.DataAvailabilityConfig,
@@ -1056,7 +1068,7 @@ func SetUpDataAvailability(
 			return nil, nil, err
 		}
 		if seqInboxAddress == nil {
-			return nil, nil, errors.New("Must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+			return nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 		}
 		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
 		if err != nil {
@@ -1184,7 +1196,7 @@ func SetUpDataAvailability(
 	}
 
 	if topLevelDas == nil {
-		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled.")
+		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
 	}
 
 	return topLevelDas, dasLifecycleManager, nil
@@ -1217,10 +1229,10 @@ func CreateNode(
 	l1client arbutil.L1Interface,
 	deployInfo *RollupAddresses,
 	txOpts *bind.TransactOpts,
-	daSigner das.DasSigner,
-	feedErrChan chan error,
+	dataSigner signature.DataSignerFunc,
+	fatalErrChan chan error,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, daSigner, feedErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, chainDb, arbDb, configFetcher, l2BlockChain, l1client, deployInfo, txOpts, dataSigner, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -1235,7 +1247,7 @@ func CreateNode(
 	}
 	if currentNode.StatelessBlockValidator != nil {
 		apis = append(apis, rpc.API{
-			Namespace: "arbdebug",
+			Namespace: "arbvalidator",
 			Version:   "1.0",
 			Service: &BlockValidatorDebugAPI{
 				val:        currentNode.StatelessBlockValidator,
@@ -1269,6 +1281,7 @@ func CreateNode(
 }
 
 func (n *Node) Start(ctx context.Context) error {
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	n.ArbInterface.Initialize(n)
 	err := n.Backend.Start()
 	if err != nil {
@@ -1526,6 +1539,6 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 }
 
 // Don't preserve reorg'd out blocks
-func shouldPreserveFalse(header *types.Header) bool {
+func shouldPreserveFalse(_ *types.Header) bool {
 	return false
 }

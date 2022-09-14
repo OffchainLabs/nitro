@@ -74,16 +74,16 @@ jobs:
           override: true
 
       - name: Cache Build Products
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-go-
 
       - name: Cache Rust Build Products
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry/
@@ -92,11 +92,11 @@ jobs:
             arbitrator/wasm-libraries/target/
             arbitrator/wasm-libraries/soft-float/SoftFloat/build
             target/etc/initial-machine-cache/
-          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
       - name: Cache cbrotli
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         id: cache-cbrotli
         with:
           path: |
@@ -105,7 +105,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-brotli-
 
       - name: Build cbrotli-local
@@ -122,6 +122,7 @@ jobs:
           # The cache folder will be placed in the build directory,
           #  so make sure it doesn't conflict with anything!
           actions-cache-folder: 'emsdk-cache'
+          no-cache: true
 
       - name: Build cbrotli-wasm
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -157,7 +158,7 @@ jobs:
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
-        run: gotestsum --format short-verbose -- -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        run: gotestsum --format short-verbose -- -p 1 -run TestRedis -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2

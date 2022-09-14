@@ -35,6 +35,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 					},
 					DelayedMessagesRead: 3333,
 				},
+				Signature: nil,
 			},
 		},
 	}
@@ -42,7 +43,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 	encoder := json.NewEncoder(&buf)
 	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
-	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333}}]}
+	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":0,"timestamp":0,"requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","baseFeeL1":0},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333},"signature":null}]}
 }
 
 func ExampleBroadcastMessage_emptymessage() {

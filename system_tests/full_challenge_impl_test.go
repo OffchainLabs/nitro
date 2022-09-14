@@ -34,27 +34,27 @@ import (
 func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
 	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	ospEntry, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	return ospEntry
 }
@@ -149,7 +149,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	Require(t, err)
 	message := append([]byte{0}, compressed...)
 
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(1), message, big.NewInt(0), common.Address{})
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin0(sequencer, big.NewInt(0), message, big.NewInt(0), common.Address{}, big.NewInt(0), big.NewInt(1))
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
@@ -159,7 +159,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
 	Require(t, err)
 	if len(batches) == 0 {
-		t.Fatal("batch not found after AddSequencerL2BatchFromOrigin")
+		Fail(t, "batch not found after AddSequencerL2BatchFromOrigin")
 	}
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
 	Require(t, err)
@@ -196,7 +196,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	conf.BlockValidator.Enable = false
 	conf.BatchPoster.Enable = false
 	conf.InboxReader.CheckDelay = time.Second
-	feedErrChan := make(chan error, 10)
+	fatalErrChan := make(chan error, 10)
 	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig.ChainID)
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
@@ -245,14 +245,14 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	rollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, rollupAddresses, nil, nil, feedErrChan)
+	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, rollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
 	err = asserterL2Stack.Start()
 	Require(t, err)
 
 	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, challengerL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	rollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, rollupAddresses, nil, nil, feedErrChan)
+	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, rollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
 	err = challengerL2Stack.Start()
 	Require(t, err)
@@ -272,18 +272,18 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	wasmModuleRoot, err := validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 
 	asserterGenesis := asserterL2.ArbInterface.BlockChain().Genesis()
 	challengerGenesis := challengerL2.ArbInterface.BlockChain().Genesis()
 	if asserterGenesis.Hash() != challengerGenesis.Hash() {
-		t.Fatal("asserter and challenger have different genesis hashes")
+		Fail(t, "asserter and challenger have different genesis hashes")
 	}
 	asserterLatestBlock := asserterL2.ArbInterface.BlockChain().CurrentBlock()
 	challengerLatestBlock := challengerL2.ArbInterface.BlockChain().CurrentBlock()
 	if asserterLatestBlock.Hash() == challengerLatestBlock.Hash() {
-		t.Fatal("asserter and challenger have the same end block")
+		Fail(t, "asserter and challenger have the same end block")
 	}
 
 	asserterStartGlobalState := validator.GoGlobalState{
@@ -315,15 +315,15 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	)
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
-	machineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig)
+	machineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig, fatalErrChan)
 	asserterManager, err := validator.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterL2Blockchain, nil, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, machineLoader, 0, 4, 0)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 
 	challengerManager, err := validator.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerL2Blockchain, nil, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, machineLoader, 0, 4, 0)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 
 	for i := 0; i < 100; i++ {
@@ -351,10 +351,10 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 				t.Log("challenge completed! asserter hit expected error:", err)
 				return
 			}
-			t.Fatal("challenge step", i, "hit error:", err)
+			Fail(t, "challenge step", i, "hit error:", err)
 		}
 		if tx == nil {
-			t.Fatal("no move")
+			Fail(t, "no move")
 		}
 		_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
 		if err != nil {
@@ -362,22 +362,22 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 				t.Log("challenge complete! Tx failed as expected:", err)
 				return
 			}
-			t.Fatal(err)
+			Fail(t, err)
 		}
 
 		confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
 		winner, err := resultReceiver.Winner(&bind.CallOpts{})
 		if err != nil {
-			t.Fatal(err)
+			Fail(t, err)
 		}
 		if winner == (common.Address{}) {
 			continue
 		}
 		if winner != expectedWinner {
-			t.Fatal("wrong party won challenge")
+			Fail(t, "wrong party won challenge")
 		}
 	}
 
-	t.Fatal("challenge timed out without winner")
+	Fail(t, "challenge timed out without winner")
 }
