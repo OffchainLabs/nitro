@@ -49,7 +49,7 @@ func TestStopWaiterStopAndWaitTimeoutShouldNotWarn(t *testing.T) {
 			case <-ctx.Done():
 				return
 			default:
-				time.Sleep(5000 * time.Millisecond)
+				time.Sleep(200 * time.Millisecond)
 			}
 		}
 	})
