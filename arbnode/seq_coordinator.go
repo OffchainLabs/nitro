@@ -402,7 +402,7 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 }
 
 func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
-	chosenSeq, err := c.recommendLiveSequencer(ctx)
+	chosenSeq, err := c.RecommendLiveSequencer(ctx)
 	if err != nil {
 		log.Warn("coordinator failed finding live sequencer", "err", err)
 		return c.retryAfterRedisError()
