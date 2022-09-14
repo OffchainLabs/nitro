@@ -257,7 +257,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 	}
 	msgCountMsg, err := c.msgCountToSignedBytes(msgCountToWrite)
 	if err != nil {
-		return nil
+		return err
 	}
 	c.chosenUpdateMutex.Lock()
 	defer c.chosenUpdateMutex.Unlock()

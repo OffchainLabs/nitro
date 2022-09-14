@@ -94,6 +94,7 @@ func (v *Verifier) verifyClosureLocal(sig []byte, hash common.Hash) (bool, commo
 
 	sigPublicKey, err := crypto.SigToPub(hash.Bytes(), sig)
 	if err != nil {
+		// nolint:nilerr
 		return false, common.Address{}, nil
 	}
 
