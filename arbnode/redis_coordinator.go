@@ -29,7 +29,7 @@ func NewRedisCoordinator(redisUrl string, myUrl string) (*RedisCoordinator, erro
 	}, nil
 }
 
-func (c *RedisCoordinator) recommendLiveSequencer(ctx context.Context) (string, error) {
+func (c *RedisCoordinator) RecommendLiveSequencer(ctx context.Context) (string, error) {
 	prioritiesString, err := c.client.Get(ctx, PRIORITIES_KEY).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
