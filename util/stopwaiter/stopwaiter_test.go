@@ -5,6 +5,7 @@ package stopwaiter
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
+
+const testStopDelayWarningTimeout = 350 * time.Millisecond
 
 func TestStopWaiterStopAndWaitTimeout(t *testing.T) {
 	logHandler := initTestLog(t, log.LvlTrace)
@@ -23,15 +26,14 @@ func TestStopWaiterStopAndWaitTimeout(t *testing.T) {
 			case <-ctx.Done():
 				return
 			default:
-				log.Warn("Going to sleep...")
-				time.Sleep(62 * time.Second)
+				time.Sleep(testStopDelayWarningTimeout + 150*time.Millisecond)
 			}
 		}
 	})
-	time.Sleep(100 * time.Millisecond)
-	sw.StopAndWait()
-	if !logHandler.WasLogged("StopWaiter taking more then 60 seconds to stop") {
-		testhelpers.FailImpl(t, "Failed to log about hanging on StopAndWait for more than 60 seconds")
+	time.Sleep(50 * time.Millisecond)
+	sw.stopAndWaitImpl(testStopDelayWarningTimeout)
+	if !logHandler.WasLogged(fmt.Sprintf("taking more than %s to stop", testStopDelayWarningTimeout.String())) {
+		testhelpers.FailImpl(t, "Failed to log about hanging on StopAndWait")
 	}
 }
 

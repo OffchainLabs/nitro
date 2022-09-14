@@ -6,11 +6,14 @@ package stopwaiter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 )
+
+const stopDelayWarningTimeout = 30 * time.Second
 
 type StopWaiterSafe struct {
 	mutex    sync.Mutex // protects started, stopped, ctx, stopFunc
@@ -76,8 +79,12 @@ func (s *StopWaiterSafe) StopOnly() {
 
 // Stopping multiple times, even before start, will work
 func (s *StopWaiterSafe) StopAndWait() {
+	s.stopAndWaitImpl(stopDelayWarningTimeout)
+}
+
+func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) {
 	s.StopOnly()
-	timer := time.NewTimer(60 * time.Second)
+	timer := time.NewTimer(warningTimeout)
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
@@ -85,7 +92,7 @@ func (s *StopWaiterSafe) StopAndWait() {
 	}()
 	select {
 	case <-timer.C:
-		log.Warn("StopWaiter taking more then 60 seconds to stop")
+		log.Warn(fmt.Sprintf("StopWaiter taking more than %s to stop", warningTimeout.String()))
 	case <-stopped:
 		return
 	}
