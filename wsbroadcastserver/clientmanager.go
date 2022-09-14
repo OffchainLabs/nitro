@@ -192,7 +192,7 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 }
 
 func (cm *ClientManager) Start(parentCtx context.Context) {
-	cm.StopWaiter.Start(parentCtx)
+	cm.StopWaiter.Start(parentCtx, cm)
 
 	cm.LaunchThread(func(ctx context.Context) {
 		defer cm.removeAll()

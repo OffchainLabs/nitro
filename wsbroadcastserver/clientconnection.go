@@ -50,7 +50,7 @@ func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *Clien
 }
 
 func (cc *ClientConnection) Start(parentCtx context.Context) {
-	cc.StopWaiter.Start(parentCtx)
+	cc.StopWaiter.Start(parentCtx, cc)
 	cc.LaunchThread(func(ctx context.Context) {
 		defer close(cc.out)
 		for {

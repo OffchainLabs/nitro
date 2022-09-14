@@ -270,7 +270,7 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(
 }
 
 func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
-	a.StopWaiter.Start(ctx)
+	a.StopWaiter.Start(ctx, a)
 	onlineUrlsChan := StartRestfulServerListFetchDaemon(a.StopWaiter.GetContext(), a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
 
 	updateRestfulDasClients := func(urls []string) {

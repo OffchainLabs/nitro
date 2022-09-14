@@ -310,7 +310,7 @@ func (s *l1SyncService) mainThread(ctx context.Context) {
 }
 
 func (s *l1SyncService) Start(ctxIn context.Context) {
-	s.StopWaiter.Start(ctxIn)
+	s.StopWaiter.Start(ctxIn, s)
 
 	s.LaunchThread(s.mainThread)
 }
