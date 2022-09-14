@@ -94,18 +94,18 @@ func (s *StopWaiterSafe) StopAndWait() {
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) {
 	s.StopOnly()
 	timer := time.NewTimer(warningTimeout)
-	stopped := make(chan struct{})
+	stop := make(chan struct{})
 	go func() {
-		defer close(stopped)
+		defer close(stop)
 		s.wg.Wait()
 	}()
 	select {
 	case <-timer.C:
 		log.Warn(fmt.Sprintf("%s taking more than %s to stop", s.name, warningTimeout.String()))
-	case <-stopped:
+	case <-stop:
 		return
 	}
-	<-stopped
+	<-stop
 }
 
 func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
