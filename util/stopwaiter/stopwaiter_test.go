@@ -5,8 +5,6 @@ package stopwaiter
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -19,71 +17,30 @@ const testStopDelayWarningTimeout = 350 * time.Millisecond
 type TestStruct struct{}
 
 func TestStopWaiterStopAndWaitTimeoutShouldWarn(t *testing.T) {
-	logHandler := initTestLog(t, log.LvlTrace)
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
 	sw := StopWaiter{}
+	testCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	sw.Start(context.Background(), &TestStruct{})
 	sw.LaunchThread(func(ctx context.Context) {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				time.Sleep(testStopDelayWarningTimeout + 150*time.Millisecond)
-			}
-		}
+		<-testCtx.Done()
 	})
-	time.Sleep(50 * time.Millisecond)
-	sw.stopAndWaitImpl(testStopDelayWarningTimeout)
-	if !logHandler.WasLogged(fmt.Sprintf("stopwaiter.TestStruct taking more than %s to stop", testStopDelayWarningTimeout.String())) {
+	go sw.stopAndWaitImpl(testStopDelayWarningTimeout)
+	time.Sleep(testStopDelayWarningTimeout + 100*time.Millisecond)
+	if !logHandler.WasLogged("taking too long to stop") {
 		testhelpers.FailImpl(t, "Failed to log about waiting long on StopAndWait")
 	}
 }
 
 func TestStopWaiterStopAndWaitTimeoutShouldNotWarn(t *testing.T) {
-	logHandler := initTestLog(t, log.LvlTrace)
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
 	sw := StopWaiter{}
 	sw.Start(context.Background(), &TestStruct{})
 	sw.LaunchThread(func(ctx context.Context) {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				time.Sleep(200 * time.Millisecond)
-			}
-		}
+		<-ctx.Done()
 	})
-	time.Sleep(50 * time.Millisecond)
 	sw.StopAndWait()
-	if logHandler.WasLogged(fmt.Sprintf("stopwaiter.TestStruct taking more than %s to stop", stopDelayWarningTimeout.String())) {
+	if logHandler.WasLogged("taking too long to stop") {
 		testhelpers.FailImpl(t, "Incorrectly logged about waiting long on StopAndWait")
 	}
-}
-
-type LogHandler struct {
-	t       *testing.T
-	records []log.Record
-}
-
-func (h *LogHandler) Log(record *log.Record) error {
-	h.t.Log(record.Msg)
-	h.records = append(h.records, *record)
-	return nil
-}
-
-func (h *LogHandler) WasLogged(pattern string) bool {
-	for _, r := range h.records {
-		if strings.Contains(r.Msg, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-func initTestLog(t *testing.T, level log.Lvl) *LogHandler {
-	handler := LogHandler{t, make([]log.Record, 0)}
-	glogger := log.NewGlogHandler(&handler)
-	glogger.Verbosity(level)
-	log.Root().SetHandler(glogger)
-	return &handler
 }
