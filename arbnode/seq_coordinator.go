@@ -357,7 +357,6 @@ func (c *SeqCoordinator) noRedisError() time.Duration {
 func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen string) time.Duration {
 	if nextChosen != c.config.MyUrl() {
 		// was the active sequencer, but no longer
-		isActiveSequencer.Update(0)
 		atomicTimeWrite(&c.lockoutUntil, time.Time{})
 		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
