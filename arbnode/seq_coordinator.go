@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/metrics"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -24,6 +25,10 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/simple_hmac"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	isActiveSequencer = metrics.NewRegisteredGauge("arb/sequencer/active", nil)
 )
 
 type SeqCoordinator struct {
@@ -351,6 +356,7 @@ func (c *SeqCoordinator) noRedisError() time.Duration {
 func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen string) time.Duration {
 	if nextChosen != c.config.MyUrl() {
 		// was the active sequencer, but no longer
+		isActiveSequencer.Update(0)
 		atomicTimeWrite(&c.lockoutUntil, time.Time{})
 		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
@@ -369,6 +375,7 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 		log.Info("released chosen-coordinator lock", "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
+	isActiveSequencer.Update(1)
 	// Was, and still, the active sequencer
 	if time.Now().Add(c.config.UpdateInterval / 3).After(atomicTimeRead(&c.lockoutUntil)) {
 		// if we recently sequenced - no need for an update
@@ -398,6 +405,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.updatePrevKnownChosen(ctx, chosenSeq)
 	}
 	if chosenSeq != c.config.MyUrl() && chosenSeq != c.prevChosenSequencer {
+		isActiveSequencer.Update(0)
 		var err error
 		if c.sequencer != nil {
 			err = c.sequencer.ForwardTo(chosenSeq)
@@ -500,6 +508,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		log.Info("caught chosen-coordinator lock")
 		c.sequencer.DontForward()
 		c.prevChosenSequencer = c.config.MyUrl()
+		isActiveSequencer.Update(1)
 		return c.noRedisError()
 	}
 
