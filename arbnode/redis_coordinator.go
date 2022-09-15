@@ -26,10 +26,9 @@ const INVALID_URL string = "<?INVALID-URL?>"
 
 type RedisCoordinator struct {
 	client redis.UniversalClient
-	myUrl  string
 }
 
-func NewRedisCoordinator(redisUrl string, myUrl string) (*RedisCoordinator, error) {
+func NewRedisCoordinator(redisUrl string) (*RedisCoordinator, error) {
 	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
 	if err != nil {
 		return nil, err
@@ -37,7 +36,6 @@ func NewRedisCoordinator(redisUrl string, myUrl string) (*RedisCoordinator, erro
 
 	return &RedisCoordinator{
 		client: redisClient,
-		myUrl:  myUrl,
 	}, nil
 }
 
@@ -60,7 +58,7 @@ func (c *RedisCoordinator) RecommendLiveSequencer(ctx context.Context) (string, 
 		}
 		return url, nil
 	}
-	log.Info("no sequencer appears live on redis", "priorities", prioritiesString, "self", c.myUrl)
+	log.Info("no sequencer appears live on redis", "priorities", prioritiesString)
 	return "", nil
 }
 
