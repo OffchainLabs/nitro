@@ -143,7 +143,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		seqList := ""
 		for i := 0; i < messagesPerRound; i++ {
 			if testData.sequencer[i] == "" {
-				Fail(t, "no sequencer succeded", "round", round, "message", i)
+				Fail(t, "no sequencer succeeded", "round", round, "message", i)
 			}
 			seqList = seqList + testData.sequencer[i] + ","
 		}
