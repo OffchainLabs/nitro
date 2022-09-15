@@ -6,7 +6,6 @@ package stopwaiter
 import (
 	"context"
 	"errors"
-	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
@@ -88,8 +87,8 @@ func (s *StopWaiterSafe) StopOnly() {
 }
 
 // Stopping multiple times, even before start, will work
-func (s *StopWaiterSafe) StopAndWait() {
-	s.stopAndWaitImpl(stopDelayWarningTimeout)
+func (s *StopWaiterSafe) StopAndWait() error {
+	return s.stopAndWaitImpl(stopDelayWarningTimeout)
 }
 
 func getAllStackTraces() string {
@@ -100,22 +99,24 @@ func getAllStackTraces() string {
 	return builder.String()
 }
 
-func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) {
+func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	s.StopOnly()
 	timer := time.NewTimer(warningTimeout)
-	stop := make(chan struct{})
-	go func() {
-		defer close(stop)
-		s.wg.Wait()
-	}()
+	waitChan, err := s.GetWaitChannel()
+	if err != nil {
+		return err
+	}
+
 	select {
 	case <-timer.C:
 		traces := getAllStackTraces()
-		log.Warn(fmt.Sprintf("%s taking more than %s to stop.\nstack traces:\n%s", s.name, warningTimeout.String(), traces))
-	case <-stop:
-		return
+		log.Warn("taking too long to stop", "name", s.name, "delay[s]", warningTimeout.Seconds())
+		log.Warn(traces)
+	case <-waitChan:
+		return nil
 	}
-	<-stop
+	<-waitChan
+	return nil
 }
 
 func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
