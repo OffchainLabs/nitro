@@ -27,7 +27,7 @@ Yes, indeed we can be. This is where the “rollup” part comes in. The data th
 #### Q: Who actually does this work (of checking for fraud, proving it, etc?)
 The parties who move the Arbitrum chain state forward on L1 — i.e., making claims about the chain’s state, disputing other’s claims, etc. — are called validators. 
 In practice, we don’t expect the average Arbitrum user to be interested in running a 
-validator, just like the average Ethereum user typically doesn’t run their own layer 1 mining (or staking) node. The crucial property, however, is that anybody can; becoming an Arbitrum validator requires no special permission ([post-mainnet beta](../mainnet-beta.md)), only that a user runs the [open source validator software](https://github.com/OffchainLabs/nitro) (and stakes Ether when/if they need to take action).
+validator, just like the average Ethereum user typically doesn’t run their own layer 1 staking node. The crucial property, however, is that anybody can; becoming an Arbitrum validator requires no special permission ([post-mainnet beta](../mainnet-beta.md)), only that a user runs the [open source validator software](https://github.com/OffchainLabs/nitro) (and stakes Ether when/if they need to take action).
 
 Additionally, as long as there’s even just one honest validator, the chain will remain secure; i.e., it only takes one non-malicious fraud-prover to catch any number of malicious trouble-makers. These properties together make the system “trustless”; users are not relying on any special designated party for their funds to be secure.
 
