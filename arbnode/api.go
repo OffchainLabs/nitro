@@ -159,7 +159,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		L1LastUpdateTime:     make([]uint64, blocks),
 	}
 
-	for i := uint64(0); i < uint64(blocks); i += 1 {
+	for i := uint64(0); i < uint64(blocks); i++ {
 		state, header, err := stateAndHeader(api.blockchain, first+i*step)
 		if err != nil {
 			return history, err
