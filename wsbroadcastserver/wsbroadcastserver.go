@@ -35,17 +35,19 @@ const (
 
 type BroadcasterConfig struct {
 	Enable         bool          `koanf:"enable"`
-	Addr           string        `koanf:"addr"`
-	IOTimeout      time.Duration `koanf:"io-timeout"`
-	Port           string        `koanf:"port"`
-	Ping           time.Duration `koanf:"ping"`
-	ClientTimeout  time.Duration `koanf:"client-timeout"`
-	Queue          int           `koanf:"queue"`
-	Workers        int           `koanf:"workers"`
-	MaxSendQueue   int           `koanf:"max-send-queue"`
-	RequireVersion bool          `koanf:"require-version"`
+	Addr           string        `koanf:"addr"`                         // TODO(magic) needs tcp server restart on change
+	IOTimeout      time.Duration `koanf:"io-timeout" reload:"hot"`      // reloading will affect only new connections
+	Port           string        `koanf:"port"`                         // TODO(magic) needs tcp server restart on change
+	Ping           time.Duration `koanf:"ping" reload:"hot"`            // reloaded value will change future ping intervals
+	ClientTimeout  time.Duration `koanf:"client-timeout" reload:"hot"`  // reloaded value will affect all clients (next time the timeout is checked)
+	Queue          int           `koanf:"queue"`                        // TODO(magic) ClientManager.pool needs to be recreated on change
+	Workers        int           `koanf:"workers"`                      // TODO(magic) ClientManager.pool needs to be recreated on change
+	MaxSendQueue   int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
+	RequireVersion bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
 	DisableSigning bool          `koanf:"disable-signing"`
 }
+
+type BroadcasterConfigFetcher func() *BroadcasterConfig
 
 func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBroadcasterConfig.Enable, "enable broadcaster")
@@ -97,7 +99,7 @@ type WSBroadcastServer struct {
 	acceptDesc      *netpoll.Desc
 
 	listener      net.Listener
-	settings      BroadcasterConfig
+	config        BroadcasterConfigFetcher
 	started       bool
 	clientManager *ClientManager
 	catchupBuffer CatchupBuffer
@@ -105,9 +107,9 @@ type WSBroadcastServer struct {
 	fatalErrChan  chan error
 }
 
-func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
+func NewWSBroadcastServer(config BroadcasterConfigFetcher, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
 	return &WSBroadcastServer{
-		settings:      settings,
+		config:        config,
 		started:       false,
 		catchupBuffer: catchupBuffer,
 		chainId:       chainId,
@@ -129,7 +131,7 @@ func (s *WSBroadcastServer) Initialize() error {
 
 	// Make pool of X size, Y sized work queue and one pre-spawned
 	// goroutine.
-	s.clientManager = NewClientManager(s.poller, s.settings, s.catchupBuffer)
+	s.clientManager = NewClientManager(s.poller, s.config, s.catchupBuffer)
 
 	return nil
 }
@@ -160,7 +162,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	// Called below in accept() loop.
 	handle := func(conn net.Conn) {
 
-		safeConn := deadliner{conn, s.settings.IOTimeout}
+		safeConn := deadliner{conn, s.config().IOTimeout}
 
 		var feedClientVersionSeen bool
 		var requestedSeqNum arbutil.MessageIndex
@@ -190,7 +192,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				return nil
 			},
 			OnBeforeUpgrade: func() (ws.HandshakeHeader, error) {
-				if s.settings.RequireVersion && !feedClientVersionSeen {
+				if s.config().RequireVersion && !feedClientVersionSeen {
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusBadRequest),
 						ws.RejectionReason(HTTPHeaderFeedClientVersion+" HTTP header missing"),
@@ -238,7 +240,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			// receive client messages, close on error
 			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client
-				if _, _, err := client.Receive(ctx, s.settings.ClientTimeout); err != nil {
+				if _, _, err := client.Receive(ctx, s.config().ClientTimeout); err != nil {
 					if errors.Is(err, wsutil.ClosedError{}) {
 						log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
 					}
@@ -254,7 +256,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	}
 
 	// Create tcp server for relay connections
-	ln, err := net.Listen("tcp", s.settings.Addr+":"+s.settings.Port)
+	ln, err := net.Listen("tcp", s.config().Addr+":"+s.config().Port)
 	if err != nil {
 		log.Error("error calling net.Listen", "err", err)
 		return err

@@ -74,6 +74,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // The node number of the initial node
     uint64 internal constant GENESIS_NODE = 0;
 
+    bool public validatorWhitelistDisabled;
+
     /**
      * @notice Get a storage reference to the Node for the given node index
      * @param nodeNum Index of the node

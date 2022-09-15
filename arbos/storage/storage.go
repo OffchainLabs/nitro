@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -441,13 +442,34 @@ func (sto *Storage) OpenStorageBackedBigInt(offset uint64) StorageBackedBigInt {
 	return StorageBackedBigInt{sto.NewSlot(offset)}
 }
 
+var twoToThe256 = new(big.Int).Lsh(big.NewInt(1), 256)
+
 func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
-	value, err := sbbi.StorageSlot.Get()
-	return value.Big(), err
+	asHash, err := sbbi.StorageSlot.Get()
+	if err != nil {
+		return nil, err
+	}
+	asBig := new(big.Int).SetBytes(asHash[:])
+	if asBig.Bit(255) != 0 {
+		asBig = new(big.Int).Sub(asBig, twoToThe256)
+	}
+	return asBig, err
 }
 
 func (sbbi *StorageBackedBigInt) Set(val *big.Int) error {
-	return sbbi.StorageSlot.Set(common.BigToHash(val))
+	if val.Sign() < 0 {
+		val = new(big.Int).Add(val, twoToThe256)
+		if val.BitLen() < 256 || val.Sign() <= 0 { // require that it's positive and the top bit is set
+			return sbbi.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigInt.Set setting value %v", val))
+		}
+	} else if val.BitLen() >= 256 {
+		return sbbi.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigInt.Set setting value %v", val))
+	}
+	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+}
+
+func (sbbi *StorageBackedBigInt) Set_preVersion7(val *big.Int) error {
+	return sbbi.Set(new(big.Int).Abs(val))
 }
 
 func (sbbi *StorageBackedBigInt) SetByUint(val uint64) error {

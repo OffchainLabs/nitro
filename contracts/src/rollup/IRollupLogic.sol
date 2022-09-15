@@ -15,6 +15,10 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address stakeToken) external view;
 
+    function removeWhitelistAfterFork() external;
+
+    function removeWhitelistAfterValidatorAfk() external;
+
     function isERC20Enabled() external view returns (bool);
 
     function rejectNextNode(address stakerAddress) external;
@@ -215,4 +219,10 @@ interface IRollupAdmin {
      * @param _sequencerInbox new address of sequencer inbox
      */
     function setSequencerInbox(address _sequencerInbox) external;
+
+    /**
+     * @notice set the validatorWhitelistDisabled flag
+     * @param _validatorWhitelistDisabled new value of validatorWhitelistDisabled, i.e. true = disabled
+     */
+    function setValidatorWhitelistDisabled(bool _validatorWhitelistDisabled) external;
 }

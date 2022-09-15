@@ -36,7 +36,7 @@ var (
 )
 
 type FeedConfig struct {
-	Output wsbroadcastserver.BroadcasterConfig `koanf:"output"`
+	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
 	Input  Config                              `koanf:"input"`
 }
 
