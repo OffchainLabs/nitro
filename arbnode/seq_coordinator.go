@@ -109,7 +109,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 }
 
 func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
-	redisCoordinator, err := NewRedisCoordinator(config.RedisUrl, config.MyUrlImpl)
+	redisCoordinator, err := NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
