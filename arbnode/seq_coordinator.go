@@ -245,6 +245,29 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 	return nil
 }
 
+func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmdable) (arbutil.MessageIndex, error) {
+	resStr, err := r.Get(ctx, MSG_COUNT_KEY).Result()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	resBytes := []byte(resStr)
+	resBytes, err = c.signer.VerifyMessageSignature(nil, resBytes)
+	if err != nil {
+		return 0, err
+	}
+	if len(resBytes) != 8 {
+		return 0, fmt.Errorf("unexpected msg count value length %v", len(resBytes))
+	}
+	return arbutil.MessageIndex(binary.BigEndian.Uint64(resBytes)), nil
+}
+
+func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
+	return c.getRemoteMsgCountImpl(c.GetContext(), c.client)
+}
+
 func (c *SeqCoordinator) livelinessUpdate(ctx context.Context) error {
 	myLivelinessKey := livelinessKeyFor(c.config.MyUrl())
 	aliveUntil := time.Now().Add(c.config.LockoutDuration)
