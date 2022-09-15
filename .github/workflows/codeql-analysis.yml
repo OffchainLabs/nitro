@@ -78,7 +78,7 @@ jobs:
         override: true
 
     - name: Cache Rust Build Products
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: |
           ~/.cargo/registry/
@@ -91,7 +91,7 @@ jobs:
         restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
     - name: Cache cbrotli
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       id: cache-cbrotli
       with:
         path: |
@@ -108,7 +108,7 @@ jobs:
       run: ./build-brotli.sh -l
 
     - name: Cache Build Products
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: |
           ~/go/pkg/mod

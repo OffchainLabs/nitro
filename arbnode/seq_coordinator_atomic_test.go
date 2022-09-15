@@ -10,15 +10,15 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/simple_hmac"
 )
 
 const messagesPerRound = 20
@@ -53,7 +53,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 			}
 			asIndex := arbutil.MessageIndex(messageCount)
 			holdingLockout := atomicTimeRead(&coord.lockoutUntil)
-			err := coord.chosenOneUpdate(ctx, asIndex, asIndex+1, &arbstate.MessageWithMetadata{})
+			err := coord.chosenOneUpdate(ctx, asIndex, asIndex+1, &arbstate.EmptyTestMessageWithMetadata)
 			if err == nil {
 				sequenced[messageCount] = true
 				atomic.StoreUint64(&data.messageCount, messageCount+1)
@@ -94,7 +94,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 	}
 }
 
-func TestSeqCoordinatorAtomic(t *testing.T) {
+func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	NumOfThreads := 10
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -102,27 +102,25 @@ func TestSeqCoordinatorAtomic(t *testing.T) {
 	coordConfig := TestSeqCoordinatorConfig
 	coordConfig.LockoutDuration = time.Millisecond * 100
 	coordConfig.LockoutSpare = time.Millisecond * 10
-	coordConfig.Dangerous.DisableSignatureVerification = true
+	coordConfig.Signing.Dangerous.DisableSignatureVerification = true
+	coordConfig.Signing.SigningKey = ""
 	testData := CoordinatorTestData{
 		testStartRound: -1,
 		sequencer:      make([]string, messagesPerRound),
 	}
-
-	redisUrl := os.Getenv("TEST_REDIS")
-	if redisUrl == "" {
-		redisUrl = coordConfig.RedisUrl
-	}
-	redisOptions, err := redis.ParseURL(redisUrl)
+	nullSigner, err := simple_hmac.NewSimpleHmac(&coordConfig.Signing)
 	Require(t, err)
 
-	redisClient := redis.NewClient(redisOptions)
+	redisClient, err := redisutil.RedisClientFromURL(redisutil.GetTestRedisURL(t))
+	Require(t, err)
 
 	for i := 0; i < NumOfThreads; i++ {
 		config := coordConfig
 		config.MyUrl = fmt.Sprint(i)
 		coordinator := &SeqCoordinator{
-			client: redis.NewClient(redisOptions),
+			client: redisClient,
 			config: config,
+			signer: nullSigner,
 		}
 		go coordinatorTestThread(ctx, coordinator, &testData)
 	}

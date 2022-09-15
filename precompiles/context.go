@@ -53,6 +53,10 @@ func (c *Context) Restrict(err error) {
 	log.Fatal("A metered burner was used for access-controlled work", err)
 }
 
+func (c *Context) HandleError(err error) error {
+	return err
+}
+
 func (c *Context) ReadOnly() bool {
 	return c.readOnly
 }

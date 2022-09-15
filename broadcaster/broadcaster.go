@@ -7,16 +7,22 @@ import (
 	"context"
 	"net"
 
+	"github.com/gobwas/ws"
+
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Broadcaster struct {
 	server        *wsbroadcastserver.WSBroadcastServer
 	catchupBuffer *SequenceNumberCatchupBuffer
+	chainId       uint64
+	dataSigner    signature.DataSignerFunc
 }
 
 /*
@@ -45,36 +51,68 @@ type BroadcastMessage struct {
 type BroadcastFeedMessage struct {
 	SequenceNumber arbutil.MessageIndex         `json:"sequenceNumber"`
 	Message        arbstate.MessageWithMetadata `json:"message"`
+	Signature      []byte                       `json:"signature"`
+}
+
+func (m *BroadcastFeedMessage) Hash(chainId uint64) (common.Hash, error) {
+	return m.Message.Hash(m.SequenceNumber, chainId)
 }
 
 type ConfirmedSequenceNumberMessage struct {
 	SequenceNumber arbutil.MessageIndex `json:"sequenceNumber"`
 }
 
-func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig, chainId uint64, feedErrChan chan error) *Broadcaster {
+func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId uint64, feedErrChan chan error, dataSigner signature.DataSignerFunc) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer()
 	return &Broadcaster{
-		server:        wsbroadcastserver.NewWSBroadcastServer(settings, catchupBuffer, chainId, feedErrChan),
+		server:        wsbroadcastserver.NewWSBroadcastServer(config, catchupBuffer, chainId, feedErrChan),
 		catchupBuffer: catchupBuffer,
+		chainId:       chainId,
+		dataSigner:    dataSigner,
 	}
 }
 
-func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) {
-	var broadcastMessages []*BroadcastFeedMessage
+func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*BroadcastFeedMessage, error) {
+	var messageSignature []byte
+	if b.dataSigner != nil {
+		hash, err := message.Hash(sequenceNumber, b.chainId)
+		if err != nil {
+			return nil, err
+		}
+		messageSignature, err = b.dataSigner(hash.Bytes())
+		if err != nil {
+			return nil, err
+		}
+	}
 
-	bfm := BroadcastFeedMessage{SequenceNumber: seq, Message: msg}
-	broadcastMessages = append(broadcastMessages, &bfm)
+	return &BroadcastFeedMessage{
+		SequenceNumber: sequenceNumber,
+		Message:        message,
+		Signature:      messageSignature,
+	}, nil
+}
+
+func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) error {
+	bfm, err := b.newBroadcastFeedMessage(msg, seq)
+	if err != nil {
+		return err
+	}
+
+	b.BroadcastSingleFeedMessage(bfm)
+	return nil
+}
+
+func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *BroadcastFeedMessage) {
+	broadcastFeedMessages := make([]*BroadcastFeedMessage, 0, 1)
+
+	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
 
 	bm := BroadcastMessage{
 		Version:  1,
-		Messages: broadcastMessages,
+		Messages: broadcastFeedMessages,
 	}
 
 	b.server.Broadcast(bm)
-}
-
-func (b *Broadcaster) Broadcast(msg BroadcastMessage) {
-	b.server.Broadcast(msg)
 }
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
@@ -102,6 +140,10 @@ func (b *Broadcaster) Initialize() error {
 
 func (b *Broadcaster) Start(ctx context.Context) error {
 	return b.server.Start(ctx)
+}
+
+func (b *Broadcaster) StartWithHeader(ctx context.Context, header ws.HandshakeHeader) error {
+	return b.server.StartWithHeader(ctx, header)
 }
 
 func (b *Broadcaster) StopAndWait() {

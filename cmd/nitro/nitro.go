@@ -43,6 +43,7 @@ import (
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -56,7 +57,7 @@ func initLog(logType string, logLevel log.Lvl) error {
 	logFormat, err := genericconf.ParseLogType(logType)
 	if err != nil {
 		flag.Usage()
-		return fmt.Errorf("Error parsing log type: %w", err)
+		return fmt.Errorf("error parsing log type: %w", err)
 	}
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(logLevel)
@@ -154,31 +155,27 @@ func main() {
 		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
-	if nodeConfig.Node.SeqCoordinator.Enable {
-		if nodeConfig.Node.SeqCoordinator.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Dangerous.DisableSignatureVerification {
-			panic("sequencer coordinator enabled, but signing key unset, and signature verification isn't disabled")
+	var l1TransactionOpts *bind.TransactOpts
+	var dataSigner signature.DataSignerFunc
+	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
+	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
+	validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorNeedsKey {
+		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
+		if err != nil {
+			fmt.Printf("%v\n", err.Error())
+			return
 		}
 	}
 
 	var rollupAddrs arbnode.RollupAddresses
-	var l1TransactionOpts *bind.TransactOpts
-	var daSigner func([]byte) ([]byte, error)
-	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
-	if nodeConfig.Node.L1Reader.Enable || setupNeedsKey {
+	if nodeConfig.Node.L1Reader.Enable {
 		log.Info("connected to l1 chain", "l1url", nodeConfig.L1.URL, "l1chainid", l1ChainId)
 
 		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
 		if err != nil {
-			panic(err)
-		}
-
-		validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
-		if nodeConfig.Node.BatchPoster.Enable || validatorNeedsKey || setupNeedsKey {
-			l1TransactionOpts, daSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
-			if err != nil {
-				fmt.Printf("%v\n", err.Error())
-				return
-			}
+			fmt.Printf("error getting rollup addresses: %v\n", err.Error())
+			return
 		}
 	} else if l1Client != nil {
 		// Don't need l1Client anymore
@@ -193,12 +190,12 @@ func main() {
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
-			nodeConfig.Node.BlockValidator.ArbitratorValidator = true
 		}
 	}
 
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
-		l1Reader := headerreader.New(l1Client, nodeConfig.Node.L1Reader)
+		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
 		deployInfo, err := nodeConfig.L1.Rollup.ParseAddresses()
@@ -282,7 +279,6 @@ func main() {
 		}
 	}
 
-	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	fatalErrChan := make(chan error, 10)
 	currentNode, err := arbnode.CreateNode(
 		ctx,
@@ -294,12 +290,16 @@ func main() {
 		l1Client,
 		&rollupAddrs,
 		l1TransactionOpts,
-		daSigner,
+		dataSigner,
 		fatalErrChan,
 	)
 	if err != nil {
 		panic(err)
 	}
+	liveNodeConfig.setOnReloadHook(func(old *NodeConfig, new *NodeConfig) error {
+		return currentNode.OnConfigReload(&old.Node, &new.Node)
+	})
+
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
@@ -321,6 +321,7 @@ func main() {
 			panic(fmt.Sprintf("Failed to register the GraphQL service: %v", err))
 		}
 	}
+
 	if err := stack.Start(); err != nil {
 		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
@@ -423,7 +424,7 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 			other := value.Field(i).Interface()
 
 			if !hot && !reflect.DeepEqual(first, other) {
-				err = fmt.Errorf("Illegal change to %v%v%v", colors.Red, dot, colors.Clear)
+				err = fmt.Errorf("illegal change to %v%v%v", colors.Red, dot, colors.Clear)
 			} else {
 				check(node.Field(i), value.Field(i), dot)
 			}
@@ -432,6 +433,10 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 
 	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
 	return err
+}
+
+func (c *NodeConfig) Validate() error {
+	return c.Node.Validate()
 }
 
 func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, *ethclient.Client, *big.Int, error) {
@@ -586,6 +591,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	nodeConfig.L1.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.L2.DevWallet = genericconf.WalletConfigDefault
 
+	err = nodeConfig.Validate()
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
 	return &nodeConfig, &l1Wallet, &l2DevWallet, l1Client, l1ChainId, nil
 }
 
@@ -664,12 +673,19 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 	}, "."), nil)
 }
 
+type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
+
+func noopOnReloadHook(old *NodeConfig, new *NodeConfig) error {
+	return nil
+}
+
 type LiveNodeConfig struct {
 	stopwaiter.StopWaiter
 
-	mutex  sync.RWMutex
-	args   []string
-	config *NodeConfig
+	mutex        sync.RWMutex
+	args         []string
+	config       *NodeConfig
+	onReloadHook OnReloadHook
 }
 
 func (c *LiveNodeConfig) get() *NodeConfig {
@@ -687,6 +703,10 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	}
 	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
 		return err
+	}
+	if err := c.onReloadHook(c.config, config); err != nil {
+		// TODO(magic) panic? return err? only log the error?
+		log.Error("Failed to execute onReloadHook", "err", err)
 	}
 	c.config = config
 	return nil
@@ -734,10 +754,16 @@ func (c *LiveNodeConfig) Start(ctxIn context.Context) {
 	})
 }
 
+// setOnReloadHook is NOT thread-safe and supports setting only one hook
+func (c *LiveNodeConfig) setOnReloadHook(hook OnReloadHook) {
+	c.onReloadHook = hook
+}
+
 func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
 	return &LiveNodeConfig{
-		args:   args,
-		config: config,
+		args:         args,
+		config:       config,
+		onReloadHook: noopOnReloadHook,
 	}
 }
 

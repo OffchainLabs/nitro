@@ -280,6 +280,9 @@ describe('SequencerInboxForceInclude', async () => {
       inbox: inbox,
       sequencerInbox: sequencerInbox,
       messageTester,
+      inboxProxy,
+      inboxTemplate,
+      bridgeProxy
     }
   }
 
@@ -514,4 +517,49 @@ describe('SequencerInboxForceInclude', async () => {
       'ForceIncludeTimeTooSoon',
     )
   })
+
+  it("should fail to call sendL1FundedUnsignedTransactionToFork", async function () {
+    const {
+      inbox,
+    } = await setupSequencerInbox()
+    await expect(inbox.sendL1FundedUnsignedTransactionToFork(
+      0, 0, 0, ethers.constants.AddressZero, "0x"
+    )).to.revertedWith("NotForked()");
+  });
+
+  it("should fail to call sendUnsignedTransactionToFork", async function () {
+    const {
+      inbox,
+    } = await setupSequencerInbox()
+    await expect(inbox.sendUnsignedTransactionToFork(
+      0, 0, 0, ethers.constants.AddressZero, 0, "0x"
+    )).to.revertedWith("NotForked()");
+  });  
+
+  it("should fail to call sendWithdrawEthToFork", async function () {
+    const {
+      inbox,
+    } = await setupSequencerInbox()
+    await expect(inbox.sendWithdrawEthToFork(
+      0, 0, 0, 0, ethers.constants.AddressZero
+    )).to.revertedWith("NotForked()");
+  });  
+
+  it('can upgrade Inbox', async () => {
+    const {
+      inboxProxy, inboxTemplate, bridgeProxy
+    } = await setupSequencerInbox()
+
+    const currentStorage = []
+    for (let i = 0; i < 1024; i++) {
+      currentStorage[i] = await inboxProxy.provider!.getStorageAt(inboxProxy.address, i)
+    }
+
+    await expect(inboxProxy.upgradeToAndCall(inboxTemplate.address, (await inboxTemplate.populateTransaction.postUpgradeInit(bridgeProxy.address)).data!)).to.emit(inboxProxy, 'Upgraded')
+
+    for (let i = 0; i < currentStorage.length; i++) {
+      await expect(await inboxProxy.provider!.getStorageAt(inboxProxy.address, i)).to.equal(currentStorage[i])
+    }
+  })
+
 })
