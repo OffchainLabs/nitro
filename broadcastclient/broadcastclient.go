@@ -31,8 +31,8 @@ import (
 )
 
 var (
-	SourcesConnectedGauge    = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
-	SourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
+	sourcesConnectedGauge    = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
+	sourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
 )
 
 type FeedConfig struct {
@@ -281,7 +281,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
 		connected := false
-		SourcesDisconnectedGauge.Inc(1)
+		sourcesDisconnectedGauge.Inc(1)
 		for {
 			select {
 			case <-ctx.Done():
@@ -303,8 +303,8 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				if connected {
 					connected = false
-					SourcesConnectedGauge.Dec(1)
-					SourcesDisconnectedGauge.Inc(1)
+					sourcesConnectedGauge.Dec(1)
+					sourcesDisconnectedGauge.Inc(1)
 				}
 				_ = bc.conn.Close()
 				earlyFrameData = bc.retryConnect(ctx)
@@ -321,8 +321,8 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 
 				if !connected {
 					connected = true
-					SourcesDisconnectedGauge.Dec(1)
-					SourcesConnectedGauge.Inc(1)
+					sourcesDisconnectedGauge.Dec(1)
+					sourcesConnectedGauge.Inc(1)
 				}
 				if len(res.Messages) > 0 {
 					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
