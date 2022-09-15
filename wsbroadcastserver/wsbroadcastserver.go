@@ -15,13 +15,12 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -32,10 +31,6 @@ const (
 	HTTPHeaderChainId                 = "Arbitrum-Chain-Id"
 	FeedServerVersion                 = 2
 	FeedClientVersion                 = 2
-)
-
-var (
-	ClientsConnectedGauge = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
 )
 
 type BroadcasterConfig struct {
@@ -244,7 +239,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client
 				if _, _, err := client.Receive(ctx, s.settings.ClientTimeout); err != nil {
-					if !strings.Contains(err.Error(), "ws closed") {
+					if errors.Is(err, wsutil.ClosedError{}) {
 						log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
 					}
 					s.clientManager.Remove(client)
@@ -379,7 +374,7 @@ func (s *WSBroadcastServer) Broadcast(bm interface{}) {
 	s.clientManager.Broadcast(bm)
 }
 
-func (s *WSBroadcastServer) ClientCount() int64 {
+func (s *WSBroadcastServer) ClientCount() int32 {
 	return s.clientManager.ClientCount()
 }
 

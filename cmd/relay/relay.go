@@ -14,6 +14,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -73,6 +74,8 @@ func startup() error {
 	}
 
 	if relayConfig.Metrics && relayConfig.MetricsServer.Addr != "" {
+		go metrics.CollectProcessMetrics(relayConfig.MetricsServer.UpdateInterval)
+
 		address := fmt.Sprintf("%v:%v", relayConfig.MetricsServer.Addr, relayConfig.MetricsServer.Port)
 		exp.Setup(address)
 	}

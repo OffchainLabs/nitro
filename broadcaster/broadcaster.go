@@ -122,7 +122,7 @@ func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 		ConfirmedSequenceNumberMessage: &ConfirmedSequenceNumberMessage{seq}})
 }
 
-func (b *Broadcaster) ClientCount() int64 {
+func (b *Broadcaster) ClientCount() int32 {
 	return b.server.ClientCount()
 }
 
