@@ -125,7 +125,7 @@ func main() {
 		panic(fmt.Sprintf("Encountered fatal error: %v", err))
 	}()
 
-	cranelift := false
+	cranelift := true
 	machineConfig := validator.DefaultNitroMachineConfig
 	machineConfig.RootPath = machinePath
 	machineConfig.JitCranelift = cranelift
@@ -290,7 +290,7 @@ func main() {
 		)
 	}
 
-	measure("JIT", true)
+	measure("Cranelift JIT", true)
 	measure("Arbitrator", false)
 }
 
