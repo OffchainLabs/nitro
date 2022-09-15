@@ -135,6 +135,7 @@ func main() {
 
 	headerReaderConfig := headerreader.TestConfig
 	headerReaderConfig.OldHeaderTimeout = 20 * time.Minute
+	headerReaderConfigFetcher := func() *headerreader.Config { return &headerReaderConfig }
 
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
@@ -142,7 +143,7 @@ func main() {
 		l1Auth,
 		sequencerAddr,
 		0,
-		headerReaderConfig,
+		headerReaderConfigFetcher,
 		machineConfig,
 		arbnode.GenerateRollupConfig(false, moduleRoot, l1Auth.From, l2ChainId, common.Address{}),
 	)

@@ -42,6 +42,9 @@ jobs:
       - name: Interface compatibility
         run: yarn run test:compatibility
 
+      - name: Test Storage Layouts
+        run: yarn run test:storage
+
       - name: Run coverage
         run: yarn hardhat coverage --testfiles "test/contract/*.spec.ts"
 

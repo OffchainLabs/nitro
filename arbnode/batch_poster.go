@@ -14,52 +14,74 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+type batchPosterPosition struct {
+	MessageCount        arbutil.MessageIndex
+	DelayedMessageCount uint64
+	NextSeqNum          uint64
+}
+
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader            *headerreader.HeaderReader
-	inbox               *InboxTracker
-	streamer            *TransactionStreamer
-	config              *BatchPosterConfig
-	inboxContract       *bridgegen.SequencerInbox
-	gasRefunder         common.Address
-	transactOpts        *bind.TransactOpts
-	building            *buildingBatch
-	pendingMsgTimestamp time.Time
-	lastBatchCount      uint64
-	daWriter            das.DataAvailabilityServiceWriter
+	l1Reader     *headerreader.HeaderReader
+	inbox        *InboxTracker
+	streamer     *TransactionStreamer
+	config       BatchPosterConfigFetcher
+	seqInbox     *bridgegen.SequencerInbox
+	syncMonitor  *SyncMonitor
+	seqInboxABI  *abi.ABI
+	seqInboxAddr common.Address
+	building     *buildingBatch
+	daWriter     das.DataAvailabilityServiceWriter
+	dataPoster   *dataposter.DataPoster[batchPosterPosition]
+	redisLock    *SimpleRedisLock
+	firstAccErr  time.Time // first time a continuous missing accumulator occurred
 }
 
 type BatchPosterConfig struct {
-	Enable                             bool          `koanf:"enable"`
-	DisableDasFallbackStoreDataOnChain bool          `koanf:"disable-das-fallback-store-data-on-chain"`
-	MaxBatchSize                       int           `koanf:"max-size"`
-	MaxBatchPostInterval               time.Duration `koanf:"max-interval"`
-	BatchPollDelay                     time.Duration `koanf:"poll-delay"`
-	PostingErrorDelay                  time.Duration `koanf:"error-delay"`
-	CompressionLevel                   int           `koanf:"compression-level"`
-	DASRetentionPeriod                 time.Duration `koanf:"das-retention-period"`
-	HighGasThreshold                   float32       `koanf:"high-gas-threshold"`
-	HighGasDelay                       time.Duration `koanf:"high-gas-delay"`
-	GasRefunderAddress                 string        `koanf:"gas-refunder-address"`
-	GasMarginBasisPoints               uint64        `koanf:"gas-margin-basis-points"`
+	Enable                             bool                        `koanf:"enable"`
+	DisableDasFallbackStoreDataOnChain bool                        `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
+	MaxBatchSize                       int                         `koanf:"max-size" reload:"hot"`
+	MaxBatchPostInterval               time.Duration               `koanf:"max-interval" reload:"hot"`
+	BatchPollDelay                     time.Duration               `koanf:"poll-delay" reload:"hot"`
+	PostingErrorDelay                  time.Duration               `koanf:"error-delay" reload:"hot"`
+	CompressionLevel                   int                         `koanf:"compression-level" reload:"hot"`
+	DASRetentionPeriod                 time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	GasRefunderAddress                 string                      `koanf:"gas-refunder-address" reload:"hot"`
+	DataPoster                         dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	RedisUrl                           string                      `koanf:"redis-url"`
+	RedisLock                          SimpleRedisLockConfig       `koanf:"redis-lock" reload:"hot"`
+	ExtraBatchGas                      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 }
+
+func (c *BatchPosterConfig) Validate() error {
+	if len(c.GasRefunderAddress) > 0 && !common.IsHexAddress(c.GasRefunderAddress) {
+		return fmt.Errorf("invalid gas refunder address \"%v\"", c.GasRefunderAddress)
+	}
+	if c.MaxBatchSize <= 40 {
+		return errors.New("MaxBatchSize too small")
+	}
+	return nil
+}
+
+type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
@@ -70,10 +92,11 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 	f.Duration(prefix+".das-retention-period", DefaultBatchPosterConfig.DASRetentionPeriod, "In AnyTrust mode, the period which DASes are requested to retain the stored batches.")
-	f.Float32(prefix+".high-gas-threshold", DefaultBatchPosterConfig.HighGasThreshold, "If the gas price in gwei is above this amount, delay posting a batch")
-	f.Duration(prefix+".high-gas-delay", DefaultBatchPosterConfig.HighGasDelay, "The maximum delay while waiting for the gas price to go below the high gas threshold")
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
-	f.Uint64(prefix+".gas-margin-basis-points", DefaultBatchPosterConfig.GasMarginBasisPoints, "The number of basis points to increase the gas limit of batch posting by")
+	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
+	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
+	RedisLockConfigAddOptions(prefix+".redis-lock", f)
+	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f)
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -85,10 +108,9 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	MaxBatchPostInterval:               time.Hour,
 	CompressionLevel:                   brotli.DefaultCompression,
 	DASRetentionPeriod:                 time.Hour * 24 * 15,
-	HighGasThreshold:                   150.,
-	HighGasDelay:                       14 * time.Hour,
 	GasRefunderAddress:                 "",
-	GasMarginBasisPoints:               500,
+	ExtraBatchGas:                      50_000,
+	DataPoster:                         dataposter.DefaultDataPosterConfig,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -99,29 +121,74 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	MaxBatchPostInterval: 0,
 	CompressionLevel:     2,
 	DASRetentionPeriod:   time.Hour * 24 * 15,
-	HighGasThreshold:     0.,
-	HighGasDelay:         0,
 	GasRefunderAddress:   "",
-	GasMarginBasisPoints: 500,
+	ExtraBatchGas:        10_000,
+	DataPoster:           dataposter.TestDataPosterConfig,
 }
 
-func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
-	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
+func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
+	seqInbox, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
-	if len(config.GasRefunderAddress) > 0 && !common.IsHexAddress(config.GasRefunderAddress) {
-		return nil, fmt.Errorf("invalid gas refunder address \"%v\"", config.GasRefunderAddress)
+	if err = config().Validate(); err != nil {
+		return nil, err
 	}
-	return &BatchPoster{
-		l1Reader:      l1Reader,
-		inbox:         inbox,
-		streamer:      streamer,
-		config:        config,
-		inboxContract: inboxContract,
-		transactOpts:  transactOpts,
-		gasRefunder:   common.HexToAddress(config.GasRefunderAddress),
-		daWriter:      daWriter,
+	seqInboxABI, err := bridgegen.SequencerInboxMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	redisClient, err := redisutil.RedisClientFromURL(config().RedisUrl)
+	if err != nil {
+		return nil, err
+	}
+	redisLockConfigFetcher := func() *SimpleRedisLockConfig {
+		return &config().RedisLock
+	}
+	redisLock, err := NewSimpleRedisLock(redisClient, redisLockConfigFetcher, func() bool { return syncMonitor.Synced() })
+	if err != nil {
+		return nil, err
+	}
+	b := &BatchPoster{
+		l1Reader:     l1Reader,
+		inbox:        inbox,
+		streamer:     streamer,
+		syncMonitor:  syncMonitor,
+		config:       config,
+		seqInbox:     seqInbox,
+		seqInboxABI:  seqInboxABI,
+		seqInboxAddr: contractAddress,
+		daWriter:     daWriter,
+		redisLock:    redisLock,
+	}
+	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
+		return &config().DataPoster
+	}
+	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.Int) (batchPosterPosition, error) {
+	bigInboxBatchCount, err := b.seqInbox.BatchCount(&bind.CallOpts{Context: ctx, BlockNumber: blockNum})
+	if err != nil {
+		return batchPosterPosition{}, fmt.Errorf("error getting latest batch count: %w", err)
+	}
+	inboxBatchCount := bigInboxBatchCount.Uint64()
+	var prevBatchMeta BatchMetadata
+	if inboxBatchCount > 0 {
+		var err error
+		prevBatchMeta, err = b.inbox.GetBatchMetadata(inboxBatchCount - 1)
+		if err != nil {
+			return batchPosterPosition{}, fmt.Errorf("error getting latest batch metadata: %w", err)
+		}
+	}
+	return batchPosterPosition{
+		MessageCount:        prevBatchMeta.MessageCount,
+		DelayedMessageCount: prevBatchMeta.DelayedMessageCount,
+		NextSeqNum:          inboxBatchCount,
 	}, nil
 }
 
@@ -143,9 +210,9 @@ type batchSegments struct {
 }
 
 type buildingBatch struct {
-	segments    *batchSegments
-	batchSeqNum uint64
-	msgCount    arbutil.MessageIndex
+	segments      *batchSegments
+	startMsgCount arbutil.MessageIndex
+	msgCount      arbutil.MessageIndex
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
@@ -335,41 +402,76 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum uint64) (*types.Transaction, error) {
-	inboxContractCount, err := b.inboxContract.BatchCount(&bind.CallOpts{Context: ctx, Pending: true})
+func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.MessageIndex, newMsgNum arbutil.MessageIndex, message []byte, delayedMsg uint64) ([]byte, error) {
+	method, ok := b.seqInboxABI.Methods["addSequencerL2BatchFromOrigin0"]
+	if !ok {
+		return nil, errors.New("failed to find add batch method")
+	}
+	inputData, err := method.Inputs.Pack(
+		seqNum,
+		message,
+		new(big.Int).SetUint64(delayedMsg),
+		common.HexToAddress(b.config().GasRefunderAddress),
+		new(big.Int).SetUint64(uint64(prevMsgNum)),
+		new(big.Int).SetUint64(uint64(newMsgNum)),
+	)
 	if err != nil {
 		return nil, err
 	}
-	timeSinceNextMessage := time.Since(b.pendingMsgTimestamp)
-	if !arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum)) {
-		// If it's been under a minute since the last batch was posted, and the inbox tracker is exactly one batch behind,
-		// then there isn't an error. We're just waiting for the inbox tracker to read the most recently posted batch.
-		if timeSinceNextMessage <= time.Minute && arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum+1)) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("inbox tracker not synced: contract has %v batches but inbox tracker has %v", inboxContractCount, batchSeqNum)
+	fullData := append([]byte{}, method.ID...)
+	fullData = append(fullData, inputData...)
+	return fullData, nil
+}
+
+func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
+	// Here we set seqNum to MaxUint256, and prevMsgNum to 0, because it disables the smart contracts' consistency checks.
+	// However, we set nextMsgNum to 1 because it is necessary for a correct estimation for the final to be non-zero.
+	// Because we're likely estimating against older state, this might not be the actual next message,
+	// but the gas used should be the same.
+	data, err := b.encodeAddBatch(abi.MaxUint256, 0, 1, sequencerMessage, delayedMessages)
+	if err != nil {
+		return 0, err
 	}
-	var prevBatchMeta BatchMetadata
-	if batchSeqNum > 0 {
-		var err error
-		prevBatchMeta, err = b.inbox.GetBatchMetadata(batchSeqNum - 1)
-		if err != nil {
-			return nil, err
-		}
+	gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
+		From: b.dataPoster.From(),
+		To:   &b.seqInboxAddr,
+		Data: data,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
-	if b.building == nil || b.building.batchSeqNum != batchSeqNum {
+	return gas + b.config().ExtraBatchGas, nil
+}
+
+func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
+	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+	if err != nil {
+		return err
+	}
+
+	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
 		b.building = &buildingBatch{
-			segments:    newBatchSegments(prevBatchMeta.DelayedMessageCount, b.config),
-			msgCount:    prevBatchMeta.MessageCount,
-			batchSeqNum: batchSeqNum,
+			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config()),
+			msgCount:      batchPosition.MessageCount,
+			startMsgCount: batchPosition.MessageCount,
 		}
 	}
 	msgCount, err := b.streamer.GetMessageCount()
 	if err != nil {
-		return nil, err
+		return err
 	}
+	if msgCount <= batchPosition.MessageCount {
+		// There's nothing after the newest batch, therefore batch posting was not required
+		return nil
+	}
+	firstMsg, err := b.streamer.GetMessage(batchPosition.MessageCount)
+	if err != nil {
+		return err
+	}
+	nextMessageTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
-	forcePostBatch := timeSinceNextMessage >= b.config.MaxBatchPostInterval
+	config := b.config()
+	forcePostBatch := time.Since(nextMessageTime) >= config.MaxBatchPostInterval
 	haveUsefulMessage := false
 
 	for b.building.msgCount < msgCount {
@@ -397,152 +499,99 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, batchSeqNum u
 
 	if b.building.segments.IsEmpty() {
 		// we don't need to post a batch for the time being
-		b.pendingMsgTimestamp = time.Now()
-		return nil, nil
+		return nil
 	}
 	if !forcePostBatch || !haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
-		return nil, nil
+		return nil
 	}
 	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if sequencerMsg == nil {
-		log.Debug("BatchPoster: batch nil", "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "prev delayed", prevBatchMeta.DelayedMessageCount)
+		log.Debug("BatchPoster: batch nil", "sequence nr.", batchPosition.NextSeqNum, "from", batchPosition.MessageCount, "prev delayed", batchPosition.DelayedMessageCount)
 		b.building = nil // a closed batchSegments can't be reused
-		return nil, nil
+		return nil
 	}
 
 	if b.daWriter != nil {
-		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(b.config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
+		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
-			if b.config.DisableDasFallbackStoreDataOnChain {
-				return nil, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
+			if config.DisableDasFallbackStoreDataOnChain {
+				return errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
 			}
 		} else {
 			sequencerMsg = das.Serialize(cert)
 		}
 	}
 
-	txOpts := *b.transactOpts
-	txOpts.Context = ctx
-	txOpts.NoSend = true
-	txOpts.GasMargin = b.config.GasMarginBasisPoints
-	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(&txOpts, new(big.Int).SetUint64(batchSeqNum), sequencerMsg, new(big.Int).SetUint64(b.building.segments.delayedMsg), b.gasRefunder)
+	gasLimit, err := b.estimateGas(ctx, sequencerMsg, b.building.segments.delayedMsg)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	highGasThreshold := new(big.Int).SetUint64(uint64(b.config.HighGasThreshold * params.GWei))
-	if b.config.HighGasThreshold != 0 && tx.GasFeeCap().Cmp(highGasThreshold) >= 0 && timeSinceNextMessage < b.config.HighGasDelay {
-		// The gas fee cap abigen recommended is above the high gas threshold. Check if this is necessary:
-		lastHeader, err := b.l1Reader.LastHeader(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if lastHeader.BaseFee.Cmp(highGasThreshold) >= 0 {
-			log.Info(
-				"not posting batch yet as gas price is high",
-				"baseFee", float32(lastHeader.BaseFee.Uint64())/params.GWei,
-				"highGasThreshold", b.config.HighGasThreshold,
-				"timeSinceBatchPosted", timeSinceNextMessage,
-				"highGasDelay", b.config.HighGasDelay,
-			)
-			return nil, nil
-		} else {
-			// The base fee is below the high gas threshold, so let's lower the gas fee cap and try it.
-			tx = types.NewTx(&types.DynamicFeeTx{
-				ChainID:    tx.ChainId(),
-				Nonce:      tx.Nonce(),
-				GasTipCap:  tx.GasTipCap(),
-				GasFeeCap:  arbmath.BigMulByFrac(highGasThreshold, 6, 5),
-				Gas:        tx.Gas(),
-				To:         tx.To(),
-				Value:      tx.Value(),
-				Data:       tx.Data(),
-				AccessList: tx.AccessList(),
-			})
-			tx, err = txOpts.Signer(txOpts.From, tx)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	err = b.l1Reader.Client().SendTransaction(ctx, tx)
+	data, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	postingMsgCount := b.building.msgCount
-	log.Info("BatchPoster: batch sent", "tx", tx.Hash(), "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "to", postingMsgCount, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", b.building.segments.delayedMsg, "total segments", len(b.building.segments.rawSegments))
+	newMeta := batchPosterPosition{
+		MessageCount:        b.building.msgCount,
+		DelayedMessageCount: b.building.segments.delayedMsg,
+		NextSeqNum:          batchPosition.NextSeqNum + 1,
+	}
+	err = b.dataPoster.PostTransaction(ctx, nextMessageTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
+	if err != nil {
+		return err
+	}
+	log.Info(
+		"BatchPoster: batch sent",
+		"sequence nr.", batchPosition.NextSeqNum,
+		"from", batchPosition.MessageCount,
+		"to", b.building.msgCount,
+		"prev delayed", batchPosition.DelayedMessageCount,
+		"current delayed", b.building.segments.delayedMsg,
+		"total segments", len(b.building.segments.rawSegments),
+	)
 	b.building = nil
-	_, err = b.l1Reader.WaitForTxApproval(ctx, tx)
-	if err != nil {
-		return tx, err
-	}
-	if postingMsgCount < msgCount {
-		msg, err := b.streamer.GetMessage(postingMsgCount)
-		if err != nil {
-			return tx, err
-		}
-		b.pendingMsgTimestamp = time.Unix(int64(msg.Message.Header.Timestamp), 0)
-	} else {
-		b.pendingMsgTimestamp = time.Now()
-	}
-	return tx, nil
-}
-
-// Returns the timestamp of the next message to post, or time.Now() if there's no new messages
-func (b *BatchPoster) recomputePendingMsgTimestamp(ctx context.Context, batchCount uint64) error {
-	if batchCount == 0 {
-		// No batches, therefore batch posting was not required
-		b.pendingMsgTimestamp = time.Now()
-		return nil
-	}
-	batchMsgCount, err := b.inbox.GetBatchMessageCount(batchCount - 1)
-	if err != nil {
-		return err
-	}
-	msgCount, err := b.streamer.GetMessageCount()
-	if err != nil {
-		return err
-	}
-	if msgCount <= batchMsgCount {
-		// There's nothing after the newest batch, therefore batch posting was not required
-		b.pendingMsgTimestamp = time.Now()
-		return nil
-	}
-	msg, err := b.streamer.GetMessage(batchMsgCount - 1)
-	if err != nil {
-		return err
-	}
-	b.pendingMsgTimestamp = time.Unix(int64(msg.Message.Header.Timestamp), 0)
 	return nil
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
+	b.dataPoster.Start(ctxIn)
+	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
-		batchSeqNum, err := b.inbox.GetBatchCount()
-		if err != nil {
-			log.Error("error getting inbox batch count", "err", err)
-			return b.config.PostingErrorDelay
+		if !b.redisLock.AttemptLock(ctx) {
+			b.building = nil
+			return b.config().BatchPollDelay
 		}
-		if batchSeqNum != b.lastBatchCount {
-			err := b.recomputePendingMsgTimestamp(ctx, batchSeqNum)
-			if err != nil {
-				log.Error("error getting next message time", "err", err)
-				return b.config.PostingErrorDelay
-			}
-			b.lastBatchCount = batchSeqNum
-		}
-		_, err = b.maybePostSequencerBatch(ctx, batchSeqNum)
+		err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
 			b.building = nil
-			log.Error("error posting batch", "err", err)
-			return b.config.PostingErrorDelay
+			logLevel := log.Error
+			if errors.Is(err, AccumulatorNotFoundErr) || errors.Is(err, dataposter.StorageRaceErr) {
+				// Likely the inbox tracker just isn't caught up.
+				// Let's see if this error disappears naturally.
+				if b.firstAccErr == (time.Time{}) {
+					b.firstAccErr = time.Now()
+					logLevel = log.Debug
+				} else if time.Since(b.firstAccErr) < time.Minute {
+					logLevel = log.Debug
+				}
+			} else {
+				b.firstAccErr = time.Time{}
+			}
+			logLevel("error posting batch", "err", err)
+			return b.config().PostingErrorDelay
 		}
-		return b.config.BatchPollDelay
+		return b.config().BatchPollDelay
 	})
+}
+
+func (b *BatchPoster) StopAndWait() {
+	b.StopWaiter.StopAndWait()
+	b.dataPoster.StopAndWait()
+	b.redisLock.StopAndWait()
 }

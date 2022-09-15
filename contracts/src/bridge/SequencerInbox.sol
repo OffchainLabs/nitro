@@ -19,7 +19,8 @@ import {
     BadSequencerNumber,
     DataNotAuthenticated,
     AlreadyValidDASKeyset,
-    NoSuchKeyset
+    NoSuchKeyset,
+    NotForked
 } from "../libraries/Error.sol";
 import "./IBridge.sol";
 import "./IInbox.sol";
@@ -61,6 +62,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         _;
     }
 
+    uint256 internal immutable deployTimeChainId = block.chainid;
+
+    function _chainIdChanged() internal view returns (bool) {
+        return deployTimeChainId != block.chainid;
+    }
+
     function initialize(
         IBridge bridge_,
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
@@ -83,6 +90,17 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         }
         bounds.maxBlockNumber = uint64(block.number + maxTimeVariation.futureBlocks);
         return bounds;
+    }
+
+    /// @inheritdoc ISequencerInbox
+    function removeDelayAfterFork() external {
+        if (!_chainIdChanged()) revert NotForked();
+        maxTimeVariation = ISequencerInbox.MaxTimeVariation({
+            delayBlocks: 1,
+            futureBlocks: 1,
+            delaySeconds: 1,
+            futureSeconds: 1
+        });
     }
 
     /// @inheritdoc ISequencerInbox
@@ -161,6 +179,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
+
         (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
             data,
             afterDelayedMessagesRead

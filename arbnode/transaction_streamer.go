@@ -733,7 +733,12 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lastBlockHeader := s.bc.CurrentBlock().Header()
+	initialLastBlock := s.bc.CurrentBlock()
+	err = s.bc.RecoverState(initialLastBlock)
+	if err != nil {
+		return fmt.Errorf("failed to recover state: %w", err)
+	}
+	lastBlockHeader := initialLastBlock.Header()
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
@@ -825,51 +830,6 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (s *TransactionStreamer) SyncProgressMap() map[string]interface{} {
-	res := make(map[string]interface{})
-
-	msgCount, err := s.GetMessageCount()
-	if err != nil {
-		res["msgCountError"] = err.Error()
-		return res
-	}
-
-	batchSeen := s.inboxReader.GetLastSeenBatchCount()
-	_, batchProcessed := s.inboxReader.GetLastReadBlockAndBatchCount()
-	broadcasterQueuedMessagesPos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
-
-	lastBlockNum := s.bc.CurrentHeader().Number.Uint64()
-	lastBuiltMessage, err := s.BlockNumberToMessageCount(lastBlockNum)
-	if err != nil {
-		res["blockMessageToMessageCountError"] = err.Error()
-		return res
-	}
-
-	processedMetadata, err := s.inboxReader.Tracker().GetBatchMetadata(batchProcessed - 1)
-
-	if err != nil {
-		res["batchMetadataError"] = err.Error()
-		return res
-	}
-
-	if (batchSeen > 0) && // read inbox without error
-		(batchProcessed >= batchSeen) && // up to date in inbox messages
-		(broadcasterQueuedMessagesPos == 0) && // no unprocessed feed
-		(processedMetadata.MessageCount <= lastBuiltMessage) && // built blocks for entire inbox
-		(msgCount <= lastBuiltMessage+20) { // TODO: configurable gap
-		return res
-	}
-
-	res["msgCount"] = msgCount
-	res["batchSeen"] = batchSeen
-	res["batchProcessed"] = batchProcessed
-	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
-	res["blockNum"] = lastBlockNum
-	res["messageOfLastBlock"] = lastBuiltMessage
-	res["messageOfProcessedBatch"] = processedMetadata.MessageCount
-	return res
 }
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) {
