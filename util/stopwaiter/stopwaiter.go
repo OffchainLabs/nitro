@@ -191,6 +191,12 @@ func (s *StopWaiter) Start(ctx context.Context, parent any) {
 	}
 }
 
+func (s *StopWaiter) StopAndWait() {
+	if err := s.StopWaiterSafe.StopAndWait(); err != nil {
+		panic(err)
+	}
+}
+
 func (s *StopWaiter) LaunchThread(foo func(context.Context)) {
 	if err := s.StopWaiterSafe.LaunchThread(foo); err != nil {
 		panic(err)
