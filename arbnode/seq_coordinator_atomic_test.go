@@ -117,7 +117,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	for i := 0; i < NumOfThreads; i++ {
 		config := coordConfig
 		config.MyUrlImpl = fmt.Sprint(i)
-		redisCoordinator, err := NewRedisCoordinator(config.RedisUrl, config.MyUrl())
+		redisCoordinator, err := NewRedisCoordinator(config.RedisUrl)
 		Require(t, err)
 		coordinator := &SeqCoordinator{
 			RedisCoordinator: *redisCoordinator,
