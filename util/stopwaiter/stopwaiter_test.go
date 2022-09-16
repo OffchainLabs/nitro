@@ -25,7 +25,10 @@ func TestStopWaiterStopAndWaitTimeoutShouldWarn(t *testing.T) {
 	sw.LaunchThread(func(ctx context.Context) {
 		<-testCtx.Done()
 	})
-	go sw.stopAndWaitImpl(testStopDelayWarningTimeout)
+	go func() {
+		err := sw.stopAndWaitImpl(testStopDelayWarningTimeout)
+		testhelpers.RequireImpl(t, err)
+	}()
 	time.Sleep(testStopDelayWarningTimeout + 100*time.Millisecond)
 	if !logHandler.WasLogged("taking too long to stop") {
 		testhelpers.FailImpl(t, "Failed to log about waiting long on StopAndWait")

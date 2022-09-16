@@ -58,7 +58,8 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		defer func() {
-			_ = ret.db.Close()
+			err := ret.db.Close()
+			log.Error("Failed to close DB", "err", err)
 		}()
 		for {
 			select {
@@ -119,8 +120,7 @@ func (dbs *DBStorageService) Sync(ctx context.Context) error {
 }
 
 func (dbs *DBStorageService) Close(ctx context.Context) error {
-	dbs.stopWaiter.StopAndWait()
-	return nil
+	return dbs.stopWaiter.StopAndWait()
 }
 
 func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
