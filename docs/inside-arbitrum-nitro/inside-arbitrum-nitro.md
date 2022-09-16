@@ -200,7 +200,7 @@ You might wonder why we need the rollup protocol. If everyone knows the results 
 
 With those preliminaries behind us, let’s jump into the details of the rollup protocol.
 
-The parties who participate in the protocol are called _validators_. Anyone can be a validator. Some validators will choose to be stakers--they will place an ETH deposit which they’ll be able to recover if they’re not caught cheating. These roles are permissionless: anyone can be a validator or a staker.
+The parties who participate in the protocol are called _validators_. Some validators will choose to be stakers--they will place an ETH deposit which they’ll be able to recover if they’re not caught cheating. The protocol allows for these roles to be permissionless in principle. (Currently on Arbitrum One, validators/stakers are whitelisted; see ["mainnet beta status"](../mainnet-beta.md)).
 
 The key security property of the rollup protocol is that any one honest validator can force the correct execution of the chain to be confirmed. This means that execution of an Arbitrum chain is as trustless as Ethereum. You, and you alone (or someone you hire) can force your transactions to be processed correctly. And that is true no matter how many malicious people are trying to stop you.
 
@@ -364,7 +364,7 @@ Some Arbitrum nodes will choose to act as _validators_. This means that they wat
 
 Not all nodes will choose to do this. Because the rollup protocol doesn’t decide what the chain will do but merely confirms the correct behavior that is fully determined by the inbox messages, a node can ignore the rollup protocol and simply compute for itself the correct behavior. For more on what such nodes might do, see the [Full Nodes](#full-nodes) section.
 
-Being a validator is permissionless--anyone can do it. Offchain Labs provides open source validator software, including a pre-built Docker image.
+Offchain Labs provides open source validator software, including a pre-built Docker image. The underlying protocol supports permissionless validation, i.e.,--anyone can do it. (Currently on Arbitrum One, validators/stakers are whitelisted; see ["mainnet beta status"](../mainnet-beta.md)).
 
 Every validator can choose their own approach, but we expect validators to follow three common strategies.
 
