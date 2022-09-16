@@ -76,8 +76,8 @@ describe('Outbox', async function () {
 
   it('First call to initial some storage', async function () {
     await sendEth(await accounts[0].getAddress(), cases[0].to, sentEthAmount);
-    expect(
-      await outboxWithOpt.executeTransaction(
+    await expect(
+      outboxWithOpt.executeTransaction(
         cases[0].proof,
         cases[0].index,
         cases[0].l2Sender,
@@ -89,8 +89,8 @@ describe('Outbox', async function () {
         cases[0].data
       )
     ).to.emit(outboxWithOpt, 'BridgeCallTriggered');
-    expect(
-      await outboxWithoutOpt.executeTransaction(
+    await expect(
+      outboxWithoutOpt.executeTransaction(
         cases[0].proof,
         cases[0].index,
         cases[0].l2Sender,
@@ -107,8 +107,8 @@ describe('Outbox', async function () {
 
   it('Call twice without storage initail cost', async function () {
     await sendEth(await accounts[0].getAddress(), cases[1].to, sentEthAmount);
-    expect(
-      await outboxWithOpt.executeTransaction(
+    await expect(
+      outboxWithOpt.executeTransaction(
         cases[1].proof,
         cases[1].index,
         cases[1].l2Sender,
@@ -120,8 +120,8 @@ describe('Outbox', async function () {
         cases[1].data
       )
     ).to.emit(outboxWithOpt, 'BridgeCallTriggered');
-    expect(
-      await outboxWithoutOpt.executeTransaction(
+    await expect(
+      outboxWithoutOpt.executeTransaction(
         cases[1].proof,
         cases[1].index,
         cases[1].l2Sender,
@@ -137,8 +137,8 @@ describe('Outbox', async function () {
 
   it('third call', async function () {
     await sendEth(await accounts[0].getAddress(), cases[2].to, sentEthAmount);
-    expect(
-      await outboxWithOpt.executeTransaction(
+    await expect(
+      outboxWithOpt.executeTransaction(
         cases[2].proof,
         cases[2].index,
         cases[2].l2Sender,
@@ -150,8 +150,8 @@ describe('Outbox', async function () {
         cases[2].data
       )
     ).to.emit(outboxWithOpt, 'BridgeCallTriggered');
-    expect(
-      await outboxWithoutOpt.executeTransaction(
+    await expect(
+      outboxWithoutOpt.executeTransaction(
         cases[2].proof,
         cases[2].index,
         cases[2].l2Sender,
