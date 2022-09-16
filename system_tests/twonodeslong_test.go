@@ -48,7 +48,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	l1NodeConfigBDataAvailability := l1NodeConfigA.DataAvailability
 	l1NodeConfigBDataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigBDataAvailability)
+	l2clientB, nodeB, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, &l1NodeConfigBDataAvailability)
 	defer requireClose(t, l2stackB)
 
 	l2info.GenerateAccount("DelayedFaucet")

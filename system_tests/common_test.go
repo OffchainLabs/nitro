@@ -429,6 +429,7 @@ func Create2ndNode(
 	ctx context.Context,
 	first *arbnode.Node,
 	l1stack *node.Node,
+	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	dasConfig *das.DataAvailabilityConfig,
 ) (*ethclient.Client, *arbnode.Node, *node.Node) {
@@ -438,7 +439,7 @@ func Create2ndNode(
 	} else {
 		nodeConf.DataAvailability = *dasConfig
 	}
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, nodeConf)
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConf)
 }
 
 func Create2ndNodeWithConfig(
@@ -446,6 +447,7 @@ func Create2ndNodeWithConfig(
 	ctx context.Context,
 	first *arbnode.Node,
 	l1stack *node.Node,
+	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
 ) (*ethclient.Client, *arbnode.Node, *node.Node) {
@@ -464,10 +466,12 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
+	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, dataSigner, feedErrChan)
 	Require(t, err)
 
 	err = l2stack.Start()

@@ -39,7 +39,7 @@ func TestBatchPosterParallel(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
-	l2clientB, _, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, nil)
+	l2clientB, _, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nil)
 	defer requireClose(t, l2stackB)
 
 	l2info.GenerateAccount("User2")

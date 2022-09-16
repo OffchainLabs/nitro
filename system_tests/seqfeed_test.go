@@ -148,7 +148,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigC.DataAvailability.AggregatorConfig.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
-	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
+	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigC)
 	defer requireClose(t, l2stackC, "unable to close l2stackC")
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -159,7 +159,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigB.DataAvailability.AggregatorConfig.Enable = false
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
+	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigB)
 	defer requireClose(t, l2stackB, "unable to close l2stackB")
 
 	l2infoA.GenerateAccount("FraudUser")
