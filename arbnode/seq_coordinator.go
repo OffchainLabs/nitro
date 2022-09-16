@@ -181,7 +181,6 @@ func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 }
 
 func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
-	isActiveSequencer.Update(1)
 	var messageData *string
 	if lastmsg != nil {
 		msgBytes, err := json.Marshal(lastmsg)
@@ -248,6 +247,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 	if err != nil {
 		return err
 	}
+	isActiveSequencer.Update(1)
 	atomicTimeWrite(&c.lockoutUntil, lockoutUntil.Add(-c.config.LockoutSpare))
 	return nil
 }
