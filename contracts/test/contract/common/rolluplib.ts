@@ -1,21 +1,21 @@
-import { ethers } from "hardhat";
-import { Interface, LogDescription } from "@ethersproject/abi";
-import { Signer } from "@ethersproject/abstract-signer";
-import { BigNumberish, BigNumber } from "@ethersproject/bignumber";
-import { BytesLike } from "@ethersproject/bytes";
-import { ContractTransaction, PayableOverrides } from "@ethersproject/contracts";
-import { Provider } from "@ethersproject/providers";
-import { RollupUserLogic, RollupAdminLogic, SequencerInbox } from "../../../build/types";
+import { ethers } from 'hardhat';
+import { Interface, LogDescription } from '@ethersproject/abi';
+import { Signer } from '@ethersproject/abstract-signer';
+import { BigNumberish, BigNumber } from '@ethersproject/bignumber';
+import { BytesLike } from '@ethersproject/bytes';
+import { ContractTransaction, PayableOverrides } from '@ethersproject/contracts';
+import { Provider } from '@ethersproject/providers';
+import { RollupUserLogic, RollupAdminLogic, SequencerInbox } from '../../../build/types';
 import {
   RollupLib,
   NodeCreatedEvent,
-} from "../../../build/types/src/rollup/RollupUserLogic.sol/RollupUserLogic";
+} from '../../../build/types/src/rollup/RollupUserLogic.sol/RollupUserLogic';
 type AssertionStruct = RollupLib.AssertionStruct;
 type ExecutionStateStruct = RollupLib.ExecutionStateStruct;
-import { blockStateHash, hashChallengeState } from "./challengeLib";
-import * as globalStateLib from "./globalStateLib";
-import { constants } from "ethers";
-import { GlobalStateStruct } from "../../../build/types/src/challenge/ChallengeManager";
+import { blockStateHash, hashChallengeState } from './challengeLib';
+import * as globalStateLib from './globalStateLib';
+import { constants } from 'ethers';
+import { GlobalStateStruct } from '../../../build/types/src/challenge/ChallengeManager';
 
 export interface Node {
   nodeNum: number;
@@ -34,7 +34,7 @@ export function nodeHash(
   wasmModuleRoot: BytesLike
 ): BytesLike {
   return ethers.utils.solidityKeccak256(
-    ["bool", "bytes32", "bytes32", "bytes32", "bytes32"],
+    ['bool', 'bytes32', 'bytes32', 'bytes32', 'bytes32'],
     [hasSibling, lastHash, assertionExecHash, inboxAcc, wasmModuleRoot]
   );
 }
@@ -68,14 +68,14 @@ export const assertionEquals = (assertion1: AssertionStruct, assertion2: Asserti
 
 export function executionStateHash(e: ExecutionStateStruct, inboxMaxCount: BigNumberish) {
   return ethers.utils.solidityKeccak256(
-    ["bytes32", "uint256", "uint8"],
+    ['bytes32', 'uint256', 'uint8'],
     [globalStateLib.hash(e.globalState), inboxMaxCount, e.machineStatus]
   );
 }
 
 export function executionStructHash(e: ExecutionStateStruct) {
   return ethers.utils.solidityKeccak256(
-    ["bytes32", "uint8"],
+    ['bytes32', 'uint8'],
     [globalStateLib.hash(e.globalState), e.machineStatus]
   );
 }
@@ -93,10 +93,10 @@ export function assertionExecutionHash(a: AssertionStruct): BytesLike {
 }
 
 async function nodeFromNodeCreatedLog(blockNumber: number, log: LogDescription): Promise<Node> {
-  if (log.name != "NodeCreated") {
-    throw Error("wrong event type");
+  if (log.name != 'NodeCreated') {
+    throw Error('wrong event type');
   }
-  const parsedEv = log.args as NodeCreatedEvent["args"];
+  const parsedEv = log.args as NodeCreatedEvent['args'];
 
   const node: Node = {
     assertion: parsedEv.assertion,
@@ -112,7 +112,7 @@ async function nodeFromNodeCreatedLog(blockNumber: number, log: LogDescription):
 async function nodeFromTx(abi: Interface, tx: ContractTransaction): Promise<Node> {
   const receipt = await tx.wait();
   if (receipt.logs == undefined) {
-    throw Error("expected receipt to have logs");
+    throw Error('expected receipt to have logs');
   }
   const evs = receipt.logs
     .map((log) => {
@@ -122,9 +122,9 @@ async function nodeFromTx(abi: Interface, tx: ContractTransaction): Promise<Node
         return undefined;
       }
     })
-    .filter((ev) => ev && ev.name == "NodeCreated");
+    .filter((ev) => ev && ev.name == 'NodeCreated');
   if (evs.length != 1) {
-    throw Error("unique event not found");
+    throw Error('unique event not found');
   }
 
   return nodeFromNodeCreatedLog(receipt.blockNumber, evs[0]!);
@@ -156,7 +156,7 @@ export class RollupContract {
       inboxPosition > 0 ? await sequencerInbox.inboxAccs(inboxPosition - 1) : constants.HashZero;
     const wasmModuleRoot = await this.rollup.wasmModuleRoot();
     const newNodeHash = nodeHash(
-      !!siblingNode,
+      Boolean(siblingNode),
       (siblingNode || parentNode).nodeHash,
       assertionExecutionHash(assertion),
       afterInboxAcc,
@@ -175,9 +175,7 @@ export class RollupContract {
     return this.rollup.stakeOnExistingNode(nodeNum, nodeHash);
   }
 
-  confirmNextNode(
-    node: Node,
-  ): Promise<ContractTransaction> {
+  confirmNextNode(node: Node): Promise<ContractTransaction> {
     return this.rollup.confirmNextNode(
       node.assertion.afterState.globalState.bytes32Vals[0],
       node.assertion.afterState.globalState.bytes32Vals[1]
@@ -247,7 +245,7 @@ export async function forceCreateNode(
     inboxPosition > 0 ? await sequencerInbox.inboxAccs(inboxPosition - 1) : constants.HashZero;
   const wasmModuleRoot = await rollupAdmin.wasmModuleRoot();
   const newNodeHash = nodeHash(
-    !!siblingNode,
+    Boolean(siblingNode),
     (siblingNode || parentNode).nodeHash,
     assertionExecutionHash(assertion),
     afterInboxAcc,

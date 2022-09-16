@@ -15,12 +15,12 @@
  */
 
 /* eslint-env node, mocha */
-import { ethers, run } from "hardhat";
-import { Signer } from "@ethersproject/abstract-signer";
-import { BigNumberish, BigNumber } from "@ethersproject/bignumber";
-import { BytesLike, hexConcat, zeroPad } from "@ethersproject/bytes";
-import { ContractTransaction } from "@ethersproject/contracts";
-import { assert, expect } from "chai";
+import { ethers, run } from 'hardhat';
+import { Signer } from '@ethersproject/abstract-signer';
+import { BigNumberish, BigNumber } from '@ethersproject/bignumber';
+import { BytesLike, hexConcat, zeroPad } from '@ethersproject/bytes';
+import { ContractTransaction } from '@ethersproject/contracts';
+import { assert, expect } from 'chai';
 import {
   BridgeCreator__factory,
   ChallengeManager,
@@ -37,19 +37,19 @@ import {
   RollupUserLogic__factory,
   SequencerInbox,
   SequencerInbox__factory,
-} from "../../build/types";
-import { initializeAccounts } from "./utils";
+} from '../../build/types';
+import { initializeAccounts } from './utils';
 
-import { Node, RollupContract, forceCreateNode, assertionEquals } from "./common/rolluplib";
-import { RollupLib } from "../../build/types/src/rollup/RollupUserLogic.sol/RollupUserLogic";
+import { Node, RollupContract, forceCreateNode, assertionEquals } from './common/rolluplib';
+import { RollupLib } from '../../build/types/src/rollup/RollupUserLogic.sol/RollupUserLogic';
 type AssertionStruct = RollupLib.AssertionStruct;
 type ExecutionStateStruct = RollupLib.ExecutionStateStruct;
-import { keccak256 } from "ethers/lib/utils";
-import { ConfigStruct, RollupCreatedEvent } from "../../build/types/src/rollup/RollupCreator";
-import { constants, providers } from "ethers";
-import { blockStateHash, MachineStatus } from "./common/challengeLib";
-import * as globalStateLib from "./common/globalStateLib";
-import { RollupChallengeStartedEvent } from "../../build/types/src/rollup/IRollupCore";
+import { keccak256 } from 'ethers/lib/utils';
+import { ConfigStruct, RollupCreatedEvent } from '../../build/types/src/rollup/RollupCreator';
+import { constants, providers } from 'ethers';
+import { blockStateHash, MachineStatus } from './common/challengeLib';
+import * as globalStateLib from './common/globalStateLib';
+import { RollupChallengeStartedEvent } from '../../build/types/src/rollup/IRollupCore';
 
 const zerobytes32 = ethers.constants.HashZero;
 const stakeRequirement = 10;
@@ -58,7 +58,7 @@ const confirmationPeriodBlocks = 100;
 const minimumAssertionPeriod = 75;
 const ZERO_ADDR = ethers.constants.AddressZero;
 const extraChallengeTimeBlocks = 20;
-const wasmModuleRoot = "0x9900000000000000000000000000000000000000000000000000000000000010";
+const wasmModuleRoot = '0x9900000000000000000000000000000000000000000000000000000000000010';
 
 // let rollup: RollupContract
 let rollup: RollupContract;
@@ -106,24 +106,24 @@ const setup = async () => {
   sequencer = accounts[6];
 
   const oneStep0Fac = (await ethers.getContractFactory(
-    "OneStepProver0"
+    'OneStepProver0'
   )) as OneStepProver0__factory;
   const oneStep0 = await oneStep0Fac.deploy();
   const oneStepMemoryFac = (await ethers.getContractFactory(
-    "OneStepProverMemory"
+    'OneStepProverMemory'
   )) as OneStepProverMemory__factory;
   const oneStepMemory = await oneStepMemoryFac.deploy();
   const oneStepMathFac = (await ethers.getContractFactory(
-    "OneStepProverMath"
+    'OneStepProverMath'
   )) as OneStepProverMath__factory;
   const oneStepMath = await oneStepMathFac.deploy();
   const oneStepHostIoFac = (await ethers.getContractFactory(
-    "OneStepProverHostIo"
+    'OneStepProverHostIo'
   )) as OneStepProverHostIo__factory;
   const oneStepHostIo = await oneStepHostIoFac.deploy();
 
   const oneStepProofEntryFac = (await ethers.getContractFactory(
-    "OneStepProofEntry"
+    'OneStepProofEntry'
   )) as OneStepProofEntry__factory;
   const oneStepProofEntry = await oneStepProofEntryFac.deploy(
     oneStep0.address,
@@ -133,27 +133,27 @@ const setup = async () => {
   );
 
   const challengeManagerTemplateFac = (await ethers.getContractFactory(
-    "ChallengeManager"
+    'ChallengeManager'
   )) as ChallengeManager__factory;
   const challengeManagerTemplate = await challengeManagerTemplateFac.deploy();
 
   const rollupAdminLogicFac = (await ethers.getContractFactory(
-    "RollupAdminLogic"
+    'RollupAdminLogic'
   )) as RollupAdminLogic__factory;
   const rollupAdminLogicTemplate = await rollupAdminLogicFac.deploy();
 
   const rollupUserLogicFac = (await ethers.getContractFactory(
-    "RollupUserLogic"
+    'RollupUserLogic'
   )) as RollupUserLogic__factory;
   const rollupUserLogicTemplate = await rollupUserLogicFac.deploy();
 
   const bridgeCreatorFac = (await ethers.getContractFactory(
-    "BridgeCreator"
+    'BridgeCreator'
   )) as BridgeCreator__factory;
   const bridgeCreator = await bridgeCreatorFac.deploy();
 
   const rollupCreatorFac = (await ethers.getContractFactory(
-    "RollupCreator"
+    'RollupCreator'
   )) as RollupCreator__factory;
   const rollupCreator = await rollupCreatorFac.deploy();
 
@@ -180,7 +180,7 @@ const setup = async () => {
   const rec = await response.wait();
 
   const rollupCreatedEvent = rollupCreator.interface.parseLog(rec.logs[rec.logs.length - 1])
-    .args as RollupCreatedEvent["args"];
+    .args as RollupCreatedEvent['args'];
 
   const rollupAdmin = rollupAdminLogicFac
     .attach(expectedRollupAddress)
@@ -192,15 +192,15 @@ const setup = async () => {
     [true, true, true]
   );
 
-  sequencerInbox = ((await ethers.getContractFactory(
-    "SequencerInbox"
-  )) as SequencerInbox__factory).attach(rollupCreatedEvent.sequencerInbox);
+  sequencerInbox = (
+    (await ethers.getContractFactory('SequencerInbox')) as SequencerInbox__factory
+  ).attach(rollupCreatedEvent.sequencerInbox);
 
   await sequencerInbox.setIsBatchPoster(await sequencer.getAddress(), true);
 
-  challengeManager = ((await ethers.getContractFactory(
-    "ChallengeManager"
-  )) as ChallengeManager__factory).attach(await rollupUser.challengeManager());
+  challengeManager = (
+    (await ethers.getContractFactory('ChallengeManager')) as ChallengeManager__factory
+  ).attach(await rollupUser.challengeManager());
 
   return {
     admin,
@@ -224,7 +224,7 @@ const setup = async () => {
 async function tryAdvanceChain(blocks: number): Promise<void> {
   try {
     for (let i = 0; i < blocks; i++) {
-      await ethers.provider.send("evm_mine", []);
+      await ethers.provider.send('evm_mine', []);
     }
   } catch (e) {
     // EVM mine failed. Try advancing the chain by sending txes if the node
@@ -299,7 +299,7 @@ async function makeSimpleNode(
     stakeToAdd
   );
 
-  expect(assertionEquals(assertion, node.assertion), "unexpected assertion").to.be.true;
+  expect(assertionEquals(assertion, node.assertion), 'unexpected assertion').to.be.true;
   assert.equal(node.nodeNum, (prevNode || siblingNode || parentNode).nodeNum + 1);
   assert.equal(node.nodeHash, expectedNewNodeHash);
 
@@ -327,22 +327,33 @@ function updatePrevNode(node: Node) {
   prevNodes.push(node);
 }
 
-const _IMPLEMENTATION_PRIMARY_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
-const _IMPLEMENTATION_SECONDARY_SLOT = "0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d"
+const _IMPLEMENTATION_PRIMARY_SLOT =
+  '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
+const _IMPLEMENTATION_SECONDARY_SLOT =
+  '0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d';
 
-const getDoubleLogicUUPSTarget = async (slot: "user" | "admin", provider: providers.Provider) : Promise<string> => {
-  return `0x${(await provider.getStorageAt(rollupAdmin.address, slot === "admin" ? 
-                _IMPLEMENTATION_PRIMARY_SLOT : _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
-}
+const getDoubleLogicUUPSTarget = async (
+  slot: 'user' | 'admin',
+  provider: providers.Provider
+): Promise<string> => {
+  return `0x${(
+    await provider.getStorageAt(
+      rollupAdmin.address,
+      slot === 'admin' ? _IMPLEMENTATION_PRIMARY_SLOT : _IMPLEMENTATION_SECONDARY_SLOT
+    )
+  )
+    .substring(26)
+    .toLowerCase()}`;
+};
 
-describe("ArbRollup", () => {
-  it("should deploy contracts", async function () {
+describe('ArbRollup', () => {
+  it('should deploy contracts', async function () {
     accounts = await initializeAccounts();
 
-    await run("deploy", { tags: "test" });
+    await run('deploy', { tags: 'test' });
   });
 
-  it("should initialize", async function () {
+  it('should initialize', async function () {
     const {
       rollupAdmin: rollupAdminContract,
       rollupUser: rollupUserContract,
@@ -357,7 +368,7 @@ describe("ArbRollup", () => {
     rollup = new RollupContract(rollupUser.connect(validators[0]));
   });
 
-  it("should only initialize once", async function () {
+  it('should only initialize once', async function () {
     await expect(
       rollupAdmin.initialize(await getDefaultConfig(), {
         challengeManager: constants.AddressZero,
@@ -371,10 +382,10 @@ describe("ArbRollup", () => {
         validatorUtils: constants.AddressZero,
         validatorWalletCreator: constants.AddressZero,
       })
-    ).to.be.revertedWith("Initializable: contract is already initialized");
+    ).to.be.revertedWith('Initializable: contract is already initialized');
   });
 
-  it("should place stake on new node", async function () {
+  it('should place stake on new node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod);
 
     const initNode: {
@@ -409,37 +420,37 @@ describe("ArbRollup", () => {
     updatePrevNode(node);
   });
 
-  it("should let a new staker place on existing node", async function () {
+  it('should let a new staker place on existing node', async function () {
     const stake = await rollup.currentRequiredStake();
     await rollupUser
       .connect(validators[2])
       .newStakeOnExistingNode(1, prevNode.nodeHash, { value: stake });
   });
 
-  it("should move stake to a new node", async function () {
+  it('should move stake to a new node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod);
     const { node } = await makeSimpleNode(rollup, sequencerInbox, prevNode);
     updatePrevNode(node);
   });
 
-  it("should let the second staker place on the new node", async function () {
+  it('should let the second staker place on the new node', async function () {
     await rollup.connect(validators[2]).stakeOnExistingNode(2, prevNode.nodeHash);
   });
 
-  it("should confirm node", async function () {
+  it('should confirm node', async function () {
     await tryAdvanceChain(confirmationPeriodBlocks * 2);
 
     await rollup.confirmNextNode(prevNodes[0]);
   });
 
-  it("should confirm next node", async function () {
+  it('should confirm next node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod);
     await rollup.confirmNextNode(prevNodes[1]);
   });
 
   let challengedNode: Node;
   let validNode: Node;
-  it("should let the first staker make another node", async function () {
+  it('should let the first staker make another node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod);
     const { node } = await makeSimpleNode(rollup, sequencerInbox, prevNode);
     challengedNode = node;
@@ -447,7 +458,7 @@ describe("ArbRollup", () => {
   });
 
   let challengerNode: Node;
-  it("should let the second staker make a conflicting node", async function () {
+  it('should let the second staker make a conflicting node', async function () {
     await tryAdvanceChain(minimumAssertionPeriod);
     const { node } = await makeSimpleNode(
       rollup.connect(validators[2]),
@@ -458,13 +469,13 @@ describe("ArbRollup", () => {
     challengerNode = node;
   });
 
-  it("should fail to confirm first staker node", async function () {
+  it('should fail to confirm first staker node', async function () {
     await advancePastAssertion(challengedNode.proposedBlock);
-    await expect(rollup.confirmNextNode(validNode)).to.be.revertedWith("NOT_ALL_STAKED");
+    await expect(rollup.confirmNextNode(validNode)).to.be.revertedWith('NOT_ALL_STAKED');
   });
 
   let challengeIndex: number;
-  it("should initiate a challenge", async function () {
+  it('should initiate a challenge', async function () {
     const tx = rollup.createChallenge(
       await validators[0].getAddress(),
       await validators[2].getAddress(),
@@ -473,13 +484,13 @@ describe("ArbRollup", () => {
     );
     const receipt = await (await tx).wait();
     const ev = rollup.rollup.interface.parseLog(receipt.logs![receipt.logs!.length - 1]);
-    expect(ev.name).to.equal("RollupChallengeStarted");
+    expect(ev.name).to.equal('RollupChallengeStarted');
 
-    const parsedEv = ev.args as RollupChallengeStartedEvent["args"];
+    const parsedEv = ev.args as RollupChallengeStartedEvent['args'];
     challengeIndex = parsedEv.challengeIndex.toNumber();
   });
 
-  it("should make a new node", async function () {
+  it('should make a new node', async function () {
     const { node } = await makeSimpleNode(
       rollup,
       sequencerInbox,
@@ -490,7 +501,7 @@ describe("ArbRollup", () => {
     challengedNode = node;
   });
 
-  it("new staker should make a conflicting node", async function () {
+  it('new staker should make a conflicting node', async function () {
     const stake = await rollup.currentRequiredStake();
     await rollup.rollup
       .connect(validators[1])
@@ -505,20 +516,20 @@ describe("ArbRollup", () => {
     challengerNode = node;
   });
 
-  it("asserter should win via timeout", async function () {
+  it('asserter should win via timeout', async function () {
     await advancePastAssertion(challengedNode.proposedBlock);
     await challengeManager.connect(validators[0]).timeout(challengeIndex);
   });
 
-  it("confirm first staker node", async function () {
+  it('confirm first staker node', async function () {
     await rollup.confirmNextNode(validNode);
   });
 
-  it("should reject out of order second node", async function () {
+  it('should reject out of order second node', async function () {
     await rollup.rejectNextNode(stakeToken);
   });
 
-  it("should initiate another challenge", async function () {
+  it('should initiate another challenge', async function () {
     const tx = rollup.createChallenge(
       await validators[0].getAddress(),
       await validators[1].getAddress(),
@@ -527,8 +538,8 @@ describe("ArbRollup", () => {
     );
     const receipt = await (await tx).wait();
     const ev = rollup.rollup.interface.parseLog(receipt.logs![receipt.logs!.length - 1]);
-    expect(ev.name).to.equal("RollupChallengeStarted");
-    const parsedEv = ev.args as RollupChallengeStartedEvent["args"];
+    expect(ev.name).to.equal('RollupChallengeStarted');
+    const parsedEv = ev.args as RollupChallengeStartedEvent['args'];
     challengeIndex = parsedEv.challengeIndex.toNumber();
 
     await expect(
@@ -537,10 +548,10 @@ describe("ArbRollup", () => {
         await sequencer.getAddress(),
         await validators[3].getAddress()
       )
-    ).to.be.revertedWith("WRONG_SENDER");
+    ).to.be.revertedWith('WRONG_SENDER');
   });
 
-  it("challenger should reply in challenge", async function () {
+  it('challenger should reply in challenge', async function () {
     const seg0 = blockStateHash(
       BigNumber.from(challengerNode.assertion.beforeState.machineStatus),
       globalStateLib.hash(challengerNode.assertion.beforeState.globalState)
@@ -574,21 +585,21 @@ describe("ArbRollup", () => {
     );
   });
 
-  it("challenger should win via timeout", async function () {
+  it('challenger should win via timeout', async function () {
     await advancePastAssertion(challengedNode.proposedBlock);
     await challengeManager.timeout(challengeIndex);
   });
 
-  it("should reject out of order second node", async function () {
+  it('should reject out of order second node', async function () {
     await rollup.rejectNextNode(await validators[1].getAddress());
   });
 
-  it("confirm next node", async function () {
+  it('confirm next node', async function () {
     await tryAdvanceChain(confirmationPeriodBlocks);
     await rollup.confirmNextNode(challengerNode);
   });
 
-  it("should add and remove stakes correctly", async function () {
+  it('should add and remove stakes correctly', async function () {
     /*
       RollupUser functions that alter stake and their respective Core logic
 
@@ -614,7 +625,7 @@ describe("ArbRollup", () => {
 
     await expect(
       rollup.connect(validators[1]).reduceDeposit(initialStake.add(1))
-    ).to.be.revertedWith("TOO_LITTLE_STAKE");
+    ).to.be.revertedWith('TOO_LITTLE_STAKE');
 
     await rollup
       .connect(validators[1])
@@ -627,9 +638,7 @@ describe("ArbRollup", () => {
       await validators[1].getAddress()
     );
 
-    const tx = await rollup.rollup
-      .connect(validators[1])
-      .withdrawStakerFunds();
+    const tx = await rollup.rollup.connect(validators[1]).withdrawStakerFunds();
     const receipt = await tx.wait();
     const gasPaid = receipt.gasUsed.mul(receipt.effectiveGasPrice);
 
@@ -646,14 +655,14 @@ describe("ArbRollup", () => {
     // all stake is now removed
   });
 
-  it("should allow removing zombies", async function () {
+  it('should allow removing zombies', async function () {
     const zombieCount = (await rollup.rollup.connect(validators[2]).zombieCount()).toNumber();
     for (let i = 0; i < zombieCount; i++) {
       await rollup.rollup.connect(validators[2]).removeZombie(0, 1024);
     }
   });
 
-  it("should pause the contracts then resume", async function () {
+  it('should pause the contracts then resume', async function () {
     const prevIsPaused = await rollup.rollup.paused();
     expect(prevIsPaused).to.equal(false);
 
@@ -664,12 +673,12 @@ describe("ArbRollup", () => {
 
     await expect(
       rollup.connect(validators[1]).addToDeposit(await validators[1].getAddress(), { value: 5 })
-    ).to.be.revertedWith("Pausable: paused");
+    ).to.be.revertedWith('Pausable: paused');
 
     await rollupAdmin.resume();
   });
 
-  it("should allow admin to alter rollup while paused", async function () {
+  it('should allow admin to alter rollup while paused', async function () {
     const prevLatestConfirmed = await rollup.rollup.latestConfirmed();
     expect(prevLatestConfirmed.toNumber()).to.equal(6);
     // prevNode is prevLatestConfirmed
@@ -686,7 +695,7 @@ describe("ArbRollup", () => {
       stake
     );
     const node1Num = await rollup.rollup.latestNodeCreated();
-    expect(node1Num.toNumber(), "node1num").to.eq(node1.nodeNum);
+    expect(node1Num.toNumber(), 'node1num').to.eq(node1.nodeNum);
 
     await tryAdvanceChain(minimumAssertionPeriod);
 
@@ -699,7 +708,7 @@ describe("ArbRollup", () => {
       stake
     );
     const node2Num = await rollup.rollup.latestNodeCreated();
-    expect(node2Num.toNumber(), "node2num").to.eq(node2.nodeNum);
+    expect(node2Num.toNumber(), 'node2num').to.eq(node2.nodeNum);
 
     const tx = await rollup.createChallenge(
       await validators[0].getAddress(),
@@ -709,11 +718,11 @@ describe("ArbRollup", () => {
     );
     const receipt = await tx.wait();
     const ev = rollup.rollup.interface.parseLog(receipt.logs![receipt.logs!.length - 1]);
-    expect(ev.name).to.equal("RollupChallengeStarted");
-    const parsedEv = ev.args as RollupChallengeStartedEvent["args"];
+    expect(ev.name).to.equal('RollupChallengeStarted');
+    const parsedEv = ev.args as RollupChallengeStartedEvent['args'];
     challengeIndex = parsedEv.challengeIndex.toNumber();
 
-    expect(await challengeManager.currentResponder(challengeIndex), "turn challenger").to.eq(
+    expect(await challengeManager.currentResponder(challengeIndex), 'turn challenger').to.eq(
       await validators[2].getAddress()
     );
 
@@ -722,8 +731,8 @@ describe("ArbRollup", () => {
         [await validators[0].getAddress()],
         [await validators[2].getAddress()]
       ),
-      "force resolve"
-    ).to.be.revertedWith("Pausable: not paused");
+      'force resolve'
+    ).to.be.revertedWith('Pausable: not paused');
 
     await expect(
       rollup.createChallenge(
@@ -732,8 +741,8 @@ describe("ArbRollup", () => {
         node1,
         node2
       ),
-      "create challenge"
-    ).to.be.revertedWith("IN_CHAL");
+      'create challenge'
+    ).to.be.revertedWith('IN_CHAL');
 
     await rollupAdmin.pause();
 
@@ -743,7 +752,7 @@ describe("ArbRollup", () => {
     );
 
     // challenge should have been destroyed
-    expect(await challengeManager.currentResponder(challengeIndex), "turn reset").to.equal(
+    expect(await challengeManager.currentResponder(challengeIndex), 'turn reset').to.equal(
       constants.AddressZero
     );
 
@@ -766,7 +775,7 @@ describe("ArbRollup", () => {
       adminAssertion,
       node2
     );
-    expect(assertionEquals(forceCreatedNode1.assertion, adminAssertion), "assertion error").to.be
+    expect(assertionEquals(forceCreatedNode1.assertion, adminAssertion), 'assertion error').to.be
       .true;
 
     const adminNodeNum = await rollup.rollup.latestNodeCreated();
@@ -813,11 +822,11 @@ describe("ArbRollup", () => {
         forceCreatedNode2,
         stake
       )
-    ).to.be.revertedWith("STAKER_IS_ZOMBIE");
+    ).to.be.revertedWith('STAKER_IS_ZOMBIE');
 
     await expect(
       makeSimpleNode(rollup.connect(validators[2]), sequencerInbox, prevNode)
-    ).to.be.revertedWith("NOT_STAKED");
+    ).to.be.revertedWith('NOT_STAKED');
 
     await rollup.rollup.connect(validators[2]).removeOldZombies(0);
 
@@ -831,7 +840,7 @@ describe("ArbRollup", () => {
     );
   });
 
-  it("should initialize a fresh rollup", async function () {
+  it('should initialize a fresh rollup', async function () {
     const {
       rollupAdmin: rollupAdminContract,
       rollupUser: rollupUserContract,
@@ -846,7 +855,7 @@ describe("ArbRollup", () => {
     rollup = new RollupContract(rollupUser.connect(validators[0]));
   });
 
-  it("should stake on initial node again", async function () {
+  it('should stake on initial node again', async function () {
     await tryAdvanceChain(minimumAssertionPeriod);
 
     const initNode: {
@@ -881,127 +890,134 @@ describe("ArbRollup", () => {
     updatePrevNode(node);
   });
 
-  it("should only allow admin to upgrade primary logic", async function () {
-    const user = rollupUser.signer
+  it('should only allow admin to upgrade primary logic', async function () {
+    const user = rollupUser.signer;
 
     // store the current implementation addresses
-    const proxyPrimaryTarget0 = await getDoubleLogicUUPSTarget("admin", user.provider!)
-    const proxySecondaryTarget0 = await getDoubleLogicUUPSTarget("user", user.provider!)
+    const proxyPrimaryTarget0 = await getDoubleLogicUUPSTarget('admin', user.provider!);
+    const proxySecondaryTarget0 = await getDoubleLogicUUPSTarget('user', user.provider!);
 
     // deploy a new admin logic
     const rollupAdminLogicFac = (await ethers.getContractFactory(
-      "RollupAdminLogic"
+      'RollupAdminLogic'
     )) as RollupAdminLogic__factory;
-    const newAdminLogicImpl = await rollupAdminLogicFac.deploy()
+    const newAdminLogicImpl = await rollupAdminLogicFac.deploy();
 
     // attempt to upgrade as user, should revert
-    await expect(rollupAdmin.connect(user).upgradeTo(newAdminLogicImpl.address)).to.be.reverted
+    await expect(rollupAdmin.connect(user).upgradeTo(newAdminLogicImpl.address)).to.be.reverted;
     // upgrade as admin
-    await expect(rollupAdmin.upgradeTo(newAdminLogicImpl.address)).to.emit(
-      rollupAdmin,
-      "Upgraded"
-    );
+    await expect(rollupAdmin.upgradeTo(newAdminLogicImpl.address)).to.emit(rollupAdmin, 'Upgraded');
 
     // check the new implementation address is set
-    const proxyPrimaryTarget = await getDoubleLogicUUPSTarget("admin", user.provider!)
-    await expect(proxyPrimaryTarget).to.not.eq(proxyPrimaryTarget0)
-    await expect(proxyPrimaryTarget).to.eq(newAdminLogicImpl.address.toLowerCase())
+    const proxyPrimaryTarget = await getDoubleLogicUUPSTarget('admin', user.provider!);
+    await expect(proxyPrimaryTarget).to.not.eq(proxyPrimaryTarget0);
+    await expect(proxyPrimaryTarget).to.eq(newAdminLogicImpl.address.toLowerCase());
 
     // check the other implementation address is unchanged
-    const proxySecondaryTarget = await getDoubleLogicUUPSTarget("user", user.provider!)
-    await expect(proxySecondaryTarget).to.eq(proxySecondaryTarget0)
+    const proxySecondaryTarget = await getDoubleLogicUUPSTarget('user', user.provider!);
+    await expect(proxySecondaryTarget).to.eq(proxySecondaryTarget0);
   });
 
-  it("should only allow admin to upgrade secondary logic", async function () {
-    const user = rollupUser.signer
+  it('should only allow admin to upgrade secondary logic', async function () {
+    const user = rollupUser.signer;
 
     // store the current implementation addresses
-    const proxyPrimaryTarget0 = await getDoubleLogicUUPSTarget("admin", user.provider!)
-    const proxySecondaryTarget0 = await getDoubleLogicUUPSTarget("user", user.provider!)
+    const proxyPrimaryTarget0 = await getDoubleLogicUUPSTarget('admin', user.provider!);
+    const proxySecondaryTarget0 = await getDoubleLogicUUPSTarget('user', user.provider!);
 
     // deploy a new user logic
     const rollupUserLogicFac = (await ethers.getContractFactory(
-      "RollupUserLogic"
+      'RollupUserLogic'
     )) as RollupUserLogic__factory;
-    const newUserLogicImpl = await rollupUserLogicFac.deploy()
+    const newUserLogicImpl = await rollupUserLogicFac.deploy();
 
     // attempt to upgrade as user, should revert
-    await expect(rollupAdmin.connect(user).upgradeSecondaryTo(newUserLogicImpl.address)).to.be.reverted
+    await expect(rollupAdmin.connect(user).upgradeSecondaryTo(newUserLogicImpl.address)).to.be
+      .reverted;
     // upgrade as admin
     await expect(rollupAdmin.upgradeSecondaryTo(newUserLogicImpl.address)).to.emit(
       rollupAdmin,
-      "UpgradedSecondary"
+      'UpgradedSecondary'
     );
 
     // check the new implementation address is set
-    const proxySecondaryTarget = await getDoubleLogicUUPSTarget("user", user.provider!)
-    await expect(proxySecondaryTarget).to.not.eq(proxySecondaryTarget0)
-    await expect(proxySecondaryTarget).to.eq(newUserLogicImpl.address.toLowerCase())
+    const proxySecondaryTarget = await getDoubleLogicUUPSTarget('user', user.provider!);
+    await expect(proxySecondaryTarget).to.not.eq(proxySecondaryTarget0);
+    await expect(proxySecondaryTarget).to.eq(newUserLogicImpl.address.toLowerCase());
 
     // check the other implementation address is unchanged
-    const proxyPrimaryTarget = await getDoubleLogicUUPSTarget("admin", user.provider!)
-    await expect(proxyPrimaryTarget).to.eq(proxyPrimaryTarget0)
+    const proxyPrimaryTarget = await getDoubleLogicUUPSTarget('admin', user.provider!);
+    await expect(proxyPrimaryTarget).to.eq(proxyPrimaryTarget0);
   });
 
-  it("should allow admin to upgrade primary logic and call", async function () {
+  it('should allow admin to upgrade primary logic and call', async function () {
     const rollupAdminLogicFac = (await ethers.getContractFactory(
-      "RollupAdminLogic"
+      'RollupAdminLogic'
     )) as RollupAdminLogic__factory;
-    const newAdminLogicImpl = await rollupAdminLogicFac.deploy()
+    const newAdminLogicImpl = await rollupAdminLogicFac.deploy();
     // first pause the contract so we can unpause after upgrade
-    await rollupAdmin.pause()
+    await rollupAdmin.pause();
     // 0x046f7da2 - resume()
-    await expect(rollupAdmin.upgradeToAndCall(newAdminLogicImpl.address, "0x046f7da2")).to.emit(
+    await expect(rollupAdmin.upgradeToAndCall(newAdminLogicImpl.address, '0x046f7da2')).to.emit(
       rollupAdmin,
-      "Unpaused"
+      'Unpaused'
     );
   });
 
-  it("should allow admin to upgrade secondary logic and call", async function () {
+  it('should allow admin to upgrade secondary logic and call', async function () {
     const rollupUserLogicFac = (await ethers.getContractFactory(
-      "RollupUserLogic"
+      'RollupUserLogic'
     )) as RollupUserLogic__factory;
-    const newUserLogicImpl = await rollupUserLogicFac.deploy()
+    const newUserLogicImpl = await rollupUserLogicFac.deploy();
     // this call should revert since the user logic don't have a fallback
-    await expect(rollupAdmin.upgradeSecondaryToAndCall(newUserLogicImpl.address, "0x")).to.revertedWith('Address: low-level delegate call failed')
+    await expect(
+      rollupAdmin.upgradeSecondaryToAndCall(newUserLogicImpl.address, '0x')
+    ).to.revertedWith('Address: low-level delegate call failed');
     // 0x8da5cb5b - owner() (some random function that will not revert)
-    await expect(rollupAdmin.upgradeSecondaryToAndCall(newUserLogicImpl.address, "0x8da5cb5b")).to.emit(
-      rollupAdmin,
-      "UpgradedSecondary"
+    await expect(
+      rollupAdmin.upgradeSecondaryToAndCall(newUserLogicImpl.address, '0x8da5cb5b')
+    ).to.emit(rollupAdmin, 'UpgradedSecondary');
+  });
+
+  it('should fail upgrade to unsafe primary logic', async function () {
+    const rollupUserLogicFac = (await ethers.getContractFactory(
+      'RollupUserLogic'
+    )) as RollupUserLogic__factory;
+    const newUserLogicImpl = await rollupUserLogicFac.deploy();
+    await expect(rollupAdmin.upgradeTo(newUserLogicImpl.address)).to.revertedWith(
+      'ERC1967Upgrade: unsupported proxiableUUID'
     );
   });
 
-  it("should fail upgrade to unsafe primary logic", async function () {
-    const rollupUserLogicFac = (await ethers.getContractFactory(
-      "RollupUserLogic"
-    )) as RollupUserLogic__factory;
-    const newUserLogicImpl = await rollupUserLogicFac.deploy()
-    await expect(rollupAdmin.upgradeTo(newUserLogicImpl.address)).to.revertedWith('ERC1967Upgrade: unsupported proxiableUUID')
-  });
-
-  it("should fail upgrade to unsafe secondary logic", async function () {
+  it('should fail upgrade to unsafe secondary logic', async function () {
     const rollupAdminLogicFac = (await ethers.getContractFactory(
-      "RollupAdminLogic"
+      'RollupAdminLogic'
     )) as RollupAdminLogic__factory;
-    const newAdminLogicImpl = await rollupAdminLogicFac.deploy()
-    await expect(rollupAdmin.upgradeSecondaryTo(newAdminLogicImpl.address)).to.revertedWith('ERC1967Upgrade: unsupported secondary proxiableUUID')
+    const newAdminLogicImpl = await rollupAdminLogicFac.deploy();
+    await expect(rollupAdmin.upgradeSecondaryTo(newAdminLogicImpl.address)).to.revertedWith(
+      'ERC1967Upgrade: unsupported secondary proxiableUUID'
+    );
   });
 
-  it("should fail upgrade to proxy primary logic", async function () {
-    await expect(rollupAdmin.upgradeTo(rollupAdmin.address)).to.revertedWith('ERC1967Upgrade: new implementation is not UUPS')
+  it('should fail upgrade to proxy primary logic', async function () {
+    await expect(rollupAdmin.upgradeTo(rollupAdmin.address)).to.revertedWith(
+      'ERC1967Upgrade: new implementation is not UUPS'
+    );
   });
 
-  it("should fail upgrade to proxy secondary logic", async function () {
-    await expect(rollupAdmin.upgradeSecondaryTo(rollupAdmin.address)).to.revertedWith('ERC1967Upgrade: new secondary implementation is not UUPS')
+  it('should fail upgrade to proxy secondary logic', async function () {
+    await expect(rollupAdmin.upgradeSecondaryTo(rollupAdmin.address)).to.revertedWith(
+      'ERC1967Upgrade: new secondary implementation is not UUPS'
+    );
   });
 
-  it("should fail to init rollupAdminLogic without proxy", async function () {
-    const user = rollupUser.signer
+  it('should fail to init rollupAdminLogic without proxy', async function () {
+    const user = rollupUser.signer;
     const rollupAdminLogicFac = (await ethers.getContractFactory(
-      "RollupAdminLogic"
+      'RollupAdminLogic'
     )) as RollupAdminLogic__factory;
-    const proxyPrimaryTarget = await getDoubleLogicUUPSTarget("admin", user.provider!)
-    const proxyPrimaryImpl = rollupAdminLogicFac.attach(proxyPrimaryTarget)
+    const proxyPrimaryTarget = await getDoubleLogicUUPSTarget('admin', user.provider!);
+    const proxyPrimaryImpl = rollupAdminLogicFac.attach(proxyPrimaryTarget);
     await expect(
       proxyPrimaryImpl.initialize(await getDefaultConfig(), {
         challengeManager: constants.AddressZero,
@@ -1015,36 +1031,42 @@ describe("ArbRollup", () => {
         validatorUtils: constants.AddressZero,
         validatorWalletCreator: constants.AddressZero,
       })
-    ).to.be.revertedWith("Function must be called through delegatecall");
+    ).to.be.revertedWith('Function must be called through delegatecall');
   });
 
-  it("should fail to init rollupUserLogic without proxy", async function () {
-    const user = rollupUser.signer
+  it('should fail to init rollupUserLogic without proxy', async function () {
+    const user = rollupUser.signer;
     const rollupUserLogicFac = (await ethers.getContractFactory(
-      "RollupUserLogic"
+      'RollupUserLogic'
     )) as RollupUserLogic__factory;
-    const proxySecondaryTarget = await getDoubleLogicUUPSTarget("user", user.provider!)
-    const proxySecondaryImpl = rollupUserLogicFac.attach(proxySecondaryTarget)
-    await expect(proxySecondaryImpl.interface.functions["initialize(address)"].stateMutability).to.eq('view')
+    const proxySecondaryTarget = await getDoubleLogicUUPSTarget('user', user.provider!);
+    const proxySecondaryImpl = rollupUserLogicFac.attach(proxySecondaryTarget);
+    await expect(
+      proxySecondaryImpl.interface.functions['initialize(address)'].stateMutability
+    ).to.eq('view');
   });
 
-  it("should fail the chainid fork check", async function () {
-    await expect(sequencerInbox.removeDelayAfterFork()).to.revertedWith("NotForked()");
+  it('should fail the chainid fork check', async function () {
+    await expect(sequencerInbox.removeDelayAfterFork()).to.revertedWith('NotForked()');
   });
 
-  it("should fail the batch poster check", async function () {
-    await expect(sequencerInbox.addSequencerL2Batch(0, "0x", 0, ethers.constants.AddressZero, 0, 0)).to.revertedWith("NotBatchPoster()");
+  it('should fail the batch poster check', async function () {
+    await expect(
+      sequencerInbox.addSequencerL2Batch(0, '0x', 0, ethers.constants.AddressZero, 0, 0)
+    ).to.revertedWith('NotBatchPoster()');
   });
 
-  it("should fail the onlyValidator check", async function () {
-    await expect(rollupUser.withdrawStakerFunds()).to.revertedWith("NOT_VALIDATOR");
+  it('should fail the onlyValidator check', async function () {
+    await expect(rollupUser.withdrawStakerFunds()).to.revertedWith('NOT_VALIDATOR');
   });
 
-  it("should fail to call removeWhitelistAfterFork", async function () {
-    await expect(rollupUser.removeWhitelistAfterFork()).to.revertedWith("CHAIN_ID_NOT_CHANGED");
+  it('should fail to call removeWhitelistAfterFork', async function () {
+    await expect(rollupUser.removeWhitelistAfterFork()).to.revertedWith('CHAIN_ID_NOT_CHANGED');
   });
 
-  it("should fail to call removeWhitelistAfterValidatorAfk", async function () {
-    await expect(rollupUser.removeWhitelistAfterValidatorAfk()).to.revertedWith("VALIDATOR_NOT_AFK");
+  it('should fail to call removeWhitelistAfterValidatorAfk', async function () {
+    await expect(rollupUser.removeWhitelistAfterValidatorAfk()).to.revertedWith(
+      'VALIDATOR_NOT_AFK'
+    );
   });
 });
