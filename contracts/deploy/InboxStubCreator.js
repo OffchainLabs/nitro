@@ -3,7 +3,7 @@ module.exports = async (hre) => {
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
 
-  const inboxDeployResult = await deploy("InboxStub", {from: deployer, args: []});
+  const inboxDeployResult = await deploy("InboxStub", { from: deployer, args: [] });
 
   const bridge = await ethers.getContract("BridgeStub");
   const inbox = await ethers.getContract("InboxStub");
@@ -16,4 +16,3 @@ module.exports = async (hre) => {
 
 module.exports.tags = ["InboxStub", "test"];
 module.exports.dependencies = ["BridgeStub"];
-

@@ -11,4 +11,3 @@ module.exports = async (hre) => {
 
 module.exports.tags = ["OneStepProver0", "live", "test"];
 module.exports.dependencies = [];
-

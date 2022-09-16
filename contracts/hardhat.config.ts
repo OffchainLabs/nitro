@@ -1,11 +1,11 @@
-import '@nomiclabs/hardhat-waffle'
-import 'hardhat-deploy'
-import '@nomiclabs/hardhat-ethers'
-import '@nomiclabs/hardhat-etherscan'
-import '@typechain/hardhat'
-import 'solidity-coverage'
-import 'hardhat-gas-reporter'
-import prodConfig from "./hardhat.prod-config"
+import "@nomiclabs/hardhat-waffle";
+import "hardhat-deploy";
+import "@nomiclabs/hardhat-ethers";
+import "@nomiclabs/hardhat-etherscan";
+import "@typechain/hardhat";
+import "solidity-coverage";
+import "hardhat-gas-reporter";
+import prodConfig from "./hardhat.prod-config";
 
 const solidity = {
   compilers: [

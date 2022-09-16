@@ -15,5 +15,9 @@ module.exports = async (hre) => {
 };
 
 module.exports.tags = ["OneStepProofEntry"];
-module.exports.dependencies = ["OneStepProver0", "OneStepProverMemory", "OneStepProverMath", "OneStepProverHostIo"];
-
+module.exports.dependencies = [
+  "OneStepProver0",
+  "OneStepProverMemory",
+  "OneStepProverMath",
+  "OneStepProverHostIo",
+];
