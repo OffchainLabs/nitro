@@ -34,8 +34,8 @@ var DefaultSignVerifyConfig = SignVerifyConfig{
 	ECDSA: VerifierConfig{
 		AcceptBatchPosters: true,
 	},
-	SymmetricFallback: true,
-	SymmetricSign:     true,
+	SymmetricFallback: false,
+	SymmetricSign:     false,
 	Symmetric:         TestSimpleHmacConfig,
 }
 

@@ -265,20 +265,22 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 
 }
 
-func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
+func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	nodeConfig := arbnode.ConfigDefaultL2Test()
+	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.SeqCoordinator.Enable = true
 	nodeConfig.SeqCoordinator.RedisUrl = redisutil.GetTestRedisURL(t)
+	nodeConfig.BatchPoster.Enable = false
 
 	nodeNames := []string{"stdio://A", "stdio://B"}
 
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
-	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
+	l2Info, nodeA, clientA, l2stackA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, params.ArbitrumDevTestChainConfig())
+	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
 	redisClient, err := redisutil.RedisClientFromURL(nodeConfig.SeqCoordinator.RedisUrl)
@@ -296,11 +298,15 @@ func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
 		break
 	}
 
-	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
-	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
-	defer requireClose(t, l2stackB)
-
 	l2Info.GenerateAccount("User2")
+
+	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
+	if !successCase {
+		nodeConfig.SeqCoordinator.Signing.ECDSA.AcceptBatchPosters = false
+		nodeConfig.SeqCoordinator.Signing.ECDSA.AllowedAddresses = []string{l2Info.GetAddress("User2").Hex()}
+	}
+	clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2Info.ArbInitData, nodeConfig)
+	defer requireClose(t, l2stackB)
 
 	tx := l2Info.PrepareTx("Owner", "User2", l2Info.TransferGas, big.NewInt(1e12), nil)
 
@@ -311,65 +317,24 @@ func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
 	Require(t, err)
 
 	_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
-	Require(t, err)
-	l2balance, err := clientB.BalanceAt(ctx, l2Info.GetAddress("User2"), nil)
-	Require(t, err)
-	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
-		t.Fatal("Unexpected balance:", l2balance)
+	if successCase {
+		Require(t, err)
+		l2balance, err := clientB.BalanceAt(ctx, l2Info.GetAddress("User2"), nil)
+		Require(t, err)
+		if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+			t.Fatal("Unexpected balance:", l2balance)
+		}
+	} else {
+		if err == nil {
+			Fail(t, "tx received by node with different seq coordinator signing key")
+		}
 	}
 }
 
+func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
+	testCoordinatorMessageSync(t, true)
+}
+
 func TestRedisSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	nodeConfig := arbnode.ConfigDefaultL2Test()
-	nodeConfig.SeqCoordinator.Enable = true
-	nodeConfig.SeqCoordinator.RedisUrl = redisutil.GetTestRedisURL(t)
-
-	nodeNames := []string{"stdio://A", "stdio://B"}
-
-	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
-
-	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
-	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
-	defer requireClose(t, l2stackA)
-
-	redisClient, err := redisutil.RedisClientFromURL(nodeConfig.SeqCoordinator.RedisUrl)
-	Require(t, err)
-	defer redisClient.Close()
-
-	// wait for sequencerA to become master
-	for {
-		err := redisClient.Get(ctx, arbnode.CHOSENSEQ_KEY).Err()
-		if errors.Is(err, redis.Nil) {
-			time.Sleep(nodeConfig.SeqCoordinator.UpdateInterval)
-			continue
-		}
-		Require(t, err)
-		break
-	}
-
-	nodeConfigCopy := *nodeConfig
-	nodeConfig = &nodeConfigCopy
-	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
-	nodeConfig.SeqCoordinator.Signing.SymmetricSign = true
-	nodeConfig.SeqCoordinator.Signing.Symmetric.SigningKey = "629b39225c813bf1975fb49bcb6ca2622f2c62509f138ac609f0c048764a95ee"
-	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
-	defer requireClose(t, l2stackB)
-
-	l2Info.GenerateAccount("User2")
-
-	tx := l2Info.PrepareTx("Owner", "User2", l2Info.TransferGas, big.NewInt(1e12), nil)
-
-	err = clientA.SendTransaction(ctx, tx)
-	Require(t, err)
-
-	_, err = EnsureTxSucceeded(ctx, clientA, tx)
-	Require(t, err)
-
-	_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second)
-	if err == nil {
-		Fail(t, "tx received by node with different seq coordinator signing key")
-	}
+	testCoordinatorMessageSync(t, false)
 }
