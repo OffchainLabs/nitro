@@ -109,7 +109,7 @@ func TestRetryableNoExist(t *testing.T) {
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
 	Require(t, err)
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, common.Hash{})
-	if err.Error() != "error NoTicketWithID()" {
+	if err.Error() != "execution reverted: error NoTicketWithID()" {
 		Fail(t, "didn't get expected NoTicketWithID error")
 	}
 }
