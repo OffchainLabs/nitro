@@ -35,6 +35,7 @@ const (
 
 type BroadcasterConfig struct {
 	Enable         bool          `koanf:"enable"`
+	Signed         bool          `koanf:"signed"`
 	Addr           string        `koanf:"addr"`                         // TODO(magic) needs tcp server restart on change
 	IOTimeout      time.Duration `koanf:"io-timeout" reload:"hot"`      // reloading will affect only new connections
 	Port           string        `koanf:"port"`                         // TODO(magic) needs tcp server restart on change
@@ -51,6 +52,7 @@ type BroadcasterConfigFetcher func() *BroadcasterConfig
 
 func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBroadcasterConfig.Enable, "enable broadcaster")
+	f.Bool(prefix+".signed", DefaultBroadcasterConfig.Signed, "sign broadcast messages")
 	f.String(prefix+".addr", DefaultBroadcasterConfig.Addr, "address to bind the relay feed output to")
 	f.Duration(prefix+".io-timeout", DefaultBroadcasterConfig.IOTimeout, "duration to wait before timing out HTTP to WS upgrade")
 	f.String(prefix+".port", DefaultBroadcasterConfig.Port, "port to bind the relay feed output to")
@@ -65,6 +67,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
 	Enable:         false,
+	Signed:         true,
 	Addr:           "",
 	IOTimeout:      5 * time.Second,
 	Port:           "9642",
@@ -79,6 +82,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	Enable:         false,
+	Signed:         false,
 	Addr:           "0.0.0.0",
 	IOTimeout:      2 * time.Second,
 	Port:           "0",
