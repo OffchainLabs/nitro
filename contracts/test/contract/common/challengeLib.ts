@@ -1,5 +1,5 @@
-import { BigNumber } from '@ethersproject/bignumber';
-import { solidityKeccak256 } from 'ethers/lib/utils';
+import { BigNumber } from '@ethersproject/bignumber'
+import { solidityKeccak256 } from 'ethers/lib/utils'
 
 export enum MachineStatus {
   RUNNING = 0,
@@ -16,19 +16,28 @@ export function hashChallengeState(
   return solidityKeccak256(
     ['uint256', 'uint256', 'bytes32[]'],
     [segmentsStart, segmentsLength, segments]
-  );
+  )
 }
 
-export function blockStateHash(machineStatus: BigNumber, globalStateHash: string) {
-  const machineStatusNum = machineStatus.toNumber();
+export function blockStateHash(
+  machineStatus: BigNumber,
+  globalStateHash: string
+) {
+  const machineStatusNum = machineStatus.toNumber()
   if (machineStatusNum === MachineStatus.FINISHED) {
-    return solidityKeccak256(['string', 'bytes32'], ['Block state:', globalStateHash]);
+    return solidityKeccak256(
+      ['string', 'bytes32'],
+      ['Block state:', globalStateHash]
+    )
   } else if (machineStatusNum === MachineStatus.ERRORED) {
-    return solidityKeccak256(['string', 'bytes32'], ['Block state, errored:', globalStateHash]);
+    return solidityKeccak256(
+      ['string', 'bytes32'],
+      ['Block state, errored:', globalStateHash]
+    )
   } else if (machineStatusNum === MachineStatus.TOO_FAR) {
-    return solidityKeccak256(['string', 'bytes32'], ['Block state, too far:']);
+    return solidityKeccak256(['string', 'bytes32'], ['Block state, too far:'])
   } else {
-    console.log(machineStatus.toNumber());
-    throw new Error('BAD_BLOCK_STATUS');
+    console.log(machineStatus.toNumber())
+    throw new Error('BAD_BLOCK_STATUS')
   }
 }

@@ -16,10 +16,10 @@
 
 /* eslint-env node, mocha */
 
-import { ethers, network } from 'hardhat';
-import { BigNumber } from '@ethersproject/bignumber';
-import { Block, TransactionReceipt } from '@ethersproject/providers';
-import { expect } from 'chai';
+import { ethers, network } from 'hardhat'
+import { BigNumber } from '@ethersproject/bignumber'
+import { Block, TransactionReceipt } from '@ethersproject/providers'
+import { expect } from 'chai'
 import {
   Bridge,
   Bridge__factory,
@@ -29,21 +29,27 @@ import {
   SequencerInbox,
   SequencerInbox__factory,
   TransparentUpgradeableProxy__factory,
-} from '../../build/types';
-import { applyAlias, initializeAccounts } from './utils';
-import { Event } from '@ethersproject/contracts';
-import { Interface } from '@ethersproject/abi';
-import { BridgeInterface, MessageDeliveredEvent } from '../../build/types/src/bridge/Bridge';
-import { Signer } from 'ethers';
+} from '../../build/types'
+import { applyAlias, initializeAccounts } from './utils'
+import { Event } from '@ethersproject/contracts'
+import { Interface } from '@ethersproject/abi'
+import {
+  BridgeInterface,
+  MessageDeliveredEvent,
+} from '../../build/types/src/bridge/Bridge'
+import { Signer } from 'ethers'
 
 const mineBlocks = async (count: number, timeDiffPerBlock = 14) => {
-  const block = (await network.provider.send('eth_getBlockByNumber', ['latest', false])) as Block;
-  let timestamp = BigNumber.from(block.timestamp).toNumber();
+  const block = (await network.provider.send('eth_getBlockByNumber', [
+    'latest',
+    false,
+  ])) as Block
+  let timestamp = BigNumber.from(block.timestamp).toNumber()
   for (let i = 0; i < count; i++) {
-    timestamp = timestamp + timeDiffPerBlock;
-    await network.provider.send('evm_mine', [timestamp]);
+    timestamp = timestamp + timeDiffPerBlock
+    await network.provider.send('evm_mine', [timestamp])
   }
-};
+}
 
 describe('SequencerInboxForceInclude', async () => {
   const findMatchingLogs = <TInterface extends Interface, TEvent extends Event>(
@@ -51,16 +57,20 @@ describe('SequencerInboxForceInclude', async () => {
     iFace: TInterface,
     eventTopicGen: (i: TInterface) => string
   ): TEvent['args'][] => {
-    const logs = receipt.logs.filter((log) => log.topics[0] === eventTopicGen(iFace));
-    return logs.map((l) => iFace.parseLog(l).args as TEvent['args']);
-  };
+    const logs = receipt.logs.filter(
+      log => log.topics[0] === eventTopicGen(iFace)
+    )
+    return logs.map(l => iFace.parseLog(l).args as TEvent['args'])
+  }
 
   const getMessageDeliveredEvents = (receipt: TransactionReceipt) => {
-    const bridgeInterface = Bridge__factory.createInterface();
-    return findMatchingLogs<BridgeInterface, MessageDeliveredEvent>(receipt, bridgeInterface, (i) =>
-      i.getEventTopic(i.getEvent('MessageDelivered'))
-    );
-  };
+    const bridgeInterface = Bridge__factory.createInterface()
+    return findMatchingLogs<BridgeInterface, MessageDeliveredEvent>(
+      receipt,
+      bridgeInterface,
+      i => i.getEventTopic(i.getEvent('MessageDelivered'))
+    )
+  }
 
   const sendDelayedTx = async (
     sender: Signer,
@@ -74,32 +84,47 @@ describe('SequencerInboxForceInclude', async () => {
     amount: BigNumber,
     data: string
   ) => {
-    const countBefore = (await bridge.functions.delayedMessageCount())[0].toNumber();
+    const countBefore = (
+      await bridge.functions.delayedMessageCount()
+    )[0].toNumber()
     const sendUnsignedTx = await inbox
       .connect(sender)
-      .sendUnsignedTransaction(l2Gas, l2GasPrice, nonce, destAddr, amount, data);
-    const sendUnsignedTxReceipt = await sendUnsignedTx.wait();
+      .sendUnsignedTransaction(l2Gas, l2GasPrice, nonce, destAddr, amount, data)
+    const sendUnsignedTxReceipt = await sendUnsignedTx.wait()
 
-    const countAfter = (await bridge.functions.delayedMessageCount())[0].toNumber();
-    expect(countAfter, 'Unexpected inbox count').to.eq(countBefore + 1);
+    const countAfter = (
+      await bridge.functions.delayedMessageCount()
+    )[0].toNumber()
+    expect(countAfter, 'Unexpected inbox count').to.eq(countBefore + 1)
 
-    const senderAddr = applyAlias(await sender.getAddress());
+    const senderAddr = applyAlias(await sender.getAddress())
 
-    const messageDeliveredEvent = getMessageDeliveredEvents(sendUnsignedTxReceipt)[0];
-    const l1BlockNumber = sendUnsignedTxReceipt.blockNumber;
-    const blockL1 = await sender.provider!.getBlock(l1BlockNumber);
-    const baseFeeL1 = blockL1.baseFeePerGas!.toNumber();
-    const l1BlockTimestamp = blockL1.timestamp;
-    const delayedAcc = await bridge.delayedInboxAccs(countBefore);
+    const messageDeliveredEvent = getMessageDeliveredEvents(
+      sendUnsignedTxReceipt
+    )[0]
+    const l1BlockNumber = sendUnsignedTxReceipt.blockNumber
+    const blockL1 = await sender.provider!.getBlock(l1BlockNumber)
+    const baseFeeL1 = blockL1.baseFeePerGas!.toNumber()
+    const l1BlockTimestamp = blockL1.timestamp
+    const delayedAcc = await bridge.delayedInboxAccs(countBefore)
 
     // need to hex pad the address
     const messageDataHash = ethers.utils.solidityKeccak256(
       ['uint8', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
-      [0, l2Gas, l2GasPrice, nonce, ethers.utils.hexZeroPad(destAddr, 32), amount, data]
-    );
-    expect(messageDeliveredEvent.messageDataHash, 'Incorrect messageDataHash').to.eq(
-      messageDataHash
-    );
+      [
+        0,
+        l2Gas,
+        l2GasPrice,
+        nonce,
+        ethers.utils.hexZeroPad(destAddr, 32),
+        amount,
+        data,
+      ]
+    )
+    expect(
+      messageDeliveredEvent.messageDataHash,
+      'Incorrect messageDataHash'
+    ).to.eq(messageDataHash)
 
     const messageHash = (
       await messageTester.functions.messageHash(
@@ -111,20 +136,23 @@ describe('SequencerInboxForceInclude', async () => {
         baseFeeL1,
         messageDataHash
       )
-    )[0];
+    )[0]
 
-    const prevAccumulator = messageDeliveredEvent.beforeInboxAcc;
+    const prevAccumulator = messageDeliveredEvent.beforeInboxAcc
     expect(prevAccumulator, 'Incorrect prev accumulator').to.eq(
       countBefore === 0
         ? ethers.utils.hexZeroPad('0x', 32)
         : await bridge.delayedInboxAccs(countBefore - 1)
-    );
+    )
 
     const nextAcc = (
-      await messageTester.functions.accumulateInboxMessage(prevAccumulator, messageHash)
-    )[0];
+      await messageTester.functions.accumulateInboxMessage(
+        prevAccumulator,
+        messageHash
+      )
+    )[0]
 
-    expect(delayedAcc, 'Incorrect delayed acc').to.eq(nextAcc);
+    expect(delayedAcc, 'Incorrect delayed acc').to.eq(nextAcc)
 
     return {
       baseFeeL1: baseFeeL1,
@@ -140,8 +168,8 @@ describe('SequencerInboxForceInclude', async () => {
       data,
       senderAddr,
       inboxAccountLength: countAfter,
-    };
-  };
+    }
+  }
 
   const forceIncludeMessages = async (
     sequencerInbox: SequencerInbox,
@@ -154,7 +182,7 @@ describe('SequencerInboxForceInclude', async () => {
     messageDataHash: string,
     expectedErrorType?: string
   ) => {
-    const inboxLengthBefore = (await sequencerInbox.batchCount()).toNumber();
+    const inboxLengthBefore = (await sequencerInbox.batchCount()).toNumber()
 
     const forceInclusionTx = sequencerInbox.forceInclusion(
       newTotalDelayedMessagesRead,
@@ -163,83 +191,93 @@ describe('SequencerInboxForceInclude', async () => {
       l1BaseFee,
       senderAddr,
       messageDataHash
-    );
+    )
     if (expectedErrorType) {
       await expect(forceInclusionTx).to.be.revertedWith(
         `reverted with custom error '${expectedErrorType}()'`
-      );
+      )
     } else {
-      await (await forceInclusionTx).wait();
+      await (await forceInclusionTx).wait()
 
       const totalDelayedMessagsReadAfter = (
         await sequencerInbox.totalDelayedMessagesRead()
-      ).toNumber();
-      expect(totalDelayedMessagsReadAfter, 'Incorrect totalDelayedMessagesRead after.').to.eq(
-        newTotalDelayedMessagesRead
-      );
-      const inboxLengthAfter = (await sequencerInbox.batchCount()).toNumber();
-      expect(inboxLengthAfter - inboxLengthBefore, 'Inbox not incremented').to.eq(1);
+      ).toNumber()
+      expect(
+        totalDelayedMessagsReadAfter,
+        'Incorrect totalDelayedMessagesRead after.'
+      ).to.eq(newTotalDelayedMessagesRead)
+      const inboxLengthAfter = (await sequencerInbox.batchCount()).toNumber()
+      expect(
+        inboxLengthAfter - inboxLengthBefore,
+        'Inbox not incremented'
+      ).to.eq(1)
     }
-  };
+  }
 
   const setupSequencerInbox = async (maxDelayBlocks = 10, maxDelayTime = 0) => {
-    const accounts = await initializeAccounts();
-    const admin = accounts[0];
-    const adminAddr = await admin.getAddress();
-    const user = accounts[1];
-    const dummyRollup = accounts[2];
+    const accounts = await initializeAccounts()
+    const admin = accounts[0]
+    const adminAddr = await admin.getAddress()
+    const user = accounts[1]
+    const dummyRollup = accounts[2]
 
     const sequencerInboxFac = (await ethers.getContractFactory(
       'SequencerInbox'
-    )) as SequencerInbox__factory;
-    const seqInboxTemplate = await sequencerInboxFac.deploy();
-    const inboxFac = (await ethers.getContractFactory('Inbox')) as Inbox__factory;
-    const inboxTemplate = await inboxFac.deploy();
-    const bridgeFac = (await ethers.getContractFactory('Bridge')) as Bridge__factory;
-    const bridgeTemplate = await bridgeFac.deploy();
+    )) as SequencerInbox__factory
+    const seqInboxTemplate = await sequencerInboxFac.deploy()
+    const inboxFac = (await ethers.getContractFactory(
+      'Inbox'
+    )) as Inbox__factory
+    const inboxTemplate = await inboxFac.deploy()
+    const bridgeFac = (await ethers.getContractFactory(
+      'Bridge'
+    )) as Bridge__factory
+    const bridgeTemplate = await bridgeFac.deploy()
     const transparentUpgradeableProxyFac = (await ethers.getContractFactory(
       'TransparentUpgradeableProxy'
-    )) as TransparentUpgradeableProxy__factory;
+    )) as TransparentUpgradeableProxy__factory
 
     const bridgeProxy = await transparentUpgradeableProxyFac.deploy(
       bridgeTemplate.address,
       adminAddr,
       '0x'
-    );
+    )
     const sequencerInboxProxy = await transparentUpgradeableProxyFac.deploy(
       seqInboxTemplate.address,
       adminAddr,
       '0x'
-    );
+    )
     const inboxProxy = await transparentUpgradeableProxyFac.deploy(
       inboxTemplate.address,
       adminAddr,
       '0x'
-    );
+    )
 
-    const bridge = await bridgeFac.attach(bridgeProxy.address).connect(user);
-    const bridgeAdmin = await bridgeFac.attach(bridgeProxy.address).connect(dummyRollup);
+    const bridge = await bridgeFac.attach(bridgeProxy.address).connect(user)
+    const bridgeAdmin = await bridgeFac
+      .attach(bridgeProxy.address)
+      .connect(dummyRollup)
     const sequencerInbox = await sequencerInboxFac
       .attach(sequencerInboxProxy.address)
-      .connect(user);
-    const inbox = await inboxFac.attach(inboxProxy.address).connect(user);
+      .connect(user)
+    const inbox = await inboxFac.attach(inboxProxy.address).connect(user)
 
-    await bridge.initialize(await dummyRollup.getAddress());
+    await bridge.initialize(await dummyRollup.getAddress())
 
     await sequencerInbox.initialize(bridgeProxy.address, {
       delayBlocks: maxDelayBlocks,
       delaySeconds: maxDelayTime,
       futureBlocks: 10,
       futureSeconds: 3000,
-    });
-    await inbox.initialize(bridgeProxy.address, sequencerInbox.address);
+    })
+    await inbox.initialize(bridgeProxy.address, sequencerInbox.address)
 
-    await bridgeAdmin.setDelayedInbox(inbox.address, true);
-    await bridgeAdmin.setSequencerInbox(sequencerInbox.address);
+    await bridgeAdmin.setDelayedInbox(inbox.address, true)
+    await bridgeAdmin.setSequencerInbox(sequencerInbox.address)
 
     const messageTester = (await (
       await ethers.getContractFactory('MessageTester')
-    ).deploy()) as MessageTester;
+    ).deploy()) as MessageTester
 
     return {
       user,
@@ -250,11 +288,12 @@ describe('SequencerInboxForceInclude', async () => {
       inboxProxy,
       inboxTemplate,
       bridgeProxy,
-    };
-  };
+    }
+  }
 
   it('can force-include', async () => {
-    const { user, inbox, bridge, messageTester, sequencerInbox } = await setupSequencerInbox();
+    const { user, inbox, bridge, messageTester, sequencerInbox } =
+      await setupSequencerInbox()
 
     const delayedTx = await sendDelayedTx(
       user,
@@ -267,10 +306,10 @@ describe('SequencerInboxForceInclude', async () => {
       await user.getAddress(),
       BigNumber.from(10),
       '0x1010'
-    );
-    const maxTimeVariation = await sequencerInbox.maxTimeVariation();
+    )
+    const maxTimeVariation = await sequencerInbox.maxTimeVariation()
 
-    await mineBlocks(maxTimeVariation.delayBlocks.toNumber());
+    await mineBlocks(maxTimeVariation.delayBlocks.toNumber())
 
     await forceIncludeMessages(
       sequencerInbox,
@@ -281,11 +320,12 @@ describe('SequencerInboxForceInclude', async () => {
       delayedTx.baseFeeL1,
       delayedTx.senderAddr,
       delayedTx.deliveredMessageEvent.messageDataHash
-    );
-  });
+    )
+  })
 
   it('can force-include one after another', async () => {
-    const { user, inbox, bridge, messageTester, sequencerInbox } = await setupSequencerInbox();
+    const { user, inbox, bridge, messageTester, sequencerInbox } =
+      await setupSequencerInbox()
     const delayedTx = await sendDelayedTx(
       user,
       inbox,
@@ -297,7 +337,7 @@ describe('SequencerInboxForceInclude', async () => {
       await user.getAddress(),
       BigNumber.from(10),
       '0x1010'
-    );
+    )
 
     const delayedTx2 = await sendDelayedTx(
       user,
@@ -310,10 +350,10 @@ describe('SequencerInboxForceInclude', async () => {
       await user.getAddress(),
       BigNumber.from(10),
       '0xdeadface'
-    );
+    )
 
-    const maxTimeVariation = await sequencerInbox.maxTimeVariation();
-    await mineBlocks(maxTimeVariation.delayBlocks.toNumber());
+    const maxTimeVariation = await sequencerInbox.maxTimeVariation()
+    await mineBlocks(maxTimeVariation.delayBlocks.toNumber())
 
     await forceIncludeMessages(
       sequencerInbox,
@@ -324,7 +364,7 @@ describe('SequencerInboxForceInclude', async () => {
       delayedTx.baseFeeL1,
       delayedTx.senderAddr,
       delayedTx.deliveredMessageEvent.messageDataHash
-    );
+    )
     await forceIncludeMessages(
       sequencerInbox,
       delayedTx2.inboxAccountLength,
@@ -334,11 +374,12 @@ describe('SequencerInboxForceInclude', async () => {
       delayedTx2.baseFeeL1,
       delayedTx2.senderAddr,
       delayedTx2.deliveredMessageEvent.messageDataHash
-    );
-  });
+    )
+  })
 
   it('can force-include three at once', async () => {
-    const { user, inbox, bridge, messageTester, sequencerInbox } = await setupSequencerInbox();
+    const { user, inbox, bridge, messageTester, sequencerInbox } =
+      await setupSequencerInbox()
     await sendDelayedTx(
       user,
       inbox,
@@ -350,7 +391,7 @@ describe('SequencerInboxForceInclude', async () => {
       await user.getAddress(),
       BigNumber.from(10),
       '0x1010'
-    );
+    )
     await sendDelayedTx(
       user,
       inbox,
@@ -362,7 +403,7 @@ describe('SequencerInboxForceInclude', async () => {
       await user.getAddress(),
       BigNumber.from(10),
       '0x101010'
-    );
+    )
     const delayedTx3 = await sendDelayedTx(
       user,
       inbox,
@@ -374,10 +415,10 @@ describe('SequencerInboxForceInclude', async () => {
       await user.getAddress(),
       BigNumber.from(10),
       '0x10101010'
-    );
+    )
 
-    const maxTimeVariation = await sequencerInbox.maxTimeVariation();
-    await mineBlocks(maxTimeVariation.delayBlocks.toNumber());
+    const maxTimeVariation = await sequencerInbox.maxTimeVariation()
+    await mineBlocks(maxTimeVariation.delayBlocks.toNumber())
 
     await forceIncludeMessages(
       sequencerInbox,
@@ -388,14 +429,12 @@ describe('SequencerInboxForceInclude', async () => {
       delayedTx3.baseFeeL1,
       delayedTx3.senderAddr,
       delayedTx3.deliveredMessageEvent.messageDataHash
-    );
-  });
+    )
+  })
 
   it('cannot include before max block delay', async () => {
-    const { user, inbox, bridge, messageTester, sequencerInbox } = await setupSequencerInbox(
-      10,
-      100
-    );
+    const { user, inbox, bridge, messageTester, sequencerInbox } =
+      await setupSequencerInbox(10, 100)
     const delayedTx = await sendDelayedTx(
       user,
       inbox,
@@ -407,10 +446,10 @@ describe('SequencerInboxForceInclude', async () => {
       await user.getAddress(),
       BigNumber.from(10),
       '0x1010'
-    );
+    )
 
-    const maxTimeVariation = await sequencerInbox.maxTimeVariation();
-    await mineBlocks(maxTimeVariation.delayBlocks.toNumber() - 1, 5);
+    const maxTimeVariation = await sequencerInbox.maxTimeVariation()
+    await mineBlocks(maxTimeVariation.delayBlocks.toNumber() - 1, 5)
 
     await forceIncludeMessages(
       sequencerInbox,
@@ -422,14 +461,12 @@ describe('SequencerInboxForceInclude', async () => {
       delayedTx.senderAddr,
       delayedTx.deliveredMessageEvent.messageDataHash,
       'ForceIncludeBlockTooSoon'
-    );
-  });
+    )
+  })
 
   it('cannot include before max time delay', async () => {
-    const { user, inbox, bridge, messageTester, sequencerInbox } = await setupSequencerInbox(
-      10,
-      100
-    );
+    const { user, inbox, bridge, messageTester, sequencerInbox } =
+      await setupSequencerInbox(10, 100)
     const delayedTx = await sendDelayedTx(
       user,
       inbox,
@@ -441,12 +478,12 @@ describe('SequencerInboxForceInclude', async () => {
       await user.getAddress(),
       BigNumber.from(10),
       '0x1010'
-    );
+    )
 
-    const maxTimeVariation = await sequencerInbox.maxTimeVariation();
+    const maxTimeVariation = await sequencerInbox.maxTimeVariation()
     // mine a lot of blocks - but use a short time per block
     // this should mean enough blocks have passed, but not enough time
-    await mineBlocks(maxTimeVariation.delayBlocks.toNumber() + 1, 5);
+    await mineBlocks(maxTimeVariation.delayBlocks.toNumber() + 1, 5)
 
     await forceIncludeMessages(
       sequencerInbox,
@@ -458,51 +495,70 @@ describe('SequencerInboxForceInclude', async () => {
       delayedTx.senderAddr,
       delayedTx.deliveredMessageEvent.messageDataHash,
       'ForceIncludeTimeTooSoon'
-    );
-  });
+    )
+  })
 
   it('should fail to call sendL1FundedUnsignedTransactionToFork', async function () {
-    const { inbox } = await setupSequencerInbox();
+    const { inbox } = await setupSequencerInbox()
     await expect(
-      inbox.sendL1FundedUnsignedTransactionToFork(0, 0, 0, ethers.constants.AddressZero, '0x')
-    ).to.revertedWith('NotForked()');
-  });
+      inbox.sendL1FundedUnsignedTransactionToFork(
+        0,
+        0,
+        0,
+        ethers.constants.AddressZero,
+        '0x'
+      )
+    ).to.revertedWith('NotForked()')
+  })
 
   it('should fail to call sendUnsignedTransactionToFork', async function () {
-    const { inbox } = await setupSequencerInbox();
+    const { inbox } = await setupSequencerInbox()
     await expect(
-      inbox.sendUnsignedTransactionToFork(0, 0, 0, ethers.constants.AddressZero, 0, '0x')
-    ).to.revertedWith('NotForked()');
-  });
+      inbox.sendUnsignedTransactionToFork(
+        0,
+        0,
+        0,
+        ethers.constants.AddressZero,
+        0,
+        '0x'
+      )
+    ).to.revertedWith('NotForked()')
+  })
 
   it('should fail to call sendWithdrawEthToFork', async function () {
-    const { inbox } = await setupSequencerInbox();
+    const { inbox } = await setupSequencerInbox()
     await expect(
       inbox.sendWithdrawEthToFork(0, 0, 0, 0, ethers.constants.AddressZero)
-    ).to.revertedWith('NotForked()');
-  });
+    ).to.revertedWith('NotForked()')
+  })
 
   it('can upgrade Inbox', async () => {
-    const { inboxProxy, inboxTemplate, bridgeProxy } = await setupSequencerInbox();
+    const { inboxProxy, inboxTemplate, bridgeProxy } =
+      await setupSequencerInbox()
 
-    const currentStorage = [];
+    const currentStorage = []
     for (let i = 0; i < 1024; i++) {
-      currentStorage[i] = await inboxProxy.provider!.getStorageAt(inboxProxy.address, i);
+      currentStorage[i] = await inboxProxy.provider!.getStorageAt(
+        inboxProxy.address,
+        i
+      )
     }
 
     await expect(
       inboxProxy.upgradeToAndCall(
         inboxTemplate.address,
         (
-          await inboxTemplate.populateTransaction.postUpgradeInit(bridgeProxy.address)
+          await inboxTemplate.populateTransaction.postUpgradeInit(
+            bridgeProxy.address
+          )
         ).data!
       )
-    ).to.emit(inboxProxy, 'Upgraded');
+    ).to.emit(inboxProxy, 'Upgraded')
 
     for (let i = 0; i < currentStorage.length; i++) {
-      await expect(await inboxProxy.provider!.getStorageAt(inboxProxy.address, i)).to.equal(
-        currentStorage[i]
-      );
+      await expect(
+        await inboxProxy.provider!.getStorageAt(inboxProxy.address, i)
+      ).to.equal(currentStorage[i])
     }
-  });
-});
+  })
+})
