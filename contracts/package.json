@@ -19,7 +19,7 @@
   },
   "scripts": {
     "build": "./scripts/build.bash",
-    "lint": "eslint .",
+    "lint:test": "eslint ./test",
     "solhint": "solhint -f table src/**/*.sol",
     "prettier:solidity": "prettier --write src/**/*.sol",
     "hardhat:prod": "hardhat --config hardhat.prod-config.js",
