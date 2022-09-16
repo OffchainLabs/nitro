@@ -58,8 +58,9 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		defer func() {
-			err := ret.db.Close()
-			log.Error("Failed to close DB", "err", err)
+			if err := ret.db.Close(); err != nil {
+				log.Error("Failed to close DB", "err", err)
+			}
 		}()
 		for {
 			select {
