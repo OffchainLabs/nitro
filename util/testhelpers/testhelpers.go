@@ -48,7 +48,9 @@ type LogHandler struct {
 }
 
 func (h *LogHandler) Log(record *log.Record) error {
-	h.streamHandler.Log(record)
+	if err := h.streamHandler.Log(record); err != nil {
+		return err
+	}
 	h.records = append(h.records, *record)
 	return nil
 }
