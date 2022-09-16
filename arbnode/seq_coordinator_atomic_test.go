@@ -102,13 +102,16 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	coordConfig := TestSeqCoordinatorConfig
 	coordConfig.LockoutDuration = time.Millisecond * 100
 	coordConfig.LockoutSpare = time.Millisecond * 10
-	coordConfig.Signing.Dangerous.DisableSignatureVerification = true
-	coordConfig.Signing.SigningKey = ""
+	coordConfig.Signing.ECDSA.AcceptBatchPosters = false
+	coordConfig.Signing.SymmetricFallback = true
+	coordConfig.Signing.SymmetricSign = true
+	coordConfig.Signing.Symmetric.Dangerous.DisableSignatureVerification = true
+	coordConfig.Signing.Symmetric.SigningKey = ""
 	testData := CoordinatorTestData{
 		testStartRound: -1,
 		sequencer:      make([]string, messagesPerRound),
 	}
-	nullSigner, err := signature.NewSimpleHmac(&coordConfig.Signing)
+	nullSigner, err := signature.NewSignVerify(&coordConfig.Signing, nil, nil)
 	Require(t, err)
 
 	redisClient, err := redisutil.RedisClientFromURL(redisutil.GetTestRedisURL(t))

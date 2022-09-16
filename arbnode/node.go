@@ -528,6 +528,8 @@ func ConfigDefaultL2Test() *Config {
 	config.L1Reader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Feed.Input.Verifier.Dangerous.AcceptMissing = true
+	config.SeqCoordinator.Signing.ECDSA.AcceptBatchPosters = false
+	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = false
 
 	return &config
 }
@@ -741,6 +743,17 @@ func createNodeImpl(
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
 	var sequencer *Sequencer
+	var bpVerifier *contracts.BatchPosterVerifier
+	if deployInfo != nil && l1client != nil {
+		sequencerInboxAddr := deployInfo.SequencerInbox
+
+		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(sequencerInboxAddr, l1client)
+		if err != nil {
+			return nil, err
+		}
+		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+	}
+
 	if config.Sequencer.Enable {
 		if config.ForwardingTarget() != "" {
 			return nil, errors.New("sequencer and forwarding target both set")
@@ -772,7 +785,7 @@ func createNodeImpl(
 		}
 	}
 	if config.SeqCoordinator.Enable {
-		coordinator, err = NewSeqCoordinator(txStreamer, sequencer, syncMonitor, config.SeqCoordinator)
+		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, sequencer, syncMonitor, config.SeqCoordinator)
 		if err != nil {
 			return nil, err
 		}
@@ -789,16 +802,7 @@ func createNodeImpl(
 
 	var broadcastClients []*broadcastclient.BroadcastClient
 	if config.Feed.Input.Enable() {
-		var bpVerifier *contracts.BatchPosterVerifier
-		if deployInfo != nil && l1client != nil {
-			sequencerInboxAddr := deployInfo.SequencerInbox
 
-			seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(sequencerInboxAddr, l1client)
-			if err != nil {
-				return nil, err
-			}
-			bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
-		}
 		currentMessageCount, err := txStreamer.GetMessageCount()
 		if err != nil {
 			return nil, err

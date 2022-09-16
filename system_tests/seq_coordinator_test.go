@@ -353,7 +353,8 @@ func TestRedisSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	nodeConfigCopy := *nodeConfig
 	nodeConfig = &nodeConfigCopy
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
-	nodeConfig.SeqCoordinator.Signing.SigningKey = "629b39225c813bf1975fb49bcb6ca2622f2c62509f138ac609f0c048764a95ee"
+	nodeConfig.SeqCoordinator.Signing.SymmetricSign = true
+	nodeConfig.SeqCoordinator.Signing.Symmetric.SigningKey = "629b39225c813bf1975fb49bcb6ca2622f2c62509f138ac609f0c048764a95ee"
 	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 	defer requireClose(t, l2stackB)
 

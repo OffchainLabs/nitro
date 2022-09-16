@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -44,7 +45,7 @@ type SeqCoordinator struct {
 	streamer  *TransactionStreamer
 	sequencer *Sequencer
 	client    redis.UniversalClient
-	signer    *signature.SimpleHmac
+	signer    *signature.SignVerify
 	config    SeqCoordinatorConfig
 
 	prevChosenSequencer string
@@ -67,7 +68,7 @@ type SeqCoordinatorConfig struct {
 	RetryInterval         time.Duration              `koanf:"retry-interval"`
 	MaxMsgPerPoll         arbutil.MessageIndex       `koanf:"msg-per-poll"`
 	MyUrl                 string                     `koanf:"my-url"`
-	Signing               signature.SimpleHmacConfig `koanf:"signer"`
+	Signing               signature.SignVerifyConfig `koanf:"signer"`
 }
 
 func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -81,7 +82,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
 	f.Uint16(prefix+".msg-per-poll", uint16(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrl, "url for this sequencer if it is the chosen")
-	signature.SimpleHmacConfigAddOptions(prefix+".signer", f)
+	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -95,6 +96,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:         time.Second,
 	MaxMsgPerPoll:         2000,
 	MyUrl:                 INVALID_URL,
+	Signing:               signature.DefaultSignVerifyConfig,
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -107,15 +109,15 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:   time.Millisecond * 3,
 	MaxMsgPerPoll:   20,
 	MyUrl:           INVALID_URL,
-	Signing:         signature.TestSimpleHmacConfig,
+	Signing:         signature.DefaultSignVerifyConfig,
 }
 
-func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
 	redisClient, err := redisutil.RedisClientFromURL(config.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
-	signer, err := signature.NewSimpleHmac(&config.Signing)
+	signer, err := signature.NewSignVerify(&config.Signing, dataSigner, bpvalidator)
 	if err != nil {
 		return nil, err
 	}
