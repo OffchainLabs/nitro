@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"regexp"
+	"sync"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -42,6 +43,7 @@ func RandomAddress() common.Address {
 }
 
 type LogHandler struct {
+	mutex         sync.Mutex
 	t             *testing.T
 	records       []log.Record
 	streamHandler log.Handler
@@ -51,6 +53,8 @@ func (h *LogHandler) Log(record *log.Record) error {
 	if err := h.streamHandler.Log(record); err != nil {
 		return err
 	}
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
 	h.records = append(h.records, *record)
 	return nil
 }
@@ -58,6 +62,8 @@ func (h *LogHandler) Log(record *log.Record) error {
 func (h *LogHandler) WasLogged(pattern string) bool {
 	re, err := regexp.Compile(pattern)
 	RequireImpl(h.t, err)
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
 	for _, record := range h.records {
 		if re.MatchString(record.Msg) {
 			return true
