@@ -15,21 +15,23 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-const HTTPHeaderFeedServerVersion = "Arbitrum-Feed-Server-Version"
-const HTTPHeaderFeedClientVersion = "Arbitrum-Feed-Client-Version"
-const HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
-const HTTPHeaderChainId = "Arbitrum-Chain-Id"
-const FeedServerVersion = 2
-const FeedClientVersion = 2
+const (
+	HTTPHeaderFeedServerVersion       = "Arbitrum-Feed-Server-Version"
+	HTTPHeaderFeedClientVersion       = "Arbitrum-Feed-Client-Version"
+	HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
+	HTTPHeaderChainId                 = "Arbitrum-Chain-Id"
+	FeedServerVersion                 = 2
+	FeedClientVersion                 = 2
+)
 
 type BroadcasterConfig struct {
 	Enable         bool          `koanf:"enable"`
@@ -239,7 +241,9 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client
 				if _, _, err := client.Receive(ctx, s.config().ClientTimeout); err != nil {
-					log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
+					if errors.Is(err, wsutil.ClosedError{}) {
+						log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
+					}
 					s.clientManager.Remove(client)
 					return
 				}

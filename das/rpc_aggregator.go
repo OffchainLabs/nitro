@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
-	"strings"
+	"regexp"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 
@@ -60,7 +60,8 @@ func setUpServices(config DataAvailabilityConfig) ([]ServiceDetails, error) {
 			return nil, err
 		}
 		// Prometheus metric names must contain only chars [a-zA-Z0-9:_]
-		metricName := strings.ReplaceAll(url.Hostname(), ".", "_")
+		invalidPromCharRegex := regexp.MustCompile(`[^a-zA-Z0-9:_]+`)
+		metricName := invalidPromCharRegex.ReplaceAllString(url.Hostname(), "_")
 
 		service, err := NewDASRPCClient(b.URL)
 		if err != nil {
