@@ -88,7 +88,7 @@ describe('Outbox', async function () {
         cases[0].value,
         cases[0].data
       )
-    ).to.emit(outboxWithOpt, 'BridgeCallTriggered');
+    ).to.emit(bridge, 'BridgeCallTriggered');
     await expect(
       outboxWithoutOpt.executeTransaction(
         cases[0].proof,
@@ -101,7 +101,7 @@ describe('Outbox', async function () {
         cases[0].value,
         cases[0].data
       )
-    ).to.emit(outboxWithoutOpt, 'BridgeCallTriggered');
+    ).to.emit(bridge, 'BridgeCallTriggered');
     //await outboxWithOpt.executeTransaction(cases[0].proof,cases[0].index,cases[0].l2Sender,cases[0].to,cases[0].l2Block,cases[0].l1Block,cases[0].l2Timestamp,cases[0].value,cases[0].data);
   });
 
@@ -119,7 +119,7 @@ describe('Outbox', async function () {
         cases[1].value,
         cases[1].data
       )
-    ).to.emit(outboxWithOpt, 'BridgeCallTriggered');
+    ).to.emit(bridge, 'BridgeCallTriggered');
     await expect(
       outboxWithoutOpt.executeTransaction(
         cases[1].proof,
@@ -132,7 +132,7 @@ describe('Outbox', async function () {
         cases[1].value,
         cases[1].data
       )
-    ).to.emit(outboxWithoutOpt, 'BridgeCallTriggered');
+    ).to.emit(bridge, 'BridgeCallTriggered');
   });
 
   it('third call', async function () {
@@ -149,7 +149,7 @@ describe('Outbox', async function () {
         cases[2].value,
         cases[2].data
       )
-    ).to.emit(outboxWithOpt, 'BridgeCallTriggered');
+    ).to.emit(bridge, 'BridgeCallTriggered');
     await expect(
       outboxWithoutOpt.executeTransaction(
         cases[2].proof,
@@ -162,6 +162,6 @@ describe('Outbox', async function () {
         cases[2].value,
         cases[2].data
       )
-    ).to.emit(outboxWithoutOpt, 'BridgeCallTriggered');
+    ).to.emit(bridge, 'BridgeCallTriggered');
   });
 });
