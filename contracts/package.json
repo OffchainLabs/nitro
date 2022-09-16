@@ -22,6 +22,7 @@
     "lint:test": "eslint ./test",
     "solhint": "solhint -f table src/**/*.sol",
     "prettier:solidity": "prettier --write src/**/*.sol",
+    "format": "prettier './**/*.{js,json,md,ts,yml,sol}' --write && yarn run lint:test --fix",
     "hardhat:prod": "hardhat --config hardhat.prod-config.js",
     "build:0.6": "INTERFACE_TESTER_SOLC_VERSION=0.6.9 yarn run build",
     "build:0.7": "INTERFACE_TESTER_SOLC_VERSION=0.7.0 yarn run build",
