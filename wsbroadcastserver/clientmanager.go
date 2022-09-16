@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -18,9 +19,14 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	clientsConnectedGauge = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
 )
 
 /* Protocol-specific client catch-up logic can be injected using this interface. */
@@ -69,6 +75,7 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 
 	clientConnection.Start(ctx)
 	cm.clientPtrMap[clientConnection] = true
+	clientsConnectedGauge.Inc(1)
 	atomic.AddInt32(&cm.clientCount, 1)
 
 	return nil
@@ -103,10 +110,11 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 	}
 
 	err = clientConnection.conn.Close()
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 		log.Warn("Failed to close client connection", "err", err)
 	}
 
+	clientsConnectedGauge.Dec(1)
 	atomic.AddInt32(&cm.clientCount, -1)
 }
 

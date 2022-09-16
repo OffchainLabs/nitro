@@ -11,7 +11,7 @@
 
 - **Arbitrum Nova**: The first Arbitrum AnyTrust chain running on Ethereum mainnet! (Currently in Beta).
 
-- **Arbitrum Full Node**: A party who keeps track of the state of an Arbitrum chain and receives remote procedure calls (RPCs) from clients. Analogous to a non-mining L1 Ethereum node.
+- **Arbitrum Full Node**: A party who keeps track of the state of an Arbitrum chain and receives remote procedure calls (RPCs) from clients. Analogous to a non-staking L1 Ethereum node.
 
 - **ArbOS**: Layer 2 "operating system" that trustlessly handles system-level operations; includes the ability to emulate the EVM.
 

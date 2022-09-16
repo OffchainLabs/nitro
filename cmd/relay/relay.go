@@ -11,12 +11,15 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/cmd/util"
 	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/metrics/exp"
 
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/relay"
 )
 
@@ -72,6 +75,14 @@ func startup() error {
 	if err != nil {
 		return err
 	}
+
+	if relayConfig.Metrics && relayConfig.MetricsServer.Addr != "" {
+		go metrics.CollectProcessMetrics(relayConfig.MetricsServer.UpdateInterval)
+
+		address := fmt.Sprintf("%v:%v", relayConfig.MetricsServer.Addr, relayConfig.MetricsServer.Port)
+		exp.Setup(address)
+	}
+
 	select {
 	case <-sigint:
 		log.Info("shutting down because of sigint")
@@ -87,19 +98,23 @@ func startup() error {
 }
 
 type RelayConfig struct {
-	Conf     genericconf.ConfConfig `koanf:"conf"`
-	L2       L2Config               `koanf:"l2"`
-	LogLevel int                    `koanf:"log-level"`
-	LogType  string                 `koanf:"log-type"`
-	Node     RelayNodeConfig        `koanf:"node"`
+	Conf          genericconf.ConfConfig          `koanf:"conf"`
+	L2            L2Config                        `koanf:"l2"`
+	LogLevel      int                             `koanf:"log-level"`
+	LogType       string                          `koanf:"log-type"`
+	Metrics       bool                            `koanf:"metrics"`
+	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	Node          RelayNodeConfig                 `koanf:"node"`
 }
 
 var RelayConfigDefault = RelayConfig{
-	Conf:     genericconf.ConfConfigDefault,
-	L2:       L2ConfigDefault,
-	LogLevel: int(log.LvlInfo),
-	LogType:  "plaintext",
-	Node:     RelayNodeConfigDefault,
+	Conf:          genericconf.ConfConfigDefault,
+	L2:            L2ConfigDefault,
+	LogLevel:      int(log.LvlInfo),
+	LogType:       "plaintext",
+	Metrics:       false,
+	MetricsServer: genericconf.MetricsServerConfigDefault,
+	Node:          RelayNodeConfigDefault,
 }
 
 func RelayConfigAddOptions(f *flag.FlagSet) {
@@ -107,6 +122,8 @@ func RelayConfigAddOptions(f *flag.FlagSet) {
 	L2ConfigAddOptions("l2", f)
 	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
 	f.String("log-type", RelayConfigDefault.LogType, "log type")
+	f.Bool("metrics", RelayConfigDefault.Metrics, "enable metrics")
+	genericconf.MetricsServerAddOptions("metrics-server", f)
 	RelayNodeConfigAddOptions("node", f)
 }
 
