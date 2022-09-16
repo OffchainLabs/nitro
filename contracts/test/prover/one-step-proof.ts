@@ -46,13 +46,12 @@ describe('OneStepProof', function () {
     }
   }
 
-  it('should deploy test harness with ' + proofs.length + ' proofs', function () {});
+  // it('should deploy test harness with ' + proofs.length + ' proofs', function () {});
 
   for (const [path, file] of proofs) {
     it('Should pass ' + file + ' proofs', async function () {
       const proofs = JSON.parse(fs.readFileSync(path).toString('utf8'));
       const osp = await ethers.getContract('OneStepProofEntry');
-      const seqInbox = await ethers.getContract('SequencerInboxStub');
       const bridge = await ethers.getContract('BridgeStub');
 
       const promises = [];

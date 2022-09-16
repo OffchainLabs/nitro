@@ -41,8 +41,8 @@ export function nodeHash(
 
 const globalStateEquals = (globalState1: GlobalStateStruct, globalState2: GlobalStateStruct) => {
   return (
-    globalState1.bytes32Vals[0] === globalState2.bytes32Vals[0] &&
-    globalState1.bytes32Vals[1] === globalState2.bytes32Vals[1] &&
+    globalState1.bytes32Vals[0].toString() === globalState2.bytes32Vals[0].toString() &&
+    globalState1.bytes32Vals[1].toString() === globalState2.bytes32Vals[1].toString() &&
     BigNumber.from(globalState1.u64Vals[0]).eq(globalState2.u64Vals[0]) &&
     BigNumber.from(globalState1.u64Vals[1]).eq(globalState2.u64Vals[1])
   );

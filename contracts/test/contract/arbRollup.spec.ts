@@ -18,7 +18,7 @@
 import { ethers, run } from 'hardhat';
 import { Signer } from '@ethersproject/abstract-signer';
 import { BigNumberish, BigNumber } from '@ethersproject/bignumber';
-import { BytesLike, hexConcat, zeroPad } from '@ethersproject/bytes';
+import { BytesLike } from '@ethersproject/bytes';
 import { ContractTransaction } from '@ethersproject/contracts';
 import { assert, expect } from 'chai';
 import {
@@ -313,12 +313,6 @@ async function makeSimpleNode(
   return { tx, node };
 }
 
-const makeSends = (count: number, batchStart = 0) => {
-  return [...Array(count)].map((_, i) =>
-    hexConcat([[0], zeroPad([i + batchStart], 32), zeroPad([0], 32), zeroPad([1], 32)])
-  );
-};
-
 let prevNode: Node;
 const prevNodes: Node[] = [];
 
@@ -357,7 +351,6 @@ describe('ArbRollup', () => {
     const {
       rollupAdmin: rollupAdminContract,
       rollupUser: rollupUserContract,
-      user: userI,
       admin: adminI,
       validators: validatorsI,
     } = await setup();
@@ -844,7 +837,6 @@ describe('ArbRollup', () => {
     const {
       rollupAdmin: rollupAdminContract,
       rollupUser: rollupUserContract,
-      user: userI,
       admin: adminI,
       validators: validatorsI,
     } = await setup();

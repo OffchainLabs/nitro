@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { ethers, waffle } from 'hardhat';
+import { ethers } from 'hardhat';
 import {
   ValidatorWalletCreator,
   ValidatorWalletCreator__factory,
