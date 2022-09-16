@@ -226,11 +226,11 @@ func (c *SeqCoordinator) msgCountToSignedBytes(msgCount arbutil.MessageIndex) ([
 	return append(msgCountBytes[:], sig...), nil
 }
 
-func (c *SeqCoordinator) signedBytesToMsgCount(data []byte) (arbutil.MessageIndex, error) {
+func (c *SeqCoordinator) signedBytesToMsgCount(ctx context.Context, data []byte) (arbutil.MessageIndex, error) {
 	if len(data) < 8 {
 		return 0, errors.New("msgcount value too short")
 	}
-	valid, err := c.signer.VerifySignature(data[8:], data[:8])
+	valid, err := c.signer.VerifySignature(ctx, data[8:], data[:8])
 	if err != nil {
 		return 0, err
 	}
@@ -327,7 +327,7 @@ func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmda
 	if err != nil {
 		return 0, err
 	}
-	return c.signedBytesToMsgCount([]byte(resStr))
+	return c.signedBytesToMsgCount(ctx, []byte(resStr))
 }
 
 func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
@@ -523,7 +523,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			sigBytes = []byte(sigString)
 		}
 		var valid bool
-		valid, msgReadErr = c.signer.VerifySignature(sigBytes, arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
+		valid, msgReadErr = c.signer.VerifySignature(ctx, sigBytes, arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
 		if msgReadErr != nil || !valid {
 			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "valid", valid, "err", msgReadErr)
 			break

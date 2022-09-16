@@ -1,6 +1,7 @@
 package signature
 
 import (
+	"context"
 	"errors"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -60,8 +61,8 @@ func NewSignVerify(config *SignVerifyConfig, signerFunc DataSignerFunc, bpValida
 }
 
 // does not check batch posters
-func (v *SignVerify) VerifySignature(signature []byte, data ...[]byte) (bool, error) {
-	ecdsaValid, _, ecdsaErr := v.verifier.verifyClosureLocal(signature, crypto.Keccak256Hash(data...))
+func (v *SignVerify) VerifySignature(ctx context.Context, signature []byte, data ...[]byte) (bool, error) {
+	ecdsaValid, ecdsaErr := v.verifier.verifyClosure(ctx, signature, crypto.Keccak256Hash(data...))
 	if ecdsaErr == nil && ecdsaValid {
 		return true, nil
 	}
