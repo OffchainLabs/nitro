@@ -252,10 +252,15 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		if err != nil {
 			return err
 		}
-		messageString := string(msgBytes)
-		sigString := string(msgSig)
-		messageData = &messageString
-		messageSigData = &sigString
+		if c.config.Signing.SymmetricSign {
+			messageString := string(append(msgBytes, msgSig...))
+			messageData = &messageString
+		} else {
+			messageString := string(msgBytes)
+			sigString := string(msgSig)
+			messageData = &messageString
+			messageSigData = &sigString
+		}
 	}
 	msgCountMsg, err := c.msgCountToSignedBytes(msgCountToWrite)
 	if err != nil {
@@ -298,7 +303,9 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		pipe.Set(ctx, myLivelinessKey, LIVELINESS_VAL, initialDuration)
 		if messageData != nil {
 			pipe.Set(ctx, messageKeyFor(msgCountToWrite-1), *messageData, c.config.SeqNumDuration)
-			pipe.Set(ctx, messageSigKeyFor(msgCountToWrite-1), *messageSigData, c.config.SeqNumDuration)
+			if messageSigData != nil {
+				pipe.Set(ctx, messageSigKeyFor(msgCountToWrite-1), *messageSigData, c.config.SeqNumDuration)
+			}
 		}
 		pipe.PExpireAt(ctx, CHOSENSEQ_KEY, lockoutUntil)
 		pipe.PExpireAt(ctx, myLivelinessKey, lockoutUntil)
