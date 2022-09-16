@@ -181,6 +181,7 @@ func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 }
 
 func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
+	isActiveSequencer.Update(1)
 	var messageData *string
 	if lastmsg != nil {
 		msgBytes, err := json.Marshal(lastmsg)
@@ -292,6 +293,7 @@ func (c *SeqCoordinator) livelinessUpdate(ctx context.Context) error {
 }
 
 func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
+	isActiveSequencer.Update(0)
 	releaseErr := c.client.Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.Get(ctx, CHOSENSEQ_KEY).Result()
 		if errors.Is(err, redis.Nil) {
@@ -375,7 +377,6 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 		log.Info("released chosen-coordinator lock", "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
-	isActiveSequencer.Update(1)
 	// Was, and still, the active sequencer
 	if time.Now().Add(c.config.UpdateInterval / 3).After(atomicTimeRead(&c.lockoutUntil)) {
 		// if we recently sequenced - no need for an update
@@ -405,7 +406,6 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.updatePrevKnownChosen(ctx, chosenSeq)
 	}
 	if chosenSeq != c.config.MyUrl() && chosenSeq != c.prevChosenSequencer {
-		isActiveSequencer.Update(0)
 		var err error
 		if c.sequencer != nil {
 			err = c.sequencer.ForwardTo(chosenSeq)
@@ -508,7 +508,6 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		log.Info("caught chosen-coordinator lock")
 		c.sequencer.DontForward()
 		c.prevChosenSequencer = c.config.MyUrl()
-		isActiveSequencer.Update(1)
 		return c.noRedisError()
 	}
 
