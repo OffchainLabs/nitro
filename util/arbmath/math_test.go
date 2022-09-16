@@ -33,7 +33,7 @@ func TestMath(t *testing.T) {
 		approx := ApproxSquareRoot(input)
 		correct := math.Sqrt(float64(input))
 		diff := int(approx) - int(correct)
-		if diff < 0 || diff > 1 {
+		if diff < -1 || diff > 1 {
 			Fail(t, "sqrt approximation off by too much", diff, input, approx, correct)
 		}
 	}
