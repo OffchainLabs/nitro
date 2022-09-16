@@ -1,5 +1,7 @@
 ## As an Arbitrum user, do I need to do anything to prepare for 'The Merge'?
 
+_**Update 9/15/22: merge complete! 🎉🐼**_
+
 In short, no. Arbitrum chains will simply continue to operate during/after [The Merge](https://ethereum.org/en/upgrades/merge/), Ethereum's transition to Proof of Stake. There is no anticipated L1 or L2 downtime, and no action is required.
 
 The Merge represents a major milestone for Ethereum; it also paves the way for [potential future L1 upgrades](https://notes.ethereum.org/@vbuterin/proto_danksharding_faq) which could significantly reduce fees for Arbitrum users. So we're excited.
