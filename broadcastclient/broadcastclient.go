@@ -21,6 +21,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -28,6 +29,11 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
+)
+
+var (
+	sourcesConnectedGauge    = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
+	sourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
 )
 
 type FeedConfig struct {
@@ -278,6 +284,8 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 
 func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
+		connected := false
+		sourcesDisconnectedGauge.Inc(1)
 		for {
 			select {
 			case <-ctx.Done():
@@ -297,6 +305,11 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				} else {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}
+				if connected {
+					connected = false
+					sourcesConnectedGauge.Dec(1)
+					sourcesDisconnectedGauge.Inc(1)
+				}
 				_ = bc.conn.Close()
 				earlyFrameData = bc.retryConnect(ctx)
 				continue
@@ -310,6 +323,11 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					continue
 				}
 
+				if !connected {
+					connected = true
+					sourcesDisconnectedGauge.Dec(1)
+					sourcesConnectedGauge.Inc(1)
+				}
 				if len(res.Messages) > 0 {
 					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
 				} else if res.ConfirmedSequenceNumberMessage != nil {

@@ -221,7 +221,7 @@ Vanilla Geth's abi library submits txes with the exact estimate the node returns
 The total amount of L2 ether in the system should not change except in controlled cases, such as when bridging. As a safety precaution, ArbOS checks geth's [balance delta][conservation_link] each time a block is created, [alerting or panicking][alert_link] should conservation be violated. 
 
 ### MixDigest and ExtraData
-To aid with [outbox proof construction][proof_link], the root hash and leaf count of ArbOS's [send merkle accumulator][merkle_link] are stored in the `MixDigest` and `ExtraData` fields of each L2 block. The yellow paper specifies that the `ExtraData` field may be no larger than 32 bytes, so we use the first 8 bytes of the `MixDigest`, which has no meaning in a system without miners, to store the send count.
+To aid with [outbox proof construction][proof_link], the root hash and leaf count of ArbOS's [send merkle accumulator][merkle_link] are stored in the `MixDigest` and `ExtraData` fields of each L2 block. The yellow paper specifies that the `ExtraData` field may be no larger than 32 bytes, so we use the first 8 bytes of the `MixDigest`, which has no meaning in a system without miners/stakers, to store the send count.
 
 ### Retryable Support
 Retryables are mostly implemented in [ArbOS](arbos.md#retryables). Some modifications were required in geth to support them.
