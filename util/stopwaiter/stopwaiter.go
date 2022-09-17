@@ -6,9 +6,16 @@ package stopwaiter
 import (
 	"context"
 	"errors"
+	"reflect"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/log"
 )
+
+const stopDelayWarningTimeout = 30 * time.Second
 
 type StopWaiterSafe struct {
 	mutex    sync.Mutex // protects started, stopped, ctx, stopFunc
@@ -16,6 +23,7 @@ type StopWaiterSafe struct {
 	stopped  bool
 	ctx      context.Context
 	stopFunc func()
+	name     string
 	waitChan <-chan interface{}
 
 	wg sync.WaitGroup
@@ -48,14 +56,20 @@ func (s *StopWaiterSafe) getContext() (context.Context, error) {
 
 }
 
+func getParentName(parent any) string {
+	// remove asterisk in case the type is a pointer
+	return strings.Replace(reflect.TypeOf(parent).String(), "*", "", 1)
+}
+
 // start-after-start will error, start-after-stop will immediately cancel
-func (s *StopWaiterSafe) Start(ctx context.Context) error {
+func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if s.started {
 		return errors.New("start after start")
 	}
 	s.started = true
+	s.name = getParentName(parent)
 	s.ctx, s.stopFunc = context.WithCancel(ctx)
 	if s.stopped {
 		s.stopFunc()
@@ -73,9 +87,36 @@ func (s *StopWaiterSafe) StopOnly() {
 }
 
 // Stopping multiple times, even before start, will work
-func (s *StopWaiterSafe) StopAndWait() {
+func (s *StopWaiterSafe) StopAndWait() error {
+	return s.stopAndWaitImpl(stopDelayWarningTimeout)
+}
+
+func getAllStackTraces() string {
+	buf := make([]byte, 64*1024*1024)
+	size := runtime.Stack(buf, true)
+	builder := strings.Builder{}
+	builder.Write(buf[0:size])
+	return builder.String()
+}
+
+func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	s.StopOnly()
-	s.wg.Wait()
+	timer := time.NewTimer(warningTimeout)
+	waitChan, err := s.GetWaitChannel()
+	if err != nil {
+		return err
+	}
+
+	select {
+	case <-timer.C:
+		traces := getAllStackTraces()
+		log.Warn("taking too long to stop", "name", s.name, "delay[s]", warningTimeout.Seconds())
+		log.Warn(traces)
+	case <-waitChan:
+		return nil
+	}
+	<-waitChan
+	return nil
 }
 
 func (s *StopWaiterSafe) GetWaitChannel() (<-chan interface{}, error) {
@@ -144,8 +185,14 @@ type StopWaiter struct {
 	StopWaiterSafe
 }
 
-func (s *StopWaiter) Start(ctx context.Context) {
-	if err := s.StopWaiterSafe.Start(ctx); err != nil {
+func (s *StopWaiter) Start(ctx context.Context, parent any) {
+	if err := s.StopWaiterSafe.Start(ctx, parent); err != nil {
+		panic(err)
+	}
+}
+
+func (s *StopWaiter) StopAndWait() {
+	if err := s.StopWaiterSafe.StopAndWait(); err != nil {
 		panic(err)
 	}
 }

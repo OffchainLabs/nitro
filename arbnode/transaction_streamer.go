@@ -833,7 +833,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 }
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) {
-	s.StopWaiter.Start(ctxIn)
+	s.StopWaiter.Start(ctxIn, s)
 	s.LaunchThread(func(ctx context.Context) {
 		for {
 			err := s.createBlocks(ctx)

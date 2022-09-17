@@ -142,7 +142,7 @@ func NewBroadcastClient(
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
-	bc.StopWaiter.Start(ctxIn)
+	bc.StopWaiter.Start(ctxIn, bc)
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)

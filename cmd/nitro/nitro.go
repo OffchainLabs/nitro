@@ -713,7 +713,7 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 }
 
 func (c *LiveNodeConfig) Start(ctxIn context.Context) {
-	c.StopWaiter.Start(ctxIn)
+	c.StopWaiter.Start(ctxIn, c)
 
 	sigusr1 := make(chan os.Signal, 1)
 	signal.Notify(sigusr1, syscall.SIGUSR1)

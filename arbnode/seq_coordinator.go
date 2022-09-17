@@ -599,7 +599,7 @@ func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
 }
 
 func (c *SeqCoordinator) Start(ctxIn context.Context) {
-	c.StopWaiter.Start(ctxIn)
+	c.StopWaiter.Start(ctxIn, c)
 	c.CallIteratively(c.update)
 	if c.config.ChosenHealthcheckAddr != "" {
 		c.StopWaiter.LaunchThread(c.launchHealthcheckServer)
