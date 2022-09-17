@@ -373,7 +373,7 @@ const minWait = time.Second * 10
 const maxTxsToRbf = 256
 
 func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
-	p.StopWaiter.Start(ctxIn)
+	p.StopWaiter.Start(ctxIn, p)
 	p.CallIteratively(func(ctx context.Context) time.Duration {
 		p.mutex.Lock()
 		defer p.mutex.Unlock()

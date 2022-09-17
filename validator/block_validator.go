@@ -902,7 +902,7 @@ func (v *BlockValidator) Initialize() error {
 }
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
-	v.StopWaiter.Start(ctxIn)
+	v.StopWaiter.Start(ctxIn, v)
 	v.LaunchThread(func(ctx context.Context) {
 		// `progressValidated` and `sendValidations` should both only do `concurrentRunsLimit` iterations of work,
 		// so they won't stomp on each other and prevent the other from running.
