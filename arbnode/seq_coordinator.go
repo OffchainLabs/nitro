@@ -223,21 +223,24 @@ func (c *SeqCoordinator) msgCountToSignedBytes(msgCount arbutil.MessageIndex) ([
 	if err != nil {
 		return nil, err
 	}
-	return append(msgCountBytes[:], sig...), nil
+	return append(sig, msgCountBytes[:]...), nil
 }
 
 func (c *SeqCoordinator) signedBytesToMsgCount(ctx context.Context, data []byte) (arbutil.MessageIndex, error) {
-	if len(data) < 8 {
+	datalen := len(data)
+	if datalen < 8 {
 		return 0, errors.New("msgcount value too short")
 	}
-	valid, err := c.signer.VerifySignature(ctx, data[8:], data[:8])
+	msgCountBytes := data[datalen-8:]
+	sig := data[:datalen-8]
+	valid, err := c.signer.VerifySignature(ctx, sig, msgCountBytes)
 	if err != nil {
 		return 0, err
 	}
 	if !valid {
 		return 0, errors.New("inavlid signature")
 	}
-	return arbutil.MessageIndex(binary.BigEndian.Uint64(data[:8])), nil
+	return arbutil.MessageIndex(binary.BigEndian.Uint64(msgCountBytes)), nil
 }
 
 func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
