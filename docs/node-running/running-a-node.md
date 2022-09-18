@@ -36,10 +36,10 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 
 ### Putting it all together
 
-- When running docker image, an external volume should be mounted to persist the database across restarts. The mount point inside the docker image should be `/home/user/.arbitrum`.
+- When running docker image, an external volume should be mounted to persist the database across restarts. The mount point inside the docker image should be `/home/user/.arbitrum`
 - Here is an example of how to run nitro-node:
 
-  - Note that is important that `/some/local/dir/arbitrum` already exists, otherwise the directory might be created with `root` as owner, and the docker container won't be able to write to it.
+  - Note that is important that `/some/local/dir/arbitrum` already exists, otherwise the directory might be created with `root` as owner, and the docker container won't be able to write to it
 
   ```shell
   docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/nitro-node:v2.0.5-208d9d5 --l1.url https://l1-node:8545 --l2.chain-id=<L2ChainId> --http.api=net,web3,eth,debug --http.corsdomain=* --http.addr=0.0.0.0 --http.vhosts=*
@@ -80,9 +80,9 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 - `--node.archive`
   - Retain past block state
 - `--node.feed.input.url=<feed address>`
-  - Defaults to `wss://<chainName>.arbitrum.io/feed`. If running more than a couple nodes, you will want to provide one feed relay per datacenter, see further instructions below.
+  - Defaults to `wss://<chainName>.arbitrum.io/feed`. If running more than a couple nodes, you will want to provide one feed relay per datacenter, see further instructions below
 - `--node.forwarding-target=<sequencer RPC>`
-  - Defaults to appropriate L2 Sequencer RPC depending on L1 and L2 chain IDs provided.
+  - Defaults to appropriate L2 Sequencer RPC depending on L1 and L2 chain IDs provided
 - `--node.rpc.evm-timeout`
   - Defaults to `5s`, timeout used for `eth_call` (0 == no timeout)
 - `--node.rpc.gas-cap`
@@ -93,7 +93,7 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 ### Arb-Relay
 
 - When running more than one node, you want to run a single arb-relay per datacenter, which will reduce ingress fees and improve stability
-- The arb-relay is in the same docker image.
+- The arb-relay is in the same docker image
 - Here is an example of how to run nitro-relay for Arbitrum One:
   ```shell
   docker run --rm -it  -p 0.0.0.0:9642:9642 --entrypoint relay offchainlabs/nitro-node:v2.0.5-208d9d5 --node.feed.output.addr=0.0.0.0 --node.feed.input.url=wss://arb1.arbitrum.io/feed
@@ -102,3 +102,10 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
   ```shell
   docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/nitro-node:v2.0.5-208d9d5 --l1.url=https://l1-mainnet-node:8545 --l2.chain-id=42161 --http.api=net,web3,eth,debug --http.corsdomain=* --http.addr=0.0.0.0 --http.vhosts=* --node.feed.input.url=ws://local-relay-address:9642
   ```
+
+### Running a Validator
+
+- Currently, the ability to post assertions on-chain is whitelisted.  However, anyone can run a validator in `Watchtower` mode which will immediately log an error if an on-chain assertion deviates from the locally computed chain state
+- Running a validator in `Watchtower` mode is the same as running an archive Nitro node with the following additional parameters
+  - `--node.validator.enable --node.validator.strategy=Watchtower`
+- If a deviation is detected, a validator in Watchtower mode will log an error containing the string `found incorrect assertion in watchtower mode`
