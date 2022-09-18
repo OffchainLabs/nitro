@@ -4,17 +4,17 @@
 package precompiles
 
 import (
-	"log"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 type addr = common.Address
@@ -50,7 +50,7 @@ func (c *Context) Burned() uint64 {
 }
 
 func (c *Context) Restrict(err error) {
-	log.Fatal("A metered burner was used for access-controlled work", err)
+	log.Crit("A metered burner was used for access-controlled work", "error", err)
 }
 
 func (c *Context) HandleError(err error) error {
@@ -76,13 +76,13 @@ func testContext(caller addr, evm mech) *Context {
 	}
 	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(tracingInfo, false))
 	if err != nil {
-		panic(err)
+		log.Crit("unable to open arbos state", "error", err)
 	}
 	ctx.State = state
 	var ok bool
 	ctx.txProcessor, ok = evm.ProcessingHook.(*arbos.TxProcessor)
 	if !ok {
-		panic("must have tx processor")
+		log.Crit("must have tx processor")
 	}
 	return ctx
 }
