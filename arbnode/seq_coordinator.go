@@ -256,7 +256,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			return err
 		}
 		if c.config.Signing.SymmetricSign {
-			messageString := string(append(msgBytes, msgSig...))
+			messageString := string(append(msgSig, msgBytes...))
 			messageData = &messageString
 		} else {
 			messageString := string(msgBytes)
