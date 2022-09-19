@@ -6,19 +6,19 @@ package broadcaster
 import (
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/metrics"
 	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 var (
-	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequence-number/confirmed", nil)
-	latestSequenceNumberGauge    = metrics.NewRegisteredGauge("arb/feed/sequence-number/latest", nil)
+	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequencenumber/confirmed", nil)
+	latestSequenceNumberGauge    = metrics.NewRegisteredGauge("arb/feed/sequencennumber/latest", nil)
 )
 
 type SequenceNumberCatchupBuffer struct {

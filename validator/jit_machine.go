@@ -67,7 +67,7 @@ func (machine *JitMachine) prove(
 	state := GoGlobalState{}
 
 	timeout := time.Now().Add(60 * time.Second)
-	tcp, err := net.ListenTCP("tcp", &net.TCPAddr{})
+	tcp, err := net.ListenTCP("tcp4", &net.TCPAddr{})
 	if err != nil {
 		return state, err
 	}
