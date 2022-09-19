@@ -1,4 +1,4 @@
-# What is "Mainnet Beta"?
+What is "Mainnet Beta"?
 
 Arbitrum One — the first permissionless Ethereum layer 2 rollup with full Ethereum smart contract functionality — is [live on mainnet](https://offchain.medium.com/mainnet-for-everyone-27ce0f67c85e) — as is [Nova](https://medium.com/offchainlabs/its-time-for-a-new-dawn-nova-is-open-to-the-public-a081df1e4ad2), our first [AnyTrust](./inside-anytrust.md) chain! We're sure you're (almost) as excited as we are; here's what you need to know before using the system:
 
