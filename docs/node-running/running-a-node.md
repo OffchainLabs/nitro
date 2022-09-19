@@ -105,7 +105,7 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 
 ### Running a Validator
 
-- Currently, the ability to post assertions on-chain is whitelisted.  However, anyone can run a validator in `Watchtower` mode which will immediately log an error if an on-chain assertion deviates from the locally computed chain state
+- Currently, the ability to post assertions on-chain for mainnet Arbitrum chains is whitelisted.  However, anyone can run a validator in `Watchtower` mode which will immediately log an error if an on-chain assertion deviates from the locally computed chain state
 - Running a validator in `Watchtower` mode is the same as running an archive Nitro node with the following additional parameters
   - `--node.validator.enable --node.validator.strategy=Watchtower`
 - If a deviation is detected, a validator in Watchtower mode will log an error containing the string `found incorrect assertion in watchtower mode`
