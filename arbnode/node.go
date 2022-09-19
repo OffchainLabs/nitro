@@ -943,7 +943,7 @@ func createNodeImpl(
 		var existingWalletAddress *common.Address
 		if len(config.Validator.ContractWalletAddress) > 0 {
 			if !common.IsHexAddress(config.Validator.ContractWalletAddress) {
-				log.Error("invalid validator smart contract wallet", "addr", config.Validator.ContractWalletAddress
+				log.Error("invalid validator smart contract wallet", "addr", config.Validator.ContractWalletAddress)
 				return nil, errors.New("invalid validator smart contract wallet address")
 			}
 			tmpAddress := common.HexToAddress(config.Validator.ContractWalletAddress)
