@@ -69,7 +69,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	createStartNode := func(nodeNum int) {
-		nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
+		nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[nodeNum]
 		_, node, _, l2stack := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 		nodes[nodeNum] = &nodeInfo{n: node, s: l2stack}
 	}
@@ -277,7 +277,7 @@ func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
 
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
-	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
+	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[0]
 	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
 	defer requireClose(t, l2stackA)
 
@@ -296,7 +296,7 @@ func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
 		break
 	}
 
-	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
+	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[1]
 	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 	defer requireClose(t, l2stackB)
 
@@ -331,7 +331,7 @@ func TestRedisSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
-	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
+	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[0]
 	l2Info, _, clientA, l2stackA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
 	defer requireClose(t, l2stackA)
 
@@ -352,7 +352,7 @@ func TestRedisSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 
 	nodeConfigCopy := *nodeConfig
 	nodeConfig = &nodeConfigCopy
-	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
+	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[1]
 	nodeConfig.SeqCoordinator.Signing.SigningKey = "629b39225c813bf1975fb49bcb6ca2622f2c62509f138ac609f0c048764a95ee"
 	_, _, clientB, l2stackB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 	defer requireClose(t, l2stackB)
