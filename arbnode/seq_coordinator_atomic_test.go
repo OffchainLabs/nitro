@@ -72,7 +72,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 			timeLaunching := time.Now()
 			// didn't sequence.. should we have succeeded?
 			if timeLaunching.Before(holdingLockout) {
-				execError = fmt.Errorf("failed while holding lock %s err %w", coord.config.MyUrl, err)
+				execError = fmt.Errorf("failed while holding lock %s err %w", coord.config.MyUrl(), err)
 				break
 			}
 		}
@@ -82,9 +82,9 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 				continue
 			}
 			if data.sequencer[i] != "" {
-				execError = fmt.Errorf("two sequencers for same msg: submsg %d, success for %s, %s", i, data.sequencer[i], coord.config.MyUrl)
+				execError = fmt.Errorf("two sequencers for same msg: submsg %d, success for %s, %s", i, data.sequencer[i], coord.config.MyUrl())
 			}
-			data.sequencer[i] = coord.config.MyUrl
+			data.sequencer[i] = coord.config.MyUrl()
 		}
 		if execError != nil {
 			data.err = execError
@@ -116,14 +116,19 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 
 	redisClient, err := redisutil.RedisClientFromURL(redisutil.GetTestRedisURL(t))
 	Require(t, err)
+	if redisClient == nil {
+		t.Fatal("redisClient is nil")
+	}
 
 	for i := 0; i < NumOfThreads; i++ {
 		config := coordConfig
-		config.MyUrl = fmt.Sprint(i)
+		config.MyUrlImpl = fmt.Sprint(i)
+		redisCoordinator, err := NewRedisCoordinator(config.RedisUrl)
+		Require(t, err)
 		coordinator := &SeqCoordinator{
-			client: redisClient,
-			config: config,
-			signer: nullSigner,
+			RedisCoordinator: *redisCoordinator,
+			config:           config,
+			signer:           nullSigner,
 		}
 		go coordinatorTestThread(ctx, coordinator, &testData)
 	}
@@ -141,7 +146,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 		seqList := ""
 		for i := 0; i < messagesPerRound; i++ {
 			if testData.sequencer[i] == "" {
-				Fail(t, "no sequencer succeded", "round", round, "message", i)
+				Fail(t, "no sequencer succeeded", "round", round, "message", i)
 			}
 			seqList = seqList + testData.sequencer[i] + ","
 		}

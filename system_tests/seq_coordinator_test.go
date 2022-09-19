@@ -69,7 +69,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	createStartNode := func(nodeNum int) {
-		nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
+		nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[nodeNum]
 		_, node, _, l2stack := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 		nodes[nodeNum] = &nodeInfo{n: node, s: l2stack}
 	}
@@ -278,7 +278,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
-	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
+	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[0]
 	l2Info, nodeA, clientA, l2stackA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, params.ArbitrumDevTestChainConfig())
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
@@ -300,7 +300,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	l2Info.GenerateAccount("User2")
 
-	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
+	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[1]
 	if !successCase {
 		nodeConfig.SeqCoordinator.Signing.ECDSA.AcceptBatchPosters = false
 		nodeConfig.SeqCoordinator.Signing.ECDSA.AllowedAddresses = []string{l2Info.GetAddress("User2").Hex()}

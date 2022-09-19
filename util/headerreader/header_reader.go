@@ -315,7 +315,7 @@ func (s *HeaderReader) Client() arbutil.L1Interface {
 }
 
 func (s *HeaderReader) Start(ctxIn context.Context) {
-	s.StopWaiter.Start(ctxIn)
+	s.StopWaiter.Start(ctxIn, s)
 	s.LaunchThread(s.broadcastLoop)
 }
 

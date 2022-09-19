@@ -561,7 +561,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.dataPoster.Start(ctxIn)
 	b.redisLock.Start(ctxIn)
-	b.StopWaiter.Start(ctxIn)
+	b.StopWaiter.Start(ctxIn, b)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
 		if !b.redisLock.AttemptLock(ctx) {
 			b.building = nil

@@ -74,7 +74,7 @@ func NewRelay(feedConfig broadcastclient.FeedConfig, chainId uint64, feedErrChan
 const RECENT_FEED_ITEM_TTL time.Duration = time.Second * 10
 
 func (r *Relay) Start(ctx context.Context) error {
-	r.StopWaiter.Start(ctx)
+	r.StopWaiter.Start(ctx, r)
 	err := r.broadcaster.Initialize()
 	if err != nil {
 		return errors.New("broadcast unable to initialize")
