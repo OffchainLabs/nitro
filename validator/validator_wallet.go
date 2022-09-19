@@ -72,6 +72,9 @@ func NewValidatorWallet(ctx context.Context, address *common.Address, walletFact
 }
 
 func (v *ValidatorWallet) validateWallet(ctx context.Context) error {
+	if v.con == nil || v.auth == nil {
+		return nil
+	}
 	callOpts := &bind.CallOpts{Context: ctx}
 	owner, err := v.con.Owner(callOpts)
 	if err != nil {
