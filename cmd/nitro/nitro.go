@@ -184,6 +184,9 @@ func main() {
 	}
 
 	if nodeConfig.Node.Validator.Enable {
+		if !nodeConfig.Node.Archive {
+			panic("validator requires --node.archive")
+		}
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
 			panic("validator must read from L1")
