@@ -1,10 +1,11 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package signature
+package verifier
 
 import (
 	"context"
+
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/pkg/errors"
@@ -18,7 +19,7 @@ type Verifier struct {
 	bpValidator      contracts.BatchPosterVerifierInterface
 }
 
-func NewVerifier(requireSignature bool, authorizedAddresses []common.Address, bpValidator contracts.BatchPosterVerifierInterface) *Verifier {
+func New(requireSignature bool, authorizedAddresses []common.Address, bpValidator contracts.BatchPosterVerifierInterface) *Verifier {
 	authorizedMap := make(map[common.Address]struct{}, len(authorizedAddresses))
 	for _, addr := range authorizedAddresses {
 		authorizedMap[addr] = struct{}{}

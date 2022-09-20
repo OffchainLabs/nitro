@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/offchainlabs/nitro/util/verifier"
+
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -791,7 +793,7 @@ func createNodeImpl(
 		}
 		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
 	}
-	sigVerifier := signature.NewVerifier(config.Feed.Input.RequireSignature, nil, bpVerifier)
+	sigVerifier := verifier.New(config.Feed.Input.RequireSignature, nil, bpVerifier)
 	currentMessageCount, err := txStreamer.GetMessageCount()
 	if err != nil {
 		return nil, err

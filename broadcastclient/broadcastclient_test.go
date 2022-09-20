@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/util/verifier"
+
 	"github.com/gobwas/ws"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -158,7 +160,7 @@ func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uin
 	if validAddr != nil {
 		bpv = contracts.NewMockBatchPosterVerifier(*validAddr)
 	}
-	sigVerifier := signature.NewVerifier(config.RequireSignature, nil, bpv)
+	sigVerifier := verifier.New(config.RequireSignature, nil, bpv)
 	return NewBroadcastClient(config, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, feedErrChan, sigVerifier)
 }
 

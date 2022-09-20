@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/util/verifier"
+
 	"github.com/gobwas/ws"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -25,7 +27,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -98,7 +99,7 @@ type BroadcastClient struct {
 	config       Config
 	websocketUrl string
 	nextSeqNum   arbutil.MessageIndex
-	sigVerifier  *signature.Verifier
+	sigVerifier  *verifier.Verifier
 
 	chainId uint64
 
@@ -128,7 +129,7 @@ func NewBroadcastClient(
 	currentMessageCount arbutil.MessageIndex,
 	txStreamer TransactionStreamerInterface,
 	fatalErrChan chan error,
-	sigVerifier *signature.Verifier,
+	sigVerifier *verifier.Verifier,
 ) *BroadcastClient {
 	return &BroadcastClient{
 		config:       config,

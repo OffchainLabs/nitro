@@ -1,12 +1,14 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package signature
+package verifier
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	signature2 "github.com/offchainlabs/nitro/util/signature"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -20,11 +22,11 @@ func TestVerifier(t *testing.T) {
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
 	signingAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
-	dataSigner := DataSignerFromPrivateKey(privateKey)
+	dataSigner := signature2.DataSignerFromPrivateKey(privateKey)
 
 	authorizedAddresses := make([]common.Address, 0)
 	authorizedAddresses = append(authorizedAddresses, signingAddr)
-	verifier := NewVerifier(true, authorizedAddresses, nil)
+	verifier := New(true, authorizedAddresses, nil)
 
 	data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
 	hash := crypto.Keccak256Hash(data)
@@ -54,7 +56,7 @@ func TestVerifier(t *testing.T) {
 
 func TestMissingRequiredSignature(t *testing.T) {
 	ctx := context.Background()
-	verifier := NewVerifier(true, nil, nil)
+	verifier := New(true, nil, nil)
 	_, err := verifier.VerifyData(ctx, nil, nil)
 	if !errors.Is(err, ErrMissingFeedSignature) {
 		t.Error("didn't fail when missing feed signature")
@@ -63,7 +65,7 @@ func TestMissingRequiredSignature(t *testing.T) {
 
 func TestMissingSignatureAllowed(t *testing.T) {
 	ctx := context.Background()
-	verifier := NewVerifier(false, nil, nil)
+	verifier := New(false, nil, nil)
 	verified, err := verifier.VerifyData(ctx, nil, nil)
 	Require(t, err, "error verifying data")
 	if !verified {
@@ -76,10 +78,10 @@ func TestVerifierBatchPoster(t *testing.T) {
 	privateKey, err := crypto.GenerateKey()
 	Require(t, err)
 	signingAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
-	dataSigner := DataSignerFromPrivateKey(privateKey)
+	dataSigner := signature2.DataSignerFromPrivateKey(privateKey)
 
 	bpVerifier := contracts.NewMockBatchPosterVerifier(signingAddr)
-	verifier := NewVerifier(true, nil, bpVerifier)
+	verifier := New(true, nil, bpVerifier)
 
 	data := []byte{0, 1, 2, 3, 4, 5, 6, 7}
 	hash := crypto.Keccak256Hash(data)
