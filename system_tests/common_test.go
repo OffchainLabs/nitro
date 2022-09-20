@@ -182,14 +182,6 @@ func (l *lifecycle) Stop() error {
 }
 
 func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
-	if l1info == nil {
-		l1info = NewL1TestInfo(t)
-	}
-	l1info.GenerateAccount("Faucet")
-
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
-
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.WSPort = 0
@@ -198,9 +190,19 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.NAT = nil
-	var err error
 	stackConf.DataDir = t.TempDir()
-	stack, err := node.New(&stackConf)
+	return createTestL1BlockChainWithConfig(t, l1info, &stackConf)
+}
+func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConf *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
+	if l1info == nil {
+		l1info = NewL1TestInfo(t)
+	}
+	l1info.GenerateAccount("Faucet")
+
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
+
+	stack, err := node.New(stackConf)
 	Require(t, err)
 
 	nodeConf := ethconfig.Defaults
@@ -309,6 +311,22 @@ func createTestNodeOnL1(
 	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, conf, params.ArbitrumDevTestChainConfig())
 }
 
+func createTestNodeOnL1WithStackConfig(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+	stackConf *node.Config,
+) (
+	info, *arbnode.Node, *ethclient.Client, *node.Node, info,
+	*eth.Ethereum, *ethclient.Client, *node.Node,
+) {
+	nodeConfig := arbnode.ConfigDefaultL1Test()
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	return createTestNodeOnL1WithConfigWithCreator(t, ctx, isSequencer, nodeConfig, chainConfig, func() (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
+		return createTestL1BlockChainWithConfig(t, nil, stackConf)
+	})
+}
+
 func createTestNodeOnL1WithConfig(
 	t *testing.T,
 	ctx context.Context,
@@ -316,11 +334,25 @@ func createTestNodeOnL1WithConfig(
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
 ) (
+	info, *arbnode.Node, *ethclient.Client, *node.Node, info,
+	*eth.Ethereum, *ethclient.Client, *node.Node,
+) {
+	return createTestNodeOnL1WithConfigWithCreator(t, ctx, isSequencer, nodeConfig, chainConfig, func() (info, *ethclient.Client, *eth.Ethereum, *node.Node) { return createTestL1BlockChain(t, nil) })
+}
+
+func createTestNodeOnL1WithConfigWithCreator(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	l1BlockChainCreator func() (info, *ethclient.Client, *eth.Ethereum, *node.Node),
+) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
 	fatalErrChan := make(chan error, 10)
-	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
+	l1info, l1client, l1backend, l1stack = l1BlockChainCreator()
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
