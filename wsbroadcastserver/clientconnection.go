@@ -80,8 +80,9 @@ func (cc *ClientConnection) StopAndWait() {
 	if !cc.Started() {
 		// If client connection never started, need to close channel
 		close(cc.out)
+	} else {
+		cc.StopWaiter.StopAndWait()
 	}
-	cc.StopWaiter.StopAndWait()
 }
 
 func (cc *ClientConnection) RequestedSeqNum() arbutil.MessageIndex {
