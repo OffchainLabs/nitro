@@ -9,9 +9,15 @@ import (
 	"net"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -24,11 +30,11 @@ type Relay struct {
 	messageChan                 chan broadcaster.BroadcastFeedMessage
 }
 
-type RelayMessageQueue struct {
+type MessageQueue struct {
 	queue chan broadcaster.BroadcastFeedMessage
 }
 
-func (q *RelayMessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (q *MessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		q.queue <- *feedMessage
 	}
@@ -36,15 +42,15 @@ func (q *RelayMessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.Bro
 	return nil
 }
 
-func NewRelay(feedConfig broadcastclient.FeedConfig, chainId uint64, feedErrChan chan error) *Relay {
+func NewRelay(config *Config, feedErrChan chan error) *Relay {
 	var broadcastClients []*broadcastclient.BroadcastClient
 
-	q := RelayMessageQueue{make(chan broadcaster.BroadcastFeedMessage, 100)}
+	q := MessageQueue{make(chan broadcaster.BroadcastFeedMessage, config.Queue)}
 
-	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, 10)
+	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, config.Queue)
 
-	for _, address := range feedConfig.Input.URLs {
-		client := broadcastclient.NewBroadcastClient(feedConfig.Input, address, chainId, 0, &q, feedErrChan, nil)
+	for _, address := range config.Node.Feed.Input.URLs {
+		client := broadcastclient.NewBroadcastClient(config.Node.Feed.Input, address, config.L2.ChainId, 0, &q, feedErrChan, nil)
 		client.ConfirmedSequenceNumberListener = confirmedSequenceNumberListener
 		broadcastClients = append(broadcastClients, client)
 	}
@@ -53,14 +59,15 @@ func NewRelay(feedConfig broadcastclient.FeedConfig, chainId uint64, feedErrChan
 		return nil, errors.New("relay attempted to sign feed message")
 	}
 	return &Relay{
-		broadcaster:                 broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &feedConfig.Output }, chainId, feedErrChan, dataSignerErr),
+		broadcaster:                 broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Node.Feed.Output }, config.L2.ChainId, feedErrChan, dataSignerErr),
 		broadcastClients:            broadcastClients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,
 	}
 }
 
-const RECENT_FEED_ITEM_TTL time.Duration = time.Second * 10
+const RECENT_FEED_ITEM_TTL = time.Second * 10
+const RECENT_FEED_INITIAL_MAP_SIZE = 1024
 
 func (r *Relay) Start(ctx context.Context) error {
 	r.StopWaiter.Start(ctx, r)
@@ -77,7 +84,9 @@ func (r *Relay) Start(ctx context.Context) error {
 		client.Start(ctx)
 	}
 
-	recentFeedItems := make(map[arbutil.MessageIndex]time.Time)
+	var lastConfirmed arbutil.MessageIndex
+	recentFeedItemsNew := make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
+	recentFeedItemsOld := make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
 	r.LaunchThread(func(ctx context.Context) {
 		recentFeedItemsCleanup := time.NewTicker(RECENT_FEED_ITEM_TTL)
 		defer recentFeedItemsCleanup.Stop()
@@ -86,21 +95,23 @@ func (r *Relay) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case msg := <-r.messageChan:
-				if recentFeedItems[msg.SequenceNumber] != (time.Time{}) {
+				if _, ok := recentFeedItemsNew[msg.SequenceNumber]; ok {
 					continue
 				}
-				recentFeedItems[msg.SequenceNumber] = time.Now()
+				if _, ok := recentFeedItemsOld[msg.SequenceNumber]; ok {
+					continue
+				}
+				recentFeedItemsNew[msg.SequenceNumber] = time.Now()
 				r.broadcaster.BroadcastSingleFeedMessage(&msg)
 			case cs := <-r.confirmedSequenceNumberChan:
+				if lastConfirmed == cs {
+					continue
+				}
 				r.broadcaster.Confirm(cs)
 			case <-recentFeedItemsCleanup.C:
-				// Clear expired items from recentFeedItems
-				recentFeedItemExpiry := time.Now().Add(-RECENT_FEED_ITEM_TTL)
-				for acc, created := range recentFeedItems {
-					if created.Before(recentFeedItemExpiry) {
-						delete(recentFeedItems, acc)
-					}
-				}
+				// Cycle buckets to get rid of old entries
+				recentFeedItemsOld = recentFeedItemsNew
+				recentFeedItemsNew = make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
 			}
 		}
 	})
@@ -118,4 +129,86 @@ func (r *Relay) StopAndWait() {
 		client.StopAndWait()
 	}
 	r.broadcaster.StopAndWait()
+}
+
+type Config struct {
+	Conf          genericconf.ConfConfig          `koanf:"conf"`
+	L2            L2Config                        `koanf:"l2"`
+	LogLevel      int                             `koanf:"log-level"`
+	LogType       string                          `koanf:"log-type"`
+	Metrics       bool                            `koanf:"metrics"`
+	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	Node          NodeConfig                      `koanf:"node"`
+	Queue         int                             `koanf:"queue"`
+}
+
+var ConfigDefault = Config{
+	Conf:          genericconf.ConfConfigDefault,
+	L2:            L2ConfigDefault,
+	LogLevel:      int(log.LvlInfo),
+	LogType:       "plaintext",
+	Metrics:       false,
+	MetricsServer: genericconf.MetricsServerConfigDefault,
+	Node:          NodeConfigDefault,
+	Queue:         1024,
+}
+
+func ConfigAddOptions(f *flag.FlagSet) {
+	genericconf.ConfConfigAddOptions("conf", f)
+	L2ConfigAddOptions("l2", f)
+	f.Int("log-level", ConfigDefault.LogLevel, "log level")
+	f.String("log-type", ConfigDefault.LogType, "log type")
+	f.Bool("metrics", ConfigDefault.Metrics, "enable metrics")
+	genericconf.MetricsServerAddOptions("metrics-server", f)
+	NodeConfigAddOptions("node", f)
+	f.Int("queue", ConfigDefault.Queue, "size of relay queue")
+}
+
+type NodeConfig struct {
+	Feed broadcastclient.FeedConfig `koanf:"feed"`
+}
+
+var NodeConfigDefault = NodeConfig{
+	Feed: broadcastclient.FeedConfigDefault,
+}
+
+func NodeConfigAddOptions(prefix string, f *flag.FlagSet) {
+	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, true, true)
+}
+
+type L2Config struct {
+	ChainId uint64 `koanf:"chain-id"`
+}
+
+var L2ConfigDefault = L2Config{
+	ChainId: 0,
+}
+
+func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainId, "L2 chain ID")
+}
+
+func ParseRelay(_ context.Context, args []string) (*Config, error) {
+	f := flag.NewFlagSet("", flag.ContinueOnError)
+
+	ConfigAddOptions(f)
+
+	k, err := util.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var relayConfig Config
+	if err := util.EndCommonParse(k, &relayConfig); err != nil {
+		return nil, err
+	}
+
+	if relayConfig.Conf.Dump {
+		err = util.DumpConfig(k, map[string]interface{}{})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &relayConfig, nil
 }
