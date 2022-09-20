@@ -46,7 +46,7 @@ type ValidatorWallet struct {
 	rollupFromBlock   int64
 }
 
-func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader L1ReaderInterface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ValidatorWallet, error) {
+func NewValidatorWallet(ctx context.Context, address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader L1ReaderInterface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ValidatorWallet, error) {
 	var con *rollupgen.ValidatorWallet
 	if address != nil {
 		var err error
@@ -55,7 +55,7 @@ func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddres
 			return nil, err
 		}
 	}
-	return &ValidatorWallet{
+	v := &ValidatorWallet{
 		con:               con,
 		address:           address,
 		onWalletCreated:   onWalletCreated,
@@ -64,7 +64,30 @@ func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddres
 		rollupAddress:     rollupAddress,
 		walletFactoryAddr: walletFactoryAddr,
 		rollupFromBlock:   rollupFromBlock,
-	}, nil
+	}
+	if err := v.validateWallet(ctx); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func (v *ValidatorWallet) validateWallet(ctx context.Context) error {
+	if v.con == nil || v.auth == nil {
+		return nil
+	}
+	callOpts := &bind.CallOpts{Context: ctx}
+	owner, err := v.con.Owner(callOpts)
+	if err != nil {
+		return err
+	}
+	isExecutor, err := v.con.Executors(callOpts, v.auth.From)
+	if err != nil {
+		return err
+	}
+	if v.auth.From != owner && !isExecutor {
+		return errors.New("specified unauthorized smart contract wallet")
+	}
+	return nil
 }
 
 func (v *ValidatorWallet) Initialize(ctx context.Context) error {
@@ -131,6 +154,10 @@ func (v *ValidatorWallet) populateWallet(ctx context.Context, createIfMissing bo
 		return err
 	}
 	v.con = con
+
+	if err := v.validateWallet(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 

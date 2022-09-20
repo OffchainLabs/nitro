@@ -4,6 +4,8 @@ Nitro is the latest iteration of the Arbitrum technology. It is a fully integrat
 layer 2 optimistic rollup system, including fraud proofs, the sequencer, the token bridges, 
 advanced calldata compression, and more.
 
+See the live docs-site [here](https://developer.arbitrum.io/) (or [here](./docs) for markdown docs source.)
+
 The Nitro stack is built on several innovations. At its core is a new prover, which can do Arbitrum’s classic 
 interactive fraud proofs over WASM code. That means the L2 Arbitrum engine can be written and compiled using 
 standard languages and tools, replacing the custom-designed language and compiler used in previous Arbitrum
@@ -19,11 +21,7 @@ and compression system to minimize L1 costs.
 Essentially, Nitro runs Geth at layer 2 on top of Ethereum, and can prove fraud over the core engine of Geth 
 compiled to WASM.
 
-Arbitrum One will be migrated seamlessly onto Nitro. More details will follow about the timeline
-and plans for the migration.
+Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on 8/31/22. (See [state migration](https://developer.arbitrum.io/migration/state-migration) and [dapp migration](https://developer.arbitrum.io/migration/dapp_migration) for more info). 
 
-During the devnet period, we have licensed Nitro under a 
-Business Source License, similar to our friends at Uniswap and Aave. 
-Before mainnet launch, we will be re-licensing the code in a more 
-permissive fashion to ensure that everyone can have full comfort 
-using and running nodes on Arbitrum One.
+
+We currently have Nitro [licensed](./LICENSE) under a Business Source License, similar to our friends at Uniswap and Aave, with an "Additional Use Grant" to ensure that everyone can have full comfort using and running nodes on all public Arbitrum chains.
