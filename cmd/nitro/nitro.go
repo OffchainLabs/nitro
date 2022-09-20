@@ -348,6 +348,7 @@ func main() {
 }
 
 type NodeConfig struct {
+	Version       int                             `reload:"version"`
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
 	L1            conf.L1Config                   `koanf:"l1"`
@@ -410,16 +411,25 @@ func (c *NodeConfig) ShallowClone() *NodeConfig {
 	return config
 }
 
-func (c *NodeConfig) CanReload(new *NodeConfig) error {
-	var check func(node, other reflect.Value, path string)
+func (c *NodeConfig) compareForUpdate(new *NodeConfig) error {
+	var check func(node, other reflect.Value, path string) bool
 	var err error
 
-	check = func(node, value reflect.Value, path string) {
+	check = func(node, value reflect.Value, path string) bool {
 		if node.Kind() != reflect.Struct {
-			return
+			return reflect.DeepEqual(node.Interface(), value.Interface())
 		}
 
+		versionField := -1
+		identical := true
 		for i := 0; i < node.NumField(); i++ {
+			if node.Type().Field(i).Tag.Get("reload") == "version" {
+				if versionField >= 0 {
+					err = fmt.Errorf("%v: too many version fields: %d, %d", path, versionField, i)
+				}
+				versionField = i
+				continue
+			}
 			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
 			dot := path + "." + node.Type().Field(i).Name
 
@@ -429,13 +439,54 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 			if !hot && !reflect.DeepEqual(first, other) {
 				err = fmt.Errorf("illegal change to %v%v%v", colors.Red, dot, colors.Clear)
 			} else {
-				check(node.Field(i), value.Field(i), dot)
+				identical = identical && check(node.Field(i), value.Field(i), dot)
 			}
 		}
+		if versionField >= 0 {
+			if identical {
+				value.Field(versionField).SetInt(node.Field(versionField).Int())
+			} else {
+				value.Field(versionField).SetInt(node.Field(versionField).Int() + 1)
+			}
+		}
+		return identical
 	}
 
 	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
 	return err
+}
+
+func (c *NodeConfig) CompareWithoutVersion(new *NodeConfig) bool {
+	var check func(node, other reflect.Value) bool
+
+	check = func(node, value reflect.Value) bool {
+		if node.Kind() != reflect.Struct {
+			return reflect.DeepEqual(node.Interface(), value.Interface())
+		}
+
+		for i := 0; i < node.NumField(); i++ {
+			if node.Type().Field(i).Tag.Get("reload") == "version" {
+				continue
+			}
+			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
+
+			first := node.Field(i).Interface()
+			other := value.Field(i).Interface()
+
+			if !hot {
+				if !reflect.DeepEqual(first, other) {
+					return false
+				}
+			} else {
+				if !check(node.Field(i), value.Field(i)) {
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	return check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem())
 }
 
 func (c *NodeConfig) Validate() error {
@@ -701,7 +752,7 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if err := c.config.CanReload(config); err != nil {
+	if err := c.config.compareForUpdate(config); err != nil {
 		return err
 	}
 	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {

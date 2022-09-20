@@ -48,10 +48,21 @@ func TestReloads(t *testing.T) {
 		if node.Kind() != reflect.Struct {
 			return
 		}
+		versionField := -1
 
 		for i := 0; i < node.NumField(); i++ {
-			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
 			dot := path + "." + node.Type().Field(i).Name
+			if node.Type().Field(i).Tag.Get("reload") == "version" {
+				if versionField >= 0 {
+					t.Fatalf("%v: too many version fields: %d, %d", path, versionField, i)
+				}
+				if !node.Field(i).CanInt() {
+					t.Fatalf("%v: marked as version but cannot int", dot)
+				}
+				versionField = i
+				continue
+			}
+			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
 			if hot && cold {
 				t.Fatalf(fmt.Sprintf(
 					"Option %v%v%v is reloadable but %v%v%v is not",
@@ -68,14 +79,19 @@ func TestReloads(t *testing.T) {
 
 	config := NodeConfigDefault
 	update := NodeConfigDefault
-	update.Node.Sequencer.MaxBlockSpeed++
-
 	check(reflect.ValueOf(config), false, "config")
-	Require(t, config.CanReload(&config))
-	Require(t, config.CanReload(&update))
+
+	Require(t, config.compareForUpdate(&config))
+	Require(t, config.compareForUpdate(&update))
+	if update.Version != 0 {
+		t.Fatalf("version of update that doesn't change anythig is %d", update.Version)
+	}
+
+	update.Node.Sequencer.MaxBlockSpeed++
+	Require(t, config.compareForUpdate(&update))
 
 	testUnsafe := func() {
-		if config.CanReload(&update) == nil {
+		if config.compareForUpdate(&update) == nil {
 			Fail(t, "failed to detect unsafe reload")
 		}
 		update = NodeConfigDefault
@@ -88,6 +104,24 @@ func TestReloads(t *testing.T) {
 	testUnsafe()
 	update.Node.Sequencer.Forwarder.ConnectionTimeout++
 	testUnsafe()
+
+	update = NodeConfigDefault
+	update.Node.Sequencer.MaxBlockSpeed += time.Second
+	Require(t, config.compareForUpdate(&update))
+	FailUnless(t, update.Version == 1)
+	FailUnless(t, update.Node.Version == 1)
+	FailUnless(t, update.Node.Sequencer.Version == 1)
+	FailUnless(t, update.Node.L1Reader.Version == 0)
+	FailUnless(t, update.Node.InboxReader.Version == 0)
+
+	update2 := update
+	update2.Node.L1Reader.TxTimeout += time.Microsecond
+	Require(t, update.compareForUpdate(&update2))
+	FailUnless(t, update2.Version == 2)
+	FailUnless(t, update2.Node.Version == 2)
+	FailUnless(t, update2.Node.Sequencer.Version == 1)
+	FailUnless(t, update2.Node.L1Reader.Version == 1)
+	FailUnless(t, update2.Node.InboxReader.Version == 0)
 }
 
 func TestLiveNodeConfig(t *testing.T) {
@@ -112,7 +146,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	update.Node.Sequencer.MaxBlockSpeed += 2 * time.Millisecond
 	expected.Node.Sequencer.MaxBlockSpeed += 2 * time.Millisecond
 	Require(t, liveConfig.set(update))
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
+	if !liveConfig.get().CompareWithoutVersion(expected) {
 		Fail(t, "failed to set config")
 	}
 
@@ -122,7 +156,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	if liveConfig.set(update) == nil {
 		Fail(t, "failed to reject invalid update")
 	}
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
+	if !liveConfig.get().CompareWithoutVersion(expected) {
 		Fail(t, "config should not change if its update fails")
 	}
 
@@ -139,7 +173,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	// check that reloading the config again doesn't change anything
 	Require(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 	time.Sleep(80 * time.Millisecond)
-	if !reflect.DeepEqual(liveConfig.get(), expected) {
+	if !liveConfig.get().CompareWithoutVersion(expected) {
 		Fail(t, "live config differs from expected")
 	}
 
@@ -219,7 +253,7 @@ func PollLiveConfigUntilNotEqual(liveConfig *LiveNodeConfig, expected *NodeConfi
 
 func PollLiveConfig(liveConfig *LiveNodeConfig, expected *NodeConfig, equal bool) bool {
 	for i := 0; i < 16; i++ {
-		if reflect.DeepEqual(liveConfig.get(), expected) == equal {
+		if liveConfig.get().CompareWithoutVersion(expected) == equal {
 			return true
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -235,4 +269,11 @@ func Require(t *testing.T, err error, text ...interface{}) {
 func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
+}
+
+func FailUnless(t *testing.T, cond bool, printables ...interface{}) {
+	t.Helper()
+	if !cond {
+		Fail(t, printables...)
+	}
 }

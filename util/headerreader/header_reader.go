@@ -37,6 +37,7 @@ type HeaderReader struct {
 }
 
 type Config struct {
+	Version              int           `reload:"version"`
 	Enable               bool          `koanf:"enable"`
 	PollOnly             bool          `koanf:"poll-only" reload:"hot"`
 	PollInterval         time.Duration `koanf:"poll-interval" reload:"hot"`

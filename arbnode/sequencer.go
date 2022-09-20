@@ -35,6 +35,7 @@ import (
 const maxTxDataSize = 112065
 
 type SequencerConfig struct {
+	Version                     int                      `reload:"version"`
 	Enable                      bool                     `koanf:"enable"`
 	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject" reload:"hot"`

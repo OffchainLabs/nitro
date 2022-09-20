@@ -394,6 +394,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 }
 
 type Config struct {
+	Version                int                            `reload:"version"`
 	RPC                    arbitrum.Config                `koanf:"rpc"`
 	Sequencer              SequencerConfig                `koanf:"sequencer" reload:"hot"`
 	L1Reader               headerreader.Config            `koanf:"l1-reader" reload:"hot"`

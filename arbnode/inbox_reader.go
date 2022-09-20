@@ -24,6 +24,7 @@ import (
 )
 
 type InboxReaderConfig struct {
+	Version             int           `reload:"version"`
 	DelayBlocks         uint64        `koanf:"delay-blocks" reload:"hot"`
 	CheckDelay          time.Duration `koanf:"check-delay" reload:"hot"`
 	HardReorg           bool          `koanf:"hard-reorg" reload:"hot"`
