@@ -19,7 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/relay"
 )
 
@@ -43,7 +43,7 @@ func startup() error {
 
 	relayConfig, err := ParseRelay(ctx, os.Args[1:])
 	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
-		util.HandleError(err, printSampleUsage)
+		confighelpers.HandleError(err, printSampleUsage)
 
 		return nil
 	}
@@ -57,7 +57,7 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(relayConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	vcsRevision, vcsTime := util.GetVersion()
+	vcsRevision, vcsTime := confighelpers.GetVersion()
 	log.Info("Running Arbitrum nitro relay", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	defer log.Info("Cleanly shutting down relay")
@@ -153,18 +153,18 @@ func ParseRelay(_ context.Context, args []string) (*RelayConfig, error) {
 
 	RelayConfigAddOptions(f)
 
-	k, err := util.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
 	}
 
 	var relayConfig RelayConfig
-	if err := util.EndCommonParse(k, &relayConfig); err != nil {
+	if err := confighelpers.EndCommonParse(k, &relayConfig); err != nil {
 		return nil, err
 	}
 
 	if relayConfig.Conf.Dump {
-		err = util.DumpConfig(k, map[string]interface{}{})
+		err = confighelpers.DumpConfig(k, map[string]interface{}{})
 		if err != nil {
 			return nil, err
 		}
