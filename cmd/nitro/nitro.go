@@ -410,9 +410,10 @@ func (c *NodeConfig) ShallowClone() *NodeConfig {
 	return config
 }
 
-func (c *NodeConfig) CanReload(new *NodeConfig) error {
+func (c *NodeConfig) CanReload(new *NodeConfig) (bool, error) {
 	var check func(node, other reflect.Value, path string)
 	var err error
+	var changed bool
 
 	check = func(node, value reflect.Value, path string) {
 		if node.Kind() != reflect.Struct {
@@ -420,22 +421,33 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 		}
 
 		for i := 0; i < node.NumField(); i++ {
-			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
-			dot := path + "." + node.Type().Field(i).Name
+			field := node.Type().Field(i)
+			if !field.IsExported() {
+				continue
+			}
+			hot := field.Tag.Get("reload") == "hot"
+			dot := path + "." + field.Name
 
 			first := node.Field(i).Interface()
 			other := value.Field(i).Interface()
 
-			if !hot && !reflect.DeepEqual(first, other) {
-				err = fmt.Errorf("illegal change to %v%v%v", colors.Red, dot, colors.Clear)
-			} else {
-				check(node.Field(i), value.Field(i), dot)
+			if !reflect.DeepEqual(first, other) {
+				if hot {
+					changed = true
+				} else {
+					err = fmt.Errorf("illegal change to %v%v%v", colors.Red, dot, colors.Clear)
+					return
+				}
+			}
+			check(node.Field(i), value.Field(i), dot)
+			if err != nil {
+				return
 			}
 		}
 	}
 
 	check(reflect.ValueOf(c).Elem(), reflect.ValueOf(new).Elem(), "config")
-	return err
+	return changed, err
 }
 
 func (c *NodeConfig) Validate() error {
@@ -701,7 +713,7 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if err := c.config.CanReload(config); err != nil {
+	if changed, err := c.config.CanReload(config); err != nil || !changed {
 		return err
 	}
 	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {

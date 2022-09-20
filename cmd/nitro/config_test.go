@@ -71,11 +71,14 @@ func TestReloads(t *testing.T) {
 	update.Node.Sequencer.MaxBlockSpeed++
 
 	check(reflect.ValueOf(config), false, "config")
-	Require(t, config.CanReload(&config))
-	Require(t, config.CanReload(&update))
+	_, canReload := config.CanReload(&config)
+	Require(t, canReload)
+	_, canReload = config.CanReload(&update)
+	Require(t, canReload)
 
 	testUnsafe := func() {
-		if config.CanReload(&update) == nil {
+		_, canReload = config.CanReload(&update)
+		if canReload == nil {
 			Fail(t, "failed to detect unsafe reload")
 		}
 		update = NodeConfigDefault
