@@ -61,6 +61,7 @@ type L1ValidatorConfig struct {
 	TargetMachineCount       int               `koanf:"target-machine-count"`
 	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
 	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
+	ContractWalletAddress    string            `koanf:"contract-wallet-address"`
 	GasRefunderAddress       string            `koanf:"gas-refunder-address"`
 	Dangerous                DangerousConfig   `koanf:"dangerous"`
 }
@@ -75,6 +76,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	TargetMachineCount:       4,
 	ConfirmationBlocks:       12,
 	OnlyCreateWalletContract: false,
+	ContractWalletAddress:    "",
 	GasRefunderAddress:       "",
 	Dangerous:                DefaultDangerousConfig,
 }
@@ -89,6 +91,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
+	f.String(prefix+".contract-wallet-address", DefaultL1ValidatorConfig.ContractWalletAddress, "validator smart contract wallet public address")
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 }

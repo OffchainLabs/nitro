@@ -5,7 +5,6 @@ package arbosState
 
 import (
 	"errors"
-	"log"
 	"math/big"
 	"sort"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -53,7 +53,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	stateDatabase := state.NewDatabase(db)
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
-		log.Fatal("failed to init empty statedb", err)
+		log.Crit("failed to init empty statedb", "error", err)
 	}
 
 	commit := func() (common.Hash, error) {
@@ -75,7 +75,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	burner := burn.NewSystemBurner(nil, false)
 	arbosState, err := InitializeArbosState(statedb, burner, chainConfig)
 	if err != nil {
-		log.Fatal("failed to open the ArbOS state", err)
+		log.Crit("failed to open the ArbOS state", "error", err)
 	}
 
 	addrTable := arbosState.AddressTable()
@@ -107,7 +107,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		return common.Hash{}, err
 	}
 
-	log.Print("addresss table import complete")
+	log.Info("addresss table import complete")
 
 	retryableReader, err := initData.GetRetryableDataReader()
 	if err != nil {
@@ -118,7 +118,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		return common.Hash{}, err
 	}
 
-	log.Print("retryables import complete")
+	log.Info("retryables import complete")
 
 	if accountsPerSync > 0 {
 		_, err := commit()
@@ -151,7 +151,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		}
 		accountsRead++
 		if accountsPerSync > 0 && (accountsRead%accountsPerSync == 0) {
-			log.Printf("imported %v accounts", accountsRead)
+			log.Info("imported accounts", "count", accountsRead)
 			_, err := commit()
 			if err != nil {
 				return common.Hash{}, err
@@ -199,7 +199,7 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 	return initData.Close()
 }
 
-func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, account statetransfer.AccountInitializationInfo) error {
+func initializeArbosAccount(_ *state.StateDB, arbosState *ArbosState, account statetransfer.AccountInitializationInfo) error {
 	l1pState := arbosState.L1PricingState()
 	posterTable := l1pState.BatchPosterTable()
 	if account.AggregatorInfo != nil {

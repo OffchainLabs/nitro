@@ -940,7 +940,16 @@ func createNodeImpl(
 	var staker *validator.Staker
 	if config.Validator.Enable {
 		// TODO: remember validator wallet in JSON instead of querying it from L1 every time
-		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+		var existingWalletAddress *common.Address
+		if len(config.Validator.ContractWalletAddress) > 0 {
+			if !common.IsHexAddress(config.Validator.ContractWalletAddress) {
+				log.Error("invalid validator smart contract wallet", "addr", config.Validator.ContractWalletAddress)
+				return nil, errors.New("invalid validator smart contract wallet address")
+			}
+			tmpAddress := common.HexToAddress(config.Validator.ContractWalletAddress)
+			existingWalletAddress = &tmpAddress
+		}
+		wallet, err := validator.NewValidatorWallet(ctx, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
 		if err != nil {
 			return nil, err
 		}
