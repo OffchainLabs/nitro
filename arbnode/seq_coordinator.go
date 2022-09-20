@@ -584,13 +584,28 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 }
 
 func (c *SeqCoordinator) StopAndWait() {
+	wasChosen := c.CurrentlyChosen()
+	c.StopWaiter.StopAndWait()
 	if c.CurrentlyChosen() {
-		_ = c.chosenOneRelease(c.GetContext())
+		wasChosen = true
 	}
 	if c.reportedAlive {
 		_ = c.livelinessRelease(c.GetContext())
 	}
-	c.StopWaiter.StopAndWait()
+	if wasChosen {
+		_ = c.chosenOneRelease(c.GetContext())
+		log.Info("Waiting for someone else to become main sequencer..")
+		var nextChosen string
+		for {
+			var err error
+			nextChosen, err = c.RecommendLiveSequencer(context.Background())
+			if err == nil && nextChosen != "" && nextChosen != c.config.MyUrl() {
+				break
+			}
+			<-time.After(c.config.RetryInterval)
+		}
+		_ = c.sequencer.ForwardTo(nextChosen)
+	}
 	_ = c.client.Close()
 }
 

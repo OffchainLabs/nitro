@@ -506,3 +506,21 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	return nil
 }
+
+func (s *Sequencer) StopAndWait() {
+	s.StopWaiter.StopAndWait()
+	fwTarget := s.GetForwarder()
+	if fwTarget != nil {
+		for s.txRetryQueue.Len() > 0 {
+			s.forwardIfSet([]txQueueItem{s.txRetryQueue.Pop()})
+		}
+		for {
+			select {
+			case queueItem := <-s.txQueue:
+				s.forwardIfSet([]txQueueItem{queueItem})
+			default:
+				break
+			}
+		}
+	}
+}
