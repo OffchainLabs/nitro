@@ -217,7 +217,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	})()
 
 	stakerATxs := 0
+	stakerAWasStaked := false
 	stakerBTxs := 0
+	stakerBWasStaked := false
 	sawStakerZombie := false
 	for i := 0; i < 100; i++ {
 		var stakerName string
@@ -290,6 +292,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		if watchTx != nil {
 			Fail(t, "watchtower staker made a transaction")
 		}
+		if !stakerAWasStaked {
+			stakerAWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
+			Require(t, err)
+		}
+		if !stakerBWasStaked {
+			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, l1authB.From)
+			Require(t, err)
+		}
 		for j := 0; j < 5; j++ {
 			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
 		}
@@ -312,18 +322,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		Fail(t, "staker B didn't become a zombie despite being faulty")
 	}
 
-	isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
-	Require(t, err)
-	if !isStaked {
-		Fail(t, "staker A isn't staked")
+	if !stakerAWasStaked {
+		Fail(t, "staker A was never staked")
 	}
-
-	if !faultyStaker {
-		isStaked, err := rollup.IsStaked(&bind.CallOpts{}, l1authB.From)
-		Require(t, err)
-		if !isStaked {
-			Fail(t, "staker B isn't staked")
-		}
+	if !stakerBWasStaked {
+		Fail(t, "staker B was never staked")
 	}
 }
 
