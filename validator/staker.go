@@ -447,7 +447,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
 				return nil, err
 			}
-			if !s.wallet.CanBatchTxs() {
+			if !s.wallet.CanBatchTxs() && effectiveStrategy >= StakeLatestStrategy {
 				info.CanProgress = false
 			}
 		}

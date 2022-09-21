@@ -940,7 +940,7 @@ func createNodeImpl(
 	var staker *validator.Staker
 	if config.Validator.Enable {
 		var wallet validator.ValidatorWalletInterface
-		if config.Validator.UseSmartContractWallet {
+		if config.Validator.UseSmartContractWallet || txOpts == nil {
 			var existingWalletAddress *common.Address
 			if len(config.Validator.ContractWalletAddress) > 0 {
 				if !common.IsHexAddress(config.Validator.ContractWalletAddress) {
@@ -967,7 +967,11 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "txSender", txOpts.From, "actingAsWallet", wallet.Address(), "strategy", config.Validator.Strategy)
+		var txSenderPtr *common.Address
+		if txOpts != nil {
+			txSenderPtr = &txOpts.From
+		}
+		log.Info("running as validator", "txSender", txSenderPtr, "actingAsWallet", wallet.Address(), "strategy", config.Validator.Strategy)
 	}
 
 	var batchPoster *BatchPoster
