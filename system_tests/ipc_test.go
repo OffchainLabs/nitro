@@ -29,7 +29,7 @@ func TestIpcRpc(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithStackConfig(t, ctx, true, &stackConf)
+	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, &stackConf)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stack)
 
