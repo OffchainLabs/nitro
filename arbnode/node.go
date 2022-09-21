@@ -967,7 +967,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "smartContractWallet", wallet.Address(), "strategy", config.Validator.Strategy)
+		log.Info("running as validator", "txSender", txOpts.From, "actingAsWallet", wallet.Address(), "strategy", config.Validator.Strategy)
 	}
 
 	var batchPoster *BatchPoster
