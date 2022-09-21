@@ -6,6 +6,7 @@ package arbnode
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"time"
@@ -438,6 +439,17 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		Data: data,
 	})
 	if err != nil {
+		sequencerMessageHeader := sequencerMessage
+		if len(sequencerMessageHeader) > 33 {
+			sequencerMessageHeader = sequencerMessageHeader[:33]
+		}
+		log.Warn(
+			"error estimating gas for batch",
+			"err", err,
+			"delayedMessages", delayedMessages,
+			"sequencerMessageHeader", hex.EncodeToString(sequencerMessageHeader),
+			"sequencerMessageLen", len(sequencerMessage),
+		)
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
 	return gas + b.config().ExtraBatchGas, nil
