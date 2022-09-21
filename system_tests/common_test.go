@@ -467,11 +467,12 @@ func Create2ndNodeWithConfig(
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, dataSigner, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
 
 	err = l2stack.Start()
