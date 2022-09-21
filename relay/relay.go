@@ -6,6 +6,7 @@ package relay
 import (
 	"context"
 	"errors"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"net"
 	"time"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -194,18 +194,18 @@ func ParseRelay(_ context.Context, args []string) (*Config, error) {
 
 	ConfigAddOptions(f)
 
-	k, err := util.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
 	}
 
 	var relayConfig Config
-	if err := util.EndCommonParse(k, &relayConfig); err != nil {
+	if err := confighelpers.EndCommonParse(k, &relayConfig); err != nil {
 		return nil, err
 	}
 
 	if relayConfig.Conf.Dump {
-		err = util.DumpConfig(k, map[string]interface{}{})
+		err = confighelpers.DumpConfig(k, map[string]interface{}{})
 		if err != nil {
 			return nil, err
 		}

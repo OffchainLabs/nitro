@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics/exp"
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/relay"
 )
 
@@ -42,7 +42,7 @@ func startup() error {
 
 	relayConfig, err := relay.ParseRelay(ctx, os.Args[1:])
 	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
-		util.HandleError(err, printSampleUsage)
+		confighelpers.HandleError(err, printSampleUsage)
 
 		return nil
 	}
@@ -56,7 +56,7 @@ func startup() error {
 	glogger.Verbosity(log.Lvl(relayConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	vcsRevision, vcsTime := util.GetVersion()
+	vcsRevision, vcsTime := confighelpers.GetVersion()
 	log.Info("Running Arbitrum nitro relay", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	defer log.Info("Cleanly shutting down relay")
