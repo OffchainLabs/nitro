@@ -102,6 +102,7 @@ func (r *Relay) Start(ctx context.Context) error {
 					continue
 				}
 				recentFeedItemsNew[msg.SequenceNumber] = time.Now()
+				arbutil.UpdateSequenceNumberGauge(msg.SequenceNumber)
 				r.broadcaster.BroadcastSingleFeedMessage(&msg)
 			case cs := <-r.confirmedSequenceNumberChan:
 				if lastConfirmed == cs {

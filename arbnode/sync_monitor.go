@@ -69,8 +69,9 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		syncing = true
 	} else {
 		res["blockNum"] = lastBlockNum
+		res["messageOfLastBlock"] = lastBuiltMessage
+		arbutil.UpdateSequenceNumberGauge(lastBuiltMessage)
 	}
-	res["messageOfLastBlock"] = lastBuiltMessage
 
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {
@@ -120,6 +121,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	}
 
 	if !syncing {
+
 		return make(map[string]interface{})
 	}
 
