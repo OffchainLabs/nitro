@@ -61,6 +61,7 @@ type SeqCoordinatorConfig struct {
 	SeqNumDuration        time.Duration                `koanf:"seq-num-duration"`
 	UpdateInterval        time.Duration                `koanf:"update-interval"`
 	RetryInterval         time.Duration                `koanf:"retry-interval"`
+	SafeShutdownDelay     time.Duration                `koanf:"safe-shutdown-delay"`
 	MaxMsgPerPoll         arbutil.MessageIndex         `koanf:"msg-per-poll"`
 	MyUrlImpl             string                       `koanf:"my-url"`
 	Signing               simple_hmac.SimpleHmacConfig `koanf:"signer"`
@@ -83,6 +84,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
 	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "")
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
+	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delayto main sequencer after transferring control")
 	f.Uint16(prefix+".msg-per-poll", uint16(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
 	simple_hmac.SimpleHmacConfigAddOptions(prefix+".signer", f)
@@ -96,22 +98,24 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	LockoutSpare:          time.Duration(30) * time.Second,
 	SeqNumDuration:        time.Duration(24) * time.Hour,
 	UpdateInterval:        time.Duration(5) * time.Second,
+	SafeShutdownDelay:     time.Duration(10) * time.Second,
 	RetryInterval:         time.Second,
 	MaxMsgPerPoll:         2000,
 	MyUrlImpl:             INVALID_URL,
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
-	Enable:          false,
-	RedisUrl:        redisutil.DefaultTestRedisURL,
-	LockoutDuration: time.Second * 2,
-	LockoutSpare:    time.Millisecond * 10,
-	SeqNumDuration:  time.Minute * 10,
-	UpdateInterval:  time.Millisecond * 10,
-	RetryInterval:   time.Millisecond * 3,
-	MaxMsgPerPoll:   20,
-	MyUrlImpl:       INVALID_URL,
-	Signing:         simple_hmac.TestSimpleHmacConfig,
+	Enable:            false,
+	RedisUrl:          redisutil.DefaultTestRedisURL,
+	LockoutDuration:   time.Second * 2,
+	LockoutSpare:      time.Millisecond * 10,
+	SeqNumDuration:    time.Minute * 10,
+	UpdateInterval:    time.Millisecond * 10,
+	SafeShutdownDelay: time.Millisecond * 20,
+	RetryInterval:     time.Millisecond * 3,
+	MaxMsgPerPoll:     20,
+	MyUrlImpl:         INVALID_URL,
+	Signing:           simple_hmac.TestSimpleHmacConfig,
 }
 
 func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
@@ -594,17 +598,20 @@ func (c *SeqCoordinator) StopAndWait() {
 	}
 	if wasChosen {
 		_ = c.chosenOneRelease(c.GetContext())
-		log.Info("Waiting for someone else to become main sequencer..")
-		var nextChosen string
-		for {
-			var err error
-			nextChosen, err = c.RecommendLiveSequencer(context.Background())
-			if err == nil && nextChosen != "" && nextChosen != c.config.MyUrl() {
-				break
+		if c.config.SafeShutdownDelay != time.Duration(0) {
+			log.Info("Waiting for someone else to become main sequencer..")
+			var nextChosen string
+			for {
+				var err error
+				nextChosen, err = c.RecommendLiveSequencer(context.Background())
+				if err == nil && nextChosen != "" && nextChosen != c.config.MyUrl() {
+					break
+				}
+				<-time.After(c.config.RetryInterval)
 			}
-			<-time.After(c.config.RetryInterval)
+			_ = c.sequencer.ForwardTo(nextChosen)
+			<-time.After(c.config.SafeShutdownDelay)
 		}
-		_ = c.sequencer.ForwardTo(nextChosen)
 	}
 	_ = c.client.Close()
 }
