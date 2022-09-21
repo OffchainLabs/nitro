@@ -400,8 +400,12 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
+	canActFurther := func() bool {
+		return s.wallet.CanBatchTxs() || s.builder.BuildingTransactionCount() == 0
+	}
+
 	// If we have an old stake, remove it
-	if rawInfo != nil && rawInfo.LatestStakedNode <= latestConfirmedNode {
+	if rawInfo != nil && rawInfo.LatestStakedNode <= latestConfirmedNode && canActFurther() {
 		stakeIsTooOutdated := rawInfo.LatestStakedNode < latestConfirmedNode
 		// We're not trying to stake anyways
 		stakeIsUnwanted := effectiveStrategy < StakeLatestStrategy
@@ -420,7 +424,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	if walletAddressOrZero != (common.Address{}) {
+	if walletAddressOrZero != (common.Address{}) && canActFurther() {
 		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, walletAddressOrZero)
 		if err != nil {
 			return nil, err
@@ -433,7 +437,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	if rawInfo != nil {
+	if rawInfo != nil && canActFurther() {
 		if err = s.handleConflict(ctx, rawInfo); err != nil {
 			return nil, err
 		}
@@ -441,7 +445,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 
 	// Don't attempt to create a new stake if we're resolving a node and the stake is elevated,
 	// as that might affect the current required stake.
-	if rawInfo != nil || !resolvingNode || !requiredStakeElevated {
+	if (rawInfo != nil || !resolvingNode || !requiredStakeElevated) && canActFurther() {
 		// Advance stake up to 20 times in one transaction
 		for i := 0; info.CanProgress && i < 20; i++ {
 			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
@@ -453,7 +457,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	if rawInfo != nil && s.builder.BuildingTransactionCount() == 0 {
+	if rawInfo != nil && s.builder.BuildingTransactionCount() == 0 && canActFurther() {
 		if err := s.createConflict(ctx, rawInfo); err != nil {
 			return nil, err
 		}

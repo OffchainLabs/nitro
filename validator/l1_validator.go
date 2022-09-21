@@ -167,7 +167,7 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 			// We aren't an example of someone staked on a competitor
 			return false, nil
 		}
-		log.Info("rejecing node", "node", unresolvedNodeIndex)
+		log.Info("rejecting node", "node", unresolvedNodeIndex)
 		_, err = v.rollup.RejectNextNode(v.builder.Auth(ctx), *addr)
 		return true, err
 	case CONFIRM_TYPE_VALID:
@@ -176,6 +176,7 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 			return false, err
 		}
 		afterGs := nodeInfo.AfterState().GlobalState
+		log.Info("confirming node", "node", unresolvedNodeIndex)
 		_, err = v.rollup.ConfirmNextNode(v.builder.Auth(ctx), afterGs.BlockHash, afterGs.SendRoot)
 		if err != nil {
 			return false, err
