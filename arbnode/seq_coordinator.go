@@ -84,7 +84,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
 	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "")
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
-	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delayto main sequencer after transferring control")
+	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
 	f.Uint16(prefix+".msg-per-poll", uint16(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
 	simple_hmac.SimpleHmacConfigAddOptions(prefix+".signer", f)
@@ -590,26 +590,29 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 func (c *SeqCoordinator) StopAndWait() {
 	wasChosen := c.CurrentlyChosen()
 	c.StopWaiter.StopAndWait()
+	// normal context now closed, use parent context
+	ctx := c.StopWaiter.GetParentContext()
 	if c.CurrentlyChosen() {
 		wasChosen = true
 	}
 	if c.reportedAlive {
-		_ = c.livelinessRelease(c.GetContext())
+		_ = c.livelinessRelease(ctx)
 	}
 	if wasChosen {
-		_ = c.chosenOneRelease(c.GetContext())
+		_ = c.chosenOneRelease(ctx)
 		if c.config.SafeShutdownDelay != time.Duration(0) {
 			log.Info("Waiting for someone else to become main sequencer..")
 			var nextChosen string
 			for {
 				var err error
-				nextChosen, err = c.RecommendLiveSequencer(context.Background())
+				nextChosen, err = c.CurrentChosenSequencer(ctx)
 				if err == nil && nextChosen != "" && nextChosen != c.config.MyUrl() {
 					break
 				}
 				<-time.After(c.config.RetryInterval)
 			}
 			_ = c.sequencer.ForwardTo(nextChosen)
+			log.Info("Waiting some more", "delay", c.config.SafeShutdownDelay, "nextChosen", nextChosen)
 			<-time.After(c.config.SafeShutdownDelay)
 		}
 	}
