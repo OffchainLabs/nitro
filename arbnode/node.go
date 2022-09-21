@@ -949,7 +949,7 @@ func createNodeImpl(
 			tmpAddress := common.HexToAddress(config.Validator.ContractWalletAddress)
 			existingWalletAddress = &tmpAddress
 		}
-		wallet, err := validator.NewValidatorWallet(ctx, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+		wallet, err := validator.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
 		if err != nil {
 			return nil, err
 		}

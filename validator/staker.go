@@ -145,7 +145,7 @@ func stakerStrategyFromString(s string) (StakerStrategy, error) {
 
 func NewStaker(
 	l1Reader L1ReaderInterface,
-	wallet *ValidatorWallet,
+	wallet ValidatorWalletInterface,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
 	l2Blockchain *core.BlockChain,
@@ -230,6 +230,10 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		if err == nil {
 			backoff = time.Second
+			if arbTx != nil && !s.wallet.CanBatchTxs() {
+				// Try to create another tx
+				return 0
+			}
 			return s.config.StakerInterval
 		}
 		backoff *= 2
@@ -440,6 +444,9 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
 				return nil, err
 			}
+			if !s.wallet.CanBatchTxs() {
+				info.CanProgress = false
+			}
 		}
 	}
 
@@ -478,7 +485,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.builder,
 			s.builder.builderAuth,
 			*s.builder.wallet.Address(),
-			s.challengeManagerAddress,
+			s.wallet.ChallengeManagerAddress(),
 			*info.CurrentChallenge,
 			s.l2Blockchain,
 			s.das,

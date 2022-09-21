@@ -40,15 +40,14 @@ const (
 )
 
 type L1Validator struct {
-	rollup                  *RollupWatcher
-	rollupAddress           common.Address
-	challengeManagerAddress common.Address
-	validatorUtils          *rollupgen.ValidatorUtils
-	client                  arbutil.L1Interface
-	builder                 *ValidatorTxBuilder
-	wallet                  *ValidatorWallet
-	callOpts                bind.CallOpts
-	genesisBlockNumber      uint64
+	rollup             *RollupWatcher
+	rollupAddress      common.Address
+	validatorUtils     *rollupgen.ValidatorUtils
+	client             arbutil.L1Interface
+	builder            *ValidatorTxBuilder
+	wallet             ValidatorWalletInterface
+	callOpts           bind.CallOpts
+	genesisBlockNumber uint64
 
 	l2Blockchain       *core.BlockChain
 	das                arbstate.DataAvailabilityReader
@@ -60,7 +59,7 @@ type L1Validator struct {
 
 func NewL1Validator(
 	client arbutil.L1Interface,
-	wallet *ValidatorWallet,
+	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
 	l2Blockchain *core.BlockChain,
@@ -116,10 +115,6 @@ func (v *L1Validator) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	v.challengeManagerAddress, err = v.rollup.ChallengeManager(v.getCallOpts(ctx))
-	if err != nil {
-		return err
-	}
 	return v.updateBlockValidatorModuleRoot(ctx)
 }
 
@@ -152,7 +147,7 @@ func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Tra
 		return nil, nil
 	}
 	log.Info("timing out challenges", "count", len(challengesToEliminate))
-	return v.wallet.TimeoutChallenges(ctx, v.challengeManagerAddress, challengesToEliminate)
+	return v.wallet.TimeoutChallenges(ctx, challengesToEliminate)
 }
 
 func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, latestConfirmedNode *uint64) (bool, error) {

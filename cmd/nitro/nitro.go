@@ -206,7 +206,7 @@ func main() {
 			log.Error("error getting deployment info for creating validator wallet contract", "error", err)
 			return
 		}
-		addr, err := validator.GetValidatorWallet(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
+		addr, err := validator.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
 			log.Error("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
 			return
