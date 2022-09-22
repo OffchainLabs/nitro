@@ -25,9 +25,9 @@ func TestDelayInboxLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _, l2client, l2stack, l1info, l1backend, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
+	l2info, l2node, l2client, l1info, l1backend, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
 	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stack)
+	defer l2node.StopAndWait()
 
 	l2info.GenerateAccount("User2")
 

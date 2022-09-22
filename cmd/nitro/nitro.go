@@ -326,8 +326,8 @@ func main() {
 		}
 	}
 
-	if err := stack.Start(); err != nil {
-		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
+	if err := currentNode.Start(ctx); err != nil {
+		panic(fmt.Sprintf("Error starting node: %v\n", err))
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -343,9 +343,7 @@ func main() {
 	// cause future ctrl+c's to panic
 	close(sigint)
 
-	if err := stack.Close(); err != nil {
-		panic(fmt.Sprintf("Error closing stack: %v\n", err))
-	}
+	currentNode.StopAndWait()
 }
 
 type NodeConfig struct {
