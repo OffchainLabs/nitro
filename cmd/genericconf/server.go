@@ -114,19 +114,19 @@ func WSConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type IPCConfig struct {
-	IPCPath string `koanf:"ipcpath"`
+	Path string `koanf:"path"`
 }
 
 var IPCConfigDefault = IPCConfig{
-	IPCPath: "",
+	Path: "",
 }
 
 func (c *IPCConfig) Apply(stackConf *node.Config) {
-	stackConf.IPCPath = c.IPCPath
+	stackConf.IPCPath = c.Path
 }
 
 func IPCConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".ipcpath", IPCConfigDefault.IPCPath, "Requested location to place the IPC endpoint. An empty path disables IPC.")
+	f.String(prefix+".path", IPCConfigDefault.Path, "Requested location to place the IPC endpoint. An empty path disables IPC.")
 }
 
 type GraphQLConfig struct {
