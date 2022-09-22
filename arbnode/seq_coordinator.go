@@ -111,7 +111,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	LockoutSpare:      time.Millisecond * 10,
 	SeqNumDuration:    time.Minute * 10,
 	UpdateInterval:    time.Millisecond * 10,
-	SafeShutdownDelay: time.Millisecond * 20,
+	SafeShutdownDelay: time.Duration(0),
 	RetryInterval:     time.Millisecond * 3,
 	MaxMsgPerPoll:     20,
 	MyUrlImpl:         INVALID_URL,
