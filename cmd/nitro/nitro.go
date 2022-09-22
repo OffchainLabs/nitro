@@ -40,6 +40,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -122,7 +123,7 @@ func main() {
 	args := os.Args[1:]
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
 	if err != nil {
-		util.HandleError(err, printSampleUsage)
+		confighelpers.HandleError(err, printSampleUsage)
 
 		return
 	}
@@ -131,7 +132,7 @@ func main() {
 		panic(err)
 	}
 
-	vcsRevision, vcsTime := util.GetVersion()
+	vcsRevision, vcsTime := confighelpers.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
@@ -234,6 +235,7 @@ func main() {
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.IPC.Apply(&stackConf)
 	nodeConfig.GraphQL.Apply(&stackConf)
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
@@ -260,7 +262,7 @@ func main() {
 
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
 	if err != nil {
-		util.HandleError(err, printSampleUsage)
+		confighelpers.HandleError(err, printSampleUsage)
 		return
 	}
 
@@ -362,6 +364,7 @@ type NodeConfig struct {
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
+	IPC           genericconf.IPCConfig           `koanf:"ipc"`
 	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -378,6 +381,7 @@ var NodeConfigDefault = NodeConfig{
 	Persistent:    conf.PersistentConfigDefault,
 	HTTP:          genericconf.HTTPConfigDefault,
 	WS:            genericconf.WSConfigDefault,
+	IPC:           genericconf.IPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 }
@@ -392,6 +396,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.PersistentConfigAddOptions("persistent", f)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
+	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
@@ -452,7 +457,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	NodeConfigAddOptions(f)
 
-	k, err := util.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -557,19 +562,19 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		}
 	}
 
-	err = util.ApplyOverrides(f, k)
+	err = confighelpers.ApplyOverrides(f, k)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
 	var nodeConfig NodeConfig
-	if err := util.EndCommonParse(k, &nodeConfig); err != nil {
+	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
-		err = util.DumpConfig(k, map[string]interface{}{
+		err = confighelpers.DumpConfig(k, map[string]interface{}{
 			"l1.wallet.password":        "",
 			"l1.wallet.private-key":     "",
 			"l2.dev-wallet.password":    "",
