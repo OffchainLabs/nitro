@@ -185,21 +185,25 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return createTestL1BlockChainWithConfig(t, l1info, nil)
 }
 
+func getTestStackConfig(t *testing.T) *node.Config {
+	stackConfig := &node.DefaultConfig
+	stackConfig.HTTPPort = 0
+	stackConfig.WSPort = 0
+	stackConfig.UseLightweightKDF = true
+	stackConfig.P2P.ListenAddr = ""
+	stackConfig.P2P.NoDial = true
+	stackConfig.P2P.NoDiscovery = true
+	stackConfig.P2P.NAT = nil
+	stackConfig.DataDir = t.TempDir()
+	return stackConfig
+}
+
 func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
 	if stackConfig == nil {
-		defaultStackConfig := node.DefaultConfig
-		stackConfig = &defaultStackConfig
-		stackConfig.HTTPPort = 0
-		stackConfig.WSPort = 0
-		stackConfig.UseLightweightKDF = true
-		stackConfig.P2P.ListenAddr = ""
-		stackConfig.P2P.NoDial = true
-		stackConfig.P2P.NoDiscovery = true
-		stackConfig.P2P.NAT = nil
-		stackConfig.DataDir = t.TempDir()
+		stackConfig = getTestStackConfig(t)
 	}
 	l1info.GenerateAccount("Faucet")
 

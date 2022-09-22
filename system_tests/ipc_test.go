@@ -9,21 +9,12 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/node"
 )
 
 func TestIpcRpc(t *testing.T) {
 	ipcPath := filepath.Join(t.TempDir(), "test.ipc")
 
-	stackConf := node.DefaultConfig
-	stackConf.HTTPPort = 0
-	stackConf.WSPort = 0
-	stackConf.UseLightweightKDF = true
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.NoDiscovery = true
-	stackConf.P2P.NAT = nil
-	stackConf.DataDir = t.TempDir()
+	stackConf := getTestStackConfig(t)
 	stackConf.IPCPath = ipcPath
 
 	ctx, cancel := context.WithCancel(context.Background())
