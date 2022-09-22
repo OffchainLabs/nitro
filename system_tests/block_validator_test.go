@@ -27,7 +27,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeString)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
-	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 

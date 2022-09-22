@@ -230,6 +230,7 @@ func main() {
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.IPC.Apply(&stackConf)
 	nodeConfig.GraphQL.Apply(&stackConf)
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
@@ -356,6 +357,7 @@ type NodeConfig struct {
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
+	IPC           genericconf.IPCConfig           `koanf:"ipc"`
 	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -372,6 +374,7 @@ var NodeConfigDefault = NodeConfig{
 	Persistent:    conf.PersistentConfigDefault,
 	HTTP:          genericconf.HTTPConfigDefault,
 	WS:            genericconf.WSConfigDefault,
+	IPC:           genericconf.IPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 }
@@ -386,6 +389,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.PersistentConfigAddOptions("persistent", f)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
+	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
