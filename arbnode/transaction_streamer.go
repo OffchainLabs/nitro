@@ -553,7 +553,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	}
 
 	if s.coordinator != nil {
-		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta); err != nil {
+		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta, false); err != nil {
 			return err
 		}
 	}
@@ -619,7 +619,7 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 		}
 		messagesWithMeta = append(messagesWithMeta, newMessage)
 		if s.coordinator != nil {
-			if err := s.coordinator.SequencingMessage(pos+arbutil.MessageIndex(i), &newMessage); err != nil {
+			if err := s.coordinator.SequencingMessage(pos+arbutil.MessageIndex(i), &newMessage, true); err != nil {
 				return err
 			}
 		}

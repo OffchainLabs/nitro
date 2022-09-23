@@ -37,16 +37,18 @@ type SeqCoordinator struct {
 
 	RedisCoordinator
 
-	sync      *SyncMonitor
-	streamer  *TransactionStreamer
-	sequencer *Sequencer
-	signer    *simple_hmac.SimpleHmac
-	config    SeqCoordinatorConfig
+	sync             *SyncMonitor
+	streamer         *TransactionStreamer
+	sequencer        *Sequencer
+	delayedSequencer *DelayedSequencer
+	signer           *simple_hmac.SimpleHmac
+	config           SeqCoordinatorConfig
 
 	prevChosenSequencer string
 	reportedAlive       bool
 
-	lockoutUntil int64 // atomic
+	lockoutUntil             int64 // atomic
+	initialDelayedSequencing int32 // atomic
 
 	chosenUpdateMutex sync.Mutex // manages access to chosenOneUpdate
 	redisErrors       int        // error counter, from workthread
@@ -135,6 +137,16 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync
 	return coordinator, nil
 }
 
+func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer) {
+	if c.Started() {
+		panic("trying to set delayed sequencer after start")
+	}
+	if c.delayedSequencer != nil {
+		panic("trying to set delayed sequencer when already set")
+	}
+	c.delayedSequencer = delayedSequencer
+}
+
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
 	signerConfig := simple_hmac.DefaultSimpleHmacConfig
 	if keyConfig == "" {
@@ -180,7 +192,7 @@ func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 	return nil
 }
 
-func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
+func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata, hadLockout bool) error {
 	var messageData *string
 	if lastmsg != nil {
 		msgBytes, err := json.Marshal(lastmsg)
@@ -247,8 +259,27 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 	if err != nil {
 		return err
 	}
+	safeLockoutElapse := lockoutUntil.Add(-c.config.LockoutSpare)
+	if time.Now().After(safeLockoutElapse) {
+		return fmt.Errorf("safe lockout elapsed %v in the past", time.Since(safeLockoutElapse))
+	}
+	if c.delayedSequencer != nil && !hadLockout {
+		// Before we say we're CurrentlyChosen and proceed with sequencing,
+		// make sure to include any pending delayed messages first.
+		// This provides a guarantee that after downtime, finalized delayed messages will have priority.
+		atomic.StoreInt32(&c.initialDelayedSequencing, 1)
+		defer atomic.StoreInt32(&c.initialDelayedSequencing, 0)
+		err := c.delayedSequencer.ForceSequenceDelayed(ctx)
+		if err != nil {
+			releaseErr := c.chosenOneRelease(ctx)
+			if releaseErr != nil {
+				log.Warn("failed to release lockout after failed delayed message sequencing", "err", releaseErr)
+			}
+			return err
+		}
+	}
 	isActiveSequencer.Update(1)
-	atomicTimeWrite(&c.lockoutUntil, lockoutUntil.Add(-c.config.LockoutSpare))
+	atomicTimeWrite(&c.lockoutUntil, safeLockoutElapse)
 	return nil
 }
 
@@ -387,7 +418,7 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 		log.Error("coordinator cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
-	err = c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
+	err = c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil, true)
 	if err != nil {
 		log.Warn("coordinator failed chosen-one keepalive", "err", err)
 		return c.retryAfterRedisError()
@@ -495,7 +526,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
-		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
+		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil, false)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
 			log.Info("sequencer failed to become chosen", "err", err, "msgcount", localMsgCount)
@@ -598,11 +629,11 @@ func (c *SeqCoordinator) CurrentlyChosen() bool {
 	return time.Now().Before(atomicTimeRead(&c.lockoutUntil))
 }
 
-func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
-	if !c.CurrentlyChosen() {
+func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata, isDelayed bool) error {
+	if !c.CurrentlyChosen() && !(isDelayed && atomic.LoadInt32(&c.initialDelayedSequencing) == 1) {
 		return fmt.Errorf("%w: not main sequencer", ErrRetrySequencer)
 	}
-	if err := c.chosenOneUpdate(c.GetContext(), pos, pos+1, msg); err != nil {
+	if err := c.chosenOneUpdate(c.GetContext(), pos, pos+1, msg, true); err != nil {
 		return err
 	}
 	return nil
