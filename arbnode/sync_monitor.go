@@ -122,7 +122,6 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	}
 
 	if !syncing {
-
 		return make(map[string]interface{})
 	}
 
