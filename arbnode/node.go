@@ -412,7 +412,6 @@ type Config struct {
 	SyncMonitor            SyncMonitorConfig              `koanf:"sync-monitor"`
 	Dangerous              DangerousConfig                `koanf:"dangerous"`
 	Caching                CachingConfig                  `koanf:"caching"`
-	Archive                bool                           `koanf:"archive"`
 	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
 }
 
@@ -471,9 +470,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
-
-	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
-	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
 }
 
 var ConfigDefault = Config{
@@ -493,7 +489,6 @@ var ConfigDefault = Config{
 	Wasm:                   DefaultWasmConfig,
 	SyncMonitor:            DefaultSyncMonitorConfig,
 	Dangerous:              DefaultDangerousConfig,
-	Archive:                false,
 	TxLookupLimit:          40_000_000,
 	Caching:                DefaultCachingConfig,
 }

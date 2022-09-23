@@ -185,8 +185,8 @@ func main() {
 	}
 
 	if nodeConfig.Node.Validator.Enable {
-		if !nodeConfig.Node.Archive {
-			panic("validator requires --node.archive")
+		if !nodeConfig.Node.Caching.Archive {
+			panic("validator requires --node.caching.archive")
 		}
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
@@ -217,10 +217,6 @@ func main() {
 		return
 	}
 
-	if nodeConfig.Node.Archive {
-		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
-		nodeConfig.Node.Caching.Archive = true
-	}
 	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
