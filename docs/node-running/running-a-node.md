@@ -77,7 +77,7 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
   - Comma separated list of virtual hostnames from which to accept requests (server enforced). Accepts `*` wildcard (default `localhost`)
 - `--http.addr`
   - Address to bind RPC to. May need to be set to `0.0.0.0` for docker networking to work properly
-- `--node.archive`
+- `--node.caching.archive`
   - Retain past block state
 - `--node.feed.input.url=<feed address>`
   - Defaults to `wss://<chainName>.arbitrum.io/feed`. If running more than a couple nodes, you will want to provide one feed relay per datacenter, see further instructions below
