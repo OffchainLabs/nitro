@@ -128,7 +128,7 @@ func main() {
 		return
 	}
 	if nodeConfig.Node.Archive {
-		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
+		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
 		nodeConfig.Node.Caching.Archive = true
 	}
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel))
