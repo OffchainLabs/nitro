@@ -1,4 +1,4 @@
-package arbnode
+package redisutil
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
 const CHOSENSEQ_KEY string = "coordinator.chosen"              // Never overwritten. Expires or released only
@@ -24,22 +23,24 @@ const INVALID_VAL string = "INVALID"
 const INVALID_URL string = "<?INVALID-URL?>"
 
 type RedisCoordinator struct {
-	client redis.UniversalClient
+	Client redis.UniversalClient
 }
 
+func LivelinessKeyFor(url string) string { return LIVELINESS_KEY_PREFIX + url }
+
 func NewRedisCoordinator(redisUrl string) (*RedisCoordinator, error) {
-	redisClient, err := redisutil.RedisClientFromURL(redisUrl)
+	redisClient, err := RedisClientFromURL(redisUrl)
 	if err != nil {
 		return nil, err
 	}
 
 	return &RedisCoordinator{
-		client: redisClient,
+		Client: redisClient,
 	}, nil
 }
 
 func (c *RedisCoordinator) RecommendLiveSequencer(ctx context.Context) (string, error) {
-	prioritiesString, err := c.client.Get(ctx, PRIORITIES_KEY).Result()
+	prioritiesString, err := c.Client.Get(ctx, PRIORITIES_KEY).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			err = errors.New("sequencer priorities unset")
@@ -48,7 +49,7 @@ func (c *RedisCoordinator) RecommendLiveSequencer(ctx context.Context) (string, 
 	}
 	priorities := strings.Split(prioritiesString, ",")
 	for _, url := range priorities {
-		err := c.client.Get(ctx, livelinessKeyFor(url)).Err()
+		err := c.Client.Get(ctx, LivelinessKeyFor(url)).Err()
 		if errors.Is(err, redis.Nil) { // liveliness not set
 			continue
 		}
@@ -61,6 +62,6 @@ func (c *RedisCoordinator) RecommendLiveSequencer(ctx context.Context) (string, 
 	return "", nil
 }
 
-func messageKeyFor(pos arbutil.MessageIndex) string {
+func MessageKeyFor(pos arbutil.MessageIndex) string {
 	return fmt.Sprintf("%s%d", MESSAGE_KEY_PREFIX, pos)
 }
