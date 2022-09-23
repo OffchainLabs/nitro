@@ -63,12 +63,13 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
 
 	lastBlockNum := s.txStreamer.bc.CurrentHeader().Number.Uint64()
+	res["blockNum"] = lastBlockNum
 	lastBuiltMessage, err := s.txStreamer.BlockNumberToMessageCount(lastBlockNum)
 	if err != nil {
 		res["blockMessageToMessageCountError"] = err.Error()
 		syncing = true
+		lastBuiltMessage = 0
 	} else {
-		res["blockNum"] = lastBlockNum
 		res["messageOfLastBlock"] = lastBuiltMessage
 		arbutil.UpdateSequenceNumberGauge(lastBuiltMessage)
 	}
