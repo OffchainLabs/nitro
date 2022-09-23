@@ -244,13 +244,13 @@ func (s *batchSegments) recompressAll() error {
 	return nil
 }
 
-func (s *batchSegments) testForOverflow() (bool, error) {
+func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// there is room, no need to flush
 	if (s.lastCompressedSize + s.newUncompressedSize) < s.sizeLimit {
 		return false, nil
 	}
 	// don't want to flush for headers
-	if s.trailingHeaders > 0 {
+	if isHeader {
 		return false, nil
 	}
 	err := s.compressedWriter.Flush()
@@ -295,7 +295,7 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	overflow, err := s.testForOverflow()
+	overflow, err := s.testForOverflow(isHeader)
 	if err != nil {
 		return false, err
 	}
