@@ -92,7 +92,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			},
 			DelayedMessagesRead: 1,
 		}
-		err = node.n.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
+		err = node.n.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage, false)
 		if errors.Is(err, arbnode.ErrRetrySequencer) {
 			return false
 		}
