@@ -58,7 +58,7 @@ func (c *RedisCoordinator) RecommendLiveSequencer(ctx context.Context) (string, 
 		}
 		return url, nil
 	}
-	log.Info("no sequencer appears live on redis", "priorities", prioritiesString)
+	log.Error("no sequencer appears live on redis", "priorities", prioritiesString)
 	return "", nil
 }
 
