@@ -20,12 +20,15 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -57,6 +60,9 @@ type TransactionStreamer struct {
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
 	inboxReader     *InboxReader
+
+	// Only used by the sequencer. Protected by the reorgMutex.
+	nonceCache *containers.LruCache[common.Address, uint64]
 }
 
 func NewTransactionStreamer(
@@ -71,6 +77,7 @@ func NewTransactionStreamer(
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 		chainId:            bc.Config().ChainID.Uint64(),
+		nonceCache:         containers.NewLruCache[common.Address, uint64](0),
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -171,6 +178,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	atomic.AddUint32(&s.reorgPending, 1)
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
+	s.nonceCache.Clear()
 	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
 	blockNum, err := s.MessageCountToBlockNumber(count)
 	if err != nil {
@@ -440,9 +448,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 }
 
 func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbos.L1IncomingMessage, error) {
-	if len(txErrors) != len(txes) {
-		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(txErrors), len(txes))
-	}
 	var l2Message []byte
 	if len(txes) == 1 && txErrors[0] == nil {
 		txBytes, err := txes[0].MarshalBinary()
@@ -474,13 +479,22 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 	}, nil
 }
 
-func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) error {
+func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks, nonceCacheSize int) (returningErr error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 	s.reorgMutex.RLock()
 	defer s.reorgMutex.RUnlock()
+
+	s.nonceCache.SetMaxEntries(nonceCacheSize)
+	if nonceCacheSize == 0 {
+		s.nonceCache.Clear()
+	} else {
+		for s.nonceCache.Len() > nonceCacheSize {
+			s.nonceCache.RemoveOldest()
+		}
+	}
 
 	pos, err := s.GetMessageCount()
 	if err != nil {
@@ -512,6 +526,42 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
 
+	if nonceCacheSize > 0 {
+		oldPreTxFilter := hooks.PreTxFilter
+		oldPostTxFilter := hooks.PostTxFilter
+		hooks.PreTxFilter = func(config *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+			stateNonce, ok := s.nonceCache.Get(sender)
+			if !ok {
+				stateNonce = statedb.GetNonce(sender)
+				s.nonceCache.Add(sender, stateNonce)
+			}
+			txNonce := tx.Nonce()
+			if txNonce < stateNonce {
+				return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooLow, sender, txNonce, stateNonce)
+			} else if txNonce > stateNonce {
+				return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooHigh, sender, txNonce, stateNonce)
+			}
+			return oldPreTxFilter(config, header, statedb, arbos, tx, sender)
+		}
+		hooks.PostTxFilter = func(arbos *arbosState.ArbosState, tx *types.Transaction, sender common.Address, nonce uint64, res *core.ExecutionResult) error {
+			err := oldPostTxFilter(arbos, tx, sender, nonce, res)
+			if err != nil {
+				return err
+			}
+			if s.nonceCache.GetMaxEntries() > 0 {
+				s.nonceCache.Add(sender, tx.Nonce()+1)
+			}
+			return nil
+		}
+	}
+
+	defer func() {
+		if returningErr != nil {
+			// This error may have invalidated the nonce cache
+			s.nonceCache.Clear()
+		}
+	}()
+
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
 		header,
@@ -525,6 +575,9 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	)
 	if err != nil {
 		return err
+	}
+	if len(hooks.TxErrors) != len(txes) {
+		return fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
 
 	if len(receipts) == 0 {
@@ -759,6 +812,11 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	batchFetcher := func(batchNum uint64) ([]byte, error) {
 		return s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 	}
+
+	if pos >= msgCount {
+		return nil
+	}
+	s.nonceCache.Clear()
 
 	for pos < msgCount {
 

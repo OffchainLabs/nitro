@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
 
@@ -47,6 +47,7 @@ type SequencerConfig struct {
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
 	Forwarder                   ForwarderConfig          `koanf:"forwarder"`
 	QueueSize                   int                      `koanf:"queue-size"`
+	NonceCacheSize              int                      `koanf:"nonce-cache-size"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -72,6 +73,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxAcceptableTimestampDelta: time.Hour,
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
+	NonceCacheSize:              1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
@@ -83,6 +85,7 @@ var TestSequencerConfig = SequencerConfig{
 	SenderWhitelist:             "",
 	Forwarder:                   DefaultTestForwarderConfig,
 	QueueSize:                   128,
+	NonceCacheSize:              4,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -94,6 +97,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
+	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -119,7 +123,7 @@ type Sequencer struct {
 
 	txStreamer      *TransactionStreamer
 	txQueue         chan txQueueItem
-	txRetryQueue    arbutil.Queue[txQueueItem]
+	txRetryQueue    containers.Queue[txQueueItem]
 	l1Reader        *headerreader.HeaderReader
 	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
@@ -206,7 +210,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, _ *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction, _ common.Address) error {
 	return nil
 }
 
@@ -404,7 +408,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		DiscardInvalidTxsEarly: true,
 		TxErrors:               []error{},
 	}
-	err := s.txStreamer.SequenceTransactions(header, txes, hooks)
+	err := s.txStreamer.SequenceTransactions(header, txes, hooks, s.config().NonceCacheSize)
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
