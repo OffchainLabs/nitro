@@ -563,7 +563,7 @@ func (v *StatelessBlockValidator) jitBlock(
 	if err != nil {
 		return empty, nil, err
 	}
-	state, err := machine.prove(entry, resolver, delayed)
+	state, err := machine.prove(ctx, entry, resolver, delayed)
 	return state, delayed, err
 }
 
