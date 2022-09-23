@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -207,7 +208,7 @@ func setMessageCount(batch ethdb.KeyValueWriter, count arbutil.MessageIndex) err
 	if err != nil {
 		return err
 	}
-	arbutil.UpdateSequenceNumberGauge(count)
+	sharedmetrics.UpdateSequenceNumberGauge(count)
 
 	return nil
 }
@@ -816,7 +817,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			s.validator.NewBlock(block, lastBlockHeader, *msg)
 		}
 
-		arbutil.UpdateSequenceNumberInBlockGauge(pos)
+		sharedmetrics.UpdateSequenceNumberInBlockGauge(pos)
 		s.latestBlockAndMessageMutex.Lock()
 		s.latestBlock = block
 		s.latestMessage = msg.Message

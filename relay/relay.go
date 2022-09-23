@@ -6,7 +6,6 @@ package relay
 import (
 	"context"
 	"errors"
-	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"net"
 	"time"
 
@@ -18,6 +17,8 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -102,7 +103,7 @@ func (r *Relay) Start(ctx context.Context) error {
 					continue
 				}
 				recentFeedItemsNew[msg.SequenceNumber] = time.Now()
-				arbutil.UpdateSequenceNumberGauge(msg.SequenceNumber)
+				sharedmetrics.UpdateSequenceNumberGauge(msg.SequenceNumber)
 				r.broadcaster.BroadcastSingleFeedMessage(&msg)
 			case cs := <-r.confirmedSequenceNumberChan:
 				if lastConfirmed == cs {
