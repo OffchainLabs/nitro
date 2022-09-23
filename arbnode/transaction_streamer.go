@@ -535,11 +535,9 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 				stateNonce = statedb.GetNonce(sender)
 				s.nonceCache.Add(sender, stateNonce)
 			}
-			txNonce := tx.Nonce()
-			if txNonce < stateNonce {
-				return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooLow, sender, txNonce, stateNonce)
-			} else if txNonce > stateNonce {
-				return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooHigh, sender, txNonce, stateNonce)
+			err := MakeNonceError(sender, tx.Nonce(), stateNonce)
+			if err != nil {
+				return err
 			}
 			return oldPreTxFilter(config, header, statedb, arbos, tx, sender)
 		}
