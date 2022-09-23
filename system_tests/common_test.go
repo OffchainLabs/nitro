@@ -182,25 +182,35 @@ func (l *lifecycle) Stop() error {
 }
 
 func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
+	return createTestL1BlockChainWithConfig(t, l1info, nil)
+}
+
+func getTestStackConfig(t *testing.T) *node.Config {
+	stackConfig := node.DefaultConfig
+	stackConfig.HTTPPort = 0
+	stackConfig.WSPort = 0
+	stackConfig.UseLightweightKDF = true
+	stackConfig.P2P.ListenAddr = ""
+	stackConfig.P2P.NoDial = true
+	stackConfig.P2P.NoDiscovery = true
+	stackConfig.P2P.NAT = nil
+	stackConfig.DataDir = t.TempDir()
+	return &stackConfig
+}
+
+func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
+	}
+	if stackConfig == nil {
+		stackConfig = getTestStackConfig(t)
 	}
 	l1info.GenerateAccount("Faucet")
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
-	stackConf := node.DefaultConfig
-	stackConf.HTTPPort = 0
-	stackConf.WSPort = 0
-	stackConf.UseLightweightKDF = true
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.NoDiscovery = true
-	stackConf.P2P.NAT = nil
-	var err error
-	stackConf.DataDir = t.TempDir()
-	stack, err := node.New(&stackConf)
+	stack, err := node.New(stackConfig)
 	Require(t, err)
 
 	nodeConf := ethconfig.Defaults
@@ -305,8 +315,7 @@ func createTestNodeOnL1(
 	l2info info, node *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
-	conf := arbnode.ConfigDefaultL1Test()
-	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, conf, params.ArbitrumDevTestChainConfig())
+	return createTestNodeOnL1WithConfig(t, ctx, isSequencer, nil, nil, nil)
 }
 
 func createTestNodeOnL1WithConfig(
@@ -315,12 +324,19 @@ func createTestNodeOnL1WithConfig(
 	isSequencer bool,
 	nodeConfig *arbnode.Config,
 	chainConfig *params.ChainConfig,
+	stackConfig *node.Config,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
+	if nodeConfig == nil {
+		nodeConfig = arbnode.ConfigDefaultL1Test()
+	}
+	if chainConfig == nil {
+		chainConfig = params.ArbitrumDevTestChainConfig()
+	}
 	fatalErrChan := make(chan error, 10)
-	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
+	l1info, l1client, l1backend, l1stack = createTestL1BlockChainWithConfig(t, nil, stackConfig)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
