@@ -279,7 +279,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[0]
-	l2Info, nodeA, clientA, l2stackA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, params.ArbitrumDevTestChainConfig())
+	l2Info, nodeA, clientA, l2stackA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfig, params.ArbitrumDevTestChainConfig(), nil)
 	defer requireClose(t, l1stack)
 	defer requireClose(t, l2stackA)
 
