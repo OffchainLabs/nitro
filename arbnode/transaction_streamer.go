@@ -480,6 +480,7 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 	}, nil
 }
 
+// Must be called inside a transaction filter hook (meaning the reorg mutex is held)
 func (s *TransactionStreamer) CheckNonceWithCache(statedb *state.StateDB, sender common.Address, nonce uint64) error {
 	if s.nonceCache.GetMaxEntries() > 0 {
 		stateNonce, ok := s.nonceCache.Get(sender)
@@ -495,6 +496,7 @@ func (s *TransactionStreamer) CheckNonceWithCache(statedb *state.StateDB, sender
 	return nil
 }
 
+// Must be called inside a transaction filter hook (meaning the reorg mutex is held)
 func (s *TransactionStreamer) UpdateNonceCache(sender common.Address, newNonce uint64) {
 	if s.nonceCache.GetMaxEntries() > 0 {
 		s.nonceCache.Add(sender, newNonce)
