@@ -69,6 +69,11 @@ func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetc
 }
 
 func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *ClientConnection) error {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("Recovered in registerClient", "recover", r)
+		}
+	}()
 	if err := cm.catchupBuffer.OnRegisterClient(ctx, clientConnection); err != nil {
 		return err
 	}
