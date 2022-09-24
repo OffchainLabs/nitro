@@ -17,8 +17,7 @@ import (
 )
 
 var (
-	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/feed/sequencenumber/confirmed", nil)
-	latestSequenceNumberGauge    = metrics.NewRegisteredGauge("arb/feed/sequencennumber/latest", nil)
+	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
 )
 
 type SequenceNumberCatchupBuffer struct {
@@ -131,11 +130,9 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 		if len(b.messages) == 0 {
 			// Add to empty list
 			b.messages = append(b.messages, newMsg)
-			latestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
 		} else if expectedSequenceNumber := b.messages[len(b.messages)-1].SequenceNumber + 1; newMsg.SequenceNumber == expectedSequenceNumber {
 			// Next sequence number to add to end of list
 			b.messages = append(b.messages, newMsg)
-			latestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
 		} else if newMsg.SequenceNumber > expectedSequenceNumber {
 			log.Warn(
 				"Message requested to be broadcast has unexpected sequence number; discarding to seqNum from catchup buffer",
@@ -144,7 +141,6 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 			)
 			b.messages = nil
 			b.messages = append(b.messages, newMsg)
-			latestSequenceNumberGauge.Update(int64(newMsg.SequenceNumber))
 		} else {
 			log.Info("Skipping already seen message", "seqNum", newMsg.SequenceNumber)
 		}
