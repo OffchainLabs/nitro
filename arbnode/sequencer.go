@@ -121,12 +121,13 @@ func (i *txQueueItem) returnResult(err error) {
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
-	txStreamer      *TransactionStreamer
-	txQueue         chan txQueueItem
-	txRetryQueue    containers.Queue[txQueueItem]
-	l1Reader        *headerreader.HeaderReader
-	config          SequencerConfigFetcher
-	senderWhitelist map[common.Address]struct{}
+	txStreamer         *TransactionStreamer
+	txQueue            chan txQueueItem
+	txRetryQueue       containers.Queue[txQueueItem]
+	l1Reader           *headerreader.HeaderReader
+	config             SequencerConfigFetcher
+	senderWhitelist    map[common.Address]struct{}
+	lastNonceCacheSize int
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -150,13 +151,14 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
 	return &Sequencer{
-		txStreamer:      txStreamer,
-		txQueue:         make(chan txQueueItem, config.QueueSize),
-		l1Reader:        l1Reader,
-		config:          configFetcher,
-		senderWhitelist: senderWhitelist,
-		l1BlockNumber:   0,
-		l1Timestamp:     0,
+		txStreamer:         txStreamer,
+		txQueue:            make(chan txQueueItem, config.QueueSize),
+		l1Reader:           l1Reader,
+		config:             configFetcher,
+		senderWhitelist:    senderWhitelist,
+		lastNonceCacheSize: 0, // the tx streamer default
+		l1BlockNumber:      0,
+		l1Timestamp:        0,
 	}, nil
 }
 
@@ -210,14 +212,15 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, _ *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction, _ common.Address) error {
-	return nil
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+	return s.txStreamer.CheckNonceWithCache(statedb, sender, tx.Nonce())
 }
 
-func (s *Sequencer) postTxFilter(_ *arbosState.ArbosState, _ *types.Transaction, _ common.Address, dataGas uint64, result *core.ExecutionResult) error {
+func (s *Sequencer) postTxFilter(_ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
+	s.txStreamer.UpdateNonceCache(sender, tx.Nonce()+1)
 	return nil
 }
 
@@ -307,6 +310,13 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 var sequencerInternalError = errors.New("sequencer internal error")
 
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
+	// TODO: this would probably be better handled by a config update hook system or similar
+	newNonceCacheSize := s.config().NonceCacheSize
+	if newNonceCacheSize != s.lastNonceCacheSize {
+		s.lastNonceCacheSize = newNonceCacheSize
+		s.txStreamer.SetNonceCacheSize(newNonceCacheSize)
+	}
+
 	var txes types.Transactions
 	var queueItems []txQueueItem
 	var totalBatchSize int
@@ -408,7 +418,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		DiscardInvalidTxsEarly: true,
 		TxErrors:               []error{},
 	}
-	err := s.txStreamer.SequenceTransactions(header, txes, hooks, s.config().NonceCacheSize)
+	err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
