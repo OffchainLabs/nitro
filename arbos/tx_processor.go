@@ -271,7 +271,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// pay for the retryable's gas and update the pools
 		gascost := arbmath.BigMulByUint(basefee, usergas)
-		if transfer(&tx.From, &networkFeeAccount, gascost) != nil {
+		if err := transfer(&tx.From, &networkFeeAccount, gascost); err != nil {
 			// should be impossible because we just checked the tx.From balance
 			glog.Error("failed to transfer gas cost to network fee account", "err", err)
 			return true, 0, nil, ticketId.Bytes()
