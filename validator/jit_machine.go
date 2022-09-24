@@ -111,7 +111,6 @@ func (machine *JitMachine) prove(
 	if err := conn.SetWriteDeadline(timeout); err != nil {
 		return state, err
 	}
-	defer conn.Close()
 
 	// Tell the new process about the global state
 	gsStart := entry.start()
