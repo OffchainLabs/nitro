@@ -186,7 +186,7 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 }
 
 func getTestStackConfig(t *testing.T) *node.Config {
-	stackConfig := &node.DefaultConfig
+	stackConfig := node.DefaultConfig
 	stackConfig.HTTPPort = 0
 	stackConfig.WSPort = 0
 	stackConfig.UseLightweightKDF = true
@@ -195,7 +195,7 @@ func getTestStackConfig(t *testing.T) *node.Config {
 	stackConfig.P2P.NoDiscovery = true
 	stackConfig.P2P.NAT = nil
 	stackConfig.DataDir = t.TempDir()
-	return stackConfig
+	return &stackConfig
 }
 
 func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {

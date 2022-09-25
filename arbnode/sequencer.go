@@ -23,12 +23,17 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
+)
+
+var (
+	sequencerBacklogGauge = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
 )
 
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
@@ -154,6 +159,9 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 var ErrRetrySequencer = errors.New("please retry transaction")
 
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	sequencerBacklogGauge.Inc(1)
+	defer sequencerBacklogGauge.Dec(1)
+
 	forwarder := s.GetForwarder()
 	if forwarder != nil {
 		err := forwarder.PublishTransaction(ctx, tx)
