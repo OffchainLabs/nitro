@@ -641,6 +641,7 @@ var DefaultCachingConfig = CachingConfig{
 }
 
 type Node struct {
+	Stack                   *node.Node
 	Backend                 *arbitrum.Backend
 	ArbInterface            *ArbInterface
 	L1Reader                *headerreader.HeaderReader
@@ -813,6 +814,7 @@ func createNodeImpl(
 	}
 	if !config.L1Reader.Enable {
 		return &Node{
+			stack,
 			backend,
 			arbInterface,
 			nil,
@@ -978,6 +980,7 @@ func createNodeImpl(
 	}
 
 	return &Node{
+		stack,
 		backend,
 		arbInterface,
 		l1Reader,
@@ -1212,23 +1215,6 @@ func SetUpDataAvailability(
 	return topLevelDas, dasLifecycleManager, nil
 }
 
-type arbNodeLifecycle struct {
-	node *Node
-}
-
-func (l arbNodeLifecycle) Start() error {
-	err := l.node.Start(context.Background())
-	if err != nil {
-		log.Error("failed to start node", "err", err)
-	}
-	return err
-}
-
-func (l arbNodeLifecycle) Stop() error {
-	l.node.StopAndWait()
-	return nil
-}
-
 func CreateNode(
 	ctx context.Context,
 	stack *node.Node,
@@ -1286,14 +1272,17 @@ func CreateNode(
 	})
 	stack.RegisterAPIs(apis)
 
-	stack.RegisterLifecycle(arbNodeLifecycle{currentNode})
 	return currentNode, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
 	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	n.ArbInterface.Initialize(n)
-	err := n.Backend.Start()
+	err := n.Stack.Start()
+	if err != nil {
+		return err
+	}
+	err = n.Backend.Start()
 	if err != nil {
 		return err
 	}
@@ -1406,6 +1395,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
+	}
+	if err := n.Stack.Close(); err != nil {
+		log.Error("error on stak close", "err", err)
 	}
 }
 

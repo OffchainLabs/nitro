@@ -270,7 +270,7 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) {
 		case 6:
 			// no state changes needed
 		default:
-			panic("Unable to perform requested ArbOS upgrade")
+			panic("Unrecognized ArbOS version, please upgrade to latest version of node software")
 		}
 		state.arbosVersion++
 	}
