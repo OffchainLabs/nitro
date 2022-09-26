@@ -123,7 +123,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	for i := 0; i < NumOfThreads; i++ {
 		config := coordConfig
 		config.MyUrlImpl = fmt.Sprint(i)
-		redisCoordinator, err := NewRedisCoordinator(config.RedisUrl)
+		redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 		Require(t, err)
 		coordinator := &SeqCoordinator{
 			RedisCoordinator: *redisCoordinator,
@@ -134,7 +134,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	}
 
 	for round := int32(0); round < 10; round++ {
-		redisClient.Del(ctx, CHOSENSEQ_KEY, MSG_COUNT_KEY)
+		redisClient.Del(ctx, redisutil.CHOSENSEQ_KEY, redisutil.MSG_COUNT_KEY)
 		testData.messageCount = 0
 		for i := 0; i < messagesPerRound; i++ {
 			testData.sequencer[i] = ""

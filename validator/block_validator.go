@@ -485,7 +485,10 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	}
 
 	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
-	v.checkProgressChan <- struct{}{}
+	select {
+	case v.checkProgressChan <- struct{}{}:
+	default:
+	}
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {

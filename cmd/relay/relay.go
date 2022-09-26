@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 
-	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/relay"
@@ -41,7 +40,7 @@ func printSampleUsage(progname string) {
 func startup() error {
 	ctx := context.Background()
 
-	relayConfig, err := ParseRelay(ctx, os.Args[1:])
+	relayConfig, err := relay.ParseRelay(ctx, os.Args[1:])
 	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
 		confighelpers.HandleError(err, printSampleUsage)
 
@@ -67,7 +66,7 @@ func startup() error {
 
 	// Start up an arbitrum sequencer relay
 	feedErrChan := make(chan error, 10)
-	newRelay, err := relay.NewRelay(relayConfig.Node.Feed, relayConfig.L2.ChainId, feedErrChan)
+	newRelay, err := relay.NewRelay(relayConfig, feedErrChan)
 	if err != nil {
 		return err
 	}
@@ -95,83 +94,4 @@ func startup() error {
 
 	newRelay.StopAndWait()
 	return nil
-}
-
-type RelayConfig struct {
-	Conf          genericconf.ConfConfig          `koanf:"conf"`
-	L2            L2Config                        `koanf:"l2"`
-	LogLevel      int                             `koanf:"log-level"`
-	LogType       string                          `koanf:"log-type"`
-	Metrics       bool                            `koanf:"metrics"`
-	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	Node          RelayNodeConfig                 `koanf:"node"`
-}
-
-var RelayConfigDefault = RelayConfig{
-	Conf:          genericconf.ConfConfigDefault,
-	L2:            L2ConfigDefault,
-	LogLevel:      int(log.LvlInfo),
-	LogType:       "plaintext",
-	Metrics:       false,
-	MetricsServer: genericconf.MetricsServerConfigDefault,
-	Node:          RelayNodeConfigDefault,
-}
-
-func RelayConfigAddOptions(f *flag.FlagSet) {
-	genericconf.ConfConfigAddOptions("conf", f)
-	L2ConfigAddOptions("l2", f)
-	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
-	f.String("log-type", RelayConfigDefault.LogType, "log type")
-	f.Bool("metrics", RelayConfigDefault.Metrics, "enable metrics")
-	genericconf.MetricsServerAddOptions("metrics-server", f)
-	RelayNodeConfigAddOptions("node", f)
-}
-
-type RelayNodeConfig struct {
-	Feed broadcastclient.FeedConfig `koanf:"feed"`
-}
-
-var RelayNodeConfigDefault = RelayNodeConfig{
-	Feed: broadcastclient.FeedConfigDefault,
-}
-
-func RelayNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
-	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, true, true)
-}
-
-type L2Config struct {
-	ChainId uint64 `koanf:"chain-id"`
-}
-
-var L2ConfigDefault = L2Config{
-	ChainId: 0,
-}
-
-func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainId, "L2 chain ID")
-}
-
-func ParseRelay(_ context.Context, args []string) (*RelayConfig, error) {
-	f := flag.NewFlagSet("", flag.ContinueOnError)
-
-	RelayConfigAddOptions(f)
-
-	k, err := confighelpers.BeginCommonParse(f, args)
-	if err != nil {
-		return nil, err
-	}
-
-	var relayConfig RelayConfig
-	if err := confighelpers.EndCommonParse(k, &relayConfig); err != nil {
-		return nil, err
-	}
-
-	if relayConfig.Conf.Dump {
-		err = confighelpers.DumpConfig(k, map[string]interface{}{})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return &relayConfig, nil
 }
