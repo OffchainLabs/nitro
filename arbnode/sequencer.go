@@ -523,24 +523,26 @@ func (s *Sequencer) StopAndWait() {
 	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
 	forwarder := s.GetForwarder()
 	if forwarder != nil {
-		for s.txRetryQueue.Len() > 0 {
-			item := s.txRetryQueue.Pop()
+	emptyqueues:
+		for {
+			var item txQueueItem
+			source := ""
+			if s.txRetryQueue.Len() > 0 {
+				item = s.txRetryQueue.Pop()
+				source = "retryQueue"
+			} else {
+				select {
+				case item = <-s.txQueue:
+					source = "txQueue"
+				default:
+					break emptyqueues
+				}
+			}
 			err := forwarder.PublishTransaction(item.ctx, item.tx)
 			if err != nil {
-				log.Warn("failed to forward transaction while shutting down", "source", "txRetryQueue", "err", err)
+				log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
 			}
-		}
-	emptyqueue:
-		for {
-			select {
-			case item := <-s.txQueue:
-				err := forwarder.PublishTransaction(item.ctx, item.tx)
-				if err != nil {
-					log.Warn("failed to forward transaction while shutting down", "source", "txQueue", "err", err)
-				}
-			default:
-				break emptyqueue
-			}
+
 		}
 	}
 }
