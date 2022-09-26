@@ -18,7 +18,7 @@ import (
 const stopDelayWarningTimeout = 30 * time.Second
 
 type StopWaiterSafe struct {
-	mutex     sync.Mutex // protects started, stopped, ctx, stopFunc
+	mutex     sync.Mutex // protects started, stopped, ctx, parentCtx, stopFunc
 	started   bool
 	stopped   bool
 	ctx       context.Context

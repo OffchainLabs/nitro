@@ -297,6 +297,7 @@ func (c *SeqCoordinator) livelinessUpdate(ctx context.Context) error {
 }
 
 func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
+	atomicTimeWrite(&c.lockoutUntil, time.Time{})
 	isActiveSequencer.Update(0)
 	releaseErr := c.client.Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.Get(ctx, CHOSENSEQ_KEY).Result()
@@ -363,7 +364,6 @@ func (c *SeqCoordinator) noRedisError() time.Duration {
 func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen string) time.Duration {
 	if nextChosen != c.config.MyUrl() {
 		// was the active sequencer, but no longer
-		atomicTimeWrite(&c.lockoutUntil, time.Time{})
 		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
 			err := c.sequencer.ForwardTo(nextChosen)
@@ -587,6 +587,22 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	}
 }
 
+func (c *SeqCoordinator) waitForHandoff(ctx context.Context) string {
+	var nextChosen string
+	for {
+		var err error
+		nextChosen, err = c.CurrentChosenSequencer(ctx)
+		if err == nil && nextChosen != "" && nextChosen != c.config.MyUrl() {
+			return nextChosen
+		}
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-time.After(c.config.RetryInterval):
+		}
+	}
+}
+
 func (c *SeqCoordinator) StopAndWait() {
 	wasChosen := c.CurrentlyChosen()
 	c.StopWaiter.StopAndWait()
@@ -596,24 +612,30 @@ func (c *SeqCoordinator) StopAndWait() {
 		wasChosen = true
 	}
 	if c.reportedAlive {
-		_ = c.livelinessRelease(ctx)
+		err := c.livelinessRelease(ctx)
+		if err != nil {
+			log.Warn("lieveliness release failed", "err", err)
+		}
 	}
 	if wasChosen {
-		_ = c.chosenOneRelease(ctx)
+		err := c.chosenOneRelease(ctx)
+		if err != nil {
+			log.Warn("chosen release failed", "err", err)
+		}
 		if c.config.SafeShutdownDelay != time.Duration(0) {
+			handoffCtx, cancel := context.WithTimeout(ctx, c.config.SafeShutdownDelay)
+			defer cancel()
 			log.Info("Waiting for someone else to become main sequencer..")
-			var nextChosen string
-			for {
-				var err error
-				nextChosen, err = c.CurrentChosenSequencer(ctx)
-				if err == nil && nextChosen != "" && nextChosen != c.config.MyUrl() {
-					break
+			newTarget := c.waitForHandoff(handoffCtx)
+			if newTarget != "" {
+				err := c.sequencer.ForwardTo(newTarget)
+				if err != nil {
+					log.Warn("setting forward address failed", "err", err)
+				} else {
+					log.Info("Waiting some more", "delay", c.config.SafeShutdownDelay, "nextChosen", newTarget)
+					<-time.After(c.config.SafeShutdownDelay)
 				}
-				<-time.After(c.config.RetryInterval)
 			}
-			_ = c.sequencer.ForwardTo(nextChosen)
-			log.Info("Waiting some more", "delay", c.config.SafeShutdownDelay, "nextChosen", nextChosen)
-			<-time.After(c.config.SafeShutdownDelay)
 		}
 	}
 	_ = c.client.Close()

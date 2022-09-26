@@ -418,7 +418,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			for _, item := range queueItems {
 				s.requeueOrFail(item, err)
 			}
-			return false
+			return true // don't return failure to avoid retrying immediately
 		}
 		log.Warn("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
