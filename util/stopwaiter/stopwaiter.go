@@ -160,9 +160,16 @@ func (s *StopWaiterSafe) LaunchUntrackedThread(foo func()) {
 	go foo()
 }
 
-// call function iteratively in a thread.
+// CallIteratively calls function iteratively in a thread.
 // input param return value is how long to wait before next invocation
 func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration) error {
+	return s.CallIterativelyWithOverride(foo, nil)
+}
+
+// CallIterativelyWithOverride calls function iteratively in a thread.
+// The return value of foo is how long to wait before next invocation
+// Anything sent to overrideChan parameter triggers call to happen immediately
+func (s *StopWaiterSafe) CallIterativelyWithOverride(foo func(context.Context) time.Duration, overrideChan chan interface{}) error {
 	return s.LaunchThread(func(ctx context.Context) {
 		for {
 			interval := foo(ctx)
@@ -175,6 +182,7 @@ func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration
 				timer.Stop()
 				return
 			case <-timer.C:
+			case <-overrideChan:
 			}
 		}
 	})
