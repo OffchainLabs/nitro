@@ -56,10 +56,7 @@ function writeConfigs(argv: any) {
             },
             "batch-poster": {
                 "enable": false,
-                "redis-lock": {
-                    "redis-url": argv.redisUrl,
-                    "key": "batchPosterLock",
-                },
+                "redis-url": argv.redisUrl,
                 "max-interval": "30s",
             }
         },

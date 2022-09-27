@@ -941,25 +941,39 @@ func createNodeImpl(
 
 	var staker *validator.Staker
 	if config.Validator.Enable {
-		// TODO: remember validator wallet in JSON instead of querying it from L1 every time
-		var existingWalletAddress *common.Address
-		if len(config.Validator.ContractWalletAddress) > 0 {
-			if !common.IsHexAddress(config.Validator.ContractWalletAddress) {
-				log.Error("invalid validator smart contract wallet", "addr", config.Validator.ContractWalletAddress)
-				return nil, errors.New("invalid validator smart contract wallet address")
+		var wallet validator.ValidatorWalletInterface
+		if config.Validator.UseSmartContractWallet || txOpts == nil {
+			var existingWalletAddress *common.Address
+			if len(config.Validator.ContractWalletAddress) > 0 {
+				if !common.IsHexAddress(config.Validator.ContractWalletAddress) {
+					log.Error("invalid validator smart contract wallet", "addr", config.Validator.ContractWalletAddress)
+					return nil, errors.New("invalid validator smart contract wallet address")
+				}
+				tmpAddress := common.HexToAddress(config.Validator.ContractWalletAddress)
+				existingWalletAddress = &tmpAddress
 			}
-			tmpAddress := common.HexToAddress(config.Validator.ContractWalletAddress)
-			existingWalletAddress = &tmpAddress
-		}
-		wallet, err := validator.NewValidatorWallet(ctx, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
-		if err != nil {
-			return nil, err
+			wallet, err = validator.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			if len(config.Validator.ContractWalletAddress) > 0 {
+				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
+			}
+			wallet, err = validator.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOpts)
+			if err != nil {
+				return nil, err
+			}
 		}
 		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, daReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "smartContractWallet", wallet.Address(), "strategy", config.Validator.Strategy)
+		var txSenderPtr *common.Address
+		if txOpts != nil {
+			txSenderPtr = &txOpts.From
+		}
+		log.Info("running as validator", "txSender", txSenderPtr, "actingAsWallet", wallet.Address(), "strategy", config.Validator.Strategy)
 	}
 
 	var batchPoster *BatchPoster

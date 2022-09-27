@@ -95,22 +95,18 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	TransferBalance(t, "Faucet", "ValidatorB", balance, l1info, l1client, ctx)
 	l1authB := l1info.GetDefaultTransactOpts("ValidatorB", ctx)
 
-	valWalletAddrAPtr, err := validator.GetValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
+	valWalletAddrAPtr, err := validator.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
 	Require(t, err)
 	valWalletAddrA := *valWalletAddrAPtr
-	valWalletAddrCheck, err := validator.GetValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
+	valWalletAddrCheck, err := validator.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
 	Require(t, err)
 	if valWalletAddrA == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
 	}
 
-	valWalletAddrBPtr, err := validator.GetValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authB, l2nodeB.L1Reader, true)
-	Require(t, err)
-	valWalletAddrB := *valWalletAddrBPtr
-
 	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, l1client)
 	Require(t, err)
-	tx, err := rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, valWalletAddrB}, []bool{true, true})
+	tx, err := rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, l1authB.From}, []bool{true, true})
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
@@ -124,7 +120,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		TargetMachineCount: 4,
 	}
 
-	valWalletA, err := validator.NewValidatorWallet(ctx, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
+	valWalletA, err := validator.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
 	Require(t, err)
 	if honestStakerInactive {
 		valConfig.Strategy = "Defensive"
@@ -150,7 +146,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	err = stakerA.Initialize(ctx)
 	Require(t, err)
 
-	valWalletB, err := validator.NewValidatorWallet(ctx, nil, l2nodeB.DeployInfo.ValidatorWalletCreator, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader, &l1authB, 0, func(common.Address) {})
+	valWalletB, err := validator.NewEoaValidatorWallet(l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB)
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	stakerB, err := validator.NewStaker(
@@ -171,7 +167,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	err = stakerB.Initialize(ctx)
 	Require(t, err)
 
-	valWalletC, err := validator.NewValidatorWallet(ctx, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {})
+	valWalletC, err := validator.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {})
 	Require(t, err)
 	valConfig.Strategy = "Watchtower"
 	stakerC, err := validator.NewStaker(
@@ -221,7 +217,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	})()
 
 	stakerATxs := 0
+	stakerAWasStaked := false
 	stakerBTxs := 0
+	stakerBWasStaked := false
 	sawStakerZombie := false
 	for i := 0; i < 100; i++ {
 		var stakerName string
@@ -279,7 +277,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			}
 		}
 		if faultyStaker && !sawStakerZombie {
-			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, valWalletAddrB)
+			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, l1authB.From)
 			Require(t, err)
 		}
 		isHonestZombie, err := rollup.IsZombie(&bind.CallOpts{}, valWalletAddrA)
@@ -293,6 +291,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 		if watchTx != nil {
 			Fail(t, "watchtower staker made a transaction")
+		}
+		if !stakerAWasStaked {
+			stakerAWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
+			Require(t, err)
+		}
+		if !stakerBWasStaked {
+			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, l1authB.From)
+			Require(t, err)
 		}
 		for j := 0; j < 5; j++ {
 			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
@@ -316,18 +322,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		Fail(t, "staker B didn't become a zombie despite being faulty")
 	}
 
-	isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
-	Require(t, err)
-	if !isStaked {
-		Fail(t, "staker A isn't staked")
+	if !stakerAWasStaked {
+		Fail(t, "staker A was never staked")
 	}
-
-	if !faultyStaker {
-		isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrB)
-		Require(t, err)
-		if !isStaked {
-			Fail(t, "staker B isn't staked")
-		}
+	if !stakerBWasStaked {
+		Fail(t, "staker B was never staked")
 	}
 }
 
