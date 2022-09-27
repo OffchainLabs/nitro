@@ -203,6 +203,11 @@ func main() {
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
+		if !nodeConfig.Node.Validator.UseSmartContractWallet {
+			flag.Usage()
+			log.Error("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
+			return
+		}
 		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
@@ -211,7 +216,7 @@ func main() {
 			log.Error("error getting deployment info for creating validator wallet contract", "error", err)
 			return
 		}
-		addr, err := validator.GetValidatorWallet(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
+		addr, err := validator.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
 			log.Error("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
 			return
