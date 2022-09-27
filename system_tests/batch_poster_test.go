@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -35,12 +34,12 @@ func TestBatchPosterParallel(t *testing.T) {
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.BatchPoster.Enable = false
 	conf.BatchPoster.RedisUrl = redisUrl
-	l2info, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, params.ArbitrumDevTestChainConfig())
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
 	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stackA)
+	defer nodeA.StopAndWait()
 
-	l2clientB, _, l2stackB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, nil)
-	defer requireClose(t, l2stackB)
+	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, nil)
+	defer nodeB.StopAndWait()
 
 	l2info.GenerateAccount("User2")
 

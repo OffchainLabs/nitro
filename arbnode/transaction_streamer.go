@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -125,11 +126,7 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 		return err
 	}
 	if !hasMessageCount {
-		data, err := rlp.EncodeToBytes(uint64(0))
-		if err != nil {
-			return err
-		}
-		err = s.db.Put(messageCountKey, data)
+		err := setMessageCount(s.db, 0)
 		if err != nil {
 			return err
 		}
@@ -198,6 +195,11 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	if err != nil {
 		return err
 	}
+
+	return setMessageCount(batch, count)
+}
+
+func setMessageCount(batch ethdb.KeyValueWriter, count arbutil.MessageIndex) error {
 	countBytes, err := rlp.EncodeToBytes(count)
 	if err != nil {
 		return err
@@ -206,6 +208,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	if err != nil {
 		return err
 	}
+	sharedmetrics.UpdateSequenceNumberGauge(count)
 
 	return nil
 }
@@ -701,11 +704,8 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 			return err
 		}
 	}
-	newCount, err := rlp.EncodeToBytes(uint64(pos) + uint64(len(messages)))
-	if err != nil {
-		return err
-	}
-	err = batch.Put(messageCountKey, newCount)
+
+	err := setMessageCount(batch, pos+arbutil.MessageIndex(len(messages)))
 	if err != nil {
 		return err
 	}
@@ -817,6 +817,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			s.validator.NewBlock(block, lastBlockHeader, *msg)
 		}
 
+		sharedmetrics.UpdateSequenceNumberInBlockGauge(pos)
 		s.latestBlockAndMessageMutex.Lock()
 		s.latestBlock = block
 		s.latestMessage = msg.Message

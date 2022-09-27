@@ -17,8 +17,8 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, _, client, l2stack := CreateTestL2(t, ctx)
-	defer requireClose(t, l2stack)
+	_, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
 
 	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x64"), client)
 	Require(t, err, "could not deploy ArbSys contract")
@@ -33,8 +33,8 @@ func TestCustomSolidityErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, _, client, l2stack := CreateTestL2(t, ctx)
-	defer requireClose(t, l2stack)
+	_, node, client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
 
 	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
 	Require(t, err, "could not deploy ArbDebug contract")

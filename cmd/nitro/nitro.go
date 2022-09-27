@@ -127,6 +127,10 @@ func main() {
 
 		return
 	}
+	if nodeConfig.Node.Archive {
+		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
+		nodeConfig.Node.Caching.Archive = true
+	}
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel))
 	if err != nil {
 		panic(err)
@@ -185,8 +189,8 @@ func main() {
 	}
 
 	if nodeConfig.Node.Validator.Enable {
-		if !nodeConfig.Node.Archive {
-			panic("validator requires --node.archive")
+		if !nodeConfig.Node.Caching.Archive {
+			panic("validator requires --node.caching.archive")
 		}
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
@@ -217,10 +221,6 @@ func main() {
 		return
 	}
 
-	if nodeConfig.Node.Archive {
-		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
-		nodeConfig.Node.Caching.Archive = true
-	}
 	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
@@ -230,6 +230,7 @@ func main() {
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.IPC.Apply(&stackConf)
 	nodeConfig.GraphQL.Apply(&stackConf)
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
@@ -326,8 +327,8 @@ func main() {
 		}
 	}
 
-	if err := stack.Start(); err != nil {
-		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
+	if err := currentNode.Start(ctx); err != nil {
+		panic(fmt.Sprintf("Error starting node: %v\n", err))
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -343,9 +344,7 @@ func main() {
 	// cause future ctrl+c's to panic
 	close(sigint)
 
-	if err := stack.Close(); err != nil {
-		panic(fmt.Sprintf("Error closing stack: %v\n", err))
-	}
+	currentNode.StopAndWait()
 }
 
 type NodeConfig struct {
@@ -358,6 +357,7 @@ type NodeConfig struct {
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
+	IPC           genericconf.IPCConfig           `koanf:"ipc"`
 	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -374,6 +374,7 @@ var NodeConfigDefault = NodeConfig{
 	Persistent:    conf.PersistentConfigDefault,
 	HTTP:          genericconf.HTTPConfigDefault,
 	WS:            genericconf.WSConfigDefault,
+	IPC:           genericconf.IPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 }
@@ -388,6 +389,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.PersistentConfigAddOptions("persistent", f)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
+	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
