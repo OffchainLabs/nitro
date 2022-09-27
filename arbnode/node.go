@@ -973,7 +973,11 @@ func createNodeImpl(
 		if txOpts != nil {
 			txSenderPtr = &txOpts.From
 		}
-		log.Info("running as validator", "txSender", txSenderPtr, "actingAsWallet", wallet.Address(), "strategy", config.Validator.Strategy)
+		whitelisted, err := staker.IsWhitelisted(ctx)
+		if err != nil {
+			return nil, err
+		}
+		log.Info("running as validator", "txSender", txSenderPtr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Validator.Strategy)
 	}
 
 	var batchPoster *BatchPoster
