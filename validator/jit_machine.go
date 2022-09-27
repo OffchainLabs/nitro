@@ -30,7 +30,11 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 
 	jitBinary, err := exec.LookPath("jit")
 	if err != nil {
-		jitBinary = filepath.FromSlash("./target/bin/jit")
+		executable, err := os.Executable()
+		if err != nil {
+			return nil, err
+		}
+		jitBinary = filepath.Join(filepath.Dir(executable), "jit")
 	}
 	if _, err := os.Stat(jitBinary); err != nil {
 		return nil, err
