@@ -26,20 +26,28 @@ type JitMachine struct {
 	stdin   io.WriteCloser
 }
 
-func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
-
-	jitBinary, err := exec.LookPath("jit")
-	if err != nil {
-		executable, err := os.Executable()
-		if err != nil {
-			return nil, err
-		}
+func getJitPath() (string, error) {
+	var jitBinary string
+	executable, err := os.Executable()
+	if err == nil {
 		jitBinary = filepath.Join(filepath.Dir(executable), "jit")
+		_, err = os.Stat(jitBinary)
 	}
-	if _, err := os.Stat(jitBinary); err != nil {
+	if err != nil {
+		var lookPathErr error
+		jitBinary, lookPathErr = exec.LookPath("jit")
+		if lookPathErr == nil {
+			return jitBinary, nil
+		}
+	}
+	return jitBinary, err
+}
+
+func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+	jitBinary, err := getJitPath()
+	if err != nil {
 		return nil, err
 	}
-
 	binary := filepath.Join(config.getMachinePath(moduleRoot), config.ProverBinPath)
 	invocation := []string{"--binary", binary, "--forks"}
 	if config.JitCranelift {
