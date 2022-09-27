@@ -6,13 +6,21 @@ import * as fs from 'fs';
 const path = require("path");
 
 async function sendTransaction(argv: any, threadId: number) {
-    const response = await namedAccount(argv.from, threadId).connect(argv.provider)
-        .sendTransaction({
-            to: namedAddress(argv.to, threadId),
-            value: ethers.utils.parseEther(argv.ethamount),
-            data: argv.data,
-        })
-    console.log(response)
+    const account = namedAccount(argv.from, threadId).connect(argv.provider)
+    const startNonce = await account.getTransactionCount("pending")
+    for (let index = 0; index < argv.times; index++) {
+        const response = await 
+            account.sendTransaction({
+                to: namedAddress(argv.to, threadId),
+                value: ethers.utils.parseEther(argv.ethamount),
+                data: argv.data,
+                nonce: startNonce + index,
+            })
+        console.log(response)
+        if (argv.delay > 0) {
+            await new Promise(f => setTimeout(f, argv.delay));
+        }
+    }
 }
 
 export const bridgeFundsCommand = {

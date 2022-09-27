@@ -205,15 +205,15 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 	cm.LaunchThread(func(ctx context.Context) {
 		defer cm.removeAll()
 
+		// Ping needs to occur regularly regardless of other traffic
+		pingTimer := time.NewTimer(cm.config().Ping)
 		var clientDeleteList []*ClientConnection
+		defer pingTimer.Stop()
 		for {
-			pingInterval := time.NewTimer(cm.config().Ping)
 			select {
 			case <-ctx.Done():
-				pingInterval.Stop()
 				return
 			case clientAction := <-cm.clientAction:
-				pingInterval.Stop()
 				if clientAction.create {
 					err := cm.registerClient(ctx, clientAction.cc)
 					if err != nil {
@@ -224,12 +224,12 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 					cm.removeClient(clientAction.cc)
 				}
 			case bm := <-cm.broadcastChan:
-				pingInterval.Stop()
 				var err error
 				clientDeleteList, err = cm.doBroadcast(bm)
 				logError(err, "failed to do broadcast")
-			case <-pingInterval.C:
+			case <-pingTimer.C:
 				clientDeleteList = cm.verifyClients()
+				pingTimer.Reset(cm.config().Ping)
 			}
 
 			if len(clientDeleteList) > 0 {

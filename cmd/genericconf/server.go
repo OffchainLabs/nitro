@@ -113,6 +113,22 @@ func WSConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".expose-all", WSConfigDefault.ExposeAll, "expose private api via websocket")
 }
 
+type IPCConfig struct {
+	Path string `koanf:"path"`
+}
+
+var IPCConfigDefault = IPCConfig{
+	Path: "",
+}
+
+func (c *IPCConfig) Apply(stackConf *node.Config) {
+	stackConf.IPCPath = c.Path
+}
+
+func IPCConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".path", IPCConfigDefault.Path, "Requested location to place the IPC endpoint. An empty path disables IPC.")
+}
+
 type GraphQLConfig struct {
 	Enable     bool     `koanf:"enable"`
 	CORSDomain []string `koanf:"corsdomain"`

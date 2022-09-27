@@ -6,6 +6,7 @@ package arbnode
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"time"
@@ -243,13 +244,13 @@ func (s *batchSegments) recompressAll() error {
 	return nil
 }
 
-func (s *batchSegments) testForOverflow() (bool, error) {
+func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// there is room, no need to flush
 	if (s.lastCompressedSize + s.newUncompressedSize) < s.sizeLimit {
 		return false, nil
 	}
 	// don't want to flush for headers
-	if s.trailingHeaders > 0 {
+	if isHeader {
 		return false, nil
 	}
 	err := s.compressedWriter.Flush()
@@ -294,7 +295,7 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	overflow, err := s.testForOverflow()
+	overflow, err := s.testForOverflow(isHeader)
 	if err != nil {
 		return false, err
 	}
@@ -438,6 +439,17 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		Data: data,
 	})
 	if err != nil {
+		sequencerMessageHeader := sequencerMessage
+		if len(sequencerMessageHeader) > 33 {
+			sequencerMessageHeader = sequencerMessageHeader[:33]
+		}
+		log.Warn(
+			"error estimating gas for batch",
+			"err", err,
+			"delayedMessages", delayedMessages,
+			"sequencerMessageHeader", hex.EncodeToString(sequencerMessageHeader),
+			"sequencerMessageLen", len(sequencerMessage),
+		)
 		return 0, fmt.Errorf("error estimating gas for batch: %w", err)
 	}
 	return gas + b.config().ExtraBatchGas, nil

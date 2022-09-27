@@ -4,6 +4,7 @@
 package validator
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -62,8 +63,10 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 }
 
 func (machine *JitMachine) prove(
-	entry *validationEntry, resolver GoPreimageResolver, delayed []byte,
+	ctxIn context.Context, entry *validationEntry, resolver GoPreimageResolver, delayed []byte,
 ) (GoGlobalState, error) {
+	ctx, cancel := context.WithCancel(ctxIn)
+	defer cancel() // ensure our cleanup functions run when we're done
 	state := GoGlobalState{}
 
 	timeout := time.Now().Add(60 * time.Second)
@@ -76,7 +79,13 @@ func (machine *JitMachine) prove(
 	if err := tcp.SetDeadline(timeout); err != nil {
 		return state, err
 	}
-	defer tcp.Close()
+	go func() {
+		<-ctx.Done()
+		err := tcp.Close()
+		if err != nil {
+			log.Warn("error closing JIT validation TCP listener", "err", err)
+		}
+	}()
 	address := fmt.Sprintf("%v\n", tcp.Addr().String())
 
 	// Tell the spawner process about the new tcp port
@@ -89,13 +98,19 @@ func (machine *JitMachine) prove(
 	if err != nil {
 		return state, err
 	}
+	go func() {
+		<-ctx.Done()
+		err := conn.Close()
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Warn("error closing JIT validation TCP connection", "err", err)
+		}
+	}()
 	if err := conn.SetReadDeadline(timeout); err != nil {
 		return state, err
 	}
 	if err := conn.SetWriteDeadline(timeout); err != nil {
 		return state, err
 	}
-	defer conn.Close()
 
 	// Tell the new process about the global state
 	gsStart := entry.start()
