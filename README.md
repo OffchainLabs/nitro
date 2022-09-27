@@ -7,7 +7,6 @@
   <h3 align="center">Arbitrum Nitro</h3>
 
   <p align="center">
-    <br />
     <a href="https://developer.arbitrum.io/"><strong>Next Generation Ethereum L2 Technology »</strong></a>
     <br />
   </p>
