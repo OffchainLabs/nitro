@@ -223,6 +223,21 @@ services:
     entrypoint: bin/relay
     command: --node.feed.output.port 9652 --node.feed.input.url ws://sequencer:9652
 
+  testnode-tokenbridge:
+    depends_on:
+      - geth
+      - sequencer
+    pid: host
+    build: testnode-tokenbridge/
+    environment:
+      - ARB_URL=http://sequencer:8547
+      - ETH_URL=http://geth:8545
+    volumes:
+      - "sdk-data:/workspace"
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
 volumes:
   l1data:
   l1keystore:
@@ -237,4 +252,4 @@ volumes:
   poster-data-c:
   config:
   postgres-data:
-
+  sdk-data:

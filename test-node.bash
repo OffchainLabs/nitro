@@ -31,8 +31,10 @@ force_build=false
 validate=false
 detach=false
 blockscout=true
+tokenbridge=true
 redundantsequencers=0
 batchposters=1
+devprivkey=e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -58,6 +60,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-blockscout)
             blockscout=false
+            shift
+            ;;
+        --no-tokenbridge)
+            tokenbridge=false
             shift
             ;;
         --no-run)
@@ -179,6 +185,13 @@ if $force_init; then
     docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
 
     docker-compose run testnode-scripts bridge-funds --ethamount 100000
+
+    if $tokenbridge; then
+        echo == Deploying token bridge
+        docker-compose run -e ARB_KEY=$devprivkey -e ETH_KEY=$devprivkey testnode-tokenbridge gen:network
+        docker-compose run --entrypoint sh testnode-tokenbridge -c "cat localNetwork.json"
+        echo 
+    fi
 fi
 
 if $run; then
