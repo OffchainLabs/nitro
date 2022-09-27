@@ -327,39 +327,39 @@ type ArbTraceForwarderAPI struct {
 	fallbackClientUrl     string
 	fallbackClientTimeout time.Duration
 
-	initialized int32
-	mutex       sync.Mutex
-	rpc         types.FallbackClient
+	initialized    int32
+	mutex          sync.Mutex
+	fallbackClient types.FallbackClient
 }
 
 func (api *ArbTraceForwarderAPI) getFallbackClient() (types.FallbackClient, error) {
 	if atomic.LoadInt32(&api.initialized) == 1 {
-		return api.rpc, nil
+		return api.fallbackClient, nil
 	}
 	api.mutex.Lock()
 	defer api.mutex.Unlock()
 	if atomic.LoadInt32(&api.initialized) == 1 {
-		return api.rpc, nil
+		return api.fallbackClient, nil
 	}
 	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout)
 	if err != nil {
 		return nil, err
 	}
-	api.rpc = fallbackClient
+	api.fallbackClient = fallbackClient
 	atomic.StoreInt32(&api.initialized, 1)
-	return api.rpc, nil
+	return api.fallbackClient, nil
 }
 
 func (api *ArbTraceForwarderAPI) forward(ctx context.Context, method string, args ...interface{}) (*json.RawMessage, error) {
-	rpc, err := api.getFallbackClient()
+	fallbackClient, err := api.getFallbackClient()
 	if err != nil {
 		return nil, err
 	}
-	if rpc == nil {
+	if fallbackClient == nil {
 		return nil, errors.New("arbtrace calls forwarding not configured") // TODO(magic)
 	}
 	var resp *json.RawMessage
-	err = rpc.CallContext(ctx, &resp, "arbtrace_call", args...)
+	err = fallbackClient.CallContext(ctx, &resp, "arbtrace_call", args...)
 	if err != nil {
 		return nil, err
 	}
