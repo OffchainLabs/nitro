@@ -163,30 +163,15 @@ func (s *StopWaiterSafe) LaunchUntrackedThread(foo func()) {
 // CallIteratively calls function iteratively in a thread.
 // input param return value is how long to wait before next invocation
 func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration) error {
-	return s.CallIterativelyWithOverride(foo, nil)
+	return s.CallIterativelyWithTrigger(foo, nil)
 }
 
-// CallIterativelyWithOverride calls function iteratively in a thread.
+// CallIterativelyWithTrigger calls function iteratively in a thread.
 // The return value of foo is how long to wait before next invocation
-// Anything sent to overrideChan parameter triggers call to happen immediately
-func (s *StopWaiterSafe) CallIterativelyWithOverride(foo func(context.Context) time.Duration, overrideChan chan interface{}) error {
+// Anything sent to triggerChan parameter triggers call to happen immediately
+func (s *StopWaiterSafe) CallIterativelyWithTrigger(foo func(context.Context) time.Duration, triggerChan chan interface{}) error {
 	return s.LaunchThread(func(ctx context.Context) {
 		for {
-			done := 100
-			for done > 0 {
-				// Consume any pending overrides
-				select {
-				case <-ctx.Done():
-					return
-				case <-overrideChan:
-					done--
-					if done == 0 {
-						log.Warn("callIterativelyWIthOverride has too many overrides")
-					}
-				default:
-					done = 0
-				}
-			}
 			interval := foo(ctx)
 			if ctx.Err() != nil {
 				return
@@ -197,7 +182,7 @@ func (s *StopWaiterSafe) CallIterativelyWithOverride(foo func(context.Context) t
 				timer.Stop()
 				return
 			case <-timer.C:
-			case <-overrideChan:
+			case <-triggerChan:
 			}
 		}
 	})
