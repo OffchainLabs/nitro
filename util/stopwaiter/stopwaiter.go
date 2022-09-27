@@ -172,6 +172,21 @@ func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration
 func (s *StopWaiterSafe) CallIterativelyWithOverride(foo func(context.Context) time.Duration, overrideChan chan interface{}) error {
 	return s.LaunchThread(func(ctx context.Context) {
 		for {
+			done := 1000
+			for done > 0 {
+				// Consume any pending overrides
+				select {
+				case <-ctx.Done():
+					return
+				case <-overrideChan:
+					done--
+					if done == 0 {
+						log.Warn("callIterativelyWIthOverride has too many overrides")
+					}
+				default:
+					done = 0
+				}
+			}
 			interval := foo(ctx)
 			if ctx.Err() != nil {
 				return
