@@ -35,14 +35,14 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNa
 
 	for _, name := range nodeNames {
 		priorities = priorities + name + ","
-		redisClient.Del(ctx, arbnode.LIVELINESS_KEY_PREFIX+name)
+		redisClient.Del(ctx, redisutil.LIVELINESS_KEY_PREFIX+name)
 	}
 	priorities = priorities[:len(priorities)-1] // remove last ","
-	Require(t, redisClient.Set(ctx, arbnode.PRIORITIES_KEY, priorities, time.Duration(0)).Err())
+	Require(t, redisClient.Set(ctx, redisutil.PRIORITIES_KEY, priorities, time.Duration(0)).Err())
 	for msg := 0; msg < 1000; msg++ {
-		redisClient.Del(ctx, fmt.Sprintf("%s%d", arbnode.MESSAGE_KEY_PREFIX, msg))
+		redisClient.Del(ctx, fmt.Sprintf("%s%d", redisutil.MESSAGE_KEY_PREFIX, msg))
 	}
-	redisClient.Del(ctx, arbnode.CHOSENSEQ_KEY, arbnode.MSG_COUNT_KEY)
+	redisClient.Del(ctx, redisutil.CHOSENSEQ_KEY, redisutil.MSG_COUNT_KEY)
 }
 
 func TestRedisSeqCoordinatorPriorities(t *testing.T) {
@@ -282,7 +282,7 @@ func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
 
 	// wait for sequencerA to become master
 	for {
-		err := redisClient.Get(ctx, arbnode.CHOSENSEQ_KEY).Err()
+		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
 		if errors.Is(err, redis.Nil) {
 			time.Sleep(nodeConfig.SeqCoordinator.UpdateInterval)
 			continue
@@ -336,7 +336,7 @@ func TestRedisSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 
 	// wait for sequencerA to become master
 	for {
-		err := redisClient.Get(ctx, arbnode.CHOSENSEQ_KEY).Err()
+		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
 		if errors.Is(err, redis.Nil) {
 			time.Sleep(nodeConfig.SeqCoordinator.UpdateInterval)
 			continue
