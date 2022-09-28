@@ -932,6 +932,7 @@ func createNodeImpl(
 				nitroMachineLoader,
 				reorgingToBlock,
 				func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
+				fatalErrChan,
 			)
 			if err != nil {
 				return nil, err

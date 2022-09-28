@@ -54,6 +54,8 @@ type BlockValidator struct {
 	sendValidationsChan chan struct{}
 	checkProgressChan   chan struct{}
 	progressChan        chan uint64
+
+	fatalErr chan<- error
 }
 
 type BlockValidatorConfig struct {
@@ -66,6 +68,7 @@ type BlockValidatorConfig struct {
 	CurrentModuleRoot        string                        `koanf:"current-module-root"`          // TODO(magic) requires reinitialization on hot reload
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"`  // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	StorePreimages           bool                          `koanf:"store-preimages" reload:"hot"` // TODO verify if hot reloading is safe
+	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
 }
 
@@ -85,6 +88,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".store-preimages", DefaultBlockValidatorConfig.StorePreimages, "store preimages of running machines (higher memory cost, better debugging, potentially better performance)")
+	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -102,6 +106,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
+	FailureIsFatal:           false,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 }
 
@@ -115,6 +120,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
+	FailureIsFatal:           false,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 }
 
@@ -141,6 +147,7 @@ func NewBlockValidator(
 	machineLoader *NitroMachineLoader,
 	reorgingToBlock *types.Block,
 	config BlockValidatorConfigFetcher,
+	fatalErr chan<- error,
 ) (*BlockValidator, error) {
 	validator := &BlockValidator{
 		StatelessBlockValidator: statelessBlockValidator,
@@ -148,6 +155,7 @@ func NewBlockValidator(
 		checkProgressChan:       make(chan struct{}, 1),
 		progressChan:            make(chan uint64, 1),
 		config:                  config,
+		fatalErr:                fatalErr,
 	}
 	err := validator.readLastBlockValidatedDbInfo(reorgingToBlock)
 	if err != nil {
@@ -442,14 +450,14 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 						"Validation of block canceled", "blockNr", entry.BlockNumber,
 						"blockHash", entry.BlockHash, "name", name, "err", err,
 					)
-				} else {
-					log.Error(
-						"Validation of block failed", "blockNr", entry.BlockNumber,
-						"blockHash", entry.BlockHash, "moduleRoot", moduleRoot,
-						"name", name, "err", err,
-					)
+					return false, false
 				}
-				return false, !canceled
+				log.Error(
+					"Validation of block failed", "blockNr", entry.BlockNumber,
+					"blockHash", entry.BlockHash, "moduleRoot", moduleRoot,
+					"name", name, "err", err,
+				)
+				return false, true
 			}
 
 			gsExpected := entry.expectedEnd()
@@ -491,6 +499,12 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 
 		if !valid {
+			if v.config().FailureIsFatal && ctx.Err() == nil {
+				select {
+				case v.fatalErr <- errors.Errorf("error validating block nr. %d expHash %v", entry.BlockNumber, entry.BlockHash):
+				default:
+				}
+			}
 			atomic.StoreUint32(&validationStatus.Status, validationStatusFailed)
 			return
 		}
