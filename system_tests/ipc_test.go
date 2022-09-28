@@ -24,9 +24,9 @@ func TestIpcRpc(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, _, _, l2stack, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, stackConf)
+	_, l2node, _, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nil, nil, stackConf)
 	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stack)
+	defer l2node.StopAndWait()
 
 	_, err := ethclient.Dial(ipcPath)
 	Require(t, err)

@@ -124,7 +124,8 @@ var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
 const validationStatusPrepared uint32 = 1   // ready to undergo validation
-const validationStatusValid uint32 = 2      // validation succeeded
+const validationStatusFailed uint32 = 2     // validation failed
+const validationStatusValid uint32 = 3      // validation succeeded
 
 type validationStatus struct {
 	Status      uint32           // atomic: value is one of validationStatus*
@@ -403,8 +404,8 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 }
 
 func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
-	if atomic.LoadUint32(&validationStatus.Status) < validationStatusPrepared {
-		log.Error("attempted to validate unprepared validation entry")
+	if currentStatus := atomic.LoadUint32(&validationStatus.Status); currentStatus != validationStatusPrepared {
+		log.Error("attempted to validate unprepared validation entry", "status", currentStatus)
 		return
 	}
 	entry := validationStatus.Entry
@@ -425,7 +426,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		type replay = func(context.Context, *validationEntry, common.Hash) (GoGlobalState, []byte, error)
 		var delayedMsg []byte
 
-		validate := func(replay replay, jit bool) bool {
+		execValidation := func(replay replay, name string) bool {
 			gsEnd, delayed, err := replay(ctx, entry, moduleRoot)
 			delayedMsg = delayed
 
@@ -433,13 +434,13 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					log.Info(
 						"Validation of block canceled", "blockNr", entry.BlockNumber,
-						"blockHash", entry.BlockHash, "jit", jit, "err", err,
+						"blockHash", entry.BlockHash, "name", name, "err", err,
 					)
 				} else {
 					log.Error(
 						"Validation of block failed", "blockNr", entry.BlockNumber,
 						"blockHash", entry.BlockHash, "moduleRoot", moduleRoot,
-						"jit", jit, "err", err,
+						"name", name, "err", err,
 					)
 				}
 				return false
@@ -451,7 +452,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 			if !resultValid {
 				log.Error(
 					"validation failed", "moduleRoot", moduleRoot, "got", gsEnd,
-					"expected", gsExpected, "expHeader", entry.BlockHeader, "jit", jit,
+					"expected", gsExpected, "expHeader", entry.BlockHeader, "name", name,
 				)
 			}
 			return resultValid
@@ -461,12 +462,15 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		writeThisBlock := false // we write the block if either fail
 
 		config := v.config()
+		valid := true
 		if config.ArbitratorValidator {
-			writeThisBlock = writeThisBlock || !validate(v.executeBlock, false)
+			valid = valid && execValidation(v.executeBlock, "arbitrator")
 		}
 		if config.JitValidator {
-			writeThisBlock = writeThisBlock || !validate(v.jitBlock, true)
+			valid = valid && execValidation(v.jitBlock, "jit")
 		}
+
+		writeThisBlock = writeThisBlock || !valid
 
 		if writeThisBlock {
 			err := v.writeToFile(
@@ -478,6 +482,11 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 			}
 		}
 
+		if !valid {
+			atomic.StoreUint32(&validationStatus.Status, validationStatusFailed)
+			return
+		}
+
 		log.Info(
 			"validation succeeded", "blockNr", entry.BlockNumber,
 			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", time.Since(before),
@@ -485,7 +494,10 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	}
 
 	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
-	v.checkProgressChan <- struct{}{}
+	select {
+	case v.checkProgressChan <- struct{}{}:
+	default:
+	}
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {
