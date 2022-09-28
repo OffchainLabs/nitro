@@ -415,14 +415,9 @@ If metrics are enabled in configuration, then several useful metrics are availab
 | arb_das_rest_getbyhash_success | Successful REST GetByHash calls |
 | arb_das_rest_getbyhash_failure | Failed REST GetByHash calls |
 | arb_das_rest_getbyhash_bytes | Bytes retrieved with REST GetByHash calls |
-| arb_das_rest_getbyhash_duration (p50, p75, p95, p99, p999, p9999) | Duration of REST GetByHash calls |
-| arb_das_rpc_getbyhash_requests | Count of RPC GetByHash calls |
-| arb_das_rpc_getbyhash_success | Successful RPC GetByHash calls |
-| arb_das_rpc_getbyhash_failure | Failed RPC GetByHash calls |
-| arb_das_rpc_getbyhash_bytes | Bytes retrieved with RPC GetByHash calls |
-| arb_das_rpc_getbyhash_duration (p50, p75, p95, p99, p999, p9999) | Duration of RPC GetByHash calls |
+| arb_das_rest_getbyhash_duration (p50, p75, p95, p99, p999, p9999) | Duration of REST GetByHash calls (ns) |
 | arb_das_rpc_store_requests | Count of RPC Store calls |
 | arb_das_rpc_store_success | Successful RPC Store calls |
 | arb_das_rpc_store_failure | Failed RPC Store calls |
 | arb_das_rpc_store_bytes | Bytes retrieved with RPC Store calls |
-| arb_das_rpc_store_duration (p50, p75, p95, p99, p999, p9999) | Duration of RPC Store calls |
+| arb_das_rpc_store_duration (p50, p75, p95, p99, p999, p9999) | Duration of RPC Store calls (ns) |
