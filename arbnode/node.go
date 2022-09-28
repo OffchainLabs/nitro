@@ -973,7 +973,11 @@ func createNodeImpl(
 		if txOpts != nil {
 			txSenderPtr = &txOpts.From
 		}
-		log.Info("running as validator", "txSender", txSenderPtr, "actingAsWallet", wallet.Address(), "strategy", config.Validator.Strategy)
+		whitelisted, err := staker.IsWhitelisted(ctx)
+		if err != nil {
+			return nil, err
+		}
+		log.Info("running as validator", "txSender", txSenderPtr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Validator.Strategy)
 	}
 
 	var batchPoster *BatchPoster
@@ -1398,10 +1402,10 @@ func (n *Node) StopAndWait() {
 	if n.InboxReader != nil {
 		n.InboxReader.StopAndWait()
 	}
-	n.TxPublisher.StopAndWait()
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.StopAndWait()
 	}
+	n.TxPublisher.StopAndWait()
 	n.TxStreamer.StopAndWait()
 	n.ArbInterface.BlockChain().Stop()
 	if err := n.Backend.Stop(); err != nil {
