@@ -435,6 +435,13 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		return false
 	}
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			// thread closed. We'll later try to forward these messages.
+			for _, item := range queueItems {
+				s.requeueOrFail(item, err)
+			}
+			return true // don't return failure to avoid retrying immediately
+		}
 		log.Warn("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
@@ -527,4 +534,37 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	})
 
 	return nil
+}
+
+func (s *Sequencer) StopAndWait() {
+	s.StopWaiter.StopAndWait()
+	if s.txRetryQueue.Len() == 0 && len(s.txQueue) == 0 {
+		return
+	}
+	// this usually means that coordinator's safe-shutdown-delay is too low
+	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
+	forwarder := s.GetForwarder()
+	if forwarder != nil {
+	emptyqueues:
+		for {
+			var item txQueueItem
+			source := ""
+			if s.txRetryQueue.Len() > 0 {
+				item = s.txRetryQueue.Pop()
+				source = "retryQueue"
+			} else {
+				select {
+				case item = <-s.txQueue:
+					source = "txQueue"
+				default:
+					break emptyqueues
+				}
+			}
+			err := forwarder.PublishTransaction(item.ctx, item.tx)
+			if err != nil {
+				log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
+			}
+
+		}
+	}
 }

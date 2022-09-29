@@ -203,6 +203,11 @@ func main() {
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
+		if !nodeConfig.Node.Validator.UseSmartContractWallet {
+			flag.Usage()
+			log.Error("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
+			return
+		}
 		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
@@ -211,7 +216,7 @@ func main() {
 			log.Error("error getting deployment info for creating validator wallet contract", "error", err)
 			return
 		}
-		addr, err := validator.GetValidatorWallet(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
+		addr, err := validator.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
 			log.Error("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
 			return
@@ -327,8 +332,8 @@ func main() {
 		}
 	}
 
-	if err := stack.Start(); err != nil {
-		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
+	if err := currentNode.Start(ctx); err != nil {
+		panic(fmt.Sprintf("Error starting node: %v\n", err))
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -344,9 +349,7 @@ func main() {
 	// cause future ctrl+c's to panic
 	close(sigint)
 
-	if err := stack.Close(); err != nil {
-		panic(fmt.Sprintf("Error closing stack: %v\n", err))
-	}
+	currentNode.StopAndWait()
 }
 
 type NodeConfig struct {

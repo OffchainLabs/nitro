@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	latestSequenceNumberGauge  = metrics.NewRegisteredGauge("arb/sequencennumber/latest", nil)
-	sequenceNumberInBlockGauge = metrics.NewRegisteredGauge("arb/sequencennumber/inblock", nil)
+	latestSequenceNumberGauge  = metrics.NewRegisteredGauge("arb/sequencenumber/latest", nil)
+	sequenceNumberInBlockGauge = metrics.NewRegisteredGauge("arb/sequencenumber/inblock", nil)
 )
 
 func UpdateSequenceNumberGauge(sequenceNumber arbutil.MessageIndex) {
