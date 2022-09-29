@@ -359,7 +359,7 @@ func (api *ArbTraceForwarderAPI) forward(ctx context.Context, method string, arg
 		return nil, errors.New("arbtrace calls forwarding not configured") // TODO(magic)
 	}
 	var resp *json.RawMessage
-	err = fallbackClient.CallContext(ctx, &resp, "arbtrace_call", args...)
+	err = fallbackClient.CallContext(ctx, &resp, method, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -371,15 +371,15 @@ func (api *ArbTraceForwarderAPI) Call(ctx context.Context, callArgs json.RawMess
 }
 
 func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls json.RawMessage, blockNum json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_callmany", calls, blockNum)
+	return api.forward(ctx, "arbtrace_callMany", calls, blockNum)
 }
 
 func (api *ArbTraceForwarderAPI) ReplayBlockTransactions(ctx context.Context, blockNum json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_replayblocktransactions", blockNum, traceTypes)
+	return api.forward(ctx, "arbtrace_replayBlockTransactions", blockNum, traceTypes)
 }
 
 func (api *ArbTraceForwarderAPI) ReplayTransaction(ctx context.Context, txHash json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
-	return api.forward(ctx, "arbtrace_replaytransaction", txHash, traceTypes)
+	return api.forward(ctx, "arbtrace_replayTransaction", txHash, traceTypes)
 }
 
 func (api *ArbTraceForwarderAPI) Transaction(ctx context.Context, txHash json.RawMessage) (*json.RawMessage, error) {
