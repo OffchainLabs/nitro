@@ -731,7 +731,7 @@ func createNodeImpl(
 	if deployInfo != nil {
 		sequencerInboxAddr = deployInfo.SequencerInbox
 	}
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
