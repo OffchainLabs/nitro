@@ -426,12 +426,13 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		type replay = func(context.Context, *validationEntry, common.Hash) (GoGlobalState, []byte, error)
 		var delayedMsg []byte
 
-		execValidation := func(replay replay, name string) bool {
+		execValidation := func(replay replay, name string) (bool, bool) {
 			gsEnd, delayed, err := replay(ctx, entry, moduleRoot)
 			delayedMsg = delayed
 
 			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				canceled := ctx.Err() != nil
+				if canceled {
 					log.Info(
 						"Validation of block canceled", "blockNr", entry.BlockNumber,
 						"blockHash", entry.BlockHash, "name", name, "err", err,
@@ -443,7 +444,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 						"name", name, "err", err,
 					)
 				}
-				return false
+				return false, !canceled
 			}
 
 			gsExpected := entry.expectedEnd()
@@ -455,24 +456,26 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 					"expected", gsExpected, "expHeader", entry.BlockHeader, "name", name,
 				)
 			}
-			return resultValid
+			return resultValid, !resultValid
 		}
 
 		before := time.Now()
-		writeThisBlock := false // we write the block if either fail
+		writeBlock := false // we write the block if either fail
 
 		config := v.config()
 		valid := true
 		if config.ArbitratorValidator {
-			valid = valid && execValidation(v.executeBlock, "arbitrator")
+			thisValid, thisWriteBlock := execValidation(v.executeBlock, "arbitrator")
+			valid = valid && thisValid
+			writeBlock = writeBlock || thisWriteBlock
 		}
 		if config.JitValidator {
-			valid = valid && execValidation(v.jitBlock, "jit")
+			thisValid, thisWriteBlock := execValidation(v.jitBlock, "jit")
+			valid = valid && thisValid
+			writeBlock = writeBlock || thisWriteBlock
 		}
 
-		writeThisBlock = writeThisBlock || !valid
-
-		if writeThisBlock {
+		if writeBlock {
 			err := v.writeToFile(
 				entry, moduleRoot, entry.StartPosition, entry.EndPosition,
 				entry.Preimages, seqMsg, delayedMsg,
