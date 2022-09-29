@@ -164,8 +164,8 @@ func main() {
 	var dataSigner signature.DataSignerFunc
 	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
-	validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
-	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorNeedsKey {
+	validatorCanAct := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
 		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 		if err != nil {
 			fmt.Printf("%v\n", err.Error())
@@ -189,9 +189,6 @@ func main() {
 	}
 
 	if nodeConfig.Node.Validator.Enable {
-		if !nodeConfig.Node.Caching.Archive {
-			panic("validator requires --node.caching.archive")
-		}
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
 			panic("validator must read from L1")
@@ -199,6 +196,10 @@ func main() {
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
+	}
+
+	if (nodeConfig.Node.BlockValidator.Enable || validatorCanAct) && !nodeConfig.Node.Caching.Archive {
+		panic("validator requires --node.caching.archive")
 	}
 
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
