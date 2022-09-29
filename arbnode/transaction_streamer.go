@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -36,9 +37,10 @@ import (
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
-	db      ethdb.Database
-	bc      *core.BlockChain
-	chainId uint64
+	db           ethdb.Database
+	bc           *core.BlockChain
+	chainId      uint64
+	fatalErrChan chan<- error
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
 	createBlocksMutex  sync.Mutex // cannot be acquired while reorgMutex is held
@@ -64,6 +66,7 @@ func NewTransactionStreamer(
 	db ethdb.Database,
 	bc *core.BlockChain,
 	broadcastServer *broadcaster.Broadcaster,
+	fatalErrChan chan<- error,
 ) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 db,
@@ -72,6 +75,7 @@ func NewTransactionStreamer(
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 		chainId:            bc.Config().ChainID.Uint64(),
+		fatalErrChan:       fatalErrChan,
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -840,6 +844,9 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 			err := s.createBlocks(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				log.Error("error creating blocks", "err", err.Error())
+				if errors.Is(err, arbosState.ErrFatalNodeOutOfDate) {
+					s.fatalErrChan <- err
+				}
 			}
 			timer := time.NewTimer(10 * time.Second)
 			select {

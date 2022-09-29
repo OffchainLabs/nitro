@@ -343,6 +343,7 @@ func main() {
 	select {
 	case err := <-fatalErrChan:
 		log.Error("shutting down due to fatal error", "err", err)
+		defer log.Error("shut down due to fatal error", "err", err)
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
