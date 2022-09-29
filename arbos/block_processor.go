@@ -81,7 +81,7 @@ type SequencingHooks struct {
 	TxErrors               []error
 	DiscardInvalidTxsEarly bool
 	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error
-	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
 func noopSequencingHooks() *SequencingHooks {
@@ -91,7 +91,7 @@ func noopSequencingHooks() *SequencingHooks {
 		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error {
 			return nil
 		},
-		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
+		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
 	}
@@ -285,7 +285,7 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				vm.Config{},
 				func(result *core.ExecutionResult) error {
-					return hooks.PostTxFilter(state, tx, sender, dataGas, result)
+					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
 				},
 			)
 			if err != nil {

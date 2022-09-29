@@ -6,6 +6,7 @@ package containers
 import "github.com/golang/groupcache/lru"
 
 // Not thread safe!
+// In contrast to lru.Cache, as zero size means it has no capacity instead of unlimited.
 type LruCache[K comparable, V any] struct {
 	inner lru.Cache
 }
@@ -16,6 +17,9 @@ func NewLruCache[K comparable, V any](size int) *LruCache[K, V] {
 }
 
 func (c *LruCache[K, V]) Add(key K, value V) {
+	if c.inner.MaxEntries <= 0 {
+		return
+	}
 	c.inner.Add(key, value)
 }
 
@@ -48,10 +52,17 @@ func (c *LruCache[K, V]) Clear() {
 	c.inner.Clear()
 }
 
-func (c *LruCache[K, V]) GetMaxEntries() int {
+func (c *LruCache[K, V]) GetSize() int {
 	return c.inner.MaxEntries
 }
 
-func (c *LruCache[K, V]) SetMaxEntries(maxEntries int) {
-	c.inner.MaxEntries = maxEntries
+func (c *LruCache[K, V]) Resize(newSize int) {
+	c.inner.MaxEntries = newSize
+	if newSize <= 0 {
+		c.Clear()
+	} else {
+		for c.Len() > newSize {
+			c.RemoveOldest()
+		}
+	}
 }

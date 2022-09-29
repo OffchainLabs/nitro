@@ -26,7 +26,6 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
-	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -59,9 +58,6 @@ type TransactionStreamer struct {
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
 	inboxReader     *InboxReader
-
-	// Only used by the sequencer. Protected by the reorgMutex.
-	nonceCache *containers.LruCache[common.Address, uint64]
 }
 
 func NewTransactionStreamer(
@@ -76,7 +72,6 @@ func NewTransactionStreamer(
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
 		chainId:            bc.Config().ChainID.Uint64(),
-		nonceCache:         containers.NewLruCache[common.Address, uint64](0),
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -173,7 +168,6 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	atomic.AddUint32(&s.reorgPending, 1)
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
-	s.nonceCache.Clear()
 	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
 	blockNum, err := s.MessageCountToBlockNumber(count)
 	if err != nil {
@@ -480,43 +474,7 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 	}, nil
 }
 
-// Must be called inside a transaction filter hook (meaning the reorg mutex is held)
-func (s *TransactionStreamer) CheckNonceWithCache(statedb *state.StateDB, sender common.Address, nonce uint64) error {
-	if s.nonceCache.GetMaxEntries() > 0 {
-		stateNonce, ok := s.nonceCache.Get(sender)
-		if !ok {
-			stateNonce = statedb.GetNonce(sender)
-			s.nonceCache.Add(sender, stateNonce)
-		}
-		err := MakeNonceError(sender, nonce, stateNonce)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Must be called inside a transaction filter hook (meaning the reorg mutex is held)
-func (s *TransactionStreamer) UpdateNonceCache(sender common.Address, newNonce uint64) {
-	if s.nonceCache.GetMaxEntries() > 0 {
-		s.nonceCache.Add(sender, newNonce)
-	}
-}
-
-func (s *TransactionStreamer) SetNonceCacheSize(size int) {
-	s.reorgMutex.Lock()
-	defer s.reorgMutex.Unlock()
-	s.nonceCache.SetMaxEntries(size)
-	if size <= 0 {
-		s.nonceCache.Clear()
-	} else {
-		for s.nonceCache.Len() > size {
-			s.nonceCache.RemoveOldest()
-		}
-	}
-}
-
-func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (returningErr error) {
+func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	s.createBlocksMutex.Lock()
@@ -526,40 +484,33 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 
 	pos, err := s.GetMessageCount()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	lastBlockHeader := s.bc.CurrentBlock().Header()
 	if lastBlockHeader == nil {
-		return errors.New("current block header not found")
+		return nil, errors.New("current block header not found")
 	}
 	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if lastBlockHeader.Number.Int64() != expectedBlockNum {
-		return fmt.Errorf("%w: block production not caught up: last block number %v but expected %v", ErrRetrySequencer, lastBlockHeader.Number, expectedBlockNum)
+		return nil, fmt.Errorf("%w: block production not caught up: last block number %v but expected %v", ErrRetrySequencer, lastBlockHeader.Number, expectedBlockNum)
 	}
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var delayedMessagesRead uint64
 	if pos > 0 {
 		lastMsg, err := s.GetMessage(pos - 1)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
-
-	defer func() {
-		if returningErr != nil {
-			// This error may have invalidated the nonce cache
-			s.nonceCache.Clear()
-		}
-	}()
 
 	startTime := time.Now()
 	block, receipts, err := arbos.ProduceBlockAdvanced(
@@ -573,14 +524,14 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		hooks,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(hooks.TxErrors) != len(txes) {
-		return fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
+		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
 
 	if len(receipts) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	allTxsErrored := true
@@ -591,12 +542,12 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		}
 	}
 	if allTxsErrored {
-		return nil
+		return nil, nil
 	}
 
 	msg, err := messageFromTxes(header, txes, hooks.TxErrors)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	msgWithMeta := arbstate.MessageWithMetadata{
@@ -606,17 +557,17 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 
 	if s.coordinator != nil {
 		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
-		return err
+		return nil, err
 	}
 
 	if s.broadcastServer != nil {
 		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -628,17 +579,17 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	}
 	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, time.Since(startTime))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if status == core.SideStatTy {
-		return errors.New("geth rejected block as non-canonical")
+		return nil, errors.New("geth rejected block as non-canonical")
 	}
 
 	if s.validator != nil {
 		s.validator.NewBlock(block, lastBlockHeader, msgWithMeta)
 	}
 
-	return nil
+	return block, nil
 }
 
 func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
@@ -808,11 +759,6 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	batchFetcher := func(batchNum uint64) ([]byte, error) {
 		return s.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 	}
-
-	if pos >= msgCount {
-		return nil
-	}
-	s.nonceCache.Clear()
 
 	for pos < msgCount {
 
