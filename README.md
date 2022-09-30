@@ -1,4 +1,20 @@
-# Arbitrum Nitro
+<br />
+<p align="center">
+  <a href="https://arbitrum.io/">
+    <img src="https://arbitrum.io/wp-content/uploads/2021/08/Arbitrum_Symbol-Full-color-White-background-768x840.png" alt="Logo" width="80" height="80">
+  </a>
+
+  <h3 align="center">Arbitrum Nitro</h3>
+
+  <p align="center">
+    <a href="https://developer.arbitrum.io/"><strong>Next Generation Ethereum L2 Technology »</strong></a>
+    <br />
+  </p>
+</p>
+
+## About Arbitrum Nitro
+
+<img src="https://arbitrum.io/wp-content/uploads/2021/08/Arbitrum_Symbol-Full-color-White-background-768x840.png" alt="Logo" width="80" height="80">
 
 Nitro is the latest iteration of the Arbitrum technology. It is a fully integrated, complete
 layer 2 optimistic rollup system, including fraud proofs, the sequencer, the token bridges, 
@@ -21,7 +37,16 @@ and compression system to minimize L1 costs.
 Essentially, Nitro runs Geth at layer 2 on top of Ethereum, and can prove fraud over the core engine of Geth 
 compiled to WASM.
 
-Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on 8/31/22. (See [state migration](https://developer.arbitrum.io/migration/state-migration) and [dapp migration](https://developer.arbitrum.io/migration/dapp_migration) for more info). 
+Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on 8/31/22. (See [state migration](https://developer.arbitrum.io/migration/state-migration) and [dapp migration](https://developer.arbitrum.io/migration/dapp_migration) for more info).
 
+## License
 
 We currently have Nitro [licensed](./LICENSE) under a Business Source License, similar to our friends at Uniswap and Aave, with an "Additional Use Grant" to ensure that everyone can have full comfort using and running nodes on all public Arbitrum chains.
+
+## Contact
+
+Discord - [Arbitrum](https://discord.com/invite/5KE54JwyTs)
+
+Twitter: [Arbitrum](https://twitter.com/arbitrum)
+
+
