@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -82,7 +81,6 @@ func (at *callTraceRequest) UnmarshalJSON(b []byte) error {
 func (at *callTraceRequest) MarshalJSON() ([]byte, error) {
 	fields := []interface{}{&at.callArgs, &at.traceTypes}
 	data, err := json.Marshal(&fields)
-	log.Warn("callTraceRequest.MarshallJSON", "data", string(data), "err", "err")
 	return data, err
 }
 
@@ -95,8 +93,7 @@ func (s *ArbTraceAPIStub) Call(ctx context.Context, callArgs callTxArgs, traceTy
 }
 
 func (s *ArbTraceAPIStub) CallMany(ctx context.Context, calls []*callTraceRequest, blockNum rpc.BlockNumberOrHash) ([]*traceResult, error) {
-	log.Warn("CallMany called")
-	results := []*traceResult{}
+	results := []*traceResult{&traceResult{}}
 	return results, nil
 }
 
