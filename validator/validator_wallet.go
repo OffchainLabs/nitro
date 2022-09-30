@@ -111,16 +111,17 @@ func (v *ContractValidatorWallet) validateWallet(ctx context.Context) error {
 }
 
 func (v *ContractValidatorWallet) Initialize(ctx context.Context) error {
-	err := v.validateWallet(ctx)
+	err := v.populateWallet(ctx, false)
+	if err != nil {
+		return err
+	}
+	err = v.validateWallet(ctx)
 	if err != nil {
 		return err
 	}
 	callOpts := &bind.CallOpts{Context: ctx}
 	v.challengeManagerAddress, err = v.rollup.ChallengeManager(callOpts)
-	if err != nil {
-		return err
-	}
-	return v.populateWallet(ctx, false)
+	return err
 }
 
 // May be the nil if the wallet hasn't been deployed yet

@@ -222,7 +222,7 @@ func ProduceBlockAdvanced(
 		var sender common.Address
 		var dataGas uint64 = 0
 		preTxHeaderGasUsed := header.GasUsed
-		receipt, scheduled, err := (func() (*types.Receipt, types.Transactions, error) {
+		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
 				return nil, nil, core.ErrGasLimitReached
@@ -294,7 +294,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			return receipt, result.ScheduledTxes, nil
+			return receipt, result, nil
 		})()
 
 		// append the err, even if it is nil
@@ -314,6 +314,10 @@ func ProduceBlockAdvanced(
 				}
 			}
 			continue
+		}
+
+		if tx.Type() == types.ArbitrumInternalTxType && result.Err != nil {
+			return nil, nil, fmt.Errorf("failed to apply internal transaction: %w", result.Err)
 		}
 
 		if preTxHeaderGasUsed > header.GasUsed {
@@ -344,7 +348,7 @@ func ProduceBlockAdvanced(
 		}
 
 		// append any scheduled redeems
-		redeems = append(redeems, scheduled...)
+		redeems = append(redeems, result.ScheduledTxes...)
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbSysAddress {
