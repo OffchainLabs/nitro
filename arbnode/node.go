@@ -731,7 +731,7 @@ func createNodeImpl(
 	if deployInfo != nil {
 		sequencerInboxAddr = deployInfo.SequencerInbox
 	}
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -968,6 +968,12 @@ func createNodeImpl(
 		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, daReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
+		}
+		if staker.Strategy() != validator.WatchtowerStrategy {
+			err := wallet.Initialize(ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
 		var txSenderPtr *common.Address
 		if txOpts != nil {

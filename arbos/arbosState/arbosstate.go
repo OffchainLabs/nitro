@@ -229,21 +229,27 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 	if desiredArbosVersion > 1 {
-		aState.UpgradeArbosVersion(desiredArbosVersion, true)
+		err = aState.UpgradeArbosVersion(desiredArbosVersion, true)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return aState, err
+	return aState, nil
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) error {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
-		state.UpgradeArbosVersion(upgradeTo, false)
+		return state.UpgradeArbosVersion(upgradeTo, false)
 	}
+	return nil
 }
 
-func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) {
+var ErrFatalNodeOutOfDate error = errors.New("please upgrade to latest version of node software")
+
+func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) error {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
 			if err != nil {
@@ -270,7 +276,7 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) {
 		case 6:
 			// no state changes needed
 		default:
-			panic("Unrecognized ArbOS version, please upgrade to latest version of node software")
+			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)
 		}
 		state.arbosVersion++
 	}
@@ -283,6 +289,8 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) {
 	}
 
 	state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), state.arbosVersion))
+
+	return nil
 }
 
 func (state *ArbosState) ScheduleArbOSUpgrade(newVersion uint64, timestamp uint64) error {
