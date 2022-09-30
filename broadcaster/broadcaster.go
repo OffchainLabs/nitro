@@ -93,6 +93,11 @@ func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetada
 }
 
 func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) error {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("recovered error in BroadcastSingle", "recover", r)
+		}
+	}()
 	bfm, err := b.newBroadcastFeedMessage(msg, seq)
 	if err != nil {
 		return err
