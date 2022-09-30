@@ -186,12 +186,6 @@ func NewStaker(
 }
 
 func (s *Staker) Initialize(ctx context.Context) error {
-	if s.strategy != WatchtowerStrategy {
-		err := s.wallet.Initialize(ctx)
-		if err != nil {
-			return err
-		}
-	}
 	err := s.L1Validator.Initialize(ctx)
 	if err != nil {
 		return err
@@ -716,4 +710,8 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 	}
 	// No conflicts exist
 	return nil
+}
+
+func (s *Staker) Strategy() StakerStrategy {
+	return s.strategy
 }
