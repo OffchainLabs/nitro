@@ -160,7 +160,9 @@ func (c *nonceCache) Get(header *types.Header, statedb *state.StateDB, addr comm
 	if ok {
 		return nonce
 	}
-	return statedb.GetNonce(addr)
+	nonce = statedb.GetNonce(addr)
+	c.cache.Add(addr, nonce)
+	return nonce
 }
 
 func (c *nonceCache) Update(header *types.Header, addr common.Address, nonce uint64) {
@@ -483,6 +485,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
+	s.nonceCache.Resize(s.config().NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
 	hooks := &arbos.SequencingHooks{
 		PreTxFilter:            s.preTxFilter,
@@ -598,8 +601,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		s.nonceCache.Resize(s.config().NonceCacheSize) // Would probably be better in a config hook but this is basically free
-
 		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
 		madeBlock := s.createBlock(ctx)
 		if madeBlock {
