@@ -33,7 +33,11 @@ import (
 )
 
 var (
-	sequencerBacklogGauge = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
+	sequencerBacklogGauge     = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
+	nonceCacheHitCounter      = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
+	nonceCacheMissCounter     = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
+	nonceCacheRejectedCounter = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
+	nonceCacheClearedCounter  = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
 )
 
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
@@ -141,6 +145,9 @@ func (c *nonceCache) Matches(header *types.Header) bool {
 }
 
 func (c *nonceCache) Reset(block common.Hash) {
+	if c.cache.Len() > 0 {
+		nonceCacheClearedCounter.Inc(1)
+	}
 	c.cache.Clear()
 	c.block = block
 	c.dirty = nil
@@ -158,8 +165,10 @@ func (c *nonceCache) Get(header *types.Header, statedb *state.StateDB, addr comm
 	}
 	nonce, ok := c.cache.Get(addr)
 	if ok {
+		nonceCacheHitCounter.Inc(1)
 		return nonce
 	}
+	nonceCacheMissCounter.Inc(1)
 	nonce = statedb.GetNonce(addr)
 	c.cache.Add(addr, nonce)
 	return nonce
@@ -290,6 +299,7 @@ func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, sta
 		stateNonce := s.nonceCache.Get(header, statedb, sender)
 		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
 		if err != nil {
+			nonceCacheRejectedCounter.Inc(1)
 			return err
 		}
 	}
