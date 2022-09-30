@@ -370,7 +370,20 @@ func (api *ArbTraceForwarderAPI) Call(ctx context.Context, callArgs json.RawMess
 	return api.forward(ctx, "arbtrace_call", callArgs, traceTypes, blockNum)
 }
 
-func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls json.RawMessage, blockNum json.RawMessage) (*json.RawMessage, error) {
+type JsonRawData struct {
+	data []byte
+}
+
+func (a *JsonRawData) UnmarshalJSON(data []byte) error {
+	copy(a.data, data)
+	return nil
+}
+
+func (a *JsonRawData) MarshalJSON() ([]byte, error) {
+	return a.data, nil
+}
+
+func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls JsonRawData, blockNum json.RawMessage) (*json.RawMessage, error) {
 	return api.forward(ctx, "arbtrace_callMany", calls, blockNum)
 }
 

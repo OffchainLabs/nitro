@@ -3,13 +3,14 @@ package arbtest
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -62,12 +63,34 @@ type traceResult struct {
 	DestroyedContracts *[]common.Address `json:"destroyedContracts"`
 }
 
+type callTraceRequest struct {
+	callArgs   callTxArgs
+	traceTypes []string
+}
+
+func (at *callTraceRequest) UnmarshalJSON(b []byte) error {
+	fields := []interface{}{&at.callArgs, &at.traceTypes}
+	if err := json.Unmarshal(b, &fields); err != nil {
+		return err
+	}
+	if len(fields) != 2 {
+		return errors.New("expected two arguments per call")
+	}
+	return nil
+}
+
 type ArbTraceAPIStub struct {
 	t *testing.T
 }
 
 func (s *ArbTraceAPIStub) Call(ctx context.Context, callArgs callTxArgs, traceTypes []string, blockNum rpc.BlockNumberOrHash) (*traceResult, error) {
 	return &traceResult{}, nil
+}
+
+func (s *ArbTraceAPIStub) CallMany(ctx context.Context, calls []*callTraceRequest, blockNum rpc.BlockNumberOrHash) ([]*traceResult, error) {
+	log.Warn("CallMany called")
+	results := []*traceResult{}
+	return results, nil
 }
 
 func TestArbTraceForwarding(t *testing.T) {
@@ -97,8 +120,11 @@ func TestArbTraceForwarding(t *testing.T) {
 	txArgs := callTxArgs{}
 	traceTypes := []string{}
 	blockNum := rpc.BlockNumberOrHash{}
-	var result json.RawMessage
+	var result *traceResult
 	err = l2rpc.CallContext(ctx, &result, "arbtrace_call", txArgs, traceTypes, blockNum)
 	testhelpers.RequireImpl(t, err)
-	t.Log(fmt.Sprint(result))
+	traceRequests := make([]*callTraceRequest, 2)
+	var results json.RawMessage
+	err = l2rpc.CallContext(ctx, &results, "arbtrace_callMany", traceRequests, blockNum)
+	testhelpers.RequireImpl(t, err)
 }
