@@ -84,6 +84,15 @@ func (at *callTraceRequest) MarshalJSON() ([]byte, error) {
 	return data, err
 }
 
+type filterRequest struct {
+	FromBlock   *rpc.BlockNumberOrHash `json:"fromBlock"`
+	ToBlock     *rpc.BlockNumberOrHash `json:"toBlock"`
+	FromAddress *[]common.Address      `json:"fromAddress"`
+	ToAddress   *[]common.Address      `json:"toAddress"`
+	After       *uint64                `json:"after"`
+	Count       *uint64                `json:"count"`
+}
+
 type ArbTraceAPIStub struct {
 	t *testing.T
 }
@@ -93,8 +102,31 @@ func (s *ArbTraceAPIStub) Call(ctx context.Context, callArgs callTxArgs, traceTy
 }
 
 func (s *ArbTraceAPIStub) CallMany(ctx context.Context, calls []*callTraceRequest, blockNum rpc.BlockNumberOrHash) ([]*traceResult, error) {
-	results := []*traceResult{&traceResult{}}
-	return results, nil
+	return []*traceResult{&traceResult{}}, nil
+}
+
+func (s *ArbTraceAPIStub) ReplayBlockTransactions(ctx context.Context, blockNum rpc.BlockNumberOrHash, traceTypes []string) ([]*traceResult, error) {
+	return []*traceResult{&traceResult{}}, nil
+}
+
+func (s *ArbTraceAPIStub) ReplayTransaction(ctx context.Context, txHash hexutil.Bytes, traceTypes []string) (*traceResult, error) {
+	return &traceResult{}, nil
+}
+
+func (s *ArbTraceAPIStub) Transaction(ctx context.Context, txHash hexutil.Bytes) ([]traceFrame, error) {
+	return []traceFrame{traceFrame{}}, nil
+}
+
+func (s *ArbTraceAPIStub) Get(ctx context.Context, txHash hexutil.Bytes, path []hexutil.Uint64) (*traceFrame, error) {
+	return &traceFrame{}, nil
+}
+
+func (a *ArbTraceAPIStub) Block(ctx context.Context, blockNum rpc.BlockNumberOrHash) ([]traceFrame, error) {
+	return []traceFrame{traceFrame{}}, nil
+}
+
+func (a *ArbTraceAPIStub) Filter(ctx context.Context, filter *filterRequest) ([]traceFrame, error) {
+	return []traceFrame{traceFrame{}}, nil
 }
 
 func TestArbTraceForwarding(t *testing.T) {
@@ -122,14 +154,31 @@ func TestArbTraceForwarding(t *testing.T) {
 
 	l2rpc, _ := l2stack.Attach()
 	txArgs := callTxArgs{}
-	traceTypes := []string{}
+	traceTypes := []string{"trace"}
 	blockNum := rpc.BlockNumberOrHash{}
-	var result *traceResult
+	traceRequests := make([]*callTraceRequest, 1)
+	traceRequests[0] = &callTraceRequest{callArgs: callTxArgs{}, traceTypes: traceTypes}
+	txHash := hexutil.Bytes{}
+	path := []hexutil.Uint64{}
+	filter := filterRequest{}
+	var result traceResult
 	err = l2rpc.CallContext(ctx, &result, "arbtrace_call", txArgs, traceTypes, blockNum)
 	testhelpers.RequireImpl(t, err)
-	traceRequests := make([]*callTraceRequest, 1)
-	traceRequests[0] = &callTraceRequest{callArgs: callTxArgs{}, traceTypes: []string{"a", "b"}}
-	var results json.RawMessage
+	var results []*traceResult
 	err = l2rpc.CallContext(ctx, &results, "arbtrace_callMany", traceRequests, blockNum)
+	testhelpers.RequireImpl(t, err)
+	err = l2rpc.CallContext(ctx, &results, "arbtrace_replayBlockTransactions", blockNum, traceTypes)
+	testhelpers.RequireImpl(t, err)
+	err = l2rpc.CallContext(ctx, &result, "arbtrace_replayTransaction", txHash, traceTypes)
+	testhelpers.RequireImpl(t, err)
+	var frames []traceFrame
+	err = l2rpc.CallContext(ctx, &frames, "arbtrace_transaction", txHash)
+	testhelpers.RequireImpl(t, err)
+	var frame traceFrame
+	err = l2rpc.CallContext(ctx, &frame, "arbtrace_get", txHash, path)
+	testhelpers.RequireImpl(t, err)
+	err = l2rpc.CallContext(ctx, &frames, "arbtrace_block", blockNum)
+	testhelpers.RequireImpl(t, err)
+	err = l2rpc.CallContext(ctx, &frames, "arbtrace_filter", filter)
 	testhelpers.RequireImpl(t, err)
 }
