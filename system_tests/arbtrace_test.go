@@ -79,6 +79,13 @@ func (at *callTraceRequest) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+func (at *callTraceRequest) MarshalJSON() ([]byte, error) {
+	fields := []interface{}{&at.callArgs, &at.traceTypes}
+	data, err := json.Marshal(&fields)
+	log.Warn("callTraceRequest.MarshallJSON", "data", string(data), "err", "err")
+	return data, err
+}
+
 type ArbTraceAPIStub struct {
 	t *testing.T
 }
@@ -123,7 +130,8 @@ func TestArbTraceForwarding(t *testing.T) {
 	var result *traceResult
 	err = l2rpc.CallContext(ctx, &result, "arbtrace_call", txArgs, traceTypes, blockNum)
 	testhelpers.RequireImpl(t, err)
-	traceRequests := make([]*callTraceRequest, 2)
+	traceRequests := make([]*callTraceRequest, 1)
+	traceRequests[0] = &callTraceRequest{callArgs: callTxArgs{}, traceTypes: []string{"a", "b"}}
 	var results json.RawMessage
 	err = l2rpc.CallContext(ctx, &results, "arbtrace_callMany", traceRequests, blockNum)
 	testhelpers.RequireImpl(t, err)
