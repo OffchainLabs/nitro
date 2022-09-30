@@ -102,11 +102,11 @@ func (s *ArbTraceAPIStub) Call(ctx context.Context, callArgs callTxArgs, traceTy
 }
 
 func (s *ArbTraceAPIStub) CallMany(ctx context.Context, calls []*callTraceRequest, blockNum rpc.BlockNumberOrHash) ([]*traceResult, error) {
-	return []*traceResult{&traceResult{}}, nil
+	return []*traceResult{{}}, nil
 }
 
 func (s *ArbTraceAPIStub) ReplayBlockTransactions(ctx context.Context, blockNum rpc.BlockNumberOrHash, traceTypes []string) ([]*traceResult, error) {
-	return []*traceResult{&traceResult{}}, nil
+	return []*traceResult{{}}, nil
 }
 
 func (s *ArbTraceAPIStub) ReplayTransaction(ctx context.Context, txHash hexutil.Bytes, traceTypes []string) (*traceResult, error) {
@@ -114,7 +114,7 @@ func (s *ArbTraceAPIStub) ReplayTransaction(ctx context.Context, txHash hexutil.
 }
 
 func (s *ArbTraceAPIStub) Transaction(ctx context.Context, txHash hexutil.Bytes) ([]traceFrame, error) {
-	return []traceFrame{traceFrame{}}, nil
+	return []traceFrame{{}}, nil
 }
 
 func (s *ArbTraceAPIStub) Get(ctx context.Context, txHash hexutil.Bytes, path []hexutil.Uint64) (*traceFrame, error) {
@@ -122,11 +122,11 @@ func (s *ArbTraceAPIStub) Get(ctx context.Context, txHash hexutil.Bytes, path []
 }
 
 func (a *ArbTraceAPIStub) Block(ctx context.Context, blockNum rpc.BlockNumberOrHash) ([]traceFrame, error) {
-	return []traceFrame{traceFrame{}}, nil
+	return []traceFrame{{}}, nil
 }
 
 func (a *ArbTraceAPIStub) Filter(ctx context.Context, filter *filterRequest) ([]traceFrame, error) {
-	return []traceFrame{traceFrame{}}, nil
+	return []traceFrame{{}}, nil
 }
 
 func TestArbTraceForwarding(t *testing.T) {
