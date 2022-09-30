@@ -969,6 +969,12 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
+		if staker.Strategy() != validator.WatchtowerStrategy {
+			err := wallet.Initialize(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
 		var txSenderPtr *common.Address
 		if txOpts != nil {
 			txSenderPtr = &txOpts.From
