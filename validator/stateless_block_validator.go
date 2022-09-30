@@ -282,13 +282,14 @@ func RecordBlockCreation(
 	prevHeader *types.Header,
 	msg *arbstate.MessageWithMetadata,
 	producePreimages bool,
+	recordForNondeterministic bool,
 ) (common.Hash, map[common.Hash][]byte, []BatchInfo, error) {
 	var recordingdb *state.StateDB
 	var chaincontext core.ChainContext
 	var recordingKV *arbitrum.RecordingKV
 	var err error
 	if producePreimages {
-		recordingdb, chaincontext, recordingKV, err = arbitrum.PrepareRecording(blockchain, prevHeader)
+		recordingdb, chaincontext, recordingKV, err = arbitrum.PrepareRecording(blockchain, prevHeader, recordForNondeterministic)
 		if err != nil {
 			return common.Hash{}, nil, nil, err
 		}
@@ -392,7 +393,7 @@ func BlockDataForValidation(
 	if prevHeader != nil {
 		var blockhash common.Hash
 		blockhash, preimages, readBatchInfo, err = RecordBlockCreation(
-			ctx, blockchain, inboxReader, prevHeader, &msg, producePreimages,
+			ctx, blockchain, inboxReader, prevHeader, &msg, producePreimages, true,
 		)
 		if err != nil {
 			return
