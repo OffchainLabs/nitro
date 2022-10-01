@@ -38,6 +38,8 @@ var (
 	nonceCacheMissCounter     = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
 	nonceCacheRejectedCounter = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
 	nonceCacheClearedCounter  = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
+	blockCreationTimer        = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
+	successfulBlocksCounter   = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 )
 
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
@@ -136,8 +138,10 @@ func newNonceCache(size int) *nonceCache {
 	}
 }
 
-func (c *nonceCache) Matches(header *types.Header) bool {
+func (c *nonceCache) matches(header *types.Header) bool {
 	if c.dirty != nil {
+		// The header is updated as the block is built,
+		// so instead of checking its hash, we do a pointer comparison.
 		return c.dirty == header
 	} else {
 		return c.block == header.ParentHash
@@ -160,7 +164,7 @@ func (c *nonceCache) BeginNewBlock() {
 }
 
 func (c *nonceCache) Get(header *types.Header, statedb *state.StateDB, addr common.Address) uint64 {
-	if !c.Matches(header) {
+	if !c.matches(header) {
 		c.Reset(header.ParentHash)
 	}
 	nonce, ok := c.cache.Get(addr)
@@ -175,7 +179,7 @@ func (c *nonceCache) Get(header *types.Header, statedb *state.StateDB, addr comm
 }
 
 func (c *nonceCache) Update(header *types.Header, addr common.Address, nonce uint64) {
-	if !c.Matches(header) {
+	if !c.matches(header) {
 		c.Reset(header.ParentHash)
 	}
 	c.dirty = header
@@ -503,7 +507,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		DiscardInvalidTxsEarly: true,
 		TxErrors:               []error{},
 	}
+	start := time.Now()
 	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
+	blockCreationTimer.Update(time.Since(start))
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
@@ -535,6 +541,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 
 	if block != nil {
+		successfulBlocksCounter.Inc(1)
 		s.nonceCache.Finalize(block)
 	}
 
