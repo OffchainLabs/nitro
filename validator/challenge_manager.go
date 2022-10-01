@@ -425,7 +425,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			return err
 		}
 		batchInfo = readBatchInfo
-		resolver, err := NewMachinePreimageResolver(ctx, preimages, nil, m.blockchain, m.das)
+		resolver, err := NewMachinePreimageResolver(ctx, preimages, m.blockchain)
 		if err != nil {
 			return err
 		}
@@ -447,7 +447,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
 		preimages, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(
-			ctx, m.blockchain, m.inboxReader, nextHeader, blockHeader, *message, false,
+			ctx, m.blockchain, m.inboxReader, nextHeader, blockHeader, *message, m.das, false,
 		)
 		if err != nil {
 			return err
@@ -461,7 +461,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			Data:   batchBytes,
 		})
 		batchInfo = readBatchInfo
-		resolver, err := NewMachinePreimageResolver(ctx, preimages, batchInfo, m.blockchain, m.das)
+		resolver, err := NewMachinePreimageResolver(ctx, preimages, m.blockchain)
 		if err != nil {
 			return err
 		}

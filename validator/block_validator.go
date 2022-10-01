@@ -223,7 +223,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 }
 
 func (v *BlockValidator) prepareBlock(ctx context.Context, header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
-	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, v.config().StorePreimages)
+	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, v.daService, v.config().StorePreimages)
 	if err != nil {
 		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
 		return
@@ -420,6 +420,11 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		Number: entry.StartPosition.BatchNumber,
 		Data:   seqMsg,
 	})
+	err := AddPreimagesFromBatchInfos(ctx, entry, v.blockchain, v.daService)
+	if err != nil {
+		log.Error("error loading batches for validation", "err", err)
+		return
+	}
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 

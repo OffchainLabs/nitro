@@ -376,6 +376,7 @@ func BlockDataForValidation(
 	inboxReader InboxReaderInterface,
 	header, prevHeader *types.Header,
 	msg arbstate.MessageWithMetadata,
+	das arbstate.DataAvailabilityReader,
 	producePreimages bool,
 ) (
 	preimages map[common.Hash][]byte, readBatchInfo []BatchInfo,
@@ -414,35 +415,49 @@ func BlockDataForValidation(
 	return
 }
 
+func AddPreimagesFromBatchInfos(
+	ctx context.Context,
+	entry *validationEntry,
+	blockchain *core.BlockChain,
+	das arbstate.DataAvailabilityReader,
+) error {
+
+	if entry.Preimages == nil {
+		entry.Preimages = make(map[common.Hash][]byte)
+	}
+	for _, batch := range entry.BatchInfo {
+		if len(batch.Data) <= 40 {
+			continue
+		}
+		if !arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
+			continue
+		}
+		if das == nil {
+			log.Error("No DAS configured, but sequencer message found with DAS header")
+			if blockchain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
+				return errors.New("processing data availability chain without DAS configured")
+			}
+		} else {
+			_, err := arbstate.RecoverPayloadFromDasBatch(
+				ctx, batch.Number, batch.Data, das, entry.Preimages, arbstate.KeysetValidate,
+			)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func NewMachinePreimageResolver(
 	ctx context.Context,
 	preimages map[common.Hash][]byte,
-	batchInfo []BatchInfo,
 	bc *core.BlockChain,
-	das arbstate.DataAvailabilityReader,
 ) (GoPreimageResolver, error) {
 	recordNewPreimages := true
 	if preimages == nil {
 		preimages = make(map[common.Hash][]byte)
 		recordNewPreimages = false
-	}
-
-	for _, batch := range batchInfo {
-		if len(batch.Data) >= 41 && arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
-			if das == nil {
-				log.Error("No DAS configured, but sequencer message found with DAS header")
-				if bc.Config().ArbitrumChainParams.DataAvailabilityCommittee {
-					return nil, errors.New("processing data availability chain without DAS configured")
-				}
-			} else {
-				_, err := arbstate.RecoverPayloadFromDasBatch(
-					ctx, batch.Number, batch.Data, das, preimages, arbstate.KeysetValidate,
-				)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
 	}
 
 	db := bc.StateCache().TrieDB()
@@ -485,7 +500,7 @@ func (v *StatelessBlockValidator) executeBlock(
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 	mach := basemachine.Clone()
-	resolver, err := NewMachinePreimageResolver(ctx, entry.Preimages, entry.BatchInfo, v.blockchain, v.daService)
+	resolver, err := NewMachinePreimageResolver(ctx, entry.Preimages, v.blockchain)
 	if err != nil {
 		return GoGlobalState{}, nil, err
 	}
@@ -568,7 +583,7 @@ func (v *StatelessBlockValidator) jitBlock(
 		}
 	}
 
-	resolver, err := NewMachinePreimageResolver(ctx, entry.Preimages, entry.BatchInfo, v.blockchain, v.daService)
+	resolver, err := NewMachinePreimageResolver(ctx, entry.Preimages, v.blockchain)
 	if err != nil {
 		return empty, nil, err
 	}
@@ -593,7 +608,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 		return false, err
 	}
 	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(
-		ctx, v.blockchain, v.inboxReader, header, prevHeader, *msg, false,
+		ctx, v.blockchain, v.inboxReader, header, prevHeader, *msg, v.daService, false,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to get block data to validate: %w", err)
@@ -630,6 +645,10 @@ func (v *StatelessBlockValidator) ValidateBlock(
 		Number: startPos.BatchNumber,
 		Data:   seqMsg,
 	})
+	err = AddPreimagesFromBatchInfos(ctx, entry, v.blockchain, v.daService)
+	if err != nil {
+		return false, err
+	}
 
 	var gsEnd GoGlobalState
 	if full {
