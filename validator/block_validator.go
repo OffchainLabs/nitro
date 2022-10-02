@@ -128,16 +128,29 @@ var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
 	ResetBlockValidation: false,
 }
 
-const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
-const validationStatusPrepared uint32 = 1   // ready to undergo validation
-const validationStatusFailed uint32 = 2     // validation failed
-const validationStatusValid uint32 = 3      // validation succeeded
+type valStatusField uint32
+
+const (
+	Unprepared valStatusField = iota
+	Prepared
+	Failed
+	Valid
+)
 
 type validationStatus struct {
 	Status      uint32           // atomic: value is one of validationStatus*
 	Cancel      func()           // non-atomic: only read/written to with reorg mutex
 	Entry       *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
 	ModuleRoots []common.Hash    // non-atomic: present from the start
+}
+
+func (s *validationStatus) setStatus(val valStatusField) {
+	atomic.StoreUint32(&s.Status, uint32(val))
+}
+
+func (s *validationStatus) getStatus() valStatusField {
+	uintStat := atomic.LoadUint32(&s.Status)
+	return valStatusField(uintStat)
 }
 
 func NewBlockValidator(
@@ -242,7 +255,7 @@ func (v *BlockValidator) prepareBlock(ctx context.Context, header *types.Header,
 		return
 	}
 	validationStatus.Entry = validationEntry
-	atomic.StoreUint32(&validationStatus.Status, validationStatusPrepared)
+	validationStatus.setStatus(Prepared)
 	select {
 	case v.sendValidationsChan <- struct{}{}:
 	default:
@@ -267,7 +280,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 		return
 	}
 	status := &validationStatus{
-		Status:      validationStatusUnprepared,
+		Status:      uint32(Unprepared),
 		Entry:       nil,
 		ModuleRoots: v.GetModuleRootsToValidate(),
 	}
@@ -417,7 +430,7 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 }
 
 func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
-	if currentStatus := atomic.LoadUint32(&validationStatus.Status); currentStatus != validationStatusPrepared {
+	if currentStatus := validationStatus.getStatus(); currentStatus != Prepared {
 		log.Error("attempted to validate unprepared validation entry", "status", currentStatus)
 		return
 	}
@@ -512,7 +525,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 				default:
 				}
 			}
-			atomic.StoreUint32(&validationStatus.Status, validationStatusFailed)
+			validationStatus.setStatus(Failed)
 			return
 		}
 
@@ -522,7 +535,8 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		)
 	}
 
-	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
+	validationStatus.setStatus(Valid) // after that - validation entry could be deleted from map
+
 	select {
 	case v.checkProgressChan <- struct{}{}:
 	default:
@@ -612,7 +626,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		if atomic.LoadUint32(&validationStatus.Status) == validationStatusUnprepared {
+		if validationStatus.getStatus() == Unprepared {
 			return
 		}
 		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, nextMsg, v.globalPosNextSend.BatchNumber)
@@ -679,7 +693,7 @@ func (v *BlockValidator) progressValidated() {
 			log.Error("bad entry trying to advance validated counter")
 			return
 		}
-		if atomic.LoadUint32(&validationStatus.Status) < validationStatusValid {
+		if validationStatus.getStatus() < Valid {
 			return
 		}
 		validationEntry := validationStatus.Entry
