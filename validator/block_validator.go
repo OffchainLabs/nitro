@@ -294,6 +294,10 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 		return err
 	}
 
+	rootPathAssign := ""
+	if executable, err := os.Executable(); err == nil {
+		rootPathAssign = "ROOTPATH=\"" + filepath.Dir(executable) + "\"\n"
+	}
 	cmdFile, err := os.OpenFile(filepath.Join(outDirPath, "run-prover.sh"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
@@ -302,6 +306,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
 		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchNumber, end.PosInBatch, validationEntry.BlockHash) +
 		"MACHPATH=\"" + machConf.getMachinePath(moduleRoot) + "\"\n" +
+		rootPathAssign +
 		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-m\" ]]; then\n" +
 		"		MACHPATH=$2\n" +
@@ -315,7 +320,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	}
 
 	for _, module := range machConf.LibraryPaths {
-		_, err = cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
+		_, err = cmdFile.WriteString(" -l " + "${MACHPATH}/" + module)
 		if err != nil {
 			return err
 		}
