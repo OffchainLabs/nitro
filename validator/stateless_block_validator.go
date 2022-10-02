@@ -139,38 +139,45 @@ func FindBatchContainingMessageIndex(
 }
 
 type validationEntry struct {
-	BlockNumber   uint64
-	PrevBlockHash common.Hash
-	BlockHash     common.Hash
-	SendRoot      common.Hash
-	PrevSendRoot  common.Hash
-	BlockHeader   *types.Header
-	HasDelayedMsg bool
-	DelayedMsgNr  uint64
-	StartPosition GlobalStatePosition
-	EndPosition   GlobalStatePosition
-	Preimages     map[common.Hash][]byte
-	BatchInfo     []BatchInfo
+	BlockNumber     uint64
+	PrevBlockHash   common.Hash
+	PrevBlockHeader *types.Header
+	BlockHash       common.Hash
+	BlockHeader     *types.Header
+	HasDelayedMsg   bool
+	DelayedMsgNr    uint64
+	StartPosition   GlobalStatePosition
+	EndPosition     GlobalStatePosition
+	Preimages       map[common.Hash][]byte
+	BatchInfo       []BatchInfo
 }
 
-func (v *validationEntry) start() GoGlobalState {
+func (v *validationEntry) start() (GoGlobalState, error) {
 	start := v.StartPosition
+	prevExtraInfo, err := types.DeserializeHeaderExtraInformation(v.PrevBlockHeader)
+	if err != nil {
+		return GoGlobalState{}, err
+	}
 	return GoGlobalState{
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
 		BlockHash:  v.PrevBlockHash,
-		SendRoot:   v.PrevSendRoot,
-	}
+		SendRoot:   prevExtraInfo.SendRoot,
+	}, nil
 }
 
-func (v *validationEntry) expectedEnd() GoGlobalState {
+func (v *validationEntry) expectedEnd() (GoGlobalState, error) {
+	extraInfo, err := types.DeserializeHeaderExtraInformation(v.BlockHeader)
+	if err != nil {
+		return GoGlobalState{}, err
+	}
 	end := v.EndPosition
 	return GoGlobalState{
 		Batch:      end.BatchNumber,
 		PosInBatch: end.PosInBatch,
 		BlockHash:  v.BlockHash,
-		SendRoot:   v.SendRoot,
-	}
+		SendRoot:   extraInfo.SendRoot,
+	}, nil
 }
 
 func newValidationEntry(
@@ -181,25 +188,16 @@ func newValidationEntry(
 	preimages map[common.Hash][]byte,
 	batchInfo []BatchInfo,
 ) (*validationEntry, error) {
-	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
-	if err != nil {
-		return nil, err
-	}
-	prevExtraInfo, err := types.DeserializeHeaderExtraInformation(prevHeader)
-	if err != nil {
-		return nil, err
-	}
 	return &validationEntry{
-		BlockNumber:   header.Number.Uint64(),
-		BlockHash:     header.Hash(),
-		SendRoot:      extraInfo.SendRoot,
-		PrevSendRoot:  prevExtraInfo.SendRoot,
-		PrevBlockHash: header.ParentHash,
-		BlockHeader:   header,
-		HasDelayedMsg: hasDelayed,
-		DelayedMsgNr:  delayedMsgNr,
-		Preimages:     preimages,
-		BatchInfo:     batchInfo,
+		BlockNumber:     header.Number.Uint64(),
+		PrevBlockHash:   prevHeader.Hash(),
+		PrevBlockHeader: prevHeader,
+		BlockHash:       header.Hash(),
+		BlockHeader:     header,
+		HasDelayedMsg:   hasDelayed,
+		DelayedMsgNr:    delayedMsgNr,
+		Preimages:       preimages,
+		BatchInfo:       batchInfo,
 	}, nil
 }
 
@@ -493,8 +491,10 @@ func (v *StatelessBlockValidator) executeBlock(
 	ctx context.Context, entry *validationEntry, moduleRoot common.Hash,
 ) (GoGlobalState, []byte, error) {
 	start := entry.StartPosition
-	gsStart := entry.start()
-
+	gsStart, err := entry.start()
+	if err != nil {
+		return GoGlobalState{}, nil, err
+	}
 	basemachine, err := v.MachineLoader.GetMachine(ctx, moduleRoot, true)
 	if err != nil {
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
@@ -649,7 +649,10 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if err != nil {
 		return false, err
 	}
-
+	expEnd, err := entry.expectedEnd()
+	if err != nil {
+		return false, err
+	}
 	var gsEnd GoGlobalState
 	if full {
 		gsEnd, _, err = v.executeBlock(ctx, entry, moduleRoot)
@@ -659,5 +662,5 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if err != nil {
 		return false, err
 	}
-	return gsEnd == entry.expectedEnd(), nil
+	return gsEnd == expEnd, nil
 }

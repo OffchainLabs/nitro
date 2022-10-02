@@ -465,16 +465,18 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 				return false, true
 			}
 
-			gsExpected := entry.expectedEnd()
-			resultValid := gsEnd == gsExpected
-
-			if !resultValid {
+			var gsExpected GoGlobalState
+			gsExpected, err = entry.expectedEnd()
+			if err != nil || gsEnd != gsExpected {
 				log.Error(
 					"validation failed", "moduleRoot", moduleRoot, "got", gsEnd,
 					"expected", gsExpected, "expHeader", entry.BlockHeader, "name", name,
+					"gsErr", err,
 				)
+				return false, true
 			}
-			return resultValid, !resultValid
+
+			return true, false
 		}
 
 		before := time.Now()

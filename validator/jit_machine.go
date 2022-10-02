@@ -125,7 +125,10 @@ func (machine *JitMachine) prove(
 	}
 
 	// Tell the new process about the global state
-	gsStart := entry.start()
+	gsStart, err := entry.start()
+	if err != nil {
+		return state, err
+	}
 
 	writeExact := func(data []byte) error {
 		_, err := conn.Write(data)
