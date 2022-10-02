@@ -184,21 +184,31 @@ func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration
 
 // CallIterativelyWithTrigger calls function iteratively in a thread.
 // The return value of foo is how long to wait before next invocation
-// Anything sent to triggerChan parameter triggers call to happen immediately
-func (s *StopWaiterSafe) CallIterativelyWithTrigger(foo func(context.Context) time.Duration, triggerChan chan interface{}) error {
+// Anything sent to triggerChan parameter triggers call to happen immediately, but no more than twice normal interval
+func (s *StopWaiterSafe) CallIterativelyWithTrigger(foo func(context.Context) time.Duration, triggerChan <-chan struct{}) error {
 	return s.LaunchThread(func(ctx context.Context) {
+		// First timer will fire right away
+		interval := time.Second * 0
+		timer := time.NewTimer(interval)
+
+		nextAllowedTriggerTime := time.Now()
 		for {
-			interval := foo(ctx)
-			if ctx.Err() != nil {
-				return
-			}
-			timer := time.NewTimer(interval)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
 				return
 			case <-timer.C:
+				interval = foo(ctx)
+				timer = time.NewTimer(interval)
 			case <-triggerChan:
+				now := time.Now()
+				if now.After(nextAllowedTriggerTime) {
+					interval = foo(ctx)
+					nextAllowedTriggerTime = now.Add(interval / 2)
+				}
+			}
+			if ctx.Err() != nil {
+				return
 			}
 		}
 	})
