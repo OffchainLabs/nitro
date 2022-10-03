@@ -215,6 +215,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		case <-timer.C:
 			h, err := s.client.HeaderByNumber(ctx, nil)
 			if err != nil {
+				s.setError(errors.Wrap(err, "failed reading HeaderByNumber"))
 				if !errors.Is(err, context.Canceled) {
 					log.Warn("failed reading header", "err", err)
 				}
@@ -228,6 +229,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 					if errors.Is(err, rpc.ErrNotificationsUnsupported) {
 						pollOnlyOverride = true
 					} else if time.Now().After(nextSubscribeErr) {
+						s.setError(errors.Wrap(err, "failed subscribing to header"))
 						log.Warn("failed subscribing to header", "err", err)
 						nextSubscribeErr = time.Now().Add(s.config().SubscribeErrInterval)
 					}
