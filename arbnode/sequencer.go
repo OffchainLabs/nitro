@@ -211,24 +211,14 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	select {
 	case s.txQueue <- queueItem:
 	case <-ctx.Done():
-		err := ctx.Err()
-		select {
-		case err = <-resultChan:
-		default:
-		}
-		return err
+		return ctx.Err()
 	}
 
 	select {
 	case res := <-resultChan:
 		return res
 	case <-ctx.Done():
-		err := ctx.Err()
-		select {
-		case err = <-resultChan:
-		default:
-		}
-		return err
+		return ctx.Err()
 	}
 }
 
