@@ -62,6 +62,7 @@ type L1ValidatorConfig struct {
 	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
 	UseSmartContractWallet   bool              `koanf:"use-smart-contract-wallet"`
 	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
+	StartFromStaked          bool              `koanf:"start-validation-from-staked"`
 	ContractWalletAddress    string            `koanf:"contract-wallet-address"`
 	GasRefunderAddress       string            `koanf:"gas-refunder-address"`
 	Dangerous                DangerousConfig   `koanf:"dangerous"`
@@ -78,6 +79,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	ConfirmationBlocks:       12,
 	UseSmartContractWallet:   false,
 	OnlyCreateWalletContract: false,
+	StartFromStaked:          true,
 	ContractWalletAddress:    "",
 	GasRefunderAddress:       "",
 	Dangerous:                DefaultDangerousConfig,
@@ -94,6 +96,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	f.Bool(prefix+".use-smart-contract-wallet", DefaultL1ValidatorConfig.UseSmartContractWallet, "use a smart contract wallet instead of an EOA address")
 	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
+	f.Bool(prefix+".start-validation-from-staked", DefaultL1ValidatorConfig.StartFromStaked, "assume staked nodes are valid")
 	f.String(prefix+".contract-wallet-address", DefaultL1ValidatorConfig.ContractWalletAddress, "validator smart contract wallet public address")
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
@@ -190,19 +193,21 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
-	if err != nil {
-		return err
-	}
-	if latestStaked == 0 {
-		return nil
-	}
-	stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
-	if err != nil {
-		return err
-	}
 
-	if s.blockValidator != nil {
+	if s.blockValidator != nil && s.config.StartFromStaked {
+		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
+		if err != nil {
+			return err
+		}
+		if latestStaked == 0 {
+			return nil
+		}
+
+		stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
+		if err != nil {
+			return err
+		}
+
 		return s.blockValidator.AssumeValid(stakedInfo.AfterState().GlobalState)
 	}
 
