@@ -311,7 +311,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	if present {
 		return
 	}
-	if v.nextValidationEntryBlock <= blockNum+v.config().PrerecordedBlocks {
+	if v.nextValidationEntryBlock+v.config().PrerecordedBlocks <= blockNum {
 		err := v.sendRecord(status)
 		if err != nil {
 			log.Error("failed send recording for new block", "err", err)
