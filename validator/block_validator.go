@@ -690,6 +690,9 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 	defer v.reorgMutex.Unlock()
 	nextRecord := v.nextBlockToValidate
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
+		if nextRecord >= v.nextBlockToValidate+v.config().PrerecordedBlocks {
+			return
+		}
 		entry, found := v.validationEntries.Load(nextRecord)
 		if !found {
 			return
