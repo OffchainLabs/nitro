@@ -253,6 +253,9 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 }
 
 func (v *BlockValidator) sendRecord(s *validationStatus) error {
+	if !v.Started() {
+		return nil
+	}
 	if !s.replaceStatus(Unprepared, RecordSent) {
 		return errors.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
