@@ -186,12 +186,6 @@ func NewStaker(
 }
 
 func (s *Staker) Initialize(ctx context.Context) error {
-	if s.strategy != WatchtowerStrategy {
-		err := s.wallet.Initialize(ctx)
-		if err != nil {
-			return err
-		}
-	}
 	err := s.L1Validator.Initialize(ctx)
 	if err != nil {
 		return err
@@ -250,6 +244,22 @@ func (s *Staker) Start(ctxIn context.Context) {
 	})
 }
 
+func (s *Staker) IsWhitelisted(ctx context.Context) (bool, error) {
+	callOpts := s.getCallOpts(ctx)
+	whitelistDisabled, err := s.rollup.ValidatorWhitelistDisabled(callOpts)
+	if err != nil {
+		return false, err
+	}
+	if whitelistDisabled {
+		return true, nil
+	}
+	addr := s.wallet.Address()
+	if addr != nil {
+		return s.rollup.IsValidator(callOpts, *addr)
+	}
+	return false, nil
+}
+
 func (s *Staker) shouldAct(ctx context.Context) bool {
 	var gasPriceHigh = false
 	var gasPriceFloat float64
@@ -300,6 +310,15 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
+	if s.strategy != WatchtowerStrategy {
+		whitelisted, err := s.IsWhitelisted(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !whitelisted {
+			log.Warn("validator address isn't whitelisted", "address", s.wallet.Address())
+		}
+	}
 	if !s.shouldAct(ctx) {
 		// The fact that we're delaying acting is alreay logged in `shouldAct`
 		return nil, nil
@@ -480,7 +499,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 	}
 
 	if s.activeChallenge == nil || s.activeChallenge.ChallengeIndex() != *info.CurrentChallenge {
-		log.Warn("entered challenge", "challenge", info.CurrentChallenge)
+		log.Error("entered challenge", "challenge", info.CurrentChallenge)
 
 		latestConfirmedCreated, err := s.rollup.LatestConfirmedCreationBlock(ctx)
 		if err != nil {
@@ -538,7 +557,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		}
 		if !active {
 			if wrongNodesExist && effectiveStrategy >= DefensiveStrategy {
-				log.Warn("bringing defensive validator online because of incorrect assertion")
+				log.Error("bringing defensive validator online because of incorrect assertion")
 				s.bringActiveUntilNode = info.LatestStakedNode + 1
 			}
 			info.CanProgress = false
@@ -577,7 +596,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		info.LatestStakedNodeHash = action.hash
 		if !active {
 			if wrongNodesExist && effectiveStrategy >= DefensiveStrategy {
-				log.Warn("bringing defensive validator online because of incorrect assertion")
+				log.Error("bringing defensive validator online because of incorrect assertion")
 				s.bringActiveUntilNode = action.number
 				info.CanProgress = false
 			} else {
@@ -691,4 +710,8 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 	}
 	// No conflicts exist
 	return nil
+}
+
+func (s *Staker) Strategy() StakerStrategy {
+	return s.strategy
 }
