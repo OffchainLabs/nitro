@@ -65,6 +65,7 @@ type BlockValidatorConfig struct {
 	JitValidatorCranelift    bool                          `koanf:"jit-validator-cranelift"`
 	OutputPath               string                        `koanf:"output-path" reload:"hot"`
 	ConcurrentRunsLimit      int                           `koanf:"concurrent-runs-limit" reload:"hot"`
+	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	CurrentModuleRoot        string                        `koanf:"current-module-root"`          // TODO(magic) requires reinitialization on hot reload
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"`  // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	StorePreimages           bool                          `koanf:"store-preimages" reload:"hot"` // TODO verify if hot reloading is safe
@@ -85,6 +86,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".jit-validator-cranelift", DefaultBlockValidatorConfig.JitValidatorCranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
+	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".store-preimages", DefaultBlockValidatorConfig.StorePreimages, "store preimages of running machines (higher memory cost, better debugging, potentially better performance)")
@@ -103,6 +105,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	JitValidatorCranelift:    true,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
+	PrerecordedBlocks:        128,
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
@@ -117,6 +120,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	JitValidatorCranelift:    true,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
+	PrerecordedBlocks:        64,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
 	StorePreimages:           false,
@@ -132,6 +136,7 @@ type valStatusField uint32
 
 const (
 	Unprepared valStatusField = iota
+	RecordSent
 	Prepared
 	Failed
 	Valid
@@ -151,6 +156,10 @@ func (s *validationStatus) setStatus(val valStatusField) {
 func (s *validationStatus) getStatus() valStatusField {
 	uintStat := atomic.LoadUint32(&s.Status)
 	return valStatusField(uintStat)
+}
+
+func (s *validationStatus) replaceStatus(old, new valStatusField) bool {
+	return atomic.CompareAndSwapUint32(&s.Status, uint32(old), uint32(new))
 }
 
 func NewBlockValidator(
@@ -243,22 +252,29 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 	return nil
 }
 
-func (v *BlockValidator) prepareBlock(ctx context.Context, header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
-	validationEntry, err := newValidationEntry(prevHeader, header, &msg)
-	if err != nil {
-		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
-		return
+func (v *BlockValidator) sendRecord(s *validationStatus) error {
+	if !s.replaceStatus(Unprepared, RecordSent) {
+		return errors.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
-	err = ValidationEntryRecord(ctx, validationEntry, v.blockchain, v.inboxReader, v.daService, v.config().StorePreimages)
-	if err != nil {
-		log.Error("error while recording validation", "err", err)
-	}
-	validationStatus.Entry = validationEntry
-	validationStatus.setStatus(Prepared)
-	select {
-	case v.sendValidationsChan <- struct{}{}:
-	default:
-	}
+	v.LaunchThread(func(ctx context.Context) {
+		err := ValidationEntryRecord(ctx, s.Entry, v.blockchain, v.inboxReader, v.daService, v.config().StorePreimages)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			log.Error("Error while recording", "err", err)
+			return
+		}
+		if !s.replaceStatus(RecordSent, Prepared) {
+			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
+			return
+		}
+		select {
+		case v.sendValidationsChan <- struct{}{}:
+		default:
+		}
+	})
+	return nil
 }
 
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
@@ -278,9 +294,13 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 		}
 		return
 	}
+	entry, err := newValidationEntry(prevHeader, block.Header(), &msg)
+	if err != nil {
+		log.Error("failed creating new validation entry", "err", err)
+	}
 	status := &validationStatus{
 		Status:      uint32(Unprepared),
-		Entry:       nil,
+		Entry:       entry,
 		ModuleRoots: v.GetModuleRootsToValidate(),
 	}
 	// It's fine to separately load and then store as we have the blockMutex acquired
@@ -288,11 +308,16 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	if present {
 		return
 	}
+	if v.nextValidationEntryBlock <= blockNum+v.config().PrerecordedBlocks {
+		err := v.sendRecord(status)
+		if err != nil {
+			log.Error("failed send recording for new block", "err", err)
+		}
+	}
 	v.validationEntries.Store(blockNum, status)
 	if v.nextValidationEntryBlock <= blockNum {
 		v.nextValidationEntryBlock = blockNum + 1
 	}
-	v.LaunchUntrackedThread(func() { v.prepareBlock(context.Background(), block.Header(), prevHeader, msg, status) })
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
@@ -620,7 +645,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		if validationStatus.getStatus() == Unprepared {
+		if validationStatus.getStatus() < Prepared {
 			return
 		}
 		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, nextMsg, v.globalPosNextSend.BatchNumber)
@@ -634,9 +659,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 
-		batchNum := validationStatus.Entry.StartPosition.BatchNumber
 		seqMsg, ok := seqBatchEntry.([]byte)
 		if !ok {
+			batchNum := validationStatus.Entry.StartPosition.BatchNumber
 			log.Error("sequencer message bad format", "blockNr", v.nextBlockToValidate, "msgNum", batchNum)
 			return
 		}
@@ -654,6 +679,30 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 
 		v.nextBlockToValidate++
 		v.globalPosNextSend = endPos
+	}
+}
+
+func (v *BlockValidator) sendRecords(ctx context.Context) {
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+	nextRecord := v.nextBlockToValidate
+	for atomic.LoadInt32(&v.reorgsPending) == 0 {
+		entry, found := v.validationEntries.Load(nextRecord)
+		if !found {
+			return
+		}
+		validationStatus, ok := entry.(*validationStatus)
+		if !ok || (validationStatus == nil) {
+			log.Error("bad entry trying to send recordings")
+			return
+		}
+		if validationStatus.getStatus() == Unprepared {
+			err := v.sendRecord(validationStatus)
+			if err != nil {
+				log.Error("error trying to send preimage recording", "err", err)
+			}
+		}
+		nextRecord++
 	}
 }
 
@@ -969,6 +1018,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 				if !ok {
 					return
 				}
+				v.sendRecords(ctx)
 				v.sendValidations(ctx)
 			case <-ctx.Done():
 				return
