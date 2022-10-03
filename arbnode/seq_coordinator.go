@@ -215,6 +215,11 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			return err
 		}
 		if remoteMsgCount > msgCountExpected {
+			if messageData == nil && c.CurrentlyChosen() {
+				// this was called from update(), while msgCount was changed by a call from SequencingMessage
+				// no need to do anything
+				return nil
+			}
 			log.Info("coordinator failed to become main", "expected", msgCountExpected, "found", remoteMsgCount, "message is nil?", messageData == nil)
 			return fmt.Errorf("%w: failed to catch lock. expected msg %d found %d", ErrRetrySequencer, msgCountExpected, remoteMsgCount)
 		}
