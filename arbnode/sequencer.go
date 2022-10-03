@@ -73,7 +73,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxAcceptableTimestampDelta: time.Hour,
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
-	QueueTimeout:                time.Second * 25,
+	QueueTimeout:                time.Second * 12,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
