@@ -138,7 +138,18 @@ func FindBatchContainingMessageIndex(
 	return low, nil
 }
 
+type ValidationEntryStage uint32
+
+const (
+	Empty ValidationEntryStage = iota
+	ReadyForRecord
+	Recorded
+	Ready
+)
+
 type validationEntry struct {
+	Stage ValidationEntryStage
+	// Valid since ReadyforRecord:
 	BlockNumber     uint64
 	PrevBlockHash   common.Hash
 	PrevBlockHeader *types.Header
@@ -146,10 +157,13 @@ type validationEntry struct {
 	BlockHeader     *types.Header
 	HasDelayedMsg   bool
 	DelayedMsgNr    uint64
-	StartPosition   GlobalStatePosition
-	EndPosition     GlobalStatePosition
-	Preimages       map[common.Hash][]byte
-	BatchInfo       []BatchInfo
+	msg             *arbstate.MessageWithMetadata
+	// Valid since Recorded:
+	Preimages map[common.Hash][]byte
+	BatchInfo []BatchInfo
+	// Valid since Ready:
+	StartPosition GlobalStatePosition
+	EndPosition   GlobalStatePosition
 }
 
 func (v *validationEntry) start() (GoGlobalState, error) {
@@ -183,22 +197,43 @@ func (v *validationEntry) expectedEnd() (GoGlobalState, error) {
 func newValidationEntry(
 	prevHeader *types.Header,
 	header *types.Header,
-	hasDelayed bool,
-	delayedMsgNr uint64,
-	preimages map[common.Hash][]byte,
-	batchInfo []BatchInfo,
+	msg *arbstate.MessageWithMetadata,
 ) (*validationEntry, error) {
+	var hasDelayedMsg bool
+	var delayedMsgNr uint64
+	if prevHeader == nil || header.Nonce != prevHeader.Nonce {
+		hasDelayedMsg = true
+		if prevHeader != nil {
+			delayedMsgNr = prevHeader.Nonce.Uint64()
+		}
+	}
 	return &validationEntry{
+		Stage:           ReadyForRecord,
 		BlockNumber:     header.Number.Uint64(),
 		PrevBlockHash:   prevHeader.Hash(),
 		PrevBlockHeader: prevHeader,
 		BlockHash:       header.Hash(),
 		BlockHeader:     header,
-		HasDelayedMsg:   hasDelayed,
+		HasDelayedMsg:   hasDelayedMsg,
 		DelayedMsgNr:    delayedMsgNr,
-		Preimages:       preimages,
-		BatchInfo:       batchInfo,
+		msg:             msg,
 	}, nil
+}
+
+func newRecordedValidationEntry(
+	prevHeader *types.Header,
+	header *types.Header,
+	preimages map[common.Hash][]byte,
+	batchInfos []BatchInfo,
+) (*validationEntry, error) {
+	entry, err := newValidationEntry(prevHeader, header, nil)
+	if err != nil {
+		return nil, err
+	}
+	entry.Preimages = preimages
+	entry.BatchInfo = batchInfos
+	entry.Stage = Recorded
+	return entry, nil
 }
 
 func NewStatelessBlockValidator(
@@ -413,17 +448,40 @@ func BlockDataForValidation(
 	return
 }
 
+func ValidationEntryRecord(ctx context.Context, e *validationEntry,
+	blockchain *core.BlockChain, inboxReader InboxReaderInterface, das arbstate.DataAvailabilityReader,
+	producePreimages bool) error {
+	if e.Stage != ReadyForRecord {
+		return errors.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
+	}
+	if e.PrevBlockHeader == nil {
+		e.Stage = Recorded
+		return nil
+	}
+	blockhash, preimages, readBatchInfo, err := RecordBlockCreation(
+		ctx, blockchain, inboxReader, e.PrevBlockHeader, e.msg, producePreimages, true,
+	)
+	if err != nil {
+		return err
+	}
+	if blockhash != e.BlockHash {
+		return fmt.Errorf("recording failed: blockNum %d, hash expected %v, got %v", e.BlockNumber, e.BlockHash, blockhash)
+	}
+	e.Preimages = preimages
+	e.BatchInfo = readBatchInfo
+	e.Stage = Recorded
+	return nil
+}
+
 func AddPreimagesFromBatchInfos(
 	ctx context.Context,
-	entry *validationEntry,
+	preimages map[common.Hash][]byte,
+	batchInfos []BatchInfo,
 	blockchain *core.BlockChain,
 	das arbstate.DataAvailabilityReader,
 ) error {
 
-	if entry.Preimages == nil {
-		entry.Preimages = make(map[common.Hash][]byte)
-	}
-	for _, batch := range entry.BatchInfo {
+	for _, batch := range batchInfos {
 		if len(batch.Data) <= 40 {
 			continue
 		}
@@ -437,13 +495,39 @@ func AddPreimagesFromBatchInfos(
 			}
 		} else {
 			_, err := arbstate.RecoverPayloadFromDasBatch(
-				ctx, batch.Number, batch.Data, das, entry.Preimages, arbstate.KeysetValidate,
+				ctx, batch.Number, batch.Data, das, preimages, arbstate.KeysetValidate,
 			)
 			if err != nil {
 				return err
 			}
 		}
 	}
+	return nil
+}
+
+func ValidationEntryAddSeqMessage(ctx context.Context, e *validationEntry,
+	startPos, endPos GlobalStatePosition, seqMsg []byte,
+	blockchain *core.BlockChain, das arbstate.DataAvailabilityReader) error {
+	if e.Stage != Recorded {
+		return fmt.Errorf("validation entry stage should be Recorded, is: %v", e.Stage)
+	}
+	if e.Preimages == nil {
+		e.Preimages = make(map[common.Hash][]byte)
+	}
+	err := AddPreimagesFromBatchInfos(ctx, e.Preimages, e.BatchInfo, blockchain, das)
+	if err != nil {
+		return err
+	}
+	e.StartPosition = startPos
+	e.EndPosition = endPos
+	if e.BatchInfo == nil {
+		e.BatchInfo = []BatchInfo{{Number: startPos.BatchNumber, Data: seqMsg}}
+	}
+	err = AddPreimagesFromBatchInfos(ctx, e.Preimages, e.BatchInfo, blockchain, das)
+	if err != nil {
+		return err
+	}
+	e.Stage = Ready
 	return nil
 }
 
@@ -607,7 +691,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if err != nil {
 		return false, err
 	}
-	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(
+	preimages, readBatchInfo, _, _, err := BlockDataForValidation(
 		ctx, v.blockchain, v.inboxReader, header, prevHeader, *msg, v.daService, false,
 	)
 	if err != nil {
@@ -628,24 +712,18 @@ func (v *StatelessBlockValidator) ValidateBlock(
 		return false, fmt.Errorf("failed calculating position for validation: %w", err)
 	}
 
-	entry, err := newValidationEntry(
-		prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages, readBatchInfo,
+	entry, err := newRecordedValidationEntry(
+		prevHeader, header, preimages, readBatchInfo,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to create validation entry %w", err)
 	}
-	entry.StartPosition = startPos
-	entry.EndPosition = endPos
 
 	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
 	if err != nil {
 		return false, err
 	}
-	entry.BatchInfo = append(entry.BatchInfo, BatchInfo{
-		Number: startPos.BatchNumber,
-		Data:   seqMsg,
-	})
-	err = AddPreimagesFromBatchInfos(ctx, entry, v.blockchain, v.daService)
+	err = ValidationEntryAddSeqMessage(ctx, entry, startPos, endPos, seqMsg, v.blockchain, v.daService)
 	if err != nil {
 		return false, err
 	}

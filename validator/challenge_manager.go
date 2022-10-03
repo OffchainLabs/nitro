@@ -461,6 +461,10 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			Data:   batchBytes,
 		})
 		batchInfo = readBatchInfo
+		err = AddPreimagesFromBatchInfos(ctx, preimages, readBatchInfo, m.blockchain, m.das)
+		if err != nil {
+			return err
+		}
 		resolver, err := NewMachinePreimageResolver(ctx, preimages, m.blockchain)
 		if err != nil {
 			return err

@@ -244,15 +244,14 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 }
 
 func (v *BlockValidator) prepareBlock(ctx context.Context, header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
-	preimages, readBatchInfo, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(ctx, v.blockchain, v.inboxReader, header, prevHeader, msg, v.daService, v.config().StorePreimages)
-	if err != nil {
-		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
-		return
-	}
-	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, preimages, readBatchInfo)
+	validationEntry, err := newValidationEntry(prevHeader, header, &msg)
 	if err != nil {
 		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
 		return
+	}
+	err = ValidationEntryRecord(ctx, validationEntry, v.blockchain, v.inboxReader, v.daService, v.config().StorePreimages)
+	if err != nil {
+		log.Error("error while recording validation", "err", err)
 	}
 	validationStatus.Entry = validationEntry
 	validationStatus.setStatus(Prepared)
@@ -446,11 +445,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		Number: entry.StartPosition.BatchNumber,
 		Data:   seqMsg,
 	})
-	err := AddPreimagesFromBatchInfos(ctx, entry, v.blockchain, v.daService)
-	if err != nil {
-		log.Error("error loading batches for validation", "err", err)
-		return
-	}
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 
@@ -639,8 +633,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
-		validationStatus.Entry.StartPosition = startPos
-		validationStatus.Entry.EndPosition = endPos
 
 		batchNum := validationStatus.Entry.StartPosition.BatchNumber
 		seqMsg, ok := seqBatchEntry.([]byte)
@@ -648,12 +640,16 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("sequencer message bad format", "blockNr", v.nextBlockToValidate, "msgNum", batchNum)
 			return
 		}
-
 		v.LaunchThread(func(ctx context.Context) {
 			validationCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
 			validationStatus.Cancel = cancel
+			err := ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg, v.blockchain, v.daService)
+			if err != nil && validationCtx.Err() == nil {
+				log.Error("error preparing validation", "err", err)
+				return
+			}
 			v.validate(validationCtx, validationStatus, seqMsg)
-			cancel()
 		})
 
 		v.nextBlockToValidate++
