@@ -94,7 +94,7 @@ func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber ar
 	confirmedIndex := uint64(confirmedSequenceNumber - firstSequenceNumber)
 
 	if confirmedIndex >= uint64(len(b.messages)) {
-		log.Error("ConfirmedSequenceNumber is past the end of stored messages", "confirmedSequenceNumber", confirmedSequenceNumber, "firstSequenceNumber", firstSequenceNumber, "cacheLength", len(b.messages))
+		log.Warn("ConfirmedSequenceNumber is past the end of stored messages", "confirmedSequenceNumber", confirmedSequenceNumber, "firstSequenceNumber", firstSequenceNumber, "cacheLength", len(b.messages))
 		b.messages = nil
 		return
 	}
