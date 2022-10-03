@@ -469,6 +469,7 @@ func ValidationEntryRecord(ctx context.Context, e *validationEntry,
 	}
 	e.Preimages = preimages
 	e.BatchInfo = readBatchInfo
+	e.msg = nil // no longer needed
 	e.Stage = Recorded
 	return nil
 }
@@ -514,16 +515,17 @@ func ValidationEntryAddSeqMessage(ctx context.Context, e *validationEntry,
 	if e.Preimages == nil {
 		e.Preimages = make(map[common.Hash][]byte)
 	}
-	err := AddPreimagesFromBatchInfos(ctx, e.Preimages, e.BatchInfo, blockchain, das)
-	if err != nil {
-		return err
+	if e.BatchInfo == nil {
+		e.BatchInfo = make([]BatchInfo, 0, 1)
 	}
 	e.StartPosition = startPos
 	e.EndPosition = endPos
-	if e.BatchInfo == nil {
-		e.BatchInfo = []BatchInfo{{Number: startPos.BatchNumber, Data: seqMsg}}
+	seqMsgBatchInfo := BatchInfo{
+		Number: startPos.BatchNumber,
+		Data:   seqMsg,
 	}
-	err = AddPreimagesFromBatchInfos(ctx, e.Preimages, e.BatchInfo, blockchain, das)
+	e.BatchInfo = append(e.BatchInfo, seqMsgBatchInfo)
+	err := AddPreimagesFromBatchInfos(ctx, e.Preimages, e.BatchInfo, blockchain, das)
 	if err != nil {
 		return err
 	}
