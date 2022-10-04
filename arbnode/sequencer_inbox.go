@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/pkg/errors"
 
@@ -102,7 +103,7 @@ type SequencerInboxBatch struct {
 	AfterDelayedAcc   common.Hash
 	AfterDelayedCount uint64
 	TimeBounds        bridgegen.ISequencerInboxTimeBounds
-	txIndexInBlock    uint
+	rawLog            types.Log
 	dataLocation      batchDataLocation
 	bridgeAddress     common.Address
 	serialized        []byte // nil if serialization isn't cached yet
@@ -111,12 +112,12 @@ type SequencerInboxBatch struct {
 func (m *SequencerInboxBatch) GetData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
 	switch m.dataLocation {
 	case batchDataTxInput:
-		tx, err := client.TransactionInBlock(ctx, m.BlockHash, m.txIndexInBlock)
+		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		args := make(map[string]interface{})
-		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
+		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:])
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
@@ -220,7 +221,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			AfterInboxAcc:     parsedLog.AfterAcc,
 			AfterDelayedAcc:   parsedLog.DelayedAcc,
 			AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
-			txIndexInBlock:    log.TxIndex,
+			rawLog:            log,
 			TimeBounds:        parsedLog.TimeBounds,
 			dataLocation:      batchDataLocation(parsedLog.DataLocation),
 			bridgeAddress:     log.Address,
