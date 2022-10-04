@@ -241,7 +241,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 				return
 			}
 			clientSubscription = nil
-			s.setError(fmt.Errorf("error in subscription to headers: %w", err)
+			s.setError(fmt.Errorf("error in subscription to headers: %w", err))
 			log.Warn("error in subscription to headers", "err", err)
 			timer.Stop()
 		case <-ctx.Done():
