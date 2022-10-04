@@ -527,7 +527,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		}
 	}
 	if livelinessErr != nil {
-		log.Warn("coordinator failed to post liveness", "err", err)
+		log.Warn("coordinator failed to post liveness", "err", livelinessErr)
 	}
 
 	if (livelinessErr != nil) || (msgReadErr != nil) {
