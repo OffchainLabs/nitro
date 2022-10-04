@@ -277,6 +277,9 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 			return nil, nil, errors.WithStack(err)
 		}
 		args := make(map[string]interface{})
+		if len(tx.Data()) < 4 {
+			return nil, nil, errors.New("message too short")
+		}
 		err = l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
 		if err != nil {
 			return nil, nil, errors.WithStack(err)

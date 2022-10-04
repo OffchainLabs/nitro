@@ -116,6 +116,9 @@ func (m *SequencerInboxBatch) GetData(ctx context.Context, client arbutil.L1Inte
 			return nil, errors.WithStack(err)
 		}
 		args := make(map[string]interface{})
+		if len(tx.Data()) < 4 {
+			return nil, errors.New("message too short")
+		}
 		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
 		if err != nil {
 			return nil, errors.WithStack(err)

@@ -158,6 +158,9 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 			return err
 		}
 		args := make(map[string]interface{})
+		if len(tx.Data()) < 4 {
+			return errors.New("message too short")
+		}
 		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
 		if err != nil {
 			return err
