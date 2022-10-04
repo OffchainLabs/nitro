@@ -90,15 +90,15 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 	return lastMsg.DelayedMessagesRead, nil
 }
 
-func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.Header) error {
+func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
 	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
 		return nil
 	}
 
-	return d.updateWithoutLockout(ctx, lastBlockHeader)
+	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
 }
 
-func (d *DelayedSequencer) updateWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
+func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -201,7 +201,7 @@ func (d *DelayedSequencer) ForceSequenceDelayed(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return d.updateWithoutLockout(ctx, lastBlockHeader)
+	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
 }
 
 func (d *DelayedSequencer) run(ctx context.Context) {
@@ -215,7 +215,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 				log.Info("delayed sequencer: header channel close")
 				return
 			}
-			if err := d.update(ctx, nextHeader); err != nil {
+			if err := d.trySequence(ctx, nextHeader); err != nil {
 				log.Error("Delayed sequencer error", "err", err)
 			}
 		case <-ctx.Done():

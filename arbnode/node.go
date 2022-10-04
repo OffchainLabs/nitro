@@ -971,10 +971,12 @@ func createNodeImpl(
 			return nil, err
 		}
 	}
-	// always create DelayedSequencer, it won't do anything if it is disabled
-	delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
-	if err != nil {
-		return nil, err
+	if config.Sequencer.Enable {
+		// create a DelayedSequencer even if it isn't enabled, it won't do anything if it is disabled
+		delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, func() *DelayedSequencerConfig { return &configFetcher.Get().DelayedSequencer })
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &Node{
