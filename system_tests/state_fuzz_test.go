@@ -4,6 +4,7 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -90,11 +91,17 @@ func (b *inboxBackend) SetPositionWithinMessage(pos uint64) {
 	b.positionWithinMessage = pos
 }
 
-func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
 	if seqNum >= uint64(len(b.delayedMessages)) {
 		return nil, errors.New("delayed inbox message out of bounds")
 	}
-	return b.delayedMessages[seqNum], nil
+	msg, err := arbos.ParseIncomingL1Message(bytes.NewReader(b.delayedMessages[seqNum]), nil)
+	if err != nil {
+		// The bridge won't generate an invalid L1 message,
+		// so here we substitute it with a less invalid one for fuzzing.
+		msg = &arbos.TestIncomingMessageWithRequestId
+	}
+	return msg, nil
 }
 
 // A chain context with no information
