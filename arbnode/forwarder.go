@@ -32,13 +32,13 @@ var DefaultTestForwarderConfig = ForwarderConfig{
 }
 
 var DefaultNodeForwarderConfig = ForwarderConfig{
-	ConnectionTimeout:     60 * time.Second,
+	ConnectionTimeout:     30 * time.Second,
 	IdleConnectionTimeout: 15 * time.Second,
 	MaxIdleConnections:    1,
 }
 
 var DefaultSequencerForwarderConfig = ForwarderConfig{
-	ConnectionTimeout:     50 * time.Second,
+	ConnectionTimeout:     30 * time.Second,
 	IdleConnectionTimeout: 60 * time.Second,
 	MaxIdleConnections:    100,
 }
