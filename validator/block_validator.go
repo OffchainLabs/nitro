@@ -124,7 +124,8 @@ var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
 const validationStatusPrepared uint32 = 1   // ready to undergo validation
-const validationStatusValid uint32 = 2      // validation succeeded
+const validationStatusFailed uint32 = 2     // validation failed
+const validationStatusValid uint32 = 3      // validation succeeded
 
 type validationStatus struct {
 	Status      uint32           // atomic: value is one of validationStatus*
@@ -403,8 +404,8 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 }
 
 func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
-	if atomic.LoadUint32(&validationStatus.Status) < validationStatusPrepared {
-		log.Error("attempted to validate unprepared validation entry")
+	if currentStatus := atomic.LoadUint32(&validationStatus.Status); currentStatus != validationStatusPrepared {
+		log.Error("attempted to validate unprepared validation entry", "status", currentStatus)
 		return
 	}
 	entry := validationStatus.Entry
@@ -419,30 +420,33 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		Number: entry.StartPosition.BatchNumber,
 		Data:   seqMsg,
 	})
-	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
+	log.Info(
+		"starting validation for block", "blockNr", entry.BlockNumber,
+		"blockDate", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)))
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 
 		type replay = func(context.Context, *validationEntry, common.Hash) (GoGlobalState, []byte, error)
 		var delayedMsg []byte
 
-		validate := func(replay replay, jit bool) bool {
+		execValidation := func(replay replay, name string) (bool, bool) {
 			gsEnd, delayed, err := replay(ctx, entry, moduleRoot)
 			delayedMsg = delayed
 
 			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				canceled := ctx.Err() != nil
+				if canceled {
 					log.Info(
 						"Validation of block canceled", "blockNr", entry.BlockNumber,
-						"blockHash", entry.BlockHash, "jit", jit, "err", err,
+						"blockHash", entry.BlockHash, "name", name, "err", err,
 					)
 				} else {
 					log.Error(
 						"Validation of block failed", "blockNr", entry.BlockNumber,
 						"blockHash", entry.BlockHash, "moduleRoot", moduleRoot,
-						"jit", jit, "err", err,
+						"name", name, "err", err,
 					)
 				}
-				return false
+				return false, !canceled
 			}
 
 			gsExpected := entry.expectedEnd()
@@ -451,24 +455,29 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 			if !resultValid {
 				log.Error(
 					"validation failed", "moduleRoot", moduleRoot, "got", gsEnd,
-					"expected", gsExpected, "expHeader", entry.BlockHeader, "jit", jit,
+					"expected", gsExpected, "expHeader", entry.BlockHeader, "name", name,
 				)
 			}
-			return resultValid
+			return resultValid, !resultValid
 		}
 
 		before := time.Now()
-		writeThisBlock := false // we write the block if either fail
+		writeBlock := false // we write the block if either fail
 
 		config := v.config()
+		valid := true
 		if config.ArbitratorValidator {
-			writeThisBlock = writeThisBlock || !validate(v.executeBlock, false)
+			thisValid, thisWriteBlock := execValidation(v.executeBlock, "arbitrator")
+			valid = valid && thisValid
+			writeBlock = writeBlock || thisWriteBlock
 		}
 		if config.JitValidator {
-			writeThisBlock = writeThisBlock || !validate(v.jitBlock, true)
+			thisValid, thisWriteBlock := execValidation(v.jitBlock, "jit")
+			valid = valid && thisValid
+			writeBlock = writeBlock || thisWriteBlock
 		}
 
-		if writeThisBlock {
+		if writeBlock {
 			err := v.writeToFile(
 				entry, moduleRoot, entry.StartPosition, entry.EndPosition,
 				entry.Preimages, seqMsg, delayedMsg,
@@ -478,14 +487,23 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 			}
 		}
 
+		if !valid {
+			atomic.StoreUint32(&validationStatus.Status, validationStatusFailed)
+			return
+		}
+
 		log.Info(
 			"validation succeeded", "blockNr", entry.BlockNumber,
+			"blockDate", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)),
 			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", time.Since(before),
 		)
 	}
 
 	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
-	v.checkProgressChan <- struct{}{}
+	select {
+	case v.checkProgressChan <- struct{}{}:
+	default:
+	}
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {

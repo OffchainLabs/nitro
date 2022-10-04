@@ -4,6 +4,7 @@
 package arbos
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 
@@ -42,12 +43,16 @@ func InternalTxStartBlock(
 	}
 }
 
-func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) {
-	switch *(*[4]byte)(tx.Data[:4]) {
+func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) error {
+	if len(tx.Data) < 4 {
+		return fmt.Errorf("internal tx data is too short (only %v bytes, at least 4 required)", len(tx.Data))
+	}
+	selector := *(*[4]byte)(tx.Data[:4])
+	switch selector {
 	case InternalTxStartBlockMethodID:
 		inputs, err := util.UnpackInternalTxDataStartBlock(tx.Data)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		l1BlockNumber := util.SafeMapGet[uint64](inputs, "l1BlockNumber")
@@ -79,11 +84,11 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
 
-		state.UpgradeArbosVersionIfNecessary(currentTime)
+		return state.UpgradeArbosVersionIfNecessary(currentTime)
 	case InternalTxBatchPostingReportMethodID:
 		inputs, err := util.UnpackInternalTxDataBatchPostingReport(tx.Data)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		batchTimestamp := util.SafeMapGet[*big.Int](inputs, "batchTimestamp")
 		batchPosterAddress := util.SafeMapGet[common.Address](inputs, "batchPosterAddress")
@@ -111,5 +116,8 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		if err != nil {
 			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
 		}
+		return nil
+	default:
+		return fmt.Errorf("unknown internal tx method selector: %v", hex.EncodeToString(tx.Data[:4]))
 	}
 }

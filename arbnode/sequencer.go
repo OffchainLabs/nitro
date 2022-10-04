@@ -47,6 +47,7 @@ type SequencerConfig struct {
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
 	Forwarder                   ForwarderConfig          `koanf:"forwarder"`
 	QueueSize                   int                      `koanf:"queue-size"`
+	QueueTimeout                time.Duration            `koanf:"queue-timeout"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -72,6 +73,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxAcceptableTimestampDelta: time.Hour,
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
+	QueueTimeout:                time.Second * 12,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
@@ -83,6 +85,7 @@ var TestSequencerConfig = SequencerConfig{
 	SenderWhitelist:             "",
 	Forwarder:                   DefaultTestForwarderConfig,
 	QueueSize:                   128,
+	QueueTimeout:                time.Second * 5,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -94,6 +97,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
+	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -158,13 +162,21 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 
 var ErrRetrySequencer = errors.New("please retry transaction")
 
-func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+func (s *Sequencer) ctxWithQueueTimeout(inctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := s.config().QueueTimeout
+	if timeout == time.Duration(0) {
+		return context.WithCancel(inctx)
+	}
+	return context.WithTimeout(inctx, timeout)
+}
+
+func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction) error {
 	sequencerBacklogGauge.Inc(1)
 	defer sequencerBacklogGauge.Dec(1)
 
 	forwarder := s.GetForwarder()
 	if forwarder != nil {
-		err := forwarder.PublishTransaction(ctx, tx)
+		err := forwarder.PublishTransaction(parentCtx, tx)
 		if !errors.Is(err, ErrNoSequencer) {
 			return err
 		}
@@ -186,6 +198,9 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 		return types.ErrTxTypeNotSupported
 	}
 
+	ctx, cancelFunc := s.ctxWithQueueTimeout(parentCtx)
+	defer cancelFunc()
+
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
 		tx,
@@ -198,6 +213,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+
 	select {
 	case res := <-resultChan:
 		return res
@@ -206,7 +222,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, _ *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction) error {
 	return nil
 }
 
@@ -308,9 +324,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var totalBatchSize int
 
 	defer func() {
-		panic := recover()
-		if panic != nil {
-			log.Error("sequencer block creation panicked", "panic", panic, "backtrace", string(debug.Stack()))
+		panicErr := recover()
+		if panicErr != nil {
+			log.Error("sequencer block creation panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
 			// Return an internal error to any queue items we were trying to process
 			for _, item := range queueItems {
 				if !item.returnedResult {
@@ -421,6 +437,13 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		return false
 	}
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			// thread closed. We'll later try to forward these messages.
+			for _, item := range queueItems {
+				s.requeueOrFail(item, err)
+			}
+			return true // don't return failure to avoid retrying immediately
+		}
 		log.Warn("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
 			queueItem.returnResult(err)
@@ -513,4 +536,37 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	})
 
 	return nil
+}
+
+func (s *Sequencer) StopAndWait() {
+	s.StopWaiter.StopAndWait()
+	if s.txRetryQueue.Len() == 0 && len(s.txQueue) == 0 {
+		return
+	}
+	// this usually means that coordinator's safe-shutdown-delay is too low
+	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
+	forwarder := s.GetForwarder()
+	if forwarder != nil {
+	emptyqueues:
+		for {
+			var item txQueueItem
+			source := ""
+			if s.txRetryQueue.Len() > 0 {
+				item = s.txRetryQueue.Pop()
+				source = "retryQueue"
+			} else {
+				select {
+				case item = <-s.txQueue:
+					source = "txQueue"
+				default:
+					break emptyqueues
+				}
+			}
+			err := forwarder.PublishTransaction(item.ctx, item.tx)
+			if err != nil {
+				log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
+			}
+
+		}
+	}
 }
