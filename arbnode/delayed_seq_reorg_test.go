@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -58,7 +59,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterDelayedAcc:   initMsgDelayed.AfterInboxAcc(),
 		AfterDelayedCount: 1,
 		TimeBounds:        bridgegen.ISequencerInboxTimeBounds{},
-		txIndexInBlock:    0,
+		rawLog:            types.Log{},
 		dataLocation:      0,
 		bridgeAddress:     [20]byte{},
 		serialized:        serializedInitMsgBatch,
@@ -74,7 +75,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterDelayedAcc:   userDelayed.AfterInboxAcc(),
 		AfterDelayedCount: 2,
 		TimeBounds:        bridgegen.ISequencerInboxTimeBounds{},
-		txIndexInBlock:    0,
+		rawLog:            types.Log{},
 		dataLocation:      0,
 		bridgeAddress:     [20]byte{},
 		serialized:        serializedUserMsgBatch,
@@ -88,7 +89,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterDelayedAcc:   userDelayed.AfterInboxAcc(),
 		AfterDelayedCount: 2,
 		TimeBounds:        bridgegen.ISequencerInboxTimeBounds{},
-		txIndexInBlock:    0,
+		rawLog:            types.Log{},
 		dataLocation:      0,
 		bridgeAddress:     [20]byte{},
 		serialized:        serializedUserMsgBatch,
@@ -127,7 +128,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterDelayedAcc:   initMsgDelayed.AfterInboxAcc(),
 		AfterDelayedCount: 1,
 		TimeBounds:        bridgegen.ISequencerInboxTimeBounds{},
-		txIndexInBlock:    0,
+		rawLog:            types.Log{},
 		dataLocation:      0,
 		bridgeAddress:     [20]byte{},
 		serialized:        serializedInitMsgBatch,
