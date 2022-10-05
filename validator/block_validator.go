@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -54,6 +55,8 @@ type BlockValidator struct {
 	sendValidationsChan chan struct{}
 	checkProgressChan   chan struct{}
 	progressChan        chan uint64
+
+	lastHeaderForPrepareState *types.Header
 
 	fatalErr chan<- error
 }
@@ -252,14 +255,25 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 	return nil
 }
 
-func (v *BlockValidator) sendRecord(s *validationStatus) error {
+func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 	if !v.Started() {
+		// this could only be sent by NewBlock, so mustDeref is not sent
 		return nil
 	}
+	prevHeader := s.Entry.PrevBlockHeader
+	if prevHeader == nil {
+		mustDeref = false
+	}
 	if !s.replaceStatus(Unprepared, RecordSent) {
+		if mustDeref {
+			arbitrum.DereferenceState(prevHeader, v.blockchain)
+		}
 		return errors.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
 	v.LaunchThread(func(ctx context.Context) {
+		if mustDeref {
+			defer arbitrum.DereferenceState(prevHeader, v.blockchain)
+		}
 		err := ValidationEntryRecord(ctx, s.Entry, v.blockchain, v.inboxReader, v.daService, v.config().StorePreimages)
 		if ctx.Err() != nil {
 			return
@@ -312,7 +326,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 		return
 	}
 	if v.nextValidationEntryBlock+v.config().PrerecordedBlocks <= blockNum {
-		err := v.sendRecord(status)
+		err := v.sendRecord(status, false)
 		if err != nil {
 			log.Error("failed send recording for new block", "err", err)
 		}
@@ -703,7 +717,19 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 			return
 		}
 		if validationStatus.getStatus() == Unprepared {
-			err := v.sendRecord(validationStatus)
+			prevHeader := validationStatus.Entry.PrevBlockHeader
+			if prevHeader != nil {
+				_, err := arbitrum.GetOrRecreateReferencedState(ctx, prevHeader, v.blockchain)
+				if err != nil {
+					log.Error("error trying to prepare state for recording", "err", err)
+				}
+				arbitrum.ReferenceState(prevHeader, v.blockchain)
+				if v.lastHeaderForPrepareState != nil {
+					arbitrum.DereferenceState(v.lastHeaderForPrepareState, v.blockchain)
+				}
+				v.lastHeaderForPrepareState = prevHeader
+			}
+			err := v.sendRecord(validationStatus, true)
 			if err != nil {
 				log.Error("error trying to send preimage recording", "err", err)
 			}

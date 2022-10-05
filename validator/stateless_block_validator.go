@@ -320,6 +320,14 @@ func RecordBlockCreation(
 	var chaincontext core.ChainContext
 	var recordingKV *arbitrum.RecordingKV
 	var err error
+	if prevHeader != nil {
+		// make sure blockchain has the required state
+		_, err = arbitrum.GetOrRecreateReferencedState(ctx, prevHeader, blockchain)
+		if err != nil {
+			return common.Hash{}, nil, nil, err
+		}
+		defer arbitrum.DereferenceState(prevHeader, blockchain)
+	}
 	if producePreimages {
 		recordingdb, chaincontext, recordingKV, err = arbitrum.PrepareRecording(blockchain, prevHeader)
 		if err != nil {
