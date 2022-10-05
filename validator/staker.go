@@ -316,7 +316,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			return nil, err
 		}
 		if !whitelisted {
-			log.Warn("validator address isn't whitelisted", "address", s.wallet.Address())
+			log.Warn("validator address isn't whitelisted", "address", s.wallet.Address(), "txSender", s.wallet.TxSenderAddress())
 		}
 	}
 	if !s.shouldAct(ctx) {
