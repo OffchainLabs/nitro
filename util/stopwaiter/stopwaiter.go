@@ -196,26 +196,30 @@ func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration
 	})
 }
 
-// CallIterativelyWithTrigger calls function iteratively in a thread.
+// CallIterativelyWith calls function iteratively in a thread.
 // The return value of foo is how long to wait before next invocation
 // Anything sent to triggerChan parameter triggers call to happen immediately
-func (s *StopWaiterSafe) CallIterativelyWithTrigger(foo func(context.Context, bool) time.Duration, triggerChan <-chan interface{}) error {
+func CallIterativelyWith[T any](
+	s *StopWaiterSafe,
+	foo func(context.Context, T) time.Duration,
+	triggerChan <-chan T,
+) error {
 	return s.LaunchThread(func(ctx context.Context) {
-		triggered := false
+		var defaultVal T
+		var val T
 		for {
-			interval := foo(ctx, triggered)
-			triggered = false
+			interval := foo(ctx, val)
 			if ctx.Err() != nil {
 				return
 			}
+			val = defaultVal
 			timer := time.NewTimer(interval)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
 				return
 			case <-timer.C:
-			case <-triggerChan:
-				triggered = true
+			case val = <-triggerChan:
 			}
 		}
 	})
