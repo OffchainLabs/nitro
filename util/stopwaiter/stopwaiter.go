@@ -225,8 +225,8 @@ func CallIterativelyWith[T any](
 	})
 }
 
-func (s *StopWaiterSafe) ChanRateLimiter(inChan <-chan interface{}, maxRateCallback func() time.Duration) (<-chan interface{}, error) {
-	outChan := make(chan interface{})
+func ChanRateLimiter[T any](s *StopWaiterSafe, inChan <-chan T, maxRateCallback func() time.Duration) (<-chan T, error) {
+	outChan := make(chan T)
 	err := s.LaunchThread(func(ctx context.Context) {
 		nextAllowedTriggerTime := time.Now()
 		for {
