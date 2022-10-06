@@ -1294,6 +1294,15 @@ func CreateNode(
 		},
 		Public: false,
 	})
+	apis = append(apis, rpc.API{
+		Namespace: "arbtrace",
+		Version:   "1.0",
+		Service: &ArbTraceForwarderAPI{
+			fallbackClientUrl:     config.RPC.ClassicRedirect,
+			fallbackClientTimeout: config.RPC.ClassicRedirectTimeout,
+		},
+		Public: false,
+	})
 	stack.RegisterAPIs(apis)
 
 	return currentNode, nil

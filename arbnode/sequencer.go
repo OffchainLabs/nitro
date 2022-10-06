@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
 
@@ -33,7 +33,13 @@ import (
 )
 
 var (
-	sequencerBacklogGauge = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
+	sequencerBacklogGauge     = metrics.NewRegisteredGauge("arb/sequencer/backlog", nil)
+	nonceCacheHitCounter      = metrics.NewRegisteredCounter("arb/sequencer/noncecache/hit", nil)
+	nonceCacheMissCounter     = metrics.NewRegisteredCounter("arb/sequencer/noncecache/miss", nil)
+	nonceCacheRejectedCounter = metrics.NewRegisteredCounter("arb/sequencer/noncecache/rejected", nil)
+	nonceCacheClearedCounter  = metrics.NewRegisteredCounter("arb/sequencer/noncecache/cleared", nil)
+	blockCreationTimer        = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
+	successfulBlocksCounter   = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 )
 
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
@@ -47,7 +53,8 @@ type SequencerConfig struct {
 	SenderWhitelist             string                   `koanf:"sender-whitelist"`
 	Forwarder                   ForwarderConfig          `koanf:"forwarder"`
 	QueueSize                   int                      `koanf:"queue-size"`
-	QueueTimeout                time.Duration            `koanf:"queue-timeout"`
+	QueueTimeout                time.Duration            `koanf:"queue-timeout" reload:"hot"`
+	NonceCacheSize              int                      `koanf:"nonce-cache-size" reload:"hot"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -74,6 +81,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	Forwarder:                   DefaultSequencerForwarderConfig,
 	QueueSize:                   1024,
 	QueueTimeout:                time.Second * 12,
+	NonceCacheSize:              1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
@@ -86,6 +94,7 @@ var TestSequencerConfig = SequencerConfig{
 	Forwarder:                   DefaultTestForwarderConfig,
 	QueueSize:                   128,
 	QueueTimeout:                time.Second * 5,
+	NonceCacheSize:              4,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -98,6 +107,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
+	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -118,15 +128,96 @@ func (i *txQueueItem) returnResult(err error) {
 	close(i.resultChan)
 }
 
+type nonceCache struct {
+	cache *containers.LruCache[common.Address, uint64]
+	block common.Hash
+	dirty *types.Header
+}
+
+func newNonceCache(size int) *nonceCache {
+	return &nonceCache{
+		cache: containers.NewLruCache[common.Address, uint64](size),
+		block: common.Hash{},
+		dirty: nil,
+	}
+}
+
+func (c *nonceCache) matches(header *types.Header) bool {
+	if c.dirty != nil {
+		// The header is updated as the block is built,
+		// so instead of checking its hash, we do a pointer comparison.
+		return c.dirty == header
+	} else {
+		return c.block == header.ParentHash
+	}
+}
+
+func (c *nonceCache) Reset(block common.Hash) {
+	if c.cache.Len() > 0 {
+		nonceCacheClearedCounter.Inc(1)
+	}
+	c.cache.Clear()
+	c.block = block
+	c.dirty = nil
+}
+
+func (c *nonceCache) BeginNewBlock() {
+	if c.dirty != nil {
+		c.Reset(common.Hash{})
+	}
+}
+
+func (c *nonceCache) Get(header *types.Header, statedb *state.StateDB, addr common.Address) uint64 {
+	if !c.matches(header) {
+		c.Reset(header.ParentHash)
+	}
+	nonce, ok := c.cache.Get(addr)
+	if ok {
+		nonceCacheHitCounter.Inc(1)
+		return nonce
+	}
+	nonceCacheMissCounter.Inc(1)
+	nonce = statedb.GetNonce(addr)
+	c.cache.Add(addr, nonce)
+	return nonce
+}
+
+func (c *nonceCache) Update(header *types.Header, addr common.Address, nonce uint64) {
+	if !c.matches(header) {
+		c.Reset(header.ParentHash)
+	}
+	c.dirty = header
+	c.cache.Add(addr, nonce)
+}
+
+func (c *nonceCache) Finalize(block *types.Block) {
+	// Note: we don't use c.Matches here because the header will have changed
+	if c.block == block.ParentHash() {
+		c.block = block.Hash()
+		c.dirty = nil
+	} else {
+		c.Reset(block.Hash())
+	}
+}
+
+func (c *nonceCache) GetSize() int {
+	return c.cache.GetSize()
+}
+
+func (c *nonceCache) Resize(newSize int) {
+	c.cache.Resize(newSize)
+}
+
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
 	txStreamer      *TransactionStreamer
 	txQueue         chan txQueueItem
-	txRetryQueue    arbutil.Queue[txQueueItem]
+	txRetryQueue    containers.Queue[txQueueItem]
 	l1Reader        *headerreader.HeaderReader
 	config          SequencerConfigFetcher
 	senderWhitelist map[common.Address]struct{}
+	nonceCache      *nonceCache
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -155,6 +246,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		l1Reader:        l1Reader,
 		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
+		nonceCache:      newNonceCache(config.NonceCacheSize),
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
 	}, nil
@@ -222,14 +314,23 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	}
 }
 
-func (s *Sequencer) preTxFilter(_ *params.ChainConfig, _ *types.Header, _ *state.StateDB, _ *arbosState.ArbosState, _ *types.Transaction) error {
+func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+	if s.nonceCache.GetSize() > 0 {
+		stateNonce := s.nonceCache.Get(header, statedb, sender)
+		err := MakeNonceError(sender, tx.Nonce(), stateNonce)
+		if err != nil {
+			nonceCacheRejectedCounter.Inc(1)
+			return err
+		}
+	}
 	return nil
 }
 
-func (s *Sequencer) postTxFilter(_ *arbosState.ArbosState, _ *types.Transaction, _ common.Address, dataGas uint64, result *core.ExecutionResult) error {
+func (s *Sequencer) postTxFilter(header *types.Header, _ *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, result *core.ExecutionResult) error {
 	if result.Err != nil && result.UsedGas > dataGas && result.UsedGas-dataGas <= s.config().MaxRevertGasReject {
 		return arbitrum.NewRevertReason(result)
 	}
+	s.nonceCache.Update(header, sender, tx.Nonce()+1)
 	return nil
 }
 
@@ -414,13 +515,17 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
+	s.nonceCache.Resize(s.config().NonceCacheSize) // Would probably be better in a config hook but this is basically free
+	s.nonceCache.BeginNewBlock()
 	hooks := &arbos.SequencingHooks{
 		PreTxFilter:            s.preTxFilter,
 		PostTxFilter:           s.postTxFilter,
 		DiscardInvalidTxsEarly: true,
 		TxErrors:               []error{},
 	}
-	err := s.txStreamer.SequenceTransactions(header, txes, hooks)
+	start := time.Now()
+	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
+	blockCreationTimer.Update(time.Since(start))
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
@@ -449,6 +554,11 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			queueItem.returnResult(err)
 		}
 		return false
+	}
+
+	if block != nil {
+		successfulBlocksCounter.Inc(1)
+		s.nonceCache.Finalize(block)
 	}
 
 	madeBlock := false
