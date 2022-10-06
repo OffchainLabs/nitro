@@ -288,7 +288,9 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         let message = socket::read_bytes(stream)?;
         env.delayed_messages.insert(position, message);
     }
-    while socket::read_u8(stream)? == socket::ANOTHER {
+
+    let preimage_count = socket::read_u64(stream)?;
+    for _ in 0..preimage_count {
         let hash = socket::read_bytes32(stream)?;
         let preimage = socket::read_bytes(stream)?;
         env.preimages.insert(hash, preimage);
