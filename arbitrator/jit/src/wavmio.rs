@@ -179,6 +179,11 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
         }
     }
 
+    // see if this is a known preimage
+    if preimage.is_none() {
+        preimage = env.preimages.get(hash);
+    }
+
     // see if Go has the preimage
     if preimage.is_none() {
         if let Some((writer, reader)) = &mut env.process.socket {
@@ -192,11 +197,6 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
                 preimage = Some(&temporary);
             }
         }
-    }
-
-    // see if this is a known preimage
-    if preimage.is_none() {
-        preimage = env.preimages.get(hash);
     }
 
     let preimage = match preimage {
