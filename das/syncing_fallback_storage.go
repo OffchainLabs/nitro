@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -153,12 +154,12 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 		}
 		data = dataEvent.Data
 	} else if deliveredEvent.DataLocation == uint8(batchDataTxInput) {
-		tx, err := s.l1Reader.Client().TransactionInBlock(ctx, batchDeliveredLog.BlockHash, batchDeliveredLog.TxIndex)
+		txData, err := arbutil.GetLogEmitterTxData(ctx, s.l1Reader.Client(), batchDeliveredLog)
 		if err != nil {
 			return err
 		}
 		args := make(map[string]interface{})
-		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
+		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, txData[4:])
 		if err != nil {
 			return err
 		}

@@ -143,7 +143,7 @@ func main() {
 	}
 
 	log.Info("Initial State", "lastBlockHash", lastBlockHash, "lastBlockStateRoot", lastBlockStateRoot)
-	statedb, err := state.New(lastBlockStateRoot, db, nil)
+	statedb, err := state.NewDeterministic(lastBlockStateRoot, db)
 	if err != nil {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
