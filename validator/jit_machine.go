@@ -196,6 +196,24 @@ func (machine *JitMachine) prove(
 			return state, err
 		}
 	}
+
+	// send known preimages
+	for hash, preimage := range make(map[[32]byte][]byte) {
+		if err := writeExact(another); err != nil {
+			return state, err
+		}
+		if err := writeExact(hash[:]); err != nil {
+			return state, err
+		}
+		if err := writeBytes(preimage); err != nil {
+			return state, err
+		}
+	}
+	if err := writeExact(success); err != nil {
+		return state, err
+	}
+
+	// signal that we are done sending global state
 	if err := writeExact(ready); err != nil {
 		return state, err
 	}

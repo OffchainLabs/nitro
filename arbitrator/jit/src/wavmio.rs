@@ -288,6 +288,11 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         let message = socket::read_bytes(stream)?;
         env.delayed_messages.insert(position, message);
     }
+    while socket::read_u8(stream)? == socket::ANOTHER {
+        let hash = socket::read_bytes32(stream)?;
+        let preimage = socket::read_bytes(stream)?;
+        env.preimages.insert(hash, preimage);
+    }
 
     if socket::read_u8(stream)? != socket::READY {
         return Escape::hostio("failed to parse global state");
