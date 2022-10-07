@@ -157,10 +157,10 @@ func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uin
 	port := listenerAddress.(*net.TCPAddr).Port
 	var bpv contracts.BatchPosterVerifierInterface
 	if validAddr != nil {
-		config.Verifier.AcceptBatchPosters = true
+		config.Verifier.AcceptSequencer = true
 		bpv = contracts.NewMockBatchPosterVerifier(*validAddr)
 	} else {
-		config.Verifier.AcceptBatchPosters = false
+		config.Verifier.AcceptSequencer = false
 	}
 	return NewBroadcastClient(config, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, feedErrChan, bpv)
 }

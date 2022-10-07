@@ -102,7 +102,7 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	coordConfig := TestSeqCoordinatorConfig
 	coordConfig.LockoutDuration = time.Millisecond * 100
 	coordConfig.LockoutSpare = time.Millisecond * 10
-	coordConfig.Signing.ECDSA.AcceptBatchPosters = false
+	coordConfig.Signing.ECDSA.AcceptSequencer = false
 	coordConfig.Signing.SymmetricFallback = true
 	coordConfig.Signing.SymmetricSign = true
 	coordConfig.Signing.Symmetric.Dangerous.DisableSignatureVerification = true

@@ -84,7 +84,7 @@ func TestVerifierBatchPoster(t *testing.T) {
 
 	bpVerifier := contracts.NewMockBatchPosterVerifier(signingAddr)
 	config := TestingFeedVerifierConfig
-	config.AcceptBatchPosters = true
+	config.AcceptSequencer = true
 	verifier, err := NewVerifier(&config, bpVerifier)
 	Require(t, err)
 

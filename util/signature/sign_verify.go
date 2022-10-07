@@ -32,7 +32,7 @@ func SignVerifyConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultSignVerifyConfig = SignVerifyConfig{
 	ECDSA: VerifierConfig{
-		AcceptBatchPosters: true,
+		AcceptSequencer: true,
 	},
 	SymmetricFallback: false,
 	SymmetricSign:     false,

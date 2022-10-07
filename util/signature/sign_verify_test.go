@@ -20,7 +20,7 @@ func TestSignVerifyModes(t *testing.T) {
 	config := DefaultSignVerifyConfig
 	config.SymmetricFallback = false
 	config.SymmetricSign = false
-	config.ECDSA.AcceptBatchPosters = false
+	config.ECDSA.AcceptSequencer = false
 	config.ECDSA.AllowedAddresses = []string{signingAddr.Hex()}
 	signVerifyECDSA, err := NewSignVerify(&config, dataSigner, nil)
 	Require(t, err)
@@ -28,7 +28,7 @@ func TestSignVerifyModes(t *testing.T) {
 	configSymmetric := DefaultSignVerifyConfig
 	configSymmetric.SymmetricFallback = true
 	configSymmetric.SymmetricSign = true
-	configSymmetric.ECDSA.AcceptBatchPosters = false
+	configSymmetric.ECDSA.AcceptSequencer = false
 	signVerifySymmetric, err := NewSignVerify(&configSymmetric, nil, nil)
 	Require(t, err)
 
@@ -36,7 +36,7 @@ func TestSignVerifyModes(t *testing.T) {
 	configFallback.SymmetricFallback = true
 	configFallback.SymmetricSign = false
 	configFallback.ECDSA.AllowedAddresses = []string{signingAddr.Hex()}
-	configFallback.ECDSA.AcceptBatchPosters = false
+	configFallback.ECDSA.AcceptSequencer = false
 	signVerifyFallback, err := NewSignVerify(&configFallback, dataSigner, nil)
 	Require(t, err)
 

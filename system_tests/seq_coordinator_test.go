@@ -297,7 +297,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	nodeConfig.SeqCoordinator.MyUrlImpl = nodeNames[1]
 	if !successCase {
-		nodeConfig.SeqCoordinator.Signing.ECDSA.AcceptBatchPosters = false
+		nodeConfig.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 		nodeConfig.SeqCoordinator.Signing.ECDSA.AllowedAddresses = []string{l2Info.GetAddress("User2").Hex()}
 	}
 	clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2Info.ArbInitData, nodeConfig)

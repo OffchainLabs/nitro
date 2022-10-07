@@ -529,7 +529,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Feed.Input.Verifier.Dangerous.AcceptMissing = true
 	config.Feed.Output.Signed = false
-	config.SeqCoordinator.Signing.ECDSA.AcceptBatchPosters = false
+	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
 
 	return &config

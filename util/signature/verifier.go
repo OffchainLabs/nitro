@@ -23,9 +23,9 @@ type Verifier struct {
 }
 
 type VerifierConfig struct {
-	AllowedAddresses   []string                `koanf:"allowed-addresses"`
-	AcceptBatchPosters bool                    `koanf:"accept-batch-posters"`
-	Dangerous          DangerousVerifierConfig `koanf:"dangerous"`
+	AllowedAddresses []string                `koanf:"allowed-addresses"`
+	AcceptSequencer  bool                    `koanf:"accept-sequencer"`
+	Dangerous        DangerousVerifierConfig `koanf:"dangerous"`
 }
 
 type DangerousVerifierConfig struct {
@@ -38,7 +38,7 @@ var ErrSignerNotApproved = fmt.Errorf("%w: signer not approved", ErrSignatureNot
 
 func FeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringArray(prefix+".allowed-addresses", DefultFeedVerifierConfig.AllowedAddresses, "a list of allowed addresses")
-	f.Bool(prefix+".accept-batch-posters", DefultFeedVerifierConfig.AcceptBatchPosters, "accept verified message from batch posters")
+	f.Bool(prefix+".accept-sequencer", DefultFeedVerifierConfig.AcceptSequencer, "accept verified message from sequencer")
 	DangerousFeedVerifierConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -47,16 +47,16 @@ func DangerousFeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefultFeedVerifierConfig = VerifierConfig{
-	AllowedAddresses:   []string{},
-	AcceptBatchPosters: true,
+	AllowedAddresses: []string{},
+	AcceptSequencer:  true,
 	Dangerous: DangerousVerifierConfig{
 		AcceptMissing: true,
 	},
 }
 
 var TestingFeedVerifierConfig = VerifierConfig{
-	AllowedAddresses:   []string{},
-	AcceptBatchPosters: false,
+	AllowedAddresses: []string{},
+	AcceptSequencer:  false,
 	Dangerous: DangerousVerifierConfig{
 		AcceptMissing: false,
 	},
@@ -68,7 +68,7 @@ func NewVerifier(config *VerifierConfig, bpValidator contracts.BatchPosterVerifi
 		addr := common.HexToAddress(addrString)
 		authorizedMap[addr] = struct{}{}
 	}
-	if bpValidator == nil && config.AcceptBatchPosters {
+	if bpValidator == nil && config.AcceptSequencer {
 		return nil, errors.New("cannot read batch poster addresses")
 	}
 	return &Verifier{
@@ -107,7 +107,7 @@ func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Ha
 		return nil
 	}
 
-	if !v.config.AcceptBatchPosters || v.bpValidator == nil {
+	if !v.config.AcceptSequencer || v.bpValidator == nil {
 		return ErrSignerNotApproved
 	}
 
