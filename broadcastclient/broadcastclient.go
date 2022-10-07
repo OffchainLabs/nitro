@@ -84,8 +84,11 @@ var DefaultConfig = Config{
 }
 
 var DefaultTestConfig = Config{
-	URLs:    []string{""},
-	Timeout: 200 * time.Millisecond,
+	RequireChainId:     false,
+	RequireFeedVersion: false,
+	Verifier:           signature.DefultFeedVerifierConfig,
+	URLs:               []string{""},
+	Timeout:            200 * time.Millisecond,
 }
 
 type TransactionStreamerInterface interface {
