@@ -248,7 +248,7 @@ func ChanRateLimiter[T any](s *StopWaiterSafe, inChan <-chan T, maxRateCallback 
 		return nil, err
 	}
 
-	return outChan, err
+	return outChan, nil
 }
 
 // May panic on race conditions instead of returning errors
