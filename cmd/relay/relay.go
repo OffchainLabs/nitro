@@ -66,7 +66,10 @@ func startup() error {
 
 	// Start up an arbitrum sequencer relay
 	feedErrChan := make(chan error, 10)
-	newRelay := relay.NewRelay(relayConfig, feedErrChan)
+	newRelay, err := relay.NewRelay(relayConfig, feedErrChan)
+	if err != nil {
+		return err
+	}
 	err = newRelay.Start(ctx)
 	if err != nil {
 		return err

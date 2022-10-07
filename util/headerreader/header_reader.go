@@ -26,12 +26,13 @@ type HeaderReader struct {
 	config ConfigFetcher
 	client arbutil.L1Interface
 
-	chanMutex sync.Mutex
+	chanMutex sync.RWMutex
 	// All fields below require the chanMutex
 	outChannels                map[chan<- *types.Header]struct{}
 	outChannelsBehind          map[chan<- *types.Header]struct{}
 	lastBroadcastHash          common.Hash
 	lastBroadcastHeader        *types.Header
+	lastBroadcastErr           error
 	lastPendingCallBlockNr     uint64
 	requiresPendingCallUpdates int
 }
@@ -133,6 +134,9 @@ func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 
+	// Clear any previous errors
+	s.lastBroadcastErr = nil
+
 	headerHash := h.Hash()
 	broadcastThis := false
 
@@ -176,6 +180,12 @@ func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 	}
 }
 
+func (s *HeaderReader) setError(err error) {
+	s.chanMutex.Lock()
+	defer s.chanMutex.Unlock()
+	s.lastBroadcastErr = err
+}
+
 func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 	var clientSubscription ethereum.Subscription = nil
 	defer func() {
@@ -185,6 +195,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 	}()
 	inputChannel := make(chan *types.Header)
 	if err := ctx.Err(); err != nil {
+		s.setError(fmt.Errorf("exiting at start of broadcastLoop: %w", err))
 		return
 	}
 	nextSubscribeErr := time.Now().Add(-time.Second)
@@ -204,6 +215,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 		case <-timer.C:
 			h, err := s.client.HeaderByNumber(ctx, nil)
 			if err != nil {
+				s.setError(fmt.Errorf("failed reading HeaderByNumber: %w", err))
 				if !errors.Is(err, context.Canceled) {
 					log.Warn("failed reading header", "err", err)
 				}
@@ -217,6 +229,7 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 					if errors.Is(err, rpc.ErrNotificationsUnsupported) {
 						pollOnlyOverride = true
 					} else if time.Now().After(nextSubscribeErr) {
+						s.setError(fmt.Errorf("failed subscribing to header: %w", err))
 						log.Warn("failed subscribing to header", "err", err)
 						nextSubscribeErr = time.Now().Add(s.config().SubscribeErrInterval)
 					}
@@ -224,13 +237,16 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 			}
 		case err := <-errChannel:
 			if ctx.Err() != nil {
+				s.setError(fmt.Errorf("exiting broadcastLoop: %w", ctx.Err()))
 				return
 			}
 			clientSubscription = nil
+			s.setError(fmt.Errorf("error in subscription to headers: %w", err))
 			log.Warn("error in subscription to headers", "err", err)
 			timer.Stop()
 		case <-ctx.Done():
 			timer.Stop()
+			s.setError(fmt.Errorf("exiting broadcastLoop: %w", ctx.Err()))
 			return
 		}
 		s.logIfHeaderIsOld()
@@ -238,14 +254,15 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 }
 
 func (s *HeaderReader) logIfHeaderIsOld() {
-	s.chanMutex.Lock()
+	s.chanMutex.RLock()
 	storedHeader := s.lastBroadcastHeader
-	s.chanMutex.Unlock()
+	s.chanMutex.RUnlock()
 	if storedHeader == nil {
 		return
 	}
 	headerTime := time.Unix(int64(storedHeader.Time), 0)
 	if time.Since(headerTime) >= 5*time.Minute {
+		s.setError(errors.New("latest header is at least 5 minutes old"))
 		log.Warn("latest L1 block is at least 5 minutes old", "l1Block", storedHeader.Number, "l1Timestamp", headerTime)
 	}
 }
@@ -277,9 +294,21 @@ func (s *HeaderReader) WaitForTxApproval(ctxIn context.Context, tx *types.Transa
 }
 
 func (s *HeaderReader) LastHeader(ctx context.Context) (*types.Header, error) {
-	s.chanMutex.Lock()
+	return s.lastHeaderImpl(ctx, false)
+}
+
+func (s *HeaderReader) LastHeaderWithError(ctx context.Context) (*types.Header, error) {
+	return s.lastHeaderImpl(ctx, true)
+}
+
+func (s *HeaderReader) lastHeaderImpl(ctx context.Context, withError bool) (*types.Header, error) {
+	s.chanMutex.RLock()
 	storedHeader := s.lastBroadcastHeader
-	s.chanMutex.Unlock()
+	storedError := s.lastBroadcastErr
+	s.chanMutex.RUnlock()
+	if withError && storedError != nil {
+		return nil, storedError
+	}
 	if storedHeader != nil {
 		return storedHeader, nil
 	}
@@ -287,16 +316,16 @@ func (s *HeaderReader) LastHeader(ctx context.Context) (*types.Header, error) {
 }
 
 func (s *HeaderReader) UpdatingPendingCallBlockNr() bool {
-	s.chanMutex.Lock()
-	defer s.chanMutex.Unlock()
+	s.chanMutex.RLock()
+	defer s.chanMutex.RUnlock()
 	return s.requiresPendingCallUpdates > 0
 }
 
 // blocknumber used by pending calls.
 // only updated if UpdatingPendingCallBlockNr returns true
 func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
-	s.chanMutex.Lock()
-	defer s.chanMutex.Unlock()
+	s.chanMutex.RLock()
+	defer s.chanMutex.RUnlock()
 	return s.lastPendingCallBlockNr
 }
 

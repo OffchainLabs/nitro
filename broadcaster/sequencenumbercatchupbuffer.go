@@ -35,12 +35,14 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	}
 	var startingIndex int32
 	// Ignore messages older than requested sequence number
-	if b.messages[0].SequenceNumber < requestedSeqNum {
-		startingIndex = int32(requestedSeqNum - b.messages[0].SequenceNumber)
-		if startingIndex >= b.messageCount {
+	firstCachedSeqNum := b.messages[0].SequenceNumber
+	if firstCachedSeqNum < requestedSeqNum {
+		lastCachedSeqNum := firstCachedSeqNum + arbutil.MessageIndex(len(b.messages))
+		if lastCachedSeqNum < requestedSeqNum {
 			// Past end, nothing to return
 			return nil
 		}
+		startingIndex = int32(requestedSeqNum - firstCachedSeqNum)
 		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
 			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "seqNumZero", b.messages[0].SequenceNumber, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
 			return nil

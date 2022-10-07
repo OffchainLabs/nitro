@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/relay"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -28,6 +29,11 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.Config {
 	return &broadcastclient.Config{
 		URLs:    []string{fmt.Sprintf("ws://localhost:%d/feed", port)},
 		Timeout: 200 * time.Millisecond,
+		Verifier: signature.VerifierConfig{
+			Dangerous: signature.DangerousVerifierConfig{
+				AcceptMissing: true,
+			},
+		},
 	}
 }
 
@@ -86,7 +92,8 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	config.L2.ChainId = bigChainId.Uint64()
 
 	feedErrChan := make(chan error, 10)
-	currentRelay := relay.NewRelay(&config, feedErrChan)
+	currentRelay, err := relay.NewRelay(&config, feedErrChan)
+	Require(t, err)
 	err = currentRelay.Start(ctx)
 	Require(t, err)
 	defer currentRelay.StopAndWait()
@@ -140,7 +147,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigC.DataAvailability.AggregatorConfig.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
-	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC, nil)
+	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigC)
 	defer nodeC.StopAndWait()
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -151,7 +158,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigB.DataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigB)
 	defer nodeB.StopAndWait()
 
 	l2infoA.GenerateAccount("FraudUser")

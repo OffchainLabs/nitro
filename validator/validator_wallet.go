@@ -40,6 +40,7 @@ type ValidatorWalletInterface interface {
 	Initialize(context.Context) error
 	Address() *common.Address
 	AddressOrZero() common.Address
+	TxSenderAddress() *common.Address
 	RollupAddress() common.Address
 	ChallengeManagerAddress() common.Address
 	L1Client() arbutil.L1Interface
@@ -111,16 +112,17 @@ func (v *ContractValidatorWallet) validateWallet(ctx context.Context) error {
 }
 
 func (v *ContractValidatorWallet) Initialize(ctx context.Context) error {
-	err := v.validateWallet(ctx)
+	err := v.populateWallet(ctx, false)
+	if err != nil {
+		return err
+	}
+	err = v.validateWallet(ctx)
 	if err != nil {
 		return err
 	}
 	callOpts := &bind.CallOpts{Context: ctx}
 	v.challengeManagerAddress, err = v.rollup.ChallengeManager(callOpts)
-	if err != nil {
-		return err
-	}
-	return v.populateWallet(ctx, false)
+	return err
 }
 
 // May be the nil if the wallet hasn't been deployed yet
@@ -134,6 +136,13 @@ func (v *ContractValidatorWallet) AddressOrZero() common.Address {
 		return common.Address{}
 	}
 	return *v.address
+}
+
+func (v *ContractValidatorWallet) TxSenderAddress() *common.Address {
+	if v.auth == nil {
+		return nil
+	}
+	return &v.auth.From
 }
 
 func (v *ContractValidatorWallet) From() common.Address {

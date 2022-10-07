@@ -167,7 +167,7 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 			// We aren't an example of someone staked on a competitor
 			return false, nil
 		}
-		log.Info("rejecting node", "node", unresolvedNodeIndex)
+		log.Warn("rejecting node", "node", unresolvedNodeIndex)
 		_, err = v.rollup.RejectNextNode(v.builder.Auth(ctx), *addr)
 		return true, err
 	case CONFIRM_TYPE_VALID:
@@ -415,7 +415,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				afterGs.SendRoot == expectedSendRoot
 			if valid {
 				log.Info(
-					"found correct node",
+					"found correct assertion",
 					"node", nd.NodeNum,
 					"blockNum", lastBlockNum,
 					"blockHash", afterGs.BlockHash,
@@ -426,8 +426,8 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				}
 				continue
 			} else {
-				log.Warn(
-					"found node with incorrect assertion",
+				log.Error(
+					"found incorrect assertion",
 					"node", nd.NodeNum,
 					"inboxPositionInvalid", inboxPositionInvalid,
 					"computedBlockNum", lastBlockNum,
@@ -440,7 +440,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				)
 			}
 		} else {
-			log.Warn("found younger sibling to correct node", "node", nd.NodeNum)
+			log.Error("found younger sibling to correct assertion (implicitly invalid)", "node", nd.NodeNum)
 		}
 		// If we've hit this point, the node is "wrong"
 		wrongNodesExist = true
