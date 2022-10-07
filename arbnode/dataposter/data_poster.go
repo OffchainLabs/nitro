@@ -21,7 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/simple_hmac"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
@@ -43,11 +43,11 @@ type QueueStorage[Item any] interface {
 }
 
 type DataPosterConfig struct {
-	RedisSigner       simple_hmac.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes  string                       `koanf:"replacement-times"`
-	L1LookBehind      uint64                       `koanf:"l1-look-behind" reload:"hot"`
-	MaxFeeCapGwei     float64                      `koanf:"max-fee-cap-gwei" reload:"hot"`
-	MaxFeeCapDoubling time.Duration                `koanf:"max-fee-cap-doubling" reload:"hot"`
+	RedisSigner       signature.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes  string                     `koanf:"replacement-times"`
+	L1LookBehind      uint64                     `koanf:"l1-look-behind" reload:"hot"`
+	MaxFeeCapGwei     float64                    `koanf:"max-fee-cap-gwei" reload:"hot"`
+	MaxFeeCapDoubling time.Duration              `koanf:"max-fee-cap-doubling" reload:"hot"`
 }
 
 type DataPosterConfigFetcher func() *DataPosterConfig
@@ -57,7 +57,7 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
 	f.Float64(prefix+".max-fee-cap-gwei", DefaultDataPosterConfig.MaxFeeCapGwei, "the maximum fee cap to use, doubled every max-fee-cap-doubling")
 	f.Duration(prefix+".max-fee-cap-doubling", DefaultDataPosterConfig.MaxFeeCapDoubling, "after this duration, double the fee cap (repeats)")
-	simple_hmac.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
+	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -69,7 +69,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:  "1s,2s,5s,10s,20s,30s,1m,5m",
-	RedisSigner:       simple_hmac.TestSimpleHmacConfig,
+	RedisSigner:       signature.TestSimpleHmacConfig,
 	L1LookBehind:      0,
 	MaxFeeCapGwei:     100.,
 	MaxFeeCapDoubling: 5 * time.Second,

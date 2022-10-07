@@ -23,8 +23,9 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/simple_hmac"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -40,7 +41,7 @@ type SeqCoordinator struct {
 	sync      *SyncMonitor
 	streamer  *TransactionStreamer
 	sequencer *Sequencer
-	signer    *simple_hmac.SimpleHmac
+	signer    *signature.SignVerify
 	config    SeqCoordinatorConfig
 
 	prevChosenSequencer string
@@ -53,18 +54,18 @@ type SeqCoordinator struct {
 }
 
 type SeqCoordinatorConfig struct {
-	Enable                bool                         `koanf:"enable"`
-	ChosenHealthcheckAddr string                       `koanf:"chosen-healthcheck-addr"`
-	RedisUrl              string                       `koanf:"redis-url"`
-	LockoutDuration       time.Duration                `koanf:"lockout-duration"`
-	LockoutSpare          time.Duration                `koanf:"lockout-spare"`
-	SeqNumDuration        time.Duration                `koanf:"seq-num-duration"`
-	UpdateInterval        time.Duration                `koanf:"update-interval"`
-	RetryInterval         time.Duration                `koanf:"retry-interval"`
-	SafeShutdownDelay     time.Duration                `koanf:"safe-shutdown-delay"`
-	MaxMsgPerPoll         arbutil.MessageIndex         `koanf:"msg-per-poll"`
-	MyUrlImpl             string                       `koanf:"my-url"`
-	Signing               simple_hmac.SimpleHmacConfig `koanf:"signer"`
+	Enable                bool                       `koanf:"enable"`
+	ChosenHealthcheckAddr string                     `koanf:"chosen-healthcheck-addr"`
+	RedisUrl              string                     `koanf:"redis-url"`
+	LockoutDuration       time.Duration              `koanf:"lockout-duration"`
+	LockoutSpare          time.Duration              `koanf:"lockout-spare"`
+	SeqNumDuration        time.Duration              `koanf:"seq-num-duration"`
+	UpdateInterval        time.Duration              `koanf:"update-interval"`
+	RetryInterval         time.Duration              `koanf:"retry-interval"`
+	SafeShutdownDelay     time.Duration              `koanf:"safe-shutdown-delay"`
+	MaxMsgPerPoll         arbutil.MessageIndex       `koanf:"msg-per-poll"`
+	MyUrlImpl             string                     `koanf:"my-url"`
+	Signing               signature.SignVerifyConfig `koanf:"signer"`
 }
 
 func (c *SeqCoordinatorConfig) MyUrl() string {
@@ -87,7 +88,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
 	f.Uint16(prefix+".msg-per-poll", uint16(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
-	simple_hmac.SimpleHmacConfigAddOptions(prefix+".signer", f)
+	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -102,6 +103,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:         time.Second,
 	MaxMsgPerPoll:         2000,
 	MyUrlImpl:             redisutil.INVALID_URL,
+	Signing:               signature.DefaultSignVerifyConfig,
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -115,15 +117,15 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:     time.Millisecond * 3,
 	MaxMsgPerPoll:     20,
 	MyUrlImpl:         redisutil.INVALID_URL,
-	Signing:           simple_hmac.TestSimpleHmacConfig,
+	Signing:           signature.DefaultSignVerifyConfig,
 }
 
-func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
-	signer, err := simple_hmac.NewSimpleHmac(&config.Signing)
+	signer, err := signature.NewSignVerify(&config.Signing, dataSigner, bpvalidator)
 	if err != nil {
 		return nil, err
 	}
@@ -140,21 +142,25 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync
 }
 
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
-	signerConfig := simple_hmac.DefaultSimpleHmacConfig
+	signerConfig := signature.EmptySimpleHmacConfig
 	if keyConfig == "" {
 		signerConfig.Dangerous.DisableSignatureVerification = true
 	} else {
 		signerConfig.SigningKey = keyConfig
 	}
-	signer, err := simple_hmac.NewSimpleHmac(&signerConfig)
+	signer, err := signature.NewSimpleHmac(&signerConfig)
 	if err != nil {
 		return err
 	}
 	var msgIndexBytes [8]byte
 	binary.BigEndian.PutUint64(msgIndexBytes[:], uint64(msgIndex))
 	msg := []byte(redisutil.INVALID_VAL)
-	signed := signer.SignMessage(msgIndexBytes[:], msg)
-	redisClient.Set(ctx, redisutil.MessageKeyFor(msgIndex), signed, DefaultSeqCoordinatorConfig.SeqNumDuration)
+	sig, err := signer.SignMessage(msgIndexBytes[:], msg)
+	if err != nil {
+		return err
+	}
+	redisClient.Set(ctx, redisutil.MessageKeyFor(msgIndex), msg, DefaultSeqCoordinatorConfig.SeqNumDuration)
+	redisClient.Set(ctx, redisutil.MessageSigKeyFor(msgIndex), sig, DefaultSeqCoordinatorConfig.SeqNumDuration)
 	return nil
 }
 
@@ -182,22 +188,60 @@ func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 	return nil
 }
 
+func (c *SeqCoordinator) msgCountToSignedBytes(msgCount arbutil.MessageIndex) ([]byte, error) {
+	var msgCountBytes [8]byte
+	binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCount))
+	sig, err := c.signer.SignMessage(msgCountBytes[:])
+	if err != nil {
+		return nil, err
+	}
+	return append(sig, msgCountBytes[:]...), nil
+}
+
+func (c *SeqCoordinator) signedBytesToMsgCount(ctx context.Context, data []byte) (arbutil.MessageIndex, error) {
+	datalen := len(data)
+	if datalen < 8 {
+		return 0, errors.New("msgcount value too short")
+	}
+	msgCountBytes := data[datalen-8:]
+	sig := data[:datalen-8]
+	err := c.signer.VerifySignature(ctx, sig, msgCountBytes)
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.MessageIndex(binary.BigEndian.Uint64(msgCountBytes)), nil
+}
+
 func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
 	var messageData *string
+	var messageSigData *string
 	if lastmsg != nil {
 		msgBytes, err := json.Marshal(lastmsg)
 		if err != nil {
 			return err
 		}
-
-		msgBytes = c.signer.SignMessage(arbmath.UintToBytes(uint64(msgCountToWrite-1)), msgBytes)
-		messageString := string(msgBytes)
-		messageData = &messageString
+		msgSig, err := c.signer.SignMessage(arbmath.UintToBytes(uint64(msgCountToWrite-1)), msgBytes)
+		if err != nil {
+			return err
+		}
+		if c.config.Signing.SymmetricSign {
+			messageString := string(append(msgSig, msgBytes...))
+			messageData = &messageString
+		} else {
+			messageString := string(msgBytes)
+			sigString := string(msgSig)
+			messageData = &messageString
+			messageSigData = &sigString
+		}
+	}
+	msgCountMsg, err := c.msgCountToSignedBytes(msgCountToWrite)
+	if err != nil {
+		return err
 	}
 	c.chosenUpdateMutex.Lock()
 	defer c.chosenUpdateMutex.Unlock()
 	lockoutUntil := time.Now().Add(c.config.LockoutDuration)
-	err := c.Client.Watch(ctx, func(tx *redis.Tx) error {
+	err = c.Client.Watch(ctx, func(tx *redis.Tx) error {
 		current, err := tx.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
 		var wasEmpty bool
 		if errors.Is(err, redis.Nil) {
@@ -231,13 +275,14 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		if wasEmpty {
 			pipe.Set(ctx, redisutil.CHOSENSEQ_KEY, c.config.MyUrl(), initialDuration)
 		}
-		var msgCountBytes [8]byte
-		binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCountToWrite))
-		pipe.Set(ctx, redisutil.MSG_COUNT_KEY, c.signer.SignMessage(nil, msgCountBytes[:]), c.config.SeqNumDuration)
+		pipe.Set(ctx, redisutil.MSG_COUNT_KEY, msgCountMsg, c.config.SeqNumDuration)
 		myLivelinessKey := redisutil.LivelinessKeyFor(c.config.MyUrl())
 		pipe.Set(ctx, myLivelinessKey, redisutil.LIVELINESS_VAL, initialDuration)
 		if messageData != nil {
 			pipe.Set(ctx, redisutil.MessageKeyFor(msgCountToWrite-1), *messageData, c.config.SeqNumDuration)
+			if messageSigData != nil {
+				pipe.Set(ctx, redisutil.MessageSigKeyFor(msgCountToWrite-1), *messageSigData, c.config.SeqNumDuration)
+			}
 		}
 		pipe.PExpireAt(ctx, redisutil.CHOSENSEQ_KEY, lockoutUntil)
 		pipe.PExpireAt(ctx, myLivelinessKey, lockoutUntil)
@@ -267,15 +312,7 @@ func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmda
 	if err != nil {
 		return 0, err
 	}
-	resBytes := []byte(resStr)
-	resBytes, err = c.signer.VerifyMessageSignature(nil, resBytes)
-	if err != nil {
-		return 0, err
-	}
-	if len(resBytes) != 8 {
-		return 0, fmt.Errorf("unexpected msg count value length %v", len(resBytes))
-	}
-	return arbutil.MessageIndex(binary.BigEndian.Uint64(resBytes)), nil
+	return c.signedBytesToMsgCount(ctx, []byte(resStr))
 }
 
 func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
@@ -453,9 +490,29 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			break
 		}
 		rsBytes := []byte(resString)
-		rsBytes, msgReadErr = c.signer.VerifyMessageSignature(arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
+		var sigString string
+		var sigBytes []byte
+		sigSeparateKey := true
+		sigString, msgReadErr = c.Client.Get(ctx, redisutil.MessageSigKeyFor(msgToRead)).Result()
+		if errors.Is(msgReadErr, redis.Nil) {
+			// no separate signature. Try reading old-style sig
+			if len(rsBytes) < 32 {
+				log.Warn("signature not found for msg", "pos", msgToRead)
+				msgReadErr = errors.New("signature not found")
+				break
+			}
+			sigBytes = rsBytes[:32]
+			rsBytes = rsBytes[32:]
+			sigSeparateKey = false
+		} else if msgReadErr != nil {
+			log.Warn("coordinator failed reading sig", "pos", msgToRead, "err", msgReadErr)
+			break
+		} else {
+			sigBytes = []byte(sigString)
+		}
+		msgReadErr = c.signer.VerifySignature(ctx, sigBytes, arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
 		if msgReadErr != nil {
-			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr)
+			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr, "separate-key", sigSeparateKey)
 			break
 		}
 		var message arbstate.MessageWithMetadata
