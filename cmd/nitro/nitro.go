@@ -164,8 +164,8 @@ func main() {
 	var dataSigner signature.DataSignerFunc
 	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
-	validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
-	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorNeedsKey {
+	validatorCanAct := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
 		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 		if err != nil {
 			fmt.Printf("%v\n", err.Error())
@@ -189,9 +189,6 @@ func main() {
 	}
 
 	if nodeConfig.Node.Validator.Enable {
-		if !nodeConfig.Node.Caching.Archive {
-			panic("validator requires --node.caching.archive")
-		}
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
 			panic("validator must read from L1")
@@ -201,8 +198,17 @@ func main() {
 		}
 	}
 
+	if (nodeConfig.Node.BlockValidator.Enable || validatorCanAct) && !nodeConfig.Node.Caching.Archive {
+		panic("validator requires --node.caching.archive")
+	}
+
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
+		if !nodeConfig.Node.Validator.UseSmartContractWallet {
+			flag.Usage()
+			log.Error("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
+			return
+		}
 		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
@@ -211,7 +217,7 @@ func main() {
 			log.Error("error getting deployment info for creating validator wallet contract", "error", err)
 			return
 		}
-		addr, err := validator.GetValidatorWallet(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
+		addr, err := validator.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
 			log.Error("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
 			return
@@ -337,6 +343,7 @@ func main() {
 	select {
 	case err := <-fatalErrChan:
 		log.Error("shutting down due to fatal error", "err", err)
+		defer log.Error("shut down due to fatal error", "err", err)
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}

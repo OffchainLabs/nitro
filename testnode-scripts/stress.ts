@@ -9,12 +9,7 @@ export const stressOptions = {
 
 
 async function runThread(argv: any, threadIndex: number, commandHandler: (argv: any, thread: number) => Promise<void>) {
-    for (let index = 0; index < argv.times; index++) {
-        await commandHandler(argv, threadIndex)
-        if (argv.delay > 0) {
-            await new Promise(f => setTimeout(f, argv.delay));
-        }
-    }
+    await commandHandler(argv, threadIndex)
 }
 
 export async function runStress(argv: any, commandHandler: (argv: any, thread: number) => Promise<void>) {

@@ -330,6 +330,21 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
+	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig)
+	return
+}
+
+func createTestNodeOnL1WithConfigImpl(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	stackConfig *node.Config,
+) (
+	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
+	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
+) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
@@ -341,7 +356,6 @@ func createTestNodeOnL1WithConfig(
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
-	var l2stack *node.Node
 	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, nil, "", chainConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts

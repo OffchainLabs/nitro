@@ -40,6 +40,7 @@ func NewRedisCoordinator(redisUrl string) (*RedisCoordinator, error) {
 	}, nil
 }
 
+// This sequencer is live and top priority
 func (c *RedisCoordinator) RecommendLiveSequencer(ctx context.Context) (string, error) {
 	prioritiesString, err := c.Client.Get(ctx, PRIORITIES_KEY).Result()
 	if err != nil {
@@ -61,6 +62,25 @@ func (c *RedisCoordinator) RecommendLiveSequencer(ctx context.Context) (string, 
 	}
 	log.Error("no sequencer appears live on redis", "priorities", prioritiesString)
 	return "", nil
+}
+
+// This sequencer is live and holds the lock
+func (c *RedisCoordinator) CurrentChosenSequencer(ctx context.Context) (string, error) {
+	current, err := c.Client.Get(ctx, CHOSENSEQ_KEY).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	err = c.Client.Get(ctx, LivelinessKeyFor(current)).Err()
+	if errors.Is(err, redis.Nil) {
+		return "", nil // lock owner but not alive
+	}
+	if err != nil {
+		return "", err
+	}
+	return current, nil
 }
 
 func MessageKeyFor(pos arbutil.MessageIndex) string {

@@ -80,18 +80,18 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type SequencingHooks struct {
 	TxErrors               []error
 	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error
-	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error
+	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
 func noopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error {
 			return nil
 		},
-		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
+		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
 	}
@@ -222,18 +222,18 @@ func ProduceBlockAdvanced(
 		var sender common.Address
 		var dataGas uint64 = 0
 		preTxHeaderGasUsed := header.GasUsed
-		receipt, scheduled, err := (func() (*types.Receipt, types.Transactions, error) {
+		receipt, result, err := (func() (*types.Receipt, *core.ExecutionResult, error) {
 			// If we've done too much work in this block, discard the tx as early as possible
 			if blockGasLeft < params.TxGas && isUserTx {
 				return nil, nil, core.ErrGasLimitReached
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx); err != nil {
+			sender, err = signer.Sender(tx)
+			if err != nil {
 				return nil, nil, err
 			}
 
-			sender, err = signer.Sender(tx)
-			if err != nil {
+			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, sender); err != nil {
 				return nil, nil, err
 			}
 
@@ -285,7 +285,7 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				vm.Config{},
 				func(result *core.ExecutionResult) error {
-					return hooks.PostTxFilter(state, tx, sender, dataGas, result)
+					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
 				},
 			)
 			if err != nil {
@@ -294,7 +294,7 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			return receipt, result.ScheduledTxes, nil
+			return receipt, result, nil
 		})()
 
 		// append the err, even if it is nil
@@ -314,6 +314,10 @@ func ProduceBlockAdvanced(
 				}
 			}
 			continue
+		}
+
+		if tx.Type() == types.ArbitrumInternalTxType && result.Err != nil {
+			return nil, nil, fmt.Errorf("failed to apply internal transaction: %w", result.Err)
 		}
 
 		if preTxHeaderGasUsed > header.GasUsed {
@@ -344,7 +348,7 @@ func ProduceBlockAdvanced(
 		}
 
 		// append any scheduled redeems
-		redeems = append(redeems, scheduled...)
+		redeems = append(redeems, result.ScheduledTxes...)
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbSysAddress {
