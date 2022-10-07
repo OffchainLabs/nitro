@@ -27,7 +27,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 	l1NodeConfigBDataAvailability := l1NodeConfigA.DataAvailability
 	l1NodeConfigBDataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigBDataAvailability)
+	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, &l1NodeConfigBDataAvailability)
 	defer nodeB.StopAndWait()
 
 	l2info.GenerateAccount("User2")
