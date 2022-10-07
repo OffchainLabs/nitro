@@ -117,7 +117,6 @@ type BroadcastClient struct {
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
 var ErrIncorrectChainId = errors.New("incorrect chain id")
-var ErrInvalidFeedSignature = errors.New("invalid feed signature")
 var ErrMissingChainId = errors.New("missing chain id")
 var ErrMissingFeedServerVersion = errors.New("missing feed server version")
 
@@ -344,18 +343,13 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 								continue
 							}
 
-							valid, err := bc.isValidSignature(ctx, message)
+							err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
 								bc.fatalErrChan <- errors.Wrapf(err, "error validating feed signature %v", message.SequenceNumber)
 								continue
 							}
 
-							if !valid {
-								log.Error("invalid feed signature", "sequence number", message.SequenceNumber)
-								bc.fatalErrChan <- ErrInvalidFeedSignature
-								continue
-							}
 							bc.nextSeqNum = message.SequenceNumber
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
@@ -421,14 +415,14 @@ func (bc *BroadcastClient) StopAndWait() {
 	}
 }
 
-func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) (bool, error) {
+func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) error {
 	if bc.config.Verifier.Dangerous.AcceptMissing && bc.sigVerifier == nil {
 		// Verifier disabled
-		return true, nil
+		return nil
 	}
 	hash, err := message.Hash(bc.chainId)
 	if err != nil {
-		return false, errors.Wrapf(err, "error getting message hash for sequence number %v", message.SequenceNumber)
+		return errors.Wrapf(err, "error getting message hash for sequence number %v", message.SequenceNumber)
 	}
 	return bc.sigVerifier.VerifyHash(ctx, message.Signature, hash)
 }

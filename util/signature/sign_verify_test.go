@@ -2,6 +2,7 @@ package signature
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -44,49 +45,34 @@ func TestSignVerifyModes(t *testing.T) {
 	ecdsaSig, err := signVerifyECDSA.SignMessage(data)
 	Require(t, err, "error signing data")
 
-	verified, err := signVerifyECDSA.VerifySignature(ctx, ecdsaSig, data)
+	err = signVerifyECDSA.VerifySignature(ctx, ecdsaSig, data)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 
-	verified, err = signVerifyFallback.VerifySignature(ctx, ecdsaSig, data)
+	err = signVerifyFallback.VerifySignature(ctx, ecdsaSig, data)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 
-	verified, _ = signVerifySymmetric.VerifySignature(ctx, ecdsaSig, data)
-	if verified {
-		t.Error("wrong signature verified")
+	err = signVerifySymmetric.VerifySignature(ctx, ecdsaSig, data)
+	if !errors.Is(err, ErrSignatureNotVerified) {
+		t.Error("unexpected error", err)
 	}
 
 	symSig, err := signVerifySymmetric.SignMessage(data)
 	Require(t, err, "error signing data")
 
-	verified, err = signVerifySymmetric.VerifySignature(ctx, symSig, data)
+	err = signVerifySymmetric.VerifySignature(ctx, symSig, data)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 
-	verified, err = signVerifyFallback.VerifySignature(ctx, symSig, data)
+	err = signVerifyFallback.VerifySignature(ctx, symSig, data)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 
-	verified, _ = signVerifyECDSA.VerifySignature(ctx, symSig, data)
-	if verified {
-		t.Error("wrong signature verified")
+	err = signVerifyECDSA.VerifySignature(ctx, symSig, data)
+	if !errors.Is(err, ErrSignatureNotVerified) {
+		t.Error("unexpected error", err)
 	}
 
 	fallbackSig, err := signVerifyFallback.SignMessage(data)
 	Require(t, err, "error signing data")
 
-	verified, err = signVerifyECDSA.VerifySignature(ctx, fallbackSig, data)
+	err = signVerifyECDSA.VerifySignature(ctx, fallbackSig, data)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 }

@@ -117,7 +117,7 @@ func TestInvalidSignature(t *testing.T) {
 	timer := time.NewTimer(1 * time.Second)
 	select {
 	case err := <-fatalErrChan:
-		if errors.Is(err, ErrInvalidFeedSignature) {
+		if errors.Is(err, signature.ErrSignatureNotVerified) {
 			t.Log("feed error found as expected")
 			return
 		}

@@ -6,6 +6,7 @@ package signature
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	flag "github.com/spf13/pflag"
 
@@ -30,6 +31,10 @@ type VerifierConfig struct {
 type DangerousVerifierConfig struct {
 	AcceptMissing bool `koanf:"accept-missing"`
 }
+
+var ErrSignatureNotVerified = errors.New("signature not verified")
+var ErrMissingSignature = fmt.Errorf("%w: signature not found", ErrSignatureNotVerified)
+var ErrSignerNotApproved = fmt.Errorf("%w: signer not approved", ErrSignatureNotVerified)
 
 func FeedVerifierConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringArray(prefix+".allowed-addresses", DefultFeedVerifierConfig.AllowedAddresses, "a list of allowed addresses")
@@ -73,51 +78,47 @@ func NewVerifier(config *VerifierConfig, bpValidator contracts.BatchPosterVerifi
 	}, nil
 }
 
-func (v *Verifier) VerifyHash(ctx context.Context, signature []byte, hash common.Hash) (bool, error) {
+func (v *Verifier) VerifyHash(ctx context.Context, signature []byte, hash common.Hash) error {
 	return v.verifyClosure(ctx, signature, hash)
 }
 
-func (v *Verifier) VerifyData(ctx context.Context, signature []byte, data ...[]byte) (bool, error) {
+func (v *Verifier) VerifyData(ctx context.Context, signature []byte, data ...[]byte) error {
 	return v.verifyClosure(ctx, signature, crypto.Keccak256Hash(data...))
 }
 
-var ErrMissingSignature = errors.New("missing required signature")
-
-func (v *Verifier) verifyClosureLocal(sig []byte, hash common.Hash) (bool, common.Address, error) {
+func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Hash) error {
 	if len(sig) == 0 {
 		if v.config.Dangerous.AcceptMissing {
 			// Signature missing and not required
-			return true, common.Address{}, nil
+			return nil
 		}
-		return false, common.Address{}, ErrMissingSignature
+		return ErrMissingSignature
 	}
 
 	sigPublicKey, err := crypto.SigToPub(hash.Bytes(), sig)
 	if err != nil {
 		// nolint:nilerr
-		return false, common.Address{}, nil
+		return ErrSignatureNotVerified
 	}
 
 	addr := crypto.PubkeyToAddress(*sigPublicKey)
 
 	if _, exists := v.authorizedMap[addr]; exists {
-		return true, addr, nil
+		return nil
 	}
 
-	return false, addr, nil
-}
+	if !v.config.AcceptBatchPosters || v.bpValidator == nil {
+		return ErrSignerNotApproved
+	}
 
-func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Hash) (bool, error) {
-	valid, addr, err := v.verifyClosureLocal(sig, hash)
+	batchPoster, err := v.bpValidator.IsBatchPoster(ctx, addr)
 	if err != nil {
-		return false, err
-	}
-	if valid {
-		return true, nil
-	}
-	if v.bpValidator == nil || !v.config.AcceptBatchPosters {
-		return false, nil
+		return err
 	}
 
-	return v.bpValidator.IsBatchPoster(ctx, addr)
+	if !batchPoster {
+		return ErrSignerNotApproved
+	}
+
+	return nil
 }

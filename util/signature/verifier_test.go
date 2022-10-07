@@ -34,23 +34,16 @@ func TestVerifier(t *testing.T) {
 	signature, err := dataSigner(hash.Bytes())
 	Require(t, err, "error signing data")
 
-	verified, err := verifier.VerifyData(ctx, signature, data)
+	err = verifier.VerifyData(ctx, signature, data)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 
-	verified, err = verifier.VerifyHash(ctx, signature, hash)
+	err = verifier.VerifyHash(ctx, signature, hash)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 
 	badData := []byte{1, 1, 2, 3, 4, 5, 6, 7}
-	verified, err = verifier.VerifyData(ctx, signature, badData)
-	Require(t, err, "error verifying data")
-	if verified {
-		t.Error("signature unexpectedly verified")
+	err = verifier.VerifyData(ctx, signature, badData)
+	if !errors.Is(err, ErrSignatureNotVerified) {
+		t.Error("unexpected error", err)
 	}
 }
 
@@ -62,7 +55,7 @@ func TestMissingRequiredSignature(t *testing.T) {
 	config.Dangerous.AcceptMissing = false
 	verifier, err := NewVerifier(&config, nil)
 	Require(t, err)
-	_, err = verifier.VerifyData(ctx, nil, nil)
+	err = verifier.VerifyData(ctx, nil, nil)
 	if !errors.Is(err, ErrMissingSignature) {
 		t.Error("didn't fail when missing feed signature")
 	}
@@ -76,11 +69,8 @@ func TestMissingSignatureAllowed(t *testing.T) {
 	config.Dangerous.AcceptMissing = true
 	verifier, err := NewVerifier(&config, nil)
 	Require(t, err)
-	verified, err := verifier.VerifyData(ctx, nil, nil)
+	err = verifier.VerifyData(ctx, nil, nil)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 }
 
 func TestVerifierBatchPoster(t *testing.T) {
@@ -104,23 +94,21 @@ func TestVerifierBatchPoster(t *testing.T) {
 	signature, err := dataSigner(hash.Bytes())
 	Require(t, err, "error signing data")
 
-	verified, err := verifier.VerifyData(ctx, signature, data)
+	err = verifier.VerifyData(ctx, signature, data)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 
-	verified, err = verifier.VerifyHash(ctx, signature, hash)
+	err = verifier.VerifyHash(ctx, signature, hash)
 	Require(t, err, "error verifying data")
-	if !verified {
-		t.Error("signature not verified")
-	}
 
-	badData := []byte{1, 1, 2, 3, 4, 5, 6, 7}
-	verified, err = verifier.VerifyData(ctx, signature, badData)
-	Require(t, err, "error verifying data")
-	if verified {
-		t.Error("signature unexpectedly verified")
+	badKey, err := crypto.GenerateKey()
+	Require(t, err)
+	badDataSigner := DataSignerFromPrivateKey(badKey)
+	badSignature, err := badDataSigner(hash.Bytes())
+	Require(t, err, "error signing data")
+
+	err = verifier.VerifyData(ctx, badSignature, data)
+	if !errors.Is(err, ErrSignerNotApproved) {
+		t.Error("unexpected error", err)
 	}
 }
 

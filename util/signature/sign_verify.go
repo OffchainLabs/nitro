@@ -61,13 +61,13 @@ func NewSignVerify(config *SignVerifyConfig, signerFunc DataSignerFunc, bpValida
 }
 
 // does not check batch posters
-func (v *SignVerify) VerifySignature(ctx context.Context, signature []byte, data ...[]byte) (bool, error) {
-	ecdsaValid, ecdsaErr := v.verifier.verifyClosure(ctx, signature, crypto.Keccak256Hash(data...))
-	if ecdsaErr == nil && ecdsaValid {
-		return true, nil
+func (v *SignVerify) VerifySignature(ctx context.Context, signature []byte, data ...[]byte) error {
+	ecdsaErr := v.verifier.verifyClosure(ctx, signature, crypto.Keccak256Hash(data...))
+	if ecdsaErr == nil {
+		return nil
 	}
 	if !v.config.SymmetricFallback {
-		return ecdsaValid, ecdsaErr
+		return ecdsaErr
 	}
 	return v.fallback.VerifySignature(signature, data...)
 }

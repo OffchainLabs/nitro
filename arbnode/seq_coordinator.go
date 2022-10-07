@@ -201,12 +201,9 @@ func (c *SeqCoordinator) signedBytesToMsgCount(ctx context.Context, data []byte)
 	}
 	msgCountBytes := data[datalen-8:]
 	sig := data[:datalen-8]
-	valid, err := c.signer.VerifySignature(ctx, sig, msgCountBytes)
+	err := c.signer.VerifySignature(ctx, sig, msgCountBytes)
 	if err != nil {
 		return 0, err
-	}
-	if !valid {
-		return 0, errors.New("inavlid signature")
 	}
 	return arbutil.MessageIndex(binary.BigEndian.Uint64(msgCountBytes)), nil
 }
@@ -502,10 +499,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		} else {
 			sigBytes = []byte(sigString)
 		}
-		var valid bool
-		valid, msgReadErr = c.signer.VerifySignature(ctx, sigBytes, arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
-		if msgReadErr != nil || !valid {
-			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "valid", valid, "err", msgReadErr)
+		msgReadErr = c.signer.VerifySignature(ctx, sigBytes, arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
+		if msgReadErr != nil {
+			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr)
 			break
 		}
 		var message arbstate.MessageWithMetadata
