@@ -179,13 +179,6 @@ func (s *StopWaiterSafe) LaunchUntrackedThread(foo func()) {
 // CallIteratively calls function iteratively in a thread.
 // input param return value is how long to wait before next invocation
 func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration) error {
-	return s.CallIterativelyWithTrigger(foo, nil)
-}
-
-// CallIterativelyWithTrigger calls function iteratively in a thread.
-// The return value of foo is how long to wait before next invocation
-// Anything sent to triggerChan parameter triggers call to happen immediately
-func (s *StopWaiterSafe) CallIterativelyWithTrigger(foo func(context.Context) time.Duration, triggerChan chan interface{}) error {
 	return s.LaunchThread(func(ctx context.Context) {
 		for {
 			interval := foo(ctx)
@@ -198,10 +191,64 @@ func (s *StopWaiterSafe) CallIterativelyWithTrigger(foo func(context.Context) ti
 				timer.Stop()
 				return
 			case <-timer.C:
-			case <-triggerChan:
 			}
 		}
 	})
+}
+
+// CallIterativelyWith calls function iteratively in a thread.
+// The return value of foo is how long to wait before next invocation
+// Anything sent to triggerChan parameter triggers call to happen immediately
+func CallIterativelyWith[T any](
+	s *StopWaiterSafe,
+	foo func(context.Context, T) time.Duration,
+	triggerChan <-chan T,
+) error {
+	return s.LaunchThread(func(ctx context.Context) {
+		var defaultVal T
+		var val T
+		for {
+			interval := foo(ctx, val)
+			if ctx.Err() != nil {
+				return
+			}
+			val = defaultVal
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			case val = <-triggerChan:
+			}
+		}
+	})
+}
+
+func ChanRateLimiter[T any](s *StopWaiterSafe, inChan <-chan T, maxRateCallback func() time.Duration) (<-chan T, error) {
+	outChan := make(chan T)
+	err := s.LaunchThread(func(ctx context.Context) {
+		nextAllowedTriggerTime := time.Now()
+		for {
+			select {
+			case <-ctx.Done():
+				close(outChan)
+				return
+			case data := <-inChan:
+				now := time.Now()
+				if now.After(nextAllowedTriggerTime) {
+					outChan <- data
+					nextAllowedTriggerTime = now.Add(maxRateCallback())
+				}
+			}
+		}
+	})
+	if err != nil {
+		close(outChan)
+		return nil, err
+	}
+
+	return outChan, nil
 }
 
 // May panic on race conditions instead of returning errors
