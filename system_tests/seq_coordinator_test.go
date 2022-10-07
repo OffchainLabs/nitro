@@ -311,8 +311,8 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 	_, err = EnsureTxSucceeded(ctx, clientA, tx)
 	Require(t, err)
 
-	_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
 	if successCase {
+		_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
 		Require(t, err)
 		l2balance, err := clientB.BalanceAt(ctx, l2Info.GetAddress("User2"), nil)
 		Require(t, err)
@@ -320,6 +320,7 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 			t.Fatal("Unexpected balance:", l2balance)
 		}
 	} else {
+		_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second)
 		if err == nil {
 			Fail(t, "tx received by node with different seq coordinator signing key")
 		}
