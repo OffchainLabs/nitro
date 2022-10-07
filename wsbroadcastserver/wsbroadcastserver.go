@@ -67,7 +67,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
 	Enable:         false,
-	Signed:         true,
+	Signed:         false,
 	Addr:           "",
 	IOTimeout:      5 * time.Second,
 	Port:           "9642",

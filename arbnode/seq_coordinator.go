@@ -483,6 +483,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		rsBytes := []byte(resString)
 		var sigString string
 		var sigBytes []byte
+		sigSeparateKey := true
 		sigString, msgReadErr = c.Client.Get(ctx, redisutil.MessageSigKeyFor(msgToRead)).Result()
 		if errors.Is(msgReadErr, redis.Nil) {
 			// no separate signature. Try reading old-style sig
@@ -493,6 +494,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			}
 			sigBytes = rsBytes[:32]
 			rsBytes = rsBytes[32:]
+			sigSeparateKey = false
 		} else if msgReadErr != nil {
 			log.Warn("coordinator failed reading sig", "pos", msgToRead, "err", msgReadErr)
 			break
@@ -501,7 +503,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		}
 		msgReadErr = c.signer.VerifySignature(ctx, sigBytes, arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
 		if msgReadErr != nil {
-			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr)
+			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr, "separate-key", sigSeparateKey)
 			break
 		}
 		var message arbstate.MessageWithMetadata

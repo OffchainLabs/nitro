@@ -60,7 +60,6 @@ func NewSignVerify(config *SignVerifyConfig, signerFunc DataSignerFunc, bpValida
 	}, nil
 }
 
-// does not check batch posters
 func (v *SignVerify) VerifySignature(ctx context.Context, signature []byte, data ...[]byte) error {
 	ecdsaErr := v.verifier.verifyClosure(ctx, signature, crypto.Keccak256Hash(data...))
 	if ecdsaErr == nil {

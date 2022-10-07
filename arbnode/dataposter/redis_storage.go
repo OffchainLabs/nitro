@@ -31,7 +31,7 @@ func NewRedisStorage[Item any](client redis.UniversalClient, key string, signerC
 
 func joinHmacMsg(msg []byte, sig []byte) ([]byte, error) {
 	if len(sig) != 32 {
-		return nil, errors.New("data is too short to contain message signature")
+		return nil, errors.New("signature is wrong length")
 	}
 	return append(sig, msg...), nil
 }
