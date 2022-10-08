@@ -676,20 +676,20 @@ type ConfigFetcher interface {
 	StopAndWait()
 }
 
-func checkArbDbVersion(arbDb ethdb.Database) error {
+func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	var version uint64
-	hasVersion, err := arbDb.Has(dbFormatVersionKey)
+	hasVersion, err := arbDb.Has(dbSchemaVersion)
 	if err != nil {
 		return err
 	}
 	if hasVersion {
-		versionBytes, err := arbDb.Get(dbFormatVersionKey)
+		versionBytes, err := arbDb.Get(dbSchemaVersion)
 		if err != nil {
 			return err
 		}
 		version = binary.BigEndian.Uint64(versionBytes)
 	}
-	for version != currentDbFormatVersion {
+	for version != currentDbSchemaVersion {
 		batch := arbDb.NewBatch()
 		switch version {
 		case ^uint64(0):
@@ -703,7 +703,7 @@ func checkArbDbVersion(arbDb ethdb.Database) error {
 		version++
 		versionBytes := make([]uint8, 8)
 		binary.BigEndian.PutUint64(versionBytes, version)
-		err = batch.Put(dbFormatVersionKey, versionBytes)
+		err = batch.Put(dbSchemaVersion, versionBytes)
 		if err != nil {
 			return err
 		}
@@ -731,7 +731,7 @@ func createNodeImpl(
 	config := configFetcher.Get()
 	var reorgingToBlock *types.Block
 
-	err := checkArbDbVersion(arbDb)
+	err := checkArbDbSchemaVersion(arbDb)
 	if err != nil {
 		return nil, err
 	}
