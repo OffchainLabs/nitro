@@ -5,6 +5,7 @@ package arbnode
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -675,6 +676,45 @@ type ConfigFetcher interface {
 	StopAndWait()
 }
 
+func checkArbDbVersion(arbDb ethdb.Database) error {
+	var version uint64
+	hasVersion, err := arbDb.Has(dbFormatVersionKey)
+	if err != nil {
+		return err
+	}
+	if hasVersion {
+		versionBytes, err := arbDb.Get(dbFormatVersionKey)
+		if err != nil {
+			return err
+		}
+		version = binary.BigEndian.Uint64(versionBytes)
+	}
+	for version != currentDbFormatVersion {
+		batch := arbDb.NewBatch()
+		switch version {
+		case ^uint64(0):
+			// TODO: write db format upgrade code
+			// This code path is here to avoid a bunch of linter errors
+		default:
+			return fmt.Errorf("unsupported database format version %v", version)
+		}
+
+		// Increment version and flush the batch
+		version++
+		versionBytes := make([]uint8, 8)
+		binary.BigEndian.PutUint64(versionBytes, version)
+		err = batch.Put(dbFormatVersionKey, versionBytes)
+		if err != nil {
+			return err
+		}
+		err = batch.Write()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
@@ -690,6 +730,11 @@ func createNodeImpl(
 ) (*Node, error) {
 	config := configFetcher.Get()
 	var reorgingToBlock *types.Block
+
+	err := checkArbDbVersion(arbDb)
+	if err != nil {
+		return nil, err
+	}
 
 	l2Config := l2BlockChain.Config()
 	l2ChainId := l2Config.ChainID.Uint64()

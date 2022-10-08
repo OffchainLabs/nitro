@@ -13,4 +13,7 @@ var (
 	messageCountKey        []byte = []byte("_messageCount")        // contains the current message count
 	delayedMessageCountKey []byte = []byte("_delayedMessageCount") // contains the current delayed message count
 	sequencerBatchCountKey []byte = []byte("_sequencerBatchCount") // contains the current sequencer message count
+	dbFormatVersionKey     []byte = []byte("_version")             // contains a uint64 representing the database format version
 )
+
+const currentDbFormatVersion uint64 = 0
