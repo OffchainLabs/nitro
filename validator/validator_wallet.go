@@ -40,6 +40,7 @@ type ValidatorWalletInterface interface {
 	Initialize(context.Context) error
 	Address() *common.Address
 	AddressOrZero() common.Address
+	TxSenderAddress() *common.Address
 	RollupAddress() common.Address
 	ChallengeManagerAddress() common.Address
 	L1Client() arbutil.L1Interface
@@ -135,6 +136,13 @@ func (v *ContractValidatorWallet) AddressOrZero() common.Address {
 		return common.Address{}
 	}
 	return *v.address
+}
+
+func (v *ContractValidatorWallet) TxSenderAddress() *common.Address {
+	if v.auth == nil {
+		return nil
+	}
+	return &v.auth.From
 }
 
 func (v *ContractValidatorWallet) From() common.Address {

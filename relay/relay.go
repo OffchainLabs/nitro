@@ -6,6 +6,7 @@ package relay
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -43,17 +44,26 @@ func (q *MessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.Broadcas
 	return nil
 }
 
-func NewRelay(config *Config, feedErrChan chan error) *Relay {
+func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 	var broadcastClients []*broadcastclient.BroadcastClient
 
 	q := MessageQueue{make(chan broadcaster.BroadcastFeedMessage, config.Queue)}
 
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, config.Queue)
 
+	var lastClientError error
 	for _, address := range config.Node.Feed.Input.URLs {
-		client := broadcastclient.NewBroadcastClient(config.Node.Feed.Input, address, config.L2.ChainId, 0, &q, feedErrChan, nil)
+		client, err := broadcastclient.NewBroadcastClient(config.Node.Feed.Input, address, config.L2.ChainId, 0, &q, feedErrChan, nil)
+		if err != nil {
+			lastClientError = err
+			log.Warn("init broadcast client failed", "address", address, "err", err)
+			continue
+		}
 		client.ConfirmedSequenceNumberListener = confirmedSequenceNumberListener
 		broadcastClients = append(broadcastClients, client)
+	}
+	if len(broadcastClients) == 0 && len(config.Node.Feed.Input.URLs) > 0 {
+		return nil, fmt.Errorf("no broadcast clients initialized. Last error: %w", lastClientError)
 	}
 
 	dataSignerErr := func([]byte) ([]byte, error) {
@@ -64,7 +74,7 @@ func NewRelay(config *Config, feedErrChan chan error) *Relay {
 		broadcastClients:            broadcastClients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,
-	}
+	}, nil
 }
 
 const RECENT_FEED_ITEM_TTL = time.Second * 10

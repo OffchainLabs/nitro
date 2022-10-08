@@ -527,6 +527,10 @@ func ConfigDefaultL2Test() *Config {
 	config.Sequencer = TestSequencerConfig
 	config.L1Reader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
+	config.Feed.Input.Verifier.Dangerous.AcceptMissing = true
+	config.Feed.Output.Signed = false
+	config.SeqCoordinator.Signing.ECDSA.AcceptSequencer = false
+	config.SeqCoordinator.Signing.ECDSA.Dangerous.AcceptMissing = true
 
 	return &config
 }
@@ -719,7 +723,14 @@ func createNodeImpl(
 
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
-		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Get().Feed.Output }, l2ChainId, fatalErrChan, dataSigner)
+		var maybeDataSigner signature.DataSignerFunc
+		if config.Feed.Output.Signed {
+			if dataSigner == nil {
+				return nil, errors.New("cannot sign outgoing feed")
+			}
+			maybeDataSigner = dataSigner
+		}
+		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner)
 	}
 
 	var l1Reader *headerreader.HeaderReader
@@ -727,10 +738,6 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &config.Get().L1Reader })
 	}
 
-	var sequencerInboxAddr common.Address
-	if deployInfo != nil {
-		sequencerInboxAddr = deployInfo.SequencerInbox
-	}
 	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan)
 	if err != nil {
 		return nil, err
@@ -738,6 +745,17 @@ func createNodeImpl(
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
 	var sequencer *Sequencer
+	var bpVerifier *contracts.BatchPosterVerifier
+	if deployInfo != nil && l1client != nil {
+		sequencerInboxAddr := deployInfo.SequencerInbox
+
+		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(sequencerInboxAddr, l1client)
+		if err != nil {
+			return nil, err
+		}
+		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+	}
+
 	if config.Sequencer.Enable {
 		if config.ForwardingTarget() != "" {
 			return nil, errors.New("sequencer and forwarding target both set")
@@ -769,7 +787,7 @@ func createNodeImpl(
 		}
 	}
 	if config.SeqCoordinator.Enable {
-		coordinator, err = NewSeqCoordinator(txStreamer, sequencer, syncMonitor, config.SeqCoordinator)
+		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, sequencer, syncMonitor, config.SeqCoordinator)
 		if err != nil {
 			return nil, err
 		}
@@ -784,31 +802,26 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	var bpVerifier *contracts.BatchPosterVerifier
-	if l1client != nil {
-		seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(sequencerInboxAddr, l1client)
+	var broadcastClients []*broadcastclient.BroadcastClient
+	if config.Feed.Input.Enable() {
+
+		currentMessageCount, err := txStreamer.GetMessageCount()
 		if err != nil {
 			return nil, err
 		}
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
-	}
-	sigVerifier := signature.NewVerifier(config.Feed.Input.RequireSignature, nil, bpVerifier)
-	currentMessageCount, err := txStreamer.GetMessageCount()
-	if err != nil {
-		return nil, err
-	}
-	var broadcastClients []*broadcastclient.BroadcastClient
-	if config.Feed.Input.Enable() {
 		for _, address := range config.Feed.Input.URLs {
-			client := broadcastclient.NewBroadcastClient(
+			client, err := broadcastclient.NewBroadcastClient(
 				config.Feed.Input,
 				address,
 				l2ChainId,
 				currentMessageCount,
 				txStreamer,
 				fatalErrChan,
-				sigVerifier,
+				bpVerifier,
 			)
+			if err != nil {
+				return nil, err
+			}
 			broadcastClients = append(broadcastClients, client)
 		}
 	}
@@ -1291,6 +1304,15 @@ func CreateNode(
 			blockchain:        l2BlockChain,
 			blockRangeBound:   config.RPC.ArbDebug.BlockRangeBound,
 			timeoutQueueBound: config.RPC.ArbDebug.TimeoutQueueBound,
+		},
+		Public: false,
+	})
+	apis = append(apis, rpc.API{
+		Namespace: "arbtrace",
+		Version:   "1.0",
+		Service: &ArbTraceForwarderAPI{
+			fallbackClientUrl:     config.RPC.ClassicRedirect,
+			fallbackClientTimeout: config.RPC.ClassicRedirectTimeout,
 		},
 		Public: false,
 	})
