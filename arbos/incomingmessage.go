@@ -217,7 +217,7 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 	return msg, msg.FillInBatchGasCost(batchFetcher)
 }
 
-type InfallibleBatchFetcher func(batchNum uint64) []byte
+type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
 
 func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
 	if len(msg.L2msg) > MaxL2MessageSize {
@@ -627,7 +627,7 @@ func computeBatchGasCost(data []byte) uint64 {
 }
 
 func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64, batchFetcher InfallibleBatchFetcher) (*types.Transaction, error) {
-	batchTimestamp, batchPosterAddr, _, batchNum, l1BaseFee, err := parseBatchPostingReportMessageFields(rd)
+	batchTimestamp, batchPosterAddr, batchHash, batchNum, l1BaseFee, err := parseBatchPostingReportMessageFields(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -635,7 +635,7 @@ func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasC
 	if msgBatchGasCost != nil {
 		batchDataGas = *msgBatchGasCost
 	} else {
-		batchData := batchFetcher(batchNum)
+		batchData := batchFetcher(batchNum, batchHash)
 		batchDataGas = computeBatchGasCost(batchData)
 	}
 
