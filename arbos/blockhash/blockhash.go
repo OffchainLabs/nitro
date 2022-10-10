@@ -39,7 +39,7 @@ func (bh *Blockhashes) BlockHash(number uint64) (common.Hash, error) {
 	return bh.backingStorage.GetByUint64(1 + (number % 256))
 }
 
-func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash) error {
+func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash, arbosVersion uint64) error {
 	nextNumber, err := bh.nextBlockNumber.Get()
 	if err != nil {
 		return err
@@ -55,16 +55,15 @@ func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash) er
 		// fill in hashes for any "skipped over" blocks
 		nextNumber++
 		var nextNumBuf [8]byte
-		binary.LittleEndian.Uint64(nextNumBuf[:])
+		if arbosVersion >= 8 {
+			binary.LittleEndian.PutUint64(nextNumBuf[:], nextNumber)
+		}
 
-		fill, err := bh.backingStorage.Keccak(blockHash.Bytes(), nextNumBuf[:])
+		fill, err := bh.backingStorage.KeccakHash(blockHash.Bytes(), nextNumBuf[:])
 		if err != nil {
 			return err
 		}
-		err = bh.backingStorage.SetByUint64(
-			1+(nextNumber%256),
-			common.BytesToHash(fill),
-		)
+		err = bh.backingStorage.SetByUint64(1+(nextNumber%256), fill)
 		if err != nil {
 			return err
 		}

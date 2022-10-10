@@ -73,7 +73,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			if evm.Context.BlockNumber.Sign() > 0 {
 				prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
 			}
-			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash))
+			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash, state.FormatVersion()))
 		}
 
 		currentTime := evm.Context.Time.Uint64()

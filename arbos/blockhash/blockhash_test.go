@@ -14,6 +14,8 @@ import (
 )
 
 func TestBlockhash(t *testing.T) {
+	arbosVersion := uint64(8)
+
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	InitializeBlockhashes(sto)
 
@@ -33,7 +35,7 @@ func TestBlockhash(t *testing.T) {
 	}
 
 	hash0 := common.BytesToHash(crypto.Keccak256([]byte{0}))
-	err = bh.RecordNewL1Block(0, hash0)
+	err = bh.RecordNewL1Block(0, hash0, arbosVersion)
 	Require(t, err)
 	bnum, err = bh.NextBlockNumber()
 	Require(t, err)
@@ -47,7 +49,7 @@ func TestBlockhash(t *testing.T) {
 	}
 
 	hash4242 := common.BytesToHash(crypto.Keccak256([]byte{42, 42}))
-	err = bh.RecordNewL1Block(4242, hash4242)
+	err = bh.RecordNewL1Block(4242, hash4242, arbosVersion)
 	Require(t, err)
 	bnum, err = bh.NextBlockNumber()
 	Require(t, err)
