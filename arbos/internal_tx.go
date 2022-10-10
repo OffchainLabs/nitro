@@ -57,7 +57,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 		l1BlockNumber := util.SafeMapGet[uint64](inputs, "l1BlockNumber")
 		timePassed := util.SafeMapGet[uint64](inputs, "timePassed")
-		if state.FormatVersion() < 3 {
+		if state.ArbOSVersion() < 3 {
 			// (incorrectly) use the L2 block number instead
 			timePassed = util.SafeMapGet[uint64](inputs, "l2BlockNumber")
 		}
@@ -73,7 +73,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			if evm.Context.BlockNumber.Sign() > 0 {
 				prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
 			}
-			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash, state.FormatVersion()))
+			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash, state.ArbOSVersion()))
 		}
 
 		currentTime := evm.Context.Time.Uint64()
@@ -105,7 +105,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,
-			state.FormatVersion(),
+			state.ArbOSVersion(),
 			batchTimestamp.Uint64(),
 			evm.Context.Time.Uint64(),
 			batchPosterAddress,

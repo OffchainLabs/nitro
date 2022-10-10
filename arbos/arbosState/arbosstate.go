@@ -311,7 +311,7 @@ func (state *ArbosState) Restrict(err error) {
 	state.Burner.Restrict(err)
 }
 
-func (state *ArbosState) FormatVersion() uint64 {
+func (state *ArbosState) ArbOSVersion() uint64 {
 	return state.arbosVersion
 }
 
