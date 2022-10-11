@@ -1,6 +1,6 @@
 # Useful Addresses
 
-Here's some contract addreses that may be useful and/or of interest to those exploring the Arbitrum protocol:
+Here's some contract addresses that may be useful and/or of interest to those exploring the Arbitrum protocol:
 
 ### Protocol (L1)
 
