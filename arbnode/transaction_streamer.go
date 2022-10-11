@@ -9,6 +9,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/params"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,7 +40,7 @@ type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
 	db           ethdb.Database
-	bc           *core.BlockChain
+	bc           BlockChainStreamerInterface
 	chainId      uint64
 	fatalErrChan chan<- error
 
@@ -65,9 +67,33 @@ type TransactionStreamer struct {
 	inboxReader     *InboxReader
 }
 
+type BlockChainStreamerInterface interface {
+	CurrentBlock() *types.Block
+	CurrentHeader() *types.Header
+	Engine() consensus.Engine
+	Genesis() *types.Block
+	GetBlockByNumber(uint64) *types.Block
+	GetCanonicalHash(uint64) common.Hash
+	GetHeader(common.Hash, uint64) *types.Header
+	GetHeaderByHash(common.Hash) *types.Header
+	RecoverState(*types.Block) error
+	ReorgToOldBlock(*types.Block) error
+	StateAt(common.Hash) (*state.StateDB, error)
+	Stop()
+	WriteBlockAndSetHeadWithTime(
+		*types.Block,
+		[]*types.Receipt,
+		[]*types.Log,
+		*state.StateDB,
+		bool,
+		time.Duration,
+	) (core.WriteStatus, error)
+	Config() *params.ChainConfig
+}
+
 func NewTransactionStreamer(
 	db ethdb.Database,
-	bc *core.BlockChain,
+	bc BlockChainStreamerInterface,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 ) (*TransactionStreamer, error) {

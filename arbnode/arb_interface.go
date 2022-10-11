@@ -5,8 +5,8 @@ package arbnode
 
 import (
 	"context"
-
 	"github.com/ethereum/go-ethereum/core"
+
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -44,7 +44,7 @@ func (a *ArbInterface) TransactionStreamer() *TransactionStreamer {
 }
 
 func (a *ArbInterface) BlockChain() *core.BlockChain {
-	return a.txStreamer.bc
+	return nil
 }
 
 func (a *ArbInterface) ArbNode() interface{} {
