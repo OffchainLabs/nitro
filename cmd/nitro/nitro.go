@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"reflect"
@@ -126,6 +128,10 @@ func main() {
 		confighelpers.HandleError(err, printSampleUsage)
 
 		return
+	}
+	if nodeConfig.Node.EnablePprof {
+		addr := fmt.Sprintf("%s:%d", nodeConfig.Node.PprofHost, nodeConfig.Node.PprofPort)
+		startPProf(addr)
 	}
 	if nodeConfig.Node.Archive {
 		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
@@ -794,4 +800,12 @@ func (f *NodeConfigFetcher) Start(ctx context.Context) {
 
 func (f *NodeConfigFetcher) StopAndWait() {
 	f.LiveNodeConfig.StopAndWait()
+}
+func startPProf(address string) {
+	log.Info("Starting pprof", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
+	go func() {
+		if err := http.ListenAndServe(address, nil); err != nil {
+			log.Error("Failure in running pprof server", "err", err)
+		}
+	}()
 }

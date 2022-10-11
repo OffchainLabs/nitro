@@ -414,6 +414,9 @@ type Config struct {
 	Dangerous              DangerousConfig                `koanf:"dangerous"`
 	Caching                CachingConfig                  `koanf:"caching"`
 	Archive                bool                           `koanf:"archive"`
+	EnablePprof            bool                           `koanf:"pprof"`
+	PprofPort              uint64                         `koanf:"pprof-port"`
+	PprofHost              string                         `koanf:"pprof-host"`
 	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
 }
 
@@ -475,6 +478,9 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
+	f.Bool(prefix+".pprof", ConfigDefault.EnablePprof, "enable pprof profiling for Go")
+	f.Uint64(prefix+".pprof-port", ConfigDefault.PprofPort, "port for profiling in Go")
+	f.String(prefix+".pprof-host", ConfigDefault.PprofHost, "host for profiling in Go")
 }
 
 var ConfigDefault = Config{
@@ -497,6 +503,9 @@ var ConfigDefault = Config{
 	Archive:                false,
 	TxLookupLimit:          40_000_000,
 	Caching:                DefaultCachingConfig,
+	EnablePprof:            false,
+	PprofPort:              6060,
+	PprofHost:              "127.0.0.1",
 }
 
 func ConfigDefaultL1Test() *Config {
