@@ -422,17 +422,15 @@ func (s *TransactionStreamer) skipDuplicateMessages(prevDelayedRead uint64, pos 
 }
 
 func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
-	if s.broadcasterQueuedMessagesActiveReorg && !force {
-		if !time.Now().After(s.nextAllowedReorgLog) {
-			return nil
-		}
-
-		s.nextAllowedReorgLog = time.Now().Add(time.Minute)
-		return errors.New("active reorg waiting for on-chain confirmation")
-	}
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
 	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
 
+	prevDelayedRead, err := s.getPrevPrevDelayedRead(messageStartPos)
+	if err != nil {
+		return err
+	}
+
+	clearQueueOnSuccess := false
 	if (s.broadcasterQueuedMessagesActiveReorg && messageStartPos <= broadcastStartPos) ||
 		(!s.broadcasterQueuedMessagesActiveReorg && broadcastStartPos <= messagesAfterPos) {
 		// Active broadcast reorg and L1 messages at or before start of broadcast messages
@@ -446,14 +444,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		}
 
 		// L1 used or replaced broadcast cache items
-		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
-		s.broadcasterQueuedMessagesActiveReorg = false
-	}
-
-	prevDelayedRead, err := s.getPrevPrevDelayedRead(messageStartPos)
-	if err != nil {
-		return err
+		clearQueueOnSuccess = true
 	}
 
 	var reorg bool
@@ -506,7 +497,18 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		return batch.Write()
 	}
 
-	return s.writeMessages(messageStartPos, messages, batch)
+	err = s.writeMessages(messageStartPos, messages, batch)
+	if err != nil {
+		return err
+	}
+
+	if clearQueueOnSuccess {
+		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
+		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
+		s.broadcasterQueuedMessagesActiveReorg = false
+	}
+
+	return nil
 }
 
 func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbos.L1IncomingMessage, error) {
