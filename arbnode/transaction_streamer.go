@@ -311,6 +311,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 			if len(s.broadcasterQueuedMessages) < 100000 {
 				s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 			}
+			broadcastStartPos = broadcasterQueuedMessagesPos
 			// Do not change existing reorg state
 		} else {
 			if len(s.broadcasterQueuedMessages) > 0 {
@@ -325,6 +326,24 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos))
 			s.broadcasterQueuedMessagesActiveReorg = reorg
 		}
+	}
+
+	if s.broadcasterQueuedMessagesActiveReorg || len(s.broadcasterQueuedMessages) == 0 {
+		// Broadcaster never triggers reorg or no messages to add
+		return nil
+	}
+
+	if broadcastStartPos > 0 {
+		_, err := s.GetMessage(broadcastStartPos - 1)
+		if err != nil {
+			// Message before current message doesn't exist in database, so don't add current messages yet
+			return nil
+		}
+	}
+
+	err = s.addMessagesAndEndBatchImpl(broadcastStartPos, false, nil, nil)
+	if err != nil {
+		return fmt.Errorf("error adding pending broadcaster messages: %w", err)
 	}
 
 	return nil
@@ -363,7 +382,7 @@ func (s *TransactionStreamer) getPrevPrevDelayedRead(pos arbutil.MessageIndex) (
 	if pos > 0 {
 		prevMsg, err := s.GetMessage(pos - 1)
 		if err != nil {
-			return 0, fmt.Errorf("failed to get previous message: %w", err)
+			return 0, fmt.Errorf("failed to get previous message for pos %d: %w", pos, err)
 		}
 		prevDelayedRead = prevMsg.DelayedMessagesRead
 	}
@@ -904,21 +923,6 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)
-	s.CallIteratively(func(ctx context.Context) time.Duration {
-		s.insertionMutex.Lock()
-		defer s.insertionMutex.Unlock()
-
-		broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
-
-		if broadcasterQueuedMessagesPos > 0 {
-			err := s.addMessagesAndEndBatchImpl(broadcasterQueuedMessagesPos, false, nil, nil)
-			if err != nil {
-				log.Error("error adding pending broadcaster messages", "err", err.Error())
-			}
-		}
-
-		return time.Millisecond * 100
-	})
 	s.LaunchThread(func(ctx context.Context) {
 		for {
 			err := s.createBlocks(ctx)
