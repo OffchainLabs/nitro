@@ -15,7 +15,7 @@ Committee members listen on the REST interface and additionally listen on the RP
 An in-memory cache can be enabled to avoid needing to access underlying storage for retrieve requests .
 
 ### Synchronizing state
-`daserver` also has an optional REST aggregator which, in the case that a data batch is not found in cache or storage, queries for that batch from a list other of REST servers, and then stores that batch locally. This is how committee members that miss storing a batch (not all committee members are required by the AnyTrust protocol to report success in order to post the batch's certificate to L1) can automatically repair gaps in data they store, and how mirrors can sync (a sync mode that eagerly syncs all batches is planned for a future release). A public list of REST endpoints is published online, which  `daserver` can be configured to download and use, and additional endpoints can be specified in configuration.
+`daserver` also has an optional REST aggregator which, in the case that a data batch is not found in cache or storage, queries for that batch from a list other of REST servers, and then stores that batch locally. This is how committee members that miss storing a batch (not all committee members are required by the AnyTrust protocol to report success in order to post the batch's certificate to L1) can automatically repair gaps in data they store, and how mirrors can sync (a sync mode that eagerly syncs all batches is planned for a future release). A public list of REST endpoints is published online, which `daserver` can be configured to download and use, and additional endpoints can be specified in configuration.
 
 ## Image:
 `offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72`
