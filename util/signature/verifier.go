@@ -68,7 +68,7 @@ func NewVerifier(config *VerifierConfig, bpValidator contracts.BatchPosterVerifi
 		addr := common.HexToAddress(addrString)
 		authorizedMap[addr] = struct{}{}
 	}
-	if bpValidator == nil && config.AcceptSequencer {
+	if bpValidator == nil && !config.Dangerous.AcceptMissing && config.AcceptSequencer {
 		return nil, errors.New("cannot read batch poster addresses")
 	}
 	return &Verifier{
@@ -104,6 +104,10 @@ func (v *Verifier) verifyClosure(ctx context.Context, sig []byte, hash common.Ha
 	addr := crypto.PubkeyToAddress(*sigPublicKey)
 
 	if _, exists := v.authorizedMap[addr]; exists {
+		return nil
+	}
+
+	if v.config.Dangerous.AcceptMissing && v.bpValidator == nil {
 		return nil
 	}
 

@@ -81,8 +81,8 @@ type sequencerMessage struct {
 	segments             [][]byte
 }
 
-const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
-const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
+const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
+const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
@@ -125,10 +125,10 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 	}
 
 	if len(payload) > 0 && IsBrotliMessageHeaderByte(payload[0]) {
-		decompressed, err := arbcompress.Decompress(payload[1:], maxDecompressedLen)
+		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
-			stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
+			stream := rlp.NewStream(reader, uint64(MaxDecompressedLen))
 			for {
 				var segment []byte
 				err := stream.Decode(&segment)
