@@ -31,6 +31,7 @@ const (
 	HTTPHeaderChainId                 = "Arbitrum-Chain-Id"
 	FeedServerVersion                 = 2
 	FeedClientVersion                 = 2
+	LivenessProbeURI                  = "livenessprobe"
 )
 
 type BroadcasterConfig struct {
@@ -171,6 +172,14 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		var feedClientVersionSeen bool
 		var requestedSeqNum arbutil.MessageIndex
 		upgrader := ws.Upgrader{
+			OnRequest: func(uri []byte) error {
+				if strings.Contains(string(uri), LivenessProbeURI) {
+					return ws.RejectConnectionError(
+						ws.RejectionStatus(http.StatusOK),
+					)
+				}
+				return nil
+			},
 			OnHeader: func(key []byte, value []byte) error {
 				headerName := string(key)
 				if headerName == HTTPHeaderFeedClientVersion {
