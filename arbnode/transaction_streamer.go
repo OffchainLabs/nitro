@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	flag "github.com/spf13/pflag"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,10 +40,11 @@ import (
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
-	db           ethdb.Database
-	bc           *core.BlockChain
-	chainId      uint64
-	fatalErrChan chan<- error
+	db            ethdb.Database
+	bc            *core.BlockChain
+	chainId       uint64
+	fatalErrChan  chan<- error
+	configFetcher TransactionStreamerConfigFetcher
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
 	createBlocksMutex  sync.Mutex // cannot be acquired while reorgMutex is held
@@ -67,11 +69,26 @@ type TransactionStreamer struct {
 	inboxReader     *InboxReader
 }
 
+type TransactionStreamerConfig struct {
+	MaxBroadcastQueueSize int `koanf:"max-broadcaster-queue-size"`
+}
+
+type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
+
+var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
+	MaxBroadcastQueueSize: 10_000,
+}
+
+func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcastQueueSize, "maximum cache of pending broadcaster messages")
+}
+
 func NewTransactionStreamer(
 	db ethdb.Database,
 	bc *core.BlockChain,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
+	configFetcher TransactionStreamerConfigFetcher,
 ) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 db,
@@ -81,6 +98,7 @@ func NewTransactionStreamer(
 		broadcastServer:    broadcastServer,
 		chainId:            bc.Config().ChainID.Uint64(),
 		fatalErrChan:       fatalErrChan,
+		configFetcher:      configFetcher,
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -310,7 +328,8 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 			s.broadcasterQueuedMessagesActiveReorg = reorg
 		} else if broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
 			// Feed messages can be added directly to end of cache
-			if len(s.broadcasterQueuedMessages) < 100000 {
+			maxQueueSize := s.configFetcher().MaxBroadcastQueueSize
+			if maxQueueSize == 0 || len(s.broadcasterQueuedMessages) <= maxQueueSize {
 				s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 			}
 			broadcastStartPos = broadcasterQueuedMessagesPos
