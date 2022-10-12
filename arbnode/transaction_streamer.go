@@ -9,11 +9,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	flag "github.com/spf13/pflag"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/ethereum/go-ethereum/common"
