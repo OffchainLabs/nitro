@@ -70,8 +70,14 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 }
 
 func (cc *ClientConnection) StopAndWait() {
-	close(cc.out)
-	cc.StopWaiter.StopAndWait()
+	// Ignore errors from conn.Close since we are just shutting down
+	_ = cc.conn.Close()
+	if !cc.Started() {
+		// If client connection never started, need to close channel
+		close(cc.out)
+	} else {
+		cc.StopWaiter.StopAndWait()
+	}
 }
 
 func (cc *ClientConnection) RequestedSeqNum() arbutil.MessageIndex {
