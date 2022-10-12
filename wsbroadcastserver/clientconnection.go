@@ -62,14 +62,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 				if err != nil {
 					logWarn(err, "error writing data to client")
 					cc.clientManager.Remove(cc)
-					for {
-						// Consume and ignore channel data until client properly stopped to prevent deadlock
-						select {
-						case <-ctx.Done():
-							return
-						case <-cc.out:
-						}
-					}
+					return
 				}
 			}
 		}
@@ -77,6 +70,8 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 }
 
 func (cc *ClientConnection) StopAndWait() {
+	// Ignore errors from conn.Close since we are just shutting down
+	_ = cc.conn.Close()
 	if !cc.Started() {
 		// If client connection never started, need to close channel
 		close(cc.out)
