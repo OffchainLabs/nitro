@@ -107,6 +107,10 @@ func (s *StopWaiterSafe) StopAndWait() error {
 	return s.stopAndWaitImpl(stopDelayWarningTimeout)
 }
 
+func (s *StopWaiterSafe) StopOrFail(timeout time.Duration) error {
+	return s.stopAndWaitOrFailImpl(timeout, true)
+}
+
 func getAllStackTraces() string {
 	buf := make([]byte, 64*1024*1024)
 	size := runtime.Stack(buf, true)
@@ -115,9 +119,18 @@ func getAllStackTraces() string {
 	return builder.String()
 }
 
-func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
+var ErrorStopTimedOut = errors.New("stopwaiter stop timed out")
+
+func (s *StopWaiterSafe) stopAndWaitImpl(timeout time.Duration) error {
+	return s.stopAndWaitOrFailImpl(timeout, false)
+}
+
+func (s *StopWaiterSafe) stopAndWaitOrFailImpl(timeout time.Duration, fail bool) error {
+	if timeout == 0 {
+		timeout = stopDelayWarningTimeout
+	}
 	s.StopOnly()
-	timer := time.NewTimer(warningTimeout)
+	timer := time.NewTimer(timeout)
 	waitChan, err := s.GetWaitChannel()
 	if err != nil {
 		return err
@@ -126,11 +139,15 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	select {
 	case <-timer.C:
 		traces := getAllStackTraces()
-		log.Warn("taking too long to stop", "name", s.name, "delay[s]", warningTimeout.Seconds())
+		log.Warn("taking too long to stop", "name", s.name, "delay[s]", timeout.Seconds())
 		log.Warn(traces)
+		if fail {
+			return ErrorStopTimedOut
+		}
 	case <-waitChan:
 		return nil
 	}
+
 	<-waitChan
 	return nil
 }

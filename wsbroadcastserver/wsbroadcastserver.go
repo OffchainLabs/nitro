@@ -34,18 +34,19 @@ const (
 )
 
 type BroadcasterConfig struct {
-	Enable         bool          `koanf:"enable"`
-	Signed         bool          `koanf:"signed"`
-	Addr           string        `koanf:"addr"`                         // TODO(magic) needs tcp server restart on change
-	IOTimeout      time.Duration `koanf:"io-timeout" reload:"hot"`      // reloading will affect only new connections
-	Port           string        `koanf:"port"`                         // TODO(magic) needs tcp server restart on change
-	Ping           time.Duration `koanf:"ping" reload:"hot"`            // reloaded value will change future ping intervals
-	ClientTimeout  time.Duration `koanf:"client-timeout" reload:"hot"`  // reloaded value will affect all clients (next time the timeout is checked)
-	Queue          int           `koanf:"queue"`                        // TODO(magic) ClientManager.pool needs to be recreated on change
-	Workers        int           `koanf:"workers"`                      // TODO(magic) ClientManager.pool needs to be recreated on change
-	MaxSendQueue   int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
-	RequireVersion bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
-	DisableSigning bool          `koanf:"disable-signing"`
+	Enable            bool          `koanf:"enable"`
+	Signed            bool          `koanf:"signed"`
+	Addr              string        `koanf:"addr"`                             // TODO(magic) needs tcp server restart on change
+	IOTimeout         time.Duration `koanf:"io-timeout" reload:"hot"`          // reloading will affect only new connections
+	Port              string        `koanf:"port"`                             // TODO(magic) needs tcp server restart on change
+	Ping              time.Duration `koanf:"ping" reload:"hot"`                // reloaded value will change future ping intervals
+	ClientTimeout     time.Duration `koanf:"client-timeout" reload:"hot"`      // reloaded value will affect all clients (next time the timeout is checked)
+	ClientStopTimeout time.Duration `koanf:"client-stop-timeout" reload:"hot"` // reloaded value will affect all clients (next time the timeout is checked)
+	Queue             int           `koanf:"queue"`                            // TODO(magic) ClientManager.pool needs to be recreated on change
+	Workers           int           `koanf:"workers"`                          // TODO(magic) ClientManager.pool needs to be recreated on change
+	MaxSendQueue      int           `koanf:"max-send-queue" reload:"hot"`      // reloaded value will affect only new connections
+	RequireVersion    bool          `koanf:"require-version" reload:"hot"`     // reloaded value will affect only future upgrades to websocket
+	DisableSigning    bool          `koanf:"disable-signing"`
 }
 
 type BroadcasterConfigFetcher func() *BroadcasterConfig
@@ -58,6 +59,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".port", DefaultBroadcasterConfig.Port, "port to bind the relay feed output to")
 	f.Duration(prefix+".ping", DefaultBroadcasterConfig.Ping, "duration for ping interval")
 	f.Duration(prefix+".client-timeout", DefaultBroadcasterConfig.ClientTimeout, "duration to wait before timing out connections to client")
+	f.Duration(prefix+".client-stop-timeout", DefaultBroadcasterConfig.ClientTimeout, "duration to wait for client connection to be stopped on deletion")
 	f.Int(prefix+".queue", DefaultBroadcasterConfig.Queue, "queue size")
 	f.Int(prefix+".workers", DefaultBroadcasterConfig.Workers, "number of threads to reserve for HTTP to WS upgrade")
 	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
@@ -66,33 +68,35 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
-	Enable:         false,
-	Signed:         false,
-	Addr:           "",
-	IOTimeout:      5 * time.Second,
-	Port:           "9642",
-	Ping:           5 * time.Second,
-	ClientTimeout:  15 * time.Second,
-	Queue:          100,
-	Workers:        100,
-	MaxSendQueue:   4096,
-	RequireVersion: false,
-	DisableSigning: true,
+	Enable:            false,
+	Signed:            false,
+	Addr:              "",
+	IOTimeout:         5 * time.Second,
+	Port:              "9642",
+	Ping:              5 * time.Second,
+	ClientTimeout:     15 * time.Second,
+	ClientStopTimeout: 5 * time.Second,
+	Queue:             100,
+	Workers:           100,
+	MaxSendQueue:      4096,
+	RequireVersion:    false,
+	DisableSigning:    true,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
-	Enable:         false,
-	Signed:         false,
-	Addr:           "0.0.0.0",
-	IOTimeout:      2 * time.Second,
-	Port:           "0",
-	Ping:           5 * time.Second,
-	ClientTimeout:  15 * time.Second,
-	Queue:          1,
-	Workers:        100,
-	MaxSendQueue:   4096,
-	RequireVersion: false,
-	DisableSigning: false,
+	Enable:            false,
+	Signed:            false,
+	Addr:              "0.0.0.0",
+	IOTimeout:         2 * time.Second,
+	Port:              "0",
+	Ping:              5 * time.Second,
+	ClientTimeout:     15 * time.Second,
+	ClientStopTimeout: 5 * time.Second,
+	Queue:             1,
+	Workers:           100,
+	MaxSendQueue:      4096,
+	RequireVersion:    false,
+	DisableSigning:    false,
 }
 
 type WSBroadcastServer struct {

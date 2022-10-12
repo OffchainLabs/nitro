@@ -27,6 +27,7 @@ import (
 
 var (
 	clientsConnectedGauge = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
+	clientsStuckGauge     = metrics.NewRegisteredGauge("arb/feed/clients/stuck", nil)
 )
 
 /* Protocol-specific client catch-up logic can be injected using this interface. */
@@ -107,9 +108,13 @@ func (cm *ClientManager) removeAll() {
 }
 
 func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
-	clientConnection.StopAndWait()
+	err := clientConnection.StopOrFail(cm.config().ClientStopTimeout)
+	if err != nil {
+		log.Error("removeClient StopOrFail failed", "err", err, "client", clientConnection.Name)
+		clientsStuckGauge.Inc(1)
+	}
 
-	err := cm.poller.Stop(clientConnection.desc)
+	err = cm.poller.Stop(clientConnection.desc)
 	if err != nil {
 		log.Warn("Failed to stop poller", "err", err)
 	}
