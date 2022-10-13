@@ -31,11 +31,6 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-const (
-	InitialReconnectBackoffDuration = time.Second * 1
-	MaxReconnectBackoffDuration     = time.Second * 64
-)
-
 var (
 	sourcesConnectedGauge    = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
 	sourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
@@ -61,11 +56,13 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type Config struct {
-	RequireChainId     bool                     `koanf:"require-chain-id"`
-	RequireFeedVersion bool                     `koanf:"require-feed-version"`
-	Timeout            time.Duration            `koanf:"timeout"`
-	URLs               []string                 `koanf:"url"`
-	Verifier           signature.VerifierConfig `koanf:"verify"`
+	ReconnectInitialBackoff time.Duration            `koanf:"reconnect-initial-backoff"`
+	ReconnectMaximumBackoff time.Duration            `koanf:"reconnect-maximum-backoff"`
+	RequireChainId          bool                     `koanf:"require-chain-id"`
+	RequireFeedVersion      bool                     `koanf:"require-feed-version"`
+	Timeout                 time.Duration            `koanf:"timeout"`
+	URLs                    []string                 `koanf:"url"`
+	Verifier                signature.VerifierConfig `koanf:"verify"`
 }
 
 func (c *Config) Enable() bool {
@@ -73,6 +70,8 @@ func (c *Config) Enable() bool {
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Duration(prefix+".reconnect-initial-backoff", DefaultConfig.ReconnectInitialBackoff, "initial duration to wait before reconnect")
+	f.Duration(prefix+".reconnect-maximum-backoff", DefaultConfig.ReconnectInitialBackoff, "maximum duration to wait before reconnect")
 	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
 	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
@@ -81,19 +80,23 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultConfig = Config{
-	RequireChainId:     false,
-	RequireFeedVersion: false,
-	Verifier:           signature.DefultFeedVerifierConfig,
-	URLs:               []string{""},
-	Timeout:            20 * time.Second,
+	ReconnectInitialBackoff: time.Second * 1,
+	ReconnectMaximumBackoff: time.Second * 64,
+	RequireChainId:          false,
+	RequireFeedVersion:      false,
+	Verifier:                signature.DefultFeedVerifierConfig,
+	URLs:                    []string{""},
+	Timeout:                 20 * time.Second,
 }
 
 var DefaultTestConfig = Config{
-	RequireChainId:     false,
-	RequireFeedVersion: false,
-	Verifier:           signature.DefultFeedVerifierConfig,
-	URLs:               []string{""},
-	Timeout:            200 * time.Millisecond,
+	ReconnectInitialBackoff: 0,
+	ReconnectMaximumBackoff: 0,
+	RequireChainId:          false,
+	RequireFeedVersion:      false,
+	Verifier:                signature.DefultFeedVerifierConfig,
+	URLs:                    []string{""},
+	Timeout:                 200 * time.Millisecond,
 }
 
 type TransactionStreamerInterface interface {
@@ -155,7 +158,7 @@ func NewBroadcastClient(
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn, bc)
 	bc.LaunchThread(func(ctx context.Context) {
-		backoffDuration := InitialReconnectBackoffDuration
+		backoffDuration := bc.config.ReconnectInitialBackoff
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 			if errors.Is(err, ErrMissingChainId) ||
@@ -174,7 +177,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				log.Error("no connected feed servers")
 			}
 			timer := time.NewTimer(backoffDuration)
-			if backoffDuration < MaxReconnectBackoffDuration {
+			if backoffDuration < bc.config.ReconnectMaximumBackoff {
 				backoffDuration *= 2
 			}
 			select {
@@ -300,7 +303,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
 		connected := false
 		sourcesDisconnectedGauge.Inc(1)
-		backoffDuration := InitialReconnectBackoffDuration
+		backoffDuration := bc.config.ReconnectInitialBackoff
 		for {
 			select {
 			case <-ctx.Done():
@@ -330,7 +333,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				_ = bc.conn.Close()
 				timer := time.NewTimer(backoffDuration)
-				if backoffDuration < MaxReconnectBackoffDuration {
+				if backoffDuration < bc.config.ReconnectMaximumBackoff {
 					backoffDuration *= 2
 				}
 				select {
@@ -342,7 +345,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				earlyFrameData = bc.retryConnect(ctx)
 				continue
 			}
-			backoffDuration = InitialReconnectBackoffDuration
+			backoffDuration = bc.config.ReconnectInitialBackoff
 
 			if msg != nil {
 				res := broadcaster.BroadcastMessage{}
