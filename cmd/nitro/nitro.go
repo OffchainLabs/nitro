@@ -148,9 +148,6 @@ func mainImpl() int {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		os.Exit(1)
 	}
-	if nodeConfig.Node.Pprof.Enable {
-		startPProf(nodeConfig.Node.Pprof)
-	}
 	if nodeConfig.Node.Archive {
 		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
 		nodeConfig.Node.Caching.Archive = true
@@ -308,7 +305,11 @@ func mainImpl() int {
 
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
-			exp.Setup(address)
+			if nodeConfig.MetricsServer.Pprof {
+				startPprof(address, true /* with metrics */)
+			} else {
+				exp.Setup(address)
+			}
 		}
 	}
 
@@ -823,11 +824,14 @@ func (f *NodeConfigFetcher) Start(ctx context.Context) {
 func (f *NodeConfigFetcher) StopAndWait() {
 	f.LiveNodeConfig.StopAndWait()
 }
-func startPProf(cfg arbnode.PprofConfig) {
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	log.Info("Starting pprof", "addr", fmt.Sprintf("http://%s/debug/pprof", addr))
+
+func startPprof(address string, withMetrics bool) {
+	if withMetrics {
+		exp.Exp(metrics.DefaultRegistry)
+	}
+	log.Info("Starting pprof server", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
 	go func() {
-		if err := http.ListenAndServe(addr, nil); err != nil {
+		if err := http.ListenAndServe(address, nil); err != nil {
 			log.Error("Failure in running pprof server", "err", err)
 		}
 	}()
