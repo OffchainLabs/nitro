@@ -196,18 +196,19 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 var errBatchAlreadyClosed = errors.New("batch segments already closed")
 
 type batchSegments struct {
-	compressedBuffer    *bytes.Buffer
-	compressedWriter    *brotli.Writer
-	rawSegments         [][]byte
-	timestamp           uint64
-	blockNum            uint64
-	delayedMsg          uint64
-	sizeLimit           int
-	compressionLevel    int
-	newUncompressedSize int
-	lastCompressedSize  int
-	trailingHeaders     int // how many trailing segments are headers
-	isDone              bool
+	compressedBuffer      *bytes.Buffer
+	compressedWriter      *brotli.Writer
+	rawSegments           [][]byte
+	timestamp             uint64
+	blockNum              uint64
+	delayedMsg            uint64
+	sizeLimit             int
+	compressionLevel      int
+	newUncompressedSize   int
+	totalUncompressedSize int
+	lastCompressedSize    int
+	trailingHeaders       int // how many trailing segments are headers
+	isDone                bool
 }
 
 type buildingBatch struct {
@@ -235,16 +236,24 @@ func (s *batchSegments) recompressAll() error {
 	s.compressedBuffer = bytes.NewBuffer(make([]byte, 0, s.sizeLimit*2))
 	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.compressionLevel)
 	s.newUncompressedSize = 0
+	s.totalUncompressedSize = 0
 	for _, segment := range s.rawSegments {
 		err := s.addSegmentToCompressed(segment)
 		if err != nil {
 			return err
 		}
 	}
+	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
+		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
+	}
 	return nil
 }
 
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
+	// we've reached the max decompressed size
+	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
+		return true, nil
+	}
 	// there is room, no need to flush
 	if (s.lastCompressedSize + s.newUncompressedSize) < s.sizeLimit {
 		return false, nil
@@ -283,6 +292,7 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 	}
 	lenWritten, err := s.compressedWriter.Write(encoded)
 	s.newUncompressedSize += lenWritten
+	s.totalUncompressedSize += lenWritten
 	return err
 }
 

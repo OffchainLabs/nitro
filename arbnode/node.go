@@ -442,6 +442,10 @@ func (c *Config) Start(context.Context) {}
 
 func (c *Config) StopAndWait() {}
 
+func (c *Config) Started() bool {
+	return true
+}
+
 func (c *Config) ForwardingTarget() string {
 	if c.ForwardingTargetImpl == "null" {
 		return ""
@@ -695,6 +699,7 @@ type ConfigFetcher interface {
 	Get() *Config
 	Start(context.Context)
 	StopAndWait()
+	Started() bool
 }
 
 func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
@@ -984,7 +989,7 @@ func createNodeImpl(
 	var statelessBlockValidator *validator.StatelessBlockValidator
 
 	if !foundMachines && blockValidatorConf.Enable {
-		return nil, fmt.Errorf("Failed to find machines %v", machinesPath)
+		return nil, fmt.Errorf("failed to find machines %v", machinesPath)
 	} else if !foundMachines {
 		log.Warn("Failed to find machines", "path", machinesPath)
 	} else {
@@ -1392,38 +1397,38 @@ func (n *Node) Start(ctx context.Context) error {
 	n.ArbInterface.Initialize(n)
 	err := n.Stack.Start()
 	if err != nil {
-		return err
+		return fmt.Errorf("error starting geth stack: %w", err)
 	}
 	err = n.Backend.Start()
 	if err != nil {
-		return err
+		return fmt.Errorf("error starting geth backend: %w", err)
 	}
 	err = n.TxPublisher.Initialize(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("error initializing transaction publisher: %w", err)
 	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()
 		if err != nil {
-			return err
+			return fmt.Errorf("error initializing inbox tracker: %w", err)
 		}
 	}
 	if n.BroadcastServer != nil {
 		err = n.BroadcastServer.Initialize()
 		if err != nil {
-			return err
+			return fmt.Errorf("error initializing feed broadcast server: %w", err)
 		}
 	}
 	n.TxStreamer.Start(ctx)
 	if n.InboxReader != nil {
 		err = n.InboxReader.Start(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("error starting inbox reader: %w", err)
 		}
 	}
 	err = n.TxPublisher.Start(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("error starting transaction puiblisher: %w", err)
 	}
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
@@ -1437,17 +1442,17 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.Staker != nil {
 		err = n.Staker.Initialize(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("error initializing staker: %w", err)
 		}
 	}
 	if n.BlockValidator != nil {
 		err = n.BlockValidator.Initialize()
 		if err != nil {
-			return err
+			return fmt.Errorf("error initializing block validator: %w", err)
 		}
 		err = n.BlockValidator.Start(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("error starting block validator: %w", err)
 		}
 	}
 	if n.Staker != nil {
@@ -1459,7 +1464,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.BroadcastServer != nil {
 		err = n.BroadcastServer.Start(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("error starting feed broadcast server: %w", err)
 		}
 	}
 	for _, client := range n.BroadcastClients {
@@ -1472,36 +1477,42 @@ func (n *Node) Start(ctx context.Context) error {
 }
 
 func (n *Node) StopAndWait() {
-	if n.configFetcher != nil {
+	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
 	}
 	for _, client := range n.BroadcastClients {
-		client.StopAndWait()
+		if client.Started() {
+			client.StopAndWait()
+		}
 	}
-	if n.BroadcastServer != nil {
+	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
 		n.BroadcastServer.StopAndWait()
 	}
-	if n.L1Reader != nil {
+	if n.L1Reader != nil && n.L1Reader.Started() {
 		n.L1Reader.StopAndWait()
 	}
-	if n.BlockValidator != nil {
+	if n.BlockValidator != nil && n.BlockValidator.Started() {
 		n.BlockValidator.StopAndWait()
 	}
-	if n.BatchPoster != nil {
+	if n.BatchPoster != nil && n.BatchPoster.Started() {
 		n.BatchPoster.StopAndWait()
 	}
-	if n.DelayedSequencer != nil {
+	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
 		n.DelayedSequencer.StopAndWait()
 	}
-	if n.InboxReader != nil {
+	if n.InboxReader != nil && n.InboxReader.Started() {
 		n.InboxReader.StopAndWait()
 	}
-	if n.SeqCoordinator != nil {
+	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
 		n.SeqCoordinator.StopAndWait()
 	}
-	n.TxPublisher.StopAndWait()
-	n.TxStreamer.StopAndWait()
-	n.ArbInterface.BlockChain().Stop()
+	if n.TxPublisher.Started() {
+		n.TxPublisher.StopAndWait()
+	}
+	if n.TxStreamer.Started() {
+		n.TxStreamer.StopAndWait()
+	}
+	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {
 		log.Error("backend stop", "err", err)
 	}
