@@ -30,7 +30,7 @@ func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
 }
 
 func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
-	if b.messageCount == 0 || requestedSeqNum == 0 {
+	if b.messageCount == 0 {
 		return nil
 	}
 	var startingIndex int32
