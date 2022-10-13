@@ -821,7 +821,7 @@ func startPprof(address string) {
 	exp.Exp(metrics.DefaultRegistry)
 	log.Info("Starting pprof server", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
 	go func() {
-		if err := http.ListenAndServe(address, nil); err != nil {
+		if err := http.ListenAndServe(address, http.DefaultServeMux); err != nil {
 			log.Error("Failure in running pprof server", "err", err)
 		}
 	}()
