@@ -819,7 +819,8 @@ func (f *NodeConfigFetcher) Get() *arbnode.Config {
 
 func startPprof(address string) {
 	exp.Exp(metrics.DefaultRegistry)
-	log.Info("Starting pprof server", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
+	log.Info("Starting metrics server with pprof", "addr", fmt.Sprintf("http://%s/debug/metrics", address))
+	log.Info("Pprof endpoint", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
 	go func() {
 		if err := http.ListenAndServe(address, http.DefaultServeMux); err != nil {
 			log.Error("Failure in running pprof server", "err", err)
