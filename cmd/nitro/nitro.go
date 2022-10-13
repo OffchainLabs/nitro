@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
+	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -115,7 +117,22 @@ func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.W
 	return devAddr, nil
 }
 
+func closeDb(db io.Closer, name string) {
+	if db != nil {
+		err := db.Close()
+		// unfortunately the freezer db means we can't just use errors.Is
+		if err != nil && !strings.Contains(err.Error(), leveldb.ErrClosed.Error()) {
+			log.Warn("failed to close database on shutdown", "db", name, "err", err)
+		}
+	}
+}
+
 func main() {
+	os.Exit(mainImpl())
+}
+
+// Returns the exit code
+func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
@@ -219,7 +236,7 @@ func main() {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
 		}
 		fmt.Printf("Created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
-		return
+		return 0
 	}
 
 	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
@@ -257,23 +274,28 @@ func main() {
 	}
 
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
+	defer closeDb(chainDb, "chainDb")
 	if err != nil {
 		flag.Usage()
-		log.Crit("error initializing database", "err", err)
+		log.Error("error initializing database", "err", err)
+		return 1
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
+	defer closeDb(arbDb, "arbDb")
 	if err != nil {
-		log.Crit("failed to open database", "err", err)
+		log.Error("failed to open database", "err", err)
+		return 1
 	}
 
 	if nodeConfig.Init.ThenQuit {
-		return
+		return 0
 	}
 
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
 		flag.Usage()
-		log.Crit("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
+		log.Error("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
+		return 1
 	}
 
 	if nodeConfig.Metrics {
@@ -300,7 +322,8 @@ func main() {
 		fatalErrChan,
 	)
 	if err != nil {
-		log.Crit("failed to create node", "err", err)
+		log.Error("failed to create node", "err", err)
+		return 1
 	}
 	liveNodeConfig.setOnReloadHook(func(old *NodeConfig, new *NodeConfig) error {
 		return currentNode.OnConfigReload(&old.Node, &new.Node)
@@ -324,7 +347,8 @@ func main() {
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
 		if err := graphql.New(stack, currentNode.Backend.APIBackend(), gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
-			log.Crit("failed to register the GraphQL service", "err", err)
+			log.Error("failed to register the GraphQL service", "err", err)
+			return 1
 		}
 	}
 
@@ -335,10 +359,12 @@ func main() {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
+	exitCode := 0
 	select {
 	case err := <-fatalErrChan:
 		log.Error("shutting down due to fatal error", "err", err)
-		defer log.Crit("shut down due to fatal error", "err", err)
+		defer log.Error("shut down due to fatal error", "err", err)
+		exitCode = 1
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
@@ -347,6 +373,8 @@ func main() {
 	close(sigint)
 
 	currentNode.StopAndWait()
+
+	return exitCode
 }
 
 type NodeConfig struct {
