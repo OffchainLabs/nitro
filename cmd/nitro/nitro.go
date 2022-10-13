@@ -300,11 +300,6 @@ func mainImpl() int {
 		return 1
 	}
 
-	if nodeConfig.MetricsServer.Pprof && !nodeConfig.Metrics {
-		flag.Usage()
-		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
-		return 1
-	}
 	if nodeConfig.Metrics {
 		go metrics.CollectProcessMetrics(nodeConfig.MetricsServer.UpdateInterval)
 
@@ -316,6 +311,10 @@ func mainImpl() int {
 				exp.Setup(address)
 			}
 		}
+	} else if nodeConfig.MetricsServer.Pprof {
+		flag.Usage()
+		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
+		return 1
 	}
 
 	fatalErrChan := make(chan error, 10)
