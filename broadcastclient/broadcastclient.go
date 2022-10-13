@@ -31,6 +31,11 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+const (
+	InitialReconnectBackoffDuration = time.Second * 1
+	MaxReconnectBackoffDuration     = time.Second * 64
+)
+
 var (
 	sourcesConnectedGauge    = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
 	sourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
@@ -150,6 +155,7 @@ func NewBroadcastClient(
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn, bc)
 	bc.LaunchThread(func(ctx context.Context) {
+		backoffDuration := InitialReconnectBackoffDuration
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 			if errors.Is(err, ErrMissingChainId) ||
@@ -164,7 +170,13 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
-			timer := time.NewTimer(5 * time.Second)
+			if sourcesConnectedGauge.Value() <= 0 {
+				log.Error("no connected feed servers")
+			}
+			timer := time.NewTimer(backoffDuration)
+			if backoffDuration < MaxReconnectBackoffDuration {
+				backoffDuration *= 2
+			}
 			select {
 			case <-ctx.Done():
 				timer.Stop()
@@ -288,6 +300,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
 		connected := false
 		sourcesDisconnectedGauge.Inc(1)
+		backoffDuration := InitialReconnectBackoffDuration
 		for {
 			select {
 			case <-ctx.Done():
@@ -311,11 +324,25 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					connected = false
 					sourcesConnectedGauge.Dec(1)
 					sourcesDisconnectedGauge.Inc(1)
+					if sourcesConnectedGauge.Value() <= 0 {
+						log.Error("feed server was just disconnected")
+					}
 				}
 				_ = bc.conn.Close()
+				timer := time.NewTimer(backoffDuration)
+				if backoffDuration < MaxReconnectBackoffDuration {
+					backoffDuration *= 2
+				}
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
 				earlyFrameData = bc.retryConnect(ctx)
 				continue
 			}
+			backoffDuration = InitialReconnectBackoffDuration
 
 			if msg != nil {
 				res := broadcaster.BroadcastMessage{}
@@ -353,7 +380,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 								continue
 							}
 
-							bc.nextSeqNum = message.SequenceNumber
+							bc.nextSeqNum = message.SequenceNumber + 1
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)

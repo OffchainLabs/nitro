@@ -30,7 +30,7 @@ func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
 }
 
 func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
-	if b.messageCount == 0 {
+	if b.messageCount == 0 || requestedSeqNum == 0 {
 		return nil
 	}
 	var startingIndex int32
@@ -65,6 +65,10 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) error {
 	start := time.Now()
 	bm := b.getCacheMessages(clientConnection.RequestedSeqNum())
+	var bmCount int
+	if bm != nil {
+		bmCount = len(bm.Messages)
+	}
 	if bm != nil {
 		// send the newly connected client the requested messages
 		err := clientConnection.Write(bm)
@@ -74,7 +78,7 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 		}
 	}
 
-	log.Info("client registered", "client", clientConnection.Name, "elapsed", time.Since(start))
+	log.Info("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", bmCount, "elapsed", time.Since(start))
 
 	return nil
 }
