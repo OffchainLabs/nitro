@@ -414,9 +414,7 @@ type Config struct {
 	Dangerous              DangerousConfig                `koanf:"dangerous"`
 	Caching                CachingConfig                  `koanf:"caching"`
 	Archive                bool                           `koanf:"archive"`
-	EnablePprof            bool                           `koanf:"pprof"`
-	PprofPort              uint64                         `koanf:"pprof-port"`
-	PprofHost              string                         `koanf:"pprof-host"`
+	Pprof                  PprofConfig                    `koanf:"pprof"`
 	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
 }
 
@@ -474,13 +472,11 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	CachingConfigAddOptions(prefix+".caching", f)
+	PProfConfigAddOptions(prefix+".pprof", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
-	f.Bool(prefix+".pprof", ConfigDefault.EnablePprof, "enable pprof profiling for Go")
-	f.Uint64(prefix+".pprof-port", ConfigDefault.PprofPort, "port for profiling in Go")
-	f.String(prefix+".pprof-host", ConfigDefault.PprofHost, "host for profiling in Go")
 }
 
 var ConfigDefault = Config{
@@ -498,14 +494,24 @@ var ConfigDefault = Config{
 	SeqCoordinator:         DefaultSeqCoordinatorConfig,
 	DataAvailability:       das.DefaultDataAvailabilityConfig,
 	Wasm:                   DefaultWasmConfig,
+	Pprof:                  DefaultPProfConfig,
 	SyncMonitor:            DefaultSyncMonitorConfig,
 	Dangerous:              DefaultDangerousConfig,
 	Archive:                false,
 	TxLookupLimit:          40_000_000,
 	Caching:                DefaultCachingConfig,
-	EnablePprof:            false,
-	PprofPort:              6060,
-	PprofHost:              "127.0.0.1",
+}
+
+type PprofConfig struct {
+	Enable bool   `koanf:"enable"`
+	Port   uint64 `koanf:"port"`
+	Host   string `koanf:"host"`
+}
+
+var DefaultPProfConfig = PprofConfig{
+	Enable: false,
+	Port:   6060,
+	Host:   "127.0.0.1",
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -652,6 +658,12 @@ var DefaultCachingConfig = CachingConfig{
 	BlockCount:    128,
 	BlockAge:      30 * time.Minute,
 	TrieTimeLimit: time.Hour,
+}
+
+func PProfConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", ConfigDefault.Pprof.Enable, "enable pprof profiling for Go")
+	f.Uint64(prefix+".port", ConfigDefault.Pprof.Port, "port for profiling in Go")
+	f.String(prefix+".host", ConfigDefault.Pprof.Host, "host for profiling in Go")
 }
 
 type Node struct {
