@@ -306,7 +306,7 @@ func mainImpl() int {
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
 			if nodeConfig.MetricsServer.Pprof {
-				startPprof(address, true /* with metrics */)
+				startPprof(address)
 			} else {
 				exp.Setup(address)
 			}
@@ -817,18 +817,8 @@ func (f *NodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveNodeConfig.get().Node
 }
 
-func (f *NodeConfigFetcher) Start(ctx context.Context) {
-	f.LiveNodeConfig.Start(ctx)
-}
-
-func (f *NodeConfigFetcher) StopAndWait() {
-	f.LiveNodeConfig.StopAndWait()
-}
-
-func startPprof(address string, withMetrics bool) {
-	if withMetrics {
-		exp.Exp(metrics.DefaultRegistry)
-	}
+func startPprof(address string) {
+	exp.Exp(metrics.DefaultRegistry)
 	log.Info("Starting pprof server", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
 	go func() {
 		if err := http.ListenAndServe(address, nil); err != nil {
