@@ -384,6 +384,10 @@ func (s *WSBroadcastServer) StopAndWait() {
 	s.started = false
 }
 
+func (s *WSBroadcastServer) Started() bool {
+	return s.started
+}
+
 // Broadcast sends batch item to all clients.
 func (s *WSBroadcastServer) Broadcast(bm interface{}) {
 	s.clientManager.Broadcast(bm)
