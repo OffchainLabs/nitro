@@ -154,3 +154,7 @@ func (b *Broadcaster) StartWithHeader(ctx context.Context, header ws.HandshakeHe
 func (b *Broadcaster) StopAndWait() {
 	b.server.StopAndWait()
 }
+
+func (b *Broadcaster) Started() bool {
+	return b.server.Started()
+}
