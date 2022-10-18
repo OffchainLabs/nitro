@@ -33,7 +33,7 @@ type MachineInterface interface {
 	ProveNextStep() []byte
 }
 
-// Holds an arbitrator machine pointer, and manages its lifetime
+// ArbitratorMachine holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
 	ptr       *C.struct_Machine
 	contextId *int64 // has a finalizer attached to remove the preimage resolver from the global map

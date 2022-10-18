@@ -10,11 +10,10 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-// Requires that Item is RLP encodable/decodable
+// RedisStorage requires that Item is RLP encodable/decodable
 type RedisStorage[Item any] struct {
 	client redis.UniversalClient
 	signer *signature.SimpleHmac

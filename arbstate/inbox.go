@@ -48,7 +48,7 @@ var EmptyTestMessageWithMetadata = MessageWithMetadata{
 	Message: &arbos.EmptyTestIncomingMessage,
 }
 
-// Message signature is only verified if requestId defined
+// TestMessageWithMetadataAndRequestId message signature is only verified if requestId defined
 var TestMessageWithMetadataAndRequestId = MessageWithMetadata{
 	Message: &arbos.TestIncomingMessageWithRequestId,
 }
@@ -302,7 +302,7 @@ const BatchSegmentKindDelayedMessages uint8 = 2
 const BatchSegmentKindAdvanceTimestamp uint8 = 3
 const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 
-// This does *not* return parse errors, those are transformed into invalid messages
+// Pop does *not* return parse errors, those are transformed into invalid messages
 func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
 		bytes, realErr := r.backend.PeekSequencerInbox()

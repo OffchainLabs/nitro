@@ -11,7 +11,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbstate"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -81,7 +80,7 @@ type ChallengeManager struct {
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 
-// latestMachineLoader may be nil if the block validator is disabled
+// NewChallengeManager may be nil if the block validator is disabled
 func NewChallengeManager(
 	ctx context.Context,
 	l1client bind.ContractBackend,

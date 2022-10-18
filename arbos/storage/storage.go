@@ -49,7 +49,7 @@ const StorageReadCost = params.SloadGasEIP2200
 const StorageWriteCost = params.SstoreSetGasEIP2200
 const StorageWriteZeroCost = params.SstoreResetGasEIP2200
 
-// Use a Geth database to create an evm key-value store
+// NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
@@ -61,12 +61,12 @@ func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	}
 }
 
-// Use Geth's memory-backed database to create an evm key-value store
+// NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store
 func NewMemoryBacked(burner burn.Burner) *Storage {
 	return NewGeth(NewMemoryBackedStateDB(), burner)
 }
 
-// Use Geth's memory-backed database to create a statedb
+// NewMemoryBackedStateDB uses Geth's memory-backed database to create a statedb
 func NewMemoryBackedStateDB() vm.StateDB {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
@@ -309,7 +309,7 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 	return nil
 }
 
-// Implementation note for StorageBackedInt64: Conversions between big.Int and common.Hash give weird results
+// StorageBackedInt64 is an implementation note for StorageBackedInt64: Conversions between big.Int and common.Hash give weird results
 // for negative values, so we cast to uint64 before writing to storage and cast back to int64 after reading.
 // Golang casting between uint64 and int64 doesn't change the data, it just reinterprets the same 8 bytes,
 // so this is a hacky but reliable way to store an 8-byte int64 in a common.Hash storage slot.
@@ -333,7 +333,7 @@ func (sbu *StorageBackedInt64) Set(value int64) error {
 	return sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
 }
 
-// Represents a number of basis points
+// StorageBackedBips represents a number of basis points
 type StorageBackedBips struct {
 	backing StorageBackedInt64
 }

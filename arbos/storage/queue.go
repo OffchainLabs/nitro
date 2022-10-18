@@ -83,7 +83,7 @@ func (q *Queue) Put(val common.Hash) error {
 	return q.storage.SetByUint64(newOffset-1, val)
 }
 
-// Reset the queue to its starting state, if empty, which is useful in testing
+// Shift reset the queue to its starting state, if empty, which is useful in testing
 func (q *Queue) Shift() (bool, error) {
 	put, err := q.nextPutOffset.Get()
 	if err != nil {
@@ -99,7 +99,7 @@ func (q *Queue) Shift() (bool, error) {
 	return true, q.nextPutOffset.Set(2)
 }
 
-// Apply a closure on the enumerated elements element of the queue
+// ForEach apply a closure on the enumerated elements element of the queue
 func (q *Queue) ForEach(closure func(uint64, common.Hash) (bool, error)) error {
 
 	size, err := q.Size()

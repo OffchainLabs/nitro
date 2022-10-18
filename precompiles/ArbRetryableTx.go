@@ -46,7 +46,7 @@ func (con ArbRetryableTx) oldNotFoundError(c ctx) error {
 	}
 }
 
-// Schedule an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
+// Redeem schedules an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
 	if c.txProcessor.CurrentRetryable != nil && ticketId == *c.txProcessor.CurrentRetryable {
 		return bytes32{}, ErrSelfModifyingRetryable
@@ -131,12 +131,12 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	return retryTxHash, c.State.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
 }
 
-// Gets the default lifetime period a retryable has at creation
+// GetLifetime gets the default lifetime period a retryable has at creation
 func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
 }
 
-// Gets the timestamp for when ticket will expire
+// GetTimeout gets the timestamp for when ticket will expire
 func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, error) {
 	retryableState := c.State.RetryableState()
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
@@ -153,7 +153,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 	return big.NewInt(int64(timeout)), nil
 }
 
-// Adds one lifetime period to the ticket's expiry
+// Keepalive adds one lifetime period to the ticket's expiry
 func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, error) {
 
 	// charge for the expiry update
@@ -181,7 +181,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 	return big.NewInt(int64(newTimeout)), err
 }
 
-// Gets the beneficiary of the ticket
+// GetBeneficiary gets the beneficiary of the ticket
 func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (addr, error) {
 	retryableState := c.State.RetryableState()
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())

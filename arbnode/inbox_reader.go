@@ -533,7 +533,7 @@ func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {
 	return r.lastReadBlock, r.lastReadBatchCount
 }
 
-// >0 - last batchcount seen in run() - only written after lastReadBatchCount updated
+// GetLastSeenBatchCount >0 - last batchcount seen in run() - only written after lastReadBatchCount updated
 // 0 - no batch seen, error
 func (r *InboxReader) GetLastSeenBatchCount() uint64 {
 	return atomic.LoadUint64(&r.lastSeenBatchCount)
