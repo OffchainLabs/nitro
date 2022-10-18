@@ -212,7 +212,8 @@ type Sequencer struct {
 	stopwaiter.StopWaiter
 
 	txStreamer      *TransactionStreamer
-	txQueue         chan txQueueItem
+	sendTxQueue     chan<- txQueueItem
+	recvTxQueue     <-chan txQueueItem
 	txRetryQueue    containers.Queue[txQueueItem]
 	l1Reader        *headerreader.HeaderReader
 	config          SequencerConfigFetcher
@@ -240,9 +241,11 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		}
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
+	txQueue := make(chan txQueueItem, config.QueueSize)
 	return &Sequencer{
 		txStreamer:      txStreamer,
-		txQueue:         make(chan txQueueItem, config.QueueSize),
+		sendTxQueue:     txQueue,
+		recvTxQueue:     txQueue,
 		l1Reader:        l1Reader,
 		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
@@ -301,7 +304,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		ctx,
 	}
 	select {
-	case s.txQueue <- queueItem:
+	case s.sendTxQueue <- queueItem:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -389,7 +392,7 @@ var ErrNoSequencer = errors.New("sequencer temporarily not available")
 
 func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
 	select {
-	case s.txQueue <- queueItem:
+	case s.sendTxQueue <- queueItem:
 	default:
 		queueItem.returnResult(err)
 	}
@@ -445,14 +448,14 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			queueItem = s.txRetryQueue.Pop()
 		} else if len(txes) == 0 {
 			select {
-			case queueItem = <-s.txQueue:
+			case queueItem = <-s.recvTxQueue:
 			case <-ctx.Done():
 				return false
 			}
 		} else {
 			done := false
 			select {
-			case queueItem = <-s.txQueue:
+			case queueItem = <-s.recvTxQueue:
 			default:
 				done = true
 			}
@@ -650,11 +653,11 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 func (s *Sequencer) StopAndWait() {
 	s.StopWaiter.StopAndWait()
-	if s.txRetryQueue.Len() == 0 && len(s.txQueue) == 0 {
+	if s.txRetryQueue.Len() == 0 && len(s.sendTxQueue) == 0 && len(s.recvTxQueue) == 0 {
 		return
 	}
 	// this usually means that coordinator's safe-shutdown-delay is too low
-	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
+	log.Warn("sequencer has queued items while shutting down", "sendTxQueue", len(s.sendTxQueue), "recvTxQueue", len(s.recvTxQueue), "retryQueue", s.txRetryQueue.Len())
 	forwarder := s.GetForwarder()
 	if forwarder != nil {
 	emptyqueues:
@@ -666,7 +669,7 @@ func (s *Sequencer) StopAndWait() {
 				source = "retryQueue"
 			} else {
 				select {
-				case item = <-s.txQueue:
+				case item = <-s.recvTxQueue:
 					source = "txQueue"
 				default:
 					break emptyqueues
