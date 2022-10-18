@@ -405,7 +405,7 @@ func ProduceBlockAdvanced(
 		}
 	}
 
-	FinalizeBlock(header, complete, statedb)
+	FinalizeBlock(header, complete, statedb, chainConfig)
 	header.Root = statedb.IntermediateRoot(true)
 
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
@@ -428,20 +428,37 @@ func ProduceBlockAdvanced(
 	return block, receipts, nil
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB, chainConfig *params.ChainConfig) {
 	if header != nil {
-		state, _ := arbosState.OpenSystemArbosState(statedb, nil, true)
+		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
+			panic("cannot finalize blocks before genesis")
+		}
 
-		// Add outbox info to the header for client-side proving
-		acc := state.SendMerkleAccumulator()
-		root, _ := acc.Root()
-		size, _ := acc.Size()
-		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
+		var sendRoot common.Hash
+		var sendCount uint64
+		var nextL1BlockNumber uint64
+		var formatVersion uint64
+
+		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
+			formatVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
+		} else {
+			state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
+				panic(newErr)
+			}
+			// Add outbox info to the header for client-side proving
+			acc := state.SendMerkleAccumulator()
+			sendRoot, _ = acc.Root()
+			sendCount, _ = acc.Size()
+			nextL1BlockNumber, _ = state.Blockhashes().NextBlockNumber()
+			formatVersion = state.FormatVersion()
+		}
 		arbitrumHeader := types.HeaderInfo{
-			SendRoot:           root,
-			SendCount:          size,
+			SendRoot:           sendRoot,
+			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: state.FormatVersion(),
+			ArbOSFormatVersion: formatVersion,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}
