@@ -302,7 +302,8 @@ const BatchSegmentKindDelayedMessages uint8 = 2
 const BatchSegmentKindAdvanceTimestamp uint8 = 3
 const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 
-// Pop does *not* return parse errors, those are transformed into invalid messages
+// Pop returns the message from the top of the sequencer inbox and removes it from the queue.
+// Note: this does *not* return parse errors, those are transformed into invalid messages
 func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
 		bytes, realErr := r.backend.PeekSequencerInbox()

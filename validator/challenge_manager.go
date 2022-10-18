@@ -80,7 +80,8 @@ type ChallengeManager struct {
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 
-// NewChallengeManager may be nil if the block validator is disabled
+// NewChallengeManager constructs a new challenge manager.
+// Note: latestMachineLoader may be nil if the block validator is disabled
 func NewChallengeManager(
 	ctx context.Context,
 	l1client bind.ContractBackend,

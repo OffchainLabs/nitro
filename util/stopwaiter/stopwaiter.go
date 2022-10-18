@@ -102,7 +102,7 @@ func (s *StopWaiterSafe) StopOnly() {
 	s.stopped = true
 }
 
-// StopAndWait is stopping multiple times, even before start, will work
+// StopAndWait may be called multiple times, even before start.
 func (s *StopWaiterSafe) StopAndWait() error {
 	return s.stopAndWaitImpl(stopDelayWarningTimeout)
 }

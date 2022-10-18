@@ -682,7 +682,7 @@ func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum arbutil.Messa
 	return arbutil.MessageCountToBlockNumber(messageNum, genesis), nil
 }
 
-// PauseReorgs pauses reorgs until a matching call to ResumeReorgs (may be called concurrently)
+// PauseReorgs until a matching call to ResumeReorgs (may be called concurrently)
 func (s *TransactionStreamer) PauseReorgs() {
 	s.reorgMutex.RLock()
 }

@@ -113,7 +113,7 @@ func (c *MachineCache) getClosestMachine(stepCount uint64) (MachineInterface, er
 	}
 }
 
-// GetMachineAt gets a machine at a given step count, optionally using a passed in machine if that's the best option.
+// GetMachineAt a given step count, optionally using a passed in machine if that's the best option.
 func (c *MachineCache) GetMachineAt(ctx context.Context, haveMachine MachineInterface, stepCount uint64) (MachineInterface, error) {
 	closestMachine, err := c.getClosestMachine(stepCount)
 	if err != nil {

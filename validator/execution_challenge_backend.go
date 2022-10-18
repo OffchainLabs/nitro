@@ -25,7 +25,8 @@ type ExecutionChallengeBackend struct {
 // Assert that ExecutionChallengeBackend implements ChallengeBackend
 var _ ChallengeBackend = (*ExecutionChallengeBackend)(nil)
 
-// NewExecutionChallengeBackend machineCache may be nil, but if present, it must not have a restricted range
+// NewExecutionChallengeBackend creates a backend with the given arguments.
+// Note: machineCache may be nil, but if present, it must not have a restricted range.
 func NewExecutionChallengeBackend(
 	initialMachine MachineInterface,
 	targetNumMachines int,

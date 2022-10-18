@@ -93,17 +93,17 @@ func (con ArbOwner) GetInfraFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.State.InfraFeeAccount()
 }
 
-// SetNetworkFeeAccount sets the network fee collector
+// SetNetworkFeeAccount sets the network fee collector to the new network fee account
 func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
 	return c.State.SetNetworkFeeAccount(newNetworkFeeAccount)
 }
 
-// SetInfraFeeAccount sets the network fee collector
+// SetInfraFeeAccount sets the infra fee collector to the new network fee account
 func (con ArbOwner) SetInfraFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
 	return c.State.SetInfraFeeAccount(newNetworkFeeAccount)
 }
 
-// ScheduleArbOSUpgrade schedules ArbOS to the requested version at the requested timestamp
+// ScheduleArbOSUpgrade to the requested version at the requested timestamp
 func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, timestamp uint64) error {
 	return c.State.ScheduleArbOSUpgrade(newVersion, timestamp)
 }
