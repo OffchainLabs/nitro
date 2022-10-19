@@ -65,12 +65,22 @@ func TestBlockhash(t *testing.T) {
 	if h != hash4242 {
 		Fail(t, "incorrect BlockHash(4242)")
 	}
-	h2, err := bh.BlockHash(4241)
+	h2, err := bh.BlockHash(4242 - 1)
 	Require(t, err)
 	if h2 == h {
 		Fail(t, "same blockhash at different blocknums")
 	}
-	_, err = bh.BlockHash(4242 - 257)
+	h3, err := bh.BlockHash(4242 - 2)
+	Require(t, err)
+	if h3 == h2 || h3 == h {
+		Fail(t, "same blockhash at different blocknums")
+	}
+	h255, err := bh.BlockHash(4242 - 255)
+	Require(t, err)
+	if h255 == h || h255 == h3 {
+		Fail(t, "same blockhash at different blocknums")
+	}
+	_, err = bh.BlockHash(4242 - 256)
 	if err == nil {
 		Fail(t, "old blockhash should give error")
 	}
