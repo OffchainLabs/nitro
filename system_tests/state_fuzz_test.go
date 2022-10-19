@@ -146,7 +146,9 @@ func FuzzStateTransition(f *testing.F) {
 		// The next 8 bytes encode the after delayed message count.
 		delayedMessages := [][]byte{delayedMsg}
 		seqBatch := make([]byte, 40)
-		binary.BigEndian.PutUint64(seqBatch[32:], uint64(len(delayedMessages)))
+		binary.BigEndian.PutUint64(seqBatch[8:16], ^uint64(0))
+		binary.BigEndian.PutUint64(seqBatch[24:32], ^uint64(0))
+		binary.BigEndian.PutUint64(seqBatch[32:40], uint64(len(delayedMessages)))
 		seqBatch = append(seqBatch, seqMsg...)
 		inbox := &inboxBackend{
 			batchSeqNum:           0,
