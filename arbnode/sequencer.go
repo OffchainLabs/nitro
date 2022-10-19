@@ -55,6 +55,7 @@ type SequencerConfig struct {
 	QueueSize                   int                      `koanf:"queue-size"`
 	QueueTimeout                time.Duration            `koanf:"queue-timeout" reload:"hot"`
 	NonceCacheSize              int                      `koanf:"nonce-cache-size" reload:"hot"`
+	TxReorderWindowMillis       int                      `koanf:"tx-reorder-window-millis"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -82,6 +83,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	QueueSize:                   1024,
 	QueueTimeout:                time.Second * 12,
 	NonceCacheSize:              1024,
+	TxReorderWindowMillis:       0,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
@@ -95,6 +97,7 @@ var TestSequencerConfig = SequencerConfig{
 	QueueSize:                   128,
 	QueueTimeout:                time.Second * 5,
 	NonceCacheSize:              4,
+	TxReorderWindowMillis:       10,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
@@ -108,6 +111,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
+	f.Int(prefix+".tx-reorder-window-millis", DefaultSequencerConfig.TxReorderWindowMillis, "tx reordering window in milliseconds (if 0, no reordering)")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -226,6 +230,8 @@ type Sequencer struct {
 
 	forwarderMutex sync.Mutex
 	forwarder      *TxForwarder
+
+	reorderer *txReorderer
 }
 
 func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -241,17 +247,24 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		}
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
-	txQueue := make(chan txQueueItem, config.QueueSize)
+	sendTxQueue := make(chan txQueueItem, config.QueueSize)
+	recvTxQueue := sendTxQueue
+	var reorderer *txReorderer
+	if config.TxReorderWindowMillis > 0 {
+		reorderer = newTxReorderer(newItemSourceFromChan(sendTxQueue), config.TxReorderWindowMillis, config.QueueSize)
+		recvTxQueue = reorderer.outChan
+	}
 	return &Sequencer{
 		txStreamer:      txStreamer,
-		sendTxQueue:     txQueue,
-		recvTxQueue:     txQueue,
+		sendTxQueue:     sendTxQueue,
+		recvTxQueue:     recvTxQueue,
 		l1Reader:        l1Reader,
 		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
 		nonceCache:      newNonceCache(config.NonceCacheSize),
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
+		reorderer:       reorderer,
 	}, nil
 }
 
@@ -633,7 +646,11 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 				}
 			}
 		})
-
+	}
+	if s.reorderer != nil {
+		s.LaunchThread(func(ctx context.Context) {
+			s.reorderer.run(ctx)
+		})
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
