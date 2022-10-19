@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/pkg/errors"
 )
@@ -384,87 +383,52 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		return err
 	}
 	machine := initialFrozenMachine.Clone()
-	var blockHeader *types.Header
-	if blockNum != -1 {
-		blockHeader = m.validator.blockchain.GetHeaderByNumber(uint64(blockNum))
-		if blockHeader == nil {
-			return fmt.Errorf("block header %v before challenge point unknown", blockNum)
-		}
-	}
-	startGlobalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(blockHeader)
-	if err != nil {
-		return err
-	}
-	err = machine.SetGlobalState(startGlobalState)
-	if err != nil {
-		return err
-	}
-	var batchInfo []BatchInfo
 	if tooFar {
-		// Just record the part of block creation before the message is read
-		_, preimages, readBatchInfo, err := m.validator.RecordBlockCreation(ctx, blockHeader, nil, true) // TODO: not statecache
+		var blockHeader *types.Header
+		if blockNum != -1 {
+			blockHeader = m.blockChallengeBackend.bc.GetHeaderByNumber(uint64(blockNum))
+			if blockHeader == nil {
+				return fmt.Errorf("block header %v before challenge point unknown", blockNum)
+			}
+		}
+		startGlobalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(blockHeader)
 		if err != nil {
 			return err
 		}
-		batchInfo = readBatchInfo
+		err = machine.SetGlobalState(startGlobalState)
+		if err != nil {
+			return err
+		}
+
+		// Just record the part of block creation before the message is read
+		_, preimages, batchInfo, err := m.validator.RecordBlockCreation(ctx, blockHeader, nil, true)
+		if err != nil {
+			return err
+		}
 		resolver, err := m.validator.NewMachinePreimageResolver(ctx, preimages)
 		if err != nil {
 			return err
 		}
 		if err := machine.SetPreimageResolver(resolver); err != nil {
 			return err
+		}
+		for _, batch := range batchInfo {
+			err = machine.AddSequencerInboxMessage(batch.Number, batch.Data)
+			if err != nil {
+				return err
+			}
 		}
 	} else {
 		// Get the next message and block header, and record the full block creation
-		genesisBlockNum := m.validator.blockchain.Config().ArbitrumChainParams.GenesisBlockNum
-
-		message, err := m.validator.streamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
-		if err != nil {
-			return err
-		}
-		nextHeader := m.validator.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
+		nextHeader := m.blockChallengeBackend.bc.GetHeaderByNumber(uint64(blockNum + 1))
 		if nextHeader == nil {
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
-		preimages, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := m.validator.BlockDataForValidation(
-			ctx, nextHeader, blockHeader, *message, false,
-		)
+		entry, err := m.validator.CreateReadyValidationEntry(ctx, nextHeader)
 		if err != nil {
 			return err
 		}
-		batchBytes, err := m.validator.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
-		if err != nil {
-			return err
-		}
-		readBatchInfo = append(readBatchInfo, BatchInfo{
-			Number: startGlobalState.Batch,
-			Data:   batchBytes,
-		})
-		batchInfo = readBatchInfo
-		err = m.validator.AddPreimagesFromBatchInfos(ctx, preimages, readBatchInfo)
-		if err != nil {
-			return err
-		}
-		resolver, err := m.validator.NewMachinePreimageResolver(ctx, preimages)
-		if err != nil {
-			return err
-		}
-		if err := machine.SetPreimageResolver(resolver); err != nil {
-			return err
-		}
-		if hasDelayedMsg {
-			delayedBytes, err := m.validator.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
-			if err != nil {
-				return err
-			}
-			err = machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	for _, batch := range batchInfo {
-		err = machine.AddSequencerInboxMessage(batch.Number, batch.Data)
+		err = m.validator.LoadEntryToMachine(ctx, entry, machine)
 		if err != nil {
 			return err
 		}

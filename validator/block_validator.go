@@ -340,7 +340,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, sequencerMsg []byte) error {
 	machConf := v.MachineLoader.GetConfig()
 	outDirPath := filepath.Join(machConf.RootPath, v.config().OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0755)
@@ -358,7 +358,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	}
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
-		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchNumber, end.PosInBatch, validationEntry.BlockHash) +
+		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", validationEntry.EndPosition.BatchNumber, validationEntry.EndPosition.PosInBatch, validationEntry.BlockHash) +
 		"MACHPATH=\"" + machConf.getMachinePath(moduleRoot) + "\"\n" +
 		rootPathAssign +
 		"if (( $# > 1 )); then\n" +
@@ -379,12 +379,12 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 			return err
 		}
 	}
-	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", start.BatchNumber, start.PosInBatch, validationEntry.PrevBlockHash))
+	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", validationEntry.StartPosition.BatchNumber, validationEntry.StartPosition.PosInBatch, validationEntry.PrevBlockHash))
 	if err != nil {
 		return err
 	}
 
-	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNumber)
+	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", validationEntry.StartPosition.BatchNumber)
 	err = os.WriteFile(filepath.Join(outDirPath, sequencerFileName), sequencerMsg, 0644)
 	if err != nil {
 		return err
@@ -399,7 +399,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 		return err
 	}
 	defer preimageFile.Close()
-	for _, data := range preimages {
+	for _, data := range validationEntry.Preimages {
 		lenbytes := make([]byte, 8)
 		binary.LittleEndian.PutUint64(lenbytes, uint64(len(data)))
 		_, err := preimageFile.Write(lenbytes)
@@ -423,7 +423,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 			return err
 		}
 		filename := fmt.Sprintf("delayed_%d.bin", validationEntry.DelayedMsgNr)
-		err = os.WriteFile(filepath.Join(outDirPath, filename), delayedMsg, 0644)
+		err = os.WriteFile(filepath.Join(outDirPath, filename), validationEntry.DelayedMsg, 0644)
 		if err != nil {
 			return err
 		}
@@ -492,12 +492,10 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		"blockDate", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)))
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 
-		type replay = func(context.Context, *validationEntry, common.Hash) (GoGlobalState, []byte, error)
-		var delayedMsg []byte
+		type replay = func(context.Context, *validationEntry, common.Hash) (GoGlobalState, error)
 
 		execValidation := func(replay replay, name string) (bool, bool) {
-			gsEnd, delayed, err := replay(ctx, entry, moduleRoot)
-			delayedMsg = delayed
+			gsEnd, err := replay(ctx, entry, moduleRoot)
 
 			if err != nil {
 				canceled := ctx.Err() != nil
@@ -548,8 +546,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 
 		if writeBlock {
 			err := v.writeToFile(
-				entry, moduleRoot, entry.StartPosition, entry.EndPosition,
-				entry.Preimages, seqMsg, delayedMsg,
+				entry, moduleRoot, seqMsg,
 			)
 			if err != nil {
 				log.Error("failed to write file", "err", err)

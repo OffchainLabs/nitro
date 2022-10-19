@@ -161,8 +161,9 @@ type validationEntry struct {
 	DelayedMsgNr    uint64
 	msg             *arbstate.MessageWithMetadata
 	// Valid since Recorded:
-	Preimages map[common.Hash][]byte
-	BatchInfo []BatchInfo
+	Preimages  map[common.Hash][]byte
+	BatchInfo  []BatchInfo
+	DelayedMsg []byte
 	// Valid since Ready:
 	StartPosition GlobalStatePosition
 	EndPosition   GlobalStatePosition
@@ -196,19 +197,22 @@ func (v *validationEntry) expectedEnd() (GoGlobalState, error) {
 	}, nil
 }
 
+func usingDelayedMsg(prevHeader *types.Header, header *types.Header) (bool, uint64) {
+	if prevHeader == nil {
+		return true, 0
+	}
+	if header.Nonce == prevHeader.Nonce {
+		return false, 0
+	}
+	return true, prevHeader.Nonce.Uint64()
+}
+
 func newValidationEntry(
 	prevHeader *types.Header,
 	header *types.Header,
 	msg *arbstate.MessageWithMetadata,
 ) (*validationEntry, error) {
-	var hasDelayedMsg bool
-	var delayedMsgNr uint64
-	if prevHeader == nil || header.Nonce != prevHeader.Nonce {
-		hasDelayedMsg = true
-		if prevHeader != nil {
-			delayedMsgNr = prevHeader.Nonce.Uint64()
-		}
-	}
+	hasDelayedMsg, delayedMsgNr := usingDelayedMsg(prevHeader, header)
 	return &validationEntry{
 		Stage:           ReadyForRecord,
 		BlockNumber:     header.Number.Uint64(),
@@ -227,6 +231,7 @@ func newRecordedValidationEntry(
 	header *types.Header,
 	preimages map[common.Hash][]byte,
 	batchInfos []BatchInfo,
+	delayedMsg []byte,
 ) (*validationEntry, error) {
 	entry, err := newValidationEntry(prevHeader, header, nil)
 	if err != nil {
@@ -234,6 +239,7 @@ func newRecordedValidationEntry(
 	}
 	entry.Preimages = preimages
 	entry.BatchInfo = batchInfos
+	entry.DelayedMsg = delayedMsg
 	entry.Stage = Recorded
 	return entry, nil
 }
@@ -412,48 +418,6 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	return blockHash, preimages, readBatchInfo, err
 }
 
-func (v *StatelessBlockValidator) BlockDataForValidation(
-	ctx context.Context,
-	header, prevHeader *types.Header,
-	msg arbstate.MessageWithMetadata,
-	producePreimages bool,
-) (
-	preimages map[common.Hash][]byte, readBatchInfo []BatchInfo,
-	hasDelayedMessage bool, delayedMsgNr uint64, err error,
-) {
-	var prevHash common.Hash
-	if prevHeader != nil {
-		prevHash = prevHeader.Hash()
-	}
-	if header.ParentHash != prevHash {
-		err = fmt.Errorf("bad arguments: prev does not match")
-		return
-	}
-
-	if prevHeader != nil {
-		var blockhash common.Hash
-		blockhash, preimages, readBatchInfo, err = v.RecordBlockCreation(
-			ctx, prevHeader, &msg, producePreimages,
-		)
-		if err != nil {
-			return
-		}
-		if blockhash != header.Hash() {
-			err = fmt.Errorf("wrong hash expected %s got %s", header.Hash(), blockhash)
-			return
-		}
-	}
-
-	if prevHeader == nil || header.Nonce != prevHeader.Nonce {
-		hasDelayedMessage = true
-		if prevHeader != nil {
-			delayedMsgNr = prevHeader.Nonce.Uint64()
-		}
-	}
-
-	return
-}
-
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry,
 	producePreimages bool) error {
 	if e.Stage != ReadyForRecord {
@@ -472,40 +436,21 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	if blockhash != e.BlockHash {
 		return fmt.Errorf("recording failed: blockNum %d, hash expected %v, got %v", e.BlockNumber, e.BlockHash, blockhash)
 	}
+	if e.HasDelayedMsg {
+		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
+		if err != nil {
+			log.Error(
+				"error while trying to read delayed msg for proving",
+				"err", err, "seq", e.DelayedMsgNr, "blockNr", e.BlockNumber,
+			)
+			return errors.New("error while trying to read delayed msg for proving")
+		}
+		e.DelayedMsg = delayedMsg
+	}
 	e.Preimages = preimages
 	e.BatchInfo = readBatchInfo
 	e.msg = nil // no longer needed
 	e.Stage = Recorded
-	return nil
-}
-
-func (v *StatelessBlockValidator) AddPreimagesFromBatchInfos(
-	ctx context.Context,
-	preimages map[common.Hash][]byte,
-	batchInfos []BatchInfo,
-) error {
-
-	for _, batch := range batchInfos {
-		if len(batch.Data) <= 40 {
-			continue
-		}
-		if !arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
-			continue
-		}
-		if v.daService == nil {
-			log.Error("No DAS configured, but sequencer message found with DAS header")
-			if v.blockchain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
-				return errors.New("processing data availability chain without DAS configured")
-			}
-		} else {
-			_, err := arbstate.RecoverPayloadFromDasBatch(
-				ctx, batch.Number, batch.Data, v.daService, preimages, arbstate.KeysetValidate,
-			)
-			if err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 
@@ -527,9 +472,27 @@ func (v *StatelessBlockValidator) ValidationEntryAddSeqMessage(ctx context.Conte
 		Data:   seqMsg,
 	}
 	e.BatchInfo = append(e.BatchInfo, seqMsgBatchInfo)
-	err := v.AddPreimagesFromBatchInfos(ctx, e.Preimages, e.BatchInfo)
-	if err != nil {
-		return err
+
+	for _, batch := range e.BatchInfo {
+		if len(batch.Data) <= 40 {
+			continue
+		}
+		if !arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
+			continue
+		}
+		if v.daService == nil {
+			log.Error("No DAS configured, but sequencer message found with DAS header")
+			if v.blockchain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
+				return errors.New("processing data availability chain without DAS configured")
+			}
+		} else {
+			_, err := arbstate.RecoverPayloadFromDasBatch(
+				ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
+			)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	e.Stage = Ready
 	return nil
@@ -574,61 +537,62 @@ func (v *StatelessBlockValidator) NewMachinePreimageResolver(
 	return resolver, nil
 }
 
-func (v *StatelessBlockValidator) executeBlock(
-	ctx context.Context, entry *validationEntry, moduleRoot common.Hash,
-) (GoGlobalState, []byte, error) {
-	start := entry.StartPosition
+func (v *StatelessBlockValidator) LoadEntryToMachine(ctx context.Context, entry *validationEntry, mach *ArbitratorMachine) error {
+	if entry.Stage != Ready {
+		return fmt.Errorf("cannot load entry to machine: not ready")
+	}
 	gsStart, err := entry.start()
 	if err != nil {
-		return GoGlobalState{}, nil, err
+		return err
 	}
-	basemachine, err := v.MachineLoader.GetMachine(ctx, moduleRoot, true)
-	if err != nil {
-		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
-	}
-	mach := basemachine.Clone()
 	resolver, err := v.NewMachinePreimageResolver(ctx, entry.Preimages)
 	if err != nil {
-		return GoGlobalState{}, nil, err
+		return err
 	}
 	if err := mach.SetPreimageResolver(resolver); err != nil {
-		return GoGlobalState{}, nil, err
+		return err
 	}
 	err = mach.SetGlobalState(gsStart)
 	if err != nil {
 		log.Error("error while setting global state for proving", "err", err, "gsStart", gsStart)
-		return GoGlobalState{}, nil, errors.New("error while setting global state for proving")
+		return errors.New("error while setting global state for proving")
 	}
 	for _, batch := range entry.BatchInfo {
 		err = mach.AddSequencerInboxMessage(batch.Number, batch.Data)
 		if err != nil {
 			log.Error(
 				"error while trying to add sequencer msg for proving",
-				"err", err, "seq", start.BatchNumber, "blockNr", entry.BlockNumber,
+				"err", err, "seq", gsStart.Batch, "blockNr", entry.BlockNumber,
 			)
-			return GoGlobalState{}, nil, errors.New("error while trying to add sequencer msg for proving")
+			return errors.New("error while trying to add sequencer msg for proving")
 		}
 	}
-	var delayedMsg []byte
 	if entry.HasDelayedMsg {
-		delayedMsg, err = v.inboxTracker.GetDelayedMessageBytes(entry.DelayedMsgNr)
-		if err != nil {
-			log.Error(
-				"error while trying to read delayed msg for proving",
-				"err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.BlockNumber,
-			)
-			return GoGlobalState{}, nil, errors.New("error while trying to read delayed msg for proving")
-		}
-		err = mach.AddDelayedInboxMessage(entry.DelayedMsgNr, delayedMsg)
+		err = mach.AddDelayedInboxMessage(entry.DelayedMsgNr, entry.DelayedMsg)
 		if err != nil {
 			log.Error(
 				"error while trying to add delayed msg for proving",
 				"err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.BlockNumber,
 			)
-			return GoGlobalState{}, nil, errors.New("error while trying to add delayed msg for proving")
+			return errors.New("error while trying to add delayed msg for proving")
 		}
 	}
+	return nil
+}
 
+func (v *StatelessBlockValidator) executeBlock(
+	ctx context.Context, entry *validationEntry, moduleRoot common.Hash,
+) (GoGlobalState, error) {
+	basemachine, err := v.MachineLoader.GetMachine(ctx, moduleRoot, true)
+	if err != nil {
+		return GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
+	}
+
+	mach := basemachine.Clone()
+	err = v.LoadEntryToMachine(ctx, entry, mach)
+	if err != nil {
+		return GoGlobalState{}, err
+	}
 	var steps uint64
 	for mach.IsRunning() {
 		var count uint64 = 500000000
@@ -637,96 +601,103 @@ func (v *StatelessBlockValidator) executeBlock(
 			log.Debug("validation", "moduleRoot", moduleRoot, "block", entry.BlockNumber, "steps", steps)
 		}
 		if err != nil {
-			return GoGlobalState{}, nil, fmt.Errorf("machine execution failed with error: %w", err)
+			return GoGlobalState{}, fmt.Errorf("machine execution failed with error: %w", err)
 		}
 		steps += count
 	}
 	if mach.IsErrored() {
 		log.Error("machine entered errored state during attempted validation", "block", entry.BlockNumber)
-		return GoGlobalState{}, nil, errors.New("machine entered errored state during attempted validation")
+		return GoGlobalState{}, errors.New("machine entered errored state during attempted validation")
 	}
-	return mach.GetGlobalState(), delayedMsg, nil
+	return mach.GetGlobalState(), nil
 }
 
 func (v *StatelessBlockValidator) jitBlock(
 	ctx context.Context, entry *validationEntry, moduleRoot common.Hash,
-) (GoGlobalState, []byte, error) {
+) (GoGlobalState, error) {
 	empty := GoGlobalState{}
 
 	machine, err := v.MachineLoader.GetJitMachine(ctx, moduleRoot, true)
 	if err != nil {
-		return empty, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
-	}
-
-	var delayed []byte
-	if entry.HasDelayedMsg {
-		delayed, err = v.inboxTracker.GetDelayedMessageBytes(entry.DelayedMsgNr)
-		if err != nil {
-			log.Error(
-				"error while trying to read delayed msg for jitting",
-				"err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.BlockNumber,
-			)
-			return empty, nil, errors.New("error while trying to read delayed msg for proving")
-		}
+		return empty, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
 	resolver, err := v.NewMachinePreimageResolver(ctx, entry.Preimages)
 	if err != nil {
-		return empty, nil, err
+		return empty, err
 	}
-	state, err := machine.prove(ctx, entry, resolver, delayed)
-	return state, delayed, err
+	state, err := machine.prove(ctx, entry, resolver)
+	return state, err
 }
 
-func (v *StatelessBlockValidator) ValidateBlock(
-	ctx context.Context, header *types.Header, full bool, moduleRoot common.Hash,
-) (bool, error) {
+func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context, header *types.Header) (*validationEntry, error) {
 	if header == nil {
-		return false, errors.New("header not found")
+		return nil, errors.New("header not found")
 	}
 	blockNum := header.Number.Uint64()
 	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
 	prevHeader := v.blockchain.GetHeaderByNumber(blockNum - 1)
 	if prevHeader == nil {
-		return false, errors.New("prev header not found")
+		return nil, errors.New("prev header not found")
+	}
+	if header.ParentHash != prevHeader.Hash() {
+		return nil, fmt.Errorf("hashes don't match block %d hash %v parent %v prev-found %v",
+			blockNum, header.Hash(), header.ParentHash, prevHeader.Hash())
 	}
 	msg, err := v.streamer.GetMessage(msgIndex)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	preimages, readBatchInfo, _, _, err := v.BlockDataForValidation(
-		ctx, header, prevHeader, *msg, false,
-	)
+	resHash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg, true)
 	if err != nil {
-		return false, fmt.Errorf("failed to get block data to validate: %w", err)
+		return nil, fmt.Errorf("failed to get block data to validate: %w", err)
 	}
-
+	if resHash != header.Hash() {
+		return nil, fmt.Errorf("wrong hash expected %s got %s", header.Hash(), resHash)
+	}
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	batch, err := FindBatchContainingMessageIndex(v.inboxTracker, msgIndex, batchCount)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, msgIndex, batch)
 	if err != nil {
-		return false, fmt.Errorf("failed calculating position for validation: %w", err)
+		return nil, fmt.Errorf("failed calculating position for validation: %w", err)
 	}
 
-	entry, err := newRecordedValidationEntry(
-		prevHeader, header, preimages, readBatchInfo,
-	)
+	usingDelayed, delaydNr := usingDelayedMsg(prevHeader, header)
+	var delayed []byte
+	if usingDelayed {
+		delayed, err = v.inboxTracker.GetDelayedMessageBytes(delaydNr)
+		if err != nil {
+			return nil, fmt.Errorf("%w: error while trying to read delayed msg for proving", err)
+		}
+	}
+	entry, err := newRecordedValidationEntry(prevHeader, header, preimages, readBatchInfo, delayed)
 	if err != nil {
-		return false, fmt.Errorf("failed to create validation entry %w", err)
+		return nil, fmt.Errorf("failed to create validation entry %w", err)
 	}
 
 	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	err = v.ValidationEntryAddSeqMessage(ctx, entry, startPos, endPos, seqMsg)
+	if err != nil {
+		return nil, err
+	}
+
+	return entry, nil
+}
+
+func (v *StatelessBlockValidator) ValidateBlock(
+	ctx context.Context, header *types.Header, full bool, moduleRoot common.Hash,
+) (bool, error) {
+	entry, err := v.CreateReadyValidationEntry(ctx, header)
 	if err != nil {
 		return false, err
 	}
@@ -736,9 +707,9 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	}
 	var gsEnd GoGlobalState
 	if full {
-		gsEnd, _, err = v.executeBlock(ctx, entry, moduleRoot)
+		gsEnd, err = v.executeBlock(ctx, entry, moduleRoot)
 	} else {
-		gsEnd, _, err = v.jitBlock(ctx, entry, moduleRoot)
+		gsEnd, err = v.jitBlock(ctx, entry, moduleRoot)
 	}
 	if err != nil {
 		return false, err
