@@ -39,7 +39,7 @@ func TestStorageBackedBigInt(t *testing.T) {
 		maxUint256,
 		minUint256,
 	} {
-		err := sbbi.Set(in)
+		err := sbbi.SetChecked(in)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +87,7 @@ func TestStorageBackedBigInt(t *testing.T) {
 		new(big.Int).Exp(minUint256, big.NewInt(1025), nil),
 	} {
 		requirePanic(t, in, func() {
-			_ = sbbi.Set(in)
+			_ = sbbi.SetChecked(in)
 		})
 	}
 }
