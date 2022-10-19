@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-redis/redis/v8"
-	
+
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbutil"
