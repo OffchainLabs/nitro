@@ -80,18 +80,18 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type SequencingHooks struct {
 	TxErrors               []error
 	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error
-	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error
+	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
 func noopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error {
 			return nil
 		},
-		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
+		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
 	}
@@ -228,12 +228,12 @@ func ProduceBlockAdvanced(
 				return nil, nil, core.ErrGasLimitReached
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx); err != nil {
+			sender, err = signer.Sender(tx)
+			if err != nil {
 				return nil, nil, err
 			}
 
-			sender, err = signer.Sender(tx)
-			if err != nil {
+			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, sender); err != nil {
 				return nil, nil, err
 			}
 
@@ -285,7 +285,7 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				vm.Config{},
 				func(result *core.ExecutionResult) error {
-					return hooks.PostTxFilter(state, tx, sender, dataGas, result)
+					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
 				},
 			)
 			if err != nil {

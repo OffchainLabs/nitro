@@ -33,18 +33,18 @@ type L1PricingState struct {
 	// parameters
 	batchPosterTable   *BatchPostersTable
 	payRewardsTo       storage.StorageBackedAddress
-	equilibrationUnits storage.StorageBackedBigInt
+	equilibrationUnits storage.StorageBackedBigUint
 	inertia            storage.StorageBackedUint64
 	perUnitReward      storage.StorageBackedUint64
 	// variables
 	lastUpdateTime     storage.StorageBackedUint64 // timestamp of the last update from L1 that we processed
 	fundsDueForRewards storage.StorageBackedBigInt
 	// funds collected since update are recorded as the balance in account L1PricerFundsPoolAddress
-	unitsSinceUpdate     storage.StorageBackedUint64 // calldata units collected for since last update
-	pricePerUnit         storage.StorageBackedBigInt // current price per calldata unit
-	lastSurplus          storage.StorageBackedBigInt // introduced in ArbOS version 2
-	perBatchGasCost      storage.StorageBackedInt64  // introduced in ArbOS version 3
-	amortizedCostCapBips storage.StorageBackedUint64 // in basis points; introduced in ArbOS version 3
+	unitsSinceUpdate     storage.StorageBackedUint64  // calldata units collected for since last update
+	pricePerUnit         storage.StorageBackedBigUint // current price per calldata unit
+	lastSurplus          storage.StorageBackedBigInt  // introduced in ArbOS version 2
+	perBatchGasCost      storage.StorageBackedInt64   // introduced in ArbOS version 3
+	amortizedCostCapBips storage.StorageBackedUint64  // in basis points; introduced in ArbOS version 3
 }
 
 var (
@@ -93,15 +93,15 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 	if err := sto.SetByUint64(payRewardsToOffset, util.AddressToHash(initialRewardsRecipient)); err != nil {
 		return err
 	}
-	equilibrationUnits := sto.OpenStorageBackedBigInt(equilibrationUnitsOffset)
-	if err := equilibrationUnits.Set(InitialEquilibrationUnitsV0); err != nil {
+	equilibrationUnits := sto.OpenStorageBackedBigUint(equilibrationUnitsOffset)
+	if err := equilibrationUnits.SetChecked(InitialEquilibrationUnitsV0); err != nil {
 		return err
 	}
 	if err := sto.SetUint64ByUint64(inertiaOffset, InitialInertia); err != nil {
 		return err
 	}
 	fundsDueForRewards := sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset)
-	if err := fundsDueForRewards.Set(common.Big0); err != nil {
+	if err := fundsDueForRewards.SetChecked(common.Big0); err != nil {
 		return err
 	}
 	if err := sto.SetUint64ByUint64(perUnitRewardOffset, InitialPerUnitReward); err != nil {
@@ -119,13 +119,13 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto,
 		OpenBatchPostersTable(sto.OpenSubStorage(BatchPosterTableKey)),
 		sto.OpenStorageBackedAddress(payRewardsToOffset),
-		sto.OpenStorageBackedBigInt(equilibrationUnitsOffset),
+		sto.OpenStorageBackedBigUint(equilibrationUnitsOffset),
 		sto.OpenStorageBackedUint64(inertiaOffset),
 		sto.OpenStorageBackedUint64(perUnitRewardOffset),
 		sto.OpenStorageBackedUint64(lastUpdateTimeOffset),
 		sto.OpenStorageBackedBigInt(fundsDueForRewardsOffset),
 		sto.OpenStorageBackedUint64(unitsSinceOffset),
-		sto.OpenStorageBackedBigInt(pricePerUnitOffset),
+		sto.OpenStorageBackedBigUint(pricePerUnitOffset),
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
 		sto.OpenStorageBackedInt64(perBatchGasCostOffset),
 		sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
@@ -149,7 +149,7 @@ func (ps *L1PricingState) EquilibrationUnits() (*big.Int, error) {
 }
 
 func (ps *L1PricingState) SetEquilibrationUnits(equilUnits *big.Int) error {
-	return ps.equilibrationUnits.Set(equilUnits)
+	return ps.equilibrationUnits.SetChecked(equilUnits)
 }
 
 func (ps *L1PricingState) Inertia() (uint64, error) {
@@ -181,7 +181,8 @@ func (ps *L1PricingState) FundsDueForRewards() (*big.Int, error) {
 }
 
 func (ps *L1PricingState) SetFundsDueForRewards(amt *big.Int) error {
-	return ps.fundsDueForRewards.Set(amt)
+	return ps.fundsDueForRewards.SetSaturatingWithWarning(amt, "L1 pricer funds due for rewards")
+
 }
 
 func (ps *L1PricingState) UnitsSinceUpdate() (uint64, error) {
@@ -200,7 +201,7 @@ func (ps *L1PricingState) SetLastSurplus(val *big.Int, arbosVersion uint64) erro
 	if arbosVersion < 7 {
 		return ps.lastSurplus.Set_preVersion7(val)
 	}
-	return ps.lastSurplus.Set(val)
+	return ps.lastSurplus.SetSaturatingWithWarning(val, "L1 pricer last surplus")
 }
 
 func (ps *L1PricingState) AddToUnitsSinceUpdate(units uint64) error {
@@ -216,7 +217,7 @@ func (ps *L1PricingState) PricePerUnit() (*big.Int, error) {
 }
 
 func (ps *L1PricingState) SetPricePerUnit(price *big.Int) error {
-	return ps.pricePerUnit.Set(price)
+	return ps.pricePerUnit.SetChecked(price)
 }
 
 func (ps *L1PricingState) PerBatchGasCost() (int64, error) {
