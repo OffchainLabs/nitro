@@ -274,7 +274,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 		if mustDeref {
 			defer arbitrum.DereferenceState(prevHeader, v.stateDatabase)
 		}
-		err := ValidationEntryRecord(ctx, s.Entry, v.blockchain, v.stateDatabase, v.inboxReader, v.daService, v.config().StorePreimages)
+		err := v.ValidationEntryRecord(ctx, s.Entry, v.config().StorePreimages)
 		if ctx.Err() != nil {
 			return
 		}
@@ -689,7 +689,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			validationCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			validationStatus.Cancel = cancel
-			err := ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg, v.blockchain, v.daService)
+			err := v.ValidationEntryAddSeqMessage(ctx, validationStatus.Entry, startPos, endPos, seqMsg)
 			if err != nil && validationCtx.Err() == nil {
 				log.Error("error preparing validation", "err", err)
 				return

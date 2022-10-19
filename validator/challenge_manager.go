@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/offchainlabs/nitro/arbstate"
-
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -65,12 +63,7 @@ type ChallengeManager struct {
 	blockChallengeBackend *BlockChallengeBackend
 
 	// fields below are only used to create execution challenge from block challenge
-	inboxReader       InboxReaderInterface
-	inboxTracker      InboxTrackerInterface
-	txStreamer        TransactionStreamerInterface
-	blockchain        *core.BlockChain
-	das               arbstate.DataAvailabilityReader
-	machineLoader     *NitroMachineLoader
+	validator         *StatelessBlockValidator
 	targetNumMachines int
 	wasmModuleRoot    common.Hash
 
@@ -90,11 +83,8 @@ func NewChallengeManager(
 	challengeManagerAddr common.Address,
 	challengeIndex uint64,
 	l2blockChain *core.BlockChain,
-	das arbstate.DataAvailabilityReader,
-	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
-	txStreamer TransactionStreamerInterface,
-	machineLoader *NitroMachineLoader,
+	validator *StatelessBlockValidator,
 	startL1Block uint64,
 	targetNumMachines int,
 	confirmationBlocks int64,
@@ -129,10 +119,7 @@ func NewChallengeManager(
 		return nil, err
 	}
 
-	genesisBlockNum, err := txStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return nil, err
-	}
+	genesisBlockNum := l2blockChain.Config().ArbitrumChainParams.GenesisBlockNum
 	backend, err := NewBlockChallengeBackend(
 		parsedLog,
 		l2blockChain,
@@ -154,12 +141,7 @@ func NewChallengeManager(
 			confirmationBlocks:   confirmationBlocks,
 		},
 		blockChallengeBackend: backend,
-		inboxReader:           inboxReader,
-		inboxTracker:          inboxTracker,
-		txStreamer:            txStreamer,
-		blockchain:            l2blockChain,
-		das:                   das,
-		machineLoader:         machineLoader,
+		validator:             validator,
 		targetNumMachines:     targetNumMachines,
 		wasmModuleRoot:        challengeInfo.WasmModuleRoot,
 	}, nil
@@ -397,14 +379,14 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if m.initialMachine != nil && m.initialMachineBlockNr == blockNum {
 		return nil
 	}
-	initialFrozenMachine, err := m.machineLoader.GetMachine(ctx, m.wasmModuleRoot, false)
+	initialFrozenMachine, err := m.validator.MachineLoader.GetMachine(ctx, m.wasmModuleRoot, false)
 	if err != nil {
 		return err
 	}
 	machine := initialFrozenMachine.Clone()
 	var blockHeader *types.Header
 	if blockNum != -1 {
-		blockHeader = m.blockchain.GetHeaderByNumber(uint64(blockNum))
+		blockHeader = m.validator.blockchain.GetHeaderByNumber(uint64(blockNum))
 		if blockHeader == nil {
 			return fmt.Errorf("block header %v before challenge point unknown", blockNum)
 		}
@@ -420,12 +402,12 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	var batchInfo []BatchInfo
 	if tooFar {
 		// Just record the part of block creation before the message is read
-		_, preimages, readBatchInfo, err := RecordBlockCreation(ctx, m.blockchain, m.blockchain.StateCache(), m.inboxReader, blockHeader, nil, true) // TODO: not statecache
+		_, preimages, readBatchInfo, err := m.validator.RecordBlockCreation(ctx, blockHeader, nil, true) // TODO: not statecache
 		if err != nil {
 			return err
 		}
 		batchInfo = readBatchInfo
-		resolver, err := NewMachinePreimageResolver(ctx, preimages, m.blockchain)
+		resolver, err := m.validator.NewMachinePreimageResolver(ctx, preimages)
 		if err != nil {
 			return err
 		}
@@ -434,25 +416,23 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		}
 	} else {
 		// Get the next message and block header, and record the full block creation
-		genesisBlockNum, err := m.txStreamer.GetGenesisBlockNumber()
+		genesisBlockNum := m.validator.blockchain.Config().ArbitrumChainParams.GenesisBlockNum
+
+		message, err := m.validator.streamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
 		if err != nil {
 			return err
 		}
-		message, err := m.txStreamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
-		if err != nil {
-			return err
-		}
-		nextHeader := m.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
+		nextHeader := m.validator.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
 		if nextHeader == nil {
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
-		preimages, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(
-			ctx, m.blockchain, m.blockchain.StateCache(), m.inboxReader, nextHeader, blockHeader, *message, m.das, false, // TODO: not stateCache
+		preimages, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := m.validator.BlockDataForValidation(
+			ctx, nextHeader, blockHeader, *message, false,
 		)
 		if err != nil {
 			return err
 		}
-		batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
+		batchBytes, err := m.validator.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
 		if err != nil {
 			return err
 		}
@@ -461,11 +441,11 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			Data:   batchBytes,
 		})
 		batchInfo = readBatchInfo
-		err = AddPreimagesFromBatchInfos(ctx, preimages, readBatchInfo, m.blockchain, m.das)
+		err = m.validator.AddPreimagesFromBatchInfos(ctx, preimages, readBatchInfo)
 		if err != nil {
 			return err
 		}
-		resolver, err := NewMachinePreimageResolver(ctx, preimages, m.blockchain)
+		resolver, err := m.validator.NewMachinePreimageResolver(ctx, preimages)
 		if err != nil {
 			return err
 		}
@@ -473,7 +453,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			return err
 		}
 		if hasDelayedMsg {
-			delayedBytes, err := m.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
+			delayedBytes, err := m.validator.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
 			if err != nil {
 				return err
 			}
