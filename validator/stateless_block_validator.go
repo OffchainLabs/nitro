@@ -13,12 +13,11 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -34,6 +33,7 @@ type StatelessBlockValidator struct {
 	db              ethdb.Database
 	daService       arbstate.DataAvailabilityReader
 	genesisBlockNum uint64
+	stateDatabase   state.Database
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
@@ -242,7 +242,8 @@ func NewStatelessBlockValidator(
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
 	blockchain *core.BlockChain,
-	db ethdb.Database,
+	blockchainDb ethdb.Database,
+	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
 	config *BlockValidatorConfig,
 	fatalErrChan chan error,
@@ -257,9 +258,10 @@ func NewStatelessBlockValidator(
 		inboxTracker:    inbox,
 		streamer:        streamer,
 		blockchain:      blockchain,
-		db:              db,
+		db:              arbdb,
 		daService:       das,
 		genesisBlockNum: genesisBlockNum,
+		stateDatabase:   state.NewDatabaseWithConfig(blockchainDb, &trie.Config{Cache: 16}), // TODO: configurable cache size
 		fatalErrChan:    fatalErrChan,
 	}
 	if config.PendingUpgradeModuleRoot != "" {
@@ -311,6 +313,7 @@ type BatchInfo struct {
 func RecordBlockCreation(
 	ctx context.Context,
 	blockchain *core.BlockChain,
+	stateDatabase state.Database,
 	inboxReader InboxReaderInterface,
 	prevHeader *types.Header,
 	msg *arbstate.MessageWithMetadata,
@@ -322,14 +325,14 @@ func RecordBlockCreation(
 	var err error
 	if prevHeader != nil {
 		// make sure blockchain has the required state
-		_, err = arbitrum.GetOrRecreateReferencedState(ctx, prevHeader, blockchain)
+		_, err = arbitrum.GetOrRecreateReferencedState(ctx, prevHeader, blockchain, stateDatabase)
 		if err != nil {
 			return common.Hash{}, nil, nil, err
 		}
-		defer arbitrum.DereferenceState(prevHeader, blockchain)
+		defer arbitrum.DereferenceState(prevHeader, stateDatabase)
 	}
 	if producePreimages {
-		recordingdb, chaincontext, recordingKV, err = arbitrum.PrepareRecording(blockchain, prevHeader)
+		recordingdb, chaincontext, recordingKV, err = arbitrum.PrepareRecording(stateDatabase.TrieDB(), blockchain, prevHeader)
 		if err != nil {
 			return common.Hash{}, nil, nil, err
 		}
@@ -413,6 +416,7 @@ func RecordBlockCreation(
 func BlockDataForValidation(
 	ctx context.Context,
 	blockchain *core.BlockChain,
+	stateDatabase state.Database,
 	inboxReader InboxReaderInterface,
 	header, prevHeader *types.Header,
 	msg arbstate.MessageWithMetadata,
@@ -434,7 +438,7 @@ func BlockDataForValidation(
 	if prevHeader != nil {
 		var blockhash common.Hash
 		blockhash, preimages, readBatchInfo, err = RecordBlockCreation(
-			ctx, blockchain, inboxReader, prevHeader, &msg, producePreimages,
+			ctx, blockchain, stateDatabase, inboxReader, prevHeader, &msg, producePreimages,
 		)
 		if err != nil {
 			return
@@ -456,7 +460,7 @@ func BlockDataForValidation(
 }
 
 func ValidationEntryRecord(ctx context.Context, e *validationEntry,
-	blockchain *core.BlockChain, inboxReader InboxReaderInterface, das arbstate.DataAvailabilityReader,
+	blockchain *core.BlockChain, stateDatabase state.Database, inboxReader InboxReaderInterface, das arbstate.DataAvailabilityReader,
 	producePreimages bool) error {
 	if e.Stage != ReadyForRecord {
 		return errors.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
@@ -466,7 +470,7 @@ func ValidationEntryRecord(ctx context.Context, e *validationEntry,
 		return nil
 	}
 	blockhash, preimages, readBatchInfo, err := RecordBlockCreation(
-		ctx, blockchain, inboxReader, e.PrevBlockHeader, e.msg, producePreimages,
+		ctx, blockchain, stateDatabase, inboxReader, e.PrevBlockHeader, e.msg, producePreimages,
 	)
 	if err != nil {
 		return err
@@ -701,7 +705,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 		return false, err
 	}
 	preimages, readBatchInfo, _, _, err := BlockDataForValidation(
-		ctx, v.blockchain, v.inboxReader, header, prevHeader, *msg, v.daService, false,
+		ctx, v.blockchain, v.stateDatabase, v.inboxReader, header, prevHeader, *msg, v.daService, false,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to get block data to validate: %w", err)

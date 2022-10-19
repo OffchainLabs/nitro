@@ -915,6 +915,7 @@ func createNodeImpl(
 			inboxTracker,
 			txStreamer,
 			l2BlockChain,
+			chainDb,
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
 			&config.Get().BlockValidator,

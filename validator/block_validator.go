@@ -266,15 +266,15 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 	}
 	if !s.replaceStatus(Unprepared, RecordSent) {
 		if mustDeref {
-			arbitrum.DereferenceState(prevHeader, v.blockchain)
+			arbitrum.DereferenceState(prevHeader, v.stateDatabase)
 		}
 		return errors.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
 	v.LaunchThread(func(ctx context.Context) {
 		if mustDeref {
-			defer arbitrum.DereferenceState(prevHeader, v.blockchain)
+			defer arbitrum.DereferenceState(prevHeader, v.stateDatabase)
 		}
-		err := ValidationEntryRecord(ctx, s.Entry, v.blockchain, v.inboxReader, v.daService, v.config().StorePreimages)
+		err := ValidationEntryRecord(ctx, s.Entry, v.blockchain, v.stateDatabase, v.inboxReader, v.daService, v.config().StorePreimages)
 		if ctx.Err() != nil {
 			return
 		}
@@ -719,13 +719,13 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 		if validationStatus.getStatus() == Unprepared {
 			prevHeader := validationStatus.Entry.PrevBlockHeader
 			if prevHeader != nil {
-				_, err := arbitrum.GetOrRecreateReferencedState(ctx, prevHeader, v.blockchain)
+				_, err := arbitrum.GetOrRecreateReferencedState(ctx, prevHeader, v.blockchain, v.stateDatabase)
 				if err != nil {
 					log.Error("error trying to prepare state for recording", "err", err)
 				}
-				arbitrum.ReferenceState(prevHeader, v.blockchain)
+				arbitrum.ReferenceState(prevHeader, v.stateDatabase)
 				if v.lastHeaderForPrepareState != nil {
-					arbitrum.DereferenceState(v.lastHeaderForPrepareState, v.blockchain)
+					arbitrum.DereferenceState(v.lastHeaderForPrepareState, v.stateDatabase)
 				}
 				v.lastHeaderForPrepareState = prevHeader
 			}

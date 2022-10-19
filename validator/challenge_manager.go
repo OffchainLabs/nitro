@@ -420,7 +420,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	var batchInfo []BatchInfo
 	if tooFar {
 		// Just record the part of block creation before the message is read
-		_, preimages, readBatchInfo, err := RecordBlockCreation(ctx, m.blockchain, m.inboxReader, blockHeader, nil, true)
+		_, preimages, readBatchInfo, err := RecordBlockCreation(ctx, m.blockchain, m.blockchain.StateCache(), m.inboxReader, blockHeader, nil, true) // TODO: not statecache
 		if err != nil {
 			return err
 		}
@@ -447,7 +447,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
 		}
 		preimages, readBatchInfo, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(
-			ctx, m.blockchain, m.inboxReader, nextHeader, blockHeader, *message, m.das, false,
+			ctx, m.blockchain, m.blockchain.StateCache(), m.inboxReader, nextHeader, blockHeader, *message, m.das, false, // TODO: not stateCache
 		)
 		if err != nil {
 			return err
