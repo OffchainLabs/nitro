@@ -29,10 +29,10 @@ func TestTxGraphSpaced(t *testing.T) {
 	numTx := 13
 	for i := 0; i < numTx; i++ {
 		tx := reorderItem{
-			uniqueId:  uint64(i),
-			timestamp: uint64(1000 * i),
-			bid:       big.NewInt(int64(100 * i)),
-			queueItem: dummyTxQueueItem(uint64(i)),
+			uniqueId:        uint64(i),
+			timestampMillis: uint64(1000 * i),
+			bid:             big.NewInt(int64(100 * i)),
+			queueItem:       dummyTxQueueItem(uint64(i)),
 		}
 		inTxs = append(inTxs, tx)
 		expectedOrder = append(expectedOrder, i)
@@ -47,10 +47,10 @@ func TestTxGraphDense(t *testing.T) {
 	numTx := 13
 	for i := 0; i < numTx; i++ {
 		tx := reorderItem{
-			uniqueId:  uint64(i),
-			timestamp: uint64(99 * i),
-			bid:       big.NewInt(1000 * int64(numTx-i)),
-			queueItem: dummyTxQueueItem(uint64(i)),
+			uniqueId:        uint64(i),
+			timestampMillis: uint64(99 * i),
+			bid:             big.NewInt(1000 * int64(numTx-i)),
+			queueItem:       dummyTxQueueItem(uint64(i)),
 		}
 		inTxs = append(inTxs, tx)
 		expectedOrder = append(expectedOrder, i)
@@ -65,10 +65,10 @@ func TestTxByBid(t *testing.T) {
 	numTx := 13
 	for i := 0; i < numTx; i++ {
 		tx := reorderItem{
-			uniqueId:  uint64(i),
-			timestamp: uint64(i),
-			bid:       big.NewInt(int64(100 * i)),
-			queueItem: dummyTxQueueItem(uint64(i)),
+			uniqueId:        uint64(i),
+			timestampMillis: uint64(i),
+			bid:             big.NewInt(int64(100 * i)),
+			queueItem:       dummyTxQueueItem(uint64(i)),
 		}
 		inTxs = append(inTxs, tx)
 		expectedOrder = append(expectedOrder, numTx-i-1)
@@ -80,22 +80,22 @@ func TestTxByBid(t *testing.T) {
 func TestTxExample1(t *testing.T) {
 	inTxs := []reorderItem{
 		{
-			uniqueId:  0,
-			timestamp: 0,
-			bid:       common.Big0,
-			queueItem: dummyTxQueueItem(0),
+			uniqueId:        0,
+			timestampMillis: 0,
+			bid:             common.Big0,
+			queueItem:       dummyTxQueueItem(0),
 		},
 		{
-			uniqueId:  1,
-			timestamp: 67,
-			bid:       big.NewInt(100),
-			queueItem: dummyTxQueueItem(1),
+			uniqueId:        1,
+			timestampMillis: 67,
+			bid:             big.NewInt(100),
+			queueItem:       dummyTxQueueItem(1),
 		},
 		{
-			uniqueId:  2,
-			timestamp: 133,
-			bid:       big.NewInt(300),
-			queueItem: dummyTxQueueItem(2),
+			uniqueId:        2,
+			timestampMillis: 133,
+			bid:             big.NewInt(300),
+			queueItem:       dummyTxQueueItem(2),
 		},
 	}
 	expectedOrder := []int{0, 2, 1}
@@ -105,22 +105,22 @@ func TestTxExample1(t *testing.T) {
 func TestTxExample2(t *testing.T) {
 	inTxs := []reorderItem{
 		{
-			uniqueId:  0,
-			timestamp: 0,
-			bid:       common.Big0,
-			queueItem: dummyTxQueueItem(0),
+			uniqueId:        0,
+			timestampMillis: 0,
+			bid:             common.Big0,
+			queueItem:       dummyTxQueueItem(0),
 		},
 		{
-			uniqueId:  1,
-			timestamp: 67,
-			bid:       big.NewInt(200),
-			queueItem: dummyTxQueueItem(1),
+			uniqueId:        1,
+			timestampMillis: 67,
+			bid:             big.NewInt(200),
+			queueItem:       dummyTxQueueItem(1),
 		},
 		{
-			uniqueId:  2,
-			timestamp: 133,
-			bid:       big.NewInt(300),
-			queueItem: dummyTxQueueItem(2),
+			uniqueId:        2,
+			timestampMillis: 133,
+			bid:             big.NewInt(300),
+			queueItem:       dummyTxQueueItem(2),
 		},
 	}
 	expectedOrder := []int{1, 0, 2}
@@ -170,18 +170,18 @@ func TestComputeEdge(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		fromTx := reorderItem{
-			uniqueId:       0,
-			timestamp:      tc.fromTs,
-			bid:            big.NewInt(tc.fromBid),
-			cumulativeLoss: common.Big0,
-			queueItem:      nil,
+			uniqueId:        0,
+			timestampMillis: tc.fromTs,
+			bid:             big.NewInt(tc.fromBid),
+			cumulativeLoss:  common.Big0,
+			queueItem:       nil,
 		}
 		toTx := reorderItem{
-			uniqueId:       1,
-			timestamp:      tc.toTs,
-			bid:            big.NewInt(tc.toBid),
-			cumulativeLoss: common.Big0,
-			queueItem:      nil,
+			uniqueId:        1,
+			timestampMillis: tc.toTs,
+			bid:             big.NewInt(tc.toBid),
+			cumulativeLoss:  common.Big0,
+			queueItem:       nil,
 		}
 		dir, heavy, weight := computeEdgeAndDirection(fromTx, toTx, 100)
 		if dir != tc.expectedDir {

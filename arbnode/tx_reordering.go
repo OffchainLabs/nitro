@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"math"
 	"math/big"
@@ -24,7 +25,6 @@ type txReorderer struct {
 	source              genericItemSource
 	outChan             chan txQueueItem
 	reorderWindowMillis uint64
-	nextUniqueId        uint64
 	bufferedItem        *reorderItem
 }
 
@@ -33,49 +33,49 @@ func newTxReorderer(source genericItemSource, reorderWindowMillis int, queueSize
 		source:              source,
 		outChan:             make(chan txQueueItem, queueSize),
 		reorderWindowMillis: uint64(reorderWindowMillis),
-		nextUniqueId:        0,
 		bufferedItem:        nil,
 	}
 }
 
 type reorderItem struct {
-	uniqueId       uint64
-	timestamp      uint64
-	bid            *big.Int
-	cumulativeLoss *big.Int
-	queueItem      *txQueueItem
+	uniqueId        uint64
+	timestampMillis uint64
+	bid             *big.Int
+	cumulativeLoss  *big.Int
+	queueItem       *txQueueItem
 }
 
 func (reo *txReorderer) run(ctx context.Context) {
 	defer close(reo.outChan)
 
-	pendingTxs := []reorderItem{}
+	pendingItems := []reorderItem{}
 	visibilityWindowMillis := 2 * reo.reorderWindowMillis
 
 	for {
-		// read in txs up until earliest plus window
+		// read in txs up until earliest plus visibility window
 		timeLimit := uint64(math.MaxUint64)
-		if len(pendingTxs) > 0 {
-			timeLimit = arbmath.SaturatingUAdd(pendingTxs[0].timestamp, visibilityWindowMillis)
+		if len(pendingItems) > 0 {
+			timeLimit = arbmath.SaturatingUAdd(pendingItems[0].timestampMillis, visibilityWindowMillis)
 		}
 		doneCollectingInputs := false
 		for !doneCollectingInputs {
 			item, err := reo.get(ctx, timeLimit)
 			if errors.Is(err, errNoMoreItems) {
 				doneCollectingInputs = true
-				if len(pendingTxs) == 0 {
+				if len(pendingItems) == 0 {
 					return
 				}
 			} else if errors.Is(err, errTimeout) {
 				doneCollectingInputs = true
 			} else {
 				if err != nil {
+					log.Error("unexpected error in tx reorderer:", err)
 					return
 				}
-				if item.timestamp <= timeLimit {
-					pendingTxs = append(pendingTxs, item)
-					if len(pendingTxs) == 1 {
-						timeLimit = arbmath.SaturatingUAdd(pendingTxs[0].timestamp, visibilityWindowMillis)
+				if item.timestampMillis <= timeLimit {
+					pendingItems = append(pendingItems, item)
+					if len(pendingItems) == 1 {
+						timeLimit = arbmath.SaturatingUAdd(pendingItems[0].timestampMillis, visibilityWindowMillis)
 					}
 				} else {
 					reo.pushBack(item)
@@ -84,13 +84,12 @@ func (reo *txReorderer) run(ctx context.Context) {
 			}
 		}
 
-		sequenced, ptx := reorder_minimax(pendingTxs, reo.reorderWindowMillis)
-		pendingTxs = ptx
+		sequencedItems, ptx := reorder_minimax(pendingItems, reo.reorderWindowMillis)
+		pendingItems = ptx
 
-		for _, tx := range sequenced {
-			// emit the tx
+		for _, item := range sequencedItems {
 			select {
-			case reo.outChan <- *tx.queueItem:
+			case reo.outChan <- *item.queueItem:
 			case <-ctx.Done():
 				return
 			}
@@ -100,29 +99,34 @@ func (reo *txReorderer) run(ctx context.Context) {
 
 func (reo *txReorderer) get(ctx context.Context, timeoutMillis uint64) (reorderItem, error) {
 	if reo.bufferedItem != nil {
-		ret := *reo.bufferedItem
+		ret := reo.bufferedItem
 		reo.bufferedItem = nil
-		return ret, nil
+		return *ret, nil
 	}
 	return reo.source.Get(ctx, timeoutMillis)
 }
 
 func (reo *txReorderer) pushBack(item reorderItem) {
+	if reo.bufferedItem != nil {
+		log.Warn("tx reorderer tried to push back multiple items")
+		return
+	}
 	buffer := item
 	reo.bufferedItem = &buffer
 }
 
-func reorder_minimax(pendingTxs []reorderItem, reorderWindow uint64) ([]reorderItem, []reorderItem) {
-	numVertices := uint64(len(pendingTxs))
-	removalOrder := findRemovals(pendingTxs, reorderWindow)
-	emitted := []reorderItem{}
-	remaining := []reorderItem{}
-	wasEmitted := make([]bool, numVertices)
+func reorder_minimax(pendingItems []reorderItem, reorderWindow uint64) ([]reorderItem, []reorderItem) {
+	numVertices := uint64(len(pendingItems))
 
+	removalOrder := findRemovals(pendingItems, reorderWindow)
+
+	sequencedItems := []reorderItem{}
+	remainingItems := []reorderItem{}
+	wasEmitted := make([]bool, numVertices)
 	done := false
 	for i := len(removalOrder) - 1; !done && i >= 0; i-- {
 		wasEmitted[removalOrder[i]] = true
-		emitted = append(emitted, pendingTxs[removalOrder[i]])
+		sequencedItems = append(sequencedItems, pendingItems[removalOrder[i]])
 		if removalOrder[i] == 0 {
 			done = true
 		}
@@ -133,20 +137,20 @@ func reorder_minimax(pendingTxs []reorderItem, reorderWindow uint64) ([]reorderI
 		if !wasEmitted[i] {
 			for j := uint64(0); j < numVertices; j++ {
 				if wasEmitted[j] {
-					dir, heavy, weight := computeEdgeAndDirection(pendingTxs[i], pendingTxs[j], reorderWindow)
+					dir, heavy, weight := computeEdgeAndDirection(pendingItems[i], pendingItems[j], reorderWindow)
 					if dir == Direction(ForwardDirection) && !heavy {
 						localLoss = new(big.Int).Add(localLoss, weight)
 					}
 				}
 			}
-			if pendingTxs[i].cumulativeLoss == nil {
-				pendingTxs[i].cumulativeLoss = common.Big0
+			if pendingItems[i].cumulativeLoss == nil {
+				pendingItems[i].cumulativeLoss = common.Big0
 			}
-			pendingTxs[i].cumulativeLoss = new(big.Int).Add(pendingTxs[i].cumulativeLoss, localLoss)
-			remaining = append(remaining, pendingTxs[i])
+			pendingItems[i].cumulativeLoss = new(big.Int).Add(pendingItems[i].cumulativeLoss, localLoss)
+			remainingItems = append(remainingItems, pendingItems[i])
 		}
 	}
-	return emitted, remaining
+	return sequencedItems, remainingItems
 }
 
 type edge struct {
@@ -191,7 +195,10 @@ func (ew edgeWeight) Add(other edgeWeight) edgeWeight {
 	}
 }
 
-func (ew edgeWeight) Sub(other edgeWeight) edgeWeight {
+func (ew edgeWeight) SaturatingSub(other edgeWeight) edgeWeight {
+	if ew.Cmp(other) < 0 {
+		return zeroEdgeWeight
+	}
 	return edgeWeight{
 		hardEdges:  ew.hardEdges - other.hardEdges,
 		softWeight: new(big.Int).Sub(ew.softWeight, other.softWeight),
@@ -202,12 +209,13 @@ func findRemovals(pendingTxs []reorderItem, reorderWindow uint64) []uint64 {
 	numVertices := uint64(len(pendingTxs))
 	removed := make([]bool, numVertices)
 	removalOrder := []uint64{}
-	edges := generateEdges_altRules(pendingTxs, reorderWindow)
+	edges := generateEdges(pendingTxs, reorderWindow)
 
-	// compute outgoing weights
+	// compute total outgoing weight for each vertex
 	outWeight := make([]edgeWeight, numVertices)
 	for i, tx := range pendingTxs {
 		if tx.cumulativeLoss != nil {
+			// include the weight of edges that were violated in previous rounds
 			outWeight[i] = newSoftEdge(tx.cumulativeLoss)
 		} else {
 			outWeight[i] = zeroEdgeWeight
@@ -217,6 +225,7 @@ func findRemovals(pendingTxs []reorderItem, reorderWindow uint64) []uint64 {
 		outWeight[edge.from] = outWeight[edge.from].Add(edge.weight)
 	}
 
+	// repeatedly remove the vertex with lowest total outgoing weight
 	for num := numVertices; num > 0; num-- {
 		idx := uint64(0)
 		minOutWeight := infiniteEdgeWeight
@@ -230,10 +239,11 @@ func findRemovals(pendingTxs []reorderItem, reorderWindow uint64) []uint64 {
 		removalOrder = append(removalOrder, idx)
 		edges = removeEdgesForVertex(edges, idx, outWeight)
 	}
+
 	return removalOrder
 }
 
-func generateEdges_altRules(pendingTxs []reorderItem, reorderWindow uint64) []*edge {
+func generateEdges(pendingTxs []reorderItem, reorderWindow uint64) []*edge {
 	edges := []*edge{}
 	for i := uint64(0); i < uint64(len(pendingTxs)); i++ {
 		for j := uint64(0); j < i; j++ {
@@ -249,7 +259,7 @@ func removeEdgesForVertex(edges []*edge, whichVertex uint64, outDegrees []edgeWe
 		if e.from != whichVertex && e.to != whichVertex {
 			ret = append(ret, e)
 		} else {
-			outDegrees[e.from] = outDegrees[e.from].Sub(e.weight)
+			outDegrees[e.from] = outDegrees[e.from].SaturatingSub(e.weight)
 		}
 	}
 	return ret
@@ -262,10 +272,10 @@ const (
 
 type Direction uint8
 
-func computeEdgeAndDirection(from reorderItem, to reorderItem, reorderWindow uint64) (direction Direction, heavy bool, weight *big.Int) {
-	if arbmath.SaturatingUAdd(from.timestamp, reorderWindow) < to.timestamp {
+func computeEdgeAndDirection(from, to reorderItem, reorderWindow uint64) (direction Direction, heavy bool, weight *big.Int) {
+	if arbmath.SaturatingUAdd(from.timestampMillis, reorderWindow) < to.timestampMillis {
 		return Direction(ForwardDirection), true, common.Big0
-	} else if arbmath.SaturatingUAdd(to.timestamp, reorderWindow) < from.timestamp {
+	} else if arbmath.SaturatingUAdd(to.timestampMillis, reorderWindow) < from.timestampMillis {
 		return Direction(BackwardDirection), true, common.Big0
 	} else {
 		cmpBids := from.bid.Cmp(to.bid)
@@ -273,12 +283,11 @@ func computeEdgeAndDirection(from reorderItem, to reorderItem, reorderWindow uin
 			return Direction(ForwardDirection), false, new(big.Int).Sub(from.bid, to.bid)
 		} else if cmpBids < 0 {
 			return Direction(BackwardDirection), false, new(big.Int).Sub(to.bid, from.bid)
-		} else if from.timestamp < to.timestamp {
+		} else if from.timestampMillis < to.timestampMillis {
 			return Direction(ForwardDirection), false, common.Big1
-		} else if to.timestamp < from.timestamp {
+		} else if to.timestampMillis < from.timestampMillis {
 			return Direction(BackwardDirection), false, common.Big1
 		} else {
-			// this should never happen
 			return Direction(ForwardDirection), false, common.Big0
 		}
 	}
@@ -328,12 +337,13 @@ func (src *itemSourceChan) Get(ctx context.Context, timeoutMillis uint64) (reord
 			return reorderItem{}, errNoMoreItems
 		}
 		ret := reorderItem{
-			uniqueId:       0,
-			timestamp:      uint64(time.Now().UnixMilli()),
-			bid:            item.tx.GasTipCap(),
-			cumulativeLoss: common.Big0,
-			queueItem:      &item,
+			uniqueId:        src.nextUniqueId,
+			timestampMillis: uint64(time.Now().UnixMilli()),
+			bid:             item.tx.GasTipCap(),
+			cumulativeLoss:  common.Big0,
+			queueItem:       &item,
 		}
+		src.nextUniqueId++
 		return ret, nil
 	case <-timeout.C:
 		return reorderItem{}, errTimeout
@@ -350,7 +360,7 @@ func newItemSourceSlice(txs []reorderItem) genericItemSource {
 	return &itemSourceSlice{txs}
 }
 
-func (p *itemSourceSlice) Get(ctx context.Context, timeoutMillis uint64) (reorderItem, error) {
+func (p *itemSourceSlice) Get(ctx context.Context, _timeoutMillis uint64) (reorderItem, error) {
 	if len(p.remainingTxs) == 0 {
 		return reorderItem{}, errNoMoreItems
 	}
