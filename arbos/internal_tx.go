@@ -61,6 +61,10 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			// (incorrectly) use the L2 block number instead
 			timePassed = util.SafeMapGet[uint64](inputs, "l2BlockNumber")
 		}
+		if state.ArbOSVersion() < 8 {
+			// in old versions we incorrectly used an L1 block number one too high
+			l1BlockNumber++
+		}
 
 		nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
 		state.Restrict(err)
@@ -68,12 +72,12 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		l2BaseFee, err := state.L2PricingState().BaseFeeWei()
 		state.Restrict(err)
 
-		if l1BlockNumber >= nextL1BlockNumber {
+		if l1BlockNumber > nextL1BlockNumber {
 			var prevHash common.Hash
 			if evm.Context.BlockNumber.Sign() > 0 {
 				prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
 			}
-			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash, state.ArbOSVersion()))
+			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber-1, prevHash, state.ArbOSVersion()))
 		}
 
 		currentTime := evm.Context.Time.Uint64()
