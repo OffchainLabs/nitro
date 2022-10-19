@@ -71,7 +71,7 @@ type BlockValidatorConfig struct {
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	CurrentModuleRoot        string                        `koanf:"current-module-root"`          // TODO(magic) requires reinitialization on hot reload
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"`  // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	StorePreimages           bool                          `koanf:"store-preimages" reload:"hot"` // TODO verify if hot reloading is safe
+	OLD_StorePreimages       bool                          `koanf:"store-preimages" reload:"hot"` // TODO remove
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
 }
@@ -92,7 +92,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
-	f.Bool(prefix+".store-preimages", DefaultBlockValidatorConfig.StorePreimages, "store preimages of running machines (higher memory cost, better debugging, potentially better performance)")
+	f.Bool(prefix+".store-preimages", false, "[DEPRECATED] ignored")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
 }
@@ -111,7 +111,6 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	PrerecordedBlocks:        128,
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
-	StorePreimages:           false,
 	FailureIsFatal:           false,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 }
@@ -126,7 +125,6 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PrerecordedBlocks:        64,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
-	StorePreimages:           false,
 	FailureIsFatal:           false,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 }
@@ -274,7 +272,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 		if mustDeref {
 			defer arbitrum.DereferenceState(prevHeader, v.stateDatabase)
 		}
-		err := v.ValidationEntryRecord(ctx, s.Entry, v.config().StorePreimages)
+		err := v.ValidationEntryRecord(ctx, s.Entry)
 		if ctx.Err() != nil {
 			return
 		}

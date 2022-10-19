@@ -322,7 +322,6 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	ctx context.Context,
 	prevHeader *types.Header,
 	msg *arbstate.MessageWithMetadata,
-	producePreimages bool,
 ) (common.Hash, map[common.Hash][]byte, []BatchInfo, error) {
 	var recordingdb *state.StateDB
 	var chaincontext core.ChainContext
@@ -336,21 +335,9 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 		}
 		defer arbitrum.DereferenceState(prevHeader, v.stateDatabase)
 	}
-	if producePreimages {
-		recordingdb, chaincontext, recordingKV, err = arbitrum.PrepareRecording(v.stateDatabase.TrieDB(), v.blockchain, prevHeader)
-		if err != nil {
-			return common.Hash{}, nil, nil, err
-		}
-	} else {
-		var prevRoot common.Hash
-		if prevHeader != nil {
-			prevRoot = prevHeader.Root
-		}
-		recordingdb, err = state.NewDeterministic(prevRoot, v.stateDatabase)
-		if err != nil {
-			return common.Hash{}, nil, nil, err
-		}
-		chaincontext = v.blockchain
+	recordingdb, chaincontext, recordingKV, err = arbitrum.PrepareRecording(v.stateDatabase.TrieDB(), v.blockchain, prevHeader)
+	if err != nil {
+		return common.Hash{}, nil, nil, err
 	}
 
 	chainConfig := v.blockchain.Config()
@@ -418,8 +405,7 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	return blockHash, preimages, readBatchInfo, err
 }
 
-func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry,
-	producePreimages bool) error {
+func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
 	if e.Stage != ReadyForRecord {
 		return errors.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
@@ -427,9 +413,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.Stage = Recorded
 		return nil
 	}
-	blockhash, preimages, readBatchInfo, err := v.RecordBlockCreation(
-		ctx, e.PrevBlockHeader, e.msg, producePreimages,
-	)
+	blockhash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, e.PrevBlockHeader, e.msg)
 	if err != nil {
 		return err
 	}
@@ -648,7 +632,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	resHash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg, true)
+	resHash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block data to validate: %w", err)
 	}
