@@ -268,16 +268,16 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		}
 		return parsedLog.MessageNum, parsedLog.Data, nil
 	} else if ethLog.Topics[0] == inboxMessageFromOriginID {
-		tx, err := b.client.TransactionInBlock(ctx, ethLog.BlockHash, ethLog.TxIndex)
-		if err != nil {
-			return nil, nil, errors.WithStack(err)
-		}
 		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(ethLog)
 		if err != nil {
 			return nil, nil, errors.WithStack(err)
 		}
+		data, err := arbutil.GetLogEmitterTxData(ctx, b.client, ethLog)
+		if err != nil {
+			return nil, nil, err
+		}
 		args := make(map[string]interface{})
-		err = l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
+		err = l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:])
 		if err != nil {
 			return nil, nil, errors.WithStack(err)
 		}
