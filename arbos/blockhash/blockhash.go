@@ -12,8 +12,8 @@ import (
 )
 
 type Blockhashes struct {
-	backingStorage  *storage.Storage
-	nextBlockNumber storage.StorageBackedUint64
+	backingStorage *storage.Storage
+	l1BlockNumber  storage.StorageBackedUint64
 }
 
 func InitializeBlockhashes(backingStorage *storage.Storage) {
@@ -24,12 +24,12 @@ func OpenBlockhashes(backingStorage *storage.Storage) *Blockhashes {
 	return &Blockhashes{backingStorage, backingStorage.OpenStorageBackedUint64(0)}
 }
 
-func (bh *Blockhashes) NextBlockNumber() (uint64, error) {
-	return bh.nextBlockNumber.Get()
+func (bh *Blockhashes) L1BlockNumber() (uint64, error) {
+	return bh.l1BlockNumber.Get()
 }
 
 func (bh *Blockhashes) BlockHash(number uint64) (common.Hash, error) {
-	currentNumber, err := bh.nextBlockNumber.Get()
+	currentNumber, err := bh.l1BlockNumber.Get()
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -40,7 +40,7 @@ func (bh *Blockhashes) BlockHash(number uint64) (common.Hash, error) {
 }
 
 func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash, arbosVersion uint64) error {
-	nextNumber, err := bh.nextBlockNumber.Get()
+	nextNumber, err := bh.l1BlockNumber.Get()
 	if err != nil {
 		return err
 	}
@@ -73,5 +73,5 @@ func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash, ar
 	if err != nil {
 		return err
 	}
-	return bh.nextBlockNumber.Set(number + 1)
+	return bh.l1BlockNumber.Set(number + 1)
 }
