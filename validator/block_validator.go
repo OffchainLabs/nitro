@@ -31,12 +31,12 @@ type BlockValidator struct {
 	stopwaiter.StopWaiter
 	*StatelessBlockValidator
 
-	validationEntries sync.Map
-	sequencerBatches  sync.Map
-	blockMutex        sync.Mutex
-	batchMutex        sync.Mutex
-	reorgMutex        sync.Mutex
-	reorgsPending     int32 // atomic
+	validations      sync.Map
+	sequencerBatches sync.Map
+	blockMutex       sync.Mutex
+	batchMutex       sync.Mutex
+	reorgMutex       sync.Mutex
+	reorgsPending    int32 // atomic
 
 	lastBlockValidated      uint64      // both atomic and behind lastBlockValidatedMutex
 	lastBlockValidatedHash  common.Hash // behind lastBlockValidatedMutex
@@ -45,7 +45,7 @@ type BlockValidator struct {
 	nextBatchKept           uint64 // 1 + the last batch number kept
 
 	nextBlockToValidate       uint64
-	nextValidationEntryBlock  uint64
+	lastValidationEntryBlock  uint64 // used to delete entries in reorg
 	lastBlockValidatedUnknown bool
 	globalPosNextSend         GlobalStatePosition
 
@@ -69,6 +69,7 @@ type BlockValidatorConfig struct {
 	OutputPath               string                        `koanf:"output-path" reload:"hot"`
 	ConcurrentRunsLimit      int                           `koanf:"concurrent-runs-limit" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
+	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
 	CurrentModuleRoot        string                        `koanf:"current-module-root"`          // TODO(magic) requires reinitialization on hot reload
 	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"`  // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	OLD_StorePreimages       bool                          `koanf:"store-preimages" reload:"hot"` // TODO remove
@@ -89,7 +90,8 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".jit-validator-cranelift", DefaultBlockValidatorConfig.JitValidatorCranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
-	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation")
+	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
+	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".store-preimages", false, "[DEPRECATED] ignored")
@@ -108,6 +110,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	JitValidatorCranelift:    true,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
+	ForwardBlocks:            1024,
 	PrerecordedBlocks:        128,
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
@@ -122,6 +125,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	JitValidatorCranelift:    true,
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
+	ForwardBlocks:            128,
 	PrerecordedBlocks:        64,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
@@ -292,6 +296,19 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 	return nil
 }
 
+func (v *BlockValidator) newValidationStatus(prevHeader, header *types.Header, msg *arbstate.MessageWithMetadata) (*validationStatus, error) {
+	entry, err := newValidationEntry(prevHeader, header, msg)
+	if err != nil {
+		return nil, err
+	}
+	status := &validationStatus{
+		Status:      uint32(Unprepared),
+		Entry:       entry,
+		ModuleRoots: v.GetModuleRootsToValidate(),
+	}
+	return status, nil
+}
+
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	v.blockMutex.Lock()
 	defer v.blockMutex.Unlock()
@@ -309,29 +326,28 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 		}
 		return
 	}
-	entry, err := newValidationEntry(prevHeader, block.Header(), &msg)
-	if err != nil {
-		log.Error("failed creating new validation entry", "err", err)
+	if v.nextBlockToValidate+v.config().ForwardBlocks <= blockNum {
+		return
 	}
-	status := &validationStatus{
-		Status:      uint32(Unprepared),
-		Entry:       entry,
-		ModuleRoots: v.GetModuleRootsToValidate(),
+	status, err := v.newValidationStatus(prevHeader, block.Header(), &msg)
+	if err != nil {
+		log.Error("failed creating validation status", "err", err)
+		return
 	}
 	// It's fine to separately load and then store as we have the blockMutex acquired
-	_, present := v.validationEntries.Load(blockNum)
+	_, present := v.validations.Load(blockNum)
 	if present {
 		return
 	}
-	if v.nextValidationEntryBlock+v.config().PrerecordedBlocks <= blockNum {
+	if v.nextBlockToValidate+v.config().PrerecordedBlocks > blockNum {
 		err := v.sendRecord(status, false)
 		if err != nil {
 			log.Error("failed send recording for new block", "err", err)
 		}
 	}
-	v.validationEntries.Store(blockNum, status)
-	if v.nextValidationEntryBlock <= blockNum {
-		v.nextValidationEntryBlock = blockNum + 1
+	v.validations.Store(blockNum, status)
+	if v.lastValidationEntryBlock < blockNum {
+		v.lastValidationEntryBlock = blockNum
 	}
 }
 
@@ -635,24 +651,8 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		v.blockMutex.Unlock()
 		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
-		entry, found := v.validationEntries.Load(v.nextBlockToValidate)
+		entry, found := v.validations.Load(v.nextBlockToValidate)
 		if !found {
-			block := v.blockchain.GetBlockByNumber(v.nextBlockToValidate)
-			if block == nil {
-				// This block hasn't been created yet.
-				return
-			}
-			prevHeader := v.blockchain.GetHeaderByHash(block.ParentHash())
-			if prevHeader == nil && block.ParentHash() != (common.Hash{}) {
-				log.Warn("failed to get prevHeader in block validator", "num", v.nextBlockToValidate-1, "hash", block.ParentHash())
-				return
-			}
-			msg, err := v.streamer.GetMessage(nextMsg)
-			if err != nil {
-				log.Warn("failed to get message in block validator", "err", err)
-				return
-			}
-			v.NewBlock(block, prevHeader, *msg)
 			return
 		}
 		validationStatus, ok := entry.(*validationStatus)
@@ -705,9 +705,36 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 		if nextRecord >= v.nextBlockToValidate+v.config().PrerecordedBlocks {
 			return
 		}
-		entry, found := v.validationEntries.Load(nextRecord)
+		entry, found := v.validations.Load(nextRecord)
 		if !found {
-			return
+			header := v.blockchain.GetHeaderByNumber(v.nextBlockToValidate)
+			if header == nil {
+				// This block hasn't been created yet.
+				return
+			}
+			prevHeader := v.blockchain.GetHeaderByHash(header.ParentHash)
+			if prevHeader == nil && header.ParentHash != (common.Hash{}) {
+				log.Warn("failed to get prevHeader in block validator", "num", v.nextBlockToValidate-1, "hash", header.ParentHash)
+				return
+			}
+			msgNum := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
+			msg, err := v.streamer.GetMessage(msgNum)
+			if err != nil {
+				log.Warn("failed to get message in block validator", "err", err)
+				return
+			}
+			status, err := v.newValidationStatus(prevHeader, header, msg)
+			if err != nil {
+				log.Warn("failed to create validation status", "err", err)
+				return
+			}
+			v.blockMutex.Lock()
+			entry, found = v.validations.Load(nextRecord)
+			if !found {
+				v.validations.Store(nextRecord, status)
+				entry = status
+			}
+			v.blockMutex.Unlock()
 		}
 		validationStatus, ok := entry.(*validationStatus)
 		if !ok || (validationStatus == nil) {
@@ -759,7 +786,7 @@ func (v *BlockValidator) progressValidated() {
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
 		// Reads from blocksValidated can be non-atomic as all writes hold reorgMutex
 		checkingBlock := v.lastBlockValidated + 1
-		entry, found := v.validationEntries.Load(checkingBlock)
+		entry, found := v.validations.Load(checkingBlock)
 		if !found {
 			return
 		}
@@ -795,7 +822,7 @@ func (v *BlockValidator) progressValidated() {
 		v.lastBlockValidatedHash = validationEntry.BlockHash
 		v.lastBlockValidatedMutex.Unlock()
 
-		v.validationEntries.Delete(checkingBlock)
+		v.validations.Delete(checkingBlock)
 		select {
 		case v.progressChan <- checkingBlock:
 		default:
@@ -902,7 +929,7 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) er
 	defer v.reorgMutex.Unlock()
 	atomic.AddInt32(&v.reorgsPending, -1)
 
-	if blockNum+1 < v.nextValidationEntryBlock {
+	if blockNum < v.lastValidationEntryBlock {
 		log.Warn("block validator processing reorg", "blockNum", blockNum)
 		err := v.reorgToBlockImpl(blockNum, blockHash, false)
 		if err != nil {
@@ -914,12 +941,12 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) er
 }
 
 func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash, hasLastValidatedMutex bool) error {
-	for b := blockNum + 1; b < v.nextValidationEntryBlock; b++ {
-		entry, found := v.validationEntries.Load(b)
+	for b := blockNum + 1; b <= v.lastValidationEntryBlock; b++ {
+		entry, found := v.validations.Load(b)
 		if !found {
 			continue
 		}
-		v.validationEntries.Delete(b)
+		v.validations.Delete(b)
 
 		validationStatus, ok := entry.(*validationStatus)
 		if !ok || (validationStatus == nil) {
@@ -931,7 +958,7 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 			validationStatus.Cancel()
 		}
 	}
-	v.nextValidationEntryBlock = blockNum + 1
+	v.lastValidationEntryBlock = blockNum
 	if v.nextBlockToValidate <= blockNum+1 {
 		return nil
 	}
@@ -965,7 +992,7 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 			return fmt.Errorf("failed to get end of batch block %v", blockNum)
 		}
 		blockHash = block.Hash()
-		v.nextValidationEntryBlock = blockNum + 1
+		v.lastValidationEntryBlock = blockNum
 	} else {
 		_, v.globalPosNextSend, err = GlobalStatePositionsFor(v.inboxTracker, msgIndex, batch)
 		if err != nil {
