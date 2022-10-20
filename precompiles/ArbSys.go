@@ -57,7 +57,7 @@ func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 
 // Gets the current ArbOS version
 func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
-	version := new(big.Int).SetUint64(55 + c.State.FormatVersion()) // Nitro starts at version 56
+	version := new(big.Int).SetUint64(55 + c.State.ArbOSVersion()) // Nitro starts at version 56
 	return version, nil
 }
 
@@ -79,7 +79,7 @@ func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest 
 // Checks if the caller's caller was aliased
 func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
 	topLevel := con.isTopLevel(c, evm)
-	if c.State.FormatVersion() < 6 {
+	if c.State.ArbOSVersion() < 6 {
 		topLevel = evm.Depth() == 2
 	}
 	aliased := topLevel && util.DoesTxTypeAlias(c.txProcessor.TopTxType)
@@ -172,7 +172,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		calldataForL1,
 	)
 
-	if c.State.FormatVersion() >= 4 {
+	if c.State.ArbOSVersion() >= 4 {
 		return leafNum, nil
 	}
 	return sendHash.Big(), err
