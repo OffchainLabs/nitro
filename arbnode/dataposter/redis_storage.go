@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
