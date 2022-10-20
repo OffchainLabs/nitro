@@ -358,7 +358,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, orderingTip *big.Int
 	gasEstimating := p.msg.RunMode() == types.MessageGasEstimationMode
 	gasPrice := p.evm.Context.BaseFee
 	scenario := util.TracingBeforeEVM
-	version := p.state.FormatVersion()
+	version := p.state.ArbOSVersion()
 	from := p.msg.From()
 
 	var poster common.Address
