@@ -21,21 +21,29 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/contracts"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+var (
+	sourcesConnectedGauge    = metrics.NewRegisteredGauge("arb/feed/sources/connected", nil)
+	sourcesDisconnectedGauge = metrics.NewRegisteredGauge("arb/feed/sources/disconnected", nil)
+)
+
 type FeedConfig struct {
-	Output wsbroadcastserver.BroadcasterConfig `koanf:"output"`
-	Input  BroadcastClientConfig               `koanf:"input"`
+	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
+	Input  Config                              `koanf:"input"`
 }
 
 func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	if feedInputEnable {
-		BroadcastClientConfigAddOptions(prefix+".input", f)
+		ConfigAddOptions(prefix+".input", f)
 	}
 	if feedOutputEnable {
 		wsbroadcastserver.BroadcasterConfigAddOptions(prefix+".output", f)
@@ -44,40 +52,56 @@ func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, 
 
 var FeedConfigDefault = FeedConfig{
 	Output: wsbroadcastserver.DefaultBroadcasterConfig,
-	Input:  DefaultBroadcastClientConfig,
+	Input:  DefaultConfig,
 }
 
-type BroadcastClientConfig struct {
-	RequireChainId bool          `koanf:"require-chain-id"`
-	Timeout        time.Duration `koanf:"timeout"`
-	URLs           []string      `koanf:"url"`
+type Config struct {
+	RequireChainId     bool                     `koanf:"require-chain-id"`
+	RequireFeedVersion bool                     `koanf:"require-feed-version"`
+	Timeout            time.Duration            `koanf:"timeout"`
+	URLs               []string                 `koanf:"url"`
+	Verifier           signature.VerifierConfig `koanf:"verify"`
 }
 
-func (c *BroadcastClientConfig) Enable() bool {
+func (c *Config) Enable() bool {
 	return len(c.URLs) > 0 && c.URLs[0] != ""
 }
 
-func BroadcastClientConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".require-chain-id", DefaultBroadcastClientConfig.RequireChainId, "require broadcast server to send chain id when connecting")
-	f.Duration(prefix+".timeout", DefaultBroadcastClientConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
-	f.StringSlice(prefix+".url", DefaultBroadcastClientConfig.URLs, "URL of sequencer feed source")
+func ConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
+	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
+	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
+	f.StringSlice(prefix+".url", DefaultConfig.URLs, "URL of sequencer feed source")
+	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
 }
 
-var DefaultBroadcastClientConfig = BroadcastClientConfig{
-	RequireChainId: false,
-	URLs:           []string{""},
-	Timeout:        20 * time.Second,
+var DefaultConfig = Config{
+	RequireChainId:     false,
+	RequireFeedVersion: false,
+	Verifier:           signature.DefultFeedVerifierConfig,
+	URLs:               []string{""},
+	Timeout:            20 * time.Second,
+}
+
+var DefaultTestConfig = Config{
+	RequireChainId:     false,
+	RequireFeedVersion: false,
+	Verifier:           signature.DefultFeedVerifierConfig,
+	URLs:               []string{""},
+	Timeout:            200 * time.Millisecond,
 }
 
 type TransactionStreamerInterface interface {
-	AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error
+	AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error
 }
 
 type BroadcastClient struct {
 	stopwaiter.StopWaiter
 
+	config       Config
 	websocketUrl string
 	nextSeqNum   arbutil.MessageIndex
+	sigVerifier  *signature.Verifier
 
 	chainId uint64
 
@@ -90,38 +114,49 @@ type BroadcastClient struct {
 	retrying                        bool
 	shuttingDown                    bool
 	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
-	idleTimeout                     time.Duration
 	txStreamer                      TransactionStreamerInterface
-	feedErrChan                     chan error
+	fatalErrChan                    chan error
 }
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
 var ErrIncorrectChainId = errors.New("incorrect chain id")
+var ErrMissingChainId = errors.New("missing chain id")
+var ErrMissingFeedServerVersion = errors.New("missing feed server version")
 
 func NewBroadcastClient(
+	config Config,
 	websocketUrl string,
 	chainId uint64,
 	currentMessageCount arbutil.MessageIndex,
-	idleTimeout time.Duration,
 	txStreamer TransactionStreamerInterface,
-	feedErrChan chan error,
-) *BroadcastClient {
+	fatalErrChan chan error,
+	bpVerifier contracts.BatchPosterVerifierInterface,
+) (*BroadcastClient, error) {
+	sigVerifier, err := signature.NewVerifier(&config.Verifier, bpVerifier)
+	if err != nil {
+		return nil, err
+	}
 	return &BroadcastClient{
+		config:       config,
 		websocketUrl: websocketUrl,
 		chainId:      chainId,
 		nextSeqNum:   currentMessageCount,
-		idleTimeout:  idleTimeout,
 		txStreamer:   txStreamer,
-		feedErrChan:  feedErrChan}
+		fatalErrChan: fatalErrChan,
+		sigVerifier:  sigVerifier,
+	}, err
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
-	bc.StopWaiter.Start(ctxIn)
+	bc.StopWaiter.Start(ctxIn, bc)
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
-			if errors.Is(err, ErrIncorrectChainId) || errors.Is(err, ErrIncorrectFeedServerVersion) {
-				bc.feedErrChan <- err
+			if errors.Is(err, ErrMissingChainId) ||
+				errors.Is(err, ErrIncorrectChainId) ||
+				errors.Is(err, ErrMissingFeedServerVersion) ||
+				errors.Is(err, ErrIncorrectFeedServerVersion) {
+				bc.fatalErrChan <- err
 				return
 			}
 			if err == nil {
@@ -152,6 +187,8 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	})
 
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
+	var foundChainId bool
+	var foundFeedServerVersion bool
 	var chainId uint64
 	var feedServerVersion uint64
 	timeoutDialer := ws.Dialer{
@@ -160,6 +197,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 			headerName := string(key)
 			headerValue := string(value)
 			if headerName == wsbroadcastserver.HTTPHeaderFeedServerVersion {
+				foundFeedServerVersion = true
 				feedServerVersion, err = strconv.ParseUint(headerValue, 0, 64)
 				if err != nil {
 					return err
@@ -175,6 +213,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 					return ErrIncorrectFeedServerVersion
 				}
 			} else if headerName == wsbroadcastserver.HTTPHeaderChainId {
+				foundChainId = true
 				chainId, err = strconv.ParseUint(headerValue, 0, 64)
 				if err != nil {
 					return err
@@ -203,8 +242,25 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	}
 
 	conn, br, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
+	if errors.Is(err, ErrIncorrectFeedServerVersion) || errors.Is(err, ErrIncorrectChainId) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, errors.Wrap(err, "broadcast client unable to connect")
+	}
+	if bc.config.RequireChainId && !foundChainId {
+		err := conn.Close()
+		if err != nil {
+			return nil, errors.Wrap(err, "error closing connection when missing chain id")
+		}
+		return nil, ErrMissingChainId
+	}
+	if bc.config.RequireFeedVersion && !foundFeedServerVersion {
+		err := conn.Close()
+		if err != nil {
+			return nil, errors.Wrap(err, "error closing connection when missing feed server version")
+		}
+		return nil, ErrMissingFeedServerVersion
 	}
 
 	var earlyFrameData io.Reader
@@ -230,6 +286,8 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 
 func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
+		connected := false
+		sourcesDisconnectedGauge.Inc(1)
 		for {
 			select {
 			case <-ctx.Done():
@@ -237,7 +295,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			default:
 			}
 
-			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.idleTimeout, ws.StateClientSide)
+			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.config.Timeout, ws.StateClientSide)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return
@@ -248,6 +306,11 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					log.Warn("readData returned EOF", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				} else {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
+				}
+				if connected {
+					connected = false
+					sourcesConnectedGauge.Dec(1)
+					sourcesDisconnectedGauge.Inc(1)
 				}
 				_ = bc.conn.Close()
 				earlyFrameData = bc.retryConnect(ctx)
@@ -262,6 +325,11 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					continue
 				}
 
+				if !connected {
+					connected = true
+					sourcesDisconnectedGauge.Dec(1)
+					sourcesConnectedGauge.Inc(1)
+				}
 				if len(res.Messages) > 0 {
 					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
 				} else if res.ConfirmedSequenceNumberMessage != nil {
@@ -272,16 +340,22 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
-						var messages []arbstate.MessageWithMetadata
 						for _, message := range res.Messages {
 							if message == nil {
 								log.Warn("ignoring nil feed message")
 								continue
 							}
+
+							err := bc.isValidSignature(ctx, message)
+							if err != nil {
+								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
+								bc.fatalErrChan <- errors.Wrapf(err, "error validating feed signature %v", message.SequenceNumber)
+								continue
+							}
+
 							bc.nextSeqNum = message.SequenceNumber
-							messages = append(messages, message.Message)
 						}
-						if err := bc.txStreamer.AddBroadcastMessages(res.Messages[0].SequenceNumber, messages); err != nil {
+						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}
@@ -342,4 +416,16 @@ func (bc *BroadcastClient) StopAndWait() {
 	if bc.conn != nil {
 		_ = bc.conn.Close()
 	}
+}
+
+func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) error {
+	if bc.config.Verifier.Dangerous.AcceptMissing && bc.sigVerifier == nil {
+		// Verifier disabled
+		return nil
+	}
+	hash, err := message.Hash(bc.chainId)
+	if err != nil {
+		return errors.Wrapf(err, "error getting message hash for sequence number %v", message.SequenceNumber)
+	}
+	return bc.sigVerifier.VerifyHash(ctx, message.Signature, hash)
 }

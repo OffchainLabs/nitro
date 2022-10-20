@@ -372,4 +372,13 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         confirmNode(1, genesisBlockHash, expectedSendRoot);
         emit OwnerFunctionCalled(29);
     }
+
+    /**
+     * @notice set the validatorWhitelistDisabled flag
+     * @param _validatorWhitelistDisabled new value of validatorWhitelistDisabled, i.e. true = disabled
+     */
+    function setValidatorWhitelistDisabled(bool _validatorWhitelistDisabled) external {
+        validatorWhitelistDisabled = _validatorWhitelistDisabled;
+        emit OwnerFunctionCalled(30);
+    }
 }

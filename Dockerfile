@@ -1,11 +1,14 @@
-FROM emscripten/emsdk:3.1.7 as brotli-wasm-builder
+FROM debian:bullseye-slim as brotli-wasm-builder
 WORKDIR /workspace
+RUN apt-get update && \
+    apt-get install -y cmake make git lbzip2 python3 xz-utils && \
+    git clone https://github.com/emscripten-core/emsdk.git && \
+    cd emsdk && \
+    ./emsdk install 3.1.7 && \
+    ./emsdk activate 3.1.7
 COPY build-brotli.sh .
 COPY brotli brotli
-RUN apt-get update && \
-    apt-get install -y cmake make git && \
-    # pinned emsdk 3.1.7 (in docker image)
-    ./build-brotli.sh -w -t install/
+RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./build-brotli.sh -w -t install/
 
 FROM scratch as brotli-wasm-export
 COPY --from=brotli-wasm-builder /workspace/install/ /
@@ -26,7 +29,7 @@ RUN apt-get update && \
     apt-get install -y git python3 make g++
 WORKDIR /workspace
 COPY contracts/package.json contracts/yarn.lock contracts/
-RUN cd contracts && yarn
+RUN cd contracts && yarn install --ignore-optional
 COPY contracts contracts/
 COPY Makefile .
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
@@ -52,6 +55,7 @@ COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
+COPY ./arbutil ./arbutil
 COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/replay ./cmd/replay
 COPY ./das/dastree ./das/dastree
@@ -77,9 +81,9 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y make && \
     cargo install --force cbindgen
 COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
-COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/jit arbitrator/jit
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
 FROM scratch as prover-header-export
@@ -89,17 +93,27 @@ FROM rust:1.61-slim-bullseye as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-10-dev
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-12 main' && \
+    apt-get update && \
+    apt-get install -y llvm-12-dev libclang-common-12-dev
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
-RUN mkdir arbitrator/prover/src && \
+COPY arbitrator/jit/Cargo.toml arbitrator/jit/
+RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
+    echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
-    cargo build --manifest-path arbitrator/Cargo.toml --release --lib
+    cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
+    rm arbitrator/jit/src/lib.rs
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/jit arbitrator/jit
+COPY --from=brotli-library-export / target/
 RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make CARGOFLAGS="--features=llvm" build-jit
 
 FROM scratch as prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -122,17 +136,20 @@ COPY ./contracts ./contracts
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
 FROM debian:bullseye-slim as machine-versions
-RUN apt-get update && apt-get install -y unzip wget
+RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
 # Download WAVM machines
-#RUN bash -c 'r=0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v1-rc1/machine.wavm.br'
-#RUN bash -c 'r=0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v2.1/machine.wavm.br'
-#RUN bash -c 'r=0x53c288a0ca7100c0f2db8ab19508763a51c7fd1be125d376d940a65378acaee7 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3/machine.wavm.br'
-#RUN bash -c 'r=0x588762be2f364be15d323df2aa60ffff60f2b14103b34823b6f7319acd1ae7a3 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3.1/machine.wavm.br'
-#RUN bash -c 'r=0xcfba6a883c50a1b4475ab909600fa88fc9cceed9e3ff6f43dccd2d27f6bd57cf && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v3.2/machine.wavm.br'
-RUN bash -c 'r=0xa24ccdb052d92c5847e8ea3ce722442358db4b00985a9ee737c4e601b6ed9876 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v4/machine.wavm.br'
-RUN bash -c 'r=0x1e09e6d9e35b93f33ed22b2bc8dc10bbcf63fdde5e8a1fb8cc1bcd1a52f14bd0 && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v5/machine.wavm.br'
-RUN bash -c 'r=0x3848eff5e0356faf1fc9cafecb789584c5e7f4f8f817694d842ada96613d8bab && mkdir $r && ln -sfT $r latest && cd $r && echo $r > module-root.txt && wget https://github.com/OffchainLabs/nitro/releases/download/consensus-v6/machine.wavm.br'
+COPY ./testnode-scripts/download-machine.sh .
+#RUN ./download-machine.sh consensus-v1-rc1 0xbb9d58e9527566138b682f3a207c0976d5359837f6e330f4017434cca983ff41
+#RUN ./download-machine.sh consensus-v2.1 0x9d68e40c47e3b87a8a7e6368cc52915720a6484bb2f47ceabad7e573e3a11232
+#RUN ./download-machine.sh consensus-v3 0x53c288a0ca7100c0f2db8ab19508763a51c7fd1be125d376d940a65378acaee7
+#RUN ./download-machine.sh consensus-v3.1 0x588762be2f364be15d323df2aa60ffff60f2b14103b34823b6f7319acd1ae7a3
+#RUN ./download-machine.sh consensus-v3.2 0xcfba6a883c50a1b4475ab909600fa88fc9cceed9e3ff6f43dccd2d27f6bd57cf
+#RUN ./download-machine.sh consensus-v4 0xa24ccdb052d92c5847e8ea3ce722442358db4b00985a9ee737c4e601b6ed9876
+#RUN ./download-machine.sh consensus-v5 0x1e09e6d9e35b93f33ed22b2bc8dc10bbcf63fdde5e8a1fb8cc1bcd1a52f14bd0
+RUN ./download-machine.sh consensus-v6 0x3848eff5e0356faf1fc9cafecb789584c5e7f4f8f817694d842ada96613d8bab
+RUN ./download-machine.sh consensus-v7 0x53dd4b9a3d807a8cbb4d58fbfc6a0857c3846d46956848cae0a1cc7eca2bb5a8
+RUN ./download-machine.sh consensus-v7.1 0x2b20e1490d1b06299b222f3239b0ae07e750d8f3b4dedd19f500a815c1548bbc
 
 FROM golang:1.19-bullseye as node-builder
 WORKDIR /workspace
@@ -186,8 +203,9 @@ ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
 FROM nitro-node-slim as nitro-node
 USER root
-COPY --from=node-builder /workspace/target/bin/daserver /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/datool /usr/local/bin/
+COPY --from=prover-export /bin/jit                        /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
@@ -204,11 +222,13 @@ FROM nitro-node as nitro-node-dev
 USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
-COPY --from=node-builder /workspace/target/bin/deploy /usr/local/bin/
-COPY --from=node-builder /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
+COPY --from=prover-export /bin/jit                                         /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/deploy                     /usr/local/bin/
+COPY --from=node-builder  /workspace/target/bin/seq-coordinator-invalidate /usr/local/bin/
 COPY --from=module-root-calc /workspace/target/machines/latest/machine.wavm.br /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/until-host-io-state.bin /home/user/target/machines/latest/
 COPY --from=module-root-calc /workspace/target/machines/latest/module-root.txt /home/user/target/machines/latest/
+COPY --from=module-root-calc /workspace/target/machines/latest/replay.wasm /home/user/target/machines/latest/
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \

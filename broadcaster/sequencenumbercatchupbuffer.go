@@ -10,9 +10,14 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
+)
+
+var (
+	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
 )
 
 type SequenceNumberCatchupBuffer struct {
@@ -30,12 +35,14 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	}
 	var startingIndex int32
 	// Ignore messages older than requested sequence number
-	if b.messages[0].SequenceNumber < requestedSeqNum {
-		startingIndex = int32(requestedSeqNum - b.messages[0].SequenceNumber)
-		if startingIndex >= b.messageCount {
+	firstCachedSeqNum := b.messages[0].SequenceNumber
+	if firstCachedSeqNum < requestedSeqNum {
+		lastCachedSeqNum := firstCachedSeqNum + arbutil.MessageIndex(len(b.messages))
+		if lastCachedSeqNum < requestedSeqNum {
 			// Past end, nothing to return
 			return nil
 		}
+		startingIndex = int32(requestedSeqNum - firstCachedSeqNum)
 		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
 			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "seqNumZero", b.messages[0].SequenceNumber, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
 			return nil
@@ -59,11 +66,10 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 	start := time.Now()
 	bm := b.getCacheMessages(clientConnection.RequestedSeqNum())
 	if bm != nil {
-		// send the newly connected client all the messages we've got...
-
+		// send the newly connected client the requested messages
 		err := clientConnection.Write(bm)
 		if err != nil {
-			log.Error("error sending client cached messages", err, "client", clientConnection.Name, "elapsed", time.Since(start))
+			log.Error("error sending client cached messages", "error", err, "client", clientConnection.Name, "elapsed", time.Since(start))
 			return err
 		}
 	}
@@ -88,7 +94,7 @@ func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber ar
 	confirmedIndex := uint64(confirmedSequenceNumber - firstSequenceNumber)
 
 	if confirmedIndex >= uint64(len(b.messages)) {
-		log.Error("ConfirmedSequenceNumber: ", confirmedSequenceNumber, " is past the end of stored messages, clearing buffer. first sequence number: ", firstSequenceNumber, ", cache length: ", len(b.messages))
+		log.Error("ConfirmedSequenceNumber is past the end of stored messages", "confirmedSequenceNumber", confirmedSequenceNumber, "firstSequenceNumber", firstSequenceNumber, "cacheLength", len(b.messages))
 		b.messages = nil
 		return
 	}
@@ -96,7 +102,7 @@ func (b *SequenceNumberCatchupBuffer) deleteConfirmed(confirmedSequenceNumber ar
 	if b.messages[confirmedIndex].SequenceNumber != confirmedSequenceNumber {
 		// Log instead of returning error here so that the message will be sent to downstream
 		// relays to also cause them to be cleared.
-		log.Error("Invariant violation: confirmedSequenceNumber: ", confirmedSequenceNumber, " is not where expected, clearing buffer. first sequence number: ", firstSequenceNumber, ", cache length: ", len(b.messages), "found: ", b.messages[confirmedIndex].SequenceNumber)
+		log.Error("Invariant violation: confirmedSequenceNumber is not where expected, clearing buffer", "confirmedSequenceNumber", confirmedSequenceNumber, "firstSequenceNumber", firstSequenceNumber, "cacheLength", len(b.messages), "foundSequenceNumber", b.messages[confirmedIndex].SequenceNumber)
 		b.messages = nil
 		return
 	}
@@ -119,6 +125,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 
 	if confirmMsg := broadcastMessage.ConfirmedSequenceNumberMessage; confirmMsg != nil {
 		b.deleteConfirmed(confirmMsg.SequenceNumber)
+		confirmedSequenceNumberGauge.Update(int64(confirmMsg.SequenceNumber))
 	}
 
 	for _, newMsg := range broadcastMessage.Messages {

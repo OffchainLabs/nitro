@@ -5,18 +5,22 @@ package arbnode
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
@@ -40,15 +44,22 @@ type BlockValidatorDebugAPI struct {
 	blockchain *core.BlockChain
 }
 
+type ValidateBlockResult struct {
+	Valid   bool   `json:"valid"`
+	Latency string `json:"latency"`
+}
+
 func (a *BlockValidatorDebugAPI) ValidateBlock(
-	ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash,
-) (bool, error) {
+	ctx context.Context, blockNum rpc.BlockNumberOrHash, full bool, moduleRootOptional *common.Hash,
+) (ValidateBlockResult, error) {
+	result := ValidateBlockResult{}
+
 	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
 	if err != nil {
-		return false, err
+		return result, err
 	}
 	if !a.blockchain.Config().IsArbitrumNitro(header.Number) {
-		return false, types.ErrUseFallback
+		return result, types.ErrUseFallback
 	}
 	var moduleRoot common.Hash
 	if moduleRootOptional != nil {
@@ -56,11 +67,15 @@ func (a *BlockValidatorDebugAPI) ValidateBlock(
 	} else {
 		moduleRoots := a.val.GetModuleRootsToValidate()
 		if len(moduleRoots) == 0 {
-			return false, errors.New("no current WasmModuleRoot configured, must provide parameter")
+			return result, errors.New("no current WasmModuleRoot configured, must provide parameter")
 		}
 		moduleRoot = moduleRoots[0]
 	}
-	return a.val.ValidateBlock(ctx, header, moduleRoot)
+	start_time := time.Now()
+	valid, err := a.val.ValidateBlock(ctx, header, full, moduleRoot)
+	result.Valid = valid
+	result.Latency = fmt.Sprintf("%vms", time.Since(start_time).Milliseconds())
+	return result, err
 }
 
 type ArbAPI struct {
@@ -78,7 +93,9 @@ type ArbDebugAPI struct {
 }
 
 type PricingModelHistory struct {
-	First            uint64     `json:"first"`
+	Start            uint64     `json:"start"`
+	End              uint64     `json:"end"`
+	Step             uint64     `json:"step"`
 	Timestamp        []uint64   `json:"timestamp"`
 	BaseFee          []*big.Int `json:"baseFee"`
 	GasBacklog       []uint64   `json:"gasBacklog"`
@@ -103,21 +120,36 @@ type PricingModelHistory struct {
 	L1PayRewardTo          string     `json:"l1PayRewardTo"`
 }
 
-func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNumber) (PricingModelHistory, error) {
+func (api *ArbDebugAPI) evenlySpaceBlocks(start, end rpc.BlockNumber) (uint64, uint64, uint64, uint64, error) {
 	start, _ = api.blockchain.ClipToPostNitroGenesis(start)
 	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
 	blocks := end.Int64() - start.Int64() + 1
-	if blocks > int64(api.blockRangeBound) {
-		log.Warn("Sanitizing pricing model # of blocks", "requested", blocks, "truncated", api.blockRangeBound)
-		blocks = int64(api.blockRangeBound)
+	bound := int64(api.blockRangeBound)
+	step := int64(1)
+	if blocks > bound {
+		step = int64(float64(blocks)/float64(bound) + 0.5)
+		blocks = arbmath.MinInt(bound, blocks/step)
 	}
 	if blocks <= 0 {
-		return PricingModelHistory{}, fmt.Errorf("invalid block range: %v to %v", start.Int64(), end.Int64())
+		return 0, 0, 0, 0, fmt.Errorf("invalid block range: %v to %v", start.Int64(), end.Int64())
+	}
+
+	first := uint64(end.Int64() - step*(blocks-1)) // minus 1 to include the fact that we start from the last
+	return first, uint64(step), uint64(end), uint64(blocks), nil
+}
+
+func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNumber) (PricingModelHistory, error) {
+
+	first, step, last, blocks, err := api.evenlySpaceBlocks(start, end)
+	if err != nil {
+		return PricingModelHistory{}, err
 	}
 
 	history := PricingModelHistory{
-		First:                uint64(start),
+		Start:                first,
+		End:                  last,
+		Step:                 step,
 		Timestamp:            make([]uint64, blocks),
 		BaseFee:              make([]*big.Int, blocks),
 		GasBacklog:           make([]uint64, blocks),
@@ -131,7 +163,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 	}
 
 	for i := uint64(0); i < uint64(blocks); i++ {
-		state, header, err := stateAndHeader(api.blockchain, i+uint64(start))
+		state, header, err := stateAndHeader(api.blockchain, first+i*step)
 		if err != nil {
 			return history, err
 		}
@@ -189,27 +221,31 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 			history.L1PayRewardTo = l1PayRewardsTo.Hex()
 		}
 	}
-
 	return history, nil
 }
 
-func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.BlockNumber) ([]uint64, error) {
-	start, _ = api.blockchain.ClipToPostNitroGenesis(start)
-	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
+type TimeoutQueueHistory struct {
+	Start uint64   `json:"start"`
+	End   uint64   `json:"end"`
+	Step  uint64   `json:"step"`
+	Count []uint64 `json:"count"`
+}
 
-	blocks := end.Int64() - start.Int64() + 1
-	if blocks > int64(api.blockRangeBound) {
-		log.Warn("Sanitizing timeout history # of blocks", "requested", blocks, "truncated", api.blockRangeBound)
-		blocks = int64(api.blockRangeBound)
-	}
-	if blocks <= 0 {
-		return []uint64{}, fmt.Errorf("invalid block range: %v to %v", start.Int64(), end.Int64())
+func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.BlockNumber) (TimeoutQueueHistory, error) {
+	first, step, last, blocks, err := api.evenlySpaceBlocks(start, end)
+	if err != nil {
+		return TimeoutQueueHistory{}, err
 	}
 
-	history := make([]uint64, blocks)
+	history := TimeoutQueueHistory{
+		Start: first,
+		End:   last,
+		Step:  step,
+		Count: make([]uint64, blocks),
+	}
 
 	for i := uint64(0); i < uint64(blocks); i++ {
-		state, _, err := stateAndHeader(api.blockchain, i+uint64(start))
+		state, _, err := stateAndHeader(api.blockchain, first+i*step)
 		if err != nil {
 			return history, err
 		}
@@ -217,9 +253,8 @@ func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.
 		if err != nil {
 			return history, err
 		}
-		history[i] = size
+		history.Count[i] = size
 	}
-
 	return history, nil
 }
 
@@ -286,4 +321,79 @@ func stateAndHeader(blockchain *core.BlockChain, block uint64) (*arbosState.Arbo
 	}
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 	return state, header, err
+}
+
+type ArbTraceForwarderAPI struct {
+	fallbackClientUrl     string
+	fallbackClientTimeout time.Duration
+
+	initialized    int32
+	mutex          sync.Mutex
+	fallbackClient types.FallbackClient
+}
+
+func (api *ArbTraceForwarderAPI) getFallbackClient() (types.FallbackClient, error) {
+	if atomic.LoadInt32(&api.initialized) == 1 {
+		return api.fallbackClient, nil
+	}
+	api.mutex.Lock()
+	defer api.mutex.Unlock()
+	if atomic.LoadInt32(&api.initialized) == 1 {
+		return api.fallbackClient, nil
+	}
+	fallbackClient, err := arbitrum.CreateFallbackClient(api.fallbackClientUrl, api.fallbackClientTimeout)
+	if err != nil {
+		return nil, err
+	}
+	api.fallbackClient = fallbackClient
+	atomic.StoreInt32(&api.initialized, 1)
+	return api.fallbackClient, nil
+}
+
+func (api *ArbTraceForwarderAPI) forward(ctx context.Context, method string, args ...interface{}) (*json.RawMessage, error) {
+	fallbackClient, err := api.getFallbackClient()
+	if err != nil {
+		return nil, err
+	}
+	if fallbackClient == nil {
+		return nil, errors.New("arbtrace calls forwarding not configured") // TODO(magic)
+	}
+	var resp *json.RawMessage
+	err = fallbackClient.CallContext(ctx, &resp, method, args...)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (api *ArbTraceForwarderAPI) Call(ctx context.Context, callArgs json.RawMessage, traceTypes json.RawMessage, blockNum json.RawMessage) (*json.RawMessage, error) {
+	return api.forward(ctx, "arbtrace_call", callArgs, traceTypes, blockNum)
+}
+
+func (api *ArbTraceForwarderAPI) CallMany(ctx context.Context, calls json.RawMessage, blockNum json.RawMessage) (*json.RawMessage, error) {
+	return api.forward(ctx, "arbtrace_callMany", calls, blockNum)
+}
+
+func (api *ArbTraceForwarderAPI) ReplayBlockTransactions(ctx context.Context, blockNum json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
+	return api.forward(ctx, "arbtrace_replayBlockTransactions", blockNum, traceTypes)
+}
+
+func (api *ArbTraceForwarderAPI) ReplayTransaction(ctx context.Context, txHash json.RawMessage, traceTypes json.RawMessage) (*json.RawMessage, error) {
+	return api.forward(ctx, "arbtrace_replayTransaction", txHash, traceTypes)
+}
+
+func (api *ArbTraceForwarderAPI) Transaction(ctx context.Context, txHash json.RawMessage) (*json.RawMessage, error) {
+	return api.forward(ctx, "arbtrace_transaction", txHash)
+}
+
+func (api *ArbTraceForwarderAPI) Get(ctx context.Context, txHash json.RawMessage, path json.RawMessage) (*json.RawMessage, error) {
+	return api.forward(ctx, "arbtrace_get", txHash, path)
+}
+
+func (api *ArbTraceForwarderAPI) Block(ctx context.Context, blockNum json.RawMessage) (*json.RawMessage, error) {
+	return api.forward(ctx, "arbtrace_block", blockNum)
+}
+
+func (api *ArbTraceForwarderAPI) Filter(ctx context.Context, filter json.RawMessage) (*json.RawMessage, error) {
+	return api.forward(ctx, "arbtrace_filter", filter)
 }

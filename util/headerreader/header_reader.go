@@ -23,26 +23,29 @@ import (
 
 type HeaderReader struct {
 	stopwaiter.StopWaiter
-	config Config
+	config ConfigFetcher
 	client arbutil.L1Interface
 
-	chanMutex sync.Mutex
+	chanMutex sync.RWMutex
 	// All fields below require the chanMutex
 	outChannels                map[chan<- *types.Header]struct{}
 	outChannelsBehind          map[chan<- *types.Header]struct{}
 	lastBroadcastHash          common.Hash
 	lastBroadcastHeader        *types.Header
+	lastBroadcastErr           error
 	lastPendingCallBlockNr     uint64
 	requiresPendingCallUpdates int
 }
 
 type Config struct {
 	Enable               bool          `koanf:"enable"`
-	PollOnly             bool          `koanf:"poll-only"`
-	PollInterval         time.Duration `koanf:"poll-interval"`
-	SubscribeErrInterval time.Duration `koanf:"subscribe-err-interval"`
-	TxTimeout            time.Duration `koanf:"tx-timeout"`
+	PollOnly             bool          `koanf:"poll-only" reload:"hot"`
+	PollInterval         time.Duration `koanf:"poll-interval" reload:"hot"`
+	SubscribeErrInterval time.Duration `koanf:"subscribe-err-interval" reload:"hot"`
+	TxTimeout            time.Duration `koanf:"tx-timeout" reload:"hot"`
 }
+
+type ConfigFetcher func() *Config
 
 var DefaultConfig = Config{
 	Enable:               true,
@@ -66,7 +69,7 @@ var TestConfig = Config{
 	TxTimeout:    time.Second * 5,
 }
 
-func New(client arbutil.L1Interface, config Config) *HeaderReader {
+func New(client arbutil.L1Interface, config ConfigFetcher) *HeaderReader {
 	return &HeaderReader{
 		client:            client,
 		config:            config,
@@ -131,6 +134,9 @@ func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 
+	// Clear any previous errors
+	s.lastBroadcastErr = nil
+
 	headerHash := h.Hash()
 	broadcastThis := false
 
@@ -174,6 +180,12 @@ func (s *HeaderReader) possiblyBroadcast(h *types.Header) {
 	}
 }
 
+func (s *HeaderReader) setError(err error) {
+	s.chanMutex.Lock()
+	defer s.chanMutex.Unlock()
+	s.lastBroadcastErr = err
+}
+
 func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 	var clientSubscription ethereum.Subscription = nil
 	defer func() {
@@ -183,48 +195,58 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 	}()
 	inputChannel := make(chan *types.Header)
 	if err := ctx.Err(); err != nil {
+		s.setError(fmt.Errorf("exiting at start of broadcastLoop: %w", err))
 		return
 	}
-	ticker := time.NewTicker(s.config.PollInterval)
 	nextSubscribeErr := time.Now().Add(-time.Second)
 	var errChannel <-chan error
+	pollOnlyOverride := false
 	for {
 		if clientSubscription != nil {
 			errChannel = clientSubscription.Err()
 		} else {
 			errChannel = nil
 		}
+		timer := time.NewTimer(s.config().PollInterval)
 		select {
 		case h := <-inputChannel:
 			s.possiblyBroadcast(h)
-		case <-ticker.C:
+			timer.Stop()
+		case <-timer.C:
 			h, err := s.client.HeaderByNumber(ctx, nil)
 			if err != nil {
+				s.setError(fmt.Errorf("failed reading HeaderByNumber: %w", err))
 				if !errors.Is(err, context.Canceled) {
 					log.Warn("failed reading header", "err", err)
 				}
 			} else {
 				s.possiblyBroadcast(h)
 			}
-			if !s.config.PollOnly && clientSubscription == nil {
+			if !(s.config().PollOnly || pollOnlyOverride) && clientSubscription == nil {
 				clientSubscription, err = s.client.SubscribeNewHead(ctx, inputChannel)
 				if err != nil {
 					clientSubscription = nil
 					if errors.Is(err, rpc.ErrNotificationsUnsupported) {
-						s.config.PollOnly = true
+						pollOnlyOverride = true
 					} else if time.Now().After(nextSubscribeErr) {
+						s.setError(fmt.Errorf("failed subscribing to header: %w", err))
 						log.Warn("failed subscribing to header", "err", err)
-						nextSubscribeErr = time.Now().Add(s.config.SubscribeErrInterval)
+						nextSubscribeErr = time.Now().Add(s.config().SubscribeErrInterval)
 					}
 				}
 			}
 		case err := <-errChannel:
 			if ctx.Err() != nil {
+				s.setError(fmt.Errorf("exiting broadcastLoop: %w", ctx.Err()))
 				return
 			}
 			clientSubscription = nil
+			s.setError(fmt.Errorf("error in subscription to headers: %w", err))
 			log.Warn("error in subscription to headers", "err", err)
+			timer.Stop()
 		case <-ctx.Done():
+			timer.Stop()
+			s.setError(fmt.Errorf("exiting broadcastLoop: %w", ctx.Err()))
 			return
 		}
 		s.logIfHeaderIsOld()
@@ -232,14 +254,15 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 }
 
 func (s *HeaderReader) logIfHeaderIsOld() {
-	s.chanMutex.Lock()
+	s.chanMutex.RLock()
 	storedHeader := s.lastBroadcastHeader
-	s.chanMutex.Unlock()
+	s.chanMutex.RUnlock()
 	if storedHeader == nil {
 		return
 	}
 	headerTime := time.Unix(int64(storedHeader.Time), 0)
 	if time.Since(headerTime) >= 5*time.Minute {
+		s.setError(errors.New("latest header is at least 5 minutes old"))
 		log.Warn("latest L1 block is at least 5 minutes old", "l1Block", storedHeader.Number, "l1Timestamp", headerTime)
 	}
 }
@@ -247,7 +270,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 func (s *HeaderReader) WaitForTxApproval(ctxIn context.Context, tx *types.Transaction) (*types.Receipt, error) {
 	headerchan, unsubscribe := s.Subscribe(true)
 	defer unsubscribe()
-	ctx, cancel := context.WithTimeout(ctxIn, s.config.TxTimeout)
+	ctx, cancel := context.WithTimeout(ctxIn, s.config().TxTimeout)
 	defer cancel()
 	txHash := tx.Hash()
 	for {
@@ -271,9 +294,21 @@ func (s *HeaderReader) WaitForTxApproval(ctxIn context.Context, tx *types.Transa
 }
 
 func (s *HeaderReader) LastHeader(ctx context.Context) (*types.Header, error) {
-	s.chanMutex.Lock()
+	return s.lastHeaderImpl(ctx, false)
+}
+
+func (s *HeaderReader) LastHeaderWithError(ctx context.Context) (*types.Header, error) {
+	return s.lastHeaderImpl(ctx, true)
+}
+
+func (s *HeaderReader) lastHeaderImpl(ctx context.Context, withError bool) (*types.Header, error) {
+	s.chanMutex.RLock()
 	storedHeader := s.lastBroadcastHeader
-	s.chanMutex.Unlock()
+	storedError := s.lastBroadcastErr
+	s.chanMutex.RUnlock()
+	if withError && storedError != nil {
+		return nil, storedError
+	}
 	if storedHeader != nil {
 		return storedHeader, nil
 	}
@@ -281,16 +316,16 @@ func (s *HeaderReader) LastHeader(ctx context.Context) (*types.Header, error) {
 }
 
 func (s *HeaderReader) UpdatingPendingCallBlockNr() bool {
-	s.chanMutex.Lock()
-	defer s.chanMutex.Unlock()
+	s.chanMutex.RLock()
+	defer s.chanMutex.RUnlock()
 	return s.requiresPendingCallUpdates > 0
 }
 
 // blocknumber used by pending calls.
 // only updated if UpdatingPendingCallBlockNr returns true
 func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
-	s.chanMutex.Lock()
-	defer s.chanMutex.Unlock()
+	s.chanMutex.RLock()
+	defer s.chanMutex.RUnlock()
 	return s.lastPendingCallBlockNr
 }
 
@@ -309,7 +344,7 @@ func (s *HeaderReader) Client() arbutil.L1Interface {
 }
 
 func (s *HeaderReader) Start(ctxIn context.Context) {
-	s.StopWaiter.Start(ctxIn)
+	s.StopWaiter.Start(ctxIn, s)
 	s.LaunchThread(s.broadcastLoop)
 }
 

@@ -152,8 +152,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		ApplyInternalTxUpdate(tx, p.state, evm)
-		return true, 0, nil, nil
+		err = ApplyInternalTxUpdate(tx, p.state, evm)
+		return true, 0, err, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		defer (startTracer())()
 		statedb := evm.StateDB
@@ -271,7 +271,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// pay for the retryable's gas and update the pools
 		gascost := arbmath.BigMulByUint(basefee, usergas)
-		if transfer(&tx.From, &networkFeeAccount, gascost) != nil {
+		if err := transfer(&tx.From, &networkFeeAccount, gascost); err != nil {
 			// should be impossible because we just checked the tx.From balance
 			glog.Error("failed to transfer gas cost to network fee account", "err", err)
 			return true, 0, nil, ticketId.Bytes()
@@ -514,7 +514,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	}
 
 	purpose := "feeCollection"
-	if p.state.FormatVersion() > 4 {
+	if p.state.ArbOSVersion() > 4 {
 		infraFeeAccount, err := p.state.InfraFeeAccount()
 		p.state.Restrict(err)
 		if infraFeeAccount != (common.Address{}) {
@@ -533,7 +533,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
 	}
 	posterFeeDestination := p.evm.Context.Coinbase
-	if p.state.FormatVersion() >= 2 {
+	if p.state.ArbOSVersion() >= 2 {
 		posterFeeDestination = l1pricing.L1PricerFundsPoolAddress
 	}
 	util.MintBalance(&posterFeeDestination, p.PosterFee, p.evm, scenario, purpose)
@@ -602,7 +602,7 @@ func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	blockNum, err := state.Blockhashes().NextBlockNumber()
+	blockNum, err := state.Blockhashes().L1BlockNumber()
 	if err != nil {
 		return 0, err
 	}
@@ -637,7 +637,7 @@ func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 }
 
 func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
-	if p.state.FormatVersion() >= 3 {
+	if p.state.ArbOSVersion() >= 3 {
 		return p.GetPaidGasPrice()
 	}
 	return evm.GasPrice

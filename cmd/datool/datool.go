@@ -16,16 +16,19 @@ import (
 	"strings"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-
 	"github.com/offchainlabs/nitro/cmd/util"
+
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/dastree"
-	flag "github.com/spf13/pflag"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 func main() {
@@ -99,13 +102,13 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
 	genericconf.ConfConfigAddOptions("conf", f)
 
-	k, err := util.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
 	}
 
 	var config ClientStoreConfig
-	if err := util.EndCommonParse(k, &config); err != nil {
+	if err := confighelpers.EndCommonParse(k, &config); err != nil {
 		return nil, err
 	}
 	return &config, nil
@@ -136,7 +139,7 @@ func startClientStore(args []string) error {
 				return err
 			}
 		}
-		signer := das.DasSignerFromPrivateKey(privateKey)
+		signer := signature.DataSignerFromPrivateKey(privateKey)
 
 		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
 		if err != nil {
@@ -181,8 +184,8 @@ func startClientStore(args []string) error {
 	}
 
 	serializedCert := das.Serialize(cert)
-	fmt.Printf("Hex Encoded Cert: %s\n", string(hexutil.Encode(serializedCert)))
-	fmt.Printf("Hex Encoded Data Hash: %s\n", string(hexutil.Encode(cert.DataHash[:])))
+	fmt.Printf("Hex Encoded Cert: %s\n", hexutil.Encode(serializedCert))
+	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(cert.DataHash[:]))
 
 	return nil
 }
@@ -202,13 +205,13 @@ func parseRESTClientGetByHashConfig(args []string) (*RESTClientGetByHashConfig, 
 
 	genericconf.ConfConfigAddOptions("conf", f)
 
-	k, err := util.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
 	}
 
 	var config RESTClientGetByHashConfig
-	if err := util.EndCommonParse(k, &config); err != nil {
+	if err := confighelpers.EndCommonParse(k, &config); err != nil {
 		return nil, err
 	}
 	return &config, nil
@@ -264,13 +267,13 @@ func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f.Bool("wallet", false, "generate the ECDSA keypair in a wallet file")
 	genericconf.ConfConfigAddOptions("conf", f)
 
-	k, err := util.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
 	}
 
 	var config KeyGenConfig
-	if err := util.EndCommonParse(k, &config); err != nil {
+	if err := confighelpers.EndCommonParse(k, &config); err != nil {
 		return nil, err
 	}
 	return &config, nil

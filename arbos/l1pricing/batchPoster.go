@@ -39,7 +39,7 @@ type BatchPosterState struct {
 
 func InitializeBatchPostersTable(storage *storage.Storage) error {
 	totalFundsDue := storage.OpenStorageBackedBigInt(totalFundsDueOffset)
-	if err := totalFundsDue.Set(common.Big0); err != nil {
+	if err := totalFundsDue.SetChecked(common.Big0); err != nil {
 		return err
 	}
 	return addressSet.Initialize(storage.OpenSubStorage(PosterAddrsKey))
@@ -89,7 +89,7 @@ func (bpt *BatchPostersTable) AddPoster(posterAddress common.Address, payTo comm
 		return nil, ErrAlreadyExists
 	}
 	bpState := bpt.internalOpen(posterAddress)
-	if err := bpState.fundsDue.Set(common.Big0); err != nil {
+	if err := bpState.fundsDue.SetChecked(common.Big0); err != nil {
 		return nil, err
 	}
 	if err := bpState.payTo.Set(payTo); err != nil {
@@ -126,10 +126,10 @@ func (bps *BatchPosterState) SetFundsDue(val *big.Int) error {
 	if err != nil {
 		return err
 	}
-	if err := totalFundsDue.Set(arbmath.BigSub(arbmath.BigAdd(prevTotal, val), prev)); err != nil {
+	if err := totalFundsDue.SetSaturatingWithWarning(arbmath.BigSub(arbmath.BigAdd(prevTotal, val), prev), "batch poster total funds due"); err != nil {
 		return err
 	}
-	return bps.fundsDue.Set(val)
+	return bps.fundsDue.SetSaturatingWithWarning(val, "batch poster funds due")
 }
 
 func (bps *BatchPosterState) PayTo() (common.Address, error) {

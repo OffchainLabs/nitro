@@ -7,22 +7,25 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"io"
 	"math/big"
 
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/zeroheavy"
-
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/zeroheavy"
 )
+
+var uniquifyingPrefix = []byte("Arbitrum Nitro Feed:")
 
 type InboxBackend interface {
 	PeekSequencerInbox() ([]byte, error)
@@ -41,6 +44,29 @@ type MessageWithMetadata struct {
 	DelayedMessagesRead uint64                   `json:"delayedMessagesRead"`
 }
 
+var EmptyTestMessageWithMetadata = MessageWithMetadata{
+	Message: &arbos.EmptyTestIncomingMessage,
+}
+
+// Message signature is only verified if requestId defined
+var TestMessageWithMetadataAndRequestId = MessageWithMetadata{
+	Message: &arbos.TestIncomingMessageWithRequestId,
+}
+
+func (m *MessageWithMetadata) Hash(sequenceNumber arbutil.MessageIndex, chainId uint64) (common.Hash, error) {
+	serializedExtraData := make([]byte, 24)
+	binary.BigEndian.PutUint64(serializedExtraData[:8], uint64(sequenceNumber))
+	binary.BigEndian.PutUint64(serializedExtraData[8:16], chainId)
+	binary.BigEndian.PutUint64(serializedExtraData[16:], m.DelayedMessagesRead)
+
+	serializedMessage, err := rlp.EncodeToBytes(m.Message)
+	if err != nil {
+		return common.Hash{}, errors.Wrapf(err, "unable to serialize message %v", sequenceNumber)
+	}
+
+	return crypto.Keccak256Hash(uniquifyingPrefix, serializedExtraData, serializedMessage), nil
+}
+
 type InboxMultiplexer interface {
 	Pop(context.Context) (*MessageWithMetadata, error)
 	DelayedMessagesRead() uint64
@@ -55,8 +81,8 @@ type sequencerMessage struct {
 	segments             [][]byte
 }
 
-const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
-const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
+const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
+const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
@@ -99,10 +125,10 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 	}
 
 	if len(payload) > 0 && IsBrotliMessageHeaderByte(payload[0]) {
-		decompressed, err := arbcompress.Decompress(payload[1:], maxDecompressedLen)
+		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
-			stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
+			stream := rlp.NewStream(reader, uint64(MaxDecompressedLen))
 			for {
 				var segment []byte
 				err := stream.Decode(&segment)
@@ -263,7 +289,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasRe
 	}
 }
 
-var InvalidL1Message *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
+var InvalidL1Message = &arbos.L1IncomingMessage{
 	Header: &arbos.L1IncomingMessageHeader{
 		Kind: arbos.L1MessageType_Invalid,
 	},

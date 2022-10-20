@@ -12,19 +12,20 @@ import (
 	"os"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/util/pretty"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
-	flag "github.com/spf13/pflag"
+	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/contracts"
+	"github.com/offchainlabs/nitro/util/pretty"
 )
 
 type AggregatorConfig struct {
@@ -57,7 +58,7 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
-	bpVerifier                     *BatchPosterVerifier
+	bpVerifier                     *contracts.BatchPosterVerifier
 }
 
 type ServiceDetails struct {
@@ -150,9 +151,9 @@ func NewAggregatorWithSeqInboxCaller(
 		os.Exit(0)
 	}
 
-	var bpVerifier *BatchPosterVerifier
+	var bpVerifier *contracts.BatchPosterVerifier
 	if seqInboxCaller != nil {
-		bpVerifier = NewBatchPosterVerifier(seqInboxCaller)
+		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
 	}
 
 	return &Aggregator{
@@ -217,17 +218,17 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			var metricWithServiceName string = metricBase + "/" + d.metricName
 			defer cancel()
 			incFailureMetric := func() {
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/failure", nil).Inc(1)
-				metrics.GetOrRegisterGauge(metricBase+"/all/failure", nil).Inc(1)
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/total", nil).Inc(1)
+				metrics.GetOrRegisterCounter(metricBase+"/error/all/total", nil).Inc(1)
 			}
 
 			cert, err := d.service.Store(storeCtx, message, timeout, sig)
 			if err != nil {
 				incFailureMetric()
 				if errors.Is(err, context.DeadlineExceeded) {
-					metrics.GetOrRegisterGauge(metricWithServiceName+"/timeout", nil).Inc(1)
+					metrics.GetOrRegisterCounter(metricWithServiceName+"/error/timeout/total", nil).Inc(1)
 				} else {
-					metrics.GetOrRegisterGauge(metricWithServiceName+"/client_error", nil).Inc(1)
+					metrics.GetOrRegisterCounter(metricWithServiceName+"/error/client/total", nil).Inc(1)
 				}
 				responses <- storeResponse{d, nil, err}
 				return
@@ -238,13 +239,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			)
 			if err != nil {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
 				responses <- storeResponse{d, nil, err}
 				return
 			}
 			if !verified {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
 				responses <- storeResponse{d, nil, errors.New("Signature verification failed.")}
 				return
 			}
@@ -253,19 +254,19 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 			if cert.DataHash != expectedHash {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
 				responses <- storeResponse{d, nil, errors.New("Hash verification failed.")}
 				return
 			}
 			if cert.Timeout != timeout {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
 				responses <- storeResponse{d, nil, fmt.Errorf("Timeout was %d, expected %d", cert.Timeout, timeout)}
 				return
 			}
 
-			metrics.GetOrRegisterGauge(metricWithServiceName+"/success", nil).Inc(1)
-			metrics.GetOrRegisterGauge(metricBase+"/success", nil).Inc(1)
+			metrics.GetOrRegisterCounter(metricWithServiceName+"/success/total", nil).Inc(1)
+			metrics.GetOrRegisterCounter(metricBase+"/success/all/total", nil).Inc(1)
 			responses <- storeResponse{d, cert.Sig, nil}
 		}(ctx, d)
 	}

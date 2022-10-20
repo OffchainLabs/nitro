@@ -45,7 +45,7 @@ func createDummyBroadcastMessagesImpl(seqNums []arbutil.MessageIndex, length int
 	for _, seqNum := range seqNums {
 		broadcastMessage := &BroadcastFeedMessage{
 			SequenceNumber: seqNum,
-			Message:        arbstate.MessageWithMetadata{},
+			Message:        arbstate.EmptyTestMessageWithMetadata,
 		}
 		broadcastMessages = append(broadcastMessages, broadcastMessage)
 	}
@@ -94,6 +94,12 @@ func TestGetCacheMessages(t *testing.T) {
 	}
 	if bm.Messages[0].SequenceNumber != 46 {
 		t.Errorf("expected sequence number 46, got %d", bm.Messages[0].SequenceNumber)
+	}
+
+	// Test extremes
+	bm = buffer.getCacheMessages(arbutil.MessageIndex(^uint64(0)))
+	if bm != nil {
+		t.Fatal("should not have returned anything")
 	}
 }
 

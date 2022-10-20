@@ -5,15 +5,26 @@ package broadcastclient
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gobwas/ws"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/contracts"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -23,27 +34,33 @@ func TestReceiveMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	brodcasterConfig := wsbroadcastserver.DefaultTestBroadcasterConfig
 
 	messageCount := 1000
 	clientCount := 2
 	chainId := uint64(9742)
 
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &brodcasterConfig }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
+	config := DefaultTestConfig
 	var wg sync.WaitGroup
 	for i := 0; i < clientCount; i++ {
-		startMakeBroadcastClient(ctx, t, b.ListenerAddr(), i, messageCount, chainId, &wg)
+		startMakeBroadcastClient(ctx, t, config, b.ListenerAddr(), i, messageCount, chainId, &wg, &sequencerAddr)
 	}
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			b.BroadcastSingle(arbstate.MessageWithMetadata{}, arbutil.MessageIndex(i))
+			Require(t, b.BroadcastSingle(arbstate.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i)))
 		}
 	}()
 
@@ -51,35 +68,108 @@ func TestReceiveMessages(t *testing.T) {
 
 }
 
-type dummyTransactionStreamer struct {
-	messageReceiver chan broadcaster.BroadcastFeedMessage
-}
+func TestInvalidSignature(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-func NewDummyTransactionStreamer() *dummyTransactionStreamer {
-	return &dummyTransactionStreamer{
-		messageReceiver: make(chan broadcaster.BroadcastFeedMessage),
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+
+	messageCount := 1
+	chainId := uint64(9742)
+
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
+	fatalErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, fatalErrChan, dataSigner)
+
+	Require(t, b.Initialize())
+	Require(t, b.Start(ctx))
+	defer b.StopAndWait()
+
+	badPrivateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	badPublicKey := badPrivateKey.Public()
+	badSequencerAddr := crypto.PubkeyToAddress(*badPublicKey.(*ecdsa.PublicKey))
+	config := DefaultTestConfig
+
+	ts := NewDummyTransactionStreamer(chainId, &badSequencerAddr)
+	broadcastClient, err := newTestBroadcastClient(
+		config,
+		b.ListenerAddr(),
+		chainId,
+		0,
+		ts,
+		fatalErrChan,
+		&badSequencerAddr,
+	)
+	Require(t, err)
+	broadcastClient.Start(ctx)
+
+	go func() {
+		for i := 0; i < messageCount; i++ {
+			Require(t, b.BroadcastSingle(arbstate.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i)))
+		}
+	}()
+
+	timer := time.NewTimer(1 * time.Second)
+	select {
+	case err := <-fatalErrChan:
+		if errors.Is(err, signature.ErrSignatureNotVerified) {
+			t.Log("feed error found as expected")
+			return
+		}
+		t.Errorf("unexpected error occurred: %v", err)
+		return
+	case <-timer.C:
+		t.Error("no feed errors detected")
+		return
+	case <-ctx.Done():
+		timer.Stop()
+		return
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
-	for i, message := range messages {
-		ts.messageReceiver <- broadcaster.BroadcastFeedMessage{
-			SequenceNumber: pos + arbutil.MessageIndex(i),
-			Message:        message,
-		}
+type dummyTransactionStreamer struct {
+	messageReceiver chan broadcaster.BroadcastFeedMessage
+	chainId         uint64
+	sequencerAddr   *common.Address
+}
+
+func NewDummyTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *dummyTransactionStreamer {
+	return &dummyTransactionStreamer{
+		messageReceiver: make(chan broadcaster.BroadcastFeedMessage),
+		chainId:         chainId,
+		sequencerAddr:   sequencerAddr,
+	}
+}
+
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+	for _, feedMessage := range feedMessages {
+		ts.messageReceiver <- *feedMessage
 	}
 	return nil
 }
 
-func newTestBroadcastClient(listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, idleTimeout time.Duration, txStreamer TransactionStreamerInterface, feedErrChan chan error) *BroadcastClient {
+func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, txStreamer TransactionStreamerInterface, feedErrChan chan error, validAddr *common.Address) (*BroadcastClient, error) {
 	port := listenerAddress.(*net.TCPAddr).Port
-	return NewBroadcastClient(fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, idleTimeout, txStreamer, feedErrChan)
+	var bpv contracts.BatchPosterVerifierInterface
+	if validAddr != nil {
+		config.Verifier.AcceptSequencer = true
+		bpv = contracts.NewMockBatchPosterVerifier(*validAddr)
+	} else {
+		config.Verifier.AcceptSequencer = false
+	}
+	return NewBroadcastClient(config, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, feedErrChan, bpv)
 }
 
-func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup) {
-	ts := NewDummyTransactionStreamer()
+func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Config, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, sequencerAddr *common.Address) {
+	ts := NewDummyTransactionStreamer(chainId, sequencerAddr)
 	feedErrChan := make(chan error, 10)
-	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 200*time.Millisecond, ts, feedErrChan)
+	broadcastClient, err := newTestBroadcastClient(clientConfig, addr, chainId, 0, ts, feedErrChan, sequencerAddr)
+	Require(t, err)
 	broadcastClient.Start(ctx)
 	messageCount := 0
 
@@ -119,23 +209,29 @@ func TestServerClientDisconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-	settings.Ping = 1 * time.Second
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Ping = 1 * time.Second
+
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer()
-	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId, 0, 200*time.Millisecond, ts, feedErrChan)
+	ts := NewDummyTransactionStreamer(chainId, nil)
+	broadcastClient, err := newTestBroadcastClient(DefaultTestConfig, b.ListenerAddr(), chainId, 0, ts, feedErrChan, &sequencerAddr)
+	Require(t, err)
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0))
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -159,6 +255,8 @@ func TestServerClientDisconnect(t *testing.T) {
 		}
 
 		select {
+		case err := <-feedErrChan:
+			t.Errorf("Broadcaster error: %s\n", err.Error())
 		case <-disconnectTimer.C:
 			t.Fatal("Client was not disconnected")
 		default:
@@ -167,7 +265,50 @@ func TestServerClientDisconnect(t *testing.T) {
 	}
 }
 
-func TestServerClientIncorrectChainId(t *testing.T) {
+func TestServerIncorrectChainId(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Ping = 1 * time.Second
+
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
+	chainId := uint64(8742)
+	feedErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, dataSigner)
+
+	Require(t, b.Initialize())
+	Require(t, b.Start(ctx))
+	defer b.StopAndWait()
+
+	ts := NewDummyTransactionStreamer(chainId, nil)
+	badFeedErrChan := make(chan error, 10)
+	badBroadcastClient, err := newTestBroadcastClient(DefaultTestConfig, b.ListenerAddr(), chainId+1, 0, ts, badFeedErrChan, &sequencerAddr)
+	Require(t, err)
+	badBroadcastClient.Start(ctx)
+	badTimer := time.NewTimer(5 * time.Second)
+	select {
+	case err := <-feedErrChan:
+		// Got unexpected error
+		t.Errorf("Unexpected error %v", err)
+		badTimer.Stop()
+	case err := <-badFeedErrChan:
+		if !errors.Is(err, ErrIncorrectChainId) {
+			// Got unexpected error
+			t.Errorf("Unexpected error %v", err)
+		}
+		badTimer.Stop()
+	case <-badTimer.C:
+		t.Fatal("Client channel did not send error as expected")
+	}
+}
+
+func TestServerMissingChainId(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -175,22 +316,140 @@ func TestServerClientIncorrectChainId(t *testing.T) {
 	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
 	settings.Ping = 1 * time.Second
 
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
 	chainId := uint64(8742)
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, feedErrChan, dataSigner)
+
+	header := ws.HandshakeHeaderHTTP(http.Header{
+		wsbroadcastserver.HTTPHeaderFeedServerVersion: []string{strconv.Itoa(wsbroadcastserver.FeedServerVersion)},
+	})
 
 	Require(t, b.Initialize())
-	Require(t, b.Start(ctx))
+	Require(t, b.StartWithHeader(ctx, header))
 	defer b.StopAndWait()
 
-	ts := NewDummyTransactionStreamer()
+	clientConfig := DefaultTestConfig
+	clientConfig.RequireChainId = true
+
+	ts := NewDummyTransactionStreamer(chainId, nil)
 	badFeedErrChan := make(chan error, 10)
-	badBroadcastClient := newTestBroadcastClient(b.ListenerAddr(), chainId+1, 0, 200*time.Millisecond, ts, badFeedErrChan)
+	badBroadcastClient, err := newTestBroadcastClient(clientConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
+	Require(t, err)
 	badBroadcastClient.Start(ctx)
 	badTimer := time.NewTimer(5 * time.Second)
 	select {
-	case <-badFeedErrChan:
-		// Got expected error
+	case err := <-feedErrChan:
+		// Got unexpected error
+		t.Errorf("Unexpected error %v", err)
+		badTimer.Stop()
+	case err := <-badFeedErrChan:
+		if !errors.Is(err, ErrMissingChainId) {
+			// Got unexpected error
+			t.Errorf("Unexpected error %v", err)
+		}
+		badTimer.Stop()
+	case <-badTimer.C:
+		t.Fatal("Client channel did not send error as expected")
+	}
+}
+
+func TestServerIncorrectFeedServerVersion(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	settings.Ping = 1 * time.Second
+
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
+	chainId := uint64(8742)
+	feedErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, feedErrChan, dataSigner)
+
+	header := ws.HandshakeHeaderHTTP(http.Header{
+		wsbroadcastserver.HTTPHeaderChainId:           []string{strconv.FormatUint(chainId, 10)},
+		wsbroadcastserver.HTTPHeaderFeedServerVersion: []string{strconv.Itoa(wsbroadcastserver.FeedServerVersion + 1)},
+	})
+
+	Require(t, b.Initialize())
+	Require(t, b.StartWithHeader(ctx, header))
+	defer b.StopAndWait()
+
+	ts := NewDummyTransactionStreamer(chainId, nil)
+	badFeedErrChan := make(chan error, 10)
+	badBroadcastClient, err := newTestBroadcastClient(DefaultTestConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
+	Require(t, err)
+	badBroadcastClient.Start(ctx)
+	badTimer := time.NewTimer(5 * time.Second)
+	select {
+	case err := <-feedErrChan:
+		// Got unexpected error
+		t.Errorf("Unexpected error %v", err)
+		badTimer.Stop()
+	case err := <-badFeedErrChan:
+		if !errors.Is(err, ErrIncorrectFeedServerVersion) {
+			// Got unexpected error
+			t.Errorf("Unexpected error %v", err)
+		}
+		badTimer.Stop()
+	case <-badTimer.C:
+		t.Fatal("Client channel did not send error as expected")
+	}
+}
+
+func TestServerMissingFeedServerVersion(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
+	settings.Ping = 1 * time.Second
+
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
+	chainId := uint64(8742)
+	feedErrChan := make(chan error, 10)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, feedErrChan, dataSigner)
+
+	header := ws.HandshakeHeaderHTTP(http.Header{
+		wsbroadcastserver.HTTPHeaderChainId: []string{strconv.FormatUint(chainId, 10)},
+	})
+
+	Require(t, b.Initialize())
+	Require(t, b.StartWithHeader(ctx, header))
+	defer b.StopAndWait()
+
+	clientConfig := DefaultTestConfig
+	clientConfig.RequireFeedVersion = true
+
+	ts := NewDummyTransactionStreamer(chainId, nil)
+	badFeedErrChan := make(chan error, 10)
+	badBroadcastClient, err := newTestBroadcastClient(clientConfig, b.ListenerAddr(), chainId, 0, ts, badFeedErrChan, &sequencerAddr)
+	Require(t, err)
+	badBroadcastClient.Start(ctx)
+	badTimer := time.NewTimer(5 * time.Second)
+	select {
+	case err := <-feedErrChan:
+		// Got unexpected error
+		t.Errorf("Unexpected error %v", err)
+		badTimer.Stop()
+	case err := <-badFeedErrChan:
+		if !errors.Is(err, ErrMissingFeedServerVersion) {
+			// Got unexpected error
+			t.Errorf("Unexpected error %v", err)
+		}
 		badTimer.Stop()
 	case <-badTimer.C:
 		t.Fatal("Client channel did not send error as expected")
@@ -202,26 +461,37 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
-	settings.Ping = 50 * time.Second
-	settings.ClientTimeout = 150 * time.Second
+	config := wsbroadcastserver.DefaultTestBroadcasterConfig
+	config.Ping = 50 * time.Second
+	config.ClientTimeout = 150 * time.Second
+
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	feedErrChan := make(chan error, 10)
 	chainId := uint64(8742)
-	b1 := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b1 := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b1.Initialize())
 	Require(t, b1.Start(ctx))
 	defer b1.StopAndWait()
 
-	broadcastClient := newTestBroadcastClient(b1.ListenerAddr(), chainId, 0, 200*time.Millisecond, nil, feedErrChan)
-
+	broadcastClient, err := newTestBroadcastClient(DefaultTestConfig, b1.ListenerAddr(), chainId, 0, nil, feedErrChan, &sequencerAddr)
+	Require(t, err)
 	broadcastClient.Start(ctx)
 	defer broadcastClient.StopAndWait()
 
 	// Client set to timeout connection at 200 milliseconds, and server set to send ping every 50 seconds,
 	// so at least one timeout/reconnect should happen after 1 seconds
 	time.Sleep(1 * time.Second)
+
+	select {
+	case err := <-feedErrChan:
+		t.Errorf("Broadcaster error: %s\n", err.Error())
+	default:
+	}
 
 	if broadcastClient.GetRetryCount() <= 0 {
 		t.Error("Should have had some retry counts")
@@ -239,23 +509,33 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	defer cancel()
 	settings := wsbroadcastserver.DefaultTestBroadcasterConfig
 
+	privateKey, err := crypto.GenerateKey()
+	Require(t, err)
+	sequencerAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
+
 	feedErrChan := make(chan error, 10)
 	chainId := uint64(8744)
-	b := broadcaster.NewBroadcaster(settings, chainId, feedErrChan)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &settings }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
-	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 1)
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 0))
+	Require(t, b.BroadcastSingle(arbstate.EmptyTestMessageWithMetadata, 1))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
-		connectAndGetCachedMessages(ctx, b.ListenerAddr(), chainId, t, i, &wg)
+		connectAndGetCachedMessages(ctx, b.ListenerAddr(), chainId, t, i, feedErrChan, &sequencerAddr, &wg)
 	}
 
+	select {
+	case err := <-feedErrChan:
+		t.Fatalf("Broadcaster error: %s\n", err.Error())
+	case <-time.After(10 * time.Millisecond):
+	}
 	wg.Wait()
 
 	// give the above connections time to reconnect
@@ -274,6 +554,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 		select {
 		case <-updateTimer.C:
 			t.Fatal("confirmed accumulator did not get updated")
+		case err := <-feedErrChan:
+			t.Errorf("Broadcaster error: %s\n", err.Error())
 		default:
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -281,15 +563,15 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 
 	b.Confirm(1)
 
-	updateTimer = time.NewTimer(2 * time.Second)
-	defer updateTimer.Stop()
+	updateTimer2 := time.NewTimer(2 * time.Second)
+	defer updateTimer2.Stop()
 	for {
 		if b.GetCachedMessageCount() == 0 { // should have left the second message
 			break
 		}
 
 		select {
-		case <-updateTimer.C:
+		case <-updateTimer2.C:
 			t.Fatal("cache did not get cleared")
 		default:
 		}
@@ -297,10 +579,10 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	}
 }
 
-func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uint64, t *testing.T, clientIndex int, wg *sync.WaitGroup) {
-	ts := NewDummyTransactionStreamer()
-	feedErrChan := make(chan error, 10)
-	broadcastClient := newTestBroadcastClient(addr, chainId, 0, 200*time.Millisecond, ts, feedErrChan)
+func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uint64, t *testing.T, clientIndex int, feedErrChan chan error, sequencerAddr *common.Address, wg *sync.WaitGroup) {
+	ts := NewDummyTransactionStreamer(chainId, nil)
+	broadcastClient, err := newTestBroadcastClient(DefaultTestConfig, addr, chainId, 0, ts, feedErrChan, sequencerAddr)
+	Require(t, err)
 	broadcastClient.Start(ctx)
 
 	go func() {
@@ -315,6 +597,8 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uin
 		case receivedMsg := <-ts.messageReceiver:
 			t.Logf("client %d received first message: %v\n", clientIndex, receivedMsg)
 			gotMsg = true
+		case err := <-feedErrChan:
+			t.Errorf("client %d feed error: %v\n", clientIndex, err)
 		case <-timer.C:
 		case <-ctx.Done():
 		}
@@ -325,20 +609,20 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, chainId uin
 
 		gotMsg = false
 		// Wait for client to receive second item
-		timer = time.NewTimer(10 * time.Second)
-		defer timer.Stop()
+		timer2 := time.NewTimer(10 * time.Second)
+		defer timer2.Stop()
 		select {
 		case receivedMsg := <-ts.messageReceiver:
 			t.Logf("client %d received second message: %v\n", clientIndex, receivedMsg)
 			gotMsg = true
-		case <-timer.C:
+		case err := <-feedErrChan:
+			t.Errorf("client %d feed error: %v\n", clientIndex, err)
+		case <-timer2.C:
 		case <-ctx.Done():
 		}
 		if !gotMsg {
 			t.Errorf("client %d did not receive second batch item\n", clientIndex)
-			return
 		}
-
 	}()
 }
 

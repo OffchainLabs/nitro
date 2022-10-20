@@ -6,9 +6,14 @@ There are two parties a user pays when submitting a tx:
 
 The L1 component is the product of the tx's estimated contribution to its batch's size — computed using Brotli on the tx by itself — and the L2's view of the L1 data price, a value which dynamically adjusts over time to ensure the batch-poster is ultimately fairly compensated. For details, see [L1 Pricing](arbos.md#l1pricingstate).
 
-[The L2 component](arbos.md#l2pricingstate) consists of the traditional fees geth would pay to miners in a vanilla L1 chain, such as the computation and storage charges applying the state transition function entails. ArbOS charges additional fees for executing its L2-specific [precompiles](precompiles.md), whose fees are dynamically priced according to the specific resources used while executing the call.
+[The L2 component](arbos.md#l2pricingstate) consists of the traditional fees geth would pay to stakers in a vanilla L1 chain, such as the computation and storage charges applying the state transition function entails. ArbOS charges additional fees for executing its L2-specific [precompiles](precompiles.md), whose fees are dynamically priced according to the specific resources used while executing the call.
 
-Calling an Arbitrum node's `eth_estimateGas` RPC returns a value sufficient to cover both the L1 and L2 components of the fee for the current gas price. (See [2-D fees](https://medium.com/offchainlabs/understanding-arbitrum-2-dimensional-fees-fd1d582596c9) for more.)
+## Gas Price Floor
+The L2 gas price on a given Arbitrum chain has a set floor, which can be queried via [`ArbGasInfo.getMinimumGasPrice`](precompiles.md) (currently 0.1 gwei on both Arbitrum One and Nova). 
+
+## Estimating Gas
+Calling an Arbitrum Node's `eth_estimateGas` RPC gives a value sufficient to cover the full transaction fee at the given L2 gas price; i.e., the value returned from `eth_estimateGas` multiplied by the L2 gas price tells you how much total Ether is required for the transaction to succeed. Note that this means that for a given operation, the value returned by `eth_estimateGas` will change over time (as the L1 calldata price fluctuates.) (See [2-D fees](https://medium.com/offchainlabs/understanding-arbitrum-2-dimensional-fees-fd1d582596c9) for more.)
+
 
 [drop_l1_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/l1pricing/l1pricing.go#L232
 

@@ -77,6 +77,8 @@ interface IRollupCore {
 
     function isValidator(address) external view returns (bool);
 
+    function validatorWhitelistDisabled() external view returns (bool);
+
     /**
      * @notice Get the Node for the given index.
      */

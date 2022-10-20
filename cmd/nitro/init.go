@@ -160,15 +160,15 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				readOnlyDb.Close()
 				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 				if err != nil {
-					return nil, nil, err
+					return chainDb, nil, err
 				}
 				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
 				if err != nil {
-					return nil, nil, err
+					return chainDb, nil, err
 				}
 				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 				if err != nil {
-					return nil, nil, err
+					return chainDb, nil, err
 				}
 				return chainDb, l2BlockChain, nil
 			}
@@ -201,18 +201,18 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 	if err != nil {
-		return nil, nil, err
+		return chainDb, nil, err
 	}
 
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error reading import file: %w", err)
+			return chainDb, nil, fmt.Errorf("error reading import file: %w", err)
 		}
 	}
 	if config.Init.Empty {
 		if initDataReader != nil {
-			return nil, nil, errors.New("multiple init methods supplied")
+			return chainDb, nil, errors.New("multiple init methods supplied")
 		}
 		initData := statetransfer.ArbosInitializationInfo{
 			NextBlockNumber: 0,
@@ -221,7 +221,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 	if config.Init.DevInit {
 		if initDataReader != nil {
-			return nil, nil, errors.New("multiple init methods supplied")
+			return chainDb, nil, errors.New("multiple init methods supplied")
 		}
 		initData := statetransfer.ArbosInitializationInfo{
 			NextBlockNumber: config.Init.DevInitBlockNum,
@@ -243,11 +243,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if initDataReader == nil {
 		chainConfig = arbnode.TryReadStoredChainConfig(chainDb)
 		if chainConfig == nil {
-			return nil, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
+			return chainDb, nil, errors.New("no --init.* mode supplied and chain data not in expected directory")
 		}
 		l2BlockChain, err = arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
 		if err != nil {
-			panic(err)
+			return chainDb, nil, err
 		}
 		genesisBlockNr := chainConfig.ArbitrumChainParams.GenesisBlockNum
 		genesisBlock := l2BlockChain.GetBlockByNumber(genesisBlockNr)
@@ -261,43 +261,46 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	} else {
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
-			panic(err)
+			return chainDb, nil, err
 		}
 		chainConfig, err = arbos.GetChainConfig(chainId, genesisBlockNr)
 		if err != nil {
-			panic(err)
+			return chainDb, nil, err
 		}
 		testUpdateTxIndex(chainDb, chainConfig, &txIndexWg)
 		ancients, err := chainDb.Ancients()
 		if err != nil {
-			panic(err)
+			return chainDb, nil, err
 		}
 		if ancients < genesisBlockNr {
-			panic(fmt.Sprint(genesisBlockNr, " pre-init blocks required, but only ", ancients, " found"))
+			return chainDb, nil, fmt.Errorf("%v pre-init blocks required, but only %v found", genesisBlockNr, ancients)
 		}
 		if ancients > genesisBlockNr {
 			storedGenHash := rawdb.ReadCanonicalHash(chainDb, genesisBlockNr)
 			storedGenBlock := rawdb.ReadBlock(chainDb, storedGenHash, genesisBlockNr)
 			if storedGenBlock.Header().Root == (common.Hash{}) {
-				panic(fmt.Errorf("Attempting to init genesis block %x, but this block is in database with no state root", genesisBlockNr))
+				return chainDb, nil, fmt.Errorf("attempting to init genesis block %x, but this block is in database with no state root", genesisBlockNr)
 			}
 			log.Warn("Re-creating genesis though it seems to exist in database", "blockNr", genesisBlockNr)
 		}
 		log.Info("Initializing", "ancients", ancients, "genesisBlockNr", genesisBlockNr)
+		if config.Init.ThenQuit {
+			cacheConfig.SnapshotWait = true
+		}
 		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, &config.Node, config.Init.AccountsPerSync)
 		if err != nil {
-			panic(err)
+			return chainDb, nil, err
 		}
 	}
 	txIndexWg.Wait()
 	err = chainDb.Sync()
 	if err != nil {
-		panic(err)
+		return chainDb, nil, err
 	}
 
 	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 	if err != nil {
-		return nil, nil, err
+		return chainDb, nil, err
 	}
 
 	return chainDb, l2BlockChain, nil

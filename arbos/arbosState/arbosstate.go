@@ -6,29 +6,26 @@ package arbosState
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-
-	"github.com/offchainlabs/nitro/arbos/blockhash"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbos/addressSet"
-	"github.com/offchainlabs/nitro/arbos/burn"
-
 	"github.com/offchainlabs/nitro/arbos/addressTable"
+	"github.com/offchainlabs/nitro/arbos/blockhash"
+	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 // ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
@@ -89,49 +86,49 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 
 func OpenSystemArbosState(stateDB vm.StateDB, tracingInfo *util.TracingInfo, readOnly bool) (*ArbosState, error) {
 	burner := burn.NewSystemBurner(tracingInfo, readOnly)
-	state, err := OpenArbosState(stateDB, burner)
+	newState, err := OpenArbosState(stateDB, burner)
 	burner.Restrict(err)
-	return state, err
+	return newState, err
 }
 
 func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingInfo, readOnly bool) *ArbosState {
-	state, err := OpenSystemArbosState(stateDB, tracingInfo, readOnly)
+	newState, err := OpenSystemArbosState(stateDB, tracingInfo, readOnly)
 	if err != nil {
 		panic(err)
 	}
-	return state
+	return newState
 }
 
-// Create and initialize a memory-backed ArbOS state (for testing only)
+// NewArbosMemoryBackedArbOSState creates and initializes a memory-backed ArbOS state (for testing only)
 func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
-		log.Fatal("failed to init empty statedb", err)
+		log.Crit("failed to init empty statedb", "error", err)
 	}
 	burner := burn.NewSystemBurner(nil, false)
-	state, err := InitializeArbosState(statedb, burner, params.ArbitrumDevTestChainConfig())
+	newState, err := InitializeArbosState(statedb, burner, params.ArbitrumDevTestChainConfig())
 	if err != nil {
-		log.Fatal("failed to open the ArbOS state", err)
+		log.Crit("failed to open the ArbOS state", "error", err)
 	}
-	return state, statedb
+	return newState, statedb
 }
 
-// Get the ArbOS version
+// ArbOSVersion returns the ArbOS version
 func ArbOSVersion(stateDB vm.StateDB) uint64 {
 	backingStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(nil, false))
 	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
-		log.Fatal("faled to get the ArbOS version", err)
+		log.Crit("failed to get the ArbOS version", "error", err)
 	}
 	return arbosVersion
 }
 
-type ArbosStateOffset uint64
+type Offset uint64
 
 const (
-	versionOffset ArbosStateOffset = iota
+	versionOffset Offset = iota
 	upgradeVersionOffset
 	upgradeTimestampOffset
 	networkFeeAccountOffset
@@ -140,16 +137,16 @@ const (
 	infraFeeAccountOffset
 )
 
-type ArbosStateSubspaceID []byte
+type SubspaceID []byte
 
 var (
-	l1PricingSubspace    ArbosStateSubspaceID = []byte{0}
-	l2PricingSubspace    ArbosStateSubspaceID = []byte{1}
-	retryablesSubspace   ArbosStateSubspaceID = []byte{2}
-	addressTableSubspace ArbosStateSubspaceID = []byte{3}
-	chainOwnerSubspace   ArbosStateSubspaceID = []byte{4}
-	sendMerkleSubspace   ArbosStateSubspaceID = []byte{5}
-	blockhashesSubspace  ArbosStateSubspaceID = []byte{6}
+	l1PricingSubspace    SubspaceID = []byte{0}
+	l2PricingSubspace    SubspaceID = []byte{1}
+	retryablesSubspace   SubspaceID = []byte{2}
+	addressTableSubspace SubspaceID = []byte{3}
+	chainOwnerSubspace   SubspaceID = []byte{4}
+	sendMerkleSubspace   SubspaceID = []byte{5}
+	blockhashesSubspace  SubspaceID = []byte{6}
 )
 
 // Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
@@ -232,21 +229,27 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, err
 	}
 	if desiredArbosVersion > 1 {
-		aState.UpgradeArbosVersion(desiredArbosVersion, true)
+		err = aState.UpgradeArbosVersion(desiredArbosVersion, true)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return aState, err
+	return aState, nil
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) error {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if state.arbosVersion < upgradeTo && currentTimestamp >= flagday {
-		state.UpgradeArbosVersion(upgradeTo, false)
+		return state.UpgradeArbosVersion(upgradeTo, false)
 	}
+	return nil
 }
 
-func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) {
+var ErrFatalNodeOutOfDate error = errors.New("please upgrade to latest version of node software")
+
+func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) error {
 	for state.arbosVersion < upgradeTo {
 		ensure := func(err error) {
 			if err != nil {
@@ -260,7 +263,7 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) {
 
 		switch state.arbosVersion {
 		case 1:
-			ensure(state.l1PricingState.SetLastSurplus(common.Big0))
+			ensure(state.l1PricingState.SetLastSurplus(common.Big0, 1))
 		case 2:
 			ensure(state.l1PricingState.SetPerBatchGasCost(0))
 			ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
@@ -270,8 +273,12 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) {
 			// no state changes needed
 		case 5:
 			// no state changes needed
+		case 6:
+			// no state changes needed
+		case 7:
+			// no state changes needed
 		default:
-			panic("Unable to perform requested ArbOS upgrade")
+			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)
 		}
 		state.arbosVersion++
 	}
@@ -284,6 +291,8 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) {
 	}
 
 	state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), state.arbosVersion))
+
+	return nil
 }
 
 func (state *ArbosState) ScheduleArbOSUpgrade(newVersion uint64, timestamp uint64) error {
@@ -302,7 +311,7 @@ func (state *ArbosState) Restrict(err error) {
 	state.Burner.Restrict(err)
 }
 
-func (state *ArbosState) FormatVersion() uint64 {
+func (state *ArbosState) ArbOSVersion() uint64 {
 	return state.arbosVersion
 }
 

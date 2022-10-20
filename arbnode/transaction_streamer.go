@@ -21,10 +21,13 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -34,8 +37,10 @@ import (
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
-	db ethdb.Database
-	bc *core.BlockChain
+	db           ethdb.Database
+	bc           *core.BlockChain
+	chainId      uint64
+	fatalErrChan chan<- error
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
 	createBlocksMutex  sync.Mutex // cannot be acquired while reorgMutex is held
@@ -57,13 +62,20 @@ type TransactionStreamer struct {
 	inboxReader     *InboxReader
 }
 
-func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastServer *broadcaster.Broadcaster) (*TransactionStreamer, error) {
+func NewTransactionStreamer(
+	db ethdb.Database,
+	bc *core.BlockChain,
+	broadcastServer *broadcaster.Broadcaster,
+	fatalErrChan chan<- error,
+) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 db,
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
 		newBlockNotifier:   make(chan struct{}, 1),
 		broadcastServer:    broadcastServer,
+		chainId:            bc.Config().ChainID.Uint64(),
+		fatalErrChan:       fatalErrChan,
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -118,11 +130,7 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 		return err
 	}
 	if !hasMessageCount {
-		data, err := rlp.EncodeToBytes(uint64(0))
-		if err != nil {
-			return err
-		}
-		err = s.db.Put(messageCountKey, data)
+		err := setMessageCount(s.db, 0)
 		if err != nil {
 			return err
 		}
@@ -191,6 +199,11 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	if err != nil {
 		return err
 	}
+
+	return setMessageCount(batch, count)
+}
+
+func setMessageCount(batch ethdb.KeyValueWriter, count arbutil.MessageIndex) error {
 	countBytes, err := rlp.EncodeToBytes(count)
 	if err != nil {
 		return err
@@ -199,6 +212,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	if err != nil {
 		return err
 	}
+	sharedmetrics.UpdateSequenceNumberGauge(count)
 
 	return nil
 }
@@ -211,15 +225,19 @@ func dbKey(prefix []byte, pos uint64) []byte {
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error) {
+func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbstate.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, uint64(seqNum))
 	data, err := s.db.Get(key)
 	if err != nil {
-		return arbstate.MessageWithMetadata{}, err
+		return nil, err
 	}
 	var message arbstate.MessageWithMetadata
 	err = rlp.DecodeBytes(data, &message)
-	return message, err
+	if err != nil {
+		return nil, err
+	}
+
+	return &message, nil
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
@@ -240,12 +258,22 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, 
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
-	for i, message := range messages {
-		msgPos := pos + arbutil.MessageIndex(i)
-		if message.Message == nil || message.Message.Header == nil {
-			return fmt.Errorf("invalid feed message at sequence number %v", msgPos)
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+	if len(feedMessages) == 0 {
+		return nil
+	}
+	startingSeqNum := feedMessages[0].SequenceNumber
+	var messages []arbstate.MessageWithMetadata
+	endingSeqNum := startingSeqNum
+	for _, feedMessage := range feedMessages {
+		if endingSeqNum != feedMessage.SequenceNumber {
+			return fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, endingSeqNum)
 		}
+		if feedMessage.Message.Message == nil || feedMessage.Message.Message.Header == nil {
+			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
+		}
+		messages = append(messages, feedMessage.Message)
+		endingSeqNum++
 	}
 
 	s.insertionMutex.Lock()
@@ -256,13 +284,13 @@ func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, mes
 		return err
 	}
 
-	if currentMessageCount >= pos {
+	if currentMessageCount >= startingSeqNum {
 		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
 		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
-		return s.addMessagesAndEndBatchImpl(pos, false, messages, nil)
+		return s.addMessagesAndEndBatchImpl(startingSeqNum, false, messages, nil)
 	} else {
 		broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
-		if len(s.broadcasterQueuedMessages) > 0 && broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == pos {
+		if len(s.broadcasterQueuedMessages) > 0 && broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == startingSeqNum {
 			s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 		} else {
 			if len(s.broadcasterQueuedMessages) > 0 {
@@ -270,11 +298,11 @@ func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, mes
 					"broadcaster queue jumped positions",
 					"queuedMessages", len(s.broadcasterQueuedMessages),
 					"expectedNextPos", broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
-					"gotPos", pos,
+					"gotPos", startingSeqNum,
 				)
 			}
 			s.broadcasterQueuedMessages = messages
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(pos))
+			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(startingSeqNum))
 		}
 	}
 
@@ -419,9 +447,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 }
 
 func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbos.L1IncomingMessage, error) {
-	if len(txErrors) != len(txes) {
-		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(txErrors), len(txes))
-	}
 	var l2Message []byte
 	if len(txes) == 1 && txErrors[0] == nil {
 		txBytes, err := txes[0].MarshalBinary()
@@ -453,7 +478,7 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 	}, nil
 }
 
-func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) error {
+func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	s.createBlocksMutex.Lock()
@@ -463,30 +488,30 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 
 	pos, err := s.GetMessageCount()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	lastBlockHeader := s.bc.CurrentBlock().Header()
 	if lastBlockHeader == nil {
-		return errors.New("current block header not found")
+		return nil, errors.New("current block header not found")
 	}
 	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if lastBlockHeader.Number.Int64() != expectedBlockNum {
-		return fmt.Errorf("%w: block production not caught up: last block number %v but expected %v", ErrRetrySequencer, lastBlockHeader.Number, expectedBlockNum)
+		return nil, fmt.Errorf("%w: block production not caught up: last block number %v but expected %v", ErrRetrySequencer, lastBlockHeader.Number, expectedBlockNum)
 	}
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var delayedMessagesRead uint64
 	if pos > 0 {
 		lastMsg, err := s.GetMessage(pos - 1)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
@@ -503,11 +528,14 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		hooks,
 	)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if len(hooks.TxErrors) != len(txes) {
+		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
 
 	if len(receipts) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	allTxsErrored := true
@@ -518,12 +546,12 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		}
 	}
 	if allTxsErrored {
-		return nil
+		return nil, nil
 	}
 
 	msg, err := messageFromTxes(header, txes, hooks.TxErrors)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	msgWithMeta := arbstate.MessageWithMetadata{
@@ -533,16 +561,18 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 
 	if s.coordinator != nil {
 		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
-		return err
+		return nil, err
 	}
 
 	if s.broadcastServer != nil {
-		s.broadcastServer.BroadcastSingle(msgWithMeta, pos)
+		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
+			return nil, err
+		}
 	}
 
 	// Only write the block after we've written the messages, so if the node dies in the middle of this,
@@ -553,17 +583,17 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	}
 	status, err := s.bc.WriteBlockAndSetHeadWithTime(block, receipts, logs, statedb, true, time.Since(startTime))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if status == core.SideStatTy {
-		return errors.New("geth rejected block as non-canonical")
+		return nil, errors.New("geth rejected block as non-canonical")
 	}
 
 	if s.validator != nil {
 		s.validator.NewBlock(block, lastBlockHeader, msgWithMeta)
 	}
 
-	return nil
+	return block, nil
 }
 
 func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
@@ -610,7 +640,9 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 
 	for i, msg := range messagesWithMeta {
 		if s.broadcastServer != nil {
-			s.broadcastServer.BroadcastSingle(msg, pos+arbutil.MessageIndex(i))
+			if err := s.broadcastServer.BroadcastSingle(msg, pos+arbutil.MessageIndex(i)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -676,11 +708,8 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 			return err
 		}
 	}
-	newCount, err := rlp.EncodeToBytes(uint64(pos) + uint64(len(messages)))
-	if err != nil {
-		return err
-	}
-	err = batch.Put(messageCountKey, newCount)
+
+	err := setMessageCount(batch, pos+arbutil.MessageIndex(len(messages)))
 	if err != nil {
 		return err
 	}
@@ -708,7 +737,12 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lastBlockHeader := s.bc.CurrentBlock().Header()
+	initialLastBlock := s.bc.CurrentBlock()
+	err = s.bc.RecoverState(initialLastBlock)
+	if err != nil {
+		return fmt.Errorf("failed to recover state: %w", err)
+	}
+	lastBlockHeader := initialLastBlock.Header()
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
@@ -784,9 +818,10 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 
 		if s.validator != nil {
-			s.validator.NewBlock(block, lastBlockHeader, msg)
+			s.validator.NewBlock(block, lastBlockHeader, *msg)
 		}
 
+		sharedmetrics.UpdateSequenceNumberInBlockGauge(pos)
 		s.latestBlockAndMessageMutex.Lock()
 		s.latestBlock = block
 		s.latestMessage = msg.Message
@@ -802,58 +837,16 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	return nil
 }
 
-func (s *TransactionStreamer) SyncProgressMap() map[string]interface{} {
-	res := make(map[string]interface{})
-
-	msgCount, err := s.GetMessageCount()
-	if err != nil {
-		res["msgCountError"] = err.Error()
-		return res
-	}
-
-	batchSeen := s.inboxReader.GetLastSeenBatchCount()
-	_, batchProcessed := s.inboxReader.GetLastReadBlockAndBatchCount()
-	broadcasterQueuedMessagesPos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
-
-	lastBlockNum := s.bc.CurrentHeader().Number.Uint64()
-	lastBuiltMessage, err := s.BlockNumberToMessageCount(lastBlockNum)
-	if err != nil {
-		res["blockMessageToMessageCountError"] = err.Error()
-		return res
-	}
-
-	processedMetadata, err := s.inboxReader.Tracker().GetBatchMetadata(batchProcessed - 1)
-
-	if err != nil {
-		res["batchMetadataError"] = err.Error()
-		return res
-	}
-
-	if (batchSeen > 0) && // read inbox without error
-		(batchProcessed >= batchSeen) && // up to date in inbox messages
-		(broadcasterQueuedMessagesPos == 0) && // no unprocessed feed
-		(processedMetadata.MessageCount <= lastBuiltMessage) && // built blocks for entire inbox
-		(msgCount <= lastBuiltMessage+20) { // TODO: configurable gap
-		return res
-	}
-
-	res["msgCount"] = msgCount
-	res["batchSeen"] = batchSeen
-	res["batchProcessed"] = batchProcessed
-	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
-	res["blockNum"] = lastBlockNum
-	res["messageOfLastBlock"] = lastBuiltMessage
-	res["messageOfProcessedBatch"] = processedMetadata.MessageCount
-	return res
-}
-
 func (s *TransactionStreamer) Start(ctxIn context.Context) {
-	s.StopWaiter.Start(ctxIn)
+	s.StopWaiter.Start(ctxIn, s)
 	s.LaunchThread(func(ctx context.Context) {
 		for {
 			err := s.createBlocks(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
 				log.Error("error creating blocks", "err", err.Error())
+				if errors.Is(err, arbosState.ErrFatalNodeOutOfDate) {
+					s.fatalErrChan <- err
+				}
 			}
 			timer := time.NewTimer(10 * time.Second)
 			select {

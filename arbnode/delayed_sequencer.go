@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -29,21 +28,21 @@ type DelayedSequencer struct {
 	txStreamer               *TransactionStreamer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *big.Int
-	config                   *DelayedSequencerConfig
+	config                   DelayedSequencerConfigFetcher
 }
 
 type DelayedSequencerConfig struct {
-	Enable              bool          `koanf:"enable"`
-	FinalizeDistance    int64         `koanf:"finalize-distance"`
-	TimeAggregate       time.Duration `koanf:"time-aggregate"`
-	RequireFullFinality bool          `koanf:"require-full-finality"`
-	UseMergeFinality    bool          `koanf:"use-merge-finality"`
+	Enable              bool  `koanf:"enable" reload:"hot"`
+	FinalizeDistance    int64 `koanf:"finalize-distance" reload:"hot"`
+	RequireFullFinality bool  `koanf:"require-full-finality" reload:"hot"`
+	UseMergeFinality    bool  `koanf:"use-merge-finality" reload:"hot"`
 }
+
+type DelayedSequencerConfigFetcher func() *DelayedSequencerConfig
 
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
 	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final (ignored when using Merge finality)")
-	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "polling interval for the delayed sequencer")
 	f.Bool(prefix+".require-full-finality", DefaultDelayedSequencerConfig.RequireFullFinality, "whether to wait for full finality before sequencing delayed messages")
 	f.Bool(prefix+".use-merge-finality", DefaultDelayedSequencerConfig.UseMergeFinality, "whether to use The Merge's notion of finality before sequencing delayed messages")
 }
@@ -51,7 +50,6 @@ func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              false,
 	FinalizeDistance:    20,
-	TimeAggregate:       time.Minute,
 	RequireFullFinality: true,
 	UseMergeFinality:    true,
 }
@@ -59,12 +57,11 @@ var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              true,
 	FinalizeDistance:    20,
-	TimeAggregate:       time.Second,
 	RequireFullFinality: true,
 	UseMergeFinality:    true,
 }
 
-func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
+func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
@@ -92,16 +89,21 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 		return nil
 	}
 
-	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(d.config.FinalizeDistance))
+	config := d.config()
+	if !config.Enable {
+		return nil
+	}
+
+	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(config.FinalizeDistance))
 	if finalized.Sign() < 0 {
 		finalized.SetInt64(0)
 	}
 
 	// Once the merge is live, we can directly query for the latest finalized block number
-	if lastBlockHeader.Difficulty.Sign() == 0 && d.config.UseMergeFinality {
+	if lastBlockHeader.Difficulty.Sign() == 0 && config.UseMergeFinality {
 		var header *types.Header
 		var err error
-		if d.config.RequireFullFinality {
+		if config.RequireFullFinality {
 			header, err = d.l1Reader.LatestFinalizedHeader()
 		} else {
 			header, err = d.l1Reader.LatestSafeHeader()
@@ -202,6 +204,6 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 }
 
 func (d *DelayedSequencer) Start(ctxIn context.Context) {
-	d.StopWaiter.Start(ctxIn)
+	d.StopWaiter.Start(ctxIn, d)
 	d.LaunchThread(d.run)
 }
