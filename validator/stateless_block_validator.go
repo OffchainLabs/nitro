@@ -14,12 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -27,15 +25,15 @@ import (
 )
 
 type StatelessBlockValidator struct {
-	MachineLoader   *NitroMachineLoader
-	inboxReader     InboxReaderInterface
-	inboxTracker    InboxTrackerInterface
-	streamer        TransactionStreamerInterface
-	blockchain      *core.BlockChain
-	db              ethdb.Database
-	daService       arbstate.DataAvailabilityReader
-	genesisBlockNum uint64
-	stateDatabase   state.Database
+	MachineLoader     *NitroMachineLoader
+	inboxReader       InboxReaderInterface
+	inboxTracker      InboxTrackerInterface
+	streamer          TransactionStreamerInterface
+	blockchain        *core.BlockChain
+	db                ethdb.Database
+	daService         arbstate.DataAvailabilityReader
+	genesisBlockNum   uint64
+	recordingDatabase *arbitrum.RecordingDatabase
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
@@ -261,16 +259,16 @@ func NewStatelessBlockValidator(
 		return nil, err
 	}
 	validator := &StatelessBlockValidator{
-		MachineLoader:   machineLoader,
-		inboxReader:     inboxReader,
-		inboxTracker:    inbox,
-		streamer:        streamer,
-		blockchain:      blockchain,
-		db:              arbdb,
-		daService:       das,
-		genesisBlockNum: genesisBlockNum,
-		stateDatabase:   state.NewDatabaseWithConfig(blockchainDb, &trie.Config{Cache: 16}), // TODO: configurable cache size
-		fatalErrChan:    fatalErrChan,
+		MachineLoader:     machineLoader,
+		inboxReader:       inboxReader,
+		inboxTracker:      inbox,
+		streamer:          streamer,
+		blockchain:        blockchain,
+		db:                arbdb,
+		daService:         das,
+		genesisBlockNum:   genesisBlockNum,
+		recordingDatabase: arbitrum.NewRecordingDatabase(blockchainDb, blockchain),
+		fatalErrChan:      fatalErrChan,
 	}
 	if config.PendingUpgradeModuleRoot != "" {
 		if config.PendingUpgradeModuleRoot == "latest" {
@@ -323,22 +321,12 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	prevHeader *types.Header,
 	msg *arbstate.MessageWithMetadata,
 ) (common.Hash, map[common.Hash][]byte, []BatchInfo, error) {
-	var recordingdb *state.StateDB
-	var chaincontext core.ChainContext
-	var recordingKV *arbitrum.RecordingKV
-	var err error
-	if prevHeader != nil {
-		// make sure blockchain has the required state
-		_, err = arbitrum.GetOrRecreateReferencedState(ctx, prevHeader, v.blockchain, v.stateDatabase)
-		if err != nil {
-			return common.Hash{}, nil, nil, err
-		}
-		defer arbitrum.DereferenceState(prevHeader, v.stateDatabase)
-	}
-	recordingdb, chaincontext, recordingKV, err = arbitrum.PrepareRecording(v.stateDatabase.TrieDB(), v.blockchain, prevHeader)
+
+	recordingdb, chaincontext, recordingKV, err := v.recordingDatabase.PrepareRecording(ctx, prevHeader)
 	if err != nil {
 		return common.Hash{}, nil, nil, err
 	}
+	defer v.recordingDatabase.Dereference(prevHeader)
 
 	chainConfig := v.blockchain.Config()
 
@@ -397,7 +385,7 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 
 	var preimages map[common.Hash][]byte
 	if recordingKV != nil {
-		preimages, err = arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
+		preimages, err = v.recordingDatabase.PreimagesFromRecording(chaincontext, recordingKV)
 		if err != nil {
 			return common.Hash{}, nil, nil, err
 		}

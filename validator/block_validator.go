@@ -17,7 +17,6 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -268,13 +267,13 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 	}
 	if !s.replaceStatus(Unprepared, RecordSent) {
 		if mustDeref {
-			arbitrum.DereferenceState(prevHeader, v.stateDatabase)
+			v.recordingDatabase.Dereference(prevHeader)
 		}
 		return errors.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
 	v.LaunchThread(func(ctx context.Context) {
 		if mustDeref {
-			defer arbitrum.DereferenceState(prevHeader, v.stateDatabase)
+			defer v.recordingDatabase.Dereference(prevHeader)
 		}
 		err := v.ValidationEntryRecord(ctx, s.Entry)
 		if ctx.Err() != nil {
@@ -348,6 +347,10 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	v.validations.Store(blockNum, status)
 	if v.lastValidationEntryBlock < blockNum {
 		v.lastValidationEntryBlock = blockNum
+	}
+	select {
+	case v.sendValidationsChan <- struct{}{}:
+	default:
 	}
 }
 
@@ -744,13 +747,17 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 		if validationStatus.getStatus() == Unprepared {
 			prevHeader := validationStatus.Entry.PrevBlockHeader
 			if prevHeader != nil {
-				_, err := arbitrum.GetOrRecreateReferencedState(ctx, prevHeader, v.blockchain, v.stateDatabase)
+				_, err := v.recordingDatabase.GetOrRecreateState(ctx, prevHeader)
 				if err != nil {
 					log.Error("error trying to prepare state for recording", "err", err)
 				}
-				arbitrum.ReferenceState(prevHeader, v.stateDatabase)
+				// add another reference that will be released by the record thread
+				_, err = v.recordingDatabase.StateFor(prevHeader)
+				if err != nil {
+					log.Error("error trying re-reference state for recording", "err", err)
+				}
 				if v.lastHeaderForPrepareState != nil {
-					arbitrum.DereferenceState(v.lastHeaderForPrepareState, v.stateDatabase)
+					v.recordingDatabase.Dereference(v.lastHeaderForPrepareState)
 				}
 				v.lastHeaderForPrepareState = prevHeader
 			}
@@ -1063,6 +1070,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.LaunchThread(func(ctx context.Context) {
 		// `progressValidated` and `sendValidations` should both only do `concurrentRunsLimit` iterations of work,
 		// so they won't stomp on each other and prevent the other from running.
+		v.sendRecords(ctx)
 		v.sendValidations(ctx)
 		for {
 			select {
