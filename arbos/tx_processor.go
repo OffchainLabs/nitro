@@ -6,7 +6,6 @@ package arbos
 import (
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"time"
 
@@ -39,6 +38,7 @@ const GasEstimationL1PricePadding arbmath.Bips = 11000 // pad estimates by 10%
 type TxProcessor struct {
 	msg              core.Message
 	state            *arbosState.ArbosState
+	orderingFee      *big.Int // set once in GasChargingHook to track the tip paid to order this tx
 	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas        uint64
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
@@ -60,6 +60,7 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	return &TxProcessor{
 		msg:                 msg,
 		state:               arbosState,
+		orderingFee:         new(big.Int),
 		PosterFee:           new(big.Int),
 		posterGas:           0,
 		Callers:             []common.Address{},
@@ -350,7 +351,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, orderingTip *big.Int) error {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
@@ -366,9 +367,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	}
 	posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
 	if calldataUnits > 0 {
-		if err := p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits); err != nil {
-			return err
-		}
+		_ = p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits)
 	}
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
@@ -388,14 +387,25 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
 	}
 
+	toL2GasTerms := func(wei *big.Int) (*big.Int, uint64) {
+		gas := arbmath.BigToUintSaturating(arbmath.BigDiv(wei, gasPrice))
+		fee := arbmath.BigMulByUint(gasPrice, gas) // round down
+		return fee, gas
+	}
+
 	if gasPrice.Sign() > 0 {
-		posterCostInL2Gas := arbmath.BigDiv(posterCost, gasPrice) // the cost as if it were an amount of gas
-		if !posterCostInL2Gas.IsUint64() {
-			posterCostInL2Gas = arbmath.UintToBig(math.MaxUint64)
-		}
-		p.posterGas = posterCostInL2Gas.Uint64()
-		p.PosterFee = arbmath.BigMul(posterCostInL2Gas, gasPrice) // round down
+		p.PosterFee, p.posterGas = toL2GasTerms(posterCost)
 		gasNeededToStartEVM = p.posterGas
+	}
+
+	if poster == l1pricing.BatchPosterAddress && p.state.FormatVersion() >= 8 {
+		fee, gas := toL2GasTerms(arbmath.BigMulByUint(orderingTip, params.TxGas))
+		sum, err := arbmath.SafeUAdd(gasNeededToStartEVM, gas)
+		if err != nil {
+			return core.ErrIntrinsicGas
+		}
+		p.orderingFee = fee
+		gasNeededToStartEVM = sum
 	}
 
 	if *gasRemaining < gasNeededToStartEVM {
@@ -433,6 +443,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 	gasPrice := p.evm.Context.BaseFee
 	scenario := util.TracingAfterEVM
+
+	if p.orderingFee.Sign() != 0 {
+		util.MintBalance(&networkFeeAccount, p.orderingFee, p.evm, scenario, "tip")
+	}
 
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
