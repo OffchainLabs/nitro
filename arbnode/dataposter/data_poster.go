@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -28,7 +29,7 @@ import (
 
 type queuedTransaction[Meta any] struct {
 	FullTx          *types.Transaction
-	Data            types.DynamicFeeTx
+	Data            types.SignedBlobTx
 	Meta            Meta
 	Sent            bool
 	Created         time.Time // may be earlier than the tx was given to the tx poster
@@ -158,7 +159,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 		return 0, emptyMeta, err
 	}
 	if lastQueueItem != nil {
-		return lastQueueItem.Data.Nonce + 1, lastQueueItem.Meta, nil
+		return uint64(lastQueueItem.Data.Message.Nonce) + 1, lastQueueItem.Meta, nil
 	}
 	meta, err := p.metadataRetriever(ctx, p.lastBlock)
 	return p.nonce, meta, err
@@ -210,6 +211,14 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big
 	return newFeeCap, newTipCap, nil
 }
 
+type SignedBlobTxWrapper struct {
+	types.SignedBlobTx
+}
+
+func (s *SignedBlobTxWrapper) isFake() bool {
+	return false
+}
+
 func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
@@ -217,21 +226,44 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	if err != nil {
 		return err
 	}
-	inner := types.DynamicFeeTx{
-		Nonce:     nonce,
-		GasTipCap: tipCap,
-		GasFeeCap: feeCap,
-		Gas:       gasLimit,
-		To:        &to,
-		Value:     new(big.Int),
-		Data:      calldata,
+
+	blobs := arbnode.EncodeBlobs(calldata)
+	commitments, versionedHashes, aggregatedProof, err := blobs.ComputeCommitmentsAndAggregatedProof()
+	if err != nil {
+		return err
 	}
-	fullTx, err := p.auth.Signer(p.auth.From, types.NewTx(&inner))
+	txData := types.SignedBlobTx{
+		Message: types.BlobTxMessage{
+			Nonce:     nonce,
+			GasTipCap: tipCap,
+			GasFeeCap: feeCap,
+			Gas:       gasLimit,
+			To:        types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(&to)},
+			Value:     new(big.Int),
+		},
+	}
+	wrapData := types.BlobTxWrapData{
+		BlobKzgs:           commitments,
+		Blobs:              blobs,
+		KzgAggregatedProof: aggregatedProof,
+	}
+	tx := types.NewTx(&txData, types.WithTxWrapData(&wrapData))
+	//
+	//inner := types.DynamicFeeTx{
+	//	Nonce:     nonce,
+	//	GasTipCap: tipCap,
+	//	GasFeeCap: feeCap,
+	//	Gas:       gasLimit,
+	//	To:        &to,
+	//	Value:     new(big.Int),
+	//	Data:      calldata,
+	//}
+	fullTx, err := p.auth.Signer(p.auth.From, tx)
 	if err != nil {
 		return err
 	}
 	queuedTx := queuedTransaction[Meta]{
-		Data:            inner,
+		Data:            txData,
 		FullTx:          fullTx,
 		Meta:            meta,
 		Sent:            false,
@@ -243,10 +275,10 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) saveTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
-	if prevTx != nil && prevTx.Data.Nonce != newTx.Data.Nonce {
+	if prevTx != nil && prevTx.Data.Message.Nonce != newTx.Data.Message.Nonce {
 		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
 	}
-	return p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx)
+	return p.queue.Put(ctx, uint64(newTx.Data.Message.Nonce), prevTx, newTx)
 }
 
 func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
@@ -275,22 +307,22 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta]) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.GasTipCap, prevTx.Created)
+	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.Message.GasTipCap, prevTx.Created)
 	if err != nil {
 		return err
 	}
 
 	desiredFeeCap := newFeeCap
-	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(prevTx.Data.Gas))
+	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(prevTx.Data.Message.Gas))
 	newFeeCap = arbmath.BigMin(newFeeCap, maxFeeCap)
-	minNewFeeCap := arbmath.BigMulByBips(prevTx.Data.GasFeeCap, minRbfIncrease)
+	minNewFeeCap := arbmath.BigMulByBips(prevTx.Data.Message.GasFeeCap, minRbfIncrease)
 	newTx := *prevTx
 	if newFeeCap.Cmp(minNewFeeCap) < 0 {
 		if desiredFeeCap.Cmp(minNewFeeCap) >= 0 {
 			log.Error(
 				"lack of L1 balance prevents posting transaction with a higher fee cap",
 				"balance", p.balance,
-				"gasLimit", prevTx.Data.Gas,
+				"gasLimit", prevTx.Data.Message.Gas,
 				"desiredFeeCap", desiredFeeCap,
 				"maxFeeCap", maxFeeCap,
 			)
@@ -308,8 +340,8 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 		break
 	}
 	newTx.Sent = false
-	newTx.Data.GasFeeCap = newFeeCap
-	newTx.Data.GasTipCap = newTipCap
+	newTx.Data.Message.GasFeeCap = newFeeCap
+	newTx.Data.Message.GasTipCap = newTipCap
 	newTx.FullTx, err = p.auth.Signer(p.auth.From, types.NewTx(&newTx.Data))
 	if err != nil {
 		return err
@@ -352,7 +384,7 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 const maxConsecutiveIntermittentErrors = 10
 
 func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta], msg string) {
-	nonce := tx.Data.Nonce
+	nonce := tx.Data.Message.Nonce
 	if err == nil {
 		delete(p.errorCount, nonce)
 		return
