@@ -707,17 +707,17 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 		}
 		entry, found := v.validations.Load(nextRecord)
 		if !found {
-			header := v.blockchain.GetHeaderByNumber(v.nextBlockToValidate)
+			header := v.blockchain.GetHeaderByNumber(nextRecord)
 			if header == nil {
 				// This block hasn't been created yet.
 				return
 			}
 			prevHeader := v.blockchain.GetHeaderByHash(header.ParentHash)
 			if prevHeader == nil && header.ParentHash != (common.Hash{}) {
-				log.Warn("failed to get prevHeader in block validator", "num", v.nextBlockToValidate-1, "hash", header.ParentHash)
+				log.Warn("failed to get prevHeader in block validator", "num", nextRecord-1, "hash", header.ParentHash)
 				return
 			}
-			msgNum := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
+			msgNum := arbutil.BlockNumberToMessageCount(nextRecord, v.genesisBlockNum) - 1
 			msg, err := v.streamer.GetMessage(msgNum)
 			if err != nil {
 				log.Warn("failed to get message in block validator", "err", err)
