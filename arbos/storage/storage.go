@@ -309,7 +309,8 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 	return nil
 }
 
-// StorageBackedInt64 is an implementation note for StorageBackedInt64: Conversions between big.Int and common.Hash give weird results
+// StorageBackedInt64 is an int64 stored inside the StateDB.
+// Implementation note: Conversions between big.Int and common.Hash give weird results
 // for negative values, so we cast to uint64 before writing to storage and cast back to int64 after reading.
 // Golang casting between uint64 and int64 doesn't change the data, it just reinterprets the same 8 bytes,
 // so this is a hacky but reliable way to store an 8-byte int64 in a common.Hash storage slot.
