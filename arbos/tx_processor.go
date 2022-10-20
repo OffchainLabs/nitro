@@ -38,7 +38,6 @@ const GasEstimationL1PricePadding arbmath.Bips = 11000 // pad estimates by 10%
 type TxProcessor struct {
 	msg              core.Message
 	state            *arbosState.ArbosState
-	orderingFee      *big.Int // set once in GasChargingHook to track the tip paid to order this tx
 	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas        uint64
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
@@ -60,7 +59,6 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	return &TxProcessor{
 		msg:                 msg,
 		state:               arbosState,
-		orderingFee:         new(big.Int),
 		PosterFee:           new(big.Int),
 		posterGas:           0,
 		Callers:             []common.Address{},
@@ -357,7 +355,11 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, orderingTip *big.Int
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
+	gasEstimating := p.msg.RunMode() == types.MessageGasEstimationMode
 	gasPrice := p.evm.Context.BaseFee
+	scenario := util.TracingBeforeEVM
+	version := p.state.FormatVersion()
+	from := p.msg.From()
 
 	var poster common.Address
 	if p.msg.RunMode() != types.MessageCommitMode {
@@ -370,7 +372,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, orderingTip *big.Int
 		_ = p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits)
 	}
 
-	if p.msg.RunMode() == types.MessageGasEstimationMode {
+	if gasEstimating {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
@@ -387,25 +389,18 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, orderingTip *big.Int
 		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
 	}
 
-	toL2GasTerms := func(wei *big.Int) (*big.Int, uint64) {
-		gas := arbmath.BigToUintSaturating(arbmath.BigDiv(wei, gasPrice))
-		fee := arbmath.BigMulByUint(gasPrice, gas) // round down
-		return fee, gas
-	}
-
 	if gasPrice.Sign() > 0 {
-		p.PosterFee, p.posterGas = toL2GasTerms(posterCost)
+		p.posterGas = arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, gasPrice))
+		p.PosterFee = arbmath.BigMulByUint(gasPrice, p.posterGas) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
 
-	if poster == l1pricing.BatchPosterAddress && p.state.FormatVersion() >= 8 {
-		fee, gas := toL2GasTerms(arbmath.BigMulByUint(orderingTip, params.TxGas))
-		sum, err := arbmath.SafeUAdd(gasNeededToStartEVM, gas)
-		if err != nil {
-			return core.ErrIntrinsicGas
+	if poster == l1pricing.BatchPosterAddress && !gasEstimating && orderingTip.Sign() > 0 && version >= 8 {
+		network, _ := p.state.NetworkFeeAccount()
+		orderingFee := arbmath.BigMulByUint(orderingTip, params.TxGas)
+		if err := util.TransferBalance(&from, &network, orderingFee, p.evm, scenario, "tip"); err != nil {
+			return core.ErrInsufficientFunds
 		}
-		p.orderingFee = fee
-		gasNeededToStartEVM = sum
 	}
 
 	if *gasRemaining < gasNeededToStartEVM {

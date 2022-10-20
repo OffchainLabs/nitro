@@ -69,14 +69,13 @@ func TestSequencerFeePaid(t *testing.T) {
 
 		networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
 		l1Charge := arbmath.BigMulByUint(l2info.GasPrice, receipt.GasUsedForL1)
-		//tipFee := arbmath.BigMulByUint(tipCap, params.TxGas)
+		tipFee := arbmath.BigMulByUint(tipCap, params.TxGas)
 
 		networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
 		gasUsedForL2 := receipt.GasUsed - receipt.GasUsedForL1
 		feePaidForL2 := arbmath.BigMulByUint(baseFee, gasUsedForL2)
-		//feePaidForL2 = arbmath.BigAdd(feePaidForL2, tipFee)
-		if !arbmath.BigEquals(networkRevenue, feePaidForL2) {
-			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2)
+		if !arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipFee)) {
+			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipFee)
 		}
 
 		txSize := compressedTxSize(t, tx)
@@ -96,7 +95,6 @@ func TestSequencerFeePaid(t *testing.T) {
 	if !arbmath.BigEquals(observed, expected) {
 		Fail(t, "didn't make the right amount from tips", observed, expected)
 	}
-
 }
 
 func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
