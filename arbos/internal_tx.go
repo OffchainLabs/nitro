@@ -66,13 +66,13 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 			l1BlockNumber++
 		}
 
-		nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
+		oldL1BlockNumber, err := state.Blockhashes().L1BlockNumber()
 		state.Restrict(err)
 
 		l2BaseFee, err := state.L2PricingState().BaseFeeWei()
 		state.Restrict(err)
 
-		if l1BlockNumber > nextL1BlockNumber {
+		if l1BlockNumber > oldL1BlockNumber {
 			var prevHash common.Hash
 			if evm.Context.BlockNumber.Sign() > 0 {
 				prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)

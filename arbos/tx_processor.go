@@ -602,7 +602,7 @@ func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	blockNum, err := state.Blockhashes().NextBlockNumber()
+	blockNum, err := state.Blockhashes().L1BlockNumber()
 	if err != nil {
 		return 0, err
 	}
