@@ -444,10 +444,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	gasPrice := p.evm.Context.BaseFee
 	scenario := util.TracingAfterEVM
 
-	if p.orderingFee.Sign() != 0 {
-		util.MintBalance(&networkFeeAccount, p.orderingFee, p.evm, scenario, "tip")
-	}
-
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
 	}

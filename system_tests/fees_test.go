@@ -41,37 +41,62 @@ func TestSequencerFeePaid(t *testing.T) {
 
 	// get the network fee account
 	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), l2client)
-	Require(t, err, "could not deploy ArbOwner contract")
+	Require(t, err, "failed to deploy contract")
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
-	Require(t, err, "could not deploy ArbOwner contract")
+	Require(t, err, "failed to deploy contract")
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), l2client)
+	Require(t, err, "failed to deploy contract")
 	networkFeeAccount, err := arbOwnerPublic.GetNetworkFeeAccount(callOpts)
 	Require(t, err, "could not get the network fee account")
 
 	l1Estimate, err := arbGasInfo.GetL1BaseFeeEstimate(callOpts)
 	Require(t, err)
-	networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
 
-	l2info.GasPrice = GetBaseFee(t, l2client, ctx)
-	tx, receipt := TransferBalance(t, "Faucet", "Faucet", big.NewInt(0), l2info, l2client, ctx)
-	txSize := compressedTxSize(t, tx)
+	baseFee := GetBaseFee(t, l2client, ctx)
+	l2info.GasPrice = baseFee
 
-	networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
-	l1Charge := arbmath.BigMulByUint(l2info.GasPrice, receipt.GasUsedForL1)
+	testFees := func(tip uint64) *big.Int {
+		tipCap := arbmath.BigMulByUint(baseFee, tip)
+		txOpts := l2info.GetDefaultTransactOpts("Faucet", ctx)
+		txOpts.GasTipCap = tipCap
 
-	networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
-	gasUsedForL2 := receipt.GasUsed - receipt.GasUsedForL1
-	if !arbmath.BigEquals(networkRevenue, arbmath.BigMulByUint(tx.GasPrice(), gasUsedForL2)) {
-		Fail(t, "network didn't receive expected payment")
+		networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
+
+		tx, err := arbDebug.Events(&txOpts, true, [32]byte{})
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+
+		networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
+		l1Charge := arbmath.BigMulByUint(l2info.GasPrice, receipt.GasUsedForL1)
+		//tipFee := arbmath.BigMulByUint(tipCap, params.TxGas)
+
+		networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
+		gasUsedForL2 := receipt.GasUsed - receipt.GasUsedForL1
+		feePaidForL2 := arbmath.BigMulByUint(baseFee, gasUsedForL2)
+		//feePaidForL2 = arbmath.BigAdd(feePaidForL2, tipFee)
+		if !arbmath.BigEquals(networkRevenue, feePaidForL2) {
+			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2)
+		}
+
+		txSize := compressedTxSize(t, tx)
+		l1GasBought := arbmath.BigDiv(l1Charge, l1Estimate).Uint64()
+		l1GasActual := txSize * params.TxDataNonZeroGasEIP2028
+
+		colors.PrintBlue("bytes ", l1GasBought/params.TxDataNonZeroGasEIP2028, txSize)
+
+		if l1GasBought != l1GasActual {
+			Fail(t, "the sequencer's future revenue does not match its costs", l1GasBought, l1GasActual)
+		}
+		return networkRevenue
 	}
 
-	l1GasBought := arbmath.BigDiv(l1Charge, l1Estimate).Uint64()
-	l1GasActual := txSize * params.TxDataNonZeroGasEIP2028
-
-	colors.PrintBlue("bytes ", l1GasBought/params.TxDataNonZeroGasEIP2028, txSize)
-
-	if l1GasBought != l1GasActual {
-		Fail(t, "the sequencer's future revenue does not match its costs", l1GasBought, l1GasActual)
+	observed := arbmath.BigSub(testFees(2), testFees(0))
+	expected := arbmath.BigMulByUint(baseFee, 2*params.TxGas)
+	if !arbmath.BigEquals(observed, expected) {
+		Fail(t, "didn't make the right amount from tips", observed, expected)
 	}
+
 }
 
 func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
