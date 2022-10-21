@@ -144,8 +144,11 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	tx := l2info.PrepareTxTo("Faucet", &faucetAddr, gas, common.Big0, data)
 	err = l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+	receiptA, err := EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
-	_, err = EnsureTxSucceededWithTimeout(ctx, l2clientB, tx, time.Second*30)
+	receiptB, err := EnsureTxSucceededWithTimeout(ctx, l2clientB, tx, time.Second*30)
 	Require(t, err)
+	if receiptA.BlockHash != receiptB.BlockHash {
+		Fail(t, "receipt A block hash", receiptA.BlockHash, "does not equal receipt B block hash", receiptB.BlockHash)
+	}
 }
