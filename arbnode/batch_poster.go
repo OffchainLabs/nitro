@@ -371,7 +371,7 @@ func (s *batchSegments) addDelayedMessage() (bool, error) {
 	return success, err
 }
 
-func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata, forceInclude bool) (bool, error) {
+func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, error) {
 	if s.isDone {
 		return false, errBatchAlreadyClosed
 	}
@@ -507,7 +507,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 			log.Error("error getting message from streamer", "error", err)
 			break
 		}
-		success, err := b.building.segments.AddMessage(msg, !haveUsefulMessage)
+		success, err := b.building.segments.AddMessage(msg)
 		if err != nil {
 			// Clear our cache
 			b.building = nil
