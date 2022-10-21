@@ -236,7 +236,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Blo
 
 	if reorgingToBlock == nil {
 		expectedHash := v.blockchain.GetCanonicalHash(info.BlockNumber)
-		if expectedHash != info.BlockHash {
+		if expectedHash != info.BlockHash && (expectedHash != common.Hash{}) {
 			return fmt.Errorf("last validated block %v stored with hash %v, but blockchain has hash %v", info.BlockNumber, info.BlockHash, expectedHash)
 		}
 	}
