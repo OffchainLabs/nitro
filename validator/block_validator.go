@@ -504,7 +504,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		Number: entry.StartPosition.BatchNumber,
 		Data:   seqMsg,
 	})
-	log.Info(
+	log.Debug(
 		"starting validation for block", "blockNr", entry.BlockNumber,
 		"blockDate", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)))
 	for _, moduleRoot := range validationStatus.ModuleRoots {
@@ -581,7 +581,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 			return
 		}
 
-		log.Info(
+		log.Debug(
 			"validation succeeded", "blockNr", entry.BlockNumber,
 			"blockDate", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)),
 			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", time.Since(before),
@@ -1072,6 +1072,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 		// so they won't stomp on each other and prevent the other from running.
 		v.sendRecords(ctx)
 		v.sendValidations(ctx)
+		lastValid := uint64(0)
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:
@@ -1079,6 +1080,11 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 					return
 				}
 				v.progressValidated()
+				newValid := v.LastBlockValidated()
+				if newValid != lastValid {
+					log.Info("Validation succeded", "blockNum", newValid)
+					lastValid = newValid
+				}
 			case _, ok := <-v.sendValidationsChan:
 				if !ok {
 					return
