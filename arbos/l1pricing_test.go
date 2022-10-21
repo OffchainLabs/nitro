@@ -178,7 +178,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	// submit a fake spending update, then check that balances are correct
 	err = l1p.SetAmortizedCostCapBips(testParams.amortizationCapBips)
 	Require(t, err)
-	version := arbosSt.FormatVersion()
+	version := arbosSt.ArbOSVersion()
 	scenario := util.TracingDuringEVM
 	err = l1p.UpdateForBatchPosterSpending(
 		evm.StateDB, evm, version, 1, 3, firstPoster, arbmath.UintToBig(testParams.fundsSpent), arbmath.UintToBig(testParams.l1BasefeeGwei*params.GWei), scenario,

@@ -437,10 +437,10 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		var sendRoot common.Hash
 		var sendCount uint64
 		var nextL1BlockNumber uint64
-		var formatVersion uint64
+		var arbosVersion uint64
 
 		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
-			formatVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
+			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
 		} else {
 			state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 			if err != nil {
@@ -451,14 +451,14 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 			acc := state.SendMerkleAccumulator()
 			sendRoot, _ = acc.Root()
 			sendCount, _ = acc.Size()
-			nextL1BlockNumber, _ = state.Blockhashes().NextBlockNumber()
-			formatVersion = state.FormatVersion()
+			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
+			arbosVersion = state.ArbOSVersion()
 		}
 		arbitrumHeader := types.HeaderInfo{
 			SendRoot:           sendRoot,
 			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: formatVersion,
+			ArbOSFormatVersion: arbosVersion,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}
