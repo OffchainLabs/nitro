@@ -216,14 +216,14 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 
 		// Zero-copy upgrade to WebSocket connection.
-		hs, err := upgrader.Upgrade(safeConn)
+		_, err := upgrader.Upgrade(safeConn)
 		if err != nil {
 			log.Warn("websocket upgrade error", "connection_name", nameConn(safeConn), "err", err)
 			_ = safeConn.Close()
 			return
 		}
 
-		log.Info(fmt.Sprintf("established websocket connection: %+v", hs), "connection-name", nameConn(safeConn))
+		log.Info("established websocket connection", "remoteAddr", safeConn.RemoteAddr())
 
 		// Create netpoll event descriptor to handle only read events.
 		desc, err := netpoll.HandleRead(conn)

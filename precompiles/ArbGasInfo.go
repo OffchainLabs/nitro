@@ -28,7 +28,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	evm mech,
 	aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
-	if c.State.FormatVersion() < 4 {
+	if c.State.ArbOSVersion() < 4 {
 		return con._preVersion4_GetPricesInWeiWithAggregator(c, evm, aggregator)
 	}
 
@@ -94,7 +94,7 @@ func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, h
 
 // Get prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
-	if c.State.FormatVersion() < 4 {
+	if c.State.ArbOSVersion() < 4 {
 		return con._preVersion4_GetPricesInArbGasWithAggregator(c, evm, aggregator)
 	}
 	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
