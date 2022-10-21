@@ -6,7 +6,6 @@ package relay
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
@@ -26,7 +26,7 @@ import (
 
 type Relay struct {
 	stopwaiter.StopWaiter
-	broadcastClients            []*broadcastclient.BroadcastClient
+	broadcastClients            *broadcastclients.BroadcastClients
 	broadcaster                 *broadcaster.Broadcaster
 	confirmedSequenceNumberChan chan arbutil.MessageIndex
 	messageChan                 chan broadcaster.BroadcastFeedMessage
@@ -45,25 +45,24 @@ func (q *MessageQueue) AddBroadcastMessages(feedMessages []*broadcaster.Broadcas
 }
 
 func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
-	var broadcastClients []*broadcastclient.BroadcastClient
 
 	q := MessageQueue{make(chan broadcaster.BroadcastFeedMessage, config.Queue)}
 
 	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, config.Queue)
 
-	var lastClientError error
-	for _, address := range config.Node.Feed.Input.URLs {
-		client, err := broadcastclient.NewBroadcastClient(config.Node.Feed.Input, address, config.L2.ChainId, 0, &q, feedErrChan, nil)
-		if err != nil {
-			lastClientError = err
-			log.Warn("init broadcast client failed", "address", address, "err", err)
-			continue
-		}
-		client.ConfirmedSequenceNumberListener = confirmedSequenceNumberListener
-		broadcastClients = append(broadcastClients, client)
+	clients, err := broadcastclients.NewBroadcastClients(
+		config.Node.Feed.Input,
+		config.L2.ChainId,
+		0,
+		&q,
+		feedErrChan,
+		nil,
+	)
+	if err != nil {
+		return nil, err
 	}
-	if len(broadcastClients) == 0 && len(config.Node.Feed.Input.URLs) > 0 {
-		return nil, fmt.Errorf("no broadcast clients initialized. Last error: %w", lastClientError)
+	if clients == nil {
+		return nil, errors.New("no feed servers found")
 	}
 
 	dataSignerErr := func([]byte) ([]byte, error) {
@@ -71,7 +70,7 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 	}
 	return &Relay{
 		broadcaster:                 broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Node.Feed.Output }, config.L2.ChainId, feedErrChan, dataSignerErr),
-		broadcastClients:            broadcastClients,
+		broadcastClients:            clients,
 		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,
 	}, nil
@@ -91,9 +90,7 @@ func (r *Relay) Start(ctx context.Context) error {
 		return errors.New("broadcast unable to start")
 	}
 
-	for _, client := range r.broadcastClients {
-		client.Start(ctx)
-	}
+	r.broadcastClients.Start(ctx)
 
 	var lastConfirmed arbutil.MessageIndex
 	recentFeedItemsNew := make(map[arbutil.MessageIndex]time.Time, RECENT_FEED_INITIAL_MAP_SIZE)
@@ -137,9 +134,7 @@ func (r *Relay) GetListenerAddr() net.Addr {
 
 func (r *Relay) StopAndWait() {
 	r.StopWaiter.StopAndWait()
-	for _, client := range r.broadcastClients {
-		client.StopAndWait()
-	}
+	r.broadcastClients.StopAndWait()
 	r.broadcaster.StopAndWait()
 }
 

@@ -124,6 +124,7 @@ type BroadcastClient struct {
 	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
+	adjustCount                     func(int32)
 }
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
@@ -139,6 +140,7 @@ func NewBroadcastClient(
 	txStreamer TransactionStreamerInterface,
 	fatalErrChan chan error,
 	bpVerifier contracts.BatchPosterVerifierInterface,
+	adjustCount func(int32),
 ) (*BroadcastClient, error) {
 	sigVerifier, err := signature.NewVerifier(&config.Verifier, bpVerifier)
 	if err != nil {
@@ -152,6 +154,7 @@ func NewBroadcastClient(
 		txStreamer:   txStreamer,
 		fatalErrChan: fatalErrChan,
 		sigVerifier:  sigVerifier,
+		adjustCount:  adjustCount,
 	}, err
 }
 
@@ -173,9 +176,6 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
-			if sourcesConnectedGauge.Value() <= 0 {
-				log.Error("no connected feed servers")
-			}
 			timer := time.NewTimer(backoffDuration)
 			if backoffDuration < bc.config.ReconnectMaximumBackoff {
 				backoffDuration *= 2
@@ -325,11 +325,9 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				if connected {
 					connected = false
+					bc.adjustCount(-1)
 					sourcesConnectedGauge.Dec(1)
 					sourcesDisconnectedGauge.Inc(1)
-					if sourcesConnectedGauge.Value() <= 0 {
-						log.Error("feed server was just disconnected")
-					}
 				}
 				_ = bc.conn.Close()
 				timer := time.NewTimer(backoffDuration)
@@ -359,6 +357,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					connected = true
 					sourcesDisconnectedGauge.Dec(1)
 					sourcesConnectedGauge.Inc(1)
+					bc.adjustCount(1)
 				}
 				if len(res.Messages) > 0 {
 					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
