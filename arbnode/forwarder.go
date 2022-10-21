@@ -157,6 +157,10 @@ func (f *TxForwarder) Start(ctx context.Context) error {
 
 func (f *TxForwarder) StopAndWait() {}
 
+func (f *TxForwarder) Started() bool {
+	return true
+}
+
 type TxDropper struct{}
 
 func NewTxDropper() *TxDropper {
@@ -178,3 +182,7 @@ func (f *TxDropper) Initialize(ctx context.Context) error { return nil }
 func (f *TxDropper) Start(ctx context.Context) error { return nil }
 
 func (f *TxDropper) StopAndWait() {}
+
+func (f *TxDropper) Started() bool {
+	return true
+}
