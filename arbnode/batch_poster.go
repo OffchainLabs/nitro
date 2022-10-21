@@ -252,7 +252,7 @@ func (s *batchSegments) recompressAll() error {
 	return nil
 }
 
-func (s *batchSegments) testForOverflow(forceInclude bool) (bool, error) {
+func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// we've reached the max decompressed size
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
 		return true, nil
@@ -266,7 +266,7 @@ func (s *batchSegments) testForOverflow(forceInclude bool) (bool, error) {
 		return false, nil
 	}
 	// don't want to flush for headers or the first message
-	if forceInclude {
+	if isHeader || len(s.rawSegments) == s.trailingHeaders {
 		return false, nil
 	}
 	err := s.compressedWriter.Flush()
@@ -304,7 +304,7 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 }
 
 // returns false if segment was too large, error in case of real error
-func (s *batchSegments) addSegment(segment []byte, isHeader bool, forceInclude bool) (bool, error) {
+func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) {
 	if s.isDone {
 		return false, errBatchAlreadyClosed
 	}
@@ -313,7 +313,7 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool, forceInclude b
 		return false, err
 	}
 	// Force include headers because we don't want to re-compress and we can just trim them later if necessary
-	overflow, err := s.testForOverflow(isHeader || forceInclude)
+	overflow, err := s.testForOverflow(isHeader)
 	if err != nil {
 		return false, err
 	}
@@ -329,11 +329,11 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool, forceInclude b
 	return true, nil
 }
 
-func (s *batchSegments) addL2Msg(l2msg []byte, forceInclude bool) (bool, error) {
+func (s *batchSegments) addL2Msg(l2msg []byte) (bool, error) {
 	segment := make([]byte, 1, len(l2msg)+1)
 	segment[0] = arbstate.BatchSegmentKindL2Message
 	segment = append(segment, l2msg...)
-	return s.addSegment(segment, false, true)
+	return s.addSegment(segment, false)
 }
 
 func (s *batchSegments) prepareIntSegment(val uint64, segmentHeader byte) ([]byte, error) {
@@ -355,7 +355,7 @@ func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal uint64, segment
 	if err != nil {
 		return false, err
 	}
-	success, err := s.addSegment(seg, true, false)
+	success, err := s.addSegment(seg, true)
 	if success {
 		*base = newVal
 	}
@@ -364,7 +364,7 @@ func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal uint64, segment
 
 func (s *batchSegments) addDelayedMessage() (bool, error) {
 	segment := []byte{arbstate.BatchSegmentKindDelayedMessages}
-	success, err := s.addSegment(segment, false, false)
+	success, err := s.addSegment(segment, false)
 	if (err == nil) && success {
 		s.delayedMsg += 1
 	}
@@ -389,7 +389,7 @@ func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata, forceInclu
 	if !success {
 		return false, err
 	}
-	return s.addL2Msg(msg.Message.L2msg, forceInclude)
+	return s.addL2Msg(msg.Message.L2msg)
 }
 
 func (s *batchSegments) IsDone() bool {

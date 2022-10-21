@@ -129,7 +129,7 @@ func TestBatchPosterLargeTx(t *testing.T) {
 
 	conf := arbnode.ConfigDefaultL1Test()
 	conf.Sequencer.MaxTxDataSize = 110000
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	l2info, nodeA, l2clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 
@@ -146,18 +146,6 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
-
-	for i := 90; i > 0; i-- {
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-		time.Sleep(500 * time.Millisecond)
-		_, err := l2clientB.TransactionReceipt(ctx, tx.Hash())
-		if err == nil {
-			break
-		}
-		if i == 0 {
-			Require(t, err)
-		}
-	}
+	_, err = EnsureTxSucceededWithTimeout(ctx, l2clientB, tx, time.Second*30)
+	Require(t, err)
 }
