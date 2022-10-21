@@ -246,20 +246,27 @@ func (s *batchSegments) recompressAll() error {
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
 		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
 	}
+	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+		return fmt.Errorf("number of raw segments %v excees maximum number %v", len(s.rawSegments), arbstate.MaxSegmentsPerSequencerMessage)
+	}
 	return nil
 }
 
-func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
+func (s *batchSegments) testForOverflow(forceInclude bool) (bool, error) {
 	// we've reached the max decompressed size
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
+		return true, nil
+	}
+	// we've reached the max number of segments
+	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
 		return true, nil
 	}
 	// there is room, no need to flush
 	if (s.lastCompressedSize + s.newUncompressedSize) < s.sizeLimit {
 		return false, nil
 	}
-	// don't want to flush for headers
-	if isHeader {
+	// don't want to flush for headers or the first message
+	if forceInclude {
 		return false, nil
 	}
 	err := s.compressedWriter.Flush()
@@ -297,7 +304,7 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 }
 
 // returns false if segment was too large, error in case of real error
-func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) {
+func (s *batchSegments) addSegment(segment []byte, isHeader bool, forceInclude bool) (bool, error) {
 	if s.isDone {
 		return false, errBatchAlreadyClosed
 	}
@@ -305,11 +312,12 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	overflow, err := s.testForOverflow(isHeader)
+	// Force include headers because we don't want to re-compress and we can just trim them later if necessary
+	overflow, err := s.testForOverflow(isHeader || forceInclude)
 	if err != nil {
 		return false, err
 	}
-	if overflow || len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+	if overflow {
 		return false, s.close()
 	}
 	s.rawSegments = append(s.rawSegments, segment)
@@ -321,11 +329,11 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	return true, nil
 }
 
-func (s *batchSegments) addL2Msg(l2msg []byte) (bool, error) {
+func (s *batchSegments) addL2Msg(l2msg []byte, forceInclude bool) (bool, error) {
 	segment := make([]byte, 1, len(l2msg)+1)
 	segment[0] = arbstate.BatchSegmentKindL2Message
 	segment = append(segment, l2msg...)
-	return s.addSegment(segment, false)
+	return s.addSegment(segment, false, true)
 }
 
 func (s *batchSegments) prepareIntSegment(val uint64, segmentHeader byte) ([]byte, error) {
@@ -347,7 +355,7 @@ func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal uint64, segment
 	if err != nil {
 		return false, err
 	}
-	success, err := s.addSegment(seg, true)
+	success, err := s.addSegment(seg, true, false)
 	if success {
 		*base = newVal
 	}
@@ -356,14 +364,14 @@ func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal uint64, segment
 
 func (s *batchSegments) addDelayedMessage() (bool, error) {
 	segment := []byte{arbstate.BatchSegmentKindDelayedMessages}
-	success, err := s.addSegment(segment, false)
+	success, err := s.addSegment(segment, false, false)
 	if (err == nil) && success {
 		s.delayedMsg += 1
 	}
 	return success, err
 }
 
-func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, error) {
+func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata, forceInclude bool) (bool, error) {
 	if s.isDone {
 		return false, errBatchAlreadyClosed
 	}
@@ -381,17 +389,14 @@ func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, err
 	if !success {
 		return false, err
 	}
-	return s.addL2Msg(msg.Message.L2msg)
+	return s.addL2Msg(msg.Message.L2msg, forceInclude)
 }
 
 func (s *batchSegments) IsDone() bool {
 	return s.isDone
 }
 
-func (s *batchSegments) IsEmpty() bool {
-	return len(s.rawSegments) == 0
-}
-
+// Returns nil (as opposed to []byte{}) if there's no segments to put in the batch
 func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	if !s.isDone {
 		err := s.close()
@@ -502,13 +507,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 			log.Error("error getting message from streamer", "error", err)
 			break
 		}
-		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
-			haveUsefulMessage = true
-		}
-		success, err := b.building.segments.AddMessage(msg)
+		success, err := b.building.segments.AddMessage(msg, !haveUsefulMessage)
 		if err != nil {
-			log.Error("error adding message to batch", "error", err)
-			break
+			// Clear our cache
+			b.building = nil
+			return fmt.Errorf("error adding message to batch: %w", err)
 		}
 		if !success {
 			// this batch is full
@@ -516,13 +519,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 			haveUsefulMessage = true
 			break
 		}
+		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
+			haveUsefulMessage = true
+		}
 		b.building.msgCount++
 	}
 
-	if b.building.segments.IsEmpty() {
-		// we don't need to post a batch for the time being
-		return nil
-	}
 	if !forcePostBatch || !haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
