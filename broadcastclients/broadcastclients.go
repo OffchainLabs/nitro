@@ -35,7 +35,7 @@ func NewBroadcastClients(
 	}
 
 	clients := BroadcastClients{}
-	clients.clients = make([]*broadcastclient.BroadcastClient, urlCount)
+	clients.clients = make([]*broadcastclient.BroadcastClient, 0, urlCount)
 	var lastClientErr error
 	for _, address := range config.URLs {
 		client, err := broadcastclient.NewBroadcastClient(
