@@ -315,6 +315,22 @@ type BatchInfo struct {
 	Data   []byte
 }
 
+func stateLogFunc(targetHeader, header *types.Header, hasState bool) {
+	if targetHeader == nil || header == nil {
+		return
+	}
+	gap := targetHeader.Number.Int64() - header.Number.Int64()
+	step := int64(500)
+	stage := "computing state"
+	if !hasState {
+		step = 3000
+		stage = "looking for full block"
+	}
+	if (gap >= step) && (gap%step == 0) {
+		log.Info("Setting up validation", "stage", stage, "current", header.Number, "target", targetHeader.Number)
+	}
+}
+
 // If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
 func (v *StatelessBlockValidator) RecordBlockCreation(
 	ctx context.Context,
@@ -322,7 +338,7 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	msg *arbstate.MessageWithMetadata,
 ) (common.Hash, map[common.Hash][]byte, []BatchInfo, error) {
 
-	recordingdb, chaincontext, recordingKV, err := v.recordingDatabase.PrepareRecording(ctx, prevHeader)
+	recordingdb, chaincontext, recordingKV, err := v.recordingDatabase.PrepareRecording(ctx, prevHeader, stateLogFunc)
 	if err != nil {
 		return common.Hash{}, nil, nil, err
 	}
@@ -687,4 +703,8 @@ func (v *StatelessBlockValidator) ValidateBlock(
 		return false, err
 	}
 	return gsEnd == expEnd, nil
+}
+
+func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
+	return v.recordingDatabase.ReferenceCount()
 }

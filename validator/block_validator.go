@@ -747,7 +747,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 		if validationStatus.getStatus() == Unprepared {
 			prevHeader := validationStatus.Entry.PrevBlockHeader
 			if prevHeader != nil {
-				_, err := v.recordingDatabase.GetOrRecreateState(ctx, prevHeader)
+				_, err := v.recordingDatabase.GetOrRecreateState(ctx, prevHeader, stateLogFunc)
 				if err != nil {
 					log.Error("error trying to prepare state for recording", "err", err)
 				}
