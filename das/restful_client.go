@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
-// Implements DataAvailabilityReader
+// RestfulDasClient implements DataAvailabilityReader
 type RestfulDasClient struct {
 	url string
 }

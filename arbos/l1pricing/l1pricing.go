@@ -236,7 +236,7 @@ func (ps *L1PricingState) SetAmortizedCostCapBips(cap uint64) error {
 	return ps.amortizedCostCapBips.Set(cap)
 }
 
-// Update the pricing model based on a payment by a batch poster
+// UpdateForBatchPosterSpending updates the pricing model based on a payment by a batch poster
 func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	statedb vm.StateDB,
 	evm *vm.EVM,
@@ -635,7 +635,7 @@ func (ps *L1PricingState) getPosterUnitsWithoutCache(tx *types.Transaction, post
 	return l1Bytes * params.TxDataNonZeroGasEIP2028
 }
 
-// Returns the poster cost and the calldata units for a transaction
+// GetPosterInfo returns the poster cost and the calldata units for a transaction
 func (ps *L1PricingState) GetPosterInfo(tx *types.Transaction, poster common.Address) (*big.Int, uint64) {
 	if poster != BatchPosterAddress {
 		return common.Big0, 0

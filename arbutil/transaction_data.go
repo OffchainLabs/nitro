@@ -11,7 +11,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Requires that the tx's data is at least 4 bytes long
+// GetLogEmitterTxData requires that the tx's data is at least 4 bytes long
 func GetLogEmitterTxData(ctx context.Context, client L1Interface, log types.Log) ([]byte, error) {
 	tx, err := client.TransactionInBlock(ctx, log.BlockHash, log.TxIndex)
 	if err != nil {
