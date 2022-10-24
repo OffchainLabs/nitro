@@ -71,7 +71,7 @@ func (c *Config) Enable() bool {
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".reconnect-initial-backoff", DefaultConfig.ReconnectInitialBackoff, "initial duration to wait before reconnect")
-	f.Duration(prefix+".reconnect-maximum-backoff", DefaultConfig.ReconnectInitialBackoff, "maximum duration to wait before reconnect")
+	f.Duration(prefix+".reconnect-maximum-backoff", DefaultConfig.ReconnectMaximumBackoff, "maximum duration to wait before reconnect")
 	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
 	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
