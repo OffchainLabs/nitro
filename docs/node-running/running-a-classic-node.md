@@ -6,7 +6,7 @@ Note: If you’re interested in accessing the Arbitrum network but you don’t w
 
 Arbitrum One and Arbitrum Rinkeby testnet have both been upgraded to Nitro, the latest Arbitrum tech stack; "Arbitrum Classic" is our term for the old, pre-Nitro tech stack.
 The Nitro node databases have the raw data of all blocks, including pre-Nitro
-blocks.  However, Nitro nodes cannot execute anything on pre-Nitro blocks.
+blocks. However, Nitro nodes cannot execute anything on pre-Nitro blocks.
 
 Arbitrum Nova started as a Nitro chain, so has no classic blocks.
 

@@ -17,7 +17,7 @@ For starters, here's a sampling of exciting perks dapps get with the Nitro upgra
 
 - **Support for All Ethereum L1 precompiles 🥳**: (`blake2f`, `ripemd160`, etc)
 
-- **Tighter Syncronization with L1 Block Numbers 🥳**: L1 block numbers (accessed via `block.number` on L2) are updated more frequently in Nitro than in Arbitrum classic; expect them to be nearly real-time/ in sync with L1.
+- **Tighter Synchronization with L1 Block Numbers 🥳**: L1 block numbers (accessed via `block.number` on L2) are updated more frequently in Nitro than in Arbitrum classic; expect them to be nearly real-time/ in sync with L1.
 
 - **Frequent Timestamps 🥳**: Timestamps (accessed via `block.timestamp` on L2) are updated every block based on the sequencer’s clock; i.e., it is no longer linked to the timestamp of the last L1 block.
 
