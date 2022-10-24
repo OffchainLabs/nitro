@@ -436,12 +436,12 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		acc := state.SendMerkleAccumulator()
 		root, _ := acc.Root()
 		size, _ := acc.Size()
-		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
+		nextL1BlockNumber, _ := state.Blockhashes().L1BlockNumber()
 		arbitrumHeader := types.HeaderInfo{
 			SendRoot:           root,
 			SendCount:          size,
 			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: state.FormatVersion(),
+			ArbOSFormatVersion: state.ArbOSVersion(),
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}
