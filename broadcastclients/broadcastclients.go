@@ -46,7 +46,7 @@ func NewBroadcastClients(
 			txStreamer,
 			fatalErrChan,
 			bpVerifier,
-			func(delta int32) { clients.AdjustCount(delta) },
+			func(delta int32) { clients.adjustCount(delta) },
 		)
 		if err != nil {
 			lastClientErr = err
@@ -61,9 +61,9 @@ func NewBroadcastClients(
 	return &clients, nil
 }
 
-func (bcs *BroadcastClients) AdjustCount(delta int32) {
-	atomic.AddInt32(&bcs.connected, delta)
-	if atomic.LoadInt32(&bcs.connected) <= 0 {
+func (bcs *BroadcastClients) adjustCount(delta int32) {
+	connected := atomic.AddInt32(&bcs.connected, delta)
+	if connected <= 0 {
 		log.Error("no connected feed")
 	}
 }
