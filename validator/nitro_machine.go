@@ -327,7 +327,9 @@ func (l *NitroMachineLoader) Stop() {
 		return
 	}
 	for _, stat := range l.machines {
-		stat.jitMachine.close()
+		if stat.jitMachine != nil {
+			stat.jitMachine.close()
+		}
 	}
 	l.stopped = true
 }
