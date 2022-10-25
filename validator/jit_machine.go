@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -30,7 +32,13 @@ func getJitPath() (string, error) {
 	var jitBinary string
 	executable, err := os.Executable()
 	if err == nil {
-		jitBinary = filepath.Join(filepath.Dir(executable), "jit")
+		if strings.Contains(filepath.Base(executable), "test") {
+			_, thisfile, _, _ := runtime.Caller(0)
+			projectDir := filepath.Dir(filepath.Dir(thisfile))
+			jitBinary = filepath.Join(projectDir, "target", "bin", "jit")
+		} else {
+			jitBinary = filepath.Join(filepath.Dir(executable), "jit")
+		}
 		_, err = os.Stat(jitBinary)
 	}
 	if err != nil {
