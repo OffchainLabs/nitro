@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/cmd/ipfs"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -78,6 +79,13 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 	}
 	if strings.HasPrefix(initConfig.Url, "file:") {
 		return initConfig.Url[5:], nil
+	}
+	if strings.HasPrefix(initConfig.Url, "ipfs:") {
+		ipfsNode, err := ipfs.CreateIpfsClient(ctx)
+		if err != nil {
+			return "", err
+		}
+		return ipfsNode.DownloadFile(ctx, initConfig.Url[5:], initConfig.DownloadPath)
 	}
 	grabclient := grab.NewClient()
 	log.Info("Downloading initial database", "url", initConfig.Url)
