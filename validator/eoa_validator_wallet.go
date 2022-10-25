@@ -54,6 +54,10 @@ func (w *EoaValidatorWallet) AddressOrZero() common.Address {
 	return w.auth.From
 }
 
+func (w *EoaValidatorWallet) TxSenderAddress() *common.Address {
+	return &w.auth.From
+}
+
 func (w *EoaValidatorWallet) L1Client() arbutil.L1Interface {
 	return w.client
 }

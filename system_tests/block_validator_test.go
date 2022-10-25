@@ -38,7 +38,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	validatorConfig.BlockValidator.ArbitratorValidator = true
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, validatorConfig, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig)
 	defer nodeB.StopAndWait()
 	l2info.GenerateAccount("User2")
 

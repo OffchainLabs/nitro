@@ -75,7 +75,7 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 }
 
 func (machine *JitMachine) prove(
-	ctxIn context.Context, entry *validationEntry, resolver GoPreimageResolver, delayed []byte,
+	ctxIn context.Context, entry *validationEntry, resolver GoPreimageResolver,
 ) (GoGlobalState, error) {
 	ctx, cancel := context.WithCancel(ctxIn)
 	defer cancel() // ensure our cleanup functions run when we're done
@@ -125,7 +125,10 @@ func (machine *JitMachine) prove(
 	}
 
 	// Tell the new process about the global state
-	gsStart := entry.start()
+	gsStart, err := entry.start()
+	if err != nil {
+		return state, err
+	}
 
 	writeExact := func(data []byte) error {
 		_, err := conn.Write(data)
@@ -192,7 +195,7 @@ func (machine *JitMachine) prove(
 		if err := writeUint64(entry.DelayedMsgNr); err != nil {
 			return state, err
 		}
-		if err := writeBytes(delayed); err != nil {
+		if err := writeBytes(entry.DelayedMsg); err != nil {
 			return state, err
 		}
 	}

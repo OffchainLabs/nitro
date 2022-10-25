@@ -514,7 +514,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	}
 
 	purpose := "feeCollection"
-	if p.state.FormatVersion() > 4 {
+	if p.state.ArbOSVersion() > 4 {
 		infraFeeAccount, err := p.state.InfraFeeAccount()
 		p.state.Restrict(err)
 		if infraFeeAccount != (common.Address{}) {
@@ -533,7 +533,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
 	}
 	posterFeeDestination := p.evm.Context.Coinbase
-	if p.state.FormatVersion() >= 2 {
+	if p.state.ArbOSVersion() >= 2 {
 		posterFeeDestination = l1pricing.L1PricerFundsPoolAddress
 	}
 	util.MintBalance(&posterFeeDestination, p.PosterFee, p.evm, scenario, purpose)
@@ -602,7 +602,7 @@ func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	blockNum, err := state.Blockhashes().NextBlockNumber()
+	blockNum, err := state.Blockhashes().L1BlockNumber()
 	if err != nil {
 		return 0, err
 	}
@@ -637,7 +637,7 @@ func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 }
 
 func (p *TxProcessor) GasPriceOp(evm *vm.EVM) *big.Int {
-	if p.state.FormatVersion() >= 3 {
+	if p.state.ArbOSVersion() >= 3 {
 		return p.GetPaidGasPrice()
 	}
 	return evm.GasPrice

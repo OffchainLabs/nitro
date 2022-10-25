@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -35,6 +36,16 @@ const TxPreCheckerStrictnessAlwaysCompatible uint = 10
 const TxPreCheckerStrictnessLikelyCompatible uint = 20
 const TxPreCheckerStrictnessFullValidation uint = 30
 
+func MakeNonceError(sender common.Address, txNonce uint64, stateNonce uint64) error {
+	if txNonce < stateNonce {
+		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooLow, sender, txNonce, stateNonce)
+	} else if txNonce > stateNonce {
+		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooHigh, sender, txNonce, stateNonce)
+	} else {
+		return nil
+	}
+}
+
 func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB, arbos *arbosState.ArbosState, tx *types.Transaction, strictness uint) error {
 	if strictness < TxPreCheckerStrictnessAlwaysCompatible {
 		return nil
@@ -58,7 +69,7 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 	}
 	stateNonce := statedb.GetNonce(sender)
 	if tx.Nonce() < stateNonce {
-		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooLow, sender, tx.Nonce(), stateNonce)
+		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	intrinsic, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, chainConfig.IsHomestead(header.Number), true)
 	if err != nil {
@@ -76,7 +87,7 @@ func PreCheckTx(chainConfig *params.ChainConfig, header *types.Header, statedb *
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
 	if strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
-		return fmt.Errorf("%w: address %v, tx: %d state: %d", core.ErrNonceTooHigh, sender, tx.Nonce(), stateNonce)
+		return MakeNonceError(sender, tx.Nonce(), stateNonce)
 	}
 	dataCost, _ := arbos.L1PricingState().GetPosterInfo(tx, l1pricing.BatchPosterAddress)
 	dataGas := arbmath.BigDiv(dataCost, header.BaseFee)

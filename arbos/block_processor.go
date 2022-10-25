@@ -80,18 +80,18 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type SequencingHooks struct {
 	TxErrors               []error
 	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error
-	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error
+	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
 func noopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error {
 			return nil
 		},
-		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
+		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
 	}
@@ -228,12 +228,12 @@ func ProduceBlockAdvanced(
 				return nil, nil, core.ErrGasLimitReached
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx); err != nil {
+			sender, err = signer.Sender(tx)
+			if err != nil {
 				return nil, nil, err
 			}
 
-			sender, err = signer.Sender(tx)
-			if err != nil {
+			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, sender); err != nil {
 				return nil, nil, err
 			}
 
@@ -285,7 +285,7 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				vm.Config{},
 				func(result *core.ExecutionResult) error {
-					return hooks.PostTxFilter(state, tx, sender, dataGas, result)
+					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
 				},
 			)
 			if err != nil {
@@ -405,7 +405,7 @@ func ProduceBlockAdvanced(
 		}
 	}
 
-	FinalizeBlock(header, complete, statedb)
+	FinalizeBlock(header, complete, statedb, chainConfig)
 	header.Root = statedb.IntermediateRoot(true)
 
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
@@ -428,20 +428,37 @@ func ProduceBlockAdvanced(
 	return block, receipts, nil
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB, chainConfig *params.ChainConfig) {
 	if header != nil {
-		state, _ := arbosState.OpenSystemArbosState(statedb, nil, true)
+		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
+			panic("cannot finalize blocks before genesis")
+		}
 
-		// Add outbox info to the header for client-side proving
-		acc := state.SendMerkleAccumulator()
-		root, _ := acc.Root()
-		size, _ := acc.Size()
-		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
+		var sendRoot common.Hash
+		var sendCount uint64
+		var nextL1BlockNumber uint64
+		var arbosVersion uint64
+
+		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
+			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
+		} else {
+			state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
+				panic(newErr)
+			}
+			// Add outbox info to the header for client-side proving
+			acc := state.SendMerkleAccumulator()
+			sendRoot, _ = acc.Root()
+			sendCount, _ = acc.Size()
+			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
+			arbosVersion = state.ArbOSVersion()
+		}
 		arbitrumHeader := types.HeaderInfo{
-			SendRoot:           root,
-			SendCount:          size,
+			SendRoot:           sendRoot,
+			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: state.FormatVersion(),
+			ArbOSFormatVersion: arbosVersion,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}

@@ -25,6 +25,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -55,11 +56,11 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type Config struct {
-	RequireChainId     bool          `koanf:"require-chain-id"`
-	RequireFeedVersion bool          `koanf:"require-feed-version"`
-	RequireSignature   bool          `koanf:"require-signature"`
-	Timeout            time.Duration `koanf:"timeout"`
-	URLs               []string      `koanf:"url"`
+	RequireChainId     bool                     `koanf:"require-chain-id"`
+	RequireFeedVersion bool                     `koanf:"require-feed-version"`
+	Timeout            time.Duration            `koanf:"timeout"`
+	URLs               []string                 `koanf:"url"`
+	Verifier           signature.VerifierConfig `koanf:"verify"`
 }
 
 func (c *Config) Enable() bool {
@@ -69,23 +70,25 @@ func (c *Config) Enable() bool {
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
 	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
-	f.Bool(prefix+".require-signature", DefaultConfig.RequireSignature, "require all feed messages to be signed")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
 	f.StringSlice(prefix+".url", DefaultConfig.URLs, "URL of sequencer feed source")
+	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
 }
 
 var DefaultConfig = Config{
 	RequireChainId:     false,
 	RequireFeedVersion: false,
-	RequireSignature:   false,
+	Verifier:           signature.DefultFeedVerifierConfig,
 	URLs:               []string{""},
 	Timeout:            20 * time.Second,
 }
 
 var DefaultTestConfig = Config{
-	RequireSignature: true,
-	URLs:             []string{""},
-	Timeout:          200 * time.Millisecond,
+	RequireChainId:     false,
+	RequireFeedVersion: false,
+	Verifier:           signature.DefultFeedVerifierConfig,
+	URLs:               []string{""},
+	Timeout:            200 * time.Millisecond,
 }
 
 type TransactionStreamerInterface interface {
@@ -117,7 +120,6 @@ type BroadcastClient struct {
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
 var ErrIncorrectChainId = errors.New("incorrect chain id")
-var ErrInvalidFeedSignature = errors.New("invalid feed signature")
 var ErrMissingChainId = errors.New("missing chain id")
 var ErrMissingFeedServerVersion = errors.New("missing feed server version")
 
@@ -128,8 +130,12 @@ func NewBroadcastClient(
 	currentMessageCount arbutil.MessageIndex,
 	txStreamer TransactionStreamerInterface,
 	fatalErrChan chan error,
-	sigVerifier *signature.Verifier,
-) *BroadcastClient {
+	bpVerifier contracts.BatchPosterVerifierInterface,
+) (*BroadcastClient, error) {
+	sigVerifier, err := signature.NewVerifier(&config.Verifier, bpVerifier)
+	if err != nil {
+		return nil, err
+	}
 	return &BroadcastClient{
 		config:       config,
 		websocketUrl: websocketUrl,
@@ -138,7 +144,7 @@ func NewBroadcastClient(
 		txStreamer:   txStreamer,
 		fatalErrChan: fatalErrChan,
 		sigVerifier:  sigVerifier,
-	}
+	}, err
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
@@ -340,18 +346,13 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 								continue
 							}
 
-							valid, err := bc.isValidSignature(ctx, message)
+							err := bc.isValidSignature(ctx, message)
 							if err != nil {
 								log.Error("error validating feed signature", "error", err, "sequence number", message.SequenceNumber)
 								bc.fatalErrChan <- errors.Wrapf(err, "error validating feed signature %v", message.SequenceNumber)
 								continue
 							}
 
-							if !valid {
-								log.Error("invalid feed signature", "sequence number", message.SequenceNumber)
-								bc.fatalErrChan <- ErrInvalidFeedSignature
-								continue
-							}
 							bc.nextSeqNum = message.SequenceNumber
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
@@ -417,14 +418,14 @@ func (bc *BroadcastClient) StopAndWait() {
 	}
 }
 
-func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) (bool, error) {
-	if !bc.config.RequireSignature && bc.sigVerifier == nil {
+func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) error {
+	if bc.config.Verifier.Dangerous.AcceptMissing && bc.sigVerifier == nil {
 		// Verifier disabled
-		return true, nil
+		return nil
 	}
 	hash, err := message.Hash(bc.chainId)
 	if err != nil {
-		return false, errors.Wrapf(err, "error getting message hash for sequence number %v", message.SequenceNumber)
+		return errors.Wrapf(err, "error getting message hash for sequence number %v", message.SequenceNumber)
 	}
 	return bc.sigVerifier.VerifyHash(ctx, message.Signature, hash)
 }
