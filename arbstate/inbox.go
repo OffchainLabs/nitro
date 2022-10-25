@@ -39,6 +39,10 @@ type InboxBackend interface {
 	ReadDelayedInbox(seqNum uint64) ([]byte, error)
 }
 
+type BlobReader interface {
+	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
+}
+
 type MessageWithMetadata struct {
 	Message             *arbos.L1IncomingMessage `json:"message"`
 	DelayedMessagesRead uint64                   `json:"delayedMessagesRead"`
@@ -86,7 +90,7 @@ const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode, blobReader BlobReader) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -112,6 +116,26 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 			if payload == nil {
 				return parsedMsg, nil
 			}
+		}
+	}
+
+	if len(payload) > 0 && IsBlobMessageHeaderByte(payload[0]) {
+		var newData []byte
+		hashBytes := payload[1:]
+		for len(hashBytes) > 32 {
+			var hash common.Hash
+			copy(hash[:], hashBytes[:32])
+			blobData, err := blobReader.GetByHash(ctx, hash)
+			if err != nil {
+				return nil, err
+			}
+			blobLen := binary.BigEndian.Uint64(blobData[:8])
+			blobData = blobData[8:]
+			if blobLen > uint64(len(blobData)) {
+				blobLen = uint64(len(blobData))
+			}
+			newData = append(newData, blobData[:blobLen]...)
+			hashBytes = hashBytes[32:]
 		}
 	}
 
@@ -271,6 +295,7 @@ type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
 	dasReader                 DataAvailabilityReader
+	blobReader                BlobReader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -280,12 +305,13 @@ type inboxMultiplexer struct {
 	keysetValidationMode      KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode) InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, keysetValidationMode KeysetValidationMode, blobReader BlobReader) InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:              backend,
 		delayedMessagesRead:  delayedMessagesRead,
 		dasReader:            dasReader,
 		keysetValidationMode: keysetValidationMode,
+		blobReader:           blobReader,
 	}
 }
 
@@ -312,7 +338,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, bytes, r.dasReader, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, bytes, r.dasReader, r.keysetValidationMode, r.blobReader)
 		if err != nil {
 			return nil, err
 		}

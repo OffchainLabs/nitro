@@ -33,3 +33,7 @@ TEXT ·readDelayedInboxMessage(SB), NOSPLIT, $0
 TEXT ·resolvePreImage(SB), NOSPLIT, $0
   CallImport
   RET
+
+TEXT ·readBlob(SB), NOSPLIT, $0
+  CallImport
+  RET

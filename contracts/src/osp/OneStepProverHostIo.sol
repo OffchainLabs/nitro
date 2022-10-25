@@ -150,6 +150,59 @@ contract OneStepProverHostIo is IOneStepProver {
         mach.valueStack.push(ValueLib.newI32(uint32(extracted.length)));
     }
 
+    function executeReadBlob(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata,
+        bytes calldata proof
+    ) internal pure {
+        uint256 preimageOffset = mach.valueStack.pop().assumeI32();
+        uint256 ptr = mach.valueStack.pop().assumeI32();
+        if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0 || preimageOffset % LEAF_SIZE != 0) {
+            mach.status = MachineStatus.ERRORED;
+            return;
+        }
+
+        uint256 leafIdx = ptr / LEAF_SIZE;
+        uint256 proofOffset = 0;
+        bytes32 leafContents;
+        MerkleProof memory merkleProof;
+        (leafContents, proofOffset, merkleProof) = mod.moduleMemory.proveLeaf(
+            leafIdx,
+            proof,
+            proofOffset
+        );
+
+        bytes memory extracted;
+        uint8 proofType = uint8(proof[proofOffset]);
+        proofOffset++;
+        if (proofType == 0) {
+            bytes calldata preimage = proof[proofOffset:(proofOffset + 32)];
+            proofOffset += 32;
+            bytes calldata blobProof = proof[proofOffset:];
+            pointEvaluationPrecompile.verifyProof(leafContents, preimage, blobProof);
+            require(keccak256(preimage) == leafContents, "BAD_PREIMAGE");
+
+            uint256 preimageEnd = preimageOffset + 32;
+            if (preimageEnd > preimage.length) {
+                preimageEnd = preimage.length;
+            }
+            extracted = preimage[preimageOffset:preimageEnd];
+        } else {
+            // TODO: support proving via an authenticated contract
+            revert("UNKNOWN_PREIMAGE_PROOF");
+        }
+
+        for (uint256 i = 0; i < extracted.length; i++) {
+            leafContents = setLeafByte(leafContents, i, uint8(extracted[i]));
+        }
+
+        mod.moduleMemory.merkleRoot = merkleProof.computeRootFromMemory(leafIdx, leafContents);
+
+        mach.valueStack.push(ValueLib.newI32(uint32(extracted.length)));
+    }
+
     function validateSequencerInbox(
         ExecutionContext calldata execCtx,
         uint64 msgIndex,

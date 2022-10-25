@@ -1921,6 +1921,30 @@ impl Machine {
                         error!();
                     }
                 }
+                Opcode::ReadBlob => {
+                    let offset = self.value_stack.pop().unwrap().assume_u32();
+                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
+                        if let Some(preimage) = self.blob_preimage_resolver.get(self.context, hash) {
+                            let offset = usize::try_from(offset).unwrap();
+                            let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
+                            let read = preimage.get(offset..(offset + len)).unwrap_or_default();
+                            let success = module.memory.store_slice_aligned(ptr.into(), read);
+                            assert!(success, "Failed to write to previously read memory");
+                            self.value_stack.push(Value::I32(len as u32));
+                        } else {
+                            eprintln!(
+                                "{} for hash {}",
+                                Color::red("Missing requested preimage"),
+                                Color::red(hash),
+                            );
+                            self.eprint_backtrace();
+                            bail!("missing requested preimage for hash {}", hash);
+                        }
+                    } else {
+                        error!();
+                    }
+                }
                 Opcode::ReadInboxMessage => {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();

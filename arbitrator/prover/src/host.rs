@@ -72,6 +72,12 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             opcode!(LocalGet, 1);
             opcode!(ReadPreImage);
         }
+        ("env", "wavm_read_blob") => {
+            ty = FunctionType::new(vec![ArbValueType::I32; 2], vec![ArbValueType::I32]);
+            opcode!(LocalGet, 0);
+            opcode!(LocalGet, 1);
+            opcode!(ReadBlob);
+        }
         ("env", "wavm_read_inbox_message") => {
             ty = FunctionType::new(
                 vec![ArbValueType::I64, ArbValueType::I32, ArbValueType::I32],

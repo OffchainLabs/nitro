@@ -100,6 +100,13 @@ func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (arbst
 	return arbstate.DiscardImmediately, nil
 }
 
+type PreimageBlobReader struct {
+}
+
+func (dasReader *PreimageBlobReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	return wavmio.ResolveBlob(hash), nil
+}
+
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
 // sig, _ := crypto.Sign(make([]byte, 32), key)
@@ -157,12 +164,13 @@ func main() {
 		if dasEnabled {
 			dasReader = &PreimageDASReader{}
 		}
+		blobReader := &PreimageBlobReader{}
 		backend := WavmInbox{}
 		var keysetValidationMode = arbstate.KeysetPanicIfInvalid
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = arbstate.KeysetDontValidate
 		}
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, keysetValidationMode)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, keysetValidationMode, blobReader)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {

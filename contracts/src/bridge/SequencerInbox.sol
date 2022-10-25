@@ -300,6 +300,53 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         emit SequencerBatchData(seqMessageIndex, data);
     }
 
+    function addSequencerL2BatchWithBlob(
+        uint256 sequenceNumber,
+        uint256 afterDelayedMessagesRead,
+        IGasRefunder gasRefunder,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
+    ) external refundsGas(gasRefunder) {
+        // solhint-disable-next-line avoid-tx-origin
+        if (msg.sender != tx.origin) revert NotOrigin();
+        if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
+        bytes32[] memory dataHashes; // get ALL blobs hashes
+        bytes memory data = abi.encodePacked(DATA_AUTHENTICATED_FLAG, dataHashes);
+        (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
+        bytes32 dataHash = keccak256(bytes.concat(header, data));
+        // Reformat the stack to prevent "Stack too deep"
+        uint256 sequenceNumber_ = sequenceNumber;
+        TimeBounds memory timeBounds_ = timeBounds;
+        bytes32 dataHash_ = dataHash;
+        uint256 afterDelayedMessagesRead_ = afterDelayedMessagesRead;
+        uint256 prevMessageCount_ = prevMessageCount;
+        uint256 newMessageCount_ = newMessageCount;
+        (
+            uint256 seqMessageIndex,
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(
+                dataHash_,
+                afterDelayedMessagesRead_,
+                0,
+                prevMessageCount_,
+                newMessageCount_
+            );
+        if (seqMessageIndex != sequenceNumber_ && sequenceNumber_ != ~uint256(0))
+            revert BadSequencerNumber(seqMessageIndex, sequenceNumber_);
+        emit SequencerBatchDelivered(
+            seqMessageIndex,
+            beforeAcc,
+            afterAcc,
+            delayedAcc,
+            totalDelayedMessagesRead,
+            timeBounds_,
+            BatchDataLocation.SeparateBatchEvent
+        );
+        emit SequencerBatchData(seqMessageIndex, data);
+    }
+
     modifier validateBatchData(bytes calldata data) {
         uint256 fullDataLen = HEADER_LENGTH + data.length;
         if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);

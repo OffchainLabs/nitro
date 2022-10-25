@@ -44,6 +44,7 @@ type ArbitratorMachine struct {
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
 var preimageResolvers sync.Map
+var blobPreimageResolvers sync.Map
 var lastPreimageResolverId int64 // atomic
 
 func freeMachine(mach *ArbitratorMachine) {
@@ -52,6 +53,7 @@ func freeMachine(mach *ArbitratorMachine) {
 
 func freeContextId(context *int64) {
 	preimageResolvers.Delete(*context)
+	blobPreimageResolvers.Delete(*context)
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
@@ -316,12 +318,15 @@ func preimageResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 	}
 }
 
-func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) error {
+// TODO: export a blobPreimageResolver as above that calls the blobPreimageResolvers resolverFunc
+
+func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver, blobResolver GoPreimageResolver) error {
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
 	id := atomic.AddInt64(&lastPreimageResolverId, 1)
 	preimageResolvers.Store(id, resolver)
+	blobPreimageResolvers.Store(id, blobResolver)
 	m.contextId = &id
 	runtime.SetFinalizer(m.contextId, freeContextId)
 	C.arbitrator_set_context(m.ptr, C.uint64_t(id))

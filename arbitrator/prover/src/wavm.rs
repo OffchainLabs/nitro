@@ -156,6 +156,8 @@ pub enum Opcode {
     ReadInboxMessage,
     /// Stop exexcuting the machine and move to the finished status
     HaltAndSetFinished,
+    /// Reads the preimage of a blob hash in-place into the pointer on the stack at an offset
+    ReadBlob,
 }
 
 impl Opcode {
@@ -266,6 +268,7 @@ impl Opcode {
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
             Opcode::HaltAndSetFinished => 0x8022,
+            Opcode::ReadBlob => 0x8023,
         }
     }
 

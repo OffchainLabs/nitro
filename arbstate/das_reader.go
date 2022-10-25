@@ -44,6 +44,8 @@ const ZeroheavyMessageHeaderFlag byte = 0x20
 // BrotliMessageHeaderByte indicates that the message is brotli-compressed.
 const BrotliMessageHeaderByte byte = 0
 
+const BlobMessageHeaderByte byte = 0x40
+
 func IsDASMessageHeaderByte(header byte) bool {
 	return (DASMessageHeaderFlag & header) > 0
 }
@@ -58,6 +60,10 @@ func IsZeroheavyEncodedHeaderByte(header byte) bool {
 
 func IsBrotliMessageHeaderByte(b uint8) bool {
 	return b == BrotliMessageHeaderByte
+}
+
+func IsBlobMessageHeaderByte(b byte) bool {
+	return b == BlobMessageHeaderByte
 }
 
 type DataAvailabilityCertificate struct {

@@ -67,6 +67,12 @@ func ResolvePreImage(hash common.Hash) []byte {
 	})
 }
 
+func ResolveBlob(hash common.Hash) []byte {
+	return readBuffer(func(offset uint32, buf []byte) uint32 {
+		return resolveBlob(hash[:], offset, buf)
+	})
+}
+
 func SetLastBlockHash(hash [32]byte) {
 	setGlobalStateBytes32(IDX_LAST_BLOCKHASH, hash[:])
 }
