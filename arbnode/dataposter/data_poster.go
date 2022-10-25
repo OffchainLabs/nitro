@@ -234,12 +234,13 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	}
 	txData := types.SignedBlobTx{
 		Message: types.BlobTxMessage{
-			Nonce:     nonce,
-			GasTipCap: tipCap,
-			GasFeeCap: feeCap,
-			Gas:       gasLimit,
-			To:        types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(&to)},
-			Value:     new(big.Int),
+			Nonce:               nonce,
+			GasTipCap:           tipCap,
+			GasFeeCap:           feeCap,
+			Gas:                 gasLimit,
+			To:                  types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(&to)},
+			Value:               new(big.Int),
+			BlobVersionedHashes: versionedHashes,
 		},
 	}
 	wrapData := types.BlobTxWrapData{
