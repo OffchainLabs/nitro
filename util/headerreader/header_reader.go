@@ -78,6 +78,7 @@ func New(client arbutil.L1Interface, config ConfigFetcher) *HeaderReader {
 	}
 }
 
+// Subscribe to block header updates.
 // Subscribers are notified when there is a change.
 // Channel could be missing headers and have duplicates.
 // Listening to the channel will make sure listenere is notified when header changes.
@@ -321,8 +322,8 @@ func (s *HeaderReader) UpdatingPendingCallBlockNr() bool {
 	return s.requiresPendingCallUpdates > 0
 }
 
-// blocknumber used by pending calls.
-// only updated if UpdatingPendingCallBlockNr returns true
+// LastPendingCallBlockNr returns the blockNumber currently used by pending calls.
+// Note: This value is only updated if UpdatingPendingCallBlockNr returns true.
 func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 	s.chanMutex.RLock()
 	defer s.chanMutex.RUnlock()

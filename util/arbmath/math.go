@@ -9,12 +9,12 @@ import (
 	"math/bits"
 )
 
-// the smallest power of two greater than the input
+// NextPowerOf2 the smallest power of two greater than the input
 func NextPowerOf2(value uint64) uint64 {
 	return 1 << Log2ceil(value)
 }
 
-// the smallest power of no less than the input
+// NextOrCurrentPowerOf2 the smallest power of no less than the input
 func NextOrCurrentPowerOf2(value uint64) uint64 {
 	power := NextPowerOf2(value)
 	if power == 2*value {
@@ -23,12 +23,12 @@ func NextOrCurrentPowerOf2(value uint64) uint64 {
 	return power
 }
 
-// the log2 of the int, rounded up
+// Log2ceil the log2 of the int, rounded up
 func Log2ceil(value uint64) uint64 {
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
-// the minimum of two ints
+// MinInt the minimum of two ints
 func MinInt(value, ceiling int64) int64 {
 	if value > ceiling {
 		return ceiling
@@ -36,7 +36,7 @@ func MinInt(value, ceiling int64) int64 {
 	return value
 }
 
-// the minimum of two uints
+// MinUint the minimum of two uints
 func MinUint(value, ceiling uint64) uint64 {
 	if value > ceiling {
 		return ceiling
@@ -44,7 +44,7 @@ func MinUint(value, ceiling uint64) uint64 {
 	return value
 }
 
-// the minimum of two 32-bit uints
+// MinUint32 the minimum of two 32-bit uints
 func MinUint32(value, ceiling uint32) uint32 {
 	if value > ceiling {
 		return ceiling
@@ -52,7 +52,7 @@ func MinUint32(value, ceiling uint32) uint32 {
 	return value
 }
 
-// the maximum of two ints
+// MaxInt the maximum of two ints
 func MaxInt(value, floor int64) int64 {
 	if value < floor {
 		return floor
@@ -60,17 +60,17 @@ func MaxInt(value, floor int64) int64 {
 	return value
 }
 
-// casts an int to a huge
+// UintToBig casts an int to a huge
 func UintToBig(value uint64) *big.Int {
 	return new(big.Int).SetUint64(value)
 }
 
-// casts a uint to a big float
+// UintToBigFloat casts a uint to a big float
 func UintToBigFloat(value uint64) *big.Float {
 	return new(big.Float).SetPrec(53).SetUint64(value)
 }
 
-// casts a huge to a uint, saturating if out of bounds
+// BigToUintSaturating casts a huge to a uint, saturating if out of bounds
 func BigToUintSaturating(value *big.Int) uint64 {
 	if value.Sign() < 0 {
 		return 0
@@ -81,7 +81,7 @@ func BigToUintSaturating(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
-// casts a huge to a uint, panicking if out of bounds
+// BigToUintOrPanic casts a huge to a uint, panicking if out of bounds
 func BigToUintOrPanic(value *big.Int) uint64 {
 	if value.Sign() < 0 {
 		panic("big.Int value is less than 0")
@@ -92,29 +92,29 @@ func BigToUintOrPanic(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
-// casts an rational to a big float
+// UfracToBigFloat casts an rational to a big float
 func UfracToBigFloat(numerator, denominator uint64) *big.Float {
 	float := new(big.Float)
 	float.Quo(UintToBigFloat(numerator), UintToBigFloat(denominator))
 	return float
 }
 
-// check huge equality
+// BigEquals check huge equality
 func BigEquals(first, second *big.Int) bool {
 	return first.Cmp(second) == 0
 }
 
-// check if a huge is less than another
+// BigLessThan check if a huge is less than another
 func BigLessThan(first, second *big.Int) bool {
 	return first.Cmp(second) < 0
 }
 
-// check if a huge is greater than another
+// BigGreaterThan check if a huge is greater than another
 func BigGreaterThan(first, second *big.Int) bool {
 	return first.Cmp(second) > 0
 }
 
-// returns a clone of the minimum of two big integers
+// BigMin returns a clone of the minimum of two big integers
 func BigMin(first, second *big.Int) *big.Int {
 	if BigLessThan(first, second) {
 		return new(big.Int).Set(first)
@@ -123,7 +123,7 @@ func BigMin(first, second *big.Int) *big.Int {
 	}
 }
 
-// returns a clone of the maximum of two big integers
+// BigMax returns a clone of the maximum of two big integers
 func BigMax(first, second *big.Int) *big.Int {
 	if BigGreaterThan(first, second) {
 		return new(big.Int).Set(first)
@@ -132,37 +132,37 @@ func BigMax(first, second *big.Int) *big.Int {
 	}
 }
 
-// add a huge to another
+// BigAdd add a huge to another
 func BigAdd(augend *big.Int, addend *big.Int) *big.Int {
 	return new(big.Int).Add(augend, addend)
 }
 
-// subtract from a huge another
+// BigSub subtract from a huge another
 func BigSub(minuend *big.Int, subtrahend *big.Int) *big.Int {
 	return new(big.Int).Sub(minuend, subtrahend)
 }
 
-// multiply a huge by another
+// BigMul multiply a huge by another
 func BigMul(multiplicand *big.Int, multiplier *big.Int) *big.Int {
 	return new(big.Int).Mul(multiplicand, multiplier)
 }
 
-// divide a huge by another
+// BigDiv divide a huge by another
 func BigDiv(dividend *big.Int, divisor *big.Int) *big.Int {
 	return new(big.Int).Div(dividend, divisor)
 }
 
-// absolute value of a huge
+// BigAbs absolute value of a huge
 func BigAbs(value *big.Int) *big.Int {
 	return new(big.Int).Abs(value)
 }
 
-// add a uint to a huge
+// BigAddByUint add a uint to a huge
 func BigAddByUint(augend *big.Int, addend uint64) *big.Int {
 	return new(big.Int).Add(augend, UintToBig(addend))
 }
 
-// multiply a huge by a rational
+// BigMulByFrac multiply a huge by a rational
 func BigMulByFrac(value *big.Int, numerator, denominator int64) *big.Int {
 	value = new(big.Int).Set(value)
 	value.Mul(value, big.NewInt(numerator))
@@ -170,7 +170,7 @@ func BigMulByFrac(value *big.Int, numerator, denominator int64) *big.Int {
 	return value
 }
 
-// multiply a huge by a rational whose components are non-negative
+// BigMulByUfrac multiply a huge by a rational whose components are non-negative
 func BigMulByUfrac(value *big.Int, numerator, denominator uint64) *big.Int {
 	value = new(big.Int).Set(value)
 	value.Mul(value, new(big.Int).SetUint64(numerator))
@@ -178,42 +178,42 @@ func BigMulByUfrac(value *big.Int, numerator, denominator uint64) *big.Int {
 	return value
 }
 
-// multiply a huge by an integer
+// BigMulByInt multiply a huge by an integer
 func BigMulByInt(multiplicand *big.Int, multiplier int64) *big.Int {
 	return new(big.Int).Mul(multiplicand, big.NewInt(multiplier))
 }
 
-// multiply a huge by a unsigned integer
+// BigMulByUint multiply a huge by a unsigned integer
 func BigMulByUint(multiplicand *big.Int, multiplier uint64) *big.Int {
 	return new(big.Int).Mul(multiplicand, new(big.Int).SetUint64(multiplier))
 }
 
-// divide a huge by an unsigned integer
+// BigDivByUint divide a huge by an unsigned integer
 func BigDivByUint(dividend *big.Int, divisor uint64) *big.Int {
 	return BigDiv(dividend, UintToBig(divisor))
 }
 
-// divide a huge by an integer
+// BigDivByInt divide a huge by an integer
 func BigDivByInt(dividend *big.Int, divisor int64) *big.Int {
 	return BigDiv(dividend, big.NewInt(divisor))
 }
 
-// add two big floats together
+// BigAddFloat add two big floats together
 func BigAddFloat(augend, addend *big.Float) *big.Float {
 	return new(big.Float).Add(augend, addend)
 }
 
-// multiply a big float by another
+// BigMulFloat multiply a big float by another
 func BigMulFloat(multiplicand, multiplier *big.Float) *big.Float {
 	return new(big.Float).Mul(multiplicand, multiplier)
 }
 
-// multiply a big float by an unsigned integer
+// BigFloatMulByUint multiply a big float by an unsigned integer
 func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
 	return new(big.Float).Mul(multiplicand, UintToBigFloat(multiplier))
 }
 
-// add two int64's without overflow
+// SaturatingAdd add two int64's without overflow
 func SaturatingAdd(augend, addend int64) int64 {
 	sum := augend + addend
 	if addend > 0 && sum < augend {
@@ -225,7 +225,7 @@ func SaturatingAdd(augend, addend int64) int64 {
 	return sum
 }
 
-// add two uint64's without overflow
+// SaturatingUAdd add two uint64's without overflow
 func SaturatingUAdd(augend uint64, addend uint64) uint64 {
 	sum := augend + addend
 	if sum < augend || sum < addend {
@@ -234,12 +234,12 @@ func SaturatingUAdd(augend uint64, addend uint64) uint64 {
 	return sum
 }
 
-// subtract an int64 from another without overflow
+// SaturatingSub subtract an int64 from another without overflow
 func SaturatingSub(minuend, subtrahend int64) int64 {
 	return SaturatingAdd(minuend, -subtrahend)
 }
 
-// subtract a uint64 from another without underflow
+// SaturatingUSub subtract a uint64 from another without underflow
 func SaturatingUSub(minuend uint64, subtrahend uint64) uint64 {
 	if subtrahend >= minuend {
 		return 0
@@ -247,7 +247,7 @@ func SaturatingUSub(minuend uint64, subtrahend uint64) uint64 {
 	return minuend - subtrahend
 }
 
-// multiply two uint64's without overflow
+// SaturatingUMul multiply two uint64's without overflow
 func SaturatingUMul(multiplicand uint64, multiplier uint64) uint64 {
 	product := multiplicand * multiplier
 	if multiplier != 0 && product/multiplier != multiplicand {
@@ -256,7 +256,7 @@ func SaturatingUMul(multiplicand uint64, multiplier uint64) uint64 {
 	return product
 }
 
-// multiply two int64's without over/underflow
+// SaturatingMul multiply two int64's without over/underflow
 func SaturatingMul(multiplicand int64, multiplier int64) int64 {
 	product := multiplicand * multiplier
 	if multiplier != 0 && product/multiplier != multiplicand {
@@ -269,7 +269,7 @@ func SaturatingMul(multiplicand int64, multiplier int64) int64 {
 	return product
 }
 
-// cast a uint64 to an int64, clipping to [0, 2^63-1]
+// SaturatingCast cast a uint64 to an int64, clipping to [0, 2^63-1]
 func SaturatingCast(value uint64) int64 {
 	if value > math.MaxInt64 {
 		return math.MaxInt64
@@ -277,7 +277,7 @@ func SaturatingCast(value uint64) int64 {
 	return int64(value)
 }
 
-// cast an int64 to a uint64, clipping to [0, 2^63-1]
+// SaturatingUCast cast an int64 to a uint64, clipping to [0, 2^63-1]
 func SaturatingUCast(value int64) uint64 {
 	if value < 0 {
 		return 0
@@ -295,7 +295,7 @@ func SaturatingCastToUint(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
-// Return the Maclaurin series approximation of e^x, where x is denominated in basis points.
+// ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where x is denominated in basis points.
 // This quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
 func ApproxExpBasisPoints(value Bips) Bips {
 	input := value
@@ -317,7 +317,7 @@ func ApproxExpBasisPoints(value Bips) Bips {
 	}
 }
 
-// Return the Newton's method approximation of sqrt(x)
+// ApproxSquareRoot return the Newton's method approximation of sqrt(x)
 // The error should be no more than 1 for values up to 2^63
 func ApproxSquareRoot(value uint64) uint64 {
 
