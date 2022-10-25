@@ -35,13 +35,15 @@ type IpfsClient struct {
 	repo     repo.Repo
 }
 
-func (c *IpfsClient) createIpfsRepo() error {
-	var err error
-	// TODO(magic) allow configuring repo path, so it can be reused between restarts of nitro node
-	c.repoPath, err = os.MkdirTemp("", "ipfs-shell")
+func (c *IpfsClient) createIpfsRepo(repoDirectory string) error {
+	fileInfo, err := os.Stat(repoDirectory)
 	if err != nil {
-		return fmt.Errorf("failed to get temp dir: %w", err)
+		return fmt.Errorf("failed to stat ipfs repo directory, %s : %w", repoDirectory, err)
 	}
+	if !fileInfo.IsDir() {
+		return fmt.Errorf("%s is not a directory", repoDirectory)
+	}
+	c.repoPath = repoDirectory
 	// Create a config with default options and a 2048 bit key
 	c.cfg, err = config.Init(io.Discard, 2048)
 	if err != nil {
@@ -147,7 +149,7 @@ func setupPlugins(externalPluginsPath string) error {
 
 var loadPluginsOnce sync.Once
 
-func CreateIpfsClient(ctx context.Context) (*IpfsClient, error) {
+func CreateIpfsClient(ctx context.Context, repoDirectory string) (*IpfsClient, error) {
 	var onceErr error
 	loadPluginsOnce.Do(func() {
 		onceErr = setupPlugins("")
@@ -156,7 +158,7 @@ func CreateIpfsClient(ctx context.Context) (*IpfsClient, error) {
 		return nil, onceErr
 	}
 	client := IpfsClient{}
-	err := client.createIpfsRepo()
+	err := client.createIpfsRepo(repoDirectory)
 	if err != nil {
 		return nil, err
 	}

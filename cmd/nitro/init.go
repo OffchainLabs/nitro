@@ -80,8 +80,9 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 	if strings.HasPrefix(initConfig.Url, "file:") {
 		return initConfig.Url[5:], nil
 	}
+	// TODO(magic) do we need ipfs: prefix?
 	if strings.HasPrefix(initConfig.Url, "ipfs:") {
-		ipfsNode, err := ipfs.CreateIpfsClient(ctx)
+		ipfsNode, err := ipfs.CreateIpfsClient(ctx, initConfig.DownloadPath)
 		if err != nil {
 			return "", err
 		}
