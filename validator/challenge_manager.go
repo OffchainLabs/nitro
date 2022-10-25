@@ -401,7 +401,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		}
 
 		// Just record the part of block creation before the message is read
-		_, preimages, batchInfo, err := m.validator.RecordBlockCreation(ctx, blockHeader, nil)
+		_, preimages, batchInfo, err := m.validator.RecordBlockCreation(ctx, blockHeader, nil, false)
 		if err != nil {
 			return err
 		}

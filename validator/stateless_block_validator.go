@@ -336,13 +336,14 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	ctx context.Context,
 	prevHeader *types.Header,
 	msg *arbstate.MessageWithMetadata,
+	keepReference bool,
 ) (common.Hash, map[common.Hash][]byte, []BatchInfo, error) {
 
 	recordingdb, chaincontext, recordingKV, err := v.recordingDatabase.PrepareRecording(ctx, prevHeader, stateLogFunc)
 	if err != nil {
 		return common.Hash{}, nil, nil, err
 	}
-	defer v.recordingDatabase.Dereference(prevHeader)
+	defer func() { v.recordingDatabase.Dereference(prevHeader) }()
 
 	chainConfig := v.blockchain.Config()
 
@@ -406,10 +407,13 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 			return common.Hash{}, nil, nil, err
 		}
 	}
+	if keepReference && err == nil {
+		prevHeader = nil
+	}
 	return blockHash, preimages, readBatchInfo, err
 }
 
-func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
+func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry, keepReference bool) error {
 	if e.Stage != ReadyForRecord {
 		return errors.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
@@ -417,7 +421,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.Stage = Recorded
 		return nil
 	}
-	blockhash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, e.PrevBlockHeader, e.msg)
+	blockhash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, e.PrevBlockHeader, e.msg, keepReference)
 	if err != nil {
 		return err
 	}
@@ -636,7 +640,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	resHash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg)
+	resHash, preimages, readBatchInfo, err := v.RecordBlockCreation(ctx, prevHeader, msg, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block data to validate: %w", err)
 	}

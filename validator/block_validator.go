@@ -57,6 +57,11 @@ type BlockValidator struct {
 
 	lastHeaderForPrepareState *types.Header
 
+	// recentValid holds one recently valid header, to commit it to DB on shutdown
+	recentValidMutex   sync.Mutex
+	awaitingValidation *types.Header
+	validHeader        *types.Header
+
 	fatalErr chan<- error
 }
 
@@ -192,6 +197,47 @@ func NewBlockValidator(
 	return validator, nil
 }
 
+func (v *BlockValidator) recentlyValid(header *types.Header) {
+	v.recentValidMutex.Lock()
+	defer v.recentValidMutex.Unlock()
+	if v.awaitingValidation == nil {
+		return
+	}
+	if v.awaitingValidation.Number.Cmp(header.Number) > 0 {
+		return
+	}
+	if v.validHeader != nil {
+		v.recordingDatabase.Dereference(v.validHeader)
+	}
+	v.validHeader = v.awaitingValidation
+	v.awaitingValidation = nil
+}
+
+func (v *BlockValidator) recentStateComputed(header *types.Header) {
+	v.recentValidMutex.Lock()
+	defer v.recentValidMutex.Unlock()
+	if v.awaitingValidation != nil {
+		return
+	}
+	_, err := v.recordingDatabase.StateFor(header)
+	if err != nil {
+		log.Error("failed to get state for blovk while validating", "err", err, "blockNum", header.Number, "hash", header.Hash())
+		return
+	}
+	v.awaitingValidation = header
+}
+
+func (v *BlockValidator) recentShutdown() error {
+	v.recentValidMutex.Lock()
+	defer v.recentValidMutex.Unlock()
+	if v.validHeader == nil {
+		return nil
+	}
+	err := v.recordingDatabase.WriteStateToDatabase(v.validHeader)
+	v.recordingDatabase.Dereference(v.validHeader)
+	return err
+}
+
 func (v *BlockValidator) readLastBlockValidatedDbInfo(reorgingToBlock *types.Block) error {
 	v.lastBlockValidatedMutex.Lock()
 	defer v.lastBlockValidatedMutex.Unlock()
@@ -275,7 +321,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 		if mustDeref {
 			defer v.recordingDatabase.Dereference(prevHeader)
 		}
-		err := v.ValidationEntryRecord(ctx, s.Entry)
+		err := v.ValidationEntryRecord(ctx, s.Entry, true)
 		if ctx.Err() != nil {
 			return
 		}
@@ -283,6 +329,8 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 			log.Error("Error while recording", "err", err)
 			return
 		}
+		v.recentStateComputed(s.Entry.PrevBlockHeader)
+		v.recordingDatabase.Dereference(prevHeader)
 		if !s.replaceStatus(RecordSent, Prepared) {
 			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
 			return
@@ -828,6 +876,7 @@ func (v *BlockValidator) progressValidated() {
 		atomic.StoreUint64(&v.lastBlockValidated, checkingBlock)
 		v.lastBlockValidatedHash = validationEntry.BlockHash
 		v.lastBlockValidatedMutex.Unlock()
+		v.recentlyValid(validationEntry.BlockHeader)
 
 		v.validations.Delete(checkingBlock)
 		select {
@@ -1097,6 +1146,13 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 		}
 	})
 	return nil
+}
+
+func (v *BlockValidator) StopAndWait() {
+	err := v.recentShutdown()
+	if err != nil {
+		log.Error("error storing valid state", "err", err)
+	}
 }
 
 // WaitForBlock can only be used from One thread
