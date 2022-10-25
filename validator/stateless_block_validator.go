@@ -708,3 +708,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
 	return v.recordingDatabase.ReferenceCount()
 }
+
+func (v *StatelessBlockValidator) Stop() {
+	v.MachineLoader.Stop()
+}

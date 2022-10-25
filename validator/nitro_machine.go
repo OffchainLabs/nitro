@@ -156,6 +156,7 @@ type NitroMachineLoader struct {
 	machinesLock sync.Mutex
 	machines     map[nitroMachineRequest]*loaderMachineStatus
 	fatalErrChan chan error
+	stopped      bool
 }
 
 func NewNitroMachineLoader(config NitroMachineConfig, fatalErrChan chan error) *NitroMachineLoader {
@@ -319,4 +320,14 @@ func (l *NitroMachineLoader) GetJitMachine(
 
 func (l *NitroMachineLoader) GetConfig() NitroMachineConfig {
 	return l.config
+}
+
+func (l *NitroMachineLoader) Stop() {
+	if l.stopped {
+		return
+	}
+	for _, stat := range l.machines {
+		stat.jitMachine.close()
+	}
+	l.stopped = true
 }

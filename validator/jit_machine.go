@@ -74,6 +74,13 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 	return machine, nil
 }
 
+func (machine *JitMachine) close() {
+	_, err := machine.stdin.Write([]byte("\n"))
+	if err != nil {
+		log.Error("error closing jit machine", "error", err)
+	}
+}
+
 func (machine *JitMachine) prove(
 	ctxIn context.Context, entry *validationEntry, resolver GoPreimageResolver,
 ) (GoGlobalState, error) {
