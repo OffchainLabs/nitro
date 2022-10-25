@@ -82,6 +82,7 @@ function writeConfigs(argv: any) {
     let validatorConfig = JSON.parse(baseConfJSON)
     validatorConfig.l1.wallet.account = namedAccount("validator").address
     validatorConfig.node.validator.enable = true
+    validatorConfig.node.validator["use-smart-contract-wallet"] = true
     let validconfJSON = JSON.stringify(validatorConfig)
     fs.writeFileSync(path.join(consts.configpath, "validator_config.json"), validconfJSON)
 
