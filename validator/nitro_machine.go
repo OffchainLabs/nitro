@@ -285,14 +285,14 @@ func (l *NitroMachineLoader) createMachineImpl(
 	return machine, nil
 }
 
-// Starts work on creating the machine in a separate goroutine
+// CreateMachine starts work on creating the machine in a separate goroutine
 // Returns immediately. Can be called multiple times.
 func (l *NitroMachineLoader) CreateMachine(moduleRoot common.Hash, untilHostIo, jit bool) error {
 	_, err := l.createMachineImpl(moduleRoot, untilHostIo, jit)
 	return err
 }
 
-// Gets machine when one is ready
+// GetMachine gets machine when one is ready
 // Returns with proper error if context aborts
 func (l *NitroMachineLoader) GetMachine(
 	ctx context.Context, moduleRoot common.Hash, untilHostIo bool,

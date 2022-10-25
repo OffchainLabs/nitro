@@ -30,7 +30,7 @@ var (
 	clientsTotalCounter   = metrics.NewRegisteredCounter("arb/feed/clients/total", nil)
 )
 
-/* Protocol-specific client catch-up logic can be injected using this interface. */
+// CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
 type CatchupBuffer interface {
 	OnRegisterClient(context.Context, *ClientConnection) error
 	OnDoBroadcast(interface{}) error

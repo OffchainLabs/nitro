@@ -62,7 +62,7 @@ func (s *ExecutionState) BlockStateHash() common.Hash {
 	}
 }
 
-// Determine the batch count required to reach the execution state.
+// RequiredBatches determines the batch count required to reach the execution state.
 // If the machine errored or the state is after the beginning of the batch,
 // the current batch is required to reach the state.
 // That's because if the machine errored, it might've read the current batch before erroring,

@@ -13,7 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-// Create any storage services that persist to files, database, cloud storage,
+// CreatePersistentStorageService creates any storage services that persist to files, database, cloud storage,
 // and group them together into a RedundantStorage instance if there is more than one.
 func CreatePersistentStorageService(
 	ctx context.Context,
