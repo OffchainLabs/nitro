@@ -3,7 +3,7 @@
 
 package precompiles
 
-// Provides a registry of BLS public keys for accounts.
+// ArbBLS provides a registry of BLS public keys for accounts.
 type ArbBLS struct {
 	Address addr
 }
