@@ -1149,6 +1149,7 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 }
 
 func (v *BlockValidator) StopAndWait() {
+	v.StopWaiter.StopAndWait()
 	err := v.recentShutdown()
 	if err != nil {
 		log.Error("error storing valid state", "err", err)
