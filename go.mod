@@ -6,6 +6,10 @@ replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
+replace github.com/protolambda/go-kzg => github.com/Inphi/go-kzg v0.0.0-20220819034031-381084440411
+
+replace github.com/kilic/bls12-381 => github.com/Inphi/bls12-381 v0.0.0-20220819032644-3ae7bcd28efc
+
 require (
 	github.com/alicebob/miniredis/v2 v2.21.0
 	github.com/allegro/bigcache v1.2.1-0.20190218064605-e24eb225f156
@@ -19,6 +23,7 @@ require (
 	github.com/codeclysm/extract/v3 v3.0.2
 	github.com/dgraph-io/badger/v3 v3.2103.2
 	github.com/ethereum/go-ethereum v1.10.13-0.20211112145008-abc74a5ffeb7
+	github.com/golang/groupcache v0.0.0-20191227052852-215e87163ea7
 	github.com/knadh/koanf v1.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/pflag v1.0.5
@@ -49,17 +54,20 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.3.0 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
-	github.com/golang/groupcache v0.0.0-20191227052852-215e87163ea7 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/flatbuffers v1.12.1 // indirect
 	github.com/graph-gophers/graphql-go v1.3.0 // indirect
 	github.com/h2non/filetype v1.0.6 // indirect
+	github.com/herumi/bls-eth-go-binary v0.0.0-20220216073600-600054663ec1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/juju/errors v0.0.0-20181118221551-089d3ea4e4d5 // indirect
+	github.com/kilic/bls12-381 v0.1.1-0.20210208205449-6045b0235e36 // indirect
 	github.com/klauspost/compress v1.12.3 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
+	github.com/protolambda/go-kzg v0.0.0-20220220065500-36404333406f // indirect
+	github.com/protolambda/ztyp v0.2.1 // indirect
 	github.com/rhnvrm/simples3 v0.6.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/urfave/cli/v2 v2.10.2 // indirect
@@ -110,14 +118,14 @@ require (
 	github.com/rs/cors v1.7.0 // indirect
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
 	github.com/status-im/keycard-go v0.0.0-20190316090335-8537d3370df4 // indirect
-	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
+	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/tklauser/go-sysconf v0.3.5 // indirect
 	github.com/tklauser/numcpus v0.2.2 // indirect
 	github.com/tyler-smith/go-bip39 v1.0.1-0.20181017060643-dbb3b84ba2ef // indirect
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
 	golang.org/x/net v0.0.0-20220607020251-c690dde0001d // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a
+	golang.org/x/sys v0.0.0-20220818161305-2296e01440c6
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
