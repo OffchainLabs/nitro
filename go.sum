@@ -1,5 +1,9 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+github.com/Inphi/bls12-381 v0.0.0-20220819032644-3ae7bcd28efc h1:dO3UA5UAc0KSHVgWNJTtG3PQwmFqlL6lJatg/9tvc38=
+github.com/Inphi/bls12-381 v0.0.0-20220819032644-3ae7bcd28efc/go.mod h1:tlkavyke+Ac7h8R3gZIjI5LKBcvMlSWnXNMgT3vZXo8=
+github.com/Inphi/go-kzg v0.0.0-20220819034031-381084440411 h1:UPONzX5HWFya8T/r8WYlbiyl1/sTwiPLsVh8NjJY7to=
+github.com/Inphi/go-kzg v0.0.0-20220819034031-381084440411/go.mod h1:sy8rQ8S75AAFdRj1QkEGm8kuSrfMa5YEDhbJ7V+nwrI=
 github.com/OneOfOne/xxhash v1.2.2 h1:KMrpdQIwFcEqXDklaen+P1axHaj9BSKzvpUUfnHldSE=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6 h1:fLjPD/aNc3UIOA6tDi6QXUemppXK3P9BI7mr2hd6gx8=
