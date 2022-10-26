@@ -285,22 +285,6 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         return challenges[challengeIndex].current.addr;
     }
 
-    function currentResponderTimeLeft(uint64 challengeIndex)
-        public
-        view
-        override
-        returns (uint256)
-    {
-        ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
-        uint256 timeLeft = challenge.current.timeLeft;
-        uint256 timeSinceLastMove = challenge.timeUsedSinceLastMove();
-        if (timeLeft > timeSinceLastMove) {
-            return timeLeft - timeSinceLastMove;
-        } else {
-            return 0;
-        }
-    }
-
     function isTimedOut(uint64 challengeIndex) public view override returns (bool) {
         return challenges[challengeIndex].isTimedOut();
     }
