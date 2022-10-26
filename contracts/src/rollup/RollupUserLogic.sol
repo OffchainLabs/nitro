@@ -340,8 +340,9 @@ abstract contract AbsRollupUserLogic is
             globalStates,
             numBlocks,
             wasmModuleRoots,
-            commonEndTime - proposedTimes[0],
-            commonEndTime - proposedTimes[1]
+            // convert from block counts to real second based timestamps
+            (commonEndTime - proposedTimes[0]) * 12,
+            (commonEndTime - proposedTimes[1]) * 12
         ); // trusted external call
 
         challengeStarted(stakers[0], stakers[1], challengeIndex);

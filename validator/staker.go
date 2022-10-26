@@ -499,7 +499,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 	}
 
 	if s.activeChallenge == nil || s.activeChallenge.ChallengeIndex() != *info.CurrentChallenge {
-		log.Error("entered challenge", "challenge", info.CurrentChallenge)
+		log.Error("entered challenge", "challenge", *info.CurrentChallenge)
 
 		latestConfirmedCreated, err := s.rollup.LatestConfirmedCreationBlock(ctx)
 		if err != nil {

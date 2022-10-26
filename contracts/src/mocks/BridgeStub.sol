@@ -44,23 +44,24 @@ contract BridgeStub is IBridge {
         revert("NOT_IMPLEMENTED");
     }
 
+    // The bridge *stub* allows anyone to enqueue a delayed message
     function enqueueDelayedMessage(
         uint8 kind,
         address sender,
         bytes32 messageDataHash
     ) external payable override returns (uint256) {
-        require(allowedDelayedInboxesMap[msg.sender].allowed, "NOT_FROM_INBOX");
         return
             addMessageToDelayedAccumulator(
                 kind,
                 sender,
-                block.number,
-                block.timestamp, // solhint-disable-line not-rely-on-time
+                uint64(block.number),
+                uint64(block.timestamp), // solhint-disable-line not-rely-on-time
                 block.basefee,
                 messageDataHash
             );
     }
 
+    // The bridge *stub* allows anyone to enqueue a sequencer message
     function enqueueSequencerMessage(
         bytes32 dataHash,
         uint256 afterDelayedMessagesRead,
@@ -102,21 +103,21 @@ contract BridgeStub is IBridge {
     }
 
     function addMessageToDelayedAccumulator(
-        uint8,
-        address,
-        uint256,
-        uint256,
-        uint256,
+        uint8 kind,
+        address sender,
+        uint64 blockNumber,
+        uint64 blockTimestamp,
+        uint256 baseFeeL1,
         bytes32 messageDataHash
     ) internal returns (uint256) {
         uint256 count = delayedInboxAccs.length;
         bytes32 messageHash = Messages.messageHash(
-            0,
-            address(uint160(0)),
-            0,
-            0,
-            0,
-            0,
+            kind,
+            sender,
+            blockNumber,
+            blockTimestamp,
+            count,
+            baseFeeL1,
             messageDataHash
         );
         bytes32 prevAcc = 0;
@@ -124,6 +125,16 @@ contract BridgeStub is IBridge {
             prevAcc = delayedInboxAccs[count - 1];
         }
         delayedInboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
+        emit MessageDelivered(
+            count,
+            prevAcc,
+            msg.sender,
+            kind,
+            sender,
+            messageDataHash,
+            baseFeeL1,
+            blockTimestamp
+        );
         return count;
     }
 
