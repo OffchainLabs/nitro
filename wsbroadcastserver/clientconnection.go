@@ -68,11 +68,11 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 	})
 }
 
-func (cc *ClientConnection) StopAndWait() {
+func (cc *ClientConnection) StopOnly() {
 	// Ignore errors from conn.Close since we are just shutting down
 	_ = cc.conn.Close()
 	if cc.Started() {
-		cc.StopWaiter.StopAndWait()
+		cc.StopWaiter.StopOnly()
 	}
 }
 
