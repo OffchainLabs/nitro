@@ -22,6 +22,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20191227052852-215e87163ea7
 	github.com/knadh/koanf v1.4.0
 	github.com/pkg/errors v0.9.1
+	github.com/protolambda/ztyp v0.2.1
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
 )
@@ -54,16 +55,15 @@ require (
 	github.com/google/flatbuffers v1.12.1 // indirect
 	github.com/graph-gophers/graphql-go v1.3.0 // indirect
 	github.com/h2non/filetype v1.0.6 // indirect
-	github.com/herumi/bls-eth-go-binary v1.28.1 // indirect
+	github.com/herumi/bls-eth-go-binary v0.0.0-20220216073600-600054663ec1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/juju/errors v0.0.0-20181118221551-089d3ea4e4d5 // indirect
-	github.com/kilic/bls12-381 v0.1.1-0.20220929213557-ca162e8a70f4 // indirect
+	github.com/kilic/bls12-381 v0.1.1-0.20210208205449-6045b0235e36 // indirect
 	github.com/klauspost/compress v1.12.3 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
-	github.com/protolambda/go-kzg v0.0.0-20221025081131-f3a74d3b1d0c // indirect
-	github.com/protolambda/ztyp v0.2.1 // indirect
+	github.com/protolambda/go-kzg v0.0.0-20220220065500-36404333406f // indirect
 	github.com/rhnvrm/simples3 v0.6.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/urfave/cli/v2 v2.10.2 // indirect
