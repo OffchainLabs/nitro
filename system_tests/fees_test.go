@@ -55,10 +55,11 @@ func TestSequencerFeePaid(t *testing.T) {
 	baseFee := GetBaseFee(t, l2client, ctx)
 	l2info.GasPrice = baseFee
 
-	testFees := func(tip uint64) *big.Int {
+	testFees := func(tip uint64) (*big.Int, *big.Int) {
 		tipCap := arbmath.BigMulByUint(baseFee, tip)
 		txOpts := l2info.GetDefaultTransactOpts("Faucet", ctx)
 		txOpts.GasTipCap = tipCap
+		gasPrice := arbmath.BigAdd(baseFee, tipCap)
 
 		networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
 
@@ -69,13 +70,17 @@ func TestSequencerFeePaid(t *testing.T) {
 
 		networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
 		l1Charge := arbmath.BigMulByUint(l2info.GasPrice, receipt.GasUsedForL1)
-		tipFee := arbmath.BigMulByUint(tipCap, params.TxGas)
 
+		// the network should receive
+		//     1. compute costs
+		//     2. tip on the compute costs
+		//     3. tip on the data costs
 		networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
 		gasUsedForL2 := receipt.GasUsed - receipt.GasUsedForL1
-		feePaidForL2 := arbmath.BigMulByUint(baseFee, gasUsedForL2)
-		if !arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipFee)) {
-			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipFee)
+		feePaidForL2 := arbmath.BigMulByUint(gasPrice, gasUsedForL2)
+		tipPaidToNet := arbmath.BigMulByUint(tipCap, receipt.GasUsedForL1)
+		if !arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet)) {
+			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
 		}
 
 		txSize := compressedTxSize(t, tx)
@@ -87,13 +92,17 @@ func TestSequencerFeePaid(t *testing.T) {
 		if l1GasBought != l1GasActual {
 			Fail(t, "the sequencer's future revenue does not match its costs", l1GasBought, l1GasActual)
 		}
-		return networkRevenue
+		return networkRevenue, tipPaidToNet
 	}
 
-	observed := arbmath.BigSub(testFees(2), testFees(0))
-	expected := arbmath.BigMulByUint(baseFee, 2*params.TxGas)
-	if !arbmath.BigEquals(observed, expected) {
-		Fail(t, "didn't make the right amount from tips", observed, expected)
+	net0, tip0 := testFees(0)
+	net2, tip2 := testFees(2)
+
+	if tip0.Sign() != 0 {
+		Fail(t, "nonzero tip")
+	}
+	if arbmath.BigEquals(arbmath.BigSub(net2, tip2), net0) {
+		Fail(t, "a tip of 2 should yield a total of 3")
 	}
 }
 

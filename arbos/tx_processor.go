@@ -41,6 +41,7 @@ type TxProcessor struct {
 	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas        uint64
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
+	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
 	Callers          []common.Address
 	TopTxType        *byte // set once in StartTxHook
 	evm              *vm.EVM
@@ -61,6 +62,7 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		state:               arbosState,
 		PosterFee:           new(big.Int),
 		posterGas:           0,
+		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
 		Callers:             []common.Address{},
 		TopTxType:           nil,
 		evm:                 evm,
@@ -349,17 +351,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, orderingTip *big.Int) error {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
-	gasEstimating := p.msg.RunMode() == types.MessageGasEstimationMode
-	gasPrice := p.evm.Context.BaseFee
-	scenario := util.TracingBeforeEVM
-	version := p.state.ArbOSVersion()
-	from := p.msg.From()
+	tipReceipient, _ := p.state.NetworkFeeAccount()
+	basefee := p.evm.Context.BaseFee
 
 	var poster common.Address
 	if p.msg.RunMode() != types.MessageCommitMode {
@@ -372,40 +371,35 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, orderingTip *big.Int
 		_ = p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits)
 	}
 
-	if gasEstimating {
+	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
 
 		minGasPrice, _ := p.state.L2PricingState().MinBaseFeeWei()
 
-		adjustedPrice := arbmath.BigMulByFrac(gasPrice, 7, 8) // assume congestion
+		adjustedPrice := arbmath.BigMulByFrac(basefee, 7, 8) // assume congestion
 		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
 			adjustedPrice = minGasPrice
 		}
-		gasPrice = adjustedPrice
+		basefee = adjustedPrice
 
 		// Pad the L1 cost in case the L1 gas price rises
 		posterCost = arbmath.BigMulByBips(posterCost, GasEstimationL1PricePadding)
 	}
 
-	if gasPrice.Sign() > 0 {
-		p.posterGas = arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, gasPrice))
-		p.PosterFee = arbmath.BigMulByUint(gasPrice, p.posterGas) // round down
-		gasNeededToStartEVM = p.posterGas
-	}
+	if basefee.Sign() > 0 {
+		// Since tips go to the network, and not to the poster, we use the basefee.
+		// Note, this only determines the amount of gas bought, not the price per gas.
 
-	if poster == l1pricing.BatchPosterAddress && !gasEstimating && orderingTip.Sign() > 0 && version >= 8 {
-		network, _ := p.state.NetworkFeeAccount()
-		orderingFee := arbmath.BigMulByUint(orderingTip, params.TxGas)
-		if err := util.TransferBalance(&from, &network, orderingFee, p.evm, scenario, "tip"); err != nil {
-			return core.ErrInsufficientFunds
-		}
+		p.posterGas = arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, basefee))
+		p.PosterFee = arbmath.BigMulByUint(basefee, p.posterGas) // round down
+		gasNeededToStartEVM = p.posterGas
 	}
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return core.ErrIntrinsicGas
+		return tipReceipient, core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
@@ -418,7 +412,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, orderingTip *big.Int
 			*gasRemaining = gasAvailable
 		}
 	}
-	return nil
+	return tipReceipient, nil
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {
@@ -436,7 +430,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
-	gasPrice := p.evm.Context.BaseFee
+	basefee := p.evm.Context.BaseFee
 	scenario := util.TracingAfterEVM
 
 	if gasLeft > p.msg.Gas() {
@@ -448,7 +442,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 
 		// undo Geth's refund to the From address
-		gasRefund := arbmath.BigMulByUint(gasPrice, gasLeft)
+		gasRefund := arbmath.BigMulByUint(basefee, gasLeft)
 		err := util.BurnBalance(&inner.From, gasRefund, p.evm, scenario, "undoRefund")
 		if err != nil {
 			log.Error("Uh oh, Geth didn't refund the user", inner.From, gasRefund)
@@ -483,7 +477,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			takeFunds(maxRefund, inner.SubmissionFeeRefund)
 		}
 		// Conceptually, the gas charge is taken from the L1 deposit pool if possible.
-		takeFunds(maxRefund, arbmath.BigMulByUint(gasPrice, gasUsed))
+		takeFunds(maxRefund, arbmath.BigMulByUint(basefee, gasUsed))
 		// Refund any unused gas, without overdrafting the L1 deposit.
 		refundNetworkFee(gasRefund)
 
@@ -507,13 +501,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		return
 	}
 
-	totalCost := arbmath.BigMul(gasPrice, arbmath.UintToBig(gasUsed)) // total cost = price of gas * gas burnt
-	computeCost := arbmath.BigSub(totalCost, p.PosterFee)             // total cost = network's compute + poster's L1 costs
+	totalCost := arbmath.BigMul(basefee, arbmath.UintToBig(gasUsed)) // total cost = price of gas * gas burnt
+	computeCost := arbmath.BigSub(totalCost, p.PosterFee)            // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
 		// Uh oh, there's a bug in our charging code.
 		// Give all funds to the network account and continue.
 
-		log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
+		log.Error("total cost < poster cost", "gasUsed", gasUsed, "basefee", basefee, "posterFee", p.PosterFee)
 		p.PosterFee = big.NewInt(0)
 		computeCost = totalCost
 	}
@@ -525,8 +519,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		if infraFeeAccount != (common.Address{}) {
 			infraFee, err := p.state.L2PricingState().MinBaseFeeWei()
 			p.state.Restrict(err)
-			if arbmath.BigLessThan(gasPrice, infraFee) {
-				infraFee = gasPrice
+			if arbmath.BigLessThan(basefee, infraFee) {
+				infraFee = basefee
 			}
 			computeGas := arbmath.SaturatingUSub(gasUsed, p.posterGas)
 			infraComputeCost := arbmath.BigMulByUint(infraFee, computeGas)
@@ -537,9 +531,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if arbmath.BigGreaterThan(computeCost, common.Big0) {
 		util.MintBalance(&networkFeeAccount, computeCost, p.evm, scenario, purpose)
 	}
-	posterFeeDestination := p.evm.Context.Coinbase
-	if p.state.ArbOSVersion() >= 2 {
-		posterFeeDestination = l1pricing.L1PricerFundsPoolAddress
+	posterFeeDestination := l1pricing.L1PricerFundsPoolAddress
+	if p.state.ArbOSVersion() < 2 {
+		posterFeeDestination = p.evm.Context.Coinbase
 	}
 	util.MintBalance(&posterFeeDestination, p.PosterFee, p.evm, scenario, purpose)
 
@@ -633,8 +627,15 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 	return hash, nil
 }
 
+func (p *TxProcessor) DropTip() bool {
+	return p.state.ArbOSVersion() < 8 || p.delayedInbox
+}
+
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
-	gasPrice := p.evm.Context.BaseFee
+	gasPrice := p.evm.GasPrice
+	if p.state.ArbOSVersion() < 8 {
+		gasPrice = p.evm.Context.BaseFee
+	}
 	if p.msg.RunMode() != types.MessageCommitMode && p.msg.GasFeeCap().Sign() == 0 {
 		gasPrice.SetInt64(0) // gasprice zero behavior
 	}
