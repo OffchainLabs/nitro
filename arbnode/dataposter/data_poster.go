@@ -89,6 +89,7 @@ type DataPoster[Meta any] struct {
 	config            DataPosterConfigFetcher
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)
+	isEip4844         bool
 
 	// these fields are protected by the mutex
 	mutex      sync.Mutex
@@ -103,7 +104,7 @@ type AttemptLocker interface {
 	AttemptLock(context.Context) bool
 }
 
-func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config DataPosterConfigFetcher, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
+func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind.TransactOpts, redisClient redis.UniversalClient, redisLock AttemptLocker, config DataPosterConfigFetcher, isEip4844 bool, metadataRetriever func(ctx context.Context, blockNum *big.Int) (Meta, error)) (*DataPoster[Meta], error) {
 	var replacementTimes []time.Duration
 	var lastReplacementTime time.Duration
 	for _, s := range strings.Split(config().ReplacementTimes, ",") {
@@ -134,6 +135,7 @@ func NewDataPoster[Meta any](headerReader *headerreader.HeaderReader, auth *bind
 	}
 	return &DataPoster[Meta]{
 		headerReader:      headerReader,
+		isEip4844:         isEip4844,
 		client:            headerReader.Client(),
 		auth:              auth,
 		config:            config,
@@ -222,7 +224,7 @@ func (s *SignedBlobTxWrapper) isFake() bool {
 	return false
 }
 
-func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64, isEIP4844 bool) error {
+func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, nil, dataCreatedAt)
@@ -231,7 +233,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	}
 	var txData types.TxData
 	var txWrapData types.TxWrapData
-	if isEIP4844 {
+	if p.isEip4844 {
 		blobs := arbnode.EncodeBlobs(calldata)
 		commitments, versionedHashes, aggregatedProof, err := blobs.ComputeCommitmentsAndAggregatedProof()
 		if err != nil {
@@ -243,7 +245,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 		}
 		fCap, ok := uint256.FromBig(feeCap)
 		if !ok {
-			return errors.New("tip cap is not a big int")
+			return errors.New("fee cap is not a big int")
 		}
 		txData = &types.SignedBlobTx{
 			Message: types.BlobTxMessage{
@@ -357,17 +359,8 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 		break
 	}
 	var txData types.TxData
-	if true {
-		txData = &types.DynamicFeeTx{
-			Nonce:     newTx.FullTx.Nonce(),
-			GasTipCap: newTipCap,
-			GasFeeCap: newFeeCap,
-			Gas:       newTx.FullTx.Gas(),
-			To:        newTx.FullTx.To(),
-			Value:     newTx.FullTx.Value(),
-			Data:      newTx.FullTx.Data(),
-		}
-	} else {
+	var tx *types.Transaction
+	if p.isEip4844 {
 		tCap, ok := uint256.FromBig(newTipCap)
 		if !ok {
 			return errors.New("tip cap is not a big int")
@@ -388,10 +381,22 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 				MaxFeePerDataGas:    view.Uint256View(*fCap), // Use the same fee cap as gas for now.
 			},
 		}
+		tx = types.NewTx(newTx.Data, types.WithTxWrapData(newTx.BlobData))
+	} else {
+		txData = &types.DynamicFeeTx{
+			Nonce:     newTx.FullTx.Nonce(),
+			GasTipCap: newTipCap,
+			GasFeeCap: newFeeCap,
+			Gas:       newTx.FullTx.Gas(),
+			To:        newTx.FullTx.To(),
+			Value:     newTx.FullTx.Value(),
+			Data:      newTx.FullTx.Data(),
+		}
+		tx = types.NewTx(txData)
 	}
 	newTx.Sent = false
 	newTx.Data = txData
-	newTx.FullTx, err = p.auth.Signer(p.auth.From, types.NewTx(newTx.Data, types.WithTxWrapData(newTx.BlobData)))
+	newTx.FullTx, err = p.auth.Signer(p.auth.From, tx)
 	if err != nil {
 		return err
 	}

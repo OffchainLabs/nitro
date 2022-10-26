@@ -169,7 +169,7 @@ func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, st
 	dataPosterConfigFetcher := func() *dataposter.DataPosterConfig {
 		return &config().DataPoster
 	}
-	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, b.getBatchPosterPosition)
+	b.dataPoster, err = dataposter.NewDataPoster(l1Reader, transactOpts, redisClient, redisLock, dataPosterConfigFetcher, config().EIP4844, b.getBatchPosterPosition)
 	if err != nil {
 		return nil, err
 	}
