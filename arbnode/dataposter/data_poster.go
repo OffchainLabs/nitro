@@ -18,18 +18,21 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
+	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/protolambda/ztyp/view"
 	flag "github.com/spf13/pflag"
 )
 
 type queuedTransaction[Meta any] struct {
 	FullTx          *types.Transaction
-	Data            types.SignedBlobTx
+	Data            types.TxData
+	BlobData        types.TxWrapData
 	Meta            Meta
 	Sent            bool
 	Created         time.Time // may be earlier than the tx was given to the tx poster
@@ -159,13 +162,13 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 		return 0, emptyMeta, err
 	}
 	if lastQueueItem != nil {
-		return uint64(lastQueueItem.Data.Message.Nonce) + 1, lastQueueItem.Meta, nil
+		return uint64(lastQueueItem.FullTx.Nonce()) + 1, lastQueueItem.Meta, nil
 	}
 	meta, err := p.metadataRetriever(ctx, p.lastBlock)
 	return p.nonce, meta, err
 }
 
-const minRbfIncrease arbmath.Bips = arbmath.OneInBips * 11 / 10
+const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
 func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big.Int, dataCreatedAt time.Time) (*big.Int, *big.Int, error) {
 	latestHeader, err := p.headerReader.LastHeader(ctx)
@@ -219,52 +222,65 @@ func (s *SignedBlobTxWrapper) isFake() bool {
 	return false
 }
 
-func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
+func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64, isEIP4844 bool) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, nil, dataCreatedAt)
 	if err != nil {
 		return err
 	}
-
-	blobs := arbnode.EncodeBlobs(calldata)
-	commitments, versionedHashes, aggregatedProof, err := blobs.ComputeCommitmentsAndAggregatedProof()
-	if err != nil {
-		return err
+	var txData types.TxData
+	var txWrapData types.TxWrapData
+	if isEIP4844 {
+		blobs := arbnode.EncodeBlobs(calldata)
+		commitments, versionedHashes, aggregatedProof, err := blobs.ComputeCommitmentsAndAggregatedProof()
+		if err != nil {
+			return err
+		}
+		tCap, ok := uint256.FromBig(tipCap)
+		if !ok {
+			return errors.New("tip cap is not a big int")
+		}
+		fCap, ok := uint256.FromBig(feeCap)
+		if !ok {
+			return errors.New("tip cap is not a big int")
+		}
+		txData = &types.SignedBlobTx{
+			Message: types.BlobTxMessage{
+				Nonce:               view.Uint64View(nonce),
+				GasTipCap:           view.Uint256View(*tCap),
+				GasFeeCap:           view.Uint256View(*fCap),
+				Gas:                 view.Uint64View(gasLimit),
+				To:                  types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(&to)},
+				Value:               view.Uint256View(*uint256.NewInt(0)),
+				BlobVersionedHashes: versionedHashes,
+				MaxFeePerDataGas:    view.Uint256View(*fCap), // Use the same fee cap as gas for now.
+			},
+		}
+		txWrapData = &types.BlobTxWrapData{
+			BlobKzgs:           commitments,
+			Blobs:              blobs,
+			KzgAggregatedProof: aggregatedProof,
+		}
+	} else {
+		txData = &types.DynamicFeeTx{
+			Nonce:     nonce,
+			GasTipCap: tipCap,
+			GasFeeCap: feeCap,
+			Gas:       gasLimit,
+			To:        &to,
+			Value:     new(big.Int),
+			Data:      calldata,
+		}
 	}
-	txData := types.SignedBlobTx{
-		Message: types.BlobTxMessage{
-			Nonce:               nonce,
-			GasTipCap:           tipCap,
-			GasFeeCap:           feeCap,
-			Gas:                 gasLimit,
-			To:                  types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(&to)},
-			Value:               new(big.Int),
-			BlobVersionedHashes: versionedHashes,
-		},
-	}
-	wrapData := types.BlobTxWrapData{
-		BlobKzgs:           commitments,
-		Blobs:              blobs,
-		KzgAggregatedProof: aggregatedProof,
-	}
-	tx := types.NewTx(&txData, types.WithTxWrapData(&wrapData))
-	//
-	//inner := types.DynamicFeeTx{
-	//	Nonce:     nonce,
-	//	GasTipCap: tipCap,
-	//	GasFeeCap: feeCap,
-	//	Gas:       gasLimit,
-	//	To:        &to,
-	//	Value:     new(big.Int),
-	//	Data:      calldata,
-	//}
+	tx := types.NewTx(txData, types.WithTxWrapData(txWrapData))
 	fullTx, err := p.auth.Signer(p.auth.From, tx)
 	if err != nil {
 		return err
 	}
 	queuedTx := queuedTransaction[Meta]{
 		Data:            txData,
+		BlobData:        txWrapData,
 		FullTx:          fullTx,
 		Meta:            meta,
 		Sent:            false,
@@ -276,10 +292,10 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) saveTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
-	if prevTx != nil && prevTx.Data.Message.Nonce != newTx.Data.Message.Nonce {
-		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
+	if prevTx != nil && prevTx.FullTx.Nonce() != newTx.FullTx.Nonce() {
+		return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.FullTx.Nonce(), newTx.FullTx.Nonce())
 	}
-	return p.queue.Put(ctx, uint64(newTx.Data.Message.Nonce), prevTx, newTx)
+	return p.queue.Put(ctx, newTx.FullTx.Nonce(), prevTx, newTx)
 }
 
 func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction[Meta], newTx *queuedTransaction[Meta]) error {
@@ -308,22 +324,22 @@ func (p *DataPoster[Meta]) sendTx(ctx context.Context, prevTx *queuedTransaction
 
 // the mutex must be held by the caller
 func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransaction[Meta]) error {
-	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.Data.Message.GasTipCap, prevTx.Created)
+	newFeeCap, newTipCap, err := p.getFeeAndTipCaps(ctx, prevTx.FullTx.GasTipCap(), prevTx.Created)
 	if err != nil {
 		return err
 	}
 
 	desiredFeeCap := newFeeCap
-	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(prevTx.Data.Message.Gas))
+	maxFeeCap := new(big.Int).Div(p.balance, new(big.Int).SetUint64(prevTx.FullTx.Gas()))
 	newFeeCap = arbmath.BigMin(newFeeCap, maxFeeCap)
-	minNewFeeCap := arbmath.BigMulByBips(prevTx.Data.Message.GasFeeCap, minRbfIncrease)
+	minNewFeeCap := arbmath.BigMulByBips(prevTx.FullTx.GasFeeCap(), minRbfIncrease)
 	newTx := *prevTx
 	if newFeeCap.Cmp(minNewFeeCap) < 0 {
 		if desiredFeeCap.Cmp(minNewFeeCap) >= 0 {
 			log.Error(
 				"lack of L1 balance prevents posting transaction with a higher fee cap",
 				"balance", p.balance,
-				"gasLimit", prevTx.Data.Message.Gas,
+				"gasLimit", prevTx.FullTx.Gas(),
 				"desiredFeeCap", desiredFeeCap,
 				"maxFeeCap", maxFeeCap,
 			)
@@ -340,10 +356,42 @@ func (p *DataPoster[Meta]) replaceTx(ctx context.Context, prevTx *queuedTransact
 		newTx.NextReplacement = prevTx.Created.Add(replacement)
 		break
 	}
+	var txData types.TxData
+	if true {
+		txData = &types.DynamicFeeTx{
+			Nonce:     newTx.FullTx.Nonce(),
+			GasTipCap: newTipCap,
+			GasFeeCap: newFeeCap,
+			Gas:       newTx.FullTx.Gas(),
+			To:        newTx.FullTx.To(),
+			Value:     newTx.FullTx.Value(),
+			Data:      newTx.FullTx.Data(),
+		}
+	} else {
+		tCap, ok := uint256.FromBig(newTipCap)
+		if !ok {
+			return errors.New("tip cap is not a big int")
+		}
+		fCap, ok := uint256.FromBig(newFeeCap)
+		if !ok {
+			return errors.New("fee cap is not a big int")
+		}
+		txData = &types.SignedBlobTx{
+			Message: types.BlobTxMessage{
+				Nonce:               view.Uint64View(newTx.FullTx.Nonce()),
+				GasTipCap:           view.Uint256View(*tCap),
+				GasFeeCap:           view.Uint256View(*fCap),
+				Gas:                 view.Uint64View(newTx.FullTx.Gas()),
+				To:                  types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(newTx.FullTx.To())},
+				Value:               view.Uint256View(*uint256.NewInt(0)),
+				BlobVersionedHashes: newTx.FullTx.DataHashes(),
+				MaxFeePerDataGas:    view.Uint256View(*fCap), // Use the same fee cap as gas for now.
+			},
+		}
+	}
 	newTx.Sent = false
-	newTx.Data.Message.GasFeeCap = newFeeCap
-	newTx.Data.Message.GasTipCap = newTipCap
-	newTx.FullTx, err = p.auth.Signer(p.auth.From, types.NewTx(&newTx.Data))
+	newTx.Data = txData
+	newTx.FullTx, err = p.auth.Signer(p.auth.From, types.NewTx(newTx.Data, types.WithTxWrapData(newTx.BlobData)))
 	if err != nil {
 		return err
 	}
@@ -385,7 +433,7 @@ func (p *DataPoster[Meta]) updateState(ctx context.Context) error {
 const maxConsecutiveIntermittentErrors = 10
 
 func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta], msg string) {
-	nonce := tx.Data.Message.Nonce
+	nonce := tx.FullTx.Nonce()
 	if err == nil {
 		delete(p.errorCount, nonce)
 		return
