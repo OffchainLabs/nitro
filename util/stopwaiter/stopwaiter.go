@@ -102,7 +102,7 @@ func (s *StopWaiterSafe) StopOnly() {
 	s.stopped = true
 }
 
-// Stopping multiple times, even before start, will work
+// StopAndWait may be called multiple times, even before start.
 func (s *StopWaiterSafe) StopAndWait() error {
 	return s.stopAndWaitImpl(stopDelayWarningTimeout)
 }
@@ -251,7 +251,7 @@ func ChanRateLimiter[T any](s *StopWaiterSafe, inChan <-chan T, maxRateCallback 
 	return outChan, nil
 }
 
-// May panic on race conditions instead of returning errors
+// StopWaiter may panic on race conditions instead of returning errors
 type StopWaiter struct {
 	StopWaiterSafe
 }

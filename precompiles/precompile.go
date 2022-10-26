@@ -115,7 +115,7 @@ func (e *SolError) Error() string {
 	return rendered
 }
 
-// Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
+// MakePrecompile makes a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
 // supports each method.
 func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Precompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
@@ -597,7 +597,7 @@ func (p Precompile) GetMethodID(name string) bytes4 {
 	return *(*bytes4)(method.template.ID)
 }
 
-// call a precompile in typed form, deserializing its inputs and serializing its outputs
+// Call a precompile in typed form, deserializing its inputs and serializing its outputs
 func (p Precompile) Call(
 	input []byte,
 	precompileAddress common.Address,
@@ -748,7 +748,7 @@ func (p Precompile) Precompile() Precompile {
 	return p
 }
 
-// Needed for the fuzzing harness
+// Get4ByteMethodSignatures is needed for the fuzzing harness
 func (p Precompile) Get4ByteMethodSignatures() [][4]byte {
 	ret := make([][4]byte, 0, len(p.methods))
 	for sig := range p.methods {

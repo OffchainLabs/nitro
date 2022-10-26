@@ -533,6 +533,8 @@ func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {
 	return r.lastReadBlock, r.lastReadBatchCount
 }
 
+// GetLastSeenBatchCount returns how many sequencer batches the inbox reader has read in from L1.
+// Return values:
 // >0 - last batchcount seen in run() - only written after lastReadBatchCount updated
 // 0 - no batch seen, error
 func (r *InboxReader) GetLastSeenBatchCount() uint64 {

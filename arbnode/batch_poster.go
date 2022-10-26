@@ -246,6 +246,9 @@ func (s *batchSegments) recompressAll() error {
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
 		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
 	}
+	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+		return fmt.Errorf("number of raw segments %v excees maximum number %v", len(s.rawSegments), arbstate.MaxSegmentsPerSequencerMessage)
+	}
 	return nil
 }
 
@@ -254,12 +257,16 @@ func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
 		return true, nil
 	}
+	// we've reached the max number of segments
+	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+		return true, nil
+	}
 	// there is room, no need to flush
 	if (s.lastCompressedSize + s.newUncompressedSize) < s.sizeLimit {
 		return false, nil
 	}
-	// don't want to flush for headers
-	if isHeader {
+	// don't want to flush for headers or the first message
+	if isHeader || len(s.rawSegments) == s.trailingHeaders {
 		return false, nil
 	}
 	err := s.compressedWriter.Flush()
@@ -305,11 +312,12 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+	// Force include headers because we don't want to re-compress and we can just trim them later if necessary
 	overflow, err := s.testForOverflow(isHeader)
 	if err != nil {
 		return false, err
 	}
-	if overflow || len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+	if overflow {
 		return false, s.close()
 	}
 	s.rawSegments = append(s.rawSegments, segment)
@@ -388,10 +396,7 @@ func (s *batchSegments) IsDone() bool {
 	return s.isDone
 }
 
-func (s *batchSegments) IsEmpty() bool {
-	return len(s.rawSegments) == 0
-}
-
+// Returns nil (as opposed to []byte{}) if there's no segments to put in the batch
 func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	if !s.isDone {
 		err := s.close()
@@ -502,13 +507,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 			log.Error("error getting message from streamer", "error", err)
 			break
 		}
-		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
-			haveUsefulMessage = true
-		}
 		success, err := b.building.segments.AddMessage(msg)
 		if err != nil {
-			log.Error("error adding message to batch", "error", err)
-			break
+			// Clear our cache
+			b.building = nil
+			return fmt.Errorf("error adding message to batch: %w", err)
 		}
 		if !success {
 			// this batch is full
@@ -516,13 +519,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 			haveUsefulMessage = true
 			break
 		}
+		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
+			haveUsefulMessage = true
+		}
 		b.building.msgCount++
 	}
 
-	if b.building.segments.IsEmpty() {
-		// we don't need to post a batch for the time being
-		return nil
-	}
 	if !forcePostBatch || !haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now

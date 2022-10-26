@@ -56,11 +56,13 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type Config struct {
-	RequireChainId     bool                     `koanf:"require-chain-id"`
-	RequireFeedVersion bool                     `koanf:"require-feed-version"`
-	Timeout            time.Duration            `koanf:"timeout"`
-	URLs               []string                 `koanf:"url"`
-	Verifier           signature.VerifierConfig `koanf:"verify"`
+	ReconnectInitialBackoff time.Duration            `koanf:"reconnect-initial-backoff"`
+	ReconnectMaximumBackoff time.Duration            `koanf:"reconnect-maximum-backoff"`
+	RequireChainId          bool                     `koanf:"require-chain-id"`
+	RequireFeedVersion      bool                     `koanf:"require-feed-version"`
+	Timeout                 time.Duration            `koanf:"timeout"`
+	URLs                    []string                 `koanf:"url"`
+	Verifier                signature.VerifierConfig `koanf:"verify"`
 }
 
 func (c *Config) Enable() bool {
@@ -68,6 +70,8 @@ func (c *Config) Enable() bool {
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Duration(prefix+".reconnect-initial-backoff", DefaultConfig.ReconnectInitialBackoff, "initial duration to wait before reconnect")
+	f.Duration(prefix+".reconnect-maximum-backoff", DefaultConfig.ReconnectMaximumBackoff, "maximum duration to wait before reconnect")
 	f.Bool(prefix+".require-chain-id", DefaultConfig.RequireChainId, "require chain id to be present on connect")
 	f.Bool(prefix+".require-feed-version", DefaultConfig.RequireFeedVersion, "require feed version to be present on connect")
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
@@ -76,19 +80,23 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultConfig = Config{
-	RequireChainId:     false,
-	RequireFeedVersion: false,
-	Verifier:           signature.DefultFeedVerifierConfig,
-	URLs:               []string{""},
-	Timeout:            20 * time.Second,
+	ReconnectInitialBackoff: time.Second * 1,
+	ReconnectMaximumBackoff: time.Second * 64,
+	RequireChainId:          false,
+	RequireFeedVersion:      false,
+	Verifier:                signature.DefultFeedVerifierConfig,
+	URLs:                    []string{""},
+	Timeout:                 20 * time.Second,
 }
 
 var DefaultTestConfig = Config{
-	RequireChainId:     false,
-	RequireFeedVersion: false,
-	Verifier:           signature.DefultFeedVerifierConfig,
-	URLs:               []string{""},
-	Timeout:            200 * time.Millisecond,
+	ReconnectInitialBackoff: 0,
+	ReconnectMaximumBackoff: 0,
+	RequireChainId:          false,
+	RequireFeedVersion:      false,
+	Verifier:                signature.DefultFeedVerifierConfig,
+	URLs:                    []string{""},
+	Timeout:                 200 * time.Millisecond,
 }
 
 type TransactionStreamerInterface interface {
@@ -116,6 +124,7 @@ type BroadcastClient struct {
 	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
+	adjustCount                     func(int32)
 }
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
@@ -131,6 +140,7 @@ func NewBroadcastClient(
 	txStreamer TransactionStreamerInterface,
 	fatalErrChan chan error,
 	bpVerifier contracts.BatchPosterVerifierInterface,
+	adjustCount func(int32),
 ) (*BroadcastClient, error) {
 	sigVerifier, err := signature.NewVerifier(&config.Verifier, bpVerifier)
 	if err != nil {
@@ -144,12 +154,14 @@ func NewBroadcastClient(
 		txStreamer:   txStreamer,
 		fatalErrChan: fatalErrChan,
 		sigVerifier:  sigVerifier,
+		adjustCount:  adjustCount,
 	}, err
 }
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn, bc)
 	bc.LaunchThread(func(ctx context.Context) {
+		backoffDuration := bc.config.ReconnectInitialBackoff
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 			if errors.Is(err, ErrMissingChainId) ||
@@ -164,7 +176,10 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
-			timer := time.NewTimer(5 * time.Second)
+			timer := time.NewTimer(backoffDuration)
+			if backoffDuration < bc.config.ReconnectMaximumBackoff {
+				backoffDuration *= 2
+			}
 			select {
 			case <-ctx.Done():
 				timer.Stop()
@@ -288,6 +303,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
 		connected := false
 		sourcesDisconnectedGauge.Inc(1)
+		backoffDuration := bc.config.ReconnectInitialBackoff
 		for {
 			select {
 			case <-ctx.Done():
@@ -309,13 +325,25 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				if connected {
 					connected = false
+					bc.adjustCount(-1)
 					sourcesConnectedGauge.Dec(1)
 					sourcesDisconnectedGauge.Inc(1)
 				}
 				_ = bc.conn.Close()
+				timer := time.NewTimer(backoffDuration)
+				if backoffDuration < bc.config.ReconnectMaximumBackoff {
+					backoffDuration *= 2
+				}
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
 				earlyFrameData = bc.retryConnect(ctx)
 				continue
 			}
+			backoffDuration = bc.config.ReconnectInitialBackoff
 
 			if msg != nil {
 				res := broadcaster.BroadcastMessage{}
@@ -329,6 +357,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 					connected = true
 					sourcesDisconnectedGauge.Dec(1)
 					sourcesConnectedGauge.Inc(1)
+					bc.adjustCount(1)
 				}
 				if len(res.Messages) > 0 {
 					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
@@ -353,7 +382,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 								continue
 							}
 
-							bc.nextSeqNum = message.SequenceNumber
+							bc.nextSeqNum = message.SequenceNumber + 1
 						}
 						if err := bc.txStreamer.AddBroadcastMessages(res.Messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
