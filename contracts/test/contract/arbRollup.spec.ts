@@ -223,6 +223,7 @@ const setup = async () => {
 
 async function tryAdvanceChain(blocks: number): Promise<void> {
   try {
+    await ethers.provider.send("evm_increaseTime", [blocks * 12]);
     for (let i = 0; i < blocks; i++) {
       await ethers.provider.send("evm_mine", []);
     }
@@ -331,7 +332,7 @@ const _IMPLEMENTATION_PRIMARY_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076
 const _IMPLEMENTATION_SECONDARY_SLOT = "0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d"
 
 const getDoubleLogicUUPSTarget = async (slot: "user" | "admin", provider: providers.Provider) : Promise<string> => {
-  return `0x${(await provider.getStorageAt(rollupAdmin.address, slot === "admin" ? 
+  return `0x${(await provider.getStorageAt(rollupAdmin.address, slot === "admin" ?
                 _IMPLEMENTATION_PRIMARY_SLOT : _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
 }
 
