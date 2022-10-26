@@ -19,9 +19,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -234,8 +234,8 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	var txData types.TxData
 	var txWrapData types.TxWrapData
 	if p.isEip4844 {
-		blobs := arbnode.EncodeBlobs(calldata)
-		commitments, versionedHashes, aggregatedProof, err := blobs.ComputeCommitmentsAndAggregatedProof()
+		dataBlobs := blobs.EncodeBlobs(calldata)
+		commitments, versionedHashes, aggregatedProof, err := dataBlobs.ComputeCommitmentsAndAggregatedProof()
 		if err != nil {
 			return err
 		}
@@ -261,7 +261,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 		}
 		txWrapData = &types.BlobTxWrapData{
 			BlobKzgs:           commitments,
-			Blobs:              blobs,
+			Blobs:              dataBlobs,
 			KzgAggregatedProof: aggregatedProof,
 		}
 	} else {
