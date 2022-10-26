@@ -109,7 +109,7 @@ func (cm *ClientManager) removeAll() {
 }
 
 func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
-	clientConnection.StopAndWait()
+	clientConnection.StopOnly()
 
 	err := cm.poller.Stop(clientConnection.desc)
 	if err != nil {
