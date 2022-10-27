@@ -177,7 +177,7 @@ func ProduceBlockAdvanced(
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
-	gasPrice := header.BaseFee
+	basefee := header.BaseFee
 	time := header.Time
 	expectedBalanceDelta := new(big.Int)
 	redeems := types.Transactions{}
@@ -237,15 +237,15 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			if gasPrice.Sign() > 0 {
+			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
 				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster)
-				posterCostInL2Gas := arbmath.BigDiv(posterCost, gasPrice)
+				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
 
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
 				} else {
-					log.Error("Could not get poster cost in L2 terms", "posterCost", posterCost, "gasPrice", gasPrice)
+					log.Error("Could not get poster cost in L2 terms", "posterCost", posterCost, "basefee", basefee)
 				}
 			}
 
