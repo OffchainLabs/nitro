@@ -850,8 +850,11 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	// TODO: make filter config configurable (it currently just applies defaults)
-	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, syncMonitor, filters.Config{})
+	filterConfig := filters.Config{
+		LogCacheSize: config.RPC.FilterLogCacheSize,
+		Timeout:      config.RPC.FilterTimeout,
+	}
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, syncMonitor, filterConfig)
 	if err != nil {
 		return nil, err
 	}
