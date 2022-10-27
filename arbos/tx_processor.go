@@ -368,7 +368,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 	posterCost, calldataUnits := p.state.L1PricingState().PosterDataCost(p.msg, poster)
 	if calldataUnits > 0 {
-		_ = p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits)
+		p.state.Restrict(p.state.L1PricingState().AddToUnitsSinceUpdate(calldataUnits))
 	}
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
