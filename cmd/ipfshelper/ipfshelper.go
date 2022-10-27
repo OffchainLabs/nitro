@@ -2,13 +2,11 @@ package ipfshelper
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -36,10 +34,10 @@ var defaultPeerList = []string{
 }
 
 type IpfsHelper struct {
-	repoPath string
 	api      icore.CoreAPI
 	node     *core.IpfsNode
 	cfg      *config.Config
+	repoPath string
 	repo     repo.Repo
 }
 
@@ -110,7 +108,6 @@ func (h *IpfsHelper) connectToPeers(ctx context.Context, peers []string) error {
 	}
 	// TODO(magic) refactor?
 	var wg sync.WaitGroup
-	var connected uint32
 	wg.Add(len(peerInfos))
 	for _, peerInfo := range peerInfos {
 		go func(peerInfo *peer.AddrInfo) {
@@ -120,13 +117,9 @@ func (h *IpfsHelper) connectToPeers(ctx context.Context, peers []string) error {
 				log.Warn("failed to connect to peer", "peerId", peerInfo.ID, "err", err)
 				return
 			}
-			atomic.AddUint32(&connected, 1)
 		}(peerInfo)
 	}
 	wg.Wait()
-	if connected == 0 {
-		return errors.New("failed to connect to any peer")
-	}
 	return nil
 }
 
