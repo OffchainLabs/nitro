@@ -158,13 +158,17 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 			}
 			err := db.ForEachStorage(addr, func(key common.Hash, value common.Hash) bool {
 				val2, exists := acct.ContractInfo.ContractStorage[key]
+				if val2 == (common.Hash{}) {
+					// There seems to be a bug in geth where it'll give us non-existent storage values while iterating
+					return true
+				}
 				if !exists {
-					t.Fatal()
+					t.Fatal("address", addr, "key", key, "found in storage as", val2, "but not in initialization data")
 				}
 				if value != val2 {
-					t.Fatal()
+					t.Fatal("address", addr, "key", key, "value", val2, "isn't what was specified in initialization data", value)
 				}
-				return false
+				return true
 			})
 			if err != nil {
 				t.Fatal(err)

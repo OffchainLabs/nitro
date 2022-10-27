@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -653,6 +654,7 @@ var DefaultCachingConfig = CachingConfig{
 type Node struct {
 	Stack                   *node.Node
 	Backend                 *arbitrum.Backend
+	FilterSystem            *filters.FilterSystem
 	ArbInterface            *ArbInterface
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
@@ -848,7 +850,8 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, syncMonitor)
+	// TODO: make filter config configurable (it currently just applies defaults)
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, syncMonitor, filters.Config{})
 	if err != nil {
 		return nil, err
 	}
@@ -876,6 +879,7 @@ func createNodeImpl(
 		return &Node{
 			stack,
 			backend,
+			filterSystem,
 			arbInterface,
 			nil,
 			txStreamer,
@@ -1066,6 +1070,7 @@ func createNodeImpl(
 	return &Node{
 		stack,
 		backend,
+		filterSystem,
 		arbInterface,
 		l1Reader,
 		txStreamer,
