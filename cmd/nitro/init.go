@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/cmd/ipfs"
+	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -82,7 +82,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 	}
 	// TODO(magic) do we need ipfs: prefix?
 	if strings.HasPrefix(initConfig.Url, "ipfs:") {
-		ipfsNode, err := ipfs.CreateIpfsClient(ctx, initConfig.DownloadPath)
+		ipfsNode, err := ipfshelper.CreateIpfsHelper(ctx, initConfig.DownloadPath, false)
 		if err != nil {
 			return "", err
 		}

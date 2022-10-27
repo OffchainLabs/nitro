@@ -1,4 +1,4 @@
-package ipfs
+package ipfshelper
 
 import (
 	"context"
@@ -26,8 +26,16 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 )
 
-type IpfsClient struct {
-	// TODO(magic) remove unneeded fields
+var defaultPeerList = []string{
+	// IPFS Bootstrapper nodes.
+	"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+	"/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+	"/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
+	"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
+	// TODO(magic) verify / add more
+}
+
+type IpfsHelper struct {
 	repoPath string
 	api      icore.CoreAPI
 	node     *core.IpfsNode
@@ -35,7 +43,7 @@ type IpfsClient struct {
 	repo     repo.Repo
 }
 
-func (c *IpfsClient) createIpfsRepo(repoDirectory string) error {
+func (h *IpfsHelper) createRepo(repoDirectory string) error {
 	fileInfo, err := os.Stat(repoDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to stat ipfs repo directory, %s : %w", repoDirectory, err)
@@ -43,40 +51,46 @@ func (c *IpfsClient) createIpfsRepo(repoDirectory string) error {
 	if !fileInfo.IsDir() {
 		return fmt.Errorf("%s is not a directory", repoDirectory)
 	}
-	c.repoPath = repoDirectory
+	h.repoPath = repoDirectory
 	// Create a config with default options and a 2048 bit key
-	c.cfg, err = config.Init(io.Discard, 2048)
+	h.cfg, err = config.Init(io.Discard, 2048)
 	if err != nil {
 		return err
 	}
 	// Create the repo with the config
-	err = fsrepo.Init(c.repoPath, c.cfg)
+	err = fsrepo.Init(h.repoPath, h.cfg)
 	if err != nil {
 		return fmt.Errorf("failed to init ipfs repo: %w", err)
 	}
-	c.repo, err = fsrepo.Open(c.repoPath)
+	h.repo, err = fsrepo.Open(h.repoPath)
 	if err != nil {
 		return fmt.Errorf("failed to open ipfs repo: %w", err)
 	}
 	return nil
 }
 
-func (c *IpfsClient) createClientNode(ctx context.Context) error {
+func (h *IpfsHelper) createNode(ctx context.Context, clientOnly bool) error {
+	var routing libp2p.RoutingOption
+	if clientOnly {
+		routing = libp2p.DHTClientOption
+	} else {
+		routing = libp2p.DHTOption
+	}
 	nodeOptions := &core.BuildCfg{
 		Online:  true,
-		Routing: libp2p.DHTClientOption,
-		Repo:    c.repo,
+		Routing: routing,
+		Repo:    h.repo,
 	}
 	var err error
-	c.node, err = core.NewNode(ctx, nodeOptions)
+	h.node, err = core.NewNode(ctx, nodeOptions)
 	if err != nil {
 		return err
 	}
-	c.api, err = coreapi.NewCoreAPI(c.node)
+	h.api, err = coreapi.NewCoreAPI(h.node)
 	return err
 }
 
-func (c *IpfsClient) connectToPeers(ctx context.Context, peers []string) error {
+func (h *IpfsHelper) connectToPeers(ctx context.Context, peers []string) error {
 	peerInfos := make(map[peer.ID]*peer.AddrInfo, len(peers))
 	for _, addressString := range peers {
 		address, err := ma.NewMultiaddr(addressString)
@@ -101,7 +115,7 @@ func (c *IpfsClient) connectToPeers(ctx context.Context, peers []string) error {
 	for _, peerInfo := range peerInfos {
 		go func(peerInfo *peer.AddrInfo) {
 			defer wg.Done()
-			err := c.api.Swarm().Connect(ctx, *peerInfo)
+			err := h.api.Swarm().Connect(ctx, *peerInfo)
 			if err != nil {
 				log.Warn("failed to connect to peer", "peerId", peerInfo.ID, "err", err)
 				return
@@ -116,9 +130,9 @@ func (c *IpfsClient) connectToPeers(ctx context.Context, peers []string) error {
 	return nil
 }
 
-func (c *IpfsClient) DownloadFile(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
+func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
 	cidPath := icorepath.New(cidString)
-	rootNodeDirectory, err := c.api.Unixfs().Get(ctx, cidPath)
+	rootNodeDirectory, err := h.api.Unixfs().Get(ctx, cidPath)
 	if err != nil {
 		return "", fmt.Errorf("could not get file with CID: %w", err)
 	}
@@ -129,6 +143,10 @@ func (c *IpfsClient) DownloadFile(ctx context.Context, cidString string, destina
 		return "", fmt.Errorf("could not write out the fetched CID: %w", err)
 	}
 	return outputFilePath, nil
+}
+
+func CreateIpfsHelper(ctx context.Context, repoDirectory string, clientOnly bool) (*IpfsHelper, error) {
+	return createIpfsHelperImpl(ctx, repoDirectory, clientOnly, defaultPeerList)
 }
 
 func setupPlugins(externalPluginsPath string) error {
@@ -149,7 +167,7 @@ func setupPlugins(externalPluginsPath string) error {
 
 var loadPluginsOnce sync.Once
 
-func CreateIpfsClient(ctx context.Context, repoDirectory string) (*IpfsClient, error) {
+func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly bool, peerList []string) (*IpfsHelper, error) {
 	var onceErr error
 	loadPluginsOnce.Do(func() {
 		onceErr = setupPlugins("")
@@ -157,17 +175,16 @@ func CreateIpfsClient(ctx context.Context, repoDirectory string) (*IpfsClient, e
 	if onceErr != nil {
 		return nil, onceErr
 	}
-	client := IpfsClient{}
-	err := client.createIpfsRepo(repoDirectory)
+	client := IpfsHelper{}
+	err := client.createRepo(repoDirectory)
 	if err != nil {
 		return nil, err
 	}
-	err = client.createClientNode(ctx)
+	err = client.createNode(ctx, clientOnly)
 	if err != nil {
 		return nil, err
 	}
-	// TODO(magic) make the peers list configurable or add more default entries
-	err = client.connectToPeers(ctx, []string{"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN"})
+	err = client.connectToPeers(ctx, defaultPeerList)
 	if err != nil {
 		return nil, err
 	}
