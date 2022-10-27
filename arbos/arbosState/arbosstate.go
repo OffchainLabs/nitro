@@ -277,6 +277,8 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) e
 			// no state changes needed
 		case 7:
 			// no state changes needed
+		case 8:
+			// no state changes needed
 		default:
 			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)
 		}
