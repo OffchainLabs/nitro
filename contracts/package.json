@@ -17,6 +17,7 @@
     "url": "https://github.com/offchainlabs/nitro/issues"
   },
   "scripts": {
+    "prepublishOnly": "hardhat clean && hardhat compile",
     "build": "hardhat compile",
     "solhint": "solhint -f table src/**/*.sol",
     "prettier:solidity": "prettier --write src/**/*.sol",
