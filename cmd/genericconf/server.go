@@ -38,7 +38,7 @@ type HTTPServerTimeoutConfig struct {
 	IdleTimeout       time.Duration `koanf:"idle-timeout"`
 }
 
-// Use geth defaults
+// HTTPServerTimeoutConfigDefault use geth defaults
 var HTTPServerTimeoutConfigDefault = HTTPServerTimeoutConfig{
 	ReadTimeout:       30 * time.Second,
 	ReadHeaderTimeout: 30 * time.Second,
