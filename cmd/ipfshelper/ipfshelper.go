@@ -177,7 +177,7 @@ func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly 
 	if err != nil {
 		return nil, err
 	}
-	err = client.connectToPeers(ctx, defaultPeerList)
+	err = client.connectToPeers(ctx, peerList)
 	if err != nil {
 		return nil, err
 	}
