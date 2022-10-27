@@ -183,6 +183,20 @@ abstract contract AbsRollupUserLogic is
     }
 
     /**
+     * @notice returns the L2 blockhash of a given assertion
+     * @param assertion The assertion data as emitted in the NodeCreated event
+     * @return the L2 block hash of the assertion
+     */
+    function getL2BlockHash(RollupLib.Assertion calldata assertion)
+        external
+        view
+        override
+        returns (bytes32)
+    {
+        return assertion.afterState.globalState.getBlockHash();
+    }
+
+    /**
      * @notice Create a new node and move stake onto it
      * @param assertion The assertion data
      * @param expectedNodeHash The hash of the node being created (protects against reorgs)

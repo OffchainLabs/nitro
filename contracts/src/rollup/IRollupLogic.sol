@@ -69,6 +69,13 @@ interface IRollupUserAbs is IRollupCore, IOwnable {
         uint256[2] calldata proposedTimes,
         bytes32[2] calldata wasmModuleRoots
     ) external;
+
+    /**
+     * @notice returns the L2 blockhash of a given assertion
+     * @param assertion The assertion data as emitted in the NodeCreated event
+     * @return the L2 block hash of the assertion
+     */
+    function getL2BlockHash(RollupLib.Assertion calldata assertion) external view returns (bytes32);
 }
 
 interface IRollupUser is IRollupUserAbs {
