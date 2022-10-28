@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -42,11 +43,12 @@ type TransactionStreamer struct {
 	chainId      uint64
 	fatalErrChan chan<- error
 
-	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
-	createBlocksMutex  sync.Mutex // cannot be acquired while reorgMutex is held
-	reorgMutex         sync.RWMutex
-	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
-	newMessageNotifier chan struct{}
+	insertionMutex            sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
+	createBlocksMutex         sync.Mutex // cannot be acquired while reorgMutex is held
+	reorgMutex                sync.RWMutex
+	reorgPending              uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
+	newMessageNotifier        chan struct{}
+	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
 	broadcasterQueuedMessages    []arbstate.MessageWithMetadata
 	broadcasterQueuedMessagesPos uint64
@@ -819,6 +821,38 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 
 		if s.validator != nil {
 			s.validator.NewBlock(block, lastBlockHeader, *msg)
+		}
+
+		if time.Now().After(s.nextScheduledVersionCheck) {
+			s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
+			arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				return err
+			}
+			version, timestampInt, err := arbState.GetScheduledUpgrade()
+			if err != nil {
+				return err
+			}
+			var timeUntilUpgrade time.Duration
+			var timestamp time.Time
+			if timestampInt == 0 {
+				// This upgrade will take effect in the next block
+				timestamp = time.Now()
+			} else {
+				// This upgrade is scheduled for the future
+				timestamp = time.Unix(int64(timestampInt), 0)
+				timeUntilUpgrade = time.Until(timestamp)
+			}
+			maxSupportedVersion := params.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
+			if version > maxSupportedVersion && timeUntilUpgrade < time.Hour*24*7 {
+				log.Error(
+					"you need to update your node to the latest version before this scheduled ArbOS upgrade",
+					"timeUntilUpgrade", timeUntilUpgrade,
+					"upgradeScheduledFor", timestamp,
+					"maxSupportedArbosVersion", maxSupportedVersion,
+					"pendingArbosUpgradeVersion", version,
+				)
+			}
 		}
 
 		sharedmetrics.UpdateSequenceNumberInBlockGauge(pos)
