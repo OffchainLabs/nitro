@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IRollupUser} from "./IRollupLogic.sol";
 import "../libraries/UUPSNotUpgradeable.sol";
 import "./RollupCore.sol";
+import {ETH_POS_BLOCK_TIME} from "../libraries/Constants.sol";
 
 abstract contract AbsRollupUserLogic is
     RollupCore,
@@ -272,7 +273,7 @@ abstract contract AbsRollupUserLogic is
      * @param globalStates The before and after global state for the first assertion
      * @param numBlocks The number of L2 blocks contained in the first assertion
      * @param secondExecutionHash The execution hash of the second assertion
-     * @param proposedTimes Times that the two nodes were proposed
+     * @param proposedBlocks L1 block numbers that the two nodes were proposed at
      * @param wasmModuleRoots The wasm module roots at the time of the creation of each assertion
      */
     function createChallenge(
@@ -282,7 +283,7 @@ abstract contract AbsRollupUserLogic is
         GlobalState[2] calldata globalStates,
         uint64 numBlocks,
         bytes32 secondExecutionHash,
-        uint256[2] calldata proposedTimes,
+        uint256[2] calldata proposedBlocks,
         bytes32[2] calldata wasmModuleRoots
     ) external onlyValidator whenNotPaused {
         require(nodeNums[0] < nodeNums[1], "WRONG_ORDER");
@@ -307,7 +308,7 @@ abstract contract AbsRollupUserLogic is
             node1.challengeHash ==
                 RollupLib.challengeRootHash(
                     RollupLib.executionHash(machineStatuses, globalStates, numBlocks),
-                    proposedTimes[0],
+                    proposedBlocks[0],
                     wasmModuleRoots[0]
                 ),
             "CHAL_HASH1"
@@ -317,18 +318,18 @@ abstract contract AbsRollupUserLogic is
             node2.challengeHash ==
                 RollupLib.challengeRootHash(
                     secondExecutionHash,
-                    proposedTimes[1],
+                    proposedBlocks[1],
                     wasmModuleRoots[1]
                 ),
             "CHAL_HASH2"
         );
 
         // Calculate upper limit for allowed node proposal time:
-        uint256 commonEndTime = getNodeStorage(node1.prevNum).firstChildBlock +
+        uint256 commonEndBlock = getNodeStorage(node1.prevNum).firstChildBlock +
             // Dispute start: dispute timer for a node starts when its first child is created
-            (node1.deadlineBlock - proposedTimes[0]) +
+            (node1.deadlineBlock - proposedBlocks[0]) +
             extraChallengeTimeBlocks; // add dispute window to dispute start time
-        if (commonEndTime < proposedTimes[1]) {
+        if (commonEndBlock < proposedBlocks[1]) {
             // The 2nd node was created too late; loses challenge automatically.
             completeChallengeImpl(stakers[0], stakers[1]);
             return;
@@ -341,8 +342,8 @@ abstract contract AbsRollupUserLogic is
             numBlocks,
             wasmModuleRoots,
             // convert from block counts to real second based timestamps
-            (commonEndTime - proposedTimes[0]) * 12,
-            (commonEndTime - proposedTimes[1]) * 12
+            (commonEndBlock - proposedBlocks[0]) * ETH_POS_BLOCK_TIME,
+            (commonEndBlock - proposedBlocks[1]) * ETH_POS_BLOCK_TIME
         ); // trusted external call
 
         challengeStarted(stakers[0], stakers[1], challengeIndex);
