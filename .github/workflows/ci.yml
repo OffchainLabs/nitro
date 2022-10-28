@@ -11,7 +11,7 @@ on:
 jobs:
   test:
     name: Go Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-8
 
     # Creates a redis container for redis tests
     services:
@@ -150,11 +150,11 @@ jobs:
 
       - name: run tests without race detection
         if: matrix.test-mode == 'defaults'
-        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=1
+        run: gotestsum --format short-verbose -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
-        run: gotestsum --format short-verbose -- ./... -race -parallel=1
+        run: gotestsum --format short-verbose -- ./... -race -parallel=8
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
