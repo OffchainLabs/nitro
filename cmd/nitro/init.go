@@ -86,7 +86,12 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return ipfsNode.DownloadFile(ctx, initConfig.Url[5:], initConfig.DownloadPath)
+		initFile, err := ipfsNode.DownloadFile(ctx, initConfig.Url[5:], initConfig.DownloadPath)
+		if err != nil {
+			return "", err
+		}
+		ipfsNode.Close()
+		return initFile, nil
 	}
 	grabclient := grab.NewClient()
 	log.Info("Downloading initial database", "url", initConfig.Url)
