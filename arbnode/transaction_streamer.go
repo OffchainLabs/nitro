@@ -844,8 +844,12 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 				timeUntilUpgrade = time.Until(timestamp)
 			}
 			maxSupportedVersion := params.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
-			if version > maxSupportedVersion && timeUntilUpgrade < time.Hour*24*7 {
-				log.Error(
+			logLevel := log.Warn
+			if timeUntilUpgrade < time.Hour*24 {
+				logLevel = log.Error
+			}
+			if version > maxSupportedVersion {
+				logLevel(
 					"you need to update your node to the latest version before this scheduled ArbOS upgrade",
 					"timeUntilUpgrade", timeUntilUpgrade,
 					"upgradeScheduledFor", timestamp,
