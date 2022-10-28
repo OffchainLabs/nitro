@@ -171,8 +171,8 @@ func (h *IpfsHelper) AddFile(ctx context.Context, filePath string, includeHidden
 	return h.api.Unixfs().Add(ctx, fileNode)
 }
 
-func CreateIpfsHelper(ctx context.Context, repoDirectory string, clientOnly bool) (*IpfsHelper, error) {
-	return createIpfsHelperImpl(ctx, repoDirectory, clientOnly, []string{}, "")
+func CreateIpfsHelper(ctx context.Context, repoDirectory string, clientOnly bool, profiles string) (*IpfsHelper, error) {
+	return createIpfsHelperImpl(ctx, repoDirectory, clientOnly, []string{}, profiles)
 }
 
 func (h *IpfsHelper) Close() error {
