@@ -177,6 +177,43 @@ func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTes
 	}
 }
 
+func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, l1Client arbutil.L1Interface, chainConfig *params.ChainConfig) (common.Address, *mocksgen.SequencerInboxStub, common.Address) {
+	txOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
+	bridgeAddr, tx, bridge, err := mocksgen.DeployBridgeUnproxied(&txOpts, l1Client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	Require(t, err)
+	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
+		DelayBlocks:   big.NewInt(10000),
+		FutureBlocks:  big.NewInt(10000),
+		DelaySeconds:  big.NewInt(10000),
+		FutureSeconds: big.NewInt(10000),
+	}
+	seqInboxAddr, tx, seqInbox, err := mocksgen.DeploySequencerInboxStub(
+		&txOpts,
+		l1Client,
+		bridgeAddr,
+		l1Info.GetAddress("sequencer"),
+		timeBounds,
+	)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	Require(t, err)
+	tx, err = bridge.SetSequencerInbox(&txOpts, seqInboxAddr)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	Require(t, err)
+	tx, err = bridge.SetDelayedInbox(&txOpts, seqInboxAddr, true)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	Require(t, err)
+	tx, err = seqInbox.AddInitMessage(&txOpts, chainConfig.ChainID)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	Require(t, err)
+	return bridgeAddr, seqInbox, seqInboxAddr
+}
+
 func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
@@ -205,52 +242,12 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
 	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter", ctx)
 	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger", ctx)
-	asserterDelayedBridge, tx, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, l1Backend)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
-	Require(t, err)
-	challengerDelayedBridge, tx, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, l1Backend)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
-	Require(t, err)
 
-	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   big.NewInt(10000),
-		FutureBlocks:  big.NewInt(10000),
-		DelaySeconds:  big.NewInt(10000),
-		FutureSeconds: big.NewInt(10000),
-	}
-	asserterSeqInboxAddr, tx, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(
-		&deployerTxOpts,
-		l1Backend,
-		asserterDelayedBridge,
-		l1Info.GetAddress("sequencer"),
-		timeBounds,
-	)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
-	Require(t, err)
-	tx, err = asserterSeqInbox.AddInitMessage(&deployerTxOpts, chainConfig.ChainID)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
-	Require(t, err)
-	challengerSeqInboxAddr, tx, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(
-		&deployerTxOpts,
-		l1Backend,
-		challengerDelayedBridge,
-		l1Info.GetAddress("sequencer"),
-		timeBounds,
-	)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
-	Require(t, err)
-	tx, err = challengerSeqInbox.AddInitMessage(&deployerTxOpts, chainConfig.ChainID)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
-	Require(t, err)
+	asserterBridgeAddr, asserterSeqInbox, asserterSeqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
+	challengerBridgeAddr, challengerSeqInbox, challengerSeqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
-	asserterRollupAddresses.Bridge = asserterDelayedBridge
+	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
 	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, conf, asserterL2Blockchain, l1Backend, asserterRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
@@ -259,7 +256,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, challengerL2Blockchain := createL2BlockChain(t, nil, "", chainConfig)
 	challengerRollupAddresses := *asserterRollupAddresses
-	challengerRollupAddresses.Bridge = challengerDelayedBridge
+	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
 	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, conf, challengerL2Blockchain, l1Backend, &challengerRollupAddresses, nil, nil, fatalErrChan)
 	Require(t, err)
@@ -272,11 +269,11 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	makeBatch(t, challengerL2, challengerL2Info, l1Backend, &sequencerTxOpts, challengerSeqInbox, challengerSeqInboxAddr, true)
 
 	trueSeqInboxAddr := challengerSeqInboxAddr
-	trueDelayedBridge := challengerDelayedBridge
+	trueDelayedBridge := challengerBridgeAddr
 	expectedWinner := l1Info.GetAddress("challenger")
 	if asserterIsCorrect {
 		trueSeqInboxAddr = asserterSeqInboxAddr
-		trueDelayedBridge = asserterDelayedBridge
+		trueDelayedBridge = asserterBridgeAddr
 		expectedWinner = l1Info.GetAddress("asserter")
 	}
 	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, l1Backend)
