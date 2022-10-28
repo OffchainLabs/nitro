@@ -24,15 +24,6 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 )
 
-var defaultPeerList = []string{
-	// IPFS Bootstrapper nodes.
-	"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-	"/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-	"/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
-	"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
-	// TODO(magic) verify / add more
-}
-
 type IpfsHelper struct {
 	api      icore.CoreAPI
 	node     *core.IpfsNode
@@ -139,7 +130,11 @@ func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destina
 }
 
 func CreateIpfsHelper(ctx context.Context, repoDirectory string, clientOnly bool) (*IpfsHelper, error) {
-	return createIpfsHelperImpl(ctx, repoDirectory, clientOnly, defaultPeerList)
+	return createIpfsHelperImpl(ctx, repoDirectory, clientOnly, []string{})
+}
+
+func (h *IpfsHelper) Close() error {
+	return h.node.Close()
 }
 
 func setupPlugins(externalPluginsPath string) error {
