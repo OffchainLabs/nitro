@@ -14,15 +14,17 @@ All chains use [bridge.arbitrum.io/](https://bridge.arbitrum.io/) for bridging a
 
 ### Arbitrum Chains | Summary
 
-_Tip: users can use [Alchemy](https://alchemy.com/arbitrum/?a=arbitrum-docs) for all Arbitrum mainnets and testnets._
+_Tip – users can use [Alchemy](https://alchemy.com/arbitrum/?a=arbitrum-docs) for Arbitrum One mainnet and Arbitrum's Goerli testnet._
 
-- **Arbitrum One**: Arbitrum One is the flagship Arbitrum mainnet chain; it is an Optimistic Rollup chain running on top of Ethereum Mainnet, and is open to all users. In an upgrade on 8/31, the Arbitrum One chain is/was upgraded to use the [Nitro](https://medium.com/offchainlabs/its-nitro-time-86944693bf29) tech stack, maintaining the same state.
+- **Arbitrum One**: Arbitrum One is the flagship Arbitrum mainnet chain. It is an Optimistic Rollup chain running on top of Ethereum Mainnet, and is open to all users. In an upgrade on 8/31, the Arbitrum One chain was upgraded to use the [Nitro](https://medium.com/offchainlabs/its-nitro-time-86944693bf29) tech stack, maintaining the same state.
 
   Users can use [Alchemy](https://alchemy.com/arbitrum/?a=arbitrum-docs), [Ankr](https://www.ankr.com/), [BlockVision](https://blockvision.org/), [GetBlock](https://getblock.io/), [Infura](https://infura.io/), [Moralis](https://moralis.io/), and [QuickNode](https://www.quicknode.com), to interact with the Arbitrum One chain. See the [node providers page](https://developer.arbitrum.io/node-running/node-providers) for more details.
 
 - **Arbitrum Nova**: Arbitrum Nova is the first mainnet [AnyTrust](inside-anytrust) chain. The following are the members of the initial data availability committee (DAC): Consensys, FTX, Google Cloud, Offchain Labs, P2P, Quicknode, and Reddit.
 
-  Users can use [Alchemy](https://www.alchemy.com/arbitrum/?a=arbitrum-docs) and [QuickNode](https://www.quicknode.com) to interact with the Arbitrum Nova chain. Check out Alchemy's and QuickNode's [developer docs](https://docs.alchemy.com/reference/arbitrum-api-quickstart) on how to set up these Arbitrum nodes.
+  Users can use [QuickNode](https://www.quicknode.com) to interact with the Arbitrum Nova chain. Check out QuickNode's developer docs on how to set up these nodes.
 
-- **Nitro Goerli Rollup Testnet**: This Goerli testnet (421613) uses the Nitro rollup tech stack, and is the only supported Arbitrum testnet. All other testnets including Rinkeby have been deprecated due to the Ethereum merge in Oct 2022. Alchemy powers a free and reliable Goerli testnet: [goerlifaucet.com](https://goerlifaucet.com). 
+- **Nitro Goerli Rollup Testnet**: This Goerli testnet (421613) uses the Nitro rollup tech stack, and is the only supported Arbitrum testnet. All other testnets including Rinkeby have been deprecated due to the Ethereum merge in Oct 2022. 
+
+  Beyond offering a RPC endpoint for the Goerli testnet, Alchemy also powers a reliable Goerli testnet available for anyone to receive free Goerli testETH – [goerlifaucet.com](https://goerlifaucet.com). 
 
