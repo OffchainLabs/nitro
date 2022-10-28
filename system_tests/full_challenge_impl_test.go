@@ -215,6 +215,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 }
 
 func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
+	t.Parallel()
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
 	log.Root().SetHandler(glogger)
