@@ -114,6 +114,18 @@ func (h *IpfsHelper) connectToPeers(ctx context.Context, peers []string) error {
 	return nil
 }
 
+func (h *IpfsHelper) GetPeerHostAddresses() ([]string, error) {
+	addresses, err := peer.AddrInfoToP2pAddrs(host.InfoFromHost(h.node.PeerHost))
+	if err != nil {
+		return []string{}, err
+	}
+	addressesStrings := make([]string, len(addresses))
+	for i, a := range addresses {
+		addressesStrings[i] = a.String()
+	}
+	return addressesStrings, nil
+}
+
 func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
 	cidPath := icorepath.New(cidString)
 	rootNodeDirectory, err := h.api.Unixfs().Get(ctx, cidPath)
