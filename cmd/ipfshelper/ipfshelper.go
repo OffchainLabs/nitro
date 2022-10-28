@@ -228,3 +228,8 @@ func CanBeIpfsPath(pathString string) bool {
 	_, err := ipfspath.ParsePath(pathString)
 	return err == nil || prefix == "/ipfs/" || prefix == "/ipld/" || prefix == "/ipns/"
 }
+
+// TODO break abstraction for now til we figure out what fns are needed
+func (h *IpfsHelper) GetAPI() icore.CoreAPI {
+	return h.api
+}
