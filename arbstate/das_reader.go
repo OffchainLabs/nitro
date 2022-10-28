@@ -27,21 +27,21 @@ type DataAvailabilityReader interface {
 
 var ErrHashMismatch = errors.New("Result does not match expected hash")
 
-// Indicates that this data is a certificate for the data availability service,
+// DASMessageHeaderFlag indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.
 const DASMessageHeaderFlag byte = 0x80
 
-// Indicates that this DAS certificate data employs the new merkelization strategy.
+// TreeDASMessageHeaderFlag indicates that this DAS certificate data employs the new merkelization strategy.
 // Ignored when DASMessageHeaderFlag is not set.
 const TreeDASMessageHeaderFlag byte = 0x08
 
-// Indicates that this message was authenticated by L1. Currently unused.
+// L1AuthenticatedMessageHeaderFlag indicates that this message was authenticated by L1. Currently unused.
 const L1AuthenticatedMessageHeaderFlag byte = 0x40
 
-// Indicates that this message is zeroheavy-encoded.
+// ZeroheavyMessageHeaderFlag indicates that this message is zeroheavy-encoded.
 const ZeroheavyMessageHeaderFlag byte = 0x20
 
-// Indicates that the message is brotli-compressed.
+// BrotliMessageHeaderByte indicates that the message is brotli-compressed.
 const BrotliMessageHeaderByte byte = 0
 
 func IsDASMessageHeaderByte(header byte) bool {

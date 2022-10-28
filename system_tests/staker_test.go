@@ -65,7 +65,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	defer l2nodeA.StopAndWait()
 
 	if faultyStaker {
-		l2info.GenerateGenesysAccount("FaultyAddr", common.Big1)
+		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
 	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test())
 	defer l2nodeB.StopAndWait()

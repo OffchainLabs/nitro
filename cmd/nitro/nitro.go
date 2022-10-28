@@ -516,7 +516,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			if i < maxConnectionAttempts {
 				log.Warn("error connecting to L1", "err", err)
 			} else {
-				panic(err)
+				return nil, nil, nil, nil, nil, fmt.Errorf("too many errors trying to connect to L1: %w", err)
 			}
 
 			timer := time.NewTimer(time.Second * 1)
@@ -721,7 +721,7 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
 
-func noopOnReloadHook(old *NodeConfig, new *NodeConfig) error {
+func noopOnReloadHook(_ *NodeConfig, _ *NodeConfig) error {
 	return nil
 }
 

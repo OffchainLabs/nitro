@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// A precompile wrapper for those not allowed in production
+// DebugPrecompile is a precompile wrapper for those not allowed in production
 type DebugPrecompile struct {
 	precompile ArbosPrecompile
 }
@@ -51,7 +51,7 @@ func (wrapper *DebugPrecompile) Precompile() Precompile {
 	return wrapper.precompile.Precompile()
 }
 
-// A precompile wrapper for those only chain owners may use
+// OwnerPrecompile is a precompile wrapper for those only chain owners may use
 type OwnerPrecompile struct {
 	precompile  ArbosPrecompile
 	emitSuccess func(mech, bytes4, addr, []byte) error

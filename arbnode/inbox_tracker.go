@@ -155,7 +155,7 @@ func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex
 	return metadata.MessageCount, err
 }
 
-// Convenience function wrapping GetBatchMetadata
+// GetBatchAcc is a convenience function wrapping GetBatchMetadata
 func (t *InboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
 	return metadata.Accumulator, err

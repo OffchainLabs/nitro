@@ -27,9 +27,10 @@ import (
 
 var (
 	clientsConnectedGauge = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
+	clientsTotalCounter   = metrics.NewRegisteredCounter("arb/feed/clients/total", nil)
 )
 
-/* Protocol-specific client catch-up logic can be injected using this interface. */
+// CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
 type CatchupBuffer interface {
 	OnRegisterClient(context.Context, *ClientConnection) error
 	OnDoBroadcast(interface{}) error
@@ -81,6 +82,7 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	clientConnection.Start(ctx)
 	cm.clientPtrMap[clientConnection] = true
 	clientsConnectedGauge.Inc(1)
+	clientsTotalCounter.Inc(1)
 	atomic.AddInt32(&cm.clientCount, 1)
 
 	return nil
@@ -107,7 +109,7 @@ func (cm *ClientManager) removeAll() {
 }
 
 func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
-	clientConnection.StopAndWait()
+	clientConnection.StopOnly()
 
 	err := cm.poller.Stop(clientConnection.desc)
 	if err != nil {

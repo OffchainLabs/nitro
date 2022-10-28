@@ -285,7 +285,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher
 	}
 }
 
-// Returns the chain id on success
+// ParseInitMessage returns the chain id on success
 func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, error) {
 	if msg.Header.Kind != L1MessageType_Initialize {
 		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
