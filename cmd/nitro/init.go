@@ -86,11 +86,13 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		initFile, err := ipfsNode.DownloadFile(ctx, initConfig.Url[5:], initConfig.DownloadPath)
+		initFile, err := ipfsNode.DownloadFileWithTimeout(ctx, initConfig.Url[5:], initConfig.DownloadPath)
 		if err != nil {
 			return "", err
 		}
-		ipfsNode.Close()
+		if err = ipfsNode.Close(); err != nil {
+			return "", fmt.Errorf("Failed to close IPFS node: %w", err)
+		}
 		return initFile, nil
 	}
 	grabclient := grab.NewClient()

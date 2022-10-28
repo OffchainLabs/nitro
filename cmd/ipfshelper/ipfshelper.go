@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 
 	files "github.com/ipfs/go-ipfs-files"
 	icore "github.com/ipfs/interface-go-ipfs-core"
+	"github.com/ipfs/interface-go-ipfs-core/path"
 	icorepath "github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/ipfs/kubo/config"
 	"github.com/ipfs/kubo/core"
@@ -25,6 +27,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 )
+
+const defaultDownloadTimeout = 1 * time.Minute // TODO(magic)
 
 type IpfsHelper struct {
 	api      icore.CoreAPI
@@ -138,6 +142,16 @@ func (h *IpfsHelper) GetPeerHostAddresses() ([]string, error) {
 	return addressesStrings, nil
 }
 
+func (h *IpfsHelper) DownloadFileWithTimeout(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
+	return h.downloadFileWithTimeoutImpl(ctx, cidString, destinationDirectory, defaultDownloadTimeout)
+}
+
+func (h *IpfsHelper) downloadFileWithTimeoutImpl(ctx context.Context, cidString string, destinationDirectory string, timeout time.Duration) (string, error) {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return h.DownloadFile(ctxWithTimeout, cidString, destinationDirectory)
+}
+
 func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
 	cidPath := icorepath.New(cidString)
 	rootNodeDirectory, err := h.api.Unixfs().Get(ctx, cidPath)
@@ -151,6 +165,18 @@ func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destina
 		return "", fmt.Errorf("could not write out the fetched CID: %w", err)
 	}
 	return outputFilePath, nil
+}
+
+func (h *IpfsHelper) AddFile(ctx context.Context, filePath string, includeHidden bool) (path.Resolved, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	fileNode, err := files.NewSerialFile(filePath, includeHidden, fileInfo)
+	if err != nil {
+		return nil, err
+	}
+	return h.api.Unixfs().Add(ctx, fileNode)
 }
 
 func CreateIpfsHelper(ctx context.Context, repoDirectory string, clientOnly bool) (*IpfsHelper, error) {
