@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -20,6 +21,7 @@ import (
 	"github.com/ipfs/kubo/plugin/loader"
 	"github.com/ipfs/kubo/repo"
 	"github.com/ipfs/kubo/repo/fsrepo"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 )
@@ -32,7 +34,7 @@ type IpfsHelper struct {
 	repo     repo.Repo
 }
 
-func (h *IpfsHelper) createRepo(repoDirectory string) error {
+func (h *IpfsHelper) createRepo(repoDirectory string, profiles string) error {
 	fileInfo, err := os.Stat(repoDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to stat ipfs repo directory, %s : %w", repoDirectory, err)
@@ -45,6 +47,16 @@ func (h *IpfsHelper) createRepo(repoDirectory string) error {
 	h.cfg, err = config.Init(io.Discard, 2048)
 	if err != nil {
 		return err
+	}
+	for _, profile := range strings.Split(profiles, ",") {
+		transformer, ok := config.Profiles[profile]
+		if !ok {
+			return fmt.Errorf("invalid configuration profile: %s", profile)
+		}
+
+		if err := transformer.Transform(h.cfg); err != nil {
+			return err
+		}
 	}
 	// Create the repo with the config
 	err = fsrepo.Init(h.repoPath, h.cfg)
@@ -142,7 +154,7 @@ func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destina
 }
 
 func CreateIpfsHelper(ctx context.Context, repoDirectory string, clientOnly bool) (*IpfsHelper, error) {
-	return createIpfsHelperImpl(ctx, repoDirectory, clientOnly, []string{})
+	return createIpfsHelperImpl(ctx, repoDirectory, clientOnly, []string{}, "")
 }
 
 func (h *IpfsHelper) Close() error {
@@ -167,7 +179,7 @@ func setupPlugins(externalPluginsPath string) error {
 
 var loadPluginsOnce sync.Once
 
-func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly bool, peerList []string) (*IpfsHelper, error) {
+func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly bool, peerList []string, profiles string) (*IpfsHelper, error) {
 	var onceErr error
 	loadPluginsOnce.Do(func() {
 		onceErr = setupPlugins("")
@@ -176,7 +188,7 @@ func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly 
 		return nil, onceErr
 	}
 	client := IpfsHelper{}
-	err := client.createRepo(repoDirectory)
+	err := client.createRepo(repoDirectory, profiles)
 	if err != nil {
 		return nil, err
 	}
