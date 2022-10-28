@@ -30,7 +30,7 @@ func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
 }
 
 func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
-	if b.messageCount == 0 {
+	if len(b.messages) == 0 {
 		return nil
 	}
 	var startingIndex int32
@@ -43,8 +43,12 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 			return nil
 		}
 		startingIndex = int32(requestedSeqNum - firstCachedSeqNum)
+		if startingIndex >= int32(len(b.messages)) {
+			log.Error("unexpected startingIndex", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "lastCachedSeqNum", lastCachedSeqNum, "cacheLength", len(b.messages))
+			return nil
+		}
 		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
-			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "seqNumZero", b.messages[0].SequenceNumber, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
+			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
 			return nil
 		}
 	}

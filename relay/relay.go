@@ -55,6 +55,7 @@ func NewRelay(config *Config, feedErrChan chan error) (*Relay, error) {
 		config.L2.ChainId,
 		0,
 		&q,
+		confirmedSequenceNumberListener,
 		feedErrChan,
 		nil,
 	)

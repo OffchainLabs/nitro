@@ -26,6 +26,7 @@ func NewBroadcastClients(
 	l2ChainId uint64,
 	currentMessageCount arbutil.MessageIndex,
 	txStreamer broadcastclient.TransactionStreamerInterface,
+	confirmedSequenceNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
 	bpVerifier contracts.BatchPosterVerifierInterface,
 ) (*BroadcastClients, error) {
@@ -44,6 +45,7 @@ func NewBroadcastClients(
 			l2ChainId,
 			currentMessageCount,
 			txStreamer,
+			confirmedSequenceNumberListener,
 			fatalErrChan,
 			bpVerifier,
 			func(delta int32) { clients.adjustCount(delta) },
