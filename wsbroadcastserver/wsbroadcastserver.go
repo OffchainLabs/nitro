@@ -31,6 +31,7 @@ const (
 	HTTPHeaderChainId                 = "Arbitrum-Chain-Id"
 	FeedServerVersion                 = 2
 	FeedClientVersion                 = 2
+	LivenessProbeURI                  = "livenessprobe"
 )
 
 type BroadcasterConfig struct {
@@ -168,9 +169,18 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 
 		safeConn := deadliner{conn, s.config().IOTimeout}
 
+		// Set requestedSeqNum to max if client doesn't provide it
+		requestedSeqNum := arbutil.MessageIndex(^uint64(0))
 		var feedClientVersionSeen bool
-		var requestedSeqNum arbutil.MessageIndex
 		upgrader := ws.Upgrader{
+			OnRequest: func(uri []byte) error {
+				if strings.Contains(string(uri), LivenessProbeURI) {
+					return ws.RejectConnectionError(
+						ws.RejectionStatus(http.StatusOK),
+					)
+				}
+				return nil
+			},
 			OnHeader: func(key []byte, value []byte) error {
 				headerName := string(key)
 				if headerName == HTTPHeaderFeedClientVersion {
@@ -207,14 +217,14 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 
 		// Zero-copy upgrade to WebSocket connection.
-		hs, err := upgrader.Upgrade(safeConn)
+		_, err := upgrader.Upgrade(safeConn)
 		if err != nil {
 			log.Warn("websocket upgrade error", "connection_name", nameConn(safeConn), "err", err)
 			_ = safeConn.Close()
 			return
 		}
 
-		log.Info(fmt.Sprintf("established websocket connection: %+v", hs), "connection-name", nameConn(safeConn))
+		log.Info("established websocket connection", "remoteAddr", safeConn.RemoteAddr())
 
 		// Create netpoll event descriptor to handle only read events.
 		desc, err := netpoll.HandleRead(conn)
@@ -373,6 +383,10 @@ func (s *WSBroadcastServer) StopAndWait() {
 
 	s.clientManager.StopAndWait()
 	s.started = false
+}
+
+func (s *WSBroadcastServer) Started() bool {
+	return s.started
 }
 
 // Broadcast sends batch item to all clients.

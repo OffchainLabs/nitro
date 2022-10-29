@@ -4,7 +4,7 @@
 
 package precompiles
 
-// This precompile represents ArbOS's internal actions as calls it makes to itself
+// ArbosActs precompile represents ArbOS's internal actions as calls it makes to itself
 type ArbosActs struct {
 	Address addr // 0xa4b05
 

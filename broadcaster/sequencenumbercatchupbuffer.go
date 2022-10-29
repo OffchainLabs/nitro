@@ -30,7 +30,7 @@ func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
 }
 
 func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
-	if b.messageCount == 0 {
+	if len(b.messages) == 0 {
 		return nil
 	}
 	var startingIndex int32
@@ -43,8 +43,12 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 			return nil
 		}
 		startingIndex = int32(requestedSeqNum - firstCachedSeqNum)
+		if startingIndex >= int32(len(b.messages)) {
+			log.Error("unexpected startingIndex", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "lastCachedSeqNum", lastCachedSeqNum, "cacheLength", len(b.messages))
+			return nil
+		}
 		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
-			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "seqNumZero", b.messages[0].SequenceNumber, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
+			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
 			return nil
 		}
 	}
@@ -65,6 +69,10 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) error {
 	start := time.Now()
 	bm := b.getCacheMessages(clientConnection.RequestedSeqNum())
+	var bmCount int
+	if bm != nil {
+		bmCount = len(bm.Messages)
+	}
 	if bm != nil {
 		// send the newly connected client the requested messages
 		err := clientConnection.Write(bm)
@@ -74,7 +82,7 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 		}
 	}
 
-	log.Info("client registered", "client", clientConnection.Name, "elapsed", time.Since(start))
+	log.Info("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", bmCount, "elapsed", time.Since(start))
 
 	return nil
 }

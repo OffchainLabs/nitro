@@ -375,7 +375,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 	return nil
 }
 
-// Should only be used for testing or running a local dev node
+// AddFakeInitMessage should only be used for testing or running a local dev node
 func (s *TransactionStreamer) AddFakeInitMessage() error {
 	return s.AddMessages(0, false, []arbstate.MessageWithMetadata{{
 		Message: &arbos.L1IncomingMessage{
@@ -836,7 +836,7 @@ func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum arbutil.Messa
 	return arbutil.MessageCountToBlockNumber(messageNum, genesis), nil
 }
 
-// Pauses reorgs until a matching call to ResumeReorgs (may be called concurrently)
+// PauseReorgs until a matching call to ResumeReorgs (may be called concurrently)
 func (s *TransactionStreamer) PauseReorgs() {
 	s.reorgMutex.RLock()
 }
