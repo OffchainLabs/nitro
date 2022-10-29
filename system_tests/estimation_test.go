@@ -191,7 +191,7 @@ func TestComponentEstimate(t *testing.T) {
 		GasTipCap: maxPriorityFeePerGas,
 		GasFeeCap: maxFeePerGas,
 		Gas:       gasEstimate,
-		To:        (*common.Address)(&to),
+		To:        &to,
 		Value:     value,
 		Data:      calldata,
 	})
