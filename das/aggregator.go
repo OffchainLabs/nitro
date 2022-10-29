@@ -217,7 +217,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 		go func(ctx context.Context, d ServiceDetails) {
 			storeCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
 			const metricBase string = "arb/das/rpc/aggregator/store"
-			var metricWithServiceName string = metricBase + "/" + d.metricName
+			var metricWithServiceName = metricBase + "/" + d.metricName
 			defer cancel()
 			incFailureMetric := func() {
 				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/total", nil).Inc(1)

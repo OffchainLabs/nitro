@@ -87,7 +87,7 @@ func (t *InboxTracker) Initialize() error {
 	return batch.Write()
 }
 
-var AccumulatorNotFoundErr error = errors.New("accumulator not found")
+var AccumulatorNotFoundErr = errors.New("accumulator not found")
 
 func (t *InboxTracker) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
 	key := dbKey(rlpDelayedMessagePrefix, seqNum)
