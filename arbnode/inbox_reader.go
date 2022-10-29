@@ -174,7 +174,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	}
 	newHeaders, unsubscribe := r.l1Reader.Subscribe(false)
 	defer unsubscribe()
-	blocksToFetch := uint64(r.config().DefaultBlocksToRead)
+	blocksToFetch := r.config().DefaultBlocksToRead
 	if hadError {
 		blocksToFetch = 1
 	}

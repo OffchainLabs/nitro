@@ -162,7 +162,7 @@ func (api *ArbDebugAPI) PricingModel(ctx context.Context, start, end rpc.BlockNu
 		L1LastUpdateTime:     make([]uint64, blocks),
 	}
 
-	for i := uint64(0); i < uint64(blocks); i++ {
+	for i := uint64(0); i < blocks; i++ {
 		state, header, err := stateAndHeader(api.blockchain, first+i*step)
 		if err != nil {
 			return history, err
@@ -244,7 +244,7 @@ func (api *ArbDebugAPI) TimeoutQueueHistory(ctx context.Context, start, end rpc.
 		Count: make([]uint64, blocks),
 	}
 
-	for i := uint64(0); i < uint64(blocks); i++ {
+	for i := uint64(0); i < blocks; i++ {
 		state, _, err := stateAndHeader(api.blockchain, first+i*step)
 		if err != nil {
 			return history, err
