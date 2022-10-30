@@ -448,8 +448,8 @@ func (store *Storage) OpenStorageBackedBigUint(offset uint64) StorageBackedBigUi
 	return StorageBackedBigUint{store.NewSlot(offset)}
 }
 
-func (sbbi *StorageBackedBigUint) Get() (*big.Int, error) {
-	asHash, err := sbbi.StorageSlot.Get()
+func (sbbu *StorageBackedBigUint) Get() (*big.Int, error) {
+	asHash, err := sbbu.StorageSlot.Get()
 	if err != nil {
 		return nil, err
 	}
@@ -458,16 +458,16 @@ func (sbbi *StorageBackedBigUint) Get() (*big.Int, error) {
 
 // Warning: this will panic if it underflows or overflows with a system burner
 // SetSaturatingWithWarning is likely better
-func (sbbi *StorageBackedBigUint) SetChecked(val *big.Int) error {
+func (sbbu *StorageBackedBigUint) SetChecked(val *big.Int) error {
 	if val.Sign() < 0 {
-		return sbbi.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigUint.Set setting value %v", val))
+		return sbbu.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigUint.Set setting value %v", val))
 	} else if val.BitLen() > 256 {
-		return sbbi.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigUint.Set setting value %v", val))
+		return sbbu.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigUint.Set setting value %v", val))
 	}
-	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+	return sbbu.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
 
-func (sbbi *StorageBackedBigUint) SetSaturatingWithWarning(val *big.Int, name string) error {
+func (sbbu *StorageBackedBigUint) SetSaturatingWithWarning(val *big.Int, name string) error {
 	if val.Sign() < 0 {
 		log.Warn("ArbOS storage big uint underflowed", "name", name, "value", val)
 		val = common.Big0
@@ -475,7 +475,7 @@ func (sbbi *StorageBackedBigUint) SetSaturatingWithWarning(val *big.Int, name st
 		log.Warn("ArbOS storage big uint overflowed", "name", name, "value", val)
 		val = twoToThe256MinusOne
 	}
-	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+	return sbbu.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
 
 type StorageBackedBigInt struct {
