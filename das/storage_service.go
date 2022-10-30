@@ -23,7 +23,6 @@ type StorageService interface {
 	Closer
 	fmt.Stringer
 	HealthCheck(ctx context.Context) error
-	// Mainly used to complete the linked list connection used for iterating data storage.
 	putKeyValue(ctx context.Context, key common.Hash, value []byte) error
 }
 
