@@ -90,7 +90,10 @@ func (i *IterableStorageService) End(ctx context.Context) common.Hash {
 }
 
 func (i *IterableStorageService) Next(ctx context.Context, hash common.Hash) common.Hash {
-	value, err := i.GetByHash(ctx, dastree.Hash([]byte(iteratorStorageKeyPrefix+EncodeStorageServiceKey(hash))))
+	if hash != i.DefaultBegin() {
+		hash = dastree.Hash([]byte(iteratorStorageKeyPrefix + EncodeStorageServiceKey(hash)))
+	}
+	value, err := i.GetByHash(ctx, hash)
 	if err != nil {
 		return common.Hash{}
 	}
