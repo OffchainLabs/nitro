@@ -866,6 +866,7 @@ func createNodeImpl(
 			l2ChainId,
 			currentMessageCount,
 			txStreamer,
+			nil,
 			fatalErrChan,
 			bpVerifier,
 		)
