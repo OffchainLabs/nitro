@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -109,10 +110,15 @@ func ProduceBlock(
 	batchFetcher FallibleBatchFetcher,
 ) (*types.Block, types.Receipts, error) {
 	var batchFetchErr error
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64) []byte {
+	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
 		data, err := batchFetcher(batchNum)
 		if err != nil {
 			batchFetchErr = err
+			return nil
+		}
+		dataHash := crypto.Keccak256Hash(data)
+		if dataHash != batchHash {
+			batchFetchErr = fmt.Errorf("expecting batch %v hash %v but got data with hash %v", batchNum, batchHash, dataHash)
 			return nil
 		}
 		return data
