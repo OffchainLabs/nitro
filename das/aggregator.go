@@ -68,8 +68,8 @@ type ServiceDetails struct {
 	metricName  string
 }
 
-func (this *ServiceDetails) String() string {
-	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", this.service, this.signersMask)
+func (s *ServiceDetails) String() string {
+	return fmt.Sprintf("ServiceDetails{service: %v, signersMask %d}", s.service, s.signersMask)
 }
 
 func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {

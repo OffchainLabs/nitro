@@ -106,36 +106,36 @@ func newMerkleEmptyFromReader(rd io.Reader) (MerkleTree, error) {
 	return NewMerkleEmpty(capacity), err
 }
 
-func (me *merkleEmpty) Hash() common.Hash {
+func (m *merkleEmpty) Hash() common.Hash {
 	return common.Hash{}
 }
 
-func (me *merkleEmpty) Size() uint64 {
+func (m *merkleEmpty) Size() uint64 {
 	return 0
 }
 
-func (me *merkleEmpty) Capacity() uint64 {
-	return me.capacity
+func (m *merkleEmpty) Capacity() uint64 {
+	return m.capacity
 }
 
-func (me *merkleEmpty) Append(newHash common.Hash) MerkleTree {
-	if me.capacity <= 1 {
+func (m *merkleEmpty) Append(newHash common.Hash) MerkleTree {
+	if m.capacity <= 1 {
 		return NewMerkleLeaf(newHash)
 	} else {
-		halfSizeEmpty := NewMerkleEmpty(me.capacity / 2)
+		halfSizeEmpty := NewMerkleEmpty(m.capacity / 2)
 		return NewMerkleInternal(halfSizeEmpty.Append(newHash), halfSizeEmpty)
 	}
 }
 
-func (me *merkleEmpty) SummarizeUpTo(num uint64) MerkleTree {
-	return me
+func (m *merkleEmpty) SummarizeUpTo(num uint64) MerkleTree {
+	return m
 }
 
-func (me *merkleEmpty) Serialize(wr io.Writer) error {
+func (m *merkleEmpty) Serialize(wr io.Writer) error {
 	if _, err := wr.Write([]byte{SerializedEmptySubtree}); err != nil {
 		return err
 	}
-	return util.Uint64ToWriter(me.capacity, wr)
+	return util.Uint64ToWriter(m.capacity, wr)
 }
 
 type merkleInternal struct {
