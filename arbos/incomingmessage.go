@@ -145,22 +145,23 @@ func (h *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
 }
 
 func (h *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetcher) error {
-	if batchFetcher != nil && h.Header.Kind == L1MessageType_BatchPostingReport && h.BatchGasCost == nil {
-		_, _, batchHash, batchNum, _, err := parseBatchPostingReportMessageFields(bytes.NewReader(h.L2msg))
-		if err != nil {
-			return fmt.Errorf("failed to parse batch posting report: %w", err)
-		}
-		batchData, err := batchFetcher(batchNum)
-		if err != nil {
-			return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
-		}
-		gotHash := crypto.Keccak256Hash(batchData)
-		if gotHash != batchHash {
-			return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
-		}
-		gas := computeBatchGasCost(batchData)
-		h.BatchGasCost = &gas
+	if batchFetcher == nil || h.Header.Kind != L1MessageType_BatchPostingReport || h.BatchGasCost != nil {
+		return nil
 	}
+	_, _, batchHash, batchNum, _, err := parseBatchPostingReportMessageFields(bytes.NewReader(h.L2msg))
+	if err != nil {
+		return fmt.Errorf("failed to parse batch posting report: %w", err)
+	}
+	batchData, err := batchFetcher(batchNum)
+	if err != nil {
+		return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+	}
+	gotHash := crypto.Keccak256Hash(batchData)
+	if gotHash != batchHash {
+		return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
+	}
+	gas := computeBatchGasCost(batchData)
+	h.BatchGasCost = &gas
 	return nil
 }
 
@@ -214,7 +215,11 @@ func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L
 		data,
 		nil,
 	}
-	return msg, msg.FillInBatchGasCost(batchFetcher)
+	err = msg.FillInBatchGasCost(batchFetcher)
+	if err != nil {
+		return nil, err
+	}
+	return msg, nil
 }
 
 type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
