@@ -7,6 +7,7 @@ import (
 	"context"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -19,15 +20,17 @@ const iteratorEnd = "iterator_end"
 const expirationTimeKeyPrefix = "expiration_time_key_prefix_"
 
 type IterableStorageService struct {
-	// Local copy of iterator end. End can also be accessing by getByHash for iteratorEnd.
-	end common.Hash
+	// Local copy of iterator end. End can also be accessed by getByHash for iteratorEnd.
+	end atomic.Value // atomic access to common.Hash
 	StorageService
 
 	mutex sync.Mutex
 }
 
 func NewIterableStorageService(storageService StorageService) *IterableStorageService {
-	return &IterableStorageService{end: common.Hash{}, StorageService: storageService}
+	i := &IterableStorageService{StorageService: storageService}
+	i.end.Store(common.Hash{})
+	return i
 }
 
 func (i *IterableStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
@@ -43,13 +46,14 @@ func (i *IterableStorageService) Put(ctx context.Context, data []byte, expiratio
 	defer i.mutex.Unlock()
 
 	dataHash := dastree.Hash(data)
-	if (i.End(ctx) == common.Hash{}) {
+	endHash := i.End(ctx)
+	if (endHash == common.Hash{}) {
 		// First element being inserted in the chain.
 		if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorBegin)), dataHash.Bytes()); err != nil {
 			return err
 		}
 	} else {
-		if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorStorageKeyPrefix+EncodeStorageServiceKey(i.End(ctx)))), dataHash.Bytes()); err != nil {
+		if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorStorageKeyPrefix+EncodeStorageServiceKey(endHash))), dataHash.Bytes()); err != nil {
 			return err
 		}
 	}
@@ -57,7 +61,7 @@ func (i *IterableStorageService) Put(ctx context.Context, data []byte, expiratio
 	if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorEnd)), dataHash.Bytes()); err != nil {
 		return err
 	}
-	i.end = dataHash
+	i.end.Store(dataHash)
 
 	return nil
 }
@@ -80,17 +84,17 @@ func (i *IterableStorageService) DefaultBegin() common.Hash {
 }
 
 func (i *IterableStorageService) End(ctx context.Context) common.Hash {
-	i.mutex.Lock()
-	defer i.mutex.Unlock()
-	if (i.end != common.Hash{}) {
-		return i.end
+	endHash := i.end.Load().(common.Hash)
+	if (endHash != common.Hash{}) {
+		return endHash
 	}
 	value, err := i.GetByHash(ctx, dastree.Hash([]byte(iteratorEnd)))
 	if err != nil {
 		return common.Hash{}
 	}
-	i.end = common.BytesToHash(value)
-	return i.end
+	endHash = common.BytesToHash(value)
+	i.end.Store(endHash)
+	return endHash
 }
 
 func (i *IterableStorageService) Next(ctx context.Context, hash common.Hash) common.Hash {
