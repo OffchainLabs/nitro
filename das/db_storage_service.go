@@ -116,6 +116,13 @@ func (dbs *DBStorageService) Put(ctx context.Context, data []byte, timeout uint6
 	})
 }
 
+func (dbs *DBStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
+	return dbs.db.Update(func(txn *badger.Txn) error {
+		e := badger.NewEntry(key.Bytes(), value)
+		return txn.SetEntry(e)
+	})
+}
+
 func (dbs *DBStorageService) Sync(ctx context.Context) error {
 	return dbs.db.Sync()
 }
