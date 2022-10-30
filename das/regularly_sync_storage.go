@@ -32,20 +32,22 @@ func RegularSyncStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type RegularlySyncStorage struct {
 	stopwaiter.StopWaiter
-	iterableStorageServices            []*IterableStorageService
-	lastSyncedHashOfEachStorageService map[*IterableStorageService]common.Hash
-	syncInterval                       time.Duration
+	syncFromStorageServices                    []*IterableStorageService
+	syncToStorageServices                      []StorageService
+	lastSyncedHashOfEachSyncFromStorageService map[*IterableStorageService]common.Hash
+	syncInterval                               time.Duration
 }
 
-func NewRegularlySyncStorage(iterableStorageServices []*IterableStorageService, conf RegularSyncStorageConfig) *RegularlySyncStorage {
-	lastSyncedHashOfEachStorageService := make(map[*IterableStorageService]common.Hash)
-	for _, services := range iterableStorageServices {
-		lastSyncedHashOfEachStorageService[services] = services.DefaultBegin()
+func NewRegularlySyncStorage(syncFromStorageServices []*IterableStorageService, syncToStorageServices []StorageService, conf RegularSyncStorageConfig) *RegularlySyncStorage {
+	lastSyncedHashOfEachSyncFromStorageService := make(map[*IterableStorageService]common.Hash)
+	for _, syncFrom := range syncFromStorageServices {
+		lastSyncedHashOfEachSyncFromStorageService[syncFrom] = syncFrom.DefaultBegin()
 	}
 	return &RegularlySyncStorage{
-		iterableStorageServices:            iterableStorageServices,
-		lastSyncedHashOfEachStorageService: lastSyncedHashOfEachStorageService,
-		syncInterval:                       conf.SyncInterval,
+		syncFromStorageServices:                    syncFromStorageServices,
+		syncToStorageServices:                      syncToStorageServices,
+		lastSyncedHashOfEachSyncFromStorageService: lastSyncedHashOfEachSyncFromStorageService,
+		syncInterval:                               conf.SyncInterval,
 	}
 }
 
@@ -66,7 +68,7 @@ func (r *RegularlySyncStorage) Start(ctx context.Context) {
 }
 
 func (r *RegularlySyncStorage) syncAllStorages(ctx context.Context) {
-	for syncFrom, lastSyncedHash := range r.lastSyncedHashOfEachStorageService {
+	for syncFrom, lastSyncedHash := range r.lastSyncedHashOfEachSyncFromStorageService {
 		end := syncFrom.End(ctx)
 		if (end == common.Hash{}) {
 			continue
@@ -83,11 +85,7 @@ func (r *RegularlySyncStorage) syncAllStorages(ctx context.Context) {
 			if err != nil {
 				continue
 			}
-			for _, syncTo := range r.iterableStorageServices {
-				if syncFrom == syncTo {
-					continue
-				}
-
+			for _, syncTo := range r.syncToStorageServices {
 				_, err = syncTo.GetByHash(ctx, syncHash)
 				if err == nil {
 					continue
@@ -98,6 +96,6 @@ func (r *RegularlySyncStorage) syncAllStorages(ctx context.Context) {
 				}
 			}
 		}
-		r.lastSyncedHashOfEachStorageService[syncFrom] = end
+		r.lastSyncedHashOfEachSyncFromStorageService[syncFrom] = end
 	}
 }
