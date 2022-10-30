@@ -130,7 +130,7 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 	if !(serverConfig.EnableRPC || serverConfig.EnableREST) {
-		confighelpers.PrintErrorAndExit(errors.New("Please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
+		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
 	}
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
