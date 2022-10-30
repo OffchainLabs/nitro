@@ -84,7 +84,10 @@ func (i *IterableStorageService) DefaultBegin() common.Hash {
 }
 
 func (i *IterableStorageService) End(ctx context.Context) common.Hash {
-	endHash := i.end.Load().(common.Hash)
+	endHash, ok := i.end.Load().(common.Hash)
+	if !ok {
+		return common.Hash{}
+	}
 	if (endHash != common.Hash{}) {
 		return endHash
 	}
