@@ -42,21 +42,22 @@ func (i *IterableStorageService) Put(ctx context.Context, data []byte, expiratio
 	i.mutex.Lock()
 	defer i.mutex.Unlock()
 
+	dataHash := dastree.Hash(data)
 	if (i.End(ctx) == common.Hash{}) {
 		// First element being inserted in the chain.
-		if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorBegin)), dastree.Hash(data).Bytes()); err != nil {
+		if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorBegin)), dataHash.Bytes()); err != nil {
 			return err
 		}
 	} else {
-		if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorStorageKeyPrefix+EncodeStorageServiceKey(i.End(ctx)))), dastree.Hash(data).Bytes()); err != nil {
+		if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorStorageKeyPrefix+EncodeStorageServiceKey(i.End(ctx)))), dataHash.Bytes()); err != nil {
 			return err
 		}
 	}
 
-	if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorEnd)), dastree.Hash(data).Bytes()); err != nil {
+	if err := i.putKeyValue(ctx, dastree.Hash([]byte(iteratorEnd)), dataHash.Bytes()); err != nil {
 		return err
 	}
-	i.end = dastree.Hash(data)
+	i.end = dataHash
 
 	return nil
 }
@@ -79,6 +80,8 @@ func (i *IterableStorageService) DefaultBegin() common.Hash {
 }
 
 func (i *IterableStorageService) End(ctx context.Context) common.Hash {
+	i.mutex.Lock()
+	defer i.mutex.Unlock()
 	if (i.end != common.Hash{}) {
 		return i.end
 	}
@@ -86,7 +89,8 @@ func (i *IterableStorageService) End(ctx context.Context) common.Hash {
 	if err != nil {
 		return common.Hash{}
 	}
-	return common.BytesToHash(value)
+	i.end = common.BytesToHash(value)
+	return i.end
 }
 
 func (i *IterableStorageService) Next(ctx context.Context, hash common.Hash) common.Hash {
