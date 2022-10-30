@@ -61,6 +61,9 @@ func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
 type L1IncomingMessage struct {
 	Header *L1IncomingMessageHeader `json:"header"`
 	L2msg  []byte                   `json:"l2Msg"`
+
+	// Only used for `L1MessageType_BatchPostingReport`
+	BatchGasCost *uint64 `json:"batchGasCost,omitempty" rlp:"optional"`
 }
 
 var EmptyTestIncomingMessage = L1IncomingMessage{
@@ -69,6 +72,7 @@ var EmptyTestIncomingMessage = L1IncomingMessage{
 
 var TestIncomingMessageWithRequestId = L1IncomingMessage{
 	Header: &L1IncomingMessageHeader{
+		Kind:      L1MessageType_Invalid,
 		RequestId: &common.Hash{},
 		L1BaseFee: big.NewInt(0),
 	},
@@ -140,12 +144,33 @@ func (h *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
 		h.L1BaseFee == other.L1BaseFee
 }
 
-func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
+func (h *L1IncomingMessage) FillInBatchGasCost(batchFetcher FallibleBatchFetcher) error {
+	if batchFetcher != nil && h.Header.Kind == L1MessageType_BatchPostingReport && h.BatchGasCost == nil {
+		_, _, batchHash, batchNum, _, err := parseBatchPostingReportMessageFields(bytes.NewReader(h.L2msg))
+		if err != nil {
+			return fmt.Errorf("failed to parse batch posting report: %w", err)
+		}
+		batchData, err := batchFetcher(batchNum)
+		if err != nil {
+			return fmt.Errorf("failed to fetch batch mentioned by batch posting report: %w", err)
+		}
+		gotHash := crypto.Keccak256Hash(batchData)
+		if gotHash != batchHash {
+			return fmt.Errorf("batch fetcher returned incorrect data hash %v (wanted %v for batch %v)", gotHash, batchHash, batchNum)
+		}
+		gas := computeBatchGasCost(batchData)
+		h.BatchGasCost = &gas
+	}
+	return nil
+}
+
+func ParseIncomingL1Message(rd io.Reader, batchFetcher FallibleBatchFetcher) (*L1IncomingMessage, error) {
 	var kindBuf [1]byte
 	_, err := rd.Read(kindBuf[:])
 	if err != nil {
 		return nil, err
 	}
+	kind := kindBuf[0]
 
 	sender, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
@@ -177,9 +202,9 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 		return nil, err
 	}
 
-	return &L1IncomingMessage{
+	msg := &L1IncomingMessage{
 		&L1IncomingMessageHeader{
-			kindBuf[0],
+			kind,
 			sender,
 			blockNumber,
 			timestamp,
@@ -187,10 +212,12 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 			baseFeeL1.Big(),
 		},
 		data,
-	}, nil
+		nil,
+	}
+	return msg, msg.FillInBatchGasCost(batchFetcher)
 }
 
-type InfallibleBatchFetcher func(batchNum uint64) []byte
+type InfallibleBatchFetcher func(batchNum uint64, batchHash common.Hash) []byte
 
 func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher InfallibleBatchFetcher) (types.Transactions, error) {
 	if len(msg.L2msg) > MaxL2MessageSize {
@@ -244,7 +271,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int, batchFetcher
 		log.Debug("ignoring rollup event message")
 		return types.Transactions{}, nil
 	case L1MessageType_BatchPostingReport:
-		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, batchFetcher)
+		tx, err := parseBatchPostingReportMessage(bytes.NewReader(msg.L2msg), chainId, msg.BatchGasCost, batchFetcher)
 		if err != nil {
 			return nil, err
 		}
@@ -554,46 +581,66 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	return types.NewTx(tx), err
 }
 
-func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, batchFetcher InfallibleBatchFetcher) (*types.Transaction, error) {
+func parseBatchPostingReportMessageFields(rd io.Reader) (*big.Int, common.Address, common.Hash, uint64, *big.Int, error) {
 	batchTimestamp, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, err
 	}
 	batchPosterAddr, err := util.AddressFromReader(rd)
 	if err != nil {
-		return nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, err
 	}
-	_, err = util.HashFromReader(rd) // unused: data hash
+	dataHash, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, err
 	}
-	batchNumHash, err := util.HashFromReader(rd)
+	batchNum, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, err
 	}
-	batchNum := batchNumHash.Big().Uint64()
-
 	l1BaseFee, err := util.HashFromReader(rd)
 	if err != nil {
-		return nil, err
+		return nil, common.Address{}, common.Hash{}, 0, nil, err
 	}
-	batchData := batchFetcher(batchNum)
-	var batchDataGas uint64
-	for _, b := range batchData {
+	batchNumBig := batchNum.Big()
+	if !batchNumBig.IsUint64() {
+		return nil, common.Address{}, common.Hash{}, 0, nil, fmt.Errorf("batch number %v is not a uint64", batchNumBig)
+	}
+	return batchTimestamp.Big(), batchPosterAddr, dataHash, batchNumBig.Uint64(), l1BaseFee.Big(), nil
+}
+
+func computeBatchGasCost(data []byte) uint64 {
+	var gas uint64
+	for _, b := range data {
 		if b == 0 {
-			batchDataGas += params.TxDataZeroGas
+			gas += params.TxDataZeroGas
 		} else {
-			batchDataGas += params.TxDataNonZeroGasEIP2028
+			gas += params.TxDataNonZeroGasEIP2028
 		}
 	}
 
 	// the poster also pays to keccak the batch and place it and a batch-posting report into the inbox
-	keccakWords := arbmath.WordsForBytes(uint64(len(batchData)))
-	batchDataGas += params.Keccak256Gas + (keccakWords * params.Keccak256WordGas)
-	batchDataGas += 2 * params.SstoreSetGasEIP2200
+	keccakWords := arbmath.WordsForBytes(uint64(len(data)))
+	gas += params.Keccak256Gas + (keccakWords * params.Keccak256WordGas)
+	gas += 2 * params.SstoreSetGasEIP2200
+	return gas
+}
+
+func parseBatchPostingReportMessage(rd io.Reader, chainId *big.Int, msgBatchGasCost *uint64, batchFetcher InfallibleBatchFetcher) (*types.Transaction, error) {
+	batchTimestamp, batchPosterAddr, batchHash, batchNum, l1BaseFee, err := parseBatchPostingReportMessageFields(rd)
+	if err != nil {
+		return nil, err
+	}
+	var batchDataGas uint64
+	if msgBatchGasCost != nil {
+		batchDataGas = *msgBatchGasCost
+	} else {
+		batchData := batchFetcher(batchNum, batchHash)
+		batchDataGas = computeBatchGasCost(batchData)
+	}
 
 	data, err := util.PackInternalTxDataBatchPostingReport(
-		batchTimestamp.Big(), batchPosterAddr, batchNum, batchDataGas, l1BaseFee.Big(),
+		batchTimestamp, batchPosterAddr, batchNum, batchDataGas, l1BaseFee,
 	)
 	if err != nil {
 		return nil, err
