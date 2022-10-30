@@ -150,7 +150,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 		return nil, nil
 	}
 	if node.NodeHash != nodeHash {
-		return nil, fmt.Errorf("Got unexpected node hash %v looking for node number %v with expected hash %v (reorg?)", node.NodeHash, nodeNum, nodeHash)
+		return nil, fmt.Errorf("got unexpected node hash %v looking for node number %v with expected hash %v (reorg?)", node.NodeHash, nodeNum, nodeHash)
 	}
 	latestChild, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), node.LatestChildNumber)
 	if err != nil {
