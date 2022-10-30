@@ -36,7 +36,7 @@ type InboxBackend interface {
 	GetPositionWithinMessage() uint64
 	SetPositionWithinMessage(pos uint64)
 
-	ReadDelayedInbox(seqNum uint64) ([]byte, error)
+	ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error)
 }
 
 type MessageWithMetadata struct {
@@ -482,16 +482,11 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 				DelayedMessagesRead: seqMsg.afterDelayedMessages,
 			}
 		} else {
-			data, realErr := r.backend.ReadDelayedInbox(r.delayedMessagesRead)
+			delayed, realErr := r.backend.ReadDelayedInbox(r.delayedMessagesRead)
 			if realErr != nil {
 				return nil, realErr
 			}
 			r.delayedMessagesRead += 1
-			delayed, parseErr := arbos.ParseIncomingL1Message(bytes.NewReader(data))
-			if parseErr != nil {
-				log.Warn("error parsing delayed message", "err", parseErr, "delayedMsg", r.delayedMessagesRead)
-				return nil, nil
-			}
 			msg = &MessageWithMetadata{
 				Message:             delayed,
 				DelayedMessagesRead: r.delayedMessagesRead,
