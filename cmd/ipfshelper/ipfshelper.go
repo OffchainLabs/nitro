@@ -52,14 +52,16 @@ func (h *IpfsHelper) createRepo(repoDirectory string, profiles string) error {
 	if err != nil {
 		return err
 	}
-	for _, profile := range strings.Split(profiles, ",") {
-		transformer, ok := config.Profiles[profile]
-		if !ok {
-			return fmt.Errorf("invalid configuration profile: %s", profile)
-		}
+	if len(profiles) > 0 {
+		for _, profile := range strings.Split(profiles, ",") {
+			transformer, ok := config.Profiles[profile]
+			if !ok {
+				return fmt.Errorf("invalid ipfs configuration profile: %s", profile)
+			}
 
-		if err := transformer.Transform(h.cfg); err != nil {
-			return err
+			if err := transformer.Transform(h.cfg); err != nil {
+				return err
+			}
 		}
 	}
 	// Create the repo with the config
