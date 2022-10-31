@@ -34,7 +34,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	return ps.SetGasBacklog(backlog)
 }
 
-// Update the pricing model with info from the last block
+// UpdatePricingModel updates the pricing model with info from the last block
 func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, debug bool) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
 	_ = ps.AddToGasPool(int64(timePassed * speedLimit))

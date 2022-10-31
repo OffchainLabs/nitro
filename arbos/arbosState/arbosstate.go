@@ -277,6 +277,8 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool) e
 			// no state changes needed
 		case 7:
 			// no state changes needed
+		case 8:
+			// no state changes needed
 		default:
 			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)
 		}
@@ -301,6 +303,18 @@ func (state *ArbosState) ScheduleArbOSUpgrade(newVersion uint64, timestamp uint6
 		return err
 	}
 	return state.upgradeTimestamp.Set(timestamp)
+}
+
+func (state *ArbosState) GetScheduledUpgrade() (uint64, uint64, error) {
+	version, err := state.upgradeVersion.Get()
+	if err != nil {
+		return 0, 0, err
+	}
+	timestamp, err := state.upgradeTimestamp.Get()
+	if err != nil {
+		return 0, 0, err
+	}
+	return version, timestamp, nil
 }
 
 func (state *ArbosState) BackingStorage() *storage.Storage {

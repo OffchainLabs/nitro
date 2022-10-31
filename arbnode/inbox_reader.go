@@ -335,12 +335,21 @@ func (ir *InboxReader) run(ctx context.Context, hadError bool) error {
 			if to.Cmp(currentHeight) > 0 {
 				to.Set(currentHeight)
 			}
-			var delayedMessages []*DelayedInboxMessage
-			delayedMessages, err := ir.delayedBridge.LookupMessagesInRange(ctx, from, to)
+			sequencerBatches, err := ir.sequencerInbox.LookupBatchesInRange(ctx, from, to)
 			if err != nil {
 				return err
 			}
-			sequencerBatches, err := ir.sequencerInbox.LookupBatchesInRange(ctx, from, to)
+			delayedMessages, err := ir.delayedBridge.LookupMessagesInRange(ctx, from, to, func(batchNum uint64) ([]byte, error) {
+				if len(sequencerBatches) > 0 && batchNum >= sequencerBatches[0].SequenceNumber {
+					idx := int(batchNum - sequencerBatches[0].SequenceNumber)
+					if idx < len(sequencerBatches) {
+						return sequencerBatches[idx].Serialize(ctx, ir.l1Reader.Client())
+					} else {
+						log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
+					}
+				}
+				return ir.GetSequencerMessageBytes(ctx, batchNum)
+			})
 			if err != nil {
 				return err
 			}
@@ -533,6 +542,8 @@ func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {
 	return r.lastReadBlock, r.lastReadBatchCount
 }
 
+// GetLastSeenBatchCount returns how many sequencer batches the inbox reader has read in from L1.
+// Return values:
 // >0 - last batchcount seen in run() - only written after lastReadBatchCount updated
 // 0 - no batch seen, error
 func (r *InboxReader) GetLastSeenBatchCount() uint64 {

@@ -1078,7 +1078,7 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 	return nil
 }
 
-// Must be called after SetCurrentWasmModuleRoot sets the current one
+// Initialize must be called after SetCurrentWasmModuleRoot sets the current one
 func (v *BlockValidator) Initialize() error {
 	config := v.config()
 	currentModuleRoot := config.CurrentModuleRoot

@@ -70,7 +70,7 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 	process.Stderr = os.Stderr
 	go func() {
 		if err := process.Run(); err != nil {
-			fatalErrChan <- fmt.Errorf("Lost jit block validator process: %w", err)
+			fatalErrChan <- fmt.Errorf("lost jit block validator process: %w", err)
 		}
 	}()
 

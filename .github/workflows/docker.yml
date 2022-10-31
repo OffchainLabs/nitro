@@ -11,7 +11,7 @@ on:
 jobs:
   docker:
     name: Docker build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-8
     services:
       # local registery
       registry:

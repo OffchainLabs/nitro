@@ -37,6 +37,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -584,7 +585,7 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 func (w *WasmConfig) FindMachineDir() (string, bool) {
-	places := []string{}
+	var places []string
 
 	if w.RootPath != "" {
 		places = append(places, w.RootPath)
@@ -665,7 +666,7 @@ type Node struct {
 	StatelessBlockValidator *validator.StatelessBlockValidator
 	Staker                  *validator.Staker
 	BroadcastServer         *broadcaster.Broadcaster
-	BroadcastClients        []*broadcastclient.BroadcastClient
+	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
@@ -697,9 +698,10 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	for version != currentDbSchemaVersion {
 		batch := arbDb.NewBatch()
 		switch version {
-		case ^uint64(0):
-			// TODO: write db format upgrade code
-			// This code path is here to avoid a bunch of linter errors
+		case 0:
+			// No database updates are necessary for database format version 0->1.
+			// This version adds a new format for delayed messages in the inbox tracker,
+			// but it can still read the old format for old messages.
 		default:
 			return fmt.Errorf("unsupported database format version %v", version)
 		}
@@ -852,27 +854,24 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	var broadcastClients []*broadcastclient.BroadcastClient
+	var broadcastClients *broadcastclients.BroadcastClients
 	if config.Feed.Input.Enable() {
-
 		currentMessageCount, err := txStreamer.GetMessageCount()
 		if err != nil {
 			return nil, err
 		}
-		for _, address := range config.Feed.Input.URLs {
-			client, err := broadcastclient.NewBroadcastClient(
-				config.Feed.Input,
-				address,
-				l2ChainId,
-				currentMessageCount,
-				txStreamer,
-				fatalErrChan,
-				bpVerifier,
-			)
-			if err != nil {
-				return nil, err
-			}
-			broadcastClients = append(broadcastClients, client)
+
+		broadcastClients, err = broadcastclients.NewBroadcastClients(
+			config.Feed.Input,
+			l2ChainId,
+			currentMessageCount,
+			txStreamer,
+			nil,
+			fatalErrChan,
+			bpVerifier,
+		)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if !config.L1Reader.Enable {
@@ -1094,7 +1093,7 @@ func createNodeImpl(
 	}, nil
 }
 
-func (n *Node) OnConfigReload(old *Config, new *Config) error {
+func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 	// TODO
 	return nil
 }
@@ -1272,7 +1271,7 @@ func SetUpDataAvailability(
 		topLevelDas = das.NewReadLimitedDataAvailabilityService(topLevelStorageService)
 	}
 
-	// Enable caches, Redis and (local) BigCache. Local is the outermost so it will be tried first.
+	// Enable caches, Redis and (local) BigCache. Local is the outermost, so it will be tried first.
 	if config.RedisCacheConfig.Enable {
 		cache, err := das.NewRedisStorageService(config.RedisCacheConfig, das.NewEmptyStorageService())
 		dasLifecycleManager.Register(cache)
@@ -1448,8 +1447,8 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error starting feed broadcast server: %w", err)
 		}
 	}
-	for _, client := range n.BroadcastClients {
-		client.Start(ctx)
+	if n.BroadcastClients != nil {
+		n.BroadcastClients.Start(ctx)
 	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
@@ -1461,10 +1460,8 @@ func (n *Node) StopAndWait() {
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
 	}
-	for _, client := range n.BroadcastClients {
-		if client.Started() {
-			client.StopAndWait()
-		}
+	if n.BroadcastClients != nil {
+		n.BroadcastClients.StopAndWait()
 	}
 	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
 		n.BroadcastServer.StopAndWait()
