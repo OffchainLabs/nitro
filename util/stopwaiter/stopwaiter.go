@@ -102,7 +102,7 @@ func (s *StopWaiterSafe) StopOnly() {
 	s.stopped = true
 }
 
-// Stopping multiple times, even before start, will work
+// StopAndWait may be called multiple times, even before start.
 func (s *StopWaiterSafe) StopAndWait() error {
 	return s.stopAndWaitImpl(stopDelayWarningTimeout)
 }
@@ -117,11 +117,11 @@ func getAllStackTraces() string {
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	s.StopOnly()
-	timer := time.NewTimer(warningTimeout)
 	waitChan, err := s.GetWaitChannel()
 	if err != nil {
 		return err
 	}
+	timer := time.NewTimer(warningTimeout)
 
 	select {
 	case <-timer.C:
@@ -129,6 +129,7 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 		log.Warn("taking too long to stop", "name", s.name, "delay[s]", warningTimeout.Seconds())
 		log.Warn(traces)
 	case <-waitChan:
+		timer.Stop()
 		return nil
 	}
 	<-waitChan
@@ -251,7 +252,7 @@ func ChanRateLimiter[T any](s *StopWaiterSafe, inChan <-chan T, maxRateCallback 
 	return outChan, nil
 }
 
-// May panic on race conditions instead of returning errors
+// StopWaiter may panic on race conditions instead of returning errors
 type StopWaiter struct {
 	StopWaiterSafe
 }

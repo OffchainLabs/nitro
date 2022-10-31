@@ -70,7 +70,7 @@ func GlobalStateFromC(gs C.GlobalState) GoGlobalState {
 	}
 }
 
-// creates a list of strings, does take ownership, should be freed
+// CreateCStringList creates a list of strings, does take ownership, should be freed
 func CreateCStringList(input []string) **C.char {
 	res := C.PrepareStringList(C.intptr_t(len(input)))
 	for i, str := range input {
