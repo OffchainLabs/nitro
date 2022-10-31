@@ -1121,7 +1121,6 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 		// so they won't stomp on each other and prevent the other from running.
 		v.sendRecords(ctx)
 		v.sendValidations(ctx)
-		lastValid := uint64(0)
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:
@@ -1129,11 +1128,6 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 					return
 				}
 				v.progressValidated()
-				newValid := v.LastBlockValidated()
-				if newValid != lastValid {
-					log.Info("Validation succeded", "blockNum", newValid)
-					lastValid = newValid
-				}
 			case _, ok := <-v.sendValidationsChan:
 				if !ok {
 					return
@@ -1144,6 +1138,15 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 				return
 			}
 		}
+	})
+	lastValid := uint64(0)
+	v.CallIteratively(func(ctx context.Context) time.Duration {
+		newValid := v.LastBlockValidated()
+		if newValid != lastValid {
+			log.Info("Validated blocks", "lastValid", newValid)
+			lastValid = newValid
+		}
+		return time.Second
 	})
 	return nil
 }
