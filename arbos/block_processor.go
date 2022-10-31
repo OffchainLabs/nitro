@@ -184,7 +184,10 @@ func ProduceBlockAdvanced(
 	userTxsProcessed := 0
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
-	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
+	gasPool := core.GasPool{}
+	gasPool.AddGas(l2pricing.GethBlockGasLimit)
+	// Use the same block gas limit for data gas for now.
+	gasPool.AddDataGas(l2pricing.GethBlockGasLimit)
 
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
@@ -273,7 +276,6 @@ func ProduceBlockAdvanced(
 			snap := statedb.Snapshot()
 			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
 
-			gasPool := gethGas
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				chainConfig,
 				chainContext,
@@ -281,6 +283,7 @@ func ProduceBlockAdvanced(
 				&gasPool,
 				statedb,
 				header,
+				lastBlockHeader.ExcessDataGas,
 				tx,
 				&header.GasUsed,
 				vm.Config{},
