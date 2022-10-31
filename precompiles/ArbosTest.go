@@ -15,7 +15,7 @@ type ArbosTest struct {
 // BurnArbGas unproductively burns the amount of L2 ArbGas
 func (con ArbosTest) BurnArbGas(c ctx, gasAmount huge) error {
 	if !gasAmount.IsUint64() {
-		return errors.New("Not a uint64")
+		return errors.New("not a uint64")
 	}
 	//nolint:errcheck
 	c.Burn(gasAmount.Uint64()) // burn the amount, even if it's more than the user has

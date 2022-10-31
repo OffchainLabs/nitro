@@ -83,7 +83,7 @@ func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, batchPoster addr, newF
 			return err
 		}
 		if !isOwner {
-			return errors.New("Only a batch poster (or its fee collector / chain owner) may change its fee collector")
+			return errors.New("only a batch poster (or its fee collector / chain owner) may change its fee collector")
 		}
 	}
 	return posterInfo.SetPayTo(newFeeCollector)
