@@ -216,7 +216,7 @@ func (machine *JitMachine) prove(
 	}
 
 	// send known preimages
-	knownPreimages := make(map[[32]byte][]byte)
+	knownPreimages := entry.Preimages
 	if err := writeUint64(uint64(len(knownPreimages))); err != nil {
 		return state, err
 	}
