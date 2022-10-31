@@ -115,7 +115,6 @@ func (h *IpfsHelper) connectToPeers(ctx context.Context, peers []string) error {
 		}
 		peerInfo.Addrs = append(peerInfo.Addrs, addressInfo.Addrs...)
 	}
-	// TODO(magic) refactor?
 	var wg sync.WaitGroup
 	wg.Add(len(peerInfos))
 	for _, peerInfo := range peerInfos {
