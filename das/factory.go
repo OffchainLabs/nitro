@@ -13,7 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-// Create any storage services that persist to files, database, cloud storage,
+// CreatePersistentStorageService creates any storage services that persist to files, database, cloud storage,
 // and group them together into a RedundantStorage instance if there is more than one.
 func CreatePersistentStorageService(
 	ctx context.Context,
@@ -74,15 +74,15 @@ func CreateBatchPosterDAS(
 	}
 
 	if !config.AggregatorConfig.Enable || !config.RestfulClientAggregatorConfig.Enable {
-		return nil, nil, nil, errors.New("--node.data-availabilty.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode.")
+		return nil, nil, nil, errors.New("--node.data-availabilty.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode")
 	}
 
 	if config.LocalDBStorageConfig.Enable || config.LocalFileStorageConfig.Enable || config.S3StorageServiceConfig.Enable {
-		return nil, nil, nil, errors.New("--node.data-availability.local-db-storage.enable, local-file-storage.enable, s3-storage.enable may not be set when running a Batch Poster in AnyTrust mode.")
+		return nil, nil, nil, errors.New("--node.data-availability.local-db-storage.enable, local-file-storage.enable, s3-storage.enable may not be set when running a Batch Poster in AnyTrust mode")
 	}
 
 	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
-		return nil, nil, nil, errors.New("--node.data-availability.key.key-dir, priv-key may not be set when running a Batch Poster in AnyTrust mode.")
+		return nil, nil, nil, errors.New("--node.data-availability.key.key-dir, priv-key may not be set when running a Batch Poster in AnyTrust mode")
 	}
 
 	var daWriter DataAvailabilityServiceWriter

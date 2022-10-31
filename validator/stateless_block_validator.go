@@ -385,6 +385,8 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 			})
 			return data, nil
 		}
+		// make sure BatchGasCost is recalculated during record if used
+		msg.Message.BatchGasCost = nil
 		block, _, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,

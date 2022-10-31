@@ -14,7 +14,7 @@ type PseudoRandomDataSource struct {
 	rand *rand.Rand
 }
 
-// pseudorandom source that repeats on different executions
+// NewPseudoRandomDataSource is the pseudorandom source that repeats on different executions
 // T param is to make sure it's only used in testing
 func NewPseudoRandomDataSource(_ *testing.T, seed int64) *PseudoRandomDataSource {
 	return &PseudoRandomDataSource{

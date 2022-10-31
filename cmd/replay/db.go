@@ -20,7 +20,7 @@ func (db PreimageDb) Has(key []byte) (bool, error) {
 	if len(key) != 32 {
 		return false, nil
 	}
-	return false, errors.New("Preimage DB doesn't support Has")
+	return false, errors.New("preimage DB doesn't support Has")
 }
 
 func (db PreimageDb) Get(key []byte) ([]byte, error) {
@@ -38,11 +38,11 @@ func (db PreimageDb) Get(key []byte) ([]byte, error) {
 }
 
 func (db PreimageDb) Put(key []byte, value []byte) error {
-	return errors.New("Preimage DB doesn't support Put")
+	return errors.New("preimage DB doesn't support Put")
 }
 
 func (db PreimageDb) Delete(key []byte) error {
-	return errors.New("Preimage DB doesn't support Delete")
+	return errors.New("preimage DB doesn't support Delete")
 }
 
 func (db PreimageDb) NewBatch() ethdb.Batch {
@@ -58,7 +58,7 @@ func (db PreimageDb) NewIterator(prefix []byte, start []byte) ethdb.Iterator {
 }
 
 func (db PreimageDb) Stat(property string) (string, error) {
-	return "", errors.New("Preimage DB doesn't support Stat")
+	return "", errors.New("preimage DB doesn't support Stat")
 }
 
 func (db PreimageDb) Compact(start []byte, limit []byte) error {
@@ -102,7 +102,7 @@ func (i ErrorIterator) Next() bool {
 }
 
 func (i ErrorIterator) Error() error {
-	return errors.New("Preimage DB doesn't support iterators")
+	return errors.New("preimage DB doesn't support iterators")
 }
 
 func (i ErrorIterator) Key() []byte {
