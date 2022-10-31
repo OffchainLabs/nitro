@@ -191,9 +191,8 @@ func (h *IpfsHelper) Close() error {
 	return h.node.Close()
 }
 
-func setupPlugins(externalPluginsPath string) error {
-	// Load any external plugins if available on externalPluginsPath
-	plugins, err := loader.NewPluginLoader(filepath.Join(externalPluginsPath, "plugins"))
+func setupPlugins() error {
+	plugins, err := loader.NewPluginLoader("")
 	if err != nil {
 		return fmt.Errorf("error loading plugins: %w", err)
 	}
@@ -212,7 +211,7 @@ var loadPluginsOnce sync.Once
 func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly bool, peerList []string, profiles string) (*IpfsHelper, error) {
 	var onceErr error
 	loadPluginsOnce.Do(func() {
-		onceErr = setupPlugins("")
+		onceErr = setupPlugins()
 	})
 	if onceErr != nil {
 		return nil, onceErr
