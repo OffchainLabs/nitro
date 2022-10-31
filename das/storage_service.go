@@ -14,7 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
-var ErrNotFound = errors.New("Not found")
+var ErrNotFound = errors.New("not found")
 
 type StorageService interface {
 	arbstate.DataAvailabilityReader

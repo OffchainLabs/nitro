@@ -16,7 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
-var ErrArchiveTimeout = errors.New("Archiver timed out")
+var ErrArchiveTimeout = errors.New("archiver timed out")
 
 type keyValue struct {
 	key   common.Hash

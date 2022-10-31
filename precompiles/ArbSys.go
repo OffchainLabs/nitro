@@ -28,7 +28,7 @@ type ArbSys struct {
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
 }
 
-var InvalidBlockNum = errors.New("Invalid block number")
+var InvalidBlockNum = errors.New("invalid block number")
 
 // ArbBlockNumber gets the current L2 block number
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
