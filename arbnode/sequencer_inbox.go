@@ -109,7 +109,7 @@ type SequencerInboxBatch struct {
 	serialized        []byte // nil if serialization isn't cached yet
 }
 
-func (m *SequencerInboxBatch) GetData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
 	switch m.dataLocation {
 	case batchDataTxInput:
 		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
@@ -176,7 +176,7 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1In
 	}
 
 	// Append the batch data
-	data, err := m.GetData(ctx, client)
+	data, err := m.getSequencerData(ctx, client)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +198,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 		return nil, errors.WithStack(err)
 	}
 	messages := make([]*SequencerInboxBatch, 0, len(logs))
+	var lastSeqNum *uint64
 	for _, log := range logs {
 		if log.Topics[0] != batchDeliveredID {
 			return nil, errors.New("unexpected log selector")
@@ -213,10 +214,17 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
 		}
 
+		seqNum := parsedLog.BatchSequenceNumber.Uint64()
+		if lastSeqNum != nil {
+			if seqNum != *lastSeqNum+1 {
+				return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", lastSeqNum, seqNum)
+			}
+		}
+		lastSeqNum = &seqNum
 		batch := &SequencerInboxBatch{
 			BlockHash:         log.BlockHash,
 			BlockNumber:       log.BlockNumber,
-			SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
+			SequenceNumber:    seqNum,
 			BeforeInboxAcc:    parsedLog.BeforeAcc,
 			AfterInboxAcc:     parsedLog.AfterAcc,
 			AfterDelayedAcc:   parsedLog.DelayedAcc,

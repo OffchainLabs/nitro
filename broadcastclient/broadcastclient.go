@@ -121,7 +121,7 @@ type BroadcastClient struct {
 
 	retrying                        bool
 	shuttingDown                    bool
-	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
+	confirmedSequenceNumberListener chan arbutil.MessageIndex
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
 	adjustCount                     func(int32)
@@ -138,6 +138,7 @@ func NewBroadcastClient(
 	chainId uint64,
 	currentMessageCount arbutil.MessageIndex,
 	txStreamer TransactionStreamerInterface,
+	confirmedSequencerNumberListener chan arbutil.MessageIndex,
 	fatalErrChan chan error,
 	bpVerifier contracts.BatchPosterVerifierInterface,
 	adjustCount func(int32),
@@ -147,14 +148,15 @@ func NewBroadcastClient(
 		return nil, err
 	}
 	return &BroadcastClient{
-		config:       config,
-		websocketUrl: websocketUrl,
-		chainId:      chainId,
-		nextSeqNum:   currentMessageCount,
-		txStreamer:   txStreamer,
-		fatalErrChan: fatalErrChan,
-		sigVerifier:  sigVerifier,
-		adjustCount:  adjustCount,
+		config:                          config,
+		websocketUrl:                    websocketUrl,
+		chainId:                         chainId,
+		nextSeqNum:                      currentMessageCount,
+		txStreamer:                      txStreamer,
+		confirmedSequenceNumberListener: confirmedSequencerNumberListener,
+		fatalErrChan:                    fatalErrChan,
+		sigVerifier:                     sigVerifier,
+		adjustCount:                     adjustCount,
 	}, err
 }
 
@@ -388,8 +390,8 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}
-					if res.ConfirmedSequenceNumberMessage != nil && bc.ConfirmedSequenceNumberListener != nil {
-						bc.ConfirmedSequenceNumberListener <- res.ConfirmedSequenceNumberMessage.SequenceNumber
+					if res.ConfirmedSequenceNumberMessage != nil && bc.confirmedSequenceNumberListener != nil {
+						bc.confirmedSequenceNumberListener <- res.ConfirmedSequenceNumberMessage.SequenceNumber
 					}
 				}
 			}

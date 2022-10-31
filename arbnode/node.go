@@ -698,9 +698,10 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	for version != currentDbSchemaVersion {
 		batch := arbDb.NewBatch()
 		switch version {
-		case ^uint64(0):
-			// TODO: write db format upgrade code
-			// This code path is here to avoid a bunch of linter errors
+		case 0:
+			// No database updates are necessary for database format version 0->1.
+			// This version adds a new format for delayed messages in the inbox tracker,
+			// but it can still read the old format for old messages.
 		default:
 			return fmt.Errorf("unsupported database format version %v", version)
 		}
@@ -865,6 +866,7 @@ func createNodeImpl(
 			l2ChainId,
 			currentMessageCount,
 			txStreamer,
+			nil,
 			fatalErrChan,
 			bpVerifier,
 		)

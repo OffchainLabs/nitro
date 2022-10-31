@@ -41,7 +41,7 @@ type LocalFileStorageService struct {
 
 func NewLocalFileStorageService(dataDir string) (StorageService, error) {
 	if unix.Access(dataDir, unix.W_OK|unix.R_OK) != nil {
-		return nil, fmt.Errorf("Couldn't start LocalFileStorageService, directory '%s' must be readable and writeable", dataDir)
+		return nil, fmt.Errorf("couldn't start LocalFileStorageService, directory '%s' must be readable and writeable", dataDir)
 	}
 	return &LocalFileStorageService{dataDir: dataDir}, nil
 }

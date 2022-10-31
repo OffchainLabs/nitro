@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -42,11 +44,12 @@ type TransactionStreamer struct {
 	chainId      uint64
 	fatalErrChan chan<- error
 
-	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
-	createBlocksMutex  sync.Mutex // cannot be acquired while reorgMutex is held
-	reorgMutex         sync.RWMutex
-	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
-	newMessageNotifier chan struct{}
+	insertionMutex            sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
+	createBlocksMutex         sync.Mutex // cannot be acquired while reorgMutex is held
+	reorgMutex                sync.RWMutex
+	reorgPending              uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
+	newMessageNotifier        chan struct{}
+	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
 	broadcasterQueuedMessages    []arbstate.MessageWithMetadata
 	broadcasterQueuedMessagesPos uint64
@@ -396,6 +399,32 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 				var gotHeader *arbos.L1IncomingMessageHeader
 				if nextMessage.Message != nil {
 					gotHeader = nextMessage.Message.Header
+					if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
+						// Remove both of the batch gas costs and see if the messages still differ
+						nextMessageCopy := nextMessage
+						nextMessageCopy.Message = new(arbos.L1IncomingMessage)
+						*nextMessageCopy.Message = *nextMessage.Message
+						dbMessageParsed.Message.BatchGasCost = nil
+						nextMessageCopy.Message.BatchGasCost = nil
+						if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
+							// Actually this isn't a reorg; only the batch gas costs differed
+							if nextMessage.Message.BatchGasCost != nil && force {
+								// If our new message has a gas cost cached, but the old one didn't,
+								// update the message in the database to add the gas cost cache.
+								if batch == nil {
+									batch = s.db.NewBatch()
+								}
+								err = s.writeMessage(pos, nextMessage, batch)
+								if err != nil {
+									return err
+								}
+							}
+							messages = messages[1:]
+							pos++
+							dontReorgAfter--
+							continue
+						}
+					}
 				}
 				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-delayed", nextMessage.DelayedMessagesRead, "got-header", gotHeader, "db-delayed", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
 			}
@@ -691,6 +720,15 @@ func (s *TransactionStreamer) ResumeReorgs() {
 	s.reorgMutex.RUnlock()
 }
 
+func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+	key := dbKey(messagePrefix, uint64(pos))
+	msgBytes, err := rlp.EncodeToBytes(msg)
+	if err != nil {
+		return err
+	}
+	return batch.Put(key, msgBytes)
+}
+
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
@@ -698,12 +736,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 		batch = s.db.NewBatch()
 	}
 	for i, msg := range messages {
-		key := dbKey(messagePrefix, uint64(pos)+uint64(i))
-		msgBytes, err := rlp.EncodeToBytes(msg)
-		if err != nil {
-			return err
-		}
-		err = batch.Put(key, msgBytes)
+		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg, batch)
 		if err != nil {
 			return err
 		}
@@ -819,6 +852,42 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 
 		if s.validator != nil {
 			s.validator.NewBlock(block, lastBlockHeader, *msg)
+		}
+
+		if time.Now().After(s.nextScheduledVersionCheck) {
+			s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
+			arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				return err
+			}
+			version, timestampInt, err := arbState.GetScheduledUpgrade()
+			if err != nil {
+				return err
+			}
+			var timeUntilUpgrade time.Duration
+			var timestamp time.Time
+			if timestampInt == 0 {
+				// This upgrade will take effect in the next block
+				timestamp = time.Now()
+			} else {
+				// This upgrade is scheduled for the future
+				timestamp = time.Unix(int64(timestampInt), 0)
+				timeUntilUpgrade = time.Until(timestamp)
+			}
+			maxSupportedVersion := params.ArbitrumDevTestChainConfig().ArbitrumChainParams.InitialArbOSVersion
+			logLevel := log.Warn
+			if timeUntilUpgrade < time.Hour*24 {
+				logLevel = log.Error
+			}
+			if version > maxSupportedVersion {
+				logLevel(
+					"you need to update your node to the latest version before this scheduled ArbOS upgrade",
+					"timeUntilUpgrade", timeUntilUpgrade,
+					"upgradeScheduledFor", timestamp,
+					"maxSupportedArbosVersion", maxSupportedVersion,
+					"pendingArbosUpgradeVersion", version,
+				)
+			}
 		}
 
 		sharedmetrics.UpdateSequenceNumberInBlockGauge(pos)

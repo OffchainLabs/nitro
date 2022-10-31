@@ -31,6 +31,7 @@ func (q *Queue[T]) Pop() T {
 		return empty
 	}
 	item := q.slice[0]
+	q.slice[0] = empty
 	q.slice = q.slice[1:]
 	q.shrink()
 	return item
