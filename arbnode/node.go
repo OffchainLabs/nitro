@@ -1475,6 +1475,9 @@ func (n *Node) StopAndWait() {
 	if n.BlockValidator != nil && n.BlockValidator.Started() {
 		n.BlockValidator.StopAndWait()
 	}
+	if n.StatelessBlockValidator != nil {
+		n.StatelessBlockValidator.Stop()
+	}
 	if n.BatchPoster != nil && n.BatchPoster.Started() {
 		n.BatchPoster.StopAndWait()
 	}
