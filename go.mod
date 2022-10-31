@@ -6,10 +6,6 @@ replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
-replace github.com/protolambda/go-kzg => github.com/Inphi/go-kzg v0.0.0-20220819034031-381084440411
-
-replace github.com/kilic/bls12-381 => github.com/Inphi/bls12-381 v0.0.0-20220819032644-3ae7bcd28efc
-
 require (
 	github.com/alicebob/miniredis/v2 v2.21.0
 	github.com/allegro/bigcache v1.2.1-0.20190218064605-e24eb225f156
