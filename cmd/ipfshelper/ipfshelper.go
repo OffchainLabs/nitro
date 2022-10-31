@@ -156,12 +156,15 @@ func (h *IpfsHelper) downloadFileWithTimeoutImpl(ctx context.Context, cidString 
 
 func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
 	cidPath := icorepath.New(cidString)
+	resolvedPath, err := h.api.ResolvePath(ctx, cidPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve path: %w", err)
+	}
 	rootNodeDirectory, err := h.api.Unixfs().Get(ctx, cidPath)
 	if err != nil {
 		return "", fmt.Errorf("could not get file with CID: %w", err)
 	}
-	// TODO(magic) fix creating output file path to support cidString with protocol prefix e.g. "/ipfs/..."
-	outputFilePath := filepath.Join(destinationDirectory, cidString)
+	outputFilePath := filepath.Join(destinationDirectory, resolvedPath.Cid().String())
 	err = files.WriteTo(rootNodeDirectory, outputFilePath)
 	if err != nil {
 		return "", fmt.Errorf("could not write out the fetched CID: %w", err)
