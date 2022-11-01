@@ -422,6 +422,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	})
 	log.Info(
 		"starting validation for block", "blockNr", entry.BlockNumber,
+		"blockAge", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)),
 		"blockDate", time.Unix(int64(entry.BlockHeader.Time), 0))
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 
@@ -494,6 +495,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 
 		log.Info(
 			"validation succeeded", "blockNr", entry.BlockNumber,
+			"blockAge", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)),
 			"blockDate", time.Unix(int64(entry.BlockHeader.Time), 0),
 			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", time.Since(before),
 		)
