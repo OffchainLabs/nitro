@@ -427,7 +427,6 @@ func ProduceBlockAdvanced(
 			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
 		}
 	}
-
 	return block, receipts, nil
 }
 
