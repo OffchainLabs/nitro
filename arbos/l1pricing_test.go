@@ -203,6 +203,11 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	if !arbmath.BigEquals(fundsStillHeld, expectedResults.fundsStillHeld) {
 		Fail(t, fundsStillHeld, expectedResults.fundsStillHeld)
 	}
+	fundsAvail, err := l1p.L1FeesAvailable()
+	Require(t, err)
+	if fundsStillHeld.Cmp(fundsAvail) != 0 {
+		Fail(t, fundsStillHeld, fundsAvail)
+	}
 }
 
 func TestUpdateTimeUpgradeBehavior(t *testing.T) {
