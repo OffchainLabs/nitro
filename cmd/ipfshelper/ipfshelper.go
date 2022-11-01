@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	files "github.com/ipfs/go-ipfs-files"
+	ipfspath "github.com/ipfs/go-path"
 	icore "github.com/ipfs/interface-go-ipfs-core"
 	"github.com/ipfs/interface-go-ipfs-core/path"
 	icorepath "github.com/ipfs/interface-go-ipfs-core/path"
@@ -232,4 +233,13 @@ func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly 
 		return nil, err
 	}
 	return &client, nil
+}
+
+func CanBeIpfsPath(pathString string) bool {
+	if len(pathString) < 5 {
+		return false
+	}
+	prefix := pathString[0:5]
+	_, err := ipfspath.ParsePath(pathString)
+	return err == nil || prefix == "/ipfs/" || prefix == "/ipld/" || prefix == "/ipns/"
 }
