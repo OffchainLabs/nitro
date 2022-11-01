@@ -422,30 +422,38 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.MessageIndex, newMsgNum arbutil.MessageIndex, message []byte, delayedMsg uint64) ([]byte, error) {
+func (b *BatchPoster) encodeAddBatch(
+	seqNum *big.Int,
+	prevMsgNum arbutil.MessageIndex,
+	newMsgNum arbutil.MessageIndex,
+	l2MessageData []byte,
+	delayedMsg uint64,
+) (*dataposter.DataToPost, error) {
 	methodName := "addSequencerL2BatchFromOrigin0"
 	if b.config().EIP4844 {
-		methodName = "addSequencerL2BatchWithBlobs0"
+		methodName = "addSequencerL2BatchWithBlobs"
 	}
 	method, ok := b.seqInboxABI.Methods[methodName]
 	if !ok {
 		return nil, errors.New("failed to find add batch method")
 	}
-	var inputData []byte
+	dataToPost := &dataposter.DataToPost{}
+	var sequencerInboxCalldata []byte
 	var err error
 	if b.config().EIP4844 {
 		// EIP4844 transactions to the sequencer inbox will not use transaction calldata for L2 info.
-		inputData, err = method.Inputs.Pack(
+		sequencerInboxCalldata, err = method.Inputs.Pack(
 			seqNum,
 			new(big.Int).SetUint64(delayedMsg),
 			common.HexToAddress(b.config().GasRefunderAddress),
 			new(big.Int).SetUint64(uint64(prevMsgNum)),
 			new(big.Int).SetUint64(uint64(newMsgNum)),
 		)
+		dataToPost.L2MessageData = l2MessageData
 	} else {
-		inputData, err = method.Inputs.Pack(
+		sequencerInboxCalldata, err = method.Inputs.Pack(
 			seqNum,
-			message,
+			l2MessageData,
 			new(big.Int).SetUint64(delayedMsg),
 			common.HexToAddress(b.config().GasRefunderAddress),
 			new(big.Int).SetUint64(uint64(prevMsgNum)),
@@ -455,9 +463,10 @@ func (b *BatchPoster) encodeAddBatch(seqNum *big.Int, prevMsgNum arbutil.Message
 	if err != nil {
 		return nil, err
 	}
-	fullData := append([]byte{}, method.ID...)
-	fullData = append(fullData, inputData...)
-	return fullData, nil
+	fullSequencerInboxCalldata := append([]byte{}, method.ID...)
+	fullSequencerInboxCalldata = append(fullSequencerInboxCalldata, sequencerInboxCalldata...)
+	dataToPost.SequencerInboxCalldata = fullSequencerInboxCalldata
+	return dataToPost, nil
 }
 
 func (b *BatchPoster) encodeAddBatchBlob(seqNum *big.Int, prevMsgNum arbutil.MessageIndex, newMsgNum arbutil.MessageIndex, delayedMsg uint64) ([]byte, error) {
@@ -492,7 +501,7 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	gas, err := b.l1Reader.Client().EstimateGas(ctx, ethereum.CallMsg{
 		From: b.dataPoster.From(),
 		To:   &b.seqInboxAddr,
-		Data: data,
+		Data: data.SequencerInboxCalldata,
 	})
 	if err != nil {
 		sequencerMessageHeader := sequencerMessage

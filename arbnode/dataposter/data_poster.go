@@ -224,7 +224,15 @@ func (s *SignedBlobTxWrapper) isFake() bool {
 	return false
 }
 
-func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, calldata []byte, gasLimit uint64) error {
+// DataToPost defines a struct containing sequencer inbox calldata, which will be sent in a transaction
+// to the sequencer inbox and an optional set of L2-specific message data which can be sent via an
+// EIP-4844 style, shard blob transaction instead of calldata to L1 to save on costs.
+type DataToPost struct {
+	SequencerInboxCalldata []byte
+	L2MessageData          []byte
+}
+
+func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta Meta, to common.Address, data *DataToPost, gasLimit uint64) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	feeCap, tipCap, err := p.getFeeAndTipCaps(ctx, nil, dataCreatedAt)
@@ -234,7 +242,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	var txData types.TxData
 	var txWrapData types.TxWrapData
 	if p.isEip4844 {
-		dataBlobs := blobs.EncodeBlobs(calldata)
+		dataBlobs := blobs.EncodeBlobs(data.L2MessageData)
 		commitments, versionedHashes, aggregatedProof, err := dataBlobs.ComputeCommitmentsAndAggregatedProof()
 		if err != nil {
 			return err
@@ -253,6 +261,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 				GasTipCap:           view.Uint256View(*tCap),
 				GasFeeCap:           view.Uint256View(*fCap),
 				Gas:                 view.Uint64View(gasLimit),
+				Data:                data.SequencerInboxCalldata,
 				To:                  types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(&to)},
 				Value:               view.Uint256View(*uint256.NewInt(0)),
 				BlobVersionedHashes: versionedHashes,
@@ -272,7 +281,7 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 			Gas:       gasLimit,
 			To:        &to,
 			Value:     new(big.Int),
-			Data:      calldata,
+			Data:      data.SequencerInboxCalldata,
 		}
 	}
 	tx := types.NewTx(txData, types.WithTxWrapData(txWrapData))
