@@ -17,4 +17,4 @@ var (
 	dbSchemaVersion        []byte = []byte("_schemaVersion")       // contains a uint64 representing the database schema version
 )
 
-const currentDbSchemaVersion uint64 = 0
+const currentDbSchemaVersion uint64 = 1

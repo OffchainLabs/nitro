@@ -385,7 +385,8 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 			})
 			return data, nil
 		}
-		// make sure BatchGasCost is recalculated during record if used
+		// Re-fetch the batch instead of using our cached cost,
+		// as the replay binary won't have the cache populated.
 		msg.Message.BatchGasCost = nil
 		block, _, err := arbos.ProduceBlock(
 			msg.Message,

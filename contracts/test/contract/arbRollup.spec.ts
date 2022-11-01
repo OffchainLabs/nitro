@@ -221,8 +221,17 @@ const setup = async () => {
   };
 };
 
-async function tryAdvanceChain(blocks: number): Promise<void> {
+async function tryAdvanceChain(blocks: number, time?: number): Promise<void> {
   try {
+    if (time === undefined) {
+      time = blocks * 12;
+    }
+    if (blocks <= 0) {
+      blocks = 1;
+    }
+    if (time > 0) {
+      await ethers.provider.send("evm_increaseTime", [time]);
+    }
     for (let i = 0; i < blocks; i++) {
       await ethers.provider.send("evm_mine", []);
     }
@@ -239,8 +248,15 @@ async function tryAdvanceChain(blocks: number): Promise<void> {
   }
 }
 
-async function advancePastAssertion(blockProposed: number): Promise<void> {
-  await tryAdvanceChain(blockProposed + confirmationPeriodBlocks);
+async function advancePastAssertion(blockProposed: number, confBlocks?: number): Promise<void> {
+  if (confBlocks === undefined) {
+    confBlocks = confirmationPeriodBlocks;
+  }
+  const blockProposedBlock = await ethers.provider.getBlock(blockProposed);
+  const latestBlock = await ethers.provider.getBlock("latest");
+  const passedBlocks = latestBlock.number - blockProposed;
+  const passedTime = latestBlock.timestamp - blockProposedBlock.timestamp;
+  await tryAdvanceChain(confBlocks - passedBlocks, (confBlocks * 12) - passedTime);
 }
 
 function newRandomExecutionState() {
@@ -331,7 +347,7 @@ const _IMPLEMENTATION_PRIMARY_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076
 const _IMPLEMENTATION_SECONDARY_SLOT = "0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d"
 
 const getDoubleLogicUUPSTarget = async (slot: "user" | "admin", provider: providers.Provider) : Promise<string> => {
-  return `0x${(await provider.getStorageAt(rollupAdmin.address, slot === "admin" ? 
+  return `0x${(await provider.getStorageAt(rollupAdmin.address, slot === "admin" ?
                 _IMPLEMENTATION_PRIMARY_SLOT : _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
 }
 
@@ -459,11 +475,12 @@ describe("ArbRollup", () => {
   });
 
   it("should fail to confirm first staker node", async function () {
-    await advancePastAssertion(challengedNode.proposedBlock);
+    await advancePastAssertion(challengerNode.proposedBlock);
     await expect(rollup.confirmNextNode(validNode)).to.be.revertedWith("NOT_ALL_STAKED");
   });
 
   let challengeIndex: number;
+  let challengeCreatedAt: number;
   it("should initiate a challenge", async function () {
     const tx = rollup.createChallenge(
       await validators[0].getAddress(),
@@ -477,6 +494,7 @@ describe("ArbRollup", () => {
 
     const parsedEv = ev.args as RollupChallengeStartedEvent["args"];
     challengeIndex = parsedEv.challengeIndex.toNumber();
+    challengeCreatedAt = receipt.blockNumber;
   });
 
   it("should make a new node", async function () {
@@ -505,8 +523,18 @@ describe("ArbRollup", () => {
     challengerNode = node;
   });
 
+  it("timeout should not occur early", async function () {
+    const challengeCreatedAtTime = (await ethers.provider.getBlock(challengeCreatedAt)).timestamp;
+    // This is missing the extraChallengeTimeBlocks
+    const notQuiteChallengeDuration = (challengedNode.proposedBlock - validNode.proposedBlock) + confirmationPeriodBlocks;
+    const elapsedTime = (await ethers.provider.getBlock("latest")).timestamp - challengeCreatedAtTime;
+    await tryAdvanceChain(1, notQuiteChallengeDuration - elapsedTime);
+    const isTimedOut = await challengeManager.connect(validators[0]).isTimedOut(challengeIndex);
+    expect(isTimedOut).to.be.false;
+  });
+
   it("asserter should win via timeout", async function () {
-    await advancePastAssertion(challengedNode.proposedBlock);
+    await tryAdvanceChain(extraChallengeTimeBlocks);
     await challengeManager.connect(validators[0]).timeout(challengeIndex);
   });
 
@@ -575,7 +603,8 @@ describe("ArbRollup", () => {
   });
 
   it("challenger should win via timeout", async function () {
-    await advancePastAssertion(challengedNode.proposedBlock);
+    const challengeDuration = confirmationPeriodBlocks + extraChallengeTimeBlocks + (challengerNode.proposedBlock - validNode.proposedBlock);
+    await advancePastAssertion(challengerNode.proposedBlock, challengeDuration);
     await challengeManager.timeout(challengeIndex);
   });
 

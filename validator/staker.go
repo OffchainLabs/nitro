@@ -32,6 +32,8 @@ const (
 	DefensiveStrategy
 	// Stake latest: stay staked on the latest node, challenging bad assertions
 	StakeLatestStrategy
+	// Resolve nodes: stay staked on the latest node and resolve any unconfirmed nodes, challenging bad assertions
+	ResolveNodesStrategy
 	// Make nodes: continually create new nodes, challenging bad assertions
 	MakeNodesStrategy
 )
@@ -142,6 +144,8 @@ func stakerStrategyFromString(s string) (StakerStrategy, error) {
 		return DefensiveStrategy, nil
 	} else if strings.ToLower(s) == "stakelatest" {
 		return StakeLatestStrategy, nil
+	} else if strings.ToLower(s) == "resolvenodes" {
+		return ResolveNodesStrategy, nil
 	} else if strings.ToLower(s) == "makenodes" {
 		return MakeNodesStrategy, nil
 	} else {
@@ -398,7 +402,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	// Resolve nodes if either we're on the make nodes strategy,
 	// or we're on the stake latest strategy but don't have a stake
 	// (attempt to reduce the current required stake).
-	shouldResolveNodes := effectiveStrategy >= MakeNodesStrategy ||
+	shouldResolveNodes := effectiveStrategy >= ResolveNodesStrategy ||
 		(effectiveStrategy >= StakeLatestStrategy && rawInfo == nil && requiredStakeElevated)
 	resolvingNode := false
 	if shouldResolveNodes {
@@ -504,7 +508,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 	}
 
 	if s.activeChallenge == nil || s.activeChallenge.ChallengeIndex() != *info.CurrentChallenge {
-		log.Error("entered challenge", "challenge", info.CurrentChallenge)
+		log.Error("entered challenge", "challenge", *info.CurrentChallenge)
 
 		latestConfirmedCreated, err := s.rollup.LatestConfirmedCreationBlock(ctx)
 		if err != nil {
