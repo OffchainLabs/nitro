@@ -30,6 +30,9 @@ func RegularSyncStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".sync-interval", DefaultRegularSyncStorageConfig.SyncInterval, "interval for running regular storage sync")
 }
 
+// A RegularlySyncStorage is used to sync data from syncFromStorageServices to
+// all the syncToStorageServices at regular intervals.
+// (Only newly added data since the last sync is copied over.)
 type RegularlySyncStorage struct {
 	stopwaiter.StopWaiter
 	syncFromStorageServices                    []*IterableStorageService

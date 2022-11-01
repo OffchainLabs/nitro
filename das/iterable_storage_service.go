@@ -19,6 +19,8 @@ const iteratorBegin = "iterator_begin"
 const iteratorEnd = "iterator_end"
 const expirationTimeKeyPrefix = "expiration_time_key_prefix_"
 
+// An IterableStorageService is used as a wrapper on top of a storage service,
+// to add the capability of iterating over the stored date in a sequential manner.
 type IterableStorageService struct {
 	// Local copy of iterator end. End can also be accessed by getByHash for iteratorEnd.
 	end atomic.Value // atomic access to common.Hash
