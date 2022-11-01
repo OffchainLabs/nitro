@@ -119,7 +119,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:                 "",
 	ExtraBatchGas:                      50_000,
 	DataPoster:                         dataposter.DefaultDataPosterConfig,
-	EIP4844:                            true,
+	EIP4844:                            false,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
@@ -133,7 +133,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress:   "",
 	ExtraBatchGas:        10_000,
 	DataPoster:           dataposter.TestDataPosterConfig,
-	EIP4844:              true,
+	EIP4844:              false,
 }
 
 func NewBatchPoster(l1Reader *headerreader.HeaderReader, inbox *InboxTracker, streamer *TransactionStreamer, syncMonitor *SyncMonitor, config BatchPosterConfigFetcher, contractAddress common.Address, transactOpts *bind.TransactOpts, daWriter das.DataAvailabilityServiceWriter) (*BatchPoster, error) {
