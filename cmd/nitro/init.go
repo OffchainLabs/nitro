@@ -86,7 +86,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		initFile, err := ipfsNode.DownloadFileWithTimeout(ctx, initConfig.Url[5:], initConfig.DownloadPath)
+		initFile, err := ipfsNode.DownloadFile(ctx, initConfig.Url[5:], initConfig.DownloadPath)
 		if err != nil {
 			return "", err
 		}

@@ -28,7 +28,7 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 )
 
-const defaultDownloadTimeout = 1 * time.Minute // TODO(magic)
+const defaultFetchTimeout = 1 * time.Minute // TODO(magic)
 
 type IpfsHelper struct {
 	api      icore.CoreAPI
@@ -143,23 +143,25 @@ func (h *IpfsHelper) GetPeerHostAddresses() ([]string, error) {
 	return addressesStrings, nil
 }
 
-func (h *IpfsHelper) DownloadFileWithTimeout(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
-	return h.downloadFileWithTimeoutImpl(ctx, cidString, destinationDirectory, defaultDownloadTimeout)
-}
-
-func (h *IpfsHelper) downloadFileWithTimeoutImpl(ctx context.Context, cidString string, destinationDirectory string, timeout time.Duration) (string, error) {
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	return h.DownloadFile(ctxWithTimeout, cidString, destinationDirectory)
-}
-
 func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
+	return h.downloadFileImpl(ctx, cidString, destinationDirectory, defaultFetchTimeout)
+}
+
+func (h *IpfsHelper) downloadFileImpl(ctx context.Context, cidString string, destinationDirectory string, fetchTimeout time.Duration) (string, error) {
 	cidPath := icorepath.New(cidString)
-	resolvedPath, err := h.api.ResolvePath(ctx, cidPath)
+	var fetchCtx context.Context
+	if fetchTimeout > 0 {
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, fetchTimeout)
+		defer cancel()
+		fetchCtx = ctxWithTimeout
+	} else {
+		fetchCtx = ctx
+	}
+	resolvedPath, err := h.api.ResolvePath(fetchCtx, cidPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path: %w", err)
 	}
-	rootNodeDirectory, err := h.api.Unixfs().Get(ctx, cidPath)
+	rootNodeDirectory, err := h.api.Unixfs().Get(fetchCtx, cidPath)
 	if err != nil {
 		return "", fmt.Errorf("could not get file with CID: %w", err)
 	}

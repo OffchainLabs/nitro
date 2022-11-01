@@ -40,7 +40,7 @@ func TestIpfsHelper(t *testing.T) {
 	ipfsB, err := createIpfsHelperImpl(ctx, t.TempDir(), false, addrsA, "test")
 	testhelpers.RequireImpl(t, err)
 	// download the test file with node B
-	downloadedFile, err := ipfsB.DownloadFileWithTimeout(ctx, testFileCid, t.TempDir())
+	downloadedFile, err := ipfsB.DownloadFile(ctx, testFileCid, t.TempDir())
 	testhelpers.RequireImpl(t, err)
 	if !fileDataEqual(t, downloadedFile, testData) {
 		testhelpers.FailImpl(t, "Downloaded file does not contain expected data")
@@ -53,7 +53,7 @@ func TestIpfsHelper(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 	ipfsC, err := createIpfsHelperImpl(ctx, t.TempDir(), false, addrsB, "test")
 	testhelpers.RequireImpl(t, err)
-	downloadedFile, err = ipfsC.DownloadFileWithTimeout(ctx, testFileCid, t.TempDir())
+	downloadedFile, err = ipfsC.DownloadFile(ctx, testFileCid, t.TempDir())
 	if !fileDataEqual(t, downloadedFile, testData) {
 		testhelpers.FailImpl(t, "Downloaded file does not contain expected data")
 	}
@@ -67,7 +67,7 @@ func TestIpfsHelper(t *testing.T) {
 	testTimeout := 500 * time.Millisecond
 	finished := make(chan interface{})
 	go func() {
-		downloadedFile, err = ipfsD.downloadFileWithTimeoutImpl(ctx, testFileCid, t.TempDir(), testTimeout)
+		downloadedFile, err = ipfsD.downloadFileImpl(ctx, testFileCid, t.TempDir(), testTimeout)
 		if err == nil {
 			testhelpers.FailImpl(t, "Download attempt did not fail as expected")
 		}
