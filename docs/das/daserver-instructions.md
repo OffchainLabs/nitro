@@ -18,7 +18,7 @@ An in-memory cache can be enabled to avoid needing to access underlying storage 
 `daserver` also has an optional REST aggregator which, in the case that a data batch is not found in cache or storage, queries for that batch from a list other of REST servers, and then stores that batch locally. This is how committee members that miss storing a batch (not all committee members are required by the AnyTrust protocol to report success in order to post the batch's certificate to L1) can automatically repair gaps in data they store, and how mirrors can sync (a sync mode that eagerly syncs all batches is planned for a future release). A public list of REST endpoints is published online, which `daserver` can be configured to download and use, and additional endpoints can be specified in configuration.
 
 ## Image:
-`offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72`
+`offchainlabs/nitro-node:v2.0.8-5b9fe9c`
 
 ## Usage of daserver
 
@@ -146,7 +146,7 @@ spec:
           mkdir -p /home/user/data/keys
           /usr/local/bin/datool keygen --dir /home/user/data/keys
           sleep infinity
-        image: offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72
+        image: offchainlabs/nitro-node:v2.0.8-5b9fe9c
         imagePullPolicy: Always
         resources:
           limits:
@@ -171,7 +171,7 @@ spec:
 
 This deployment sets up a DAS server using the Arbitrum Nova Mainnet. It uses the L1 inbox contract at 0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b. For the Arbitrum Nova Mainnet you must specify a Mainnet Ethereum L1 RPC endpoint.
 
-This configuration sets up all three storage types. To disable any of them, remove the --data-availability.(local-file-storage|local-disk-storage|s3-storage).enable option, and the other options for that storage type can also be removed. If updating an existing deployment from `offchainlabs/nitro-node:v2.0.0-alpha.4` that is using the local files on disk storage type, you should use at least `local-file-storage`.
+This configuration sets up all three storage types. To disable any of them, remove the --data-availability.(local-file-storage|local-disk-storage|s3-storage).enable option, and the other options for that storage type can also be removed. If updating an existing deployment from `offchainlabs/nitro-node:v2.0.8-5b9fe9c` that is using the local files on disk storage type, you should use at least `local-file-storage`.
 
 ```
 apiVersion: apps/v1
@@ -202,7 +202,7 @@ spec:
 		  mkdir -p /home/user/data/badgerdb
           /usr/local/bin/daserver --data-availability.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT>
 --enable-rpc --rpc-addr '0.0.0.0' --enable-rest --rest-addr '0.0.0.0' --log-level 3 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.key.key-dir /home/user/data/keys --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.online-url-list "https://nova.arbitrum.io/das-servers" --data-availability.sequencer-inbox-address '0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b'
-        image: offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72
+        image: offchainlabs/nitro-node:v2.0.8-5b9fe9c
         imagePullPolicy: Always
         resources:
           limits:
@@ -303,7 +303,7 @@ spec:
 		  mkdir -p /home/user/data/badgerdb
           /usr/local/bin/daserver --data-availability.l1-node-url <YOUR ETHEREUM L1 RPC ENDPOINT>
 --enable-rest --rest-addr '0.0.0.0' --log-level 3 --data-availability.local-file-storage.enable --data-availability.local-file-storage.data-dir /home/user/data/db  --data-availability.local-db-storage.enable --data-availability.local-db-storage.data-dir /home/user/data/badgerdb --data-availability.s3-storage.enable --data-availability.s3-storage.access-key "<YOUR ACCESS KEY>" --data-availability.s3-storage.bucket <YOUR BUCKET> --data-availability.s3-storage.region <YOUR REGION> --data-availability.s3-storage.secret-key "<YOUR SECRET KEY>" --data-availability.s3-storage.object-prefix "YOUR OBJECT KEY PREFIX/" --data-availability.local-cache.enable --data-availability.rest-aggregator.enable --data-availability.rest-aggregator.urls "http://your-committee-member.svc.cluster.local:9877" --data-availability.rest-aggregator.online-url-list "https://nova.arbitrum.io/das-servers" --data-availability.rest-aggregator.sync-to-storage.eager --data-availability.rest-aggregator.sync-to-storage.eager-lower-bound-block 15025611 --data-availability.sequencer-inbox-address '0x211e1c4c7f1bf5351ac850ed10fd68cffcf6c21b'
-        image: offchainlabs/nitro-node:v2.0.0-beta.8-5ed2c72
+        image: offchainlabs/nitro-node:v2.0.8-5b9fe9c
         imagePullPolicy: Always
         resources:
           limits:
