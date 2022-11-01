@@ -209,3 +209,7 @@ func (con ArbGasInfo) GetPerBatchGasCharge(c ctx, evm mech) (int64, error) {
 func (con ArbGasInfo) GetAmortizedCostCapBips(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().AmortizedCostCapBips()
 }
+
+func (con ArbGasInfo) GetL1FeesAvailable(c ctx, evm mech) (huge, error) {
+	return c.State.L1PricingState().L1FeesAvailable()
+}
