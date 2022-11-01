@@ -335,8 +335,8 @@ func mainImpl() int {
 		log.Error("failed to create node", "err", err)
 		return 1
 	}
-	liveNodeConfig.setOnReloadHook(func(old *NodeConfig, new *NodeConfig) error {
-		return currentNode.OnConfigReload(&old.Node, &new.Node)
+	liveNodeConfig.setOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
+		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
@@ -356,7 +356,8 @@ func mainImpl() int {
 	}
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, currentNode.Backend.APIBackend(), gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+		// TODO: Add in a filter system API now that geth changed this requirement.
+		if err := graphql.New(stack, currentNode.Backend.APIBackend(), nil, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
 		}
@@ -516,7 +517,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			if i < maxConnectionAttempts {
 				log.Warn("error connecting to L1", "err", err)
 			} else {
-				panic(err)
+				return nil, nil, nil, nil, nil, fmt.Errorf("too many errors trying to connect to L1: %w", err)
 			}
 
 			timer := time.NewTimer(time.Second * 1)
@@ -721,7 +722,7 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
 
-func noopOnReloadHook(old *NodeConfig, new *NodeConfig) error {
+func noopOnReloadHook(_ *NodeConfig, _ *NodeConfig) error {
 	return nil
 }
 

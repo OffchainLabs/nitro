@@ -42,9 +42,6 @@ var (
 	successfulBlocksCounter   = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 )
 
-// 95% of the SequencerInbox limit, leaving ~5KB for headers and such
-const maxTxDataSize = 112065
-
 type SequencerConfig struct {
 	Enable                      bool                     `koanf:"enable"`
 	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed" reload:"hot"`
@@ -55,6 +52,7 @@ type SequencerConfig struct {
 	QueueSize                   int                      `koanf:"queue-size"`
 	QueueTimeout                time.Duration            `koanf:"queue-timeout" reload:"hot"`
 	NonceCacheSize              int                      `koanf:"nonce-cache-size" reload:"hot"`
+	MaxTxDataSize               int                      `koanf:"max-tx-data-size" reload:"hot"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
@@ -83,6 +81,8 @@ var DefaultSequencerConfig = SequencerConfig{
 	QueueTimeout:                time.Second * 12,
 	NonceCacheSize:              1024,
 	Dangerous:                   DefaultDangerousSequencerConfig,
+	// 95% of the default batch poster limit, leaving 5KB for headers and such
+	MaxTxDataSize: 95000,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -96,6 +96,7 @@ var TestSequencerConfig = SequencerConfig{
 	QueueTimeout:                time.Second * 5,
 	NonceCacheSize:              4,
 	Dangerous:                   TestDangerousSequencerConfig,
+	MaxTxDataSize:               95000,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -108,6 +109,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
+	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -439,6 +441,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		}
 	}()
 
+	config := s.config()
 	for {
 		var queueItem txQueueItem
 		if s.txRetryQueue.Len() > 0 {
@@ -470,12 +473,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			queueItem.returnResult(err)
 			continue
 		}
-		if len(txBytes) > maxTxDataSize {
+		if len(txBytes) > config.MaxTxDataSize {
 			// This tx is too large
 			queueItem.returnResult(core.ErrOversizedData)
 			continue
 		}
-		if totalBatchSize+len(txBytes) > maxTxDataSize {
+		if totalBatchSize+len(txBytes) > config.MaxTxDataSize {
 			// This tx would be too large to add to this batch
 			s.txRetryQueue.Push(queueItem)
 			// End the batch here to put this tx in the next one
@@ -496,7 +499,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	l1Timestamp := s.l1Timestamp
 	s.L1BlockAndTimeMutex.Unlock()
 
-	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config().MaxAcceptableTimestampDelta.Seconds()) {
+	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > config.MaxAcceptableTimestampDelta.Seconds()) {
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
@@ -515,7 +518,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		L1BaseFee:   nil,
 	}
 
-	s.nonceCache.Resize(s.config().NonceCacheSize) // Would probably be better in a config hook but this is basically free
+	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
 	hooks := &arbos.SequencingHooks{
 		PreTxFilter:            s.preTxFilter,
