@@ -86,7 +86,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 			return "", err
 		}
 		log.Info("Downloading initial database via IPFS", "url", initConfig.Url)
-		initFile, err := ipfsNode.DownloadFile(ctx, initConfig.Url[5:], initConfig.DownloadPath)
+		initFile, err := ipfsNode.DownloadFile(ctx, initConfig.Url, initConfig.DownloadPath)
 		if err != nil {
 			return "", err
 		}
