@@ -172,6 +172,8 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	balanceAdded := big.NewInt(int64(testParams.fundsCollectedPerSecond * 3))
 	unitsAdded := uint64(testParams.unitsPerSecond * 3)
 	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, balanceAdded)
+	err = l1p.SetL1FeesAvailable(balanceAdded)
+	Require(t, err)
 	err = l1p.SetUnitsSinceUpdate(unitsAdded)
 	Require(t, err)
 
