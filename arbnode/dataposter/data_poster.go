@@ -239,52 +239,10 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 	if err != nil {
 		return err
 	}
-	var txData types.TxData
-	var txWrapData types.TxWrapData
-	if p.isEip4844 {
-		dataBlobs := blobs.EncodeBlobs(data.L2MessageData)
-		commitments, versionedHashes, aggregatedProof, err := dataBlobs.ComputeCommitmentsAndAggregatedProof()
-		if err != nil {
-			return err
-		}
-		tCap, ok := uint256.FromBig(tipCap)
-		if !ok {
-			return errors.New("tip cap is not a big int")
-		}
-		fCap, ok := uint256.FromBig(feeCap)
-		if !ok {
-			return errors.New("fee cap is not a big int")
-		}
-		txData = &types.SignedBlobTx{
-			Message: types.BlobTxMessage{
-				Nonce:               view.Uint64View(nonce),
-				GasTipCap:           view.Uint256View(*tCap),
-				GasFeeCap:           view.Uint256View(*fCap),
-				Gas:                 view.Uint64View(gasLimit),
-				Data:                data.SequencerInboxCalldata,
-				To:                  types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(&to)},
-				Value:               view.Uint256View(*uint256.NewInt(0)),
-				BlobVersionedHashes: versionedHashes,
-				MaxFeePerDataGas:    view.Uint256View(*fCap), // Use the same fee cap as gas for now.
-			},
-		}
-		txWrapData = &types.BlobTxWrapData{
-			BlobKzgs:           commitments,
-			Blobs:              dataBlobs,
-			KzgAggregatedProof: aggregatedProof,
-		}
-	} else {
-		txData = &types.DynamicFeeTx{
-			Nonce:     nonce,
-			GasTipCap: tipCap,
-			GasFeeCap: feeCap,
-			Gas:       gasLimit,
-			To:        &to,
-			Value:     new(big.Int),
-			Data:      data.SequencerInboxCalldata,
-		}
+	tx, txData, txWrapData, err := p.prepareTxTypeToPost(feeCap, tipCap, data, nonce, to, gasLimit)
+	if err != nil {
+		return err
 	}
-	tx := types.NewTx(txData, types.WithTxWrapData(txWrapData))
 	fullTx, err := p.auth.Signer(p.auth.From, tx)
 	if err != nil {
 		return err
@@ -299,6 +257,57 @@ func (p *DataPoster[Meta]) PostTransaction(ctx context.Context, dataCreatedAt ti
 		NextReplacement: time.Now().Add(p.replacementTimes[0]),
 	}
 	return p.sendTx(ctx, nil, &queuedTx)
+}
+
+// Prepares a transaction kind to post depending on configuration values. This allows for
+// posting EIP-4844 style blob transactions to reduce costs on L1.
+func (p *DataPoster[Meta]) prepareTxTypeToPost(
+	feeCap, tipCap *big.Int, data *DataToPost, nonce uint64, to common.Address, gasLimit uint64,
+) (*types.Transaction, types.TxData, types.TxWrapData, error) {
+	if p.isEip4844 {
+		dataBlobs := blobs.EncodeBlobs(data.L2MessageData)
+		commitments, versionedHashes, aggregatedProof, err := dataBlobs.ComputeCommitmentsAndAggregatedProof()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		tCap, overflows := uint256.FromBig(tipCap)
+		if overflows {
+			return nil, nil, nil, fmt.Errorf("tip cap overflows: %s", tipCap.String())
+		}
+		fCap, overflows := uint256.FromBig(feeCap)
+		if overflows {
+			return nil, nil, nil, fmt.Errorf("fee cap overflows: %s", feeCap.String())
+		}
+		txData := &types.SignedBlobTx{
+			Message: types.BlobTxMessage{
+				Nonce:               view.Uint64View(nonce),
+				GasTipCap:           view.Uint256View(*tCap),
+				GasFeeCap:           view.Uint256View(*fCap),
+				Gas:                 view.Uint64View(gasLimit),
+				Data:                data.SequencerInboxCalldata,
+				To:                  types.AddressOptionalSSZ{Address: (*types.AddressSSZ)(&to)},
+				Value:               view.Uint256View(*uint256.NewInt(0)),
+				BlobVersionedHashes: versionedHashes,
+				MaxFeePerDataGas:    view.Uint256View(*fCap), // Use the same fee cap as gas for now.
+			},
+		}
+		txWrapData := &types.BlobTxWrapData{
+			BlobKzgs:           commitments,
+			Blobs:              dataBlobs,
+			KzgAggregatedProof: aggregatedProof,
+		}
+		return types.NewTx(txData, types.WithTxWrapData(txWrapData)), txData, txWrapData, nil
+	}
+	txData := &types.DynamicFeeTx{
+		Nonce:     nonce,
+		GasTipCap: tipCap,
+		GasFeeCap: feeCap,
+		Gas:       gasLimit,
+		To:        &to,
+		Value:     new(big.Int),
+		Data:      data.SequencerInboxCalldata,
+	}
+	return types.NewTx(txData), txData, nil, nil
 }
 
 // the mutex must be held by the caller
