@@ -54,6 +54,7 @@ func TestIpfsHelper(t *testing.T) {
 	ipfsC, err := createIpfsHelperImpl(ctx, t.TempDir(), false, addrsB, "test")
 	testhelpers.RequireImpl(t, err)
 	downloadedFile, err = ipfsC.DownloadFile(ctx, testFileCid, t.TempDir())
+	testhelpers.RequireImpl(t, err)
 	if !fileDataEqual(t, downloadedFile, testData) {
 		testhelpers.FailImpl(t, "Downloaded file does not contain expected data")
 	}
@@ -64,19 +65,12 @@ func TestIpfsHelper(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 	err = ipfsC.Close()
 	testhelpers.RequireImpl(t, err)
-	testTimeout := 500 * time.Millisecond
-	finished := make(chan interface{})
-	go func() {
-		downloadedFile, err = ipfsD.downloadFileImpl(ctx, testFileCid, t.TempDir(), testTimeout)
-		if err == nil {
-			testhelpers.FailImpl(t, "Download attempt did not fail as expected")
-		}
-		close(finished)
-	}()
-	select {
-	case <-time.After(testTimeout + 100*time.Millisecond):
-		testhelpers.FailImpl(t, "Download attempt did not time out as expected")
-	case <-finished:
+	testTimeout := 300 * time.Millisecond
+	timeoutCtx, cancel := context.WithTimeout(ctx, testTimeout)
+	defer cancel()
+	_, err = ipfsD.DownloadFile(timeoutCtx, testFileCid, t.TempDir())
+	if err == nil {
+		testhelpers.FailImpl(t, "Download attempt did not fail as expected")
 	}
 	err = ipfsD.Close()
 	testhelpers.RequireImpl(t, err)
