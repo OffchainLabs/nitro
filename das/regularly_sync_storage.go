@@ -56,6 +56,7 @@ func (r *RegularlySyncStorage) Start(ctx context.Context) {
 	r.StopWaiter.Start(ctx, r)
 	r.StopWaiter.LaunchThread(func(ctx context.Context) {
 		regularSyncTicker := time.NewTicker(r.syncInterval)
+		defer regularSyncTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
