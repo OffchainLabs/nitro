@@ -42,7 +42,7 @@ func TestQueue(t *testing.T) {
 
 	// Save the capacity to calculate how many elements we need to pop.
 	bigCap := cap(q.slice)
-	if bigCap <= initNumElements {
+	if bigCap < initNumElements {
 		testhelpers.FailImpl(t, fmt.Sprintf("Unexpected capacity %d<%d: ", bigCap, initNumElements))
 	}
 
