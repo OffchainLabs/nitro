@@ -75,7 +75,7 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout 
 	if err != nil {
 		return err
 	}
-	err = f.Chmod(0600)
+	err = f.Chmod(0o600)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (s *LocalFileStorageService) putKeyValue(ctx context.Context, key common.Ha
 	if err != nil {
 		return err
 	}
-	err = f.Chmod(0600)
+	err = f.Chmod(0o600)
 	if err != nil {
 		return err
 	}
