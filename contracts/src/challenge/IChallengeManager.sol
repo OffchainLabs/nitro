@@ -67,8 +67,6 @@ interface IChallengeManager {
 
     function isTimedOut(uint64 challengeIndex) external view returns (bool);
 
-    function currentResponderTimeLeft(uint64 challengeIndex_) external view returns (uint256);
-
     function clearChallenge(uint64 challengeIndex_) external;
 
     function timeout(uint64 challengeIndex_) external;
