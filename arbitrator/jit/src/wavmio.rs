@@ -179,6 +179,11 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
         }
     }
 
+    // see if this is a known preimage
+    if preimage.is_none() {
+        preimage = env.preimages.get(hash);
+    }
+
     // see if Go has the preimage
     if preimage.is_none() {
         if let Some((writer, reader)) = &mut env.process.socket {
@@ -192,11 +197,6 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
                 preimage = Some(&temporary);
             }
         }
-    }
-
-    // see if this is a known preimage
-    if preimage.is_none() {
-        preimage = env.preimages.get(hash);
     }
 
     let preimage = match preimage {
@@ -290,6 +290,13 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         let position = socket::read_u64(stream)?;
         let message = socket::read_bytes(stream)?;
         env.delayed_messages.insert(position, message);
+    }
+
+    let preimage_count = socket::read_u64(stream)?;
+    for _ in 0..preimage_count {
+        let hash = socket::read_bytes32(stream)?;
+        let preimage = socket::read_bytes(stream)?;
+        env.preimages.insert(hash, preimage);
     }
 
     if socket::read_u8(stream)? != socket::READY {

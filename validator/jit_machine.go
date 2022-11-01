@@ -184,7 +184,7 @@ func (machine *JitMachine) prove(
 
 	success := []byte{successByte}
 	another := []byte{anotherByte}
-	ready := []byte{successByte, readyByte}
+	ready := []byte{readyByte}
 
 	// send inbox
 	for _, batch := range entry.BatchInfo {
@@ -214,6 +214,25 @@ func (machine *JitMachine) prove(
 			return state, err
 		}
 	}
+	if err := writeExact(success); err != nil {
+		return state, err
+	}
+
+	// send known preimages
+	knownPreimages := entry.Preimages
+	if err := writeUint64(uint64(len(knownPreimages))); err != nil {
+		return state, err
+	}
+	for hash, preimage := range knownPreimages {
+		if err := writeExact(hash[:]); err != nil {
+			return state, err
+		}
+		if err := writeBytes(preimage); err != nil {
+			return state, err
+		}
+	}
+
+	// signal that we are done sending global state
 	if err := writeExact(ready); err != nil {
 		return state, err
 	}
