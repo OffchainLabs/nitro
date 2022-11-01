@@ -586,25 +586,39 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		)
 	}
 	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(uint64(nextMovePos))
+	expectedState, expectedStatus, err := m.blockChallengeBackend.GetInfoAtStep(uint64(nextMovePos + 1))
+	if err != nil {
+		return nil, err
+	}
 	err = m.createInitialMachine(ctx, blockNum, tooFar)
 	if err != nil {
 		return nil, err
 	}
 	// TODO: we might also use HostIoMachineTo Speed things up
-	stepCountMachine := m.initialMachine.Clone()
+	initialRunMachine := m.initialMachine.Clone()
 	var stepCount uint64
-	for stepCountMachine.IsRunning() {
+	for initialRunMachine.IsRunning() {
 		stepsPerLoop := uint64(1_000_000_000)
 		if stepCount > 0 {
 			log.Debug("step count machine", "block", blockNum, "steps", stepCount)
 		}
-		err = stepCountMachine.Step(ctx, stepsPerLoop)
+		err = initialRunMachine.Step(ctx, stepsPerLoop)
 		if err != nil {
 			return nil, err
 		}
 		stepCount += stepsPerLoop
 	}
-	stepCount = stepCountMachine.GetStepCount()
+	stepCount = initialRunMachine.GetStepCount()
+	computedStatus := initialRunMachine.Status()
+	if expectedStatus != computedStatus {
+		return nil, fmt.Errorf("after block %v expected status %v but got %v", blockNum, expectedStatus, computedStatus)
+	}
+	if computedStatus == StatusFinished {
+		computedState := initialRunMachine.GetGlobalState()
+		if computedState != expectedState {
+			return nil, fmt.Errorf("after block %v expected global state %v but got %v", blockNum, expectedState, computedState)
+		}
+	}
 	log.Info("issuing one step proof", "challenge", m.challengeIndex, "stepCount", stepCount, "blockNum", blockNum)
 	return m.blockChallengeBackend.IssueExecChallenge(
 		m.challengeCore,
