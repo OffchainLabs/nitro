@@ -538,7 +538,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	util.MintBalance(&posterFeeDestination, p.PosterFee, p.evm, scenario, purpose)
 	if p.state.ArbOSVersion() >= 10 {
 		if _, err := p.state.L1PricingState().AddToL1FeesAvailable(p.PosterFee); err != nil {
-			log.Error("failed to update L1FeesAvailable: "+err.Error(), "err", err)
+			log.Error("failed to update L1FeesAvailable: ", "err", err)
 		}
 	}
 

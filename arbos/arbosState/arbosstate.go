@@ -278,7 +278,7 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, s
 		case 7:
 			// no state changes needed
 		case 8:
-		// no state changes needed
+			// no state changes needed
 		case 9:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)))
 		default:
