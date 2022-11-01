@@ -33,6 +33,11 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
+var (
+	sequencerBatchPostMethodName          = "addSequencerL2BatchFromOrigin0"
+	sequencerBatchPostWithBlobsMethodName = "addSequencerL2BatchWithBlobs"
+)
+
 type batchPosterPosition struct {
 	MessageCount        arbutil.MessageIndex
 	DelayedMessageCount uint64
@@ -429,9 +434,9 @@ func (b *BatchPoster) encodeAddBatch(
 	l2MessageData []byte,
 	delayedMsg uint64,
 ) (*dataposter.DataToPost, error) {
-	methodName := "addSequencerL2BatchFromOrigin0"
+	methodName := sequencerBatchPostMethodName
 	if b.config().EIP4844 {
-		methodName = "addSequencerL2BatchWithBlobs"
+		methodName = sequencerBatchPostWithBlobsMethodName
 	}
 	method, ok := b.seqInboxABI.Methods[methodName]
 	if !ok {
@@ -467,26 +472,6 @@ func (b *BatchPoster) encodeAddBatch(
 	fullSequencerInboxCalldata = append(fullSequencerInboxCalldata, sequencerInboxCalldata...)
 	dataToPost.SequencerInboxCalldata = fullSequencerInboxCalldata
 	return dataToPost, nil
-}
-
-func (b *BatchPoster) encodeAddBatchBlob(seqNum *big.Int, prevMsgNum arbutil.MessageIndex, newMsgNum arbutil.MessageIndex, delayedMsg uint64) ([]byte, error) {
-	method, ok := b.seqInboxABI.Methods["addSequencerL2BatchWithBlob0"]
-	if !ok {
-		return nil, errors.New("failed to find add batch with blob method")
-	}
-	inputData, err := method.Inputs.Pack(
-		seqNum,
-		new(big.Int).SetUint64(delayedMsg),
-		common.HexToAddress(b.config().GasRefunderAddress),
-		new(big.Int).SetUint64(uint64(prevMsgNum)),
-		new(big.Int).SetUint64(uint64(newMsgNum)),
-	)
-	if err != nil {
-		return nil, err
-	}
-	fullData := append([]byte{}, method.ID...)
-	fullData = append(fullData, inputData...)
-	return fullData, nil
 }
 
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64) (uint64, error) {
