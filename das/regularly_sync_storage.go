@@ -57,21 +57,10 @@ func NewRegularlySyncStorage(syncFromStorageServices []*IterableStorageService, 
 func (r *RegularlySyncStorage) Start(ctx context.Context) {
 	// Start thread for regular sync
 	r.StopWaiter.Start(ctx, r)
-	r.StopWaiter.LaunchThread(func(ctx context.Context) {
-		regularSyncTicker := time.NewTicker(r.syncInterval)
-		defer regularSyncTicker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-regularSyncTicker.C:
-				r.syncAllStorages(ctx)
-			}
-		}
-	})
+	r.CallIteratively(r.syncAllStorages)
 }
 
-func (r *RegularlySyncStorage) syncAllStorages(ctx context.Context) {
+func (r *RegularlySyncStorage) syncAllStorages(ctx context.Context) time.Duration {
 	for syncFrom, lastSyncedHash := range r.lastSyncedHashOfEachSyncFromStorageService {
 		end := syncFrom.End(ctx)
 		if (end == common.Hash{}) {
@@ -102,4 +91,5 @@ func (r *RegularlySyncStorage) syncAllStorages(ctx context.Context) {
 		}
 		r.lastSyncedHashOfEachSyncFromStorageService[syncFrom] = end
 	}
+	return r.syncInterval
 }
