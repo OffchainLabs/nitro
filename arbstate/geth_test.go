@@ -132,9 +132,11 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 			Number:     big.NewInt(1000),
 			Difficulty: big.NewInt(1000),
 		}
-		gasPool := core.GasPool(100000)
+		gasPool := core.GasPool{}
+		gasPool.AddGas(100000)
+		gasPool.AddDataGas(100000)
 		for _, tx := range txes {
-			_, _, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+			_, _, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, big.NewInt(100000), tx, &header.GasUsed, vm.Config{}, nil)
 			if err != nil {
 				Fail(t, err)
 			}
