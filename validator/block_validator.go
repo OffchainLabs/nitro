@@ -118,7 +118,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	PrerecordedBlocks:        128,
 	CurrentModuleRoot:        "current",
 	PendingUpgradeModuleRoot: "latest",
-	FailureIsFatal:           false,
+	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 }
 
@@ -133,7 +133,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PrerecordedBlocks:        64,
 	CurrentModuleRoot:        "latest",
 	PendingUpgradeModuleRoot: "latest",
-	FailureIsFatal:           false,
+	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
 }
 
@@ -146,6 +146,7 @@ type valStatusField uint32
 const (
 	Unprepared valStatusField = iota
 	RecordSent
+	RecordFailed
 	Prepared
 	Failed
 	Valid
@@ -195,6 +196,22 @@ func NewBlockValidator(
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
 	return validator, nil
+}
+
+func (v *BlockValidator) possiblyFatal(err error) {
+	if v.Stopped() {
+		return
+	}
+	if err == nil {
+		return
+	}
+	log.Error("Error during validation", "err", err)
+	if v.config().FailureIsFatal {
+		select {
+		case v.fatalErr <- err:
+		default:
+		}
+	}
 }
 
 func (v *BlockValidator) recentlyValid(header *types.Header) {
@@ -326,7 +343,8 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 			return
 		}
 		if err != nil {
-			log.Error("Error while recording", "err", err)
+			s.replaceStatus(RecordSent, RecordFailed) // after that - could be removed from validations map
+			log.Error("Error while recording", "err", err, "status", s.getStatus())
 			return
 		}
 		v.recentStateComputed(s.Entry.PrevBlockHeader)
@@ -535,6 +553,8 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	)
 }
 
+var ErrValidationCanceled = errors.New("validation of block cancelled")
+
 func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
 	if currentStatus := validationStatus.getStatus(); currentStatus != Prepared {
 		log.Error("attempted to validate unprepared validation entry", "status", currentStatus)
@@ -560,71 +580,50 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 
 		type replay = func(context.Context, *validationEntry, common.Hash) (GoGlobalState, error)
 
-		execValidation := func(replay replay, name string) (bool, bool) {
+		execValidation := func(replay replay, validationType string) error {
 			gsEnd, err := replay(ctx, entry, moduleRoot)
 
 			if err != nil {
 				canceled := ctx.Err() != nil
 				if canceled {
-					log.Info(
-						"Validation of block canceled", "blockNr", entry.BlockNumber,
-						"blockHash", entry.BlockHash, "name", name, "err", err,
-					)
-					return false, false
+					return fmt.Errorf("%w: blockNr: %v, hash: %v, validationType: %v",
+						ErrValidationCanceled, entry.BlockNumber, entry.BlockHash, validationType)
 				}
-				log.Error(
-					"Validation of block failed", "blockNr", entry.BlockNumber,
-					"blockHash", entry.BlockHash, "moduleRoot", moduleRoot,
-					"name", name, "err", err,
-				)
-				return false, true
+				return fmt.Errorf("validation of block failed. blockNr: %v, hash: %v, validationType: %v err: %w",
+					entry.BlockNumber, entry.BlockHash, validationType, err)
 			}
 
 			var gsExpected GoGlobalState
 			gsExpected, err = entry.expectedEnd()
 			if err != nil || gsEnd != gsExpected {
-				log.Error(
-					"validation failed", "moduleRoot", moduleRoot, "got", gsEnd,
-					"expected", gsExpected, "expHeader", entry.BlockHeader, "name", name,
-					"gsErr", err,
-				)
-				return false, true
+				return fmt.Errorf("validation of block failed. moduleRoot: %v got: %v expected: %v expectedHeader: %v, validationType: %v, gsErr: %w",
+					moduleRoot, gsEnd, gsExpected, entry.BlockHeader, validationType, err)
 			}
 
-			return true, false
+			return nil
 		}
 
 		before := time.Now()
-		writeBlock := false // we write the block if either fail
 
 		config := v.config()
-		valid := true
+		var valError error
 		if config.ArbitratorValidator {
-			thisValid, thisWriteBlock := execValidation(v.executeBlock, "arbitrator")
-			valid = valid && thisValid
-			writeBlock = writeBlock || thisWriteBlock
+			valError = execValidation(v.executeBlock, "arbitrator")
 		}
-		if config.JitValidator {
-			thisValid, thisWriteBlock := execValidation(v.jitBlock, "jit")
-			valid = valid && thisValid
-			writeBlock = writeBlock || thisWriteBlock
+		if config.JitValidator && valError == nil {
+			valError = execValidation(v.jitBlock, "jit")
 		}
-
-		if writeBlock {
-			err := v.writeToFile(
-				entry, moduleRoot, seqMsg,
-			)
-			if err != nil {
-				log.Error("failed to write file", "err", err)
-			}
-		}
-
-		if !valid {
-			if v.config().FailureIsFatal && ctx.Err() == nil {
-				select {
-				case v.fatalErr <- errors.Errorf("error validating block nr. %d expHash %v", entry.BlockNumber, entry.BlockHash):
-				default:
+		if valError != nil {
+			if errors.Is(valError, ErrValidationCanceled) {
+				log.Info("validation cancelled", "info", valError)
+			} else {
+				err := v.writeToFile(
+					entry, moduleRoot, seqMsg,
+				)
+				if err != nil {
+					log.Error("failed to write file", "err", err)
 				}
+				v.possiblyFatal(valError)
 			}
 			validationStatus.setStatus(Failed)
 			return
@@ -794,7 +793,13 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 			log.Error("bad entry trying to send recordings")
 			return
 		}
-		if validationStatus.getStatus() == Unprepared {
+		currentStatus := validationStatus.getStatus()
+		if currentStatus == RecordFailed {
+			// retry
+			v.validations.Delete(nextRecord)
+			return
+		}
+		if currentStatus == Unprepared {
 			prevHeader := validationStatus.Entry.PrevBlockHeader
 			if prevHeader != nil {
 				_, err := v.recordingDatabase.GetOrRecreateState(ctx, prevHeader, stateLogFunc)
