@@ -1,52 +1,19 @@
-<br />
-<p align="center">
-  <a href="https://arbitrum.io/">
-    <img src="https://arbitrum.io/wp-content/uploads/2021/08/Arbitrum_Symbol-Full-color-White-background-768x840.png" alt="Logo" width="80" height="80">
-  </a>
+# Arbitrum Nitro
 
-  <h3 align="center">Arbitrum Nitro</h3>
-
-  <p align="center">
-    <a href="https://developer.arbitrum.io/"><strong>Next Generation Ethereum L2 Technology »</strong></a>
-    <br />
-  </p>
-</p>
-
-## About Arbitrum Nitro
-
-<img src="https://arbitrum.io/wp-content/uploads/2021/08/Arbitrum_Symbol-Full-color-White-background-768x840.png" alt="Logo" width="80" height="80">
-
-Nitro is the latest iteration of the Arbitrum technology. It is a fully integrated, complete
-layer 2 optimistic rollup system, including fraud proofs, the sequencer, the token bridges, 
-advanced calldata compression, and more.
-
-See the live docs-site [here](https://developer.arbitrum.io/) (or [here](./docs) for markdown docs source.)
-
-The Nitro stack is built on several innovations. At its core is a new prover, which can do Arbitrum’s classic 
-interactive fraud proofs over WASM code. That means the L2 Arbitrum engine can be written and compiled using 
-standard languages and tools, replacing the custom-designed language and compiler used in previous Arbitrum
-versions. In normal execution, 
-validators and nodes run the Nitro engine compiled to native code, switching to WASM if a fraud proof is needed. 
-We compile the core of Geth, the EVM engine that practically defines the Ethereum standard, right into Arbitrum. 
-So the previous custom-built EVM emulator is replaced by Geth, the most popular and well-supported Ethereum client.
-
-The last piece of the stack is a slimmed-down version of our ArbOS component, rewritten in Go, which provides the 
-rest of what’s needed to run an L2 chain: things like cross-chain communication, and a new and improved batching 
-and compression system to minimize L1 costs.
-
-Essentially, Nitro runs Geth at layer 2 on top of Ethereum, and can prove fraud over the core engine of Geth 
-compiled to WASM.
-
-Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on 8/31/22. (See [state migration](https://developer.arbitrum.io/migration/state-migration) and [dapp migration](https://developer.arbitrum.io/migration/dapp_migration) for more info).
-
-## License
-
-We currently have Nitro [licensed](./LICENSE) under a Business Source License, similar to our friends at Uniswap and Aave, with an "Additional Use Grant" to ensure that everyone can have full comfort using and running nodes on all public Arbitrum chains.
-
-## Contact
-
-Discord - [Arbitrum](https://discord.com/invite/5KE54JwyTs)
-
-Twitter: [Arbitrum](https://twitter.com/arbitrum)
+This is a fork of https://github.com/OffchainLabs/nitro with modifications made to better support testing and development of [The Graph's](https://thegraph.com/) multi-layer protocol. See https://github.com/graphprotocol/contracts for details on the protocol contracts.
 
 
+## Quick setup
+
+For a quick setup of your local Nitro environment, run:
+
+```bash
+  git clone https://github.com/edgeandnode/nitro
+  pushd nitro
+  git submodule update --init --recursive
+  ./test-node.bash --init --no-blockscout --detach
+```
+
+This will start a local Arbitrum testnet with a single sequencer node and all Arbitrum contracts deployed and ready to go. The L1 node will be available at http://localhost:8545 while the L2 sequencer at http://localhost:8547. A prefunded account can be accessed using the following private key: `e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2`
+
+__Note__: if you run the test nodes in "attached mode" (by removing the `--detach` flag) you'll need to manually deploy the Arbitrum contracts by running `docker-compose run network-gen` on a separate terminal.
