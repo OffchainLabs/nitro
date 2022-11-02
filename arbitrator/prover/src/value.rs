@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use crate::{binary::FloatType, console::Color, utils::Bytes32};
 use digest::Digest;
@@ -86,6 +86,33 @@ impl ProgramCounter {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SmallProgramCounter {
+    pub module: u32,
+    pub func: u32,
+    pub inst: u32,
+}
+
+impl From<SmallProgramCounter> for ProgramCounter {
+    fn from(src: SmallProgramCounter) -> ProgramCounter {
+        ProgramCounter {
+            module: src.module.try_into().unwrap(),
+            func: src.func.try_into().unwrap(),
+            inst: src.inst.try_into().unwrap(),
+        }
+    }
+}
+
+impl From<ProgramCounter> for SmallProgramCounter {
+    fn from(src: ProgramCounter) -> SmallProgramCounter {
+        SmallProgramCounter {
+            module: src.module.try_into().unwrap(),
+            func: src.func.try_into().unwrap(),
+            inst: src.inst.try_into().unwrap(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Value {
     I32(u32),
@@ -94,7 +121,7 @@ pub enum Value {
     F64(f64),
     RefNull,
     FuncRef(u32),
-    InternalRef(ProgramCounter),
+    InternalRef(SmallProgramCounter),
 }
 
 impl Value {
@@ -118,7 +145,7 @@ impl Value {
             Value::F64(x) => x.to_bits().into(),
             Value::RefNull => Bytes32::default(),
             Value::FuncRef(x) => x.into(),
-            Value::InternalRef(pc) => pc.serialize(),
+            Value::InternalRef(pc) => ProgramCounter::from(pc).serialize(),
         }
     }
 

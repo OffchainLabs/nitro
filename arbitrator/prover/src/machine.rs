@@ -23,6 +23,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
+use smallvec::SmallVec;
 use std::{
     borrow::Cow,
     convert::TryFrom,
@@ -145,7 +146,7 @@ impl Function {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct StackFrame {
     return_ref: Value,
-    locals: Vec<Value>,
+    locals: SmallVec<[Value; 16]>,
     caller_module: u32,
     caller_module_internals: u32,
 }
@@ -265,7 +266,7 @@ struct Module {
     types: Arc<Vec<FunctionType>>,
     internals_offset: u32,
     names: Arc<NameCustomSection>,
-    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
+    host_call_hooks: Arc<Vec<(String, String)>>,
     start_function: Option<u32>,
     func_types: Arc<Vec<FunctionType>>,
     exports: Arc<HashMap<String, u32>>,
@@ -320,7 +321,7 @@ impl Module {
                 }
                 func_type_idxs.push(ty);
                 code.push(func);
-                host_call_hooks.push(Some((import.module.into(), import.name.into())));
+                host_call_hooks.push((import.module.into(), import.name.into()));
             } else {
                 bail!("Unsupport import kind {:?}", import);
             }
@@ -349,7 +350,6 @@ impl Module {
                 func_ty.clone(),
                 types,
             )?);
-            host_call_hooks.push(None);
         }
         ensure!(
             bin.memories.len() <= 1,
@@ -1132,7 +1132,7 @@ impl Machine {
             types: Arc::new(entrypoint_types),
             names: Arc::new(entrypoint_names),
             internals_offset: 0,
-            host_call_hooks: Arc::new(vec![None]),
+            host_call_hooks: Arc::new(Vec::new()),
             start_function: None,
             func_types: Arc::new(vec![FunctionType::default()]),
             exports: Arc::new(HashMap::default()),
@@ -1426,27 +1426,6 @@ impl Machine {
                 error!();
             }
             let inst = func.code[self.pc.inst];
-            if self.pc.inst == 1 {
-                if let Some(hook) = module
-                    .host_call_hooks
-                    .get(self.pc.func)
-                    .cloned()
-                    .and_then(|x| x)
-                {
-                    if let Err(err) = Self::host_call_hook(
-                        &self.value_stack,
-                        module,
-                        &mut self.stdio_output,
-                        &hook.0,
-                        &hook.1,
-                    ) {
-                        eprintln!(
-                            "Failed to process host call hook for host call {:?} {:?}: {}",
-                            hook.0, hook.1, err,
-                        );
-                    }
-                }
-            }
             self.pc.inst += 1;
             match inst.opcode {
                 Opcode::Unreachable => error!(),
@@ -1466,6 +1445,20 @@ impl Machine {
                         caller_module,
                         caller_module_internals,
                     });
+                    if let Some(hook) = module.host_call_hooks.get(self.pc.func) {
+                        if let Err(err) = Self::host_call_hook(
+                            &self.value_stack,
+                            module,
+                            &mut self.stdio_output,
+                            &hook.0,
+                            &hook.1,
+                        ) {
+                            eprintln!(
+                                "Failed to process host call hook for host call {:?} {:?}: {}",
+                                hook.0, hook.1, err,
+                            );
+                        }
+                    }
                 }
                 Opcode::ArbitraryJump => {
                     self.pc.inst = inst.argument_data as usize;
@@ -1483,6 +1476,7 @@ impl Machine {
                     match frame.return_ref {
                         Value::RefNull => error!(),
                         Value::InternalRef(pc) => {
+                            let pc = ProgramCounter::from(pc);
                             let changing_module = pc.module != self.pc.module;
                             if changing_module {
                                 flush_module!();
@@ -1498,7 +1492,7 @@ impl Machine {
                 }
                 Opcode::Call => {
                     let current_frame = self.frame_stack.last().unwrap();
-                    self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(Value::InternalRef(self.pc.into()));
                     self.value_stack
                         .push(Value::I32(current_frame.caller_module));
                     self.value_stack
@@ -1509,7 +1503,7 @@ impl Machine {
                 }
                 Opcode::CrossModuleCall => {
                     flush_module!();
-                    self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(Value::InternalRef(self.pc.into()));
                     self.value_stack.push(Value::I32(self.pc.module as u32));
                     self.value_stack.push(Value::I32(module.internals_offset));
                     let (call_module, call_func) =
@@ -1521,7 +1515,7 @@ impl Machine {
                     func = &module.funcs[self.pc.func];
                 }
                 Opcode::CallerModuleInternalCall => {
-                    self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(Value::InternalRef(self.pc.into()));
                     self.value_stack.push(Value::I32(self.pc.module as u32));
                     self.value_stack.push(Value::I32(module.internals_offset));
 
@@ -1557,7 +1551,7 @@ impl Machine {
                         match elem.val {
                             Value::FuncRef(call_func) => {
                                 let current_frame = self.frame_stack.last().unwrap();
-                                self.value_stack.push(Value::InternalRef(self.pc));
+                                self.value_stack.push(Value::InternalRef(self.pc.into()));
                                 self.value_stack
                                     .push(Value::I32(current_frame.caller_module));
                                 self.value_stack
@@ -2389,7 +2383,7 @@ impl Machine {
         push_pc(self.pc);
         for frame in self.frame_stack.iter().rev() {
             if let Value::InternalRef(pc) = frame.return_ref {
-                push_pc(pc);
+                push_pc(pc.into());
             }
         }
         res

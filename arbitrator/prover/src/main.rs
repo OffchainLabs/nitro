@@ -75,6 +75,8 @@ struct Opts {
     generate_binaries: Option<PathBuf>,
     #[structopt(long)]
     skip_until_host_io: bool,
+    #[structopt(long)]
+    max_steps: Option<u64>,
 }
 
 fn parse_size_delim(path: &Path) -> Result<Vec<Vec<u8>>> {
@@ -229,6 +231,12 @@ fn main() -> Result<()> {
     }
     let mut skipping_profiling = opts.skip_until_host_io;
     while !mach.is_halted() {
+        if let Some(max_steps) = opts.max_steps {
+            if mach.get_steps() > max_steps {
+                break;
+            }
+        }
+
         let next_inst = mach.get_next_instruction().unwrap();
         let next_opcode = next_inst.opcode;
 
