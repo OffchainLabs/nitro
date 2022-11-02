@@ -247,7 +247,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         }
 
         address.pop(); // pop the newline
-        if address.len() == 0 {
+        if address.is_empty() {
             return Ok(());
         }
         if debug {
