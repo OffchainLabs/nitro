@@ -38,7 +38,8 @@ func FuzzPrecompiles(f *testing.F) {
 		}
 
 		// Create an EVM
-		gp := core.GasPool(fuzzGas)
+		gp := core.GasPool{}
+		gp.AddGas(fuzzGas)
 		txContext := vm.TxContext{
 			GasPrice: common.Big1,
 		}
@@ -80,9 +81,11 @@ func FuzzPrecompiles(f *testing.F) {
 			new(big.Int),
 			new(big.Int),
 			new(big.Int),
+			new(big.Int),
 			input,
 			nil,
-			true,
+			nil,
+			false,
 		)
 		_, _ = core.ApplyMessage(evm, msg, &gp)
 	})
