@@ -50,8 +50,6 @@ func EvaluatePolyInEvaluationForm(yFr *bls.Fr, poly []bls.Fr, x *bls.Fr) {
 }
 
 func frToBig(b *big.Int, val *bls.Fr) {
-	//b.SetBytes((*kilicbls.Fr)(val).RedToBytes())
-	// silly double conversion
 	v := bls.FrTo32(val)
 	for i := 0; i < 16; i++ {
 		v[31-i], v[i] = v[i], v[31-i]

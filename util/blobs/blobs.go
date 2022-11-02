@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -203,7 +202,7 @@ func (blob *Blob) UnmarshalText(text []byte) error {
 	j := 0
 	for i := 2; i < l; i += 64 {
 		if _, err := hex.Decode(blob[j][:], text[i:i+64]); err != nil {
-			return fmt.Errorf("blob item %d is not formatted correctly: %v", j, err)
+			return fmt.Errorf("blob item %d is not formatted correctly: %w", j, err)
 		}
 		j += 1
 	}
@@ -230,7 +229,7 @@ func (li BlobKzgs) Parse() ([]*bls.G1Point, error) {
 	for i, c := range li {
 		p, err := c.Point()
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse commitment %d: %v", i, err)
+			return nil, fmt.Errorf("failed to parse commitment %d: %w", i, err)
 		}
 		out[i] = p
 	}
@@ -265,12 +264,6 @@ func (li BlobKzgs) HashTreeRoot(hFn tree.HashFn) tree.Root {
 	}, uint64(len(li)), params.MaxBlobsPerBlock)
 }
 
-func (li BlobKzgs) copy() BlobKzgs {
-	cpy := make(BlobKzgs, len(li))
-	copy(cpy, li)
-	return cpy
-}
-
 type Blobs []Blob
 
 func (a *Blobs) Deserialize(dr *codec.DecodingReader) error {
@@ -303,12 +296,6 @@ func (li Blobs) HashTreeRoot(hFn tree.HashFn) tree.Root {
 		}
 		return nil
 	}, length, params.MaxBlobsPerBlock)
-}
-
-func (blobs Blobs) copy() Blobs {
-	cpy := make(Blobs, len(blobs))
-	copy(cpy, blobs) // each blob element is an array and gets deep-copied
-	return cpy
 }
 
 type BlobsAndCommitments struct {
@@ -386,32 +373,6 @@ type BlobTxWrapData struct {
 	KzgAggregatedProof KZGProof
 }
 
-func (b *BlobTxWrapData) sizeWrapData() common.StorageSize {
-	return common.StorageSize(4 + 4 + b.BlobKzgs.ByteLength() + b.Blobs.ByteLength() + b.KzgAggregatedProof.ByteLength())
-}
-
-func (b *BlobTxWrapData) verifyVersionedHash(inner types.TxData) error {
-	blobTx, ok := inner.(*types.SignedBlobTx)
-	if !ok {
-		return fmt.Errorf("expected signed blob tx, got %T", inner)
-	}
-	if a, b := len(blobTx.Message.BlobVersionedHashes), params.MaxBlobsPerBlock; a > b {
-		return fmt.Errorf("too many blobs in blob tx, got %d, expected no more than %d", a, b)
-	}
-	if a, b := len(b.BlobKzgs), len(b.Blobs); a != b {
-		return fmt.Errorf("expected equal amount but got %d kzgs and %d blobs", a, b)
-	}
-	if a, b := len(b.BlobKzgs), len(blobTx.Message.BlobVersionedHashes); a != b {
-		return fmt.Errorf("expected equal amount but got %d kzgs and %d versioned hashes", a, b)
-	}
-	for i, h := range blobTx.Message.BlobVersionedHashes {
-		if computed := b.BlobKzgs[i].ComputeVersionedHash(); computed != h {
-			return fmt.Errorf("versioned hash %d supposedly %s but does not match computed %s", i, h, computed)
-		}
-	}
-	return nil
-}
-
 func ToGethWrapData(b *BlobTxWrapData) types.TxWrapData {
 	proof := [48]byte{}
 	copy(proof[:], b.KzgAggregatedProof[:])
@@ -432,35 +393,6 @@ func ToGethWrapData(b *BlobTxWrapData) types.TxWrapData {
 		Blobs:              blobs,
 		KzgAggregatedProof: proof,
 	}
-}
-
-func (b *BlobTxWrapData) kzgs() BlobKzgs {
-	return b.BlobKzgs
-}
-
-func (b *BlobTxWrapData) blobs() Blobs {
-	return b.Blobs
-}
-
-func (b *BlobTxWrapData) aggregatedProof() KZGProof {
-	return b.KzgAggregatedProof
-}
-
-func (b *BlobTxWrapData) encodeTyped(w io.Writer, txdata types.TxData) error {
-	if _, err := w.Write([]byte{types.BlobTxType}); err != nil {
-		return err
-	}
-	blobTx, ok := txdata.(*types.SignedBlobTx)
-	if !ok {
-		return fmt.Errorf("expected signed blob tx, got %T", txdata)
-	}
-	wrapped := BlobTxWrapper{
-		Tx:                 *blobTx,
-		BlobKzgs:           b.BlobKzgs,
-		Blobs:              b.Blobs,
-		KzgAggregatedProof: b.KzgAggregatedProof,
-	}
-	return types.EncodeSSZ(w, &wrapped)
 }
 
 // EncodeBlobs takes in raw bytes data to convert into blobs used for KZG commitment EIP-4844
@@ -505,7 +437,7 @@ func (blobs Blobs) Parse() ([][]bls.Fr, error) {
 	for i, b := range blobs {
 		blob, err := b.Parse()
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse blob %d: %v", i, err)
+			return nil, fmt.Errorf("failed to parse blob %d: %w", i, err)
 		}
 		out[i] = blob
 	}
@@ -561,7 +493,7 @@ func (blobs Blobs) ComputeCommitmentsAndAggregatedProof() (commitments []KZGComm
 		hashToFr(&z, sum)
 
 		var y bls.Fr
-		kzg.EvaluatePolyInEvaluationForm(&y, aggregatePoly[:], &z)
+		kzg.EvaluatePolyInEvaluationForm(&y, aggregatePoly, &z)
 
 		aggProofG1, err := kzg.ComputeProof(aggregatePoly, &z)
 		if err != nil {
