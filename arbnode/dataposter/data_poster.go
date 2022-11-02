@@ -216,14 +216,6 @@ func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big
 	return newFeeCap, newTipCap, nil
 }
 
-type SignedBlobTxWrapper struct {
-	types.SignedBlobTx
-}
-
-func (s *SignedBlobTxWrapper) isFake() bool {
-	return false
-}
-
 // DataToPost defines a struct containing sequencer inbox calldata, which will be sent in a transaction
 // to the sequencer inbox and an optional set of L2-specific message data which can be sent via an
 // EIP-4844 style, shard blob transaction instead of calldata to L1 to save on costs.
