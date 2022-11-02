@@ -1,0 +1,5 @@
+# Reference > https://hub.docker.com/r/offchainlabs/nitro-node
+ARG VERSION_TAG=v2.0.8
+ARG VERSION_HASH=5b9fe9c
+
+FROM offchainlabs/nitro-node:$VERSION_TAG-$VERSION_HASH-dev

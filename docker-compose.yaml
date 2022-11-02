@@ -59,7 +59,7 @@ services:
     pid: host # allow debugging
     build:
       context: .
-      target: nitro-node-dev
+      dockerfile: Dockerfile.nitro-node
     ports:
       - "127.0.0.1:8547:8547"
       - "127.0.0.1:8548:8548"
@@ -124,7 +124,7 @@ services:
     pid: host # allow debugging
     build:
       context: .
-      target: nitro-node-dev
+      dockerfile: Dockerfile.nitro-node
     ports:
       - "127.0.0.1:8047:8547"
       - "127.0.0.1:8048:8548"
@@ -141,7 +141,7 @@ services:
     pid: host # allow debugging
     build:
       context: .
-      target: nitro-node-dev
+      dockerfile: Dockerfile.nitro-node
     ports:
       - "127.0.0.1:8147:8547"
       - "127.0.0.1:8148:8548"
