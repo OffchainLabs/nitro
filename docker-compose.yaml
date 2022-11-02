@@ -205,7 +205,7 @@ services:
       - sequencer
 
   testnode-scripts:
-    build: testnode-scripts/
+    image: tmigone/nitro-testnode-scripts
     volumes:
       - "l1keystore:/home/user/l1keystore"
       - "config:/config"
@@ -228,7 +228,7 @@ services:
       - geth
       - sequencer
     pid: host
-    build: testnode-tokenbridge/
+    image: tmigone/nitro-testnode-tokenbridge
     environment:
       - ARB_URL=http://sequencer:8547
       - ETH_URL=http://geth:8545
