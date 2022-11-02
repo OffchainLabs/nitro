@@ -35,11 +35,11 @@ func Test_encodeAddBatch(t *testing.T) {
 		false, // isConst
 		false, // isPayable
 		[]abi.Argument{
-			{"sequenceNumber", Uint256, false},
-			{"afterDelayedMessagesRead", Uint256, false},
-			{"gasRefunder", Address, false},
-			{"prevMessageCount", Uint256, false},
-			{"newMessageCount", Uint256, false},
+			{Name: "sequenceNumber", Type: Uint256, Indexed: false},
+			{Name: "afterDelayedMessagesRead", Type: Uint256, Indexed: false},
+			{Name: "gasRefunder", Type: Address, Indexed: false},
+			{Name: "prevMessageCount", Type: Uint256, Indexed: false},
+			{Name: "newMessageCount", Type: Uint256, Indexed: false},
 		},
 		nil, // outputs
 	)
