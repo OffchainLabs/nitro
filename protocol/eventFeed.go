@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-type EventFeed[Event interface{}] struct {
+type EventFeed[Event any] struct {
 	mutex    sync.RWMutex
 	pingChan chan struct{} // this gets closed and re-generated whenever an event is appended
 	ctx      context.Context
@@ -13,7 +13,7 @@ type EventFeed[Event interface{}] struct {
 	events   []Event
 }
 
-func NewEventFeed[Event interface{}](ctx context.Context) *EventFeed[Event] {
+func NewEventFeed[Event any](ctx context.Context) *EventFeed[Event] {
 	feed := &EventFeed[Event]{
 		mutex:    sync.RWMutex{},
 		pingChan: make(chan struct{}),

@@ -75,12 +75,12 @@ type Assertion struct {
 	status                  AssertionState
 	sequenceNum             uint64
 	stateCommitment         StateCommitment
-	prev                    *Assertion
+	prev                    Option[*Assertion]
 	isFirstChild            bool
 	firstChildCreationTime  SecondsDuration
 	secondChildCreationTime SecondsDuration
-	challenge               *Challenge
-	staker                  *common.Address
+	challenge               Option[*Challenge]
+	staker                  Option[common.Address]
 }
 
 func NewAssertionChain(ctx context.Context, timeRef TimeReference, challengePeriod SecondsDuration) *AssertionChain {
@@ -92,12 +92,12 @@ func NewAssertionChain(ctx context.Context, timeRef TimeReference, challengePeri
 			height: 0,
 			state:  common.Hash{},
 		},
-		prev:                    nil,
+		prev:                    EmptyOption[*Assertion](),
 		isFirstChild:            false,
 		firstChildCreationTime:  0,
 		secondChildCreationTime: 0,
-		challenge:               nil,
-		staker:                  nil,
+		challenge:               EmptyOption[*Challenge](),
+		staker:                  EmptyOption[common.Address](),
 	}
 	chain := &AssertionChain{
 		mutex:           sync.RWMutex{},
@@ -136,19 +136,19 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 		status:                  PendingAssertionState,
 		sequenceNum:             uint64(len(chain.assertions)),
 		stateCommitment:         commitment,
-		prev:                    prev,
+		prev:                    FullOption[*Assertion](prev),
 		isFirstChild:            prev.firstChildCreationTime == 0,
 		firstChildCreationTime:  0,
 		secondChildCreationTime: 0,
-		challenge:               nil,
-		staker:                  &staker,
+		challenge:               EmptyOption[*Challenge](),
+		staker:                  FullOption[common.Address](staker),
 	}
 	if prev.firstChildCreationTime == 0 {
 		prev.firstChildCreationTime = chain.timeReference.Get()
 	} else if prev.secondChildCreationTime == 0 {
 		prev.secondChildCreationTime = chain.timeReference.Get()
 	}
-	prev.staker = nil
+	prev.staker = EmptyOption[common.Address]()
 	chain.assertions = append(chain.assertions, leaf)
 	chain.dedupe[dedupeCode] = true
 	chain.feed.Append(&CreateLeafEvent{
@@ -164,7 +164,10 @@ func (a *Assertion) RejectForPrev() error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.status != RejectedAssertionState {
+	if a.prev.IsEmpty() {
+		return ErrInvalid
+	}
+	if a.prev.OpenKnownFull().status != RejectedAssertionState {
 		return ErrWrongPredecessorState
 	}
 	a.status = RejectedAssertionState
@@ -178,10 +181,14 @@ func (a *Assertion) RejectForLoss() error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.challenge == nil {
-		return ErrWrongPredecessorState
+	if a.prev.IsEmpty() {
+		return ErrInvalid
 	}
-	winner, err := a.prev.challenge.Winner()
+	chal := a.prev.OpenKnownFull().challenge
+	if chal.IsEmpty() {
+		return ErrOptionIsEmpty
+	}
+	winner, err := chal.OpenKnownFull().Winner()
 	if err != nil {
 		return err
 	}
@@ -199,13 +206,17 @@ func (a *Assertion) ConfirmNoRival() error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.status != ConfirmedAssertionState {
-		return ErrWrongPredecessorState
-	}
-	if a.prev.secondChildCreationTime != 0 {
+	if a.prev.IsEmpty() {
 		return ErrInvalid
 	}
-	if a.chain.timeReference.Get() <= a.prev.firstChildCreationTime.SaturatingAdd(a.chain.challengePeriod) {
+	prev := a.prev.OpenKnownFull()
+	if prev.status != ConfirmedAssertionState {
+		return ErrWrongPredecessorState
+	}
+	if prev.secondChildCreationTime != 0 {
+		return ErrInvalid
+	}
+	if a.chain.timeReference.Get() <= prev.firstChildCreationTime.SaturatingAdd(a.chain.challengePeriod) {
 		return ErrNotYet
 	}
 	a.status = ConfirmedAssertionState
@@ -220,13 +231,17 @@ func (a *Assertion) ConfirmForWin() error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.status != ConfirmedAssertionState {
+	if a.prev.IsEmpty() {
+		return ErrInvalid
+	}
+	prev := a.prev.OpenKnownFull()
+	if prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
-	if a.prev.challenge == nil {
+	if prev.challenge.IsEmpty() {
 		return ErrWrongPredecessorState
 	}
-	winner, err := a.prev.challenge.Winner()
+	winner, err := prev.challenge.OpenKnownFull().Winner()
 	if err != nil {
 		return err
 	}
@@ -256,7 +271,7 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 	if parent.status != PendingAssertionState && parent.chain.LatestConfirmed() != parent {
 		return nil, ErrWrongState
 	}
-	if parent.challenge != nil {
+	if !parent.challenge.IsEmpty() {
 		return nil, ErrInvalid
 	}
 	if parent.secondChildCreationTime == 0 {
@@ -288,7 +303,7 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 	}
 	root.challenge = ret
 	ret.includedHistories[root.commitment.Hash()] = true
-	parent.challenge = ret
+	parent.challenge = FullOption[*Challenge](ret)
 	parent.chain.feed.Append(&StartChallengeEvent{
 		parentSeqNum: parent.sequenceNum,
 	})
@@ -296,7 +311,11 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 }
 
 func (chal *Challenge) AddLeaf(assertion *Assertion, history HistoryCommitment) (*ChallengeVertex, error) {
-	if assertion.prev != chal.parent {
+	if assertion.prev.IsEmpty() {
+		return nil, ErrInvalid
+	}
+	prev := assertion.prev.OpenKnownFull()
+	if prev != chal.parent {
 		return nil, ErrInvalid
 	}
 	if chal.Completed() {
@@ -309,7 +328,7 @@ func (chal *Challenge) AddLeaf(assertion *Assertion, history HistoryCommitment) 
 
 	timer := newCountUpTimer(chain.timeReference)
 	if assertion.isFirstChild {
-		delta, err := assertion.prev.secondChildCreationTime.Sub(assertion.prev.firstChildCreationTime)
+		delta, err := prev.secondChildCreationTime.Sub(prev.firstChildCreationTime)
 		if err != nil {
 			return nil, err
 		}

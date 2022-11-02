@@ -5,39 +5,13 @@ import (
 	"testing"
 )
 
-func TestOldBisectionPoint(t *testing.T) {
-	_, err := oldBisectionPointAlgorithm(13, 9)
-	if err == nil {
-		t.Fatal()
-	}
-	_, err = oldBisectionPointAlgorithm(13, 14)
-	if err == nil {
-		t.Fatal()
-	}
-
-	lo := uint64(26)
-	hi := uint64(45)
-	expected := []uint64{44, 40, 32, 28, 27}
-	for len(expected) > 0 {
-		bp, err := oldBisectionPointAlgorithm(lo, hi)
-		if err != nil {
-			t.Fatal(lo, hi, err)
-		}
-		if bp != expected[0] {
-			t.Fatal(lo, hi, bp, expected[0])
-		}
-		hi = bp
-		expected = expected[1:]
-	}
-}
-
-type bpTestCase struct {
-	pre      uint64
-	post     uint64
-	expected uint64
-}
-
 func TestBisectionPoint(t *testing.T) {
+	type bpTestCase struct {
+		pre      uint64
+		post     uint64
+		expected uint64
+	}
+
 	errorTestCases := []bpTestCase{
 		{12, 13, 0},
 		{13, 9, 0},

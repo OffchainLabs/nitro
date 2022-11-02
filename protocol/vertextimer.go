@@ -74,14 +74,8 @@ func (ct *countUpTimer) set(val SecondsDuration) {
 }
 
 func (ct *countUpTimer) setLocked(val SecondsDuration) {
-	wasRunning := ct.running
-	if wasRunning {
-		ct.running = false
-		ct.zeropointOrValue = ct.timeReference.Get() - ct.zeropointOrValue
-	}
 	ct.zeropointOrValue = val
-	if wasRunning {
-		ct.running = true
+	if ct.running {
 		ct.zeropointOrValue = ct.timeReference.Get() - ct.zeropointOrValue
 	}
 }
