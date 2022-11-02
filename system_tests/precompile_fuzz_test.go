@@ -85,7 +85,7 @@ func FuzzPrecompiles(f *testing.F) {
 			input,
 			nil,
 			nil,
-			false,
+			true,
 		)
 		_, _ = core.ApplyMessage(evm, msg, &gp)
 	})
