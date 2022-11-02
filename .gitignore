@@ -13,3 +13,7 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+.idea/vcs.xml
+.idea/new-rollup-exploration.iml
+.idea/modules.xml
+.idea/workspace.xml
