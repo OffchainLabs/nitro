@@ -283,11 +283,12 @@ func (p *DataPoster[Meta]) prepareTxTypeToPost(
 				MaxFeePerDataGas:    view.Uint256View(*fCap), // Use the same fee cap as gas for now.
 			},
 		}
-		txWrapData := &types.BlobTxWrapData{
+		blobWrap := &blobs.BlobTxWrapData{
 			BlobKzgs:           commitments,
 			Blobs:              dataBlobs,
 			KzgAggregatedProof: aggregatedProof,
 		}
+		txWrapData := blobs.ToGethWrapData(blobWrap)
 		return types.NewTx(txData, types.WithTxWrapData(txWrapData)), txData, txWrapData, nil
 	}
 	txData := &types.DynamicFeeTx{
