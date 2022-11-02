@@ -13,4 +13,4 @@ To deploy contracts onto an Arbitrum chain, simple set the RPC endpoint (see [Pu
 
 For demos of deploying with hardhat see the [Pet Shop](https://github.com/OffchainLabs/arbitrum-tutorials/tree/master/packages/demo-dapp-pet-shop) and [Election](https://github.com/OffchainLabs/arbitrum-tutorials/tree/master/packages/demo-dapp-election) dapp tutorials.
 
-For info on new / different behavior between Arbitrum and Ethereum, see [Differences with Ethereum](arb-specific-things).
+For info on new / different behavior between Arbitrum and Ethereum, see [Differences with Ethereum](arbitrum-ethereum-differences).
