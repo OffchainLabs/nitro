@@ -1,6 +1,6 @@
 # Overview: The Lifecycle of an Arbitrum Transaction
 
-As an introduction to the various components that compromise the Arbitrum protocol, we'll go step-by-step over the phases an Arbitrum transaction goes through, starting with a client creating a signed transaction, to it ultimately being confirmed back on layer 1.
+As an introduction to the various components that comprise the Arbitrum protocol, we'll go step-by-step over the phases an Arbitrum transaction goes through, starting with a client creating a signed transaction, to it ultimately being confirmed back on layer 1.
 
 We'll also intersperse it with "finality checks," explaining what guarantees the client has over their transaction's finality (i.e., assurances that their transaction's result is guaranteed and won't later be altered) over the course of a transaction's various stages.
 
@@ -46,7 +46,7 @@ At this phase, the client's acceptance of finality relies on trusting the Sequen
 
 Note that even a malicious/faulty Sequencer can only, at worst, reorder or temporarily delay transactions; it cannot, e.g., forge a client's transaction or propose an invalid state update. Given the degree of trust in the Sequencer at phase 2, we sometimes refer to the "instant" receipt that the Sequencer provides as a "soft confirmation."
 
-#### 3. Sequencer posts transaction in a batch (on-chain)
+### 3. Sequencer posts transaction in a batch (on-chain)
 
 The Sequencer will eventually post a batch of L2 transactions which includes our client's transaction onto the underlying L1 (as calldata); under normal conditions, the Sequencer will post batches [every few minutes](https://arbiscan.io/batches).
 
