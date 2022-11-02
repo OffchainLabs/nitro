@@ -141,7 +141,18 @@ func (h *IpfsHelper) GetPeerHostAddresses() ([]string, error) {
 	return addressesStrings, nil
 }
 
+func normalizeCidString(cidString string) string {
+	if strings.HasPrefix(cidString, "ipfs://") {
+		return "/ipfs" + cidString[6:]
+	}
+	if strings.HasPrefix(cidString, "ipns://") {
+		return "/ipns" + cidString[6:]
+	}
+	return cidString
+}
+
 func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
+	cidString = normalizeCidString(cidString)
 	cidPath := icorepath.New(cidString)
 	resolvedPath, err := h.api.ResolvePath(ctx, cidPath)
 	if err != nil {
@@ -224,7 +235,12 @@ func CanBeIpfsPath(pathString string) bool {
 	if len(pathString) < 5 {
 		return false
 	}
-	prefix := pathString[0:5]
+
 	_, err := ipfspath.ParsePath(pathString)
-	return err == nil || prefix == "/ipfs/" || prefix == "/ipld/" || prefix == "/ipns/"
+	return err == nil ||
+		strings.HasPrefix(pathString, "/ipfs/") ||
+		strings.HasPrefix(pathString, "/ipld/") ||
+		strings.HasPrefix(pathString, "/ipns/") ||
+		strings.HasPrefix(pathString, "ipfs://") ||
+		strings.HasPrefix(pathString, "ipns://")
 }
