@@ -75,11 +75,37 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout 
 	if err != nil {
 		return err
 	}
-	err = f.Chmod(0600)
+	err = f.Chmod(0o600)
 	if err != nil {
 		return err
 	}
 	_, err = f.Write(data)
+	if err != nil {
+		return err
+	}
+	err = f.Close()
+	if err != nil {
+		return err
+	}
+
+	return os.Rename(f.Name(), finalPath)
+
+}
+
+func (s *LocalFileStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
+	fileName := EncodeStorageServiceKey(key)
+	finalPath := s.dataDir + "/" + fileName
+
+	// Use a temp file and rename to achieve atomic writes.
+	f, err := os.CreateTemp(s.dataDir, fileName)
+	if err != nil {
+		return err
+	}
+	err = f.Chmod(0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(value)
 	if err != nil {
 		return err
 	}
