@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -80,18 +81,18 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 type SequencingHooks struct {
 	TxErrors               []error
 	DiscardInvalidTxsEarly bool
-	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error
-	PostTxFilter           func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
+	PreTxFilter            func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error
+	PostTxFilter           func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error
 }
 
 func noopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
 		false,
-		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction) error {
+		func(*params.ChainConfig, *types.Header, *state.StateDB, *arbosState.ArbosState, *types.Transaction, common.Address) error {
 			return nil
 		},
-		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
+		func(*types.Header, *arbosState.ArbosState, *types.Transaction, common.Address, uint64, *core.ExecutionResult) error {
 			return nil
 		},
 	}
@@ -109,10 +110,15 @@ func ProduceBlock(
 	batchFetcher FallibleBatchFetcher,
 ) (*types.Block, types.Receipts, error) {
 	var batchFetchErr error
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64) []byte {
+	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
 		data, err := batchFetcher(batchNum)
 		if err != nil {
 			batchFetchErr = err
+			return nil
+		}
+		dataHash := crypto.Keccak256Hash(data)
+		if dataHash != batchHash {
+			batchFetchErr = fmt.Errorf("expecting batch %v hash %v but got data with hash %v", batchNum, batchHash, dataHash)
 			return nil
 		}
 		return data
@@ -177,7 +183,7 @@ func ProduceBlockAdvanced(
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
-	gasPrice := header.BaseFee
+	basefee := header.BaseFee
 	time := header.Time
 	expectedBalanceDelta := new(big.Int)
 	redeems := types.Transactions{}
@@ -228,24 +234,24 @@ func ProduceBlockAdvanced(
 				return nil, nil, core.ErrGasLimitReached
 			}
 
-			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx); err != nil {
-				return nil, nil, err
-			}
-
 			sender, err = signer.Sender(tx)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			if gasPrice.Sign() > 0 {
+			if err := hooks.PreTxFilter(chainConfig, header, statedb, state, tx, sender); err != nil {
+				return nil, nil, err
+			}
+
+			if basefee.Sign() > 0 {
 				dataGas = math.MaxUint64
 				posterCost, _ := state.L1PricingState().GetPosterInfo(tx, poster)
-				posterCostInL2Gas := arbmath.BigDiv(posterCost, gasPrice)
+				posterCostInL2Gas := arbmath.BigDiv(posterCost, basefee)
 
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
 				} else {
-					log.Error("Could not get poster cost in L2 terms", "posterCost", posterCost, "gasPrice", gasPrice)
+					log.Error("Could not get poster cost in L2 terms", "posterCost", posterCost, "basefee", basefee)
 				}
 			}
 
@@ -285,7 +291,7 @@ func ProduceBlockAdvanced(
 				&header.GasUsed,
 				vm.Config{},
 				func(result *core.ExecutionResult) error {
-					return hooks.PostTxFilter(state, tx, sender, dataGas, result)
+					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
 				},
 			)
 			if err != nil {
@@ -411,14 +417,14 @@ func ProduceBlockAdvanced(
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
-		return nil, nil, fmt.Errorf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
+		return nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
 	}
 
 	balanceDelta := statedb.GetUnexpectedBalanceDelta()
 	if !arbmath.BigEquals(balanceDelta, expectedBalanceDelta) {
 		// Fail if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
-			return nil, nil, fmt.Errorf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
+			return nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
 		} else {
 			// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
 			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
@@ -436,12 +442,12 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		acc := state.SendMerkleAccumulator()
 		root, _ := acc.Root()
 		size, _ := acc.Size()
-		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
+		nextL1BlockNumber, _ := state.Blockhashes().L1BlockNumber()
 		arbitrumHeader := types.HeaderInfo{
 			SendRoot:           root,
 			SendCount:          size,
 			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: state.FormatVersion(),
+			ArbOSFormatVersion: state.ArbOSVersion(),
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}

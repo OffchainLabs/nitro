@@ -15,7 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// Represents a balance change occuring aside from a call.
+// TransferBalance represents a balance change occuring aside from a call.
 // While most uses will be transfers, setting `from` or `to` to nil will mint or burn funds, respectively.
 func TransferBalance(
 	from, to *common.Address,
@@ -43,7 +43,7 @@ func TransferBalance(
 		if evm.Depth() != 0 && scenario != TracingDuringEVM {
 			// A non-zero depth implies this transfer is occuring inside EVM execution
 			log.Error("Tracing scenario mismatch", "scenario", scenario, "depth", evm.Depth())
-			return errors.New("Tracing scenario mismatch")
+			return errors.New("tracing scenario mismatch")
 		}
 
 		if scenario != TracingDuringEVM {
@@ -69,7 +69,7 @@ func TransferBalance(
 	return nil
 }
 
-// Mints funds for the user and adds them to their balance
+// MintBalance mints funds for the user and adds them to their balance
 func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string) {
 	err := TransferBalance(nil, to, amount, evm, scenario, purpose)
 	if err != nil {
@@ -77,7 +77,7 @@ func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario Trac
 	}
 }
 
-// Burns funds from a user's account
+// BurnBalance burns funds from a user's account
 func BurnBalance(from *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario, purpose string) error {
 	return TransferBalance(from, nil, amount, evm, scenario, purpose)
 }

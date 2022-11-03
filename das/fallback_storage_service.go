@@ -26,7 +26,7 @@ type FallbackStorageService struct {
 	currentlyFetchingMutex     sync.RWMutex
 }
 
-// This is a StorageService that relies on a "primary" StorageService and a "backup". Puts go to the primary.
+// NewFallbackStorageService is a StorageService that relies on a "primary" StorageService and a "backup". Puts go to the primary.
 // GetByHashes are tried first in the primary. If they aren't found in the primary, the backup is tried, and
 // a successful GetByHash result from the backup is Put into the primary.
 func NewFallbackStorageService(

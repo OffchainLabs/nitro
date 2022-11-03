@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/signature"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -215,13 +216,13 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesys := core.DeveloperGenesisBlock(0, 15_000_000, l1info.GetAddress("Faucet"))
-	infoGenesys := l1info.GetGenesysAlloc()
-	for acct, info := range infoGenesys {
-		l1Genesys.Alloc[acct] = info
+	l1Genesis := core.DeveloperGenesisBlock(0, 15_000_000, l1info.GetAddress("Faucet"))
+	infoGenesis := l1info.GetGenesisAlloc()
+	for acct, info := range infoGenesis {
+		l1Genesis.Alloc[acct] = info
 	}
-	l1Genesys.BaseFee = big.NewInt(50 * params.GWei)
-	nodeConf.Genesis = l1Genesys
+	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
+	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
 
 	l1backend, err := eth.New(stack, &nodeConf)
@@ -329,6 +330,21 @@ func createTestNodeOnL1WithConfig(
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l1info info,
 	l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
 ) {
+	l2info, currentNode, l2client, _, l1info, l1backend, l1client, l1stack = createTestNodeOnL1WithConfigImpl(t, ctx, isSequencer, nodeConfig, chainConfig, stackConfig)
+	return
+}
+
+func createTestNodeOnL1WithConfigImpl(
+	t *testing.T,
+	ctx context.Context,
+	isSequencer bool,
+	nodeConfig *arbnode.Config,
+	chainConfig *params.ChainConfig,
+	stackConfig *node.Config,
+) (
+	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
+	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
+) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
@@ -340,13 +356,14 @@ func createTestNodeOnL1WithConfig(
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
-	var l2stack *node.Node
 	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, nil, "", chainConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
+	var dataSigner signature.DataSignerFunc
 	if isSequencer {
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 		sequencerTxOptsPtr = &sequencerTxOpts
+		dataSigner = signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	}
 
 	if !isSequencer {
@@ -358,7 +375,7 @@ func createTestNodeOnL1WithConfig(
 	var err error
 	currentNode, err = arbnode.CreateNode(
 		ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client,
-		addresses, sequencerTxOptsPtr, nil, fatalErrChan,
+		addresses, sequencerTxOptsPtr, dataSigner, fatalErrChan,
 	)
 	Require(t, err)
 
@@ -440,6 +457,7 @@ func Create2ndNode(
 	ctx context.Context,
 	first *arbnode.Node,
 	l1stack *node.Node,
+	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	dasConfig *das.DataAvailabilityConfig,
 ) (*ethclient.Client, *arbnode.Node) {
@@ -449,7 +467,7 @@ func Create2ndNode(
 	} else {
 		nodeConf.DataAvailability = *dasConfig
 	}
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, nodeConf, nil)
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConf)
 }
 
 func Create2ndNodeWithConfig(
@@ -457,9 +475,9 @@ func Create2ndNodeWithConfig(
 	ctx context.Context,
 	first *arbnode.Node,
 	l1stack *node.Node,
+	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
-	txOpts *bind.TransactOpts,
 ) (*ethclient.Client, *arbnode.Node) {
 	feedErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
@@ -476,10 +494,13 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
+	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, first.ArbInterface.BlockChain().Config(), arbnode.ConfigDefaultL2Test(), 0)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, txOpts, nil, feedErrChan)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, l2chainDb, l2arbDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, &txOpts, dataSigner, feedErrChan)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)

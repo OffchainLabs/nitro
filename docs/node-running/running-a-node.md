@@ -5,7 +5,7 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 
 ### Required Artifacts
 
-- Latest Docker Image: `offchainlabs/nitro-node:v2.0.7-10b845c`
+- Latest Docker Image: `offchainlabs/nitro-node:v2.0.8-5b9fe9c`
 
 - Arbitrum One Nitro Genesis Database Snapshot
   - Use the parameter `--init.url="https://snapshot.arbitrum.io/mainnet/nitro.tar"` on first startup to initialize Nitro database
@@ -42,7 +42,7 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
   - Note that is important that `/some/local/dir/arbitrum` already exists, otherwise the directory might be created with `root` as owner, and the docker container won't be able to write to it
 
   ```shell
-  docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/nitro-node:v2.0.7-10b845c --l1.url https://l1-node:8545 --l2.chain-id=<L2ChainId> --http.api=net,web3,eth,debug --http.corsdomain=* --http.addr=0.0.0.0 --http.vhosts=*
+  docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/nitro-node:v2.0.8-5b9fe9c --l1.url https://l1-node:8545 --l2.chain-id=<L2ChainId> --http.api=net,web3,eth,debug --http.corsdomain=* --http.addr=0.0.0.0 --http.vhosts=*
   ```
 
   - Note that if you are running L1 node on localhost, you may need to add `--network host` right after `docker run` to use docker host-based networking
@@ -96,19 +96,19 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 - The arb-relay is in the same docker image
 - Here is an example of how to run nitro-relay for Arbitrum One:
   ```shell
-  docker run --rm -it  -p 0.0.0.0:9642:9642 --entrypoint relay offchainlabs/nitro-node:v2.0.7-10b845c --node.feed.output.addr=0.0.0.0 --node.feed.input.url=wss://arb1.arbitrum.io/feed
+  docker run --rm -it  -p 0.0.0.0:9642:9642 --entrypoint relay offchainlabs/nitro-node:v2.0.8-5b9fe9c --node.feed.output.addr=0.0.0.0 --node.feed.input.url=wss://arb1.arbitrum.io/feed
   ```
 - Here is an example of how to run nitro-node for Arbitrum One with custom relay:
   ```shell
-  docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/nitro-node:v2.0.7-10b845c --l1.url=https://l1-mainnet-node:8545 --l2.chain-id=42161 --http.api=net,web3,eth,debug --http.corsdomain=* --http.addr=0.0.0.0 --http.vhosts=* --node.feed.input.url=ws://local-relay-address:9642
+  docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum -p 0.0.0.0:8547:8547 -p 0.0.0.0:8548:8548 offchainlabs/nitro-node:v2.0.8-5b9fe9c --l1.url=https://l1-mainnet-node:8545 --l2.chain-id=42161 --http.api=net,web3,eth,debug --http.corsdomain=* --http.addr=0.0.0.0 --http.vhosts=* --node.feed.input.url=ws://local-relay-address:9642
   ```
 
 ### Running a Validator
 
-- Currently, the ability to post assertions on-chain for mainnet Arbitrum chains is whitelisted.  However, anyone can run a validator in `Watchtower` mode which will immediately log an error if an on-chain assertion deviates from the locally computed chain state
+- Currently, the ability to post assertions on-chain for mainnet Arbitrum chains is whitelisted. However, anyone can run a validator in `Watchtower` mode which will immediately log an error if an on-chain assertion deviates from the locally computed chain state
 - Running a validator in `Watchtower` mode is the same as running an archive Nitro node with `--node.validator.enable --node.validator.strategy=Watchtower`
 - Here is an example of how to run validator for Arbitrum One:
   ```shell
-  docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum offchainlabs/nitro-node:v2.0.7-10b845c --l1.url=https://l1-mainnet-node:8545 --l2.chain-id=42161 --node.caching.archive --node.validator.enable --node.validator.strategy=Watchtower
+  docker run --rm -it  -v /some/local/dir/arbitrum:/home/user/.arbitrum offchainlabs/nitro-node:v2.0.8-5b9fe9c --l1.url=https://l1-mainnet-node:8545 --l2.chain-id=42161 --node.caching.archive --node.validator.enable --node.validator.strategy=Watchtower
   ```
 - If a deviation is detected, a validator in Watchtower mode will log an error containing the string `found incorrect assertion in watchtower mode`

@@ -113,7 +113,7 @@ COPY --from=brotli-library-export / target/
 RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make CARGOFLAGS="--features=llvm" build-jit
 
 FROM scratch as prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -147,8 +147,10 @@ COPY ./testnode-scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v3.2 0xcfba6a883c50a1b4475ab909600fa88fc9cceed9e3ff6f43dccd2d27f6bd57cf
 #RUN ./download-machine.sh consensus-v4 0xa24ccdb052d92c5847e8ea3ce722442358db4b00985a9ee737c4e601b6ed9876
 #RUN ./download-machine.sh consensus-v5 0x1e09e6d9e35b93f33ed22b2bc8dc10bbcf63fdde5e8a1fb8cc1bcd1a52f14bd0
-RUN ./download-machine.sh consensus-v6 0x3848eff5e0356faf1fc9cafecb789584c5e7f4f8f817694d842ada96613d8bab
+#RUN ./download-machine.sh consensus-v6 0x3848eff5e0356faf1fc9cafecb789584c5e7f4f8f817694d842ada96613d8bab
 RUN ./download-machine.sh consensus-v7 0x53dd4b9a3d807a8cbb4d58fbfc6a0857c3846d46956848cae0a1cc7eca2bb5a8
+RUN ./download-machine.sh consensus-v7.1 0x2b20e1490d1b06299b222f3239b0ae07e750d8f3b4dedd19f500a815c1548bbc
+RUN ./download-machine.sh consensus-v9 0xd1842bfbe047322b3f3b3635b5fe62eb611557784d17ac1d2b1ce9c170af6544
 
 FROM golang:1.19-bullseye as node-builder
 WORKDIR /workspace

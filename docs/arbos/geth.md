@@ -110,7 +110,7 @@ This interface is the main interaction-point between geth-standard APIs and the 
 [PublishTransactions_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/arbitrum/arbos_interface.go#L11
 
 ### [`RecordingKV`][RecordingKV_link]
-RecordingKV is a read-only key-value store, which retrieves values from an internal trie database. All values accessed by a RecordingKV are also recorded internally. This is used to record all preimages accessed during block creation, which will be needed to proove execution of this particular block.
+RecordingKV is a read-only key-value store, which retrieves values from an internal trie database. All values accessed by a RecordingKV are also recorded internally. This is used to record all preimages accessed during block creation, which will be needed to prove execution of this particular block.
 A [`RecordingChainContext`][RecordingChainContext_link] should also be used, to record which block headers the block execution reads (another option would be to always assume the last 256 block headers were accessed).
 The process is simplified using two functions: [`PrepareRecording`][PrepareRecording_link] creates a stateDB and chaincontext objects, running block creation process using these objects records the required preimages, and [`PreimagesFromRecording`][PreimagesFromRecording_link] function extracts the preimages recorded.
 

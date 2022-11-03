@@ -1,9 +1,9 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbutil
+package containers
 
-// A queue of an arbitrary type backed by a slice which is shrinked when it grows too large
+// Queue of an arbitrary type backed by a slice which is shrinked when it grows too large
 type Queue[T any] struct {
 	slice []T
 }
@@ -31,6 +31,7 @@ func (q *Queue[T]) Pop() T {
 		return empty
 	}
 	item := q.slice[0]
+	q.slice[0] = empty
 	q.slice = q.slice[1:]
 	q.shrink()
 	return item

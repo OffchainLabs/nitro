@@ -122,7 +122,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			header, err = d.l1Reader.LatestSafeHeader()
 		}
 		if err != nil {
-			return fmt.Errorf("Failed to get latest header: %w", err)
+			return fmt.Errorf("failed to get latest header: %w", err)
 		}
 		finalized = header.Number
 	}

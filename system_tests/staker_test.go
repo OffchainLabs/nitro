@@ -65,10 +65,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	defer l2nodeA.StopAndWait()
 
 	if faultyStaker {
-		l2info.GenerateGenesysAccount("FaultyAddr", common.Big1)
+		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
-	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), &sequencerTxOpts)
+	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test())
 	defer l2nodeB.StopAndWait()
 
 	nodeAGenesis := l2nodeA.Backend.APIBackend().CurrentHeader().Hash()
