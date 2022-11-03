@@ -77,8 +77,8 @@ type Assertion struct {
 	stateCommitment         StateCommitment
 	prev                    Option[*Assertion]
 	isFirstChild            bool
-	firstChildCreationTime  SecondsDuration
-	secondChildCreationTime SecondsDuration
+	firstChildCreationTime  Option[SecondsDuration]
+	secondChildCreationTime Option[SecondsDuration]
 	challenge               Option[*Challenge]
 	staker                  Option[common.Address]
 }
@@ -94,8 +94,8 @@ func NewAssertionChain(ctx context.Context, timeRef TimeReference, challengePeri
 		},
 		prev:                    EmptyOption[*Assertion](),
 		isFirstChild:            false,
-		firstChildCreationTime:  0,
-		secondChildCreationTime: 0,
+		firstChildCreationTime:  EmptyOption[SecondsDuration](),
+		secondChildCreationTime: EmptyOption[SecondsDuration](),
 		challenge:               EmptyOption[*Challenge](),
 		staker:                  EmptyOption[common.Address](),
 	}
@@ -137,16 +137,16 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 		sequenceNum:             uint64(len(chain.assertions)),
 		stateCommitment:         commitment,
 		prev:                    FullOption[*Assertion](prev),
-		isFirstChild:            prev.firstChildCreationTime == 0,
-		firstChildCreationTime:  0,
-		secondChildCreationTime: 0,
+		isFirstChild:            prev.firstChildCreationTime.IsEmpty(),
+		firstChildCreationTime:  EmptyOption[SecondsDuration](),
+		secondChildCreationTime: EmptyOption[SecondsDuration](),
 		challenge:               EmptyOption[*Challenge](),
 		staker:                  FullOption[common.Address](staker),
 	}
-	if prev.firstChildCreationTime == 0 {
-		prev.firstChildCreationTime = chain.timeReference.Get()
-	} else if prev.secondChildCreationTime == 0 {
-		prev.secondChildCreationTime = chain.timeReference.Get()
+	if prev.firstChildCreationTime.IsEmpty() {
+		prev.firstChildCreationTime = FullOption[SecondsDuration](chain.timeReference.Get())
+	} else if prev.secondChildCreationTime.IsEmpty() {
+		prev.secondChildCreationTime = FullOption[SecondsDuration](chain.timeReference.Get())
 	}
 	prev.staker = EmptyOption[common.Address]()
 	chain.assertions = append(chain.assertions, leaf)
@@ -213,10 +213,10 @@ func (a *Assertion) ConfirmNoRival() error {
 	if prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
-	if prev.secondChildCreationTime != 0 {
+	if !prev.secondChildCreationTime.IsEmpty() {
 		return ErrInvalid
 	}
-	if a.chain.timeReference.Get() <= prev.firstChildCreationTime.SaturatingAdd(a.chain.challengePeriod) {
+	if a.chain.timeReference.Get() <= prev.firstChildCreationTime.OpenKnownFull().SaturatingAdd(a.chain.challengePeriod) {
 		return ErrNotYet
 	}
 	a.status = ConfirmedAssertionState
@@ -274,7 +274,7 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 	if !parent.challenge.IsEmpty() {
 		return nil, ErrInvalid
 	}
-	if parent.secondChildCreationTime == 0 {
+	if parent.secondChildCreationTime.IsEmpty() {
 		return nil, ErrInvalid
 	}
 	root := &ChallengeVertex{
@@ -328,7 +328,7 @@ func (chal *Challenge) AddLeaf(assertion *Assertion, history HistoryCommitment) 
 
 	timer := newCountUpTimer(chain.timeReference)
 	if assertion.isFirstChild {
-		delta, err := prev.secondChildCreationTime.Sub(prev.firstChildCreationTime)
+		delta, err := prev.secondChildCreationTime.OpenKnownFull().Sub(prev.firstChildCreationTime.OpenKnownFull())
 		if err != nil {
 			return nil, err
 		}

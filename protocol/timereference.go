@@ -47,7 +47,7 @@ type artificialTimeReference struct {
 }
 
 func newArtificialTimeReference() *artificialTimeReference {
-	return &artificialTimeReference{1} // initialize to 1 because time==0 is treated as a null value
+	return &artificialTimeReference{0}
 }
 
 func (atr *artificialTimeReference) Get() SecondsDuration {
