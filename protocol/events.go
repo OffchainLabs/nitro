@@ -1,6 +1,9 @@
 package protocol
 
-import "github.com/ethereum/go-ethereum/common"
+import (
+	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/ethereum/go-ethereum/common"
+)
 
 type AssertionChainEvent interface {
 	IsAssertionChainEvent() bool // this method is just a marker that the type intends to be an AssertionChainEvent
@@ -45,7 +48,7 @@ type ChallengeLeafEvent struct {
 	genericChallengeEvent
 	sequenceNum       uint64
 	winnerIfConfirmed uint64
-	history           HistoryCommitment
+	history           util.HistoryCommitment
 	becomesPS         bool
 }
 
@@ -53,7 +56,7 @@ type ChallengeBisectEvent struct {
 	genericChallengeEvent
 	fromSequenceNum uint64 // previously existing vertex
 	sequenceNum     uint64 // newly created vertex
-	history         HistoryCommitment
+	history         util.HistoryCommitment
 	becomesPS       bool
 }
 

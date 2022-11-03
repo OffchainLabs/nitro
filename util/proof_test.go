@@ -1,7 +1,6 @@
-package protocol
+package util
 
 import (
-	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"testing"
@@ -66,12 +65,12 @@ func TestMerkleExpansion(t *testing.T) {
 	me2Compact, _ := me2.Compact()
 	err = VerifyProof(
 		HistoryCommitment{
-			height: 2,
-			merkle: me2.Root(),
+			Height: 2,
+			Merkle: me2.Root(),
 		},
 		HistoryCommitment{
-			height: 4,
-			merkle: me4.Root(),
+			Height: 4,
+			Merkle: me4.Root(),
 		},
 		me2Compact,
 		h23,
@@ -106,17 +105,17 @@ func TestMerkleProof(t *testing.T) {
 		{20, 39823},
 	} {
 		leaves := hashesForUints(0, c.hi)
-		loExp := expansionFromLeaves(leaves[:c.lo])
-		hiExp := expansionFromLeaves(leaves[:c.hi])
+		loExp := ExpansionFromLeaves(leaves[:c.lo])
+		hiExp := ExpansionFromLeaves(leaves[:c.hi])
 		proof := GeneratePrefixProof(c.lo, loExp, leaves[c.lo:c.hi])
 		err := VerifyPrefixProof(
 			HistoryCommitment{
-				height: c.lo,
-				merkle: loExp.Root(),
+				Height: c.lo,
+				Merkle: loExp.Root(),
 			},
 			HistoryCommitment{
-				height: c.hi,
-				merkle: hiExp.Root(),
+				Height: c.hi,
+				Merkle: hiExp.Root(),
 			},
 			proof,
 		)
@@ -129,11 +128,7 @@ func TestMerkleProof(t *testing.T) {
 func hashesForUints(lo, hi uint64) []common.Hash {
 	ret := []common.Hash{}
 	for i := lo; i < hi; i++ {
-		ret = append(ret, hashForUint(i))
+		ret = append(ret, HashForUint(i))
 	}
 	return ret
-}
-
-func hashForUint(x uint64) common.Hash {
-	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, x))
 }

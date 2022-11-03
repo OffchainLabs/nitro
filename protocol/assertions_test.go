@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"errors"
+	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"testing"
 	"time"
@@ -78,9 +79,9 @@ func TestAssertionChain(t *testing.T) {
 	challenge, err := newAssertion.CreateChallenge(ctx)
 	Require(t, err)
 	verifyStartChallengeEventInFeed(t, eventChan, newAssertion.sequenceNum)
-	chal1, err := challenge.AddLeaf(branch1, HistoryCommitment{100, expansionFromLeaves(correctBlockHashes[99:200]).Root()})
+	chal1, err := challenge.AddLeaf(branch1, util.HistoryCommitment{100, util.ExpansionFromLeaves(correctBlockHashes[99:200]).Root()})
 	Require(t, err)
-	_, err = challenge.AddLeaf(branch2, HistoryCommitment{100, expansionFromLeaves(wrongBlockHashes[99:200]).Root()})
+	_, err = challenge.AddLeaf(branch2, util.HistoryCommitment{100, util.ExpansionFromLeaves(wrongBlockHashes[99:200]).Root()})
 	Require(t, err)
 	err = chal1.confirmForPsTimer()
 	if !errors.Is(err, ErrNotYet) {
@@ -174,9 +175,9 @@ func TestChallengeBisections(t *testing.T) {
 	Require(t, err)
 	challenge, err := chain.LatestConfirmed().CreateChallenge(ctx)
 	Require(t, err)
-	correctLeaf, err := challenge.AddLeaf(correctBranch, HistoryCommitment{100, expansionFromLeaves(correctBlockHashes[101:200]).Root()})
+	correctLeaf, err := challenge.AddLeaf(correctBranch, util.HistoryCommitment{100, util.ExpansionFromLeaves(correctBlockHashes[101:200]).Root()})
 	Require(t, err)
-	wrongLeaf, err := challenge.AddLeaf(wrongBranch, HistoryCommitment{100, expansionFromLeaves(wrongBlockHashes[101:200]).Root()})
+	wrongLeaf, err := challenge.AddLeaf(wrongBranch, util.HistoryCommitment{100, util.ExpansionFromLeaves(wrongBlockHashes[101:200]).Root()})
 	Require(t, err)
 
 	_ = correctLeaf
@@ -186,7 +187,7 @@ func TestChallengeBisections(t *testing.T) {
 func correctBlockHashesForTest(numBlocks uint64) []common.Hash {
 	ret := []common.Hash{}
 	for i := uint64(0); i < numBlocks; i++ {
-		ret = append(ret, hashForUint(i))
+		ret = append(ret, util.HashForUint(i))
 	}
 	return ret
 }
@@ -194,7 +195,7 @@ func correctBlockHashesForTest(numBlocks uint64) []common.Hash {
 func wrongBlockHashesForTest(numBlocks uint64) []common.Hash {
 	ret := []common.Hash{}
 	for i := uint64(0); i < numBlocks; i++ {
-		ret = append(ret, hashForUint(71285937102384-i))
+		ret = append(ret, util.HashForUint(71285937102384-i))
 	}
 	return ret
 }

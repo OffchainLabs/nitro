@@ -1,4 +1,4 @@
-module github.com/OffchainLabs/new-rollup-explore
+module github.com/OffchainLabs/new-rollup-exploration
 
 go 1.19
 

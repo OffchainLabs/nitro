@@ -1,4 +1,4 @@
-package protocol
+package util
 
 import (
 	"errors"
@@ -17,8 +17,8 @@ func TestBisectionPoint(t *testing.T) {
 		{13, 9, 0},
 	}
 	for _, testCase := range errorTestCases {
-		_, err := bisectionPoint(testCase.pre, testCase.post)
-		if !errors.Is(err, ErrInvalid) {
+		_, err := BisectionPoint(testCase.pre, testCase.post)
+		if !errors.Is(err, ErrUnableToBisect) {
 			t.Fatal(testCase, err)
 		}
 	}
@@ -36,7 +36,7 @@ func TestBisectionPoint(t *testing.T) {
 		{15, 31, 16},
 	}
 	for _, testCase := range testCases {
-		res, err := bisectionPoint(testCase.pre, testCase.post)
+		res, err := BisectionPoint(testCase.pre, testCase.post)
 		if err != nil {
 			t.Fatal(err, testCase)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"sync"
@@ -29,15 +30,6 @@ type StateCommitment struct {
 
 func (comm *StateCommitment) Hash() common.Hash {
 	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.height), comm.state.Bytes())
-}
-
-type HistoryCommitment struct {
-	height uint64
-	merkle common.Hash
-}
-
-func (comm *HistoryCommitment) Hash() common.Hash {
-	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.height), comm.merkle.Bytes())
 }
 
 type AssertionChain struct {
@@ -75,12 +67,12 @@ type Assertion struct {
 	status                  AssertionState
 	sequenceNum             uint64
 	stateCommitment         StateCommitment
-	prev                    Option[*Assertion]
+	prev                    util.Option[*Assertion]
 	isFirstChild            bool
-	firstChildCreationTime  Option[SecondsDuration]
-	secondChildCreationTime Option[SecondsDuration]
-	challenge               Option[*Challenge]
-	staker                  Option[common.Address]
+	firstChildCreationTime  util.Option[SecondsDuration]
+	secondChildCreationTime util.Option[SecondsDuration]
+	challenge               util.Option[*Challenge]
+	staker                  util.Option[common.Address]
 }
 
 func NewAssertionChain(ctx context.Context, timeRef TimeReference, challengePeriod SecondsDuration) *AssertionChain {
@@ -92,12 +84,12 @@ func NewAssertionChain(ctx context.Context, timeRef TimeReference, challengePeri
 			height: 0,
 			state:  common.Hash{},
 		},
-		prev:                    EmptyOption[*Assertion](),
+		prev:                    util.EmptyOption[*Assertion](),
 		isFirstChild:            false,
-		firstChildCreationTime:  EmptyOption[SecondsDuration](),
-		secondChildCreationTime: EmptyOption[SecondsDuration](),
-		challenge:               EmptyOption[*Challenge](),
-		staker:                  EmptyOption[common.Address](),
+		firstChildCreationTime:  util.EmptyOption[SecondsDuration](),
+		secondChildCreationTime: util.EmptyOption[SecondsDuration](),
+		challenge:               util.EmptyOption[*Challenge](),
+		staker:                  util.EmptyOption[common.Address](),
 	}
 	chain := &AssertionChain{
 		mutex:           sync.RWMutex{},
@@ -136,19 +128,19 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 		status:                  PendingAssertionState,
 		sequenceNum:             uint64(len(chain.assertions)),
 		stateCommitment:         commitment,
-		prev:                    FullOption[*Assertion](prev),
+		prev:                    util.FullOption[*Assertion](prev),
 		isFirstChild:            prev.firstChildCreationTime.IsEmpty(),
-		firstChildCreationTime:  EmptyOption[SecondsDuration](),
-		secondChildCreationTime: EmptyOption[SecondsDuration](),
-		challenge:               EmptyOption[*Challenge](),
-		staker:                  FullOption[common.Address](staker),
+		firstChildCreationTime:  util.EmptyOption[SecondsDuration](),
+		secondChildCreationTime: util.EmptyOption[SecondsDuration](),
+		challenge:               util.EmptyOption[*Challenge](),
+		staker:                  util.FullOption[common.Address](staker),
 	}
 	if prev.firstChildCreationTime.IsEmpty() {
-		prev.firstChildCreationTime = FullOption[SecondsDuration](chain.timeReference.Get())
+		prev.firstChildCreationTime = util.FullOption[SecondsDuration](chain.timeReference.Get())
 	} else if prev.secondChildCreationTime.IsEmpty() {
-		prev.secondChildCreationTime = FullOption[SecondsDuration](chain.timeReference.Get())
+		prev.secondChildCreationTime = util.FullOption[SecondsDuration](chain.timeReference.Get())
 	}
-	prev.staker = EmptyOption[common.Address]()
+	prev.staker = util.EmptyOption[common.Address]()
 	chain.assertions = append(chain.assertions, leaf)
 	chain.dedupe[dedupeCode] = true
 	chain.feed.Append(&CreateLeafEvent{
@@ -186,7 +178,7 @@ func (a *Assertion) RejectForLoss() error {
 	}
 	chal := a.prev.OpenKnownFull().challenge
 	if chal.IsEmpty() {
-		return ErrOptionIsEmpty
+		return util.ErrOptionIsEmpty
 	}
 	winner, err := chal.OpenKnownFull().Winner()
 	if err != nil {
@@ -282,9 +274,9 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 		sequenceNum: 0,
 		isLeaf:      false,
 		status:      ConfirmedAssertionState,
-		commitment: HistoryCommitment{
-			height: 0,
-			merkle: common.Hash{},
+		commitment: util.HistoryCommitment{
+			Height: 0,
+			Merkle: common.Hash{},
 		},
 		prev:                 nil,
 		presumptiveSuccessor: nil,
@@ -303,14 +295,14 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 	}
 	root.challenge = ret
 	ret.includedHistories[root.commitment.Hash()] = true
-	parent.challenge = FullOption[*Challenge](ret)
+	parent.challenge = util.FullOption[*Challenge](ret)
 	parent.chain.feed.Append(&StartChallengeEvent{
 		parentSeqNum: parent.sequenceNum,
 	})
 	return ret, nil
 }
 
-func (chal *Challenge) AddLeaf(assertion *Assertion, history HistoryCommitment) (*ChallengeVertex, error) {
+func (chal *Challenge) AddLeaf(assertion *Assertion, history util.HistoryCommitment) (*ChallengeVertex, error) {
 	if assertion.prev.IsEmpty() {
 		return nil, ErrInvalid
 	}
@@ -373,7 +365,7 @@ type ChallengeVertex struct {
 	sequenceNum          uint64 // unique within the challenge
 	isLeaf               bool
 	status               AssertionState
-	commitment           HistoryCommitment
+	commitment           util.HistoryCommitment
 	prev                 *ChallengeVertex
 	presumptiveSuccessor *ChallengeVertex
 	psTimer              *countUpTimer
@@ -386,7 +378,7 @@ func (vertex *ChallengeVertex) eligibleForNewSuccessor() bool {
 }
 
 func (vertex *ChallengeVertex) maybeNewPresumptiveSuccessor(succ *ChallengeVertex) {
-	if vertex.presumptiveSuccessor != nil && succ.commitment.height < vertex.presumptiveSuccessor.commitment.height {
+	if vertex.presumptiveSuccessor != nil && succ.commitment.Height < vertex.presumptiveSuccessor.commitment.Height {
 		vertex.presumptiveSuccessor.psTimer.stop()
 		vertex.presumptiveSuccessor = nil
 	}
@@ -401,10 +393,10 @@ func (vertex *ChallengeVertex) isPresumptiveSuccessor() bool {
 }
 
 func (vertex *ChallengeVertex) requiredBisectionHeight() (uint64, error) {
-	return bisectionPoint(vertex.prev.commitment.height, vertex.commitment.height)
+	return util.BisectionPoint(vertex.prev.commitment.Height, vertex.commitment.Height)
 }
 
-func (vertex *ChallengeVertex) bisect(history HistoryCommitment, proof []common.Hash) error {
+func (vertex *ChallengeVertex) bisect(history util.HistoryCommitment, proof []common.Hash) error {
 	if vertex.isPresumptiveSuccessor() {
 		return ErrWrongState
 	}
@@ -418,10 +410,10 @@ func (vertex *ChallengeVertex) bisect(history HistoryCommitment, proof []common.
 	if err != nil {
 		return err
 	}
-	if bisectionHeight != history.height {
+	if bisectionHeight != history.Height {
 		return ErrInvalidHeight
 	}
-	if err := VerifyPrefixProof(history, vertex.commitment, proof); err != nil {
+	if err := util.VerifyPrefixProof(history, vertex.commitment, proof); err != nil {
 		return err
 	}
 
@@ -455,10 +447,10 @@ func (vertex *ChallengeVertex) merge(newPrev *ChallengeVertex, proof []common.Ha
 	if vertex.prev != newPrev.prev {
 		return ErrInvalid
 	}
-	if vertex.commitment.height <= newPrev.commitment.height {
+	if vertex.commitment.Height <= newPrev.commitment.Height {
 		return ErrInvalidHeight
 	}
-	if err := VerifyPrefixProof(newPrev.commitment, vertex.commitment, proof); err != nil {
+	if err := util.VerifyPrefixProof(newPrev.commitment, vertex.commitment, proof); err != nil {
 		return err
 	}
 

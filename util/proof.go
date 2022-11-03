@@ -1,6 +1,7 @@
-package protocol
+package util
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
@@ -10,6 +11,7 @@ import (
 
 var (
 	ErrInvalidLevel   = errors.New("invalid level")
+	ErrInvalidHeight  = errors.New("invalid height")
 	ErrMisaligned     = errors.New("misaligned")
 	ErrIncorrectProof = errors.New("incorrect proof")
 )
@@ -104,11 +106,11 @@ func (me MerkleExpansion) AppendLeaf(leafHash common.Hash) MerkleExpansion {
 }
 
 func VerifyProof(pre, post HistoryCommitment, compactPre []common.Hash, proof common.Hash) error {
-	preExpansion, _ := MerkleExpansionFromCompact(compactPre, pre.height)
-	if pre.height >= post.height {
-		return ErrInvalid
+	preExpansion, _ := MerkleExpansionFromCompact(compactPre, pre.Height)
+	if pre.Height >= post.Height {
+		return ErrInvalidHeight
 	}
-	diff := post.height - pre.height
+	diff := post.Height - pre.Height
 	if bits.OnesCount64(diff) != 1 {
 		return ErrMisaligned
 	}
@@ -117,29 +119,29 @@ func VerifyProof(pre, post HistoryCommitment, compactPre []common.Hash, proof co
 	if err != nil {
 		return err
 	}
-	if postExpansion.Root() != post.merkle {
+	if postExpansion.Root() != post.Merkle {
 		return ErrIncorrectProof
 	}
 	return nil
 }
 
 func VerifyPrefixProof(pre, post HistoryCommitment, proof []common.Hash) error {
-	if pre.height >= post.height {
-		return ErrInvalid
+	if pre.Height >= post.Height {
+		return ErrInvalidHeight
 	}
-	expHeight := pre.height
+	expHeight := pre.Height
 	expansion, numRead := MerkleExpansionFromCompact(proof, expHeight)
 	proof = proof[numRead:]
-	for expHeight < post.height {
+	for expHeight < post.Height {
 		if len(proof) == 0 {
 			return ErrIncorrectProof
 		}
 		// extHeight looks like   xxxxxxx0yyy
 		// post.height looks like xxxxxxx1zzz
-		firstDiffBit := 63 - bits.LeadingZeros64(expHeight^post.height)
+		firstDiffBit := 63 - bits.LeadingZeros64(expHeight^post.Height)
 		mask := (uint64(1) << firstDiffBit) - 1
 		yyy := expHeight & mask
-		zzz := post.height & mask
+		zzz := post.Height & mask
 		if yyy != 0 {
 			lowBit := bits.TrailingZeros64(yyy)
 			exp, err := expansion.AppendCompleteSubtree(uint64(lowBit), proof[0])
@@ -164,11 +166,11 @@ func VerifyPrefixProof(pre, post HistoryCommitment, proof []common.Hash) error {
 				return err
 			}
 			expansion = exp
-			expHeight = post.height
+			expHeight = post.Height
 			proof = proof[1:]
 		}
 	}
-	if expansion.Root() != post.merkle {
+	if expansion.Root() != post.Merkle {
 		return ErrIncorrectProof
 	}
 	return nil
@@ -188,27 +190,31 @@ func GeneratePrefixProof(preHeight uint64, preExpansion MerkleExpansion, leaves 
 		if yyy != 0 {
 			lowBit := bits.TrailingZeros64(yyy)
 			numLeaves := uint64(1) << lowBit
-			proof = append(proof, expansionFromLeaves(leaves[:numLeaves]).Root())
+			proof = append(proof, ExpansionFromLeaves(leaves[:numLeaves]).Root())
 			leaves = leaves[numLeaves:]
 			height += numLeaves
 		} else if zzz != 0 {
 			highBit := 63 - bits.LeadingZeros64(zzz)
 			numLeaves := uint64(1) << highBit
-			proof = append(proof, expansionFromLeaves(leaves[:numLeaves]).Root())
+			proof = append(proof, ExpansionFromLeaves(leaves[:numLeaves]).Root())
 			leaves = leaves[numLeaves:]
 			height += numLeaves
 		} else {
-			proof = append(proof, expansionFromLeaves(leaves).Root())
+			proof = append(proof, ExpansionFromLeaves(leaves).Root())
 			height = postHeight
 		}
 	}
 	return proof
 }
 
-func expansionFromLeaves(leaves []common.Hash) MerkleExpansion {
+func ExpansionFromLeaves(leaves []common.Hash) MerkleExpansion {
 	ret := NewEmptyMerkleExpansion()
 	for _, leaf := range leaves {
 		ret = ret.AppendLeaf(leaf)
 	}
 	return ret
+}
+
+func HashForUint(x uint64) common.Hash {
+	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, x))
 }

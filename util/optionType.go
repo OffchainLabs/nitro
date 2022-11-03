@@ -1,46 +1,42 @@
-package protocol
+package util
 
 import "errors"
 
 var ErrOptionIsEmpty = errors.New("option value is empty")
 
 type Option[T any] struct {
-	empty bool
-	value T
+	value *T
 }
 
 func EmptyOption[T any]() Option[T] {
-	return Option[T]{empty: true}
+	return Option[T]{nil}
 }
 
 func FullOption[T any](x T) Option[T] {
-	return Option[T]{empty: false, value: x}
+	return Option[T]{&x}
 }
 
 func (x Option[T]) IsEmpty() bool {
-	return x.empty
-}
-
-func (x Option[T]) Open() (T, bool) {
-	return x.value, x.empty
-}
-
-func (x Option[T]) OpenOrError() (T, error) {
-	if x.empty {
-		return x.value, ErrOptionIsEmpty
-	}
-	return x.value, nil
+	return x.value == nil
 }
 
 func (x Option[T]) OpenKnownFull() T {
-	return x.value
+	return *x.value
+}
+
+func (x Option[T]) ToResult() Result[T] {
+	if x.value == nil {
+		return ErrorResult[T](ErrOptionIsEmpty)
+	}
+	return SuccessResult[T](*x.value)
 }
 
 func OptionMap[T, U any](o Option[T], f func(T) U) Option[U] {
-	if o.IsEmpty() {
-		return EmptyOption[U]()
+	if o.value == nil {
+		return Option[U]{nil}
 	}
-	return FullOption[U](f(o.value))
+	u := f(*o.value)
+	return Option[U]{&u}
 }
 
 type Result[T any] struct {
