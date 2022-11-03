@@ -21,7 +21,7 @@ func TestAssertionChain(t *testing.T) {
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
-	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod).inner
 	if len(chain.assertions) != 1 {
 		t.Fatal()
 	}
@@ -168,7 +168,7 @@ func TestChallengeBisections(t *testing.T) {
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
-	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod).inner
 	correctBranch, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{100, correctBlockHashes[100]}, staker1)
 	Require(t, err)
 	wrongBranch, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{100, wrongBlockHashes[100]}, staker2)

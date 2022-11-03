@@ -32,6 +32,10 @@ func (comm *StateCommitment) Hash() common.Hash {
 	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.height), comm.state.Bytes())
 }
 
+type L2AssertionChain struct {
+	inner *AssertionChain
+}
+
 type AssertionChain struct {
 	mutex           sync.RWMutex
 	timeReference   util.TimeReference
@@ -42,16 +46,16 @@ type AssertionChain struct {
 	feed            *EventFeed[AssertionChainEvent]
 }
 
-func (chain *AssertionChain) Tx(clo func(*AssertionChain) error) error {
-	chain.mutex.Lock()
-	defer chain.mutex.Unlock()
-	return clo(chain)
+func (chain *L2AssertionChain) Tx(clo func(*AssertionChain) error) error {
+	chain.inner.mutex.Lock()
+	defer chain.inner.mutex.Unlock()
+	return clo(chain.inner)
 }
 
-func (chain *AssertionChain) Call(clo func(*AssertionChain) error) error {
-	chain.mutex.RLock()
-	defer chain.mutex.RUnlock()
-	return clo(chain)
+func (chain *L2AssertionChain) Call(clo func(*AssertionChain) error) error {
+	chain.inner.mutex.RLock()
+	defer chain.inner.mutex.RUnlock()
+	return clo(chain.inner)
 }
 
 const (
@@ -75,7 +79,7 @@ type Assertion struct {
 	staker                  util.Option[common.Address]
 }
 
-func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod util.SecondsDuration) *AssertionChain {
+func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod util.SecondsDuration) *L2AssertionChain {
 	genesis := &Assertion{
 		chain:       nil,
 		status:      ConfirmedAssertionState,
@@ -101,7 +105,7 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		feed:            NewEventFeed[AssertionChainEvent](ctx),
 	}
 	genesis.chain = chain
-	return chain
+	return &L2AssertionChain{chain}
 }
 
 func (chain *AssertionChain) LatestConfirmed() *Assertion {
