@@ -143,10 +143,10 @@ func (h *IpfsHelper) GetPeerHostAddresses() ([]string, error) {
 
 func normalizeCidString(cidString string) string {
 	if strings.HasPrefix(cidString, "ipfs://") {
-		return "/ipfs" + cidString[6:]
+		return "/ipfs/" + cidString[7:]
 	}
 	if strings.HasPrefix(cidString, "ipns://") {
-		return "/ipns" + cidString[6:]
+		return "/ipns/" + cidString[7:]
 	}
 	return cidString
 }
