@@ -305,6 +305,18 @@ func (state *ArbosState) ScheduleArbOSUpgrade(newVersion uint64, timestamp uint6
 	return state.upgradeTimestamp.Set(timestamp)
 }
 
+func (state *ArbosState) GetScheduledUpgrade() (uint64, uint64, error) {
+	version, err := state.upgradeVersion.Get()
+	if err != nil {
+		return 0, 0, err
+	}
+	timestamp, err := state.upgradeTimestamp.Get()
+	if err != nil {
+		return 0, 0, err
+	}
+	return version, timestamp, nil
+}
+
 func (state *ArbosState) BackingStorage() *storage.Storage {
 	return state.backingStorage
 }

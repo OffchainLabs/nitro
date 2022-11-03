@@ -43,7 +43,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
     address[] public allowedDelayedInboxList;
     address[] public allowedOutboxList;
 
-    address private _activeOutbox;
+    address internal _activeOutbox;
 
     /// @inheritdoc IBridge
     bytes32[] public delayedInboxAccs;
@@ -56,7 +56,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
 
     uint256 public override sequencerReportedSubMessageCount;
 
-    address private constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
+    address internal constant EMPTY_ACTIVEOUTBOX = address(type(uint160).max);
 
     function initialize(IOwnable rollup_) external initializer onlyDelegated {
         _activeOutbox = EMPTY_ACTIVEOUTBOX;
