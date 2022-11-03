@@ -136,7 +136,7 @@ func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout ui
 }
 
 func (rs *RedisStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	err := rs.baseStorageService.putKeyValue(ctx, key, value)
+	err := convertStorageServiceToIterationCompatibleStorageService(rs.baseStorageService).putKeyValue(ctx, key, value)
 	if err != nil {
 		return err
 	}

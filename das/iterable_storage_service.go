@@ -19,24 +19,49 @@ const iteratorBegin = "iterator_begin"
 const iteratorEnd = "iterator_end"
 const expirationTimeKeyPrefix = "expiration_time_key_prefix_"
 
+// IterationCompatibleStorageService is a StorageService which is
+// compatible to be used as a backend for IterableStorageService.
+type IterationCompatibleStorageService interface {
+	putKeyValue(ctx context.Context, key common.Hash, value []byte) error
+	StorageService
+}
+
+// IterationCompatibleStorageServiceAdaptor is an adaptor used to covert iteration incompatible StorageService
+// to IterationCompatibleStorageService (basically adds an empty putKeyValue to the StorageService)
+type IterationCompatibleStorageServiceAdaptor struct {
+	StorageService
+}
+
+func (i *IterationCompatibleStorageServiceAdaptor) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
+	return nil
+}
+
+func convertStorageServiceToIterationCompatibleStorageService(storageService StorageService) IterationCompatibleStorageService {
+	service, ok := storageService.(IterationCompatibleStorageService)
+	if ok {
+		return service
+	}
+	return &IterationCompatibleStorageServiceAdaptor{storageService}
+}
+
 // An IterableStorageService is used as a wrapper on top of a storage service,
 // to add the capability of iterating over the stored date in a sequential manner.
 type IterableStorageService struct {
 	// Local copy of iterator end. End can also be accessed by getByHash for iteratorEnd.
 	end atomic.Value // atomic access to common.Hash
-	StorageService
+	IterationCompatibleStorageService
 
 	mutex sync.Mutex
 }
 
-func NewIterableStorageService(storageService StorageService) *IterableStorageService {
-	i := &IterableStorageService{StorageService: storageService}
+func NewIterableStorageService(storageService IterationCompatibleStorageService) *IterableStorageService {
+	i := &IterableStorageService{IterationCompatibleStorageService: storageService}
 	i.end.Store(common.Hash{})
 	return i
 }
 
 func (i *IterableStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
-	if err := i.StorageService.Put(ctx, data, expiration); err != nil {
+	if err := i.IterationCompatibleStorageService.Put(ctx, data, expiration); err != nil {
 		return err
 	}
 
@@ -69,7 +94,7 @@ func (i *IterableStorageService) Put(ctx context.Context, data []byte, expiratio
 }
 
 func (i *IterableStorageService) GetExpirationTime(ctx context.Context, hash common.Hash) (uint64, error) {
-	value, err := i.StorageService.GetByHash(ctx, dastree.Hash([]byte(expirationTimeKeyPrefix+EncodeStorageServiceKey(hash))))
+	value, err := i.IterationCompatibleStorageService.GetByHash(ctx, dastree.Hash([]byte(expirationTimeKeyPrefix+EncodeStorageServiceKey(hash))))
 	if err != nil {
 		return 0, err
 	}

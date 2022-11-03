@@ -92,7 +92,7 @@ func (bcs *BigCacheStorageService) Put(ctx context.Context, value []byte, timeou
 }
 
 func (bcs *BigCacheStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	err := bcs.baseStorageService.putKeyValue(ctx, key, value)
+	err := convertStorageServiceToIterationCompatibleStorageService(bcs.baseStorageService).putKeyValue(ctx, key, value)
 	if err != nil {
 		return err
 	}

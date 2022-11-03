@@ -23,7 +23,6 @@ type StorageService interface {
 	Closer
 	fmt.Stringer
 	HealthCheck(ctx context.Context) error
-	putKeyValue(ctx context.Context, key common.Hash, value []byte) error
 }
 
 func EncodeStorageServiceKey(key common.Hash) string {
