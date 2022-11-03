@@ -9,13 +9,13 @@ import (
 	"time"
 )
 
-const testChallengePeriod = SecondsDuration(100)
+const testChallengePeriod = util.SecondsDuration(100)
 
 func TestAssertionChain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	timeRef := newArtificialTimeReference()
+	timeRef := util.NewArtificialTimeReference()
 	correctBlockHashes := correctBlockHashesForTest(200)
 	wrongBlockHashes := wrongBlockHashesForTest(200)
 	staker1 := common.BytesToAddress([]byte{1})
@@ -33,7 +33,7 @@ func TestAssertionChain(t *testing.T) {
 		t.Fatal()
 	}
 
-	eventChan := chain.feed.StartListener(ctx)
+	eventChan := chain.feed.Subscribe(ctx)
 
 	// add an assertion, then confirm it
 	comm := StateCommitment{1, correctBlockHashes[99]}
@@ -83,12 +83,12 @@ func TestAssertionChain(t *testing.T) {
 	Require(t, err)
 	_, err = challenge.AddLeaf(branch2, util.HistoryCommitment{100, util.ExpansionFromLeaves(wrongBlockHashes[99:200]).Root()})
 	Require(t, err)
-	err = chal1.confirmForPsTimer()
+	err = chal1.ConfirmForPsTimer()
 	if !errors.Is(err, ErrNotYet) {
 		t.Fatal(err)
 	}
 	timeRef.Add(testChallengePeriod)
-	Require(t, chal1.confirmForPsTimer())
+	Require(t, chal1.ConfirmForPsTimer())
 	Require(t, branch1.ConfirmForWin())
 	if chain.LatestConfirmed() != branch1 {
 		t.Fatal()
@@ -162,7 +162,7 @@ func TestChallengeBisections(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	timeRef := newArtificialTimeReference()
+	timeRef := util.NewArtificialTimeReference()
 	correctBlockHashes := correctBlockHashesForTest(200)
 	wrongBlockHashes := wrongBlockHashesForTest(200)
 	staker1 := common.BytesToAddress([]byte{1})

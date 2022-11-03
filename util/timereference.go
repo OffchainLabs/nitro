@@ -1,4 +1,4 @@
-package protocol
+package util
 
 import (
 	"errors"
@@ -42,22 +42,22 @@ func (realTimeReference) Get() SecondsDuration {
 	return SecondsDuration(time.Now().Unix())
 }
 
-type artificialTimeReference struct {
+type ArtificialTimeReference struct {
 	current SecondsDuration
 }
 
-func newArtificialTimeReference() *artificialTimeReference {
-	return &artificialTimeReference{0}
+func NewArtificialTimeReference() *ArtificialTimeReference {
+	return &ArtificialTimeReference{0}
 }
 
-func (atr *artificialTimeReference) Get() SecondsDuration {
+func (atr *ArtificialTimeReference) Get() SecondsDuration {
 	return atr.current
 }
 
-func (atr *artificialTimeReference) Set(newVal SecondsDuration) {
+func (atr *ArtificialTimeReference) Set(newVal SecondsDuration) {
 	atr.current = newVal
 }
 
-func (atr *artificialTimeReference) Add(delta SecondsDuration) {
+func (atr *ArtificialTimeReference) Add(delta SecondsDuration) {
 	atr.current = atr.current.SaturatingAdd(delta)
 }

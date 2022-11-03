@@ -1,17 +1,18 @@
 package protocol
 
 import (
+	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"sync"
 )
 
 type countUpTimer struct {
 	mutex            sync.Mutex
-	timeReference    TimeReference
+	timeReference    util.TimeReference
 	running          bool
-	zeropointOrValue SecondsDuration
+	zeropointOrValue util.SecondsDuration
 }
 
-func newCountUpTimer(timeReference TimeReference) *countUpTimer {
+func newCountUpTimer(timeReference util.TimeReference) *countUpTimer {
 	return &countUpTimer{
 		timeReference:    timeReference,
 		running:          false,
@@ -53,13 +54,13 @@ func (ct *countUpTimer) isRunning() bool {
 	return ct.running
 }
 
-func (ct *countUpTimer) get() SecondsDuration {
+func (ct *countUpTimer) get() util.SecondsDuration {
 	ct.mutex.Lock()
 	defer ct.mutex.Unlock()
 	return ct.getLocked()
 }
 
-func (ct *countUpTimer) getLocked() SecondsDuration {
+func (ct *countUpTimer) getLocked() util.SecondsDuration {
 	if ct.running {
 		return ct.timeReference.Get() - ct.zeropointOrValue
 	} else {
@@ -67,20 +68,20 @@ func (ct *countUpTimer) getLocked() SecondsDuration {
 	}
 }
 
-func (ct *countUpTimer) set(val SecondsDuration) {
+func (ct *countUpTimer) set(val util.SecondsDuration) {
 	ct.mutex.Lock()
 	defer ct.mutex.Unlock()
 	ct.setLocked(val)
 }
 
-func (ct *countUpTimer) setLocked(val SecondsDuration) {
+func (ct *countUpTimer) setLocked(val util.SecondsDuration) {
 	ct.zeropointOrValue = val
 	if ct.running {
 		ct.zeropointOrValue = ct.timeReference.Get() - ct.zeropointOrValue
 	}
 }
 
-func (ct *countUpTimer) add(delta SecondsDuration) {
+func (ct *countUpTimer) add(delta util.SecondsDuration) {
 	ct.mutex.Lock()
 	defer ct.mutex.Unlock()
 	ct.setLocked(ct.getLocked() + delta)
