@@ -186,18 +186,17 @@ if $force_init; then
 
     docker-compose run testnode-scripts bridge-funds --ethamount 100000
 
-    if $tokenbridge; then
-        echo == Deploying token bridge
-        docker-compose run -e ARB_KEY=$devprivkey -e ETH_KEY=$devprivkey testnode-tokenbridge gen:network
-        docker-compose run --entrypoint sh testnode-tokenbridge -c "cat localNetwork.json"
-        echo 
-    fi
 fi
 
 if $run; then
     UP_FLAG=""
     if $detach; then
         UP_FLAG="-d"
+    else
+        echo == Deploying Token bridge
+        echo Not running in detached mode. To deploy token bridge run the following commands on another terminal or re-run with --detach flag:
+        echo docker-compose run -e ARB_KEY=$devprivkey -e ETH_KEY=$devprivkey testnode-tokenbridge gen:network
+        echo docker-compose run --entrypoint sh testnode-tokenbridge -c "cat localNetwork.json"
     fi
 
     echo == Launching Sequencer
@@ -205,4 +204,11 @@ if $run; then
     echo
 
     docker-compose up $UP_FLAG $NODES
+
+    if $tokenbridge && $detach; then
+        echo == Deploying token bridge
+        docker-compose run -e ARB_KEY=$devprivkey -e ETH_KEY=$devprivkey testnode-tokenbridge gen:network
+        docker-compose run --entrypoint sh testnode-tokenbridge -c "cat localNetwork.json"
+        echo 
+    fi
 fi
