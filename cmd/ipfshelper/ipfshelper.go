@@ -232,10 +232,6 @@ func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly 
 }
 
 func CanBeIpfsPath(pathString string) bool {
-	if len(pathString) < 5 {
-		return false
-	}
-
 	_, err := ipfspath.ParsePath(pathString)
 	return err == nil ||
 		strings.HasPrefix(pathString, "/ipfs/") ||
