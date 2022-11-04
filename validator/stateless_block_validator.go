@@ -332,6 +332,7 @@ func stateLogFunc(targetHeader, header *types.Header, hasState bool) {
 }
 
 // If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
+// If keepreference == true, reference to state of prevHeader is added (no reference added if an error is returned)
 func (v *StatelessBlockValidator) RecordBlockCreation(
 	ctx context.Context,
 	prevHeader *types.Header,
@@ -403,13 +404,11 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 		blockHash = block.Hash()
 	}
 
-	var preimages map[common.Hash][]byte
-	if recordingKV != nil {
-		preimages, err = v.recordingDatabase.PreimagesFromRecording(chaincontext, recordingKV)
-		if err != nil {
-			return common.Hash{}, nil, nil, err
-		}
+	preimages, err := v.recordingDatabase.PreimagesFromRecording(chaincontext, recordingKV)
+	if err != nil {
+		return common.Hash{}, nil, nil, err
 	}
+
 	if keepReference && err == nil {
 		prevHeader = nil
 	}
@@ -438,7 +437,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				"error while trying to read delayed msg for proving",
 				"err", err, "seq", e.DelayedMsgNr, "blockNr", e.BlockNumber,
 			)
-			return errors.New("error while trying to read delayed msg for proving")
+			return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 		}
 		e.DelayedMsg = delayedMsg
 	}
@@ -456,9 +455,6 @@ func (v *StatelessBlockValidator) ValidationEntryAddSeqMessage(ctx context.Conte
 	}
 	if e.Preimages == nil {
 		e.Preimages = make(map[common.Hash][]byte)
-	}
-	if e.BatchInfo == nil {
-		e.BatchInfo = make([]BatchInfo, 0, 1)
 	}
 	e.StartPosition = startPos
 	e.EndPosition = endPos
@@ -550,7 +546,7 @@ func (v *StatelessBlockValidator) LoadEntryToMachine(ctx context.Context, entry 
 	err = mach.SetGlobalState(gsStart)
 	if err != nil {
 		log.Error("error while setting global state for proving", "err", err, "gsStart", gsStart)
-		return errors.New("error while setting global state for proving")
+		return fmt.Errorf("error while setting global state for proving: %w", err)
 	}
 	for _, batch := range entry.BatchInfo {
 		err = mach.AddSequencerInboxMessage(batch.Number, batch.Data)
@@ -559,7 +555,7 @@ func (v *StatelessBlockValidator) LoadEntryToMachine(ctx context.Context, entry 
 				"error while trying to add sequencer msg for proving",
 				"err", err, "seq", gsStart.Batch, "blockNr", entry.BlockNumber,
 			)
-			return errors.New("error while trying to add sequencer msg for proving")
+			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
 		}
 	}
 	if entry.HasDelayedMsg {
@@ -569,7 +565,7 @@ func (v *StatelessBlockValidator) LoadEntryToMachine(ctx context.Context, entry 
 				"error while trying to add delayed msg for proving",
 				"err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.BlockNumber,
 			)
-			return errors.New("error while trying to add delayed msg for proving")
+			return fmt.Errorf("error while trying to add delayed msg for proving: %w", err)
 		}
 	}
 	return nil
@@ -669,7 +665,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if usingDelayed {
 		delayed, err = v.inboxTracker.GetDelayedMessageBytes(delaydNr)
 		if err != nil {
-			return nil, fmt.Errorf("%w: error while trying to read delayed msg for proving", err)
+			return nil, fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 		}
 	}
 	entry, err := newRecordedValidationEntry(prevHeader, header, preimages, readBatchInfo, delayed)

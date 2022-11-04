@@ -44,7 +44,7 @@ type BlockValidator struct {
 	nextBatchKept           uint64 // 1 + the last batch number kept
 
 	nextBlockToValidate       uint64
-	lastValidationEntryBlock  uint64 // used to delete entries in reorg
+	lastValidationEntryBlock  uint64 // used to delete entries in reorg, protected by blockMutex
 	lastBlockValidatedUnknown bool
 	globalPosNextSend         GlobalStatePosition
 
@@ -74,9 +74,8 @@ type BlockValidatorConfig struct {
 	ConcurrentRunsLimit      int                           `koanf:"concurrent-runs-limit" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
-	CurrentModuleRoot        string                        `koanf:"current-module-root"`          // TODO(magic) requires reinitialization on hot reload
-	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"`  // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	OLD_StorePreimages       bool                          `koanf:"store-preimages" reload:"hot"` // TODO remove
+	CurrentModuleRoot        string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
 	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
 }
@@ -98,7 +97,6 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
-	f.Bool(prefix+".store-preimages", false, "[DEPRECATED] ignored")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
 }
@@ -238,7 +236,7 @@ func (v *BlockValidator) recentStateComputed(header *types.Header) {
 	}
 	_, err := v.recordingDatabase.StateFor(header)
 	if err != nil {
-		log.Error("failed to get state for blovk while validating", "err", err, "blockNum", header.Number, "hash", header.Hash())
+		log.Error("failed to get state for block while validating", "err", err, "blockNum", header.Number, "hash", header.Hash())
 		return
 	}
 	v.awaitingValidation = header
@@ -325,9 +323,6 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 		return nil
 	}
 	prevHeader := s.Entry.PrevBlockHeader
-	if prevHeader == nil {
-		mustDeref = false
-	}
 	if !s.replaceStatus(Unprepared, RecordSent) {
 		if mustDeref {
 			v.recordingDatabase.Dereference(prevHeader)
@@ -347,8 +342,8 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 			log.Error("Error while recording", "err", err, "status", s.getStatus())
 			return
 		}
-		v.recentStateComputed(s.Entry.PrevBlockHeader)
-		v.recordingDatabase.Dereference(prevHeader)
+		v.recentStateComputed(prevHeader)
+		v.recordingDatabase.Dereference(prevHeader) // removes the reference added by ValidationEntryRecord
 		if !s.replaceStatus(RecordSent, Prepared) {
 			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
 			return
@@ -1148,9 +1143,21 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 	})
 	lastValid := uint64(0)
 	v.CallIteratively(func(ctx context.Context) time.Duration {
-		newValid := v.LastBlockValidated()
+		newValid, validHash, wasmModuleRoots := v.LastBlockValidatedAndHash()
 		if newValid != lastValid {
-			log.Info("Validated blocks", "lastValid", newValid)
+			validHeader := v.blockchain.GetHeader(validHash, newValid)
+			if validHeader == nil {
+				foundHeader := v.blockchain.GetHeaderByNumber(newValid)
+				foundHash := common.Hash{}
+				if foundHeader != nil {
+					foundHash = foundHeader.Hash()
+				}
+				log.Warn("last valid block not in blockchain", "blockNum", newValid, "validatedBlockHash", validHash, "found-hash", foundHash)
+			} else {
+				validTimestamp := time.Unix(int64(validHeader.Time), 0)
+				log.Info("Validated blocks", "blockNum", newValid, "hash", validHash,
+					"timestamp", validTimestamp, "age", time.Since(validTimestamp), "wasm", wasmModuleRoots)
+			}
 			lastValid = newValid
 		}
 		return time.Second
