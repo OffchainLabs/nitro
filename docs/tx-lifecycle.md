@@ -93,7 +93,7 @@ In the happy / common case, the validator asserted a valid RBlock, and over the 
 
 If two validators assert different RBlocks, only (at most) one of them can be valid, so they are put into a dispute.
 
-A dispute consists of two staked validators dissecting their disagreement down to a single L2 block, and then dissecting the sequence of VM instructions within this block down to a single OPCODE, then finally, executing this single operation. The underlying VM the Arbitrum uses is Wasm, or, more precicelsy, "WAVM." This is all refereed by contracts on L1.
+A dispute consists of two staked validators dissecting their disagreement down to a single L2 block, and then dissecting the sequence of VM instructions within this block down to a single OPCODE, then finally, executing this single operation. The underlying VM the Arbitrum uses is Wasm, or, more precisely, "WAVM." This is all refereed by contracts on L1.
 
 **See:**
 

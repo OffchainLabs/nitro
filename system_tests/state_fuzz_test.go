@@ -4,9 +4,11 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
@@ -90,11 +93,17 @@ func (b *inboxBackend) SetPositionWithinMessage(pos uint64) {
 	b.positionWithinMessage = pos
 }
 
-func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+func (b *inboxBackend) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
 	if seqNum >= uint64(len(b.delayedMessages)) {
 		return nil, errors.New("delayed inbox message out of bounds")
 	}
-	return b.delayedMessages[seqNum], nil
+	msg, err := arbos.ParseIncomingL1Message(bytes.NewReader(b.delayedMessages[seqNum]), nil)
+	if err != nil {
+		// The bridge won't generate an invalid L1 message,
+		// so here we substitute it with a less invalid one for fuzzing.
+		msg = &arbos.TestIncomingMessageWithRequestId
+	}
+	return msg, nil
 }
 
 // A chain context with no information
@@ -109,7 +118,7 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 }
 
 func FuzzStateTransition(f *testing.F) {
-	f.Fuzz(func(t *testing.T, seqMsg []byte, delayedMsg []byte) {
+	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
 		chainDb := rawdb.NewMemoryDatabase()
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
 			chainDb,
@@ -146,8 +155,19 @@ func FuzzStateTransition(f *testing.F) {
 		// The next 8 bytes encode the after delayed message count.
 		delayedMessages := [][]byte{delayedMsg}
 		seqBatch := make([]byte, 40)
-		binary.BigEndian.PutUint64(seqBatch[32:], uint64(len(delayedMessages)))
-		seqBatch = append(seqBatch, seqMsg...)
+		binary.BigEndian.PutUint64(seqBatch[8:16], ^uint64(0))
+		binary.BigEndian.PutUint64(seqBatch[24:32], ^uint64(0))
+		binary.BigEndian.PutUint64(seqBatch[32:40], uint64(len(delayedMessages)))
+		if compressSeqMsg {
+			seqBatch = append(seqBatch, arbstate.BrotliMessageHeaderByte)
+			seqMsgCompressed, err := arbcompress.CompressFast(seqMsg)
+			if err != nil {
+				panic(fmt.Sprintf("failed to compress sequencer message: %v", err))
+			}
+			seqBatch = append(seqBatch, seqMsgCompressed...)
+		} else {
+			seqBatch = append(seqBatch, seqMsg...)
+		}
 		inbox := &inboxBackend{
 			batchSeqNum:           0,
 			batches:               [][]byte{seqBatch},

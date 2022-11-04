@@ -7,15 +7,15 @@ import (
 	"errors"
 )
 
-// Provides a method of burning arbitrary amounts of gas, which exists for historical reasons.
+// ArbosTest provides a method of burning arbitrary amounts of gas, which exists for historical reasons.
 type ArbosTest struct {
 	Address addr // 0x69
 }
 
-// Unproductively burns the amount of L2 ArbGas
+// BurnArbGas unproductively burns the amount of L2 ArbGas
 func (con ArbosTest) BurnArbGas(c ctx, gasAmount huge) error {
 	if !gasAmount.IsUint64() {
-		return errors.New("Not a uint64")
+		return errors.New("not a uint64")
 	}
 	//nolint:errcheck
 	c.Burn(gasAmount.Uint64()) // burn the amount, even if it's more than the user has

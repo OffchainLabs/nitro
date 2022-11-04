@@ -75,7 +75,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxFeeCapDoubling: 5 * time.Second,
 }
 
-// Meta must be RLP serializable and deserializable
+// DataPoster must be RLP serializable and deserializable
 type DataPoster[Meta any] struct {
 	stopwaiter.StopWaiter
 	headerReader      *headerreader.HeaderReader

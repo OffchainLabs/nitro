@@ -52,7 +52,6 @@ func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *Clien
 func (cc *ClientConnection) Start(parentCtx context.Context) {
 	cc.StopWaiter.Start(parentCtx, cc)
 	cc.LaunchThread(func(ctx context.Context) {
-		defer close(cc.out)
 		for {
 			select {
 			case <-ctx.Done():
@@ -69,14 +68,11 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 	})
 }
 
-func (cc *ClientConnection) StopAndWait() {
+func (cc *ClientConnection) StopOnly() {
 	// Ignore errors from conn.Close since we are just shutting down
 	_ = cc.conn.Close()
-	if !cc.Started() {
-		// If client connection never started, need to close channel
-		close(cc.out)
-	} else {
-		cc.StopWaiter.StopAndWait()
+	if cc.Started() {
+		cc.StopWaiter.StopOnly()
 	}
 }
 

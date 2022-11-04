@@ -13,8 +13,8 @@ type L2PricingState struct {
 	storage             *storage.Storage
 	speedLimitPerSecond storage.StorageBackedUint64
 	perBlockGasLimit    storage.StorageBackedUint64
-	baseFeeWei          storage.StorageBackedBigInt
-	minBaseFeeWei       storage.StorageBackedBigInt
+	baseFeeWei          storage.StorageBackedBigUint
+	minBaseFeeWei       storage.StorageBackedBigUint
 	gasBacklog          storage.StorageBackedUint64
 	pricingInertia      storage.StorageBackedUint64
 	backlogTolerance    storage.StorageBackedUint64
@@ -47,8 +47,8 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto,
 		sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
 		sto.OpenStorageBackedUint64(perBlockGasLimitOffset),
-		sto.OpenStorageBackedBigInt(baseFeeWeiOffset),
-		sto.OpenStorageBackedBigInt(minBaseFeeWeiOffset),
+		sto.OpenStorageBackedBigUint(baseFeeWeiOffset),
+		sto.OpenStorageBackedBigUint(minBaseFeeWeiOffset),
 		sto.OpenStorageBackedUint64(gasBacklogOffset),
 		sto.OpenStorageBackedUint64(pricingInertiaOffset),
 		sto.OpenStorageBackedUint64(backlogToleranceOffset),
@@ -60,7 +60,7 @@ func (ps *L2PricingState) BaseFeeWei() (*big.Int, error) {
 }
 
 func (ps *L2PricingState) SetBaseFeeWei(val *big.Int) error {
-	return ps.baseFeeWei.Set(val)
+	return ps.baseFeeWei.SetSaturatingWithWarning(val, "L2 base fee")
 }
 
 func (ps *L2PricingState) MinBaseFeeWei() (*big.Int, error) {
@@ -71,7 +71,7 @@ func (ps *L2PricingState) SetMinBaseFeeWei(val *big.Int) error {
 	// This modifies the "minimum basefee" parameter, but doesn't modify the current basefee.
 	// If this increases the minimum basefee, then the basefee might be below the minimum for a little while.
 	// If so, the basefee will increase by up to a factor of two per block, until it reaches the minimum.
-	return ps.minBaseFeeWei.Set(val)
+	return ps.minBaseFeeWei.SetChecked(val)
 }
 
 func (ps *L2PricingState) SpeedLimitPerSecond() (uint64, error) {
