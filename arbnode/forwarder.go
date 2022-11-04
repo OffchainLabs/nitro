@@ -32,13 +32,13 @@ var DefaultTestForwarderConfig = ForwarderConfig{
 }
 
 var DefaultNodeForwarderConfig = ForwarderConfig{
-	ConnectionTimeout:     60 * time.Second,
+	ConnectionTimeout:     30 * time.Second,
 	IdleConnectionTimeout: 15 * time.Second,
 	MaxIdleConnections:    1,
 }
 
 var DefaultSequencerForwarderConfig = ForwarderConfig{
-	ConnectionTimeout:     50 * time.Second,
+	ConnectionTimeout:     30 * time.Second,
 	IdleConnectionTimeout: 60 * time.Second,
 	MaxIdleConnections:    100,
 }
@@ -146,7 +146,7 @@ func (f *TxForwarder) Initialize(inctx context.Context) error {
 	return nil
 }
 
-// Not thread-safe vs. Initialize
+// Disable is not thread-safe vs. Initialize
 func (f *TxForwarder) Disable() {
 	atomic.StoreInt32(&f.enabled, 0)
 }
@@ -156,6 +156,10 @@ func (f *TxForwarder) Start(ctx context.Context) error {
 }
 
 func (f *TxForwarder) StopAndWait() {}
+
+func (f *TxForwarder) Started() bool {
+	return true
+}
 
 type TxDropper struct{}
 
@@ -178,3 +182,7 @@ func (f *TxDropper) Initialize(ctx context.Context) error { return nil }
 func (f *TxDropper) Start(ctx context.Context) error { return nil }
 
 func (f *TxDropper) StopAndWait() {}
+
+func (f *TxDropper) Started() bool {
+	return true
+}

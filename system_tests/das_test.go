@@ -137,7 +137,7 @@ func TestDASRekey(t *testing.T) {
 
 		nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 		Require(t, err)
-		Require(t, l2stackA.Start())
+		Require(t, nodeA.Start(ctx))
 		l2clientA := ClientForStack(t, l2stackA)
 
 		l1NodeConfigB.BlockValidator.Enable = false
@@ -148,10 +148,10 @@ func TestDASRekey(t *testing.T) {
 
 		l1NodeConfigB.DataAvailability.L1NodeURL = "none"
 
-		l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+		l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB)
 		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
-		requireClose(t, l2stackA)
-		requireClose(t, l2stackB)
+		nodeA.StopAndWait()
+		nodeB.StopAndWait()
 	}
 
 	err := dasRpcServerA.Shutdown(ctx)
@@ -179,14 +179,14 @@ func TestDASRekey(t *testing.T) {
 	l1NodeConfigA.DataAvailability.AggregatorConfig = aggConfigForBackend(t, backendConfigB)
 	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, feedErrChan)
 	Require(t, err)
-	Require(t, l2stackA.Start())
+	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)
 
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB)
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(2e12), l2clientB)
 
-	Require(t, l2stackA.Close())
-	Require(t, l2stackB.Close())
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
 }
 
 func checkBatchPosting(t *testing.T, ctx context.Context, l1client, l2clientA *ethclient.Client, l1info, l2info info, expectedBalance *big.Int, l2ClientsToCheck ...*ethclient.Client) {
@@ -309,7 +309,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	sequencerTxOptsPtr := &sequencerTxOpts
 	nodeA, err := arbnode.CreateNode(ctx, l2stackA, l2chainDb, l2arbDb, l1NodeConfigA, l2blockchain, l1client, addresses, sequencerTxOptsPtr, dataSigner, feedErrChan)
 	Require(t, err)
-	Require(t, l2stackA.Start())
+	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)
 
 	// Create node to sync from chain
@@ -331,12 +331,12 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Enable = true
 	l1NodeConfigB.DataAvailability.RestfulClientAggregatorConfig.Urls = []string{"http://" + restLis.Addr().String()}
 	l1NodeConfigB.DataAvailability.L1NodeURL = "none"
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB)
 
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 
-	requireClose(t, l2stackA)
-	requireClose(t, l2stackB)
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
 
 	err = restServer.Shutdown()
 	Require(t, err)

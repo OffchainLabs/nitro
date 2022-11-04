@@ -27,9 +27,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeString)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
-	l2info, nodeA, l2client, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
+	l2info, nodeA, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig, nil)
 	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stackA)
+	defer nodeA.StopAndWait()
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
@@ -38,8 +38,8 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, expensiveTx bo
 	validatorConfig.BlockValidator.ArbitratorValidator = true
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.AggregatorConfig.Enable = false
-	l2clientB, nodeB, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, validatorConfig)
-	defer requireClose(t, l2stackB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, validatorConfig)
+	defer nodeB.StopAndWait()
 	l2info.GenerateAccount("User2")
 
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)

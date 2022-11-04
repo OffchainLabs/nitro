@@ -4,6 +4,7 @@
 package validator
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -25,16 +26,28 @@ type JitMachine struct {
 	stdin   io.WriteCloser
 }
 
-func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
-
-	jitBinary, err := exec.LookPath("jit")
-	if err != nil {
-		jitBinary = filepath.FromSlash("./target/bin/jit")
+func getJitPath() (string, error) {
+	var jitBinary string
+	executable, err := os.Executable()
+	if err == nil {
+		jitBinary = filepath.Join(filepath.Dir(executable), "jit")
+		_, err = os.Stat(jitBinary)
 	}
-	if _, err := os.Stat(jitBinary); err != nil {
+	if err != nil {
+		var lookPathErr error
+		jitBinary, lookPathErr = exec.LookPath("jit")
+		if lookPathErr == nil {
+			return jitBinary, nil
+		}
+	}
+	return jitBinary, err
+}
+
+func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+	jitBinary, err := getJitPath()
+	if err != nil {
 		return nil, err
 	}
-
 	binary := filepath.Join(config.getMachinePath(moduleRoot), config.ProverBinPath)
 	invocation := []string{"--binary", binary, "--forks"}
 	if config.JitCranelift {
@@ -49,7 +62,7 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 	process.Stderr = os.Stderr
 	go func() {
 		if err := process.Run(); err != nil {
-			fatalErrChan <- fmt.Errorf("Lost jit block validator process: %w", err)
+			fatalErrChan <- fmt.Errorf("lost jit block validator process: %w", err)
 		}
 	}()
 
@@ -62,19 +75,29 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 }
 
 func (machine *JitMachine) prove(
-	entry *validationEntry, resolver GoPreimageResolver, delayed []byte,
+	ctxIn context.Context, entry *validationEntry, resolver GoPreimageResolver, delayed []byte,
 ) (GoGlobalState, error) {
+	ctx, cancel := context.WithCancel(ctxIn)
+	defer cancel() // ensure our cleanup functions run when we're done
 	state := GoGlobalState{}
 
 	timeout := time.Now().Add(60 * time.Second)
-	tcp, err := net.ListenTCP("tcp", &net.TCPAddr{})
+	tcp, err := net.ListenTCP("tcp4", &net.TCPAddr{
+		IP: []byte{127, 0, 0, 1},
+	})
 	if err != nil {
 		return state, err
 	}
 	if err := tcp.SetDeadline(timeout); err != nil {
 		return state, err
 	}
-	defer tcp.Close()
+	go func() {
+		<-ctx.Done()
+		err := tcp.Close()
+		if err != nil {
+			log.Warn("error closing JIT validation TCP listener", "err", err)
+		}
+	}()
 	address := fmt.Sprintf("%v\n", tcp.Addr().String())
 
 	// Tell the spawner process about the new tcp port
@@ -87,13 +110,19 @@ func (machine *JitMachine) prove(
 	if err != nil {
 		return state, err
 	}
+	go func() {
+		<-ctx.Done()
+		err := conn.Close()
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Warn("error closing JIT validation TCP connection", "err", err)
+		}
+	}()
 	if err := conn.SetReadDeadline(timeout); err != nil {
 		return state, err
 	}
 	if err := conn.SetWriteDeadline(timeout); err != nil {
 		return state, err
 	}
-	defer conn.Close()
 
 	// Tell the new process about the global state
 	gsStart := entry.start()

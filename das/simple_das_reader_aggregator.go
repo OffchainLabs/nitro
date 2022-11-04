@@ -97,7 +97,7 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 		}
 	}
 	if len(combinedUrls) == 0 {
-		return nil, errors.New("No URLs were specified with either of rest-aggregator.urls or rest-aggregator.online-url-list")
+		return nil, errors.New("no URLs were specified with either of rest-aggregator.urls or rest-aggregator.online-url-list")
 	}
 
 	urls := make([]string, 0, len(combinedUrls))
@@ -126,7 +126,7 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 	case "testing-sequential":
 		a.strategy = &testingSequentialStrategy{}
 	default:
-		return nil, fmt.Errorf("Unknown RestfulClientAggregator strategy '%s', use --help to see available strategies.", config.Strategy)
+		return nil, fmt.Errorf("unknown RestfulClientAggregator strategy '%s', use --help to see available strategies", config.Strategy)
 	}
 	a.strategy.update(a.readers, a.stats)
 	return &a, nil
@@ -239,7 +239,7 @@ func (a *SimpleDASReaderAggregator) GetByHash(ctx context.Context, hash common.H
 		}
 	}
 
-	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS Reader: %v", errorCollection)
+	return nil, fmt.Errorf("data wasn't able to be retrieved from any DAS Reader: %v", errorCollection)
 }
 
 func (a *SimpleDASReaderAggregator) tryGetByHash(
@@ -270,7 +270,7 @@ func (a *SimpleDASReaderAggregator) tryGetByHash(
 }
 
 func (a *SimpleDASReaderAggregator) Start(ctx context.Context) {
-	a.StopWaiter.Start(ctx)
+	a.StopWaiter.Start(ctx, a)
 	onlineUrlsChan := StartRestfulServerListFetchDaemon(a.StopWaiter.GetContext(), a.config.OnlineUrlList, a.config.OnlineUrlListFetchInterval)
 
 	updateRestfulDasClients := func(urls []string) {

@@ -7,8 +7,11 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
+	"net/http"
+	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
 	"reflect"
@@ -21,6 +24,7 @@ import (
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
+	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -40,6 +44,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	_ "github.com/offchainlabs/nitro/nodeInterface"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -49,8 +54,7 @@ import (
 )
 
 func printSampleUsage(name string) {
-	fmt.Printf("\n")
-	fmt.Printf("Sample usage:                  %s --help \n", name)
+	fmt.Printf("Sample usage: %s --help \n", name)
 }
 
 func initLog(logType string, logLevel log.Lvl) error {
@@ -115,23 +119,41 @@ func addUnlockWallet(accountManager *accounts.Manager, walletConf *genericconf.W
 	return devAddr, nil
 }
 
+func closeDb(db io.Closer, name string) {
+	if db != nil {
+		err := db.Close()
+		// unfortunately the freezer db means we can't just use errors.Is
+		if err != nil && !strings.Contains(err.Error(), leveldb.ErrClosed.Error()) {
+			log.Warn("failed to close database on shutdown", "db", name, "err", err)
+		}
+	}
+}
+
 func main() {
+	os.Exit(mainImpl())
+}
+
+// Returns the exit code
+func mainImpl() int {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
 	args := os.Args[1:]
 	nodeConfig, l1Wallet, l2DevWallet, l1Client, l1ChainId, err := ParseNode(ctx, args)
 	if err != nil {
-		util.HandleError(err, printSampleUsage)
-
-		return
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel))
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
+		os.Exit(1)
+	}
+	if nodeConfig.Node.Archive {
+		log.Warn("--node.archive has been deprecated. Please use --node.caching.archive instead.")
+		nodeConfig.Node.Caching.Archive = true
 	}
 
-	vcsRevision, vcsTime := util.GetVersion()
+	vcsRevision, vcsTime := confighelpers.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
@@ -145,26 +167,27 @@ func main() {
 	if nodeConfig.Node.Sequencer.Enable {
 		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
-			panic("forwarding-target set when sequencer enabled")
+			log.Crit("forwarding-target cannot be set when sequencer is enabled")
 		}
 		if nodeConfig.Node.L1Reader.Enable && nodeConfig.Node.InboxReader.HardReorg {
-			panic("hard reorgs cannot safely be enabled with sequencer mode enabled")
+			flag.Usage()
+			log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
 		}
 	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
 		flag.Usage()
-		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
+		log.Crit("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
 	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	sequencerNeedsKey := nodeConfig.Node.Sequencer.Enable && !nodeConfig.Node.Feed.Output.DisableSigning
 	setupNeedsKey := l1Wallet.OnlyCreateKey || nodeConfig.Node.Validator.OnlyCreateWalletContract
-	validatorNeedsKey := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
-	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorNeedsKey {
+	validatorCanAct := nodeConfig.Node.Validator.Enable && !strings.EqualFold(nodeConfig.Node.Validator.Strategy, "watchtower")
+	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.Enable || setupNeedsKey || validatorCanAct {
 		l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.L1.ChainID))
 		if err != nil {
-			fmt.Printf("%v\n", err.Error())
-			return
+			flag.Usage()
+			log.Crit("error opening L1 wallet", "err", err)
 		}
 	}
 
@@ -174,8 +197,7 @@ func main() {
 
 		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
 		if err != nil {
-			fmt.Printf("error getting rollup addresses: %v\n", err.Error())
-			return
+			log.Crit("error getting rollup addresses", "err", err)
 		}
 	} else if l1Client != nil {
 		// Don't need l1Client anymore
@@ -186,37 +208,39 @@ func main() {
 	if nodeConfig.Node.Validator.Enable {
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
-			panic("validator must read from L1")
+			log.Crit("validator have the L1 reader enabled")
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 		}
 	}
 
+	if (nodeConfig.Node.BlockValidator.Enable || validatorCanAct) && !nodeConfig.Node.Caching.Archive {
+		flag.Usage()
+		log.Crit("validator requires --node.caching.archive")
+	}
+
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
+		if !nodeConfig.Node.Validator.UseSmartContractWallet {
+			flag.Usage()
+			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
+		}
 		l1Reader := headerreader.New(l1Client, func() *headerreader.Config { return &liveNodeConfig.get().Node.L1Reader })
 
 		// Just create validator smart wallet if needed then exit
 		deployInfo, err := nodeConfig.L1.Rollup.ParseAddresses()
 		if err != nil {
-			log.Error("error getting deployment info for creating validator wallet contract", "error", err)
-			return
+			log.Crit("error getting deployment info for creating validator wallet contract", "error", err)
 		}
-		addr, err := validator.GetValidatorWallet(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
+		addr, err := validator.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOpts, l1Reader, true)
 		if err != nil {
-			log.Error("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
-			return
+			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOpts.From.Hex())
 		}
-		fmt.Printf("created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
-
-		return
+		fmt.Printf("Created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
+		return 0
 	}
 
-	if nodeConfig.Node.Archive {
-		log.Warn("node.archive has been deprecated. Please use node.caching.archive instead.")
-		nodeConfig.Node.Caching.Archive = true
-	}
 	if nodeConfig.Node.Caching.Archive && nodeConfig.Node.TxLookupLimit != 0 {
 		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
 		nodeConfig.Node.TxLookupLimit = 0
@@ -226,6 +250,7 @@ func main() {
 	stackConf.DataDir = nodeConfig.Persistent.Chain
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.IPC.Apply(&stackConf)
 	nodeConfig.GraphQL.Apply(&stackConf)
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
@@ -237,13 +262,13 @@ func main() {
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
-		panic(err)
+		log.Crit("failed to initialize geth stack", "err", err)
 	}
 	{
 		devAddr, err := addUnlockWallet(stack.AccountManager(), l2DevWallet)
 		if err != nil {
 			flag.Usage()
-			panic(err)
+			log.Crit("error opening L2 dev wallet", "err", err)
 		}
 		if devAddr != (common.Address{}) {
 			nodeConfig.Init.DevInitAddr = devAddr.String()
@@ -251,23 +276,28 @@ func main() {
 	}
 
 	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.L2.ChainID), arbnode.DefaultCacheConfigFor(stack, &nodeConfig.Node.Caching))
+	defer closeDb(chainDb, "chainDb")
 	if err != nil {
-		util.HandleError(err, printSampleUsage)
-		return
+		flag.Usage()
+		log.Error("error initializing database", "err", err)
+		return 1
 	}
 
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
+	defer closeDb(arbDb, "arbDb")
 	if err != nil {
-		panic(fmt.Sprintf("Failed to open database: %v", err))
+		log.Error("failed to open database", "err", err)
+		return 1
 	}
 
 	if nodeConfig.Init.ThenQuit {
-		return
+		return 0
 	}
 
 	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
 		flag.Usage()
-		panic("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
+		log.Error("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
+		return 1
 	}
 
 	if nodeConfig.Metrics {
@@ -275,8 +305,16 @@ func main() {
 
 		if nodeConfig.MetricsServer.Addr != "" {
 			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
-			exp.Setup(address)
+			if nodeConfig.MetricsServer.Pprof {
+				startPprof(address)
+			} else {
+				exp.Setup(address)
+			}
 		}
+	} else if nodeConfig.MetricsServer.Pprof {
+		flag.Usage()
+		log.Error("--metrics must be enabled in order to use pprof with the metrics server")
+		return 1
 	}
 
 	fatalErrChan := make(chan error, 10)
@@ -294,10 +332,11 @@ func main() {
 		fatalErrChan,
 	)
 	if err != nil {
-		panic(err)
+		log.Error("failed to create node", "err", err)
+		return 1
 	}
-	liveNodeConfig.setOnReloadHook(func(old *NodeConfig, new *NodeConfig) error {
-		return currentNode.OnConfigReload(&old.Node, &new.Node)
+	liveNodeConfig.setOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
+		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {
@@ -318,20 +357,24 @@ func main() {
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
 		if err := graphql.New(stack, currentNode.Backend.APIBackend(), gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
-			panic(fmt.Sprintf("Failed to register the GraphQL service: %v", err))
+			log.Error("failed to register the GraphQL service", "err", err)
+			return 1
 		}
 	}
 
-	if err := stack.Start(); err != nil {
-		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
+	if err := currentNode.Start(ctx); err != nil {
+		fatalErrChan <- fmt.Errorf("error starting node: %w", err)
 	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
+	exitCode := 0
 	select {
 	case err := <-fatalErrChan:
 		log.Error("shutting down due to fatal error", "err", err)
+		defer log.Error("shut down due to fatal error", "err", err)
+		exitCode = 1
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
@@ -339,9 +382,9 @@ func main() {
 	// cause future ctrl+c's to panic
 	close(sigint)
 
-	if err := stack.Close(); err != nil {
-		panic(fmt.Sprintf("Error closing stack: %v\n", err))
-	}
+	currentNode.StopAndWait()
+
+	return exitCode
 }
 
 type NodeConfig struct {
@@ -354,6 +397,7 @@ type NodeConfig struct {
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
+	IPC           genericconf.IPCConfig           `koanf:"ipc"`
 	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -370,6 +414,7 @@ var NodeConfigDefault = NodeConfig{
 	Persistent:    conf.PersistentConfigDefault,
 	HTTP:          genericconf.HTTPConfigDefault,
 	WS:            genericconf.WSConfigDefault,
+	IPC:           genericconf.IPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 }
@@ -384,6 +429,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.PersistentConfigAddOptions("persistent", f)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
+	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
@@ -444,7 +490,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	NodeConfigAddOptions(f)
 
-	k, err := util.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -470,7 +516,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			if i < maxConnectionAttempts {
 				log.Warn("error connecting to L1", "err", err)
 			} else {
-				panic(err)
+				return nil, nil, nil, nil, nil, fmt.Errorf("too many errors trying to connect to L1: %w", err)
 			}
 
 			timer := time.NewTimer(time.Second * 1)
@@ -549,19 +595,19 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 		}
 	}
 
-	err = util.ApplyOverrides(f, k)
+	err = confighelpers.ApplyOverrides(f, k)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
 	var nodeConfig NodeConfig
-	if err := util.EndCommonParse(k, &nodeConfig); err != nil {
+	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
-		err = util.DumpConfig(k, map[string]interface{}{
+		err = confighelpers.DumpConfig(k, map[string]interface{}{
 			"l1.wallet.password":        "",
 			"l1.wallet.private-key":     "",
 			"l2.dev-wallet.password":    "",
@@ -675,7 +721,7 @@ func applyArbitrumAnytrustGoerliTestnetParameters(k *koanf.Koanf) error {
 
 type OnReloadHook func(old *NodeConfig, new *NodeConfig) error
 
-func noopOnReloadHook(old *NodeConfig, new *NodeConfig) error {
+func noopOnReloadHook(_ *NodeConfig, _ *NodeConfig) error {
 	return nil
 }
 
@@ -713,7 +759,7 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 }
 
 func (c *LiveNodeConfig) Start(ctxIn context.Context) {
-	c.StopWaiter.Start(ctxIn)
+	c.StopWaiter.Start(ctxIn, c)
 
 	sigusr1 := make(chan os.Signal, 1)
 	signal.Notify(sigusr1, syscall.SIGUSR1)
@@ -775,10 +821,14 @@ func (f *NodeConfigFetcher) Get() *arbnode.Config {
 	return &f.LiveNodeConfig.get().Node
 }
 
-func (f *NodeConfigFetcher) Start(ctx context.Context) {
-	f.LiveNodeConfig.Start(ctx)
-}
-
-func (f *NodeConfigFetcher) StopAndWait() {
-	f.LiveNodeConfig.StopAndWait()
+func startPprof(address string) {
+	exp.Exp(metrics.DefaultRegistry)
+	log.Info("Starting metrics server with pprof", "addr", fmt.Sprintf("http://%s/debug/metrics", address))
+	log.Info("Pprof endpoint", "addr", fmt.Sprintf("http://%s/debug/pprof", address))
+	go func() {
+		// #nosec G114
+		if err := http.ListenAndServe(address, http.DefaultServeMux); err != nil {
+			log.Error("Failure in running pprof server", "err", err)
+		}
+	}()
 }

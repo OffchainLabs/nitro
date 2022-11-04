@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -18,12 +19,18 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-/* Protocol-specific client catch-up logic can be injected using this interface. */
+var (
+	clientsConnectedGauge = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
+	clientsTotalCounter   = metrics.NewRegisteredCounter("arb/feed/clients/total", nil)
+)
+
+// CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
 type CatchupBuffer interface {
 	OnRegisterClient(context.Context, *ClientConnection) error
 	OnDoBroadcast(interface{}) error
@@ -63,12 +70,19 @@ func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetc
 }
 
 func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *ClientConnection) error {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("Recovered in registerClient", "recover", r)
+		}
+	}()
 	if err := cm.catchupBuffer.OnRegisterClient(ctx, clientConnection); err != nil {
 		return err
 	}
 
 	clientConnection.Start(ctx)
 	cm.clientPtrMap[clientConnection] = true
+	clientsConnectedGauge.Inc(1)
+	clientsTotalCounter.Inc(1)
 	atomic.AddInt32(&cm.clientCount, 1)
 
 	return nil
@@ -95,7 +109,7 @@ func (cm *ClientManager) removeAll() {
 }
 
 func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
-	clientConnection.StopAndWait()
+	clientConnection.StopOnly()
 
 	err := cm.poller.Stop(clientConnection.desc)
 	if err != nil {
@@ -103,10 +117,11 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 	}
 
 	err = clientConnection.conn.Close()
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 		log.Warn("Failed to close client connection", "err", err)
 	}
 
+	clientsConnectedGauge.Dec(1)
 	atomic.AddInt32(&cm.clientCount, -1)
 }
 
@@ -192,20 +207,20 @@ func (cm *ClientManager) verifyClients() []*ClientConnection {
 }
 
 func (cm *ClientManager) Start(parentCtx context.Context) {
-	cm.StopWaiter.Start(parentCtx)
+	cm.StopWaiter.Start(parentCtx, cm)
 
 	cm.LaunchThread(func(ctx context.Context) {
 		defer cm.removeAll()
 
+		// Ping needs to occur regularly regardless of other traffic
+		pingTimer := time.NewTimer(cm.config().Ping)
 		var clientDeleteList []*ClientConnection
+		defer pingTimer.Stop()
 		for {
-			pingInterval := time.NewTimer(cm.config().Ping)
 			select {
 			case <-ctx.Done():
-				pingInterval.Stop()
 				return
 			case clientAction := <-cm.clientAction:
-				pingInterval.Stop()
 				if clientAction.create {
 					err := cm.registerClient(ctx, clientAction.cc)
 					if err != nil {
@@ -216,12 +231,12 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 					cm.removeClient(clientAction.cc)
 				}
 			case bm := <-cm.broadcastChan:
-				pingInterval.Stop()
 				var err error
 				clientDeleteList, err = cm.doBroadcast(bm)
 				logError(err, "failed to do broadcast")
-			case <-pingInterval.C:
+			case <-pingTimer.C:
 				clientDeleteList = cm.verifyClients()
+				pingTimer.Reset(cm.config().Ping)
 			}
 
 			if len(clientDeleteList) > 0 {

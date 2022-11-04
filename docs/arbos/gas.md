@@ -6,7 +6,7 @@ There are two parties a user pays when submitting a tx:
 
 The L1 component is the product of the tx's estimated contribution to its batch's size — computed using Brotli on the tx by itself — and the L2's view of the L1 data price, a value which dynamically adjusts over time to ensure the batch-poster is ultimately fairly compensated. For details, see [L1 Pricing](arbos.md#l1pricingstate).
 
-[The L2 component](arbos.md#l2pricingstate) consists of the traditional fees geth would pay to miners in a vanilla L1 chain, such as the computation and storage charges applying the state transition function entails. ArbOS charges additional fees for executing its L2-specific [precompiles](precompiles.md), whose fees are dynamically priced according to the specific resources used while executing the call.
+[The L2 component](arbos.md#l2pricingstate) consists of the traditional fees geth would pay to stakers in a vanilla L1 chain, such as the computation and storage charges applying the state transition function entails. ArbOS charges additional fees for executing its L2-specific [precompiles](precompiles.md), whose fees are dynamically priced according to the specific resources used while executing the call.
 
 ## Gas Price Floor
 The L2 gas price on a given Arbitrum chain has a set floor, which can be queried via [`ArbGasInfo.getMinimumGasPrice`](precompiles.md) (currently 0.1 gwei on both Arbitrum One and Nova). 

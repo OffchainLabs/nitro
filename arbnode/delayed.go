@@ -123,7 +123,7 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
 }
 
-func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int) ([]*DelayedInboxMessage, error) {
+func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int, batchFetcher arbos.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
 	query := ethereum.FilterQuery{
 		BlockHash: nil,
 		FromBlock: from,
@@ -135,7 +135,7 @@ func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
-	return b.logsToDeliveredMessages(ctx, logs)
+	return b.logsToDeliveredMessages(ctx, logs, batchFetcher)
 }
 
 type sortableMessageList []*DelayedInboxMessage
@@ -152,7 +152,7 @@ func (l sortableMessageList) Less(i, j int) bool {
 	return bytes.Compare(l[i].Message.Header.RequestId.Bytes(), l[j].Message.Header.RequestId.Bytes()) < 0
 }
 
-func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []types.Log) ([]*DelayedInboxMessage, error) {
+func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []types.Log, batchFetcher arbos.FallibleBatchFetcher) ([]*DelayedInboxMessage, error) {
 	if len(logs) == 0 {
 		return nil, nil
 	}
@@ -209,6 +209,10 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 				},
 				L2msg: data,
 			},
+		}
+		err := msg.Message.FillInBatchGasCost(batchFetcher)
+		if err != nil {
+			return nil, err
 		}
 		messages = append(messages, msg)
 	}
@@ -268,16 +272,16 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		}
 		return parsedLog.MessageNum, parsedLog.Data, nil
 	} else if ethLog.Topics[0] == inboxMessageFromOriginID {
-		tx, err := b.client.TransactionInBlock(ctx, ethLog.BlockHash, ethLog.TxIndex)
-		if err != nil {
-			return nil, nil, errors.WithStack(err)
-		}
 		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(ethLog)
 		if err != nil {
 			return nil, nil, errors.WithStack(err)
 		}
+		data, err := arbutil.GetLogEmitterTxData(ctx, b.client, ethLog)
+		if err != nil {
+			return nil, nil, err
+		}
 		args := make(map[string]interface{})
-		err = l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
+		err = l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:])
 		if err != nil {
 			return nil, nil, errors.WithStack(err)
 		}

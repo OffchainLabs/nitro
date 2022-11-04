@@ -180,7 +180,7 @@ func (l *SimpleRedisLock) Release(ctx context.Context) {
 }
 
 func (l *SimpleRedisLock) Start(ctxin context.Context) {
-	l.StopWaiter.Start(ctxin)
+	l.StopWaiter.Start(ctxin, l)
 	if l.config().BackgroundLock && l.client != nil {
 		l.CallIteratively(func(ctx context.Context) time.Duration {
 			_, err := l.attemptLock(ctx)

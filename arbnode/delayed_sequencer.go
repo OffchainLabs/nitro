@@ -109,7 +109,7 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 			header, err = d.l1Reader.LatestSafeHeader()
 		}
 		if err != nil {
-			return fmt.Errorf("Failed to get latest header: %w", err)
+			return fmt.Errorf("failed to get latest header: %w", err)
 		}
 		finalized = header.Number
 	}
@@ -204,6 +204,6 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 }
 
 func (d *DelayedSequencer) Start(ctxIn context.Context) {
-	d.StopWaiter.Start(ctxIn)
+	d.StopWaiter.Start(ctxIn, d)
 	d.LaunchThread(d.run)
 }

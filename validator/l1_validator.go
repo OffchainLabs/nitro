@@ -40,15 +40,14 @@ const (
 )
 
 type L1Validator struct {
-	rollup                  *RollupWatcher
-	rollupAddress           common.Address
-	challengeManagerAddress common.Address
-	validatorUtils          *rollupgen.ValidatorUtils
-	client                  arbutil.L1Interface
-	builder                 *ValidatorTxBuilder
-	wallet                  *ValidatorWallet
-	callOpts                bind.CallOpts
-	genesisBlockNumber      uint64
+	rollup             *RollupWatcher
+	rollupAddress      common.Address
+	validatorUtils     *rollupgen.ValidatorUtils
+	client             arbutil.L1Interface
+	builder            *ValidatorTxBuilder
+	wallet             ValidatorWalletInterface
+	callOpts           bind.CallOpts
+	genesisBlockNumber uint64
 
 	l2Blockchain       *core.BlockChain
 	das                arbstate.DataAvailabilityReader
@@ -60,7 +59,7 @@ type L1Validator struct {
 
 func NewL1Validator(
 	client arbutil.L1Interface,
-	wallet *ValidatorWallet,
+	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
 	l2Blockchain *core.BlockChain,
@@ -116,10 +115,6 @@ func (v *L1Validator) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	v.challengeManagerAddress, err = v.rollup.ChallengeManager(v.getCallOpts(ctx))
-	if err != nil {
-		return err
-	}
 	return v.updateBlockValidatorModuleRoot(ctx)
 }
 
@@ -152,7 +147,7 @@ func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Tra
 		return nil, nil
 	}
 	log.Info("timing out challenges", "count", len(challengesToEliminate))
-	return v.wallet.TimeoutChallenges(ctx, v.challengeManagerAddress, challengesToEliminate)
+	return v.wallet.TimeoutChallenges(ctx, challengesToEliminate)
 }
 
 func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, latestConfirmedNode *uint64) (bool, error) {
@@ -172,7 +167,7 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 			// We aren't an example of someone staked on a competitor
 			return false, nil
 		}
-		log.Info("rejecing node", "node", unresolvedNodeIndex)
+		log.Warn("rejecting node", "node", unresolvedNodeIndex)
 		_, err = v.rollup.RejectNextNode(v.builder.Auth(ctx), *addr)
 		return true, err
 	case CONFIRM_TYPE_VALID:
@@ -181,6 +176,7 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 			return false, err
 		}
 		afterGs := nodeInfo.AfterState().GlobalState
+		log.Info("confirming node", "node", unresolvedNodeIndex)
 		_, err = v.rollup.ConfirmNextNode(v.builder.Auth(ctx), afterGs.BlockHash, afterGs.SendRoot)
 		if err != nil {
 			return false, err
@@ -419,7 +415,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				afterGs.SendRoot == expectedSendRoot
 			if valid {
 				log.Info(
-					"found correct node",
+					"found correct assertion",
 					"node", nd.NodeNum,
 					"blockNum", lastBlockNum,
 					"blockHash", afterGs.BlockHash,
@@ -430,8 +426,8 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				}
 				continue
 			} else {
-				log.Warn(
-					"found node with incorrect assertion",
+				log.Error(
+					"found incorrect assertion",
 					"node", nd.NodeNum,
 					"inboxPositionInvalid", inboxPositionInvalid,
 					"computedBlockNum", lastBlockNum,
@@ -444,7 +440,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				)
 			}
 		} else {
-			log.Warn("found younger sibling to correct node", "node", nd.NodeNum)
+			log.Error("found younger sibling to correct assertion (implicitly invalid)", "node", nd.NodeNum)
 		}
 		// If we've hit this point, the node is "wrong"
 		wrongNodesExist = true

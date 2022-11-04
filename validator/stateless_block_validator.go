@@ -320,6 +320,14 @@ func RecordBlockCreation(
 		if chainId.Cmp(chainConfig.ChainID) != 0 {
 			return common.Hash{}, nil, nil, fmt.Errorf("unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
 		}
+		genesisNum, err := initialArbosState.GenesisBlockNum()
+		if err != nil {
+			return common.Hash{}, nil, nil, fmt.Errorf("error getting genesis block number from initial ArbOS state: %w", err)
+		}
+		expectedNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
+		if genesisNum != expectedNum {
+			return common.Hash{}, nil, nil, fmt.Errorf("unexpected genesis block number %v in ArbOS state, expected %v", genesisNum, expectedNum)
+		}
 	}
 
 	var blockHash common.Hash
@@ -336,6 +344,9 @@ func RecordBlockCreation(
 			})
 			return data, nil
 		}
+		// Re-fetch the batch instead of using our cached cost,
+		// as the replay binary won't have the cache populated.
+		msg.Message.BatchGasCost = nil
 		block, _, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
@@ -563,7 +574,7 @@ func (v *StatelessBlockValidator) jitBlock(
 	if err != nil {
 		return empty, nil, err
 	}
-	state, err := machine.prove(entry, resolver, delayed)
+	state, err := machine.prove(ctx, entry, resolver, delayed)
 	return state, delayed, err
 }
 

@@ -12,7 +12,7 @@ The only thing that a dispute can add delay to is the confirmation of L2-to-L1 m
 
 It will be roughly one week, but there's some variability in the exact wall-clock time of the dispute window, plus there's some expected additional "padding" time on both ends (no more than about an hour, typically).
 
-The variability of the dispute window comes from the unpredictability of POW block times. Arbitrum One's dispute window is 45818 blocks; this converts to ~1 week assuming 13.2 seconds per block, which historically has been the average block time on Ethereum, though some weeks could differ.
+The variability of the dispute window comes from the slight variance of block times. Arbitrum One's dispute window is 45818 blocks; this converts to ~1 week assuming 13.2 seconds per block, which was the average block time when Ethereum used Proof of Work (with the switch to Proof of Stake, average block times are expected to be slightly lower — about 12 seconds.)
 
 The "padding on both ends" involves three events that have to occur between a client receiving their transaction receipt from a Sequencer and their L2 to L1 message being executable. After getting their receipt,
 

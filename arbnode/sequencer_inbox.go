@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/pkg/errors"
 
@@ -102,21 +103,21 @@ type SequencerInboxBatch struct {
 	AfterDelayedAcc   common.Hash
 	AfterDelayedCount uint64
 	TimeBounds        bridgegen.ISequencerInboxTimeBounds
-	txIndexInBlock    uint
+	rawLog            types.Log
 	dataLocation      batchDataLocation
 	bridgeAddress     common.Address
 	serialized        []byte // nil if serialization isn't cached yet
 }
 
-func (m *SequencerInboxBatch) GetData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
 	switch m.dataLocation {
 	case batchDataTxInput:
-		tx, err := client.TransactionInBlock(ctx, m.BlockHash, m.txIndexInBlock)
+		data, err := arbutil.GetLogEmitterTxData(ctx, client, m.rawLog)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, err
 		}
 		args := make(map[string]interface{})
-		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
+		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, data[4:])
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
@@ -175,7 +176,7 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1In
 	}
 
 	// Append the batch data
-	data, err := m.GetData(ctx, client)
+	data, err := m.getSequencerData(ctx, client)
 	if err != nil {
 		return nil, err
 	}
@@ -197,6 +198,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 		return nil, errors.WithStack(err)
 	}
 	messages := make([]*SequencerInboxBatch, 0, len(logs))
+	var lastSeqNum *uint64
 	for _, log := range logs {
 		if log.Topics[0] != batchDeliveredID {
 			return nil, errors.New("unexpected log selector")
@@ -212,15 +214,22 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
 		}
 
+		seqNum := parsedLog.BatchSequenceNumber.Uint64()
+		if lastSeqNum != nil {
+			if seqNum != *lastSeqNum+1 {
+				return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", lastSeqNum, seqNum)
+			}
+		}
+		lastSeqNum = &seqNum
 		batch := &SequencerInboxBatch{
 			BlockHash:         log.BlockHash,
 			BlockNumber:       log.BlockNumber,
-			SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
+			SequenceNumber:    seqNum,
 			BeforeInboxAcc:    parsedLog.BeforeAcc,
 			AfterInboxAcc:     parsedLog.AfterAcc,
 			AfterDelayedAcc:   parsedLog.DelayedAcc,
 			AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
-			txIndexInBlock:    log.TxIndex,
+			rawLog:            log,
 			TimeBounds:        parsedLog.TimeBounds,
 			dataLocation:      batchDataLocation(parsedLog.DataLocation),
 			bridgeAddress:     log.Address,

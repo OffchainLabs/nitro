@@ -51,14 +51,16 @@ func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeou
 		discardAfterTimeout: discardAfterTimeout,
 		dirPath:             dirPath,
 	}
-	if err := ret.stopWaiter.Start(ctx); err != nil {
+	if err := ret.stopWaiter.Start(ctx, ret); err != nil {
 		return nil, err
 	}
 	err = ret.stopWaiter.LaunchThread(func(myCtx context.Context) {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		defer func() {
-			_ = ret.db.Close()
+			if err := ret.db.Close(); err != nil {
+				log.Error("Failed to close DB", "err", err)
+			}
 		}()
 		for {
 			select {
@@ -119,8 +121,7 @@ func (dbs *DBStorageService) Sync(ctx context.Context) error {
 }
 
 func (dbs *DBStorageService) Close(ctx context.Context) error {
-	dbs.stopWaiter.StopAndWait()
-	return nil
+	return dbs.stopWaiter.StopAndWait()
 }
 
 func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {

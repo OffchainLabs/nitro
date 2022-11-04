@@ -32,6 +32,8 @@ const (
 	DefensiveStrategy
 	// Stake latest: stay staked on the latest node, challenging bad assertions
 	StakeLatestStrategy
+	// Resolve nodes: stay staked on the latest node and resolve any unconfirmed nodes, challenging bad assertions
+	ResolveNodesStrategy
 	// Make nodes: continually create new nodes, challenging bad assertions
 	MakeNodesStrategy
 )
@@ -60,7 +62,9 @@ type L1ValidatorConfig struct {
 	DisableChallenge         bool              `koanf:"disable-challenge"`
 	TargetMachineCount       int               `koanf:"target-machine-count"`
 	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
+	UseSmartContractWallet   bool              `koanf:"use-smart-contract-wallet"`
 	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
+	ContractWalletAddress    string            `koanf:"contract-wallet-address"`
 	GasRefunderAddress       string            `koanf:"gas-refunder-address"`
 	Dangerous                DangerousConfig   `koanf:"dangerous"`
 }
@@ -74,7 +78,9 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	DisableChallenge:         false,
 	TargetMachineCount:       4,
 	ConfirmationBlocks:       12,
+	UseSmartContractWallet:   false,
 	OnlyCreateWalletContract: false,
+	ContractWalletAddress:    "",
 	GasRefunderAddress:       "",
 	Dangerous:                DefaultDangerousConfig,
 }
@@ -88,7 +94,9 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
 	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
+	f.Bool(prefix+".use-smart-contract-wallet", DefaultL1ValidatorConfig.UseSmartContractWallet, "use a smart contract wallet instead of an EOA address")
 	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
+	f.String(prefix+".contract-wallet-address", DefaultL1ValidatorConfig.ContractWalletAddress, "validator smart contract wallet public address")
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
@@ -133,6 +141,8 @@ func stakerStrategyFromString(s string) (StakerStrategy, error) {
 		return DefensiveStrategy, nil
 	} else if strings.ToLower(s) == "stakelatest" {
 		return StakeLatestStrategy, nil
+	} else if strings.ToLower(s) == "resolvenodes" {
+		return ResolveNodesStrategy, nil
 	} else if strings.ToLower(s) == "makenodes" {
 		return MakeNodesStrategy, nil
 	} else {
@@ -142,7 +152,7 @@ func stakerStrategyFromString(s string) (StakerStrategy, error) {
 
 func NewStaker(
 	l1Reader L1ReaderInterface,
-	wallet *ValidatorWallet,
+	wallet ValidatorWalletInterface,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
 	l2Blockchain *core.BlockChain,
@@ -180,12 +190,6 @@ func NewStaker(
 }
 
 func (s *Staker) Initialize(ctx context.Context) error {
-	if s.strategy != WatchtowerStrategy {
-		err := s.wallet.Initialize(ctx)
-		if err != nil {
-			return err
-		}
-	}
 	err := s.L1Validator.Initialize(ctx)
 	if err != nil {
 		return err
@@ -210,7 +214,7 @@ func (s *Staker) Initialize(ctx context.Context) error {
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
-	s.StopWaiter.Start(ctxIn)
+	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		err := s.updateBlockValidatorModuleRoot(ctx)
@@ -227,6 +231,10 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		if err == nil {
 			backoff = time.Second
+			if arbTx != nil && !s.wallet.CanBatchTxs() {
+				// Try to create another tx
+				return 0
+			}
 			return s.config.StakerInterval
 		}
 		backoff *= 2
@@ -238,6 +246,22 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		return backoff
 	})
+}
+
+func (s *Staker) IsWhitelisted(ctx context.Context) (bool, error) {
+	callOpts := s.getCallOpts(ctx)
+	whitelistDisabled, err := s.rollup.ValidatorWhitelistDisabled(callOpts)
+	if err != nil {
+		return false, err
+	}
+	if whitelistDisabled {
+		return true, nil
+	}
+	addr := s.wallet.Address()
+	if addr != nil {
+		return s.rollup.IsValidator(callOpts, *addr)
+	}
+	return false, nil
 }
 
 func (s *Staker) shouldAct(ctx context.Context) bool {
@@ -290,6 +314,15 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
+	if s.strategy != WatchtowerStrategy {
+		whitelisted, err := s.IsWhitelisted(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !whitelisted {
+			log.Warn("validator address isn't whitelisted", "address", s.wallet.Address(), "txSender", s.wallet.TxSenderAddress())
+		}
+	}
 	if !s.shouldAct(ctx) {
 		// The fact that we're delaying acting is alreay logged in `shouldAct`
 		return nil, nil
@@ -364,7 +397,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	// Resolve nodes if either we're on the make nodes strategy,
 	// or we're on the stake latest strategy but don't have a stake
 	// (attempt to reduce the current required stake).
-	shouldResolveNodes := effectiveStrategy >= MakeNodesStrategy ||
+	shouldResolveNodes := effectiveStrategy >= ResolveNodesStrategy ||
 		(effectiveStrategy >= StakeLatestStrategy && rawInfo == nil && requiredStakeElevated)
 	resolvingNode := false
 	if shouldResolveNodes {
@@ -390,8 +423,12 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
+	canActFurther := func() bool {
+		return s.wallet.CanBatchTxs() || s.builder.BuildingTransactionCount() == 0
+	}
+
 	// If we have an old stake, remove it
-	if rawInfo != nil && rawInfo.LatestStakedNode <= latestConfirmedNode {
+	if rawInfo != nil && rawInfo.LatestStakedNode <= latestConfirmedNode && canActFurther() {
 		stakeIsTooOutdated := rawInfo.LatestStakedNode < latestConfirmedNode
 		// We're not trying to stake anyways
 		stakeIsUnwanted := effectiveStrategy < StakeLatestStrategy
@@ -410,7 +447,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	if walletAddressOrZero != (common.Address{}) {
+	if walletAddressOrZero != (common.Address{}) && canActFurther() {
 		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, walletAddressOrZero)
 		if err != nil {
 			return nil, err
@@ -423,7 +460,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	if rawInfo != nil {
+	if rawInfo != nil && canActFurther() {
 		if err = s.handleConflict(ctx, rawInfo); err != nil {
 			return nil, err
 		}
@@ -431,16 +468,19 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 
 	// Don't attempt to create a new stake if we're resolving a node and the stake is elevated,
 	// as that might affect the current required stake.
-	if rawInfo != nil || !resolvingNode || !requiredStakeElevated {
+	if (rawInfo != nil || !resolvingNode || !requiredStakeElevated) && canActFurther() {
 		// Advance stake up to 20 times in one transaction
 		for i := 0; info.CanProgress && i < 20; i++ {
 			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
 				return nil, err
 			}
+			if !s.wallet.CanBatchTxs() && effectiveStrategy >= StakeLatestStrategy {
+				info.CanProgress = false
+			}
 		}
 	}
 
-	if rawInfo != nil && s.builder.BuildingTransactionCount() == 0 {
+	if rawInfo != nil && s.builder.BuildingTransactionCount() == 0 && canActFurther() {
 		if err := s.createConflict(ctx, rawInfo); err != nil {
 			return nil, err
 		}
@@ -463,7 +503,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 	}
 
 	if s.activeChallenge == nil || s.activeChallenge.ChallengeIndex() != *info.CurrentChallenge {
-		log.Warn("entered challenge", "challenge", info.CurrentChallenge)
+		log.Error("entered challenge", "challenge", *info.CurrentChallenge)
 
 		latestConfirmedCreated, err := s.rollup.LatestConfirmedCreationBlock(ctx)
 		if err != nil {
@@ -475,7 +515,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.builder,
 			s.builder.builderAuth,
 			*s.builder.wallet.Address(),
-			s.challengeManagerAddress,
+			s.wallet.ChallengeManagerAddress(),
 			*info.CurrentChallenge,
 			s.l2Blockchain,
 			s.das,
@@ -521,7 +561,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		}
 		if !active {
 			if wrongNodesExist && effectiveStrategy >= DefensiveStrategy {
-				log.Warn("bringing defensive validator online because of incorrect assertion")
+				log.Error("bringing defensive validator online because of incorrect assertion")
 				s.bringActiveUntilNode = info.LatestStakedNode + 1
 			}
 			info.CanProgress = false
@@ -560,7 +600,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		info.LatestStakedNodeHash = action.hash
 		if !active {
 			if wrongNodesExist && effectiveStrategy >= DefensiveStrategy {
-				log.Warn("bringing defensive validator online because of incorrect assertion")
+				log.Error("bringing defensive validator online because of incorrect assertion")
 				s.bringActiveUntilNode = action.number
 				info.CanProgress = false
 			} else {
@@ -674,4 +714,8 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 	}
 	// No conflicts exist
 	return nil
+}
+
+func (s *Staker) Strategy() StakerStrategy {
+	return s.strategy
 }

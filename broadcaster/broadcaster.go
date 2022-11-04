@@ -25,22 +25,20 @@ type Broadcaster struct {
 	dataSigner    signature.DataSignerFunc
 }
 
-/*
- * BroadcastMessage is the base message type for messages to send over the network.
- *
- * Acts as a variant holding the message types. The type of the message is
- * indicated by whichever of the fields is non-empty. The fields holding the message
- * types are annotated with omitempty so only the populated message is sent as
- * json. The message fields should be pointers or slices and end with
- * "Messages" or "Message".
- *
- * The format is forwards compatible, ie if a json BroadcastMessage is received that
- * has fields that are not in the Go struct then deserialization will succeed
- * skip the unknown field [1]
- *
- * References:
- * [1] https://pkg.go.dev/encoding/json#Unmarshal
- */
+// BroadcastMessage is the base message type for messages to send over the network.
+//
+// Acts as a variant holding the message types. The type of the message is
+// indicated by whichever of the fields is non-empty. The fields holding the message
+// types are annotated with omitempty so only the populated message is sent as
+// json. The message fields should be pointers or slices and end with
+// "Messages" or "Message".
+//
+// The format is forwards compatible, ie if a json BroadcastMessage is received that
+// has fields that are not in the Go struct then deserialization will succeed
+// skip the unknown field [1]
+//
+// References:
+// [1] https://pkg.go.dev/encoding/json#Unmarshal
 type BroadcastMessage struct {
 	Version int `json:"version"`
 	// TODO better name than messages since there are different types of messages
@@ -93,6 +91,11 @@ func (b *Broadcaster) newBroadcastFeedMessage(message arbstate.MessageWithMetada
 }
 
 func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) error {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("recovered error in BroadcastSingle", "recover", r)
+		}
+	}()
 	bfm, err := b.newBroadcastFeedMessage(msg, seq)
 	if err != nil {
 		return err
@@ -148,4 +151,8 @@ func (b *Broadcaster) StartWithHeader(ctx context.Context, header ws.HandshakeHe
 
 func (b *Broadcaster) StopAndWait() {
 	b.server.StopAndWait()
+}
+
+func (b *Broadcaster) Started() bool {
+	return b.server.Started()
 }

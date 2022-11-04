@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/pkg/errors"
 )
@@ -35,18 +36,37 @@ func init() {
 	walletCreatedID = parsedValidatorWalletCreator.Events["WalletCreated"].ID
 }
 
-type ValidatorWallet struct {
-	con               *rollupgen.ValidatorWallet
-	address           *common.Address
-	onWalletCreated   func(common.Address)
-	l1Reader          L1ReaderInterface
-	auth              *bind.TransactOpts
-	rollupAddress     common.Address
-	walletFactoryAddr common.Address
-	rollupFromBlock   int64
+type ValidatorWalletInterface interface {
+	Initialize(context.Context) error
+	Address() *common.Address
+	AddressOrZero() common.Address
+	TxSenderAddress() *common.Address
+	RollupAddress() common.Address
+	ChallengeManagerAddress() common.Address
+	L1Client() arbutil.L1Interface
+	TestTransactions(context.Context, []*types.Transaction) error
+	ExecuteTransactions(context.Context, *ValidatorTxBuilder, common.Address) (*types.Transaction, error)
+	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
+	CanBatchTxs() bool
+	AuthIfEoa() *bind.TransactOpts
 }
 
-func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader L1ReaderInterface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ValidatorWallet, error) {
+type ContractValidatorWallet struct {
+	con                     *rollupgen.ValidatorWallet
+	address                 *common.Address
+	onWalletCreated         func(common.Address)
+	l1Reader                L1ReaderInterface
+	auth                    *bind.TransactOpts
+	walletFactoryAddr       common.Address
+	rollupFromBlock         int64
+	rollup                  *rollupgen.RollupUserLogic
+	rollupAddress           common.Address
+	challengeManagerAddress common.Address
+}
+
+var _ ValidatorWalletInterface = (*ContractValidatorWallet)(nil)
+
+func NewContractValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader L1ReaderInterface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ContractValidatorWallet, error) {
 	var con *rollupgen.ValidatorWallet
 	if address != nil {
 		var err error
@@ -55,47 +75,84 @@ func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddres
 			return nil, err
 		}
 	}
-	return &ValidatorWallet{
+	rollup, err := rollupgen.NewRollupUserLogic(rollupAddress, l1Reader.Client())
+	if err != nil {
+		return nil, err
+	}
+	return &ContractValidatorWallet{
 		con:               con,
 		address:           address,
 		onWalletCreated:   onWalletCreated,
 		l1Reader:          l1Reader,
 		auth:              auth,
-		rollupAddress:     rollupAddress,
 		walletFactoryAddr: walletFactoryAddr,
+		rollupAddress:     rollupAddress,
+		rollup:            rollup,
 		rollupFromBlock:   rollupFromBlock,
 	}, nil
 }
 
-func (v *ValidatorWallet) Initialize(ctx context.Context) error {
-	return v.populateWallet(ctx, false)
+func (v *ContractValidatorWallet) validateWallet(ctx context.Context) error {
+	if v.con == nil || v.auth == nil {
+		return nil
+	}
+	callOpts := &bind.CallOpts{Context: ctx}
+	owner, err := v.con.Owner(callOpts)
+	if err != nil {
+		return err
+	}
+	isExecutor, err := v.con.Executors(callOpts, v.auth.From)
+	if err != nil {
+		return err
+	}
+	if v.auth.From != owner && !isExecutor {
+		return errors.New("specified unauthorized smart contract wallet")
+	}
+	return nil
+}
+
+func (v *ContractValidatorWallet) Initialize(ctx context.Context) error {
+	err := v.populateWallet(ctx, false)
+	if err != nil {
+		return err
+	}
+	err = v.validateWallet(ctx)
+	if err != nil {
+		return err
+	}
+	callOpts := &bind.CallOpts{Context: ctx}
+	v.challengeManagerAddress, err = v.rollup.ChallengeManager(callOpts)
+	return err
 }
 
 // May be the nil if the wallet hasn't been deployed yet
-func (v *ValidatorWallet) Address() *common.Address {
+func (v *ContractValidatorWallet) Address() *common.Address {
 	return v.address
 }
 
 // May be zero if the wallet hasn't been deployed yet
-func (v *ValidatorWallet) AddressOrZero() common.Address {
+func (v *ContractValidatorWallet) AddressOrZero() common.Address {
 	if v.address == nil {
 		return common.Address{}
 	}
 	return *v.address
 }
 
-func (v *ValidatorWallet) From() common.Address {
+func (v *ContractValidatorWallet) TxSenderAddress() *common.Address {
+	if v.auth == nil {
+		return nil
+	}
+	return &v.auth.From
+}
+
+func (v *ContractValidatorWallet) From() common.Address {
 	if v.auth == nil {
 		return common.Address{}
 	}
 	return v.auth.From
 }
 
-func (v *ValidatorWallet) RollupAddress() common.Address {
-	return v.rollupAddress
-}
-
-func (v *ValidatorWallet) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
+func (v *ContractValidatorWallet) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
 	oldAuthValue := v.auth.Value
 	v.auth.Value = tx.Value()
 	defer (func() { v.auth.Value = oldAuthValue })()
@@ -103,7 +160,7 @@ func (v *ValidatorWallet) executeTransaction(ctx context.Context, tx *types.Tran
 	return v.con.ExecuteTransactionWithGasRefunder(v.auth, gasRefunder, tx.Data(), *tx.To(), tx.Value())
 }
 
-func (v *ValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {
+func (v *ContractValidatorWallet) populateWallet(ctx context.Context, createIfMissing bool) error {
 	if v.con != nil {
 		return nil
 	}
@@ -114,7 +171,7 @@ func (v *ValidatorWallet) populateWallet(ctx context.Context, createIfMissing bo
 		return nil
 	}
 	if v.address == nil {
-		addr, err := GetValidatorWallet(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader, createIfMissing)
+		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader, createIfMissing)
 		if err != nil {
 			return err
 		}
@@ -131,6 +188,10 @@ func (v *ValidatorWallet) populateWallet(ctx context.Context, createIfMissing bo
 		return err
 	}
 	v.con = con
+
+	if err := v.validateWallet(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -150,7 +211,7 @@ func combineTxes(txes []*types.Transaction) ([][]byte, []common.Address, []*big.
 }
 
 // Not thread safe! Don't call this from multiple threads at the same time.
-func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *ValidatorTxBuilder, gasRefunder common.Address) (*types.Transaction, error) {
+func (v *ContractValidatorWallet) ExecuteTransactions(ctx context.Context, builder *ValidatorTxBuilder, gasRefunder common.Address) (*types.Transaction, error) {
 	txes := builder.transactions
 	if len(txes) == 0 {
 		return nil, nil
@@ -202,11 +263,50 @@ func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *Vali
 	return arbTx, nil
 }
 
-func (v *ValidatorWallet) TimeoutChallenges(ctx context.Context, manager common.Address, challenges []uint64) (*types.Transaction, error) {
-	return v.con.TimeoutChallenges(v.auth, manager, challenges)
+func (v *ContractValidatorWallet) TimeoutChallenges(ctx context.Context, challenges []uint64) (*types.Transaction, error) {
+	return v.con.TimeoutChallenges(v.auth, v.challengeManagerAddress, challenges)
 }
 
-func GetValidatorWallet(
+func (v *ContractValidatorWallet) L1Client() arbutil.L1Interface {
+	return v.l1Reader.Client()
+}
+
+func (v *ContractValidatorWallet) RollupAddress() common.Address {
+	return v.rollupAddress
+}
+
+func (v *ContractValidatorWallet) ChallengeManagerAddress() common.Address {
+	return v.challengeManagerAddress
+}
+
+func (v *ContractValidatorWallet) TestTransactions(ctx context.Context, txs []*types.Transaction) error {
+	if v.Address() == nil {
+		return nil
+	}
+	data, dest, amount, totalAmount := combineTxes(txs)
+	realData, err := validatorABI.Pack("executeTransactions", data, dest, amount)
+	if err != nil {
+		return err
+	}
+	msg := ethereum.CallMsg{
+		From:  v.From(),
+		To:    v.Address(),
+		Value: totalAmount,
+		Data:  realData,
+	}
+	_, err = v.L1Client().PendingCallContract(ctx, msg)
+	return err
+}
+
+func (v *ContractValidatorWallet) CanBatchTxs() bool {
+	return true
+}
+
+func (v *ContractValidatorWallet) AuthIfEoa() *bind.TransactOpts {
+	return nil
+}
+
+func GetValidatorWalletContract(
 	ctx context.Context,
 	validatorWalletFactoryAddr common.Address,
 	fromBlock int64,
