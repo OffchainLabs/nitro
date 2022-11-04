@@ -19,7 +19,7 @@ pub type Bytes32 = [u8; 32];
 
 pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+    ready_hostio(&mut env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     let out_ptr = sp.read_u64(1);
@@ -40,7 +40,7 @@ pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+    ready_hostio(&mut env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     let src_ptr = sp.read_u64(1);
@@ -63,7 +63,7 @@ pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+    ready_hostio(&mut env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get(global) {
@@ -75,7 +75,7 @@ pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+    ready_hostio(&mut env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get_mut(global) {
@@ -87,7 +87,7 @@ pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn read_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+    ready_hostio(&mut env)?;
 
     let inbox = &env.sequencer_messages;
     inbox_message_impl(&sp, inbox, "wavmio.readInboxMessage")
@@ -95,7 +95,7 @@ pub fn read_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
 
 pub fn read_delayed_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+    ready_hostio(&mut env)?;
 
     let inbox = &env.delayed_messages;
     inbox_message_impl(&sp, inbox, "wavmio.readDelayedInboxMessage")
