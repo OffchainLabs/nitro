@@ -32,9 +32,10 @@ validate=false
 detach=false
 blockscout=true
 tokenbridge=true
+consensusclient=false
 redundantsequencers=0
 batchposters=1
-devprivkey=e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2
+devprivkey=45a915e4d060149eb4365960e6a7a45f334393093061116b197e3240065ff2d8
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -145,6 +146,11 @@ fi
 if $blockscout; then
     NODES="$NODES blockscout"
 fi
+if $consensusclient; then
+    NODES="$NODES create_beacon_chain_genesis"
+    NODES="$NODES prysm_beacon_node"
+    NODES="$NODES prysm_validator_client"
+fi
 
 if $force_build; then
     echo == Building..
@@ -170,6 +176,12 @@ if $force_init; then
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /keystore"
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /config"
 
+    echo == Writing configs
+    docker-compose run testnode-scripts write-config
+
+    echo == Initializing go-ethereum genesis configuration
+    docker-compose run geth init --datadir /root/.ethereum/geth /config/geth_genesis.json
+
     echo == Funding validator and sequencer
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer
@@ -177,9 +189,6 @@ if $force_init; then
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
     docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines
-
-    echo == Writing configs
-    docker-compose run testnode-scripts write-config
 
     echo == Initializing redis
     docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
