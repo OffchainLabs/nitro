@@ -642,9 +642,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	if err != nil {
 		return err
 	}
-	if len(messages) == 0 {
-		log.Warn("TransactionStreamer ignoring broadcast client reorg")
-	}
 	if feedReorg {
 		// Never allow feed to reorg confirmed messages
 		messages = messages[:0]
