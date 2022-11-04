@@ -325,7 +325,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 	machineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig, fatalErrChan)
-	asserterValidator, err := validator.NewStatelessBlockValidator(machineLoader, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &validator.DefaultBlockValidatorConfig, nil)
+	asserterValidator, err := validator.NewStatelessBlockValidator(machineLoader, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &validator.DefaultBlockValidatorConfig)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -333,7 +333,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	if err != nil {
 		Fail(t, err)
 	}
-	challengerValidator, err := validator.NewStatelessBlockValidator(machineLoader, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, &validator.DefaultBlockValidatorConfig, nil)
+	challengerValidator, err := validator.NewStatelessBlockValidator(machineLoader, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, &validator.DefaultBlockValidatorConfig)
 	if err != nil {
 		Fail(t, err)
 	}

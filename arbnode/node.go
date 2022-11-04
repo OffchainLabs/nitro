@@ -970,11 +970,7 @@ func createNodeImpl(
 	var blockValidator *validator.BlockValidator
 	var statelessBlockValidator *validator.StatelessBlockValidator
 
-	if !foundMachines && blockValidatorConf.Enable {
-		return nil, fmt.Errorf("failed to find machines %v", machinesPath)
-	} else if !foundMachines {
-		log.Warn("Failed to find machines", "path", machinesPath)
-	} else {
+	if foundMachines {
 		statelessBlockValidator, err = validator.NewStatelessBlockValidator(
 			nitroMachineLoader,
 			inboxReader,
@@ -985,25 +981,29 @@ func createNodeImpl(
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
 			&config.Get().BlockValidator,
-			fatalErrChan,
 		)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		if blockValidatorConf.Enable || config.Validator.Enable {
+			return nil, fmt.Errorf("failed to find machines %v", machinesPath)
+		}
+		log.Warn("Failed to find machines", "path", machinesPath)
+	}
 
-		if blockValidatorConf.Enable {
-			blockValidator, err = validator.NewBlockValidator(
-				statelessBlockValidator,
-				inboxTracker,
-				txStreamer,
-				nitroMachineLoader,
-				reorgingToBlock,
-				func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
-				fatalErrChan,
-			)
-			if err != nil {
-				return nil, err
-			}
+	if blockValidatorConf.Enable {
+		blockValidator, err = validator.NewBlockValidator(
+			statelessBlockValidator,
+			inboxTracker,
+			txStreamer,
+			nitroMachineLoader,
+			reorgingToBlock,
+			func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
+			fatalErrChan,
+		)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -1033,7 +1033,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, daReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}

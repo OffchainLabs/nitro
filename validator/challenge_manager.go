@@ -406,7 +406,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 		if err != nil {
 			return err
 		}
-		resolver, err := m.validator.NewMachinePreimageResolver(ctx, preimages)
+		resolver, err := m.validator.NewMachinePreimageResolver(ctx, preimages, uint64(blockNum))
 		if err != nil {
 			return err
 		}

@@ -10,11 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbstate"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
@@ -134,7 +131,7 @@ type Staker struct {
 	inactiveLastCheckedNode *nodeAndHash
 	bringActiveUntilNode    uint64
 	inboxReader             InboxReaderInterface
-	nitroMachineLoader      *NitroMachineLoader
+	statelessBlockValidator *StatelessBlockValidator
 }
 
 func stakerStrategyFromString(s string) (StakerStrategy, error) {
@@ -158,13 +155,8 @@ func NewStaker(
 	wallet ValidatorWalletInterface,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
-	l2Blockchain *core.BlockChain,
-	das arbstate.DataAvailabilityReader,
-	inboxReader InboxReaderInterface,
-	inboxTracker InboxTrackerInterface,
-	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
-	nitroMachineLoader *NitroMachineLoader,
+	statelessBlockValidator *StatelessBlockValidator,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
 	strategy, err := stakerStrategyFromString(config.Strategy)
@@ -175,20 +167,21 @@ func NewStaker(
 		return nil, errors.New("invalid validator gas refunder address")
 	}
 	client := l1Reader.Client()
-	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, das, inboxTracker, txStreamer, blockValidator)
+	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts,
+		statelessBlockValidator.blockchain, statelessBlockValidator.daService, statelessBlockValidator.inboxTracker, statelessBlockValidator.streamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
 	return &Staker{
-		L1Validator:         val,
-		l1Reader:            l1Reader,
-		strategy:            strategy,
-		baseCallOpts:        callOpts,
-		config:              config,
-		highGasBlocksBuffer: big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
-		lastActCalledBlock:  nil,
-		inboxReader:         inboxReader,
-		nitroMachineLoader:  nitroMachineLoader,
+		L1Validator:             val,
+		l1Reader:                l1Reader,
+		strategy:                strategy,
+		baseCallOpts:            callOpts,
+		config:                  config,
+		highGasBlocksBuffer:     big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
+		lastActCalledBlock:      nil,
+		inboxReader:             statelessBlockValidator.inboxReader,
+		statelessBlockValidator: statelessBlockValidator,
 	}, nil
 }
 
@@ -524,7 +517,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			*info.CurrentChallenge,
 			s.l2Blockchain,
 			s.inboxTracker,
-			s.blockValidator.StatelessBlockValidator,
+			s.statelessBlockValidator,
 			latestConfirmedCreated,
 			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,

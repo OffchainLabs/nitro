@@ -38,7 +38,6 @@ type StatelessBlockValidator struct {
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
 	pendingWasmModuleRoot common.Hash
-	fatalErrChan          chan error
 }
 
 type BlockValidatorRegistrer interface {
@@ -252,7 +251,6 @@ func NewStatelessBlockValidator(
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
 	config *BlockValidatorConfig,
-	fatalErrChan chan error,
 ) (*StatelessBlockValidator, error) {
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
 	if err != nil {
@@ -268,7 +266,6 @@ func NewStatelessBlockValidator(
 		daService:         das,
 		genesisBlockNum:   genesisBlockNum,
 		recordingDatabase: arbitrum.NewRecordingDatabase(blockchainDb, blockchain),
-		fatalErrChan:      fatalErrChan,
 	}
 	if config.PendingUpgradeModuleRoot != "" {
 		if config.PendingUpgradeModuleRoot == "latest" {
@@ -492,6 +489,7 @@ func (v *StatelessBlockValidator) ValidationEntryAddSeqMessage(ctx context.Conte
 func (v *StatelessBlockValidator) NewMachinePreimageResolver(
 	ctx context.Context,
 	preimages map[common.Hash][]byte,
+	blockNum uint64,
 ) (GoPreimageResolver, error) {
 	recordNewPreimages := true
 	if preimages == nil {
@@ -505,23 +503,31 @@ func (v *StatelessBlockValidator) NewMachinePreimageResolver(
 		if preimage, ok := preimages[hash]; ok {
 			return preimage, nil
 		}
-		// Check if it's part of the state trie
-		preimage, err := db.Node(hash)
-		if err != nil {
-			// Check if it's a code hash
-			codeKey := append([]byte{}, rawdb.CodePrefix...)
-			codeKey = append(codeKey, hash.Bytes()...)
-			preimage, err = db.DiskDB().Get(codeKey)
-		}
+		// Check if it's a code hash
+		codeKey := append([]byte{}, rawdb.CodePrefix...)
+		codeKey = append(codeKey, hash.Bytes()...)
+		datasource := "code"
+		preimage, err := db.DiskDB().Get(codeKey)
 		if err != nil {
 			// Check if it's a block hash
 			header := v.blockchain.GetHeaderByHash(hash)
 			if header != nil {
+				datasource = "blockhash"
 				preimage, err = rlp.EncodeToBytes(header)
 			}
 		}
+		if err != nil {
+			// Check if it's part of the state trie
+			datasource = "triedb"
+			preimage, err = db.Node(hash)
+		}
 		if err == nil && recordNewPreimages {
 			preimages[hash] = preimage
+		}
+		if err == nil {
+			log.Error("preimage not found in prerecording", "hash", hash, "blockNum", blockNum, "source", datasource)
+		} else {
+			log.Error("preimage not found anywhere", "hash", hash, "blockNum", blockNum)
 		}
 		return preimage, err
 	}
@@ -536,7 +542,7 @@ func (v *StatelessBlockValidator) LoadEntryToMachine(ctx context.Context, entry 
 	if err != nil {
 		return err
 	}
-	resolver, err := v.NewMachinePreimageResolver(ctx, entry.Preimages)
+	resolver, err := v.NewMachinePreimageResolver(ctx, entry.Preimages, entry.BlockNumber)
 	if err != nil {
 		return err
 	}
@@ -613,7 +619,7 @@ func (v *StatelessBlockValidator) jitBlock(
 		return empty, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
-	resolver, err := v.NewMachinePreimageResolver(ctx, entry.Preimages)
+	resolver, err := v.NewMachinePreimageResolver(ctx, entry.Preimages, entry.BlockNumber)
 	if err != nil {
 		return empty, err
 	}
