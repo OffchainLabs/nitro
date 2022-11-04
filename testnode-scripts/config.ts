@@ -32,6 +32,7 @@ function writeConfigs(argv: any) {
                 "disable-challenge": false,
                 "enable": false,
                 "staker-interval": "10s",
+                "make-assertion-interval": "10s",
                 "strategy": "MakeNodes",
                 "target-machine-count": 4,
             },

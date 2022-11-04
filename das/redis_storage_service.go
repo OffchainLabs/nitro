@@ -135,6 +135,20 @@ func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout ui
 	return err
 }
 
+func (rs *RedisStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
+	err := convertStorageServiceToIterationCompatibleStorageService(rs.baseStorageService).putKeyValue(ctx, key, value)
+	if err != nil {
+		return err
+	}
+	err = rs.client.Set(
+		ctx, string(key.Bytes()), rs.signMessage(value), rs.redisConfig.Expiration,
+	).Err()
+	if err != nil {
+		log.Error("das.RedisStorageService.putKeyValue", "err", err)
+	}
+	return err
+}
+
 func (rs *RedisStorageService) Sync(ctx context.Context) error {
 	return rs.baseStorageService.Sync(ctx)
 }
