@@ -454,7 +454,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	}})
 }
 
-// Used in tests
+// Used in redis tests
 func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
