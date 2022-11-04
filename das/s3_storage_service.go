@@ -109,6 +109,18 @@ func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint
 	return err
 }
 
+func (s3s *S3StorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
+	putObjectInput := s3.PutObjectInput{
+		Bucket: aws.String(s3s.bucket),
+		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(key)),
+		Body:   bytes.NewReader(value)}
+	_, err := s3s.uploader.Upload(ctx, &putObjectInput)
+	if err != nil {
+		log.Error("das.S3StorageService.Store", "err", err)
+	}
+	return err
+}
+
 func (s3s *S3StorageService) Sync(ctx context.Context) error {
 	return nil
 }
