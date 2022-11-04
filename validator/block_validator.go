@@ -212,6 +212,13 @@ func (v *BlockValidator) possiblyFatal(err error) {
 	}
 }
 
+func (v *BlockValidator) triggerSendValidations() {
+	select {
+	case v.sendValidationsChan <- struct{}{}:
+	default:
+	}
+}
+
 func (v *BlockValidator) recentlyValid(header *types.Header) {
 	v.recentValidMutex.Lock()
 	defer v.recentValidMutex.Unlock()
@@ -348,10 +355,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus, mustDeref bool) error {
 			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
 			return
 		}
-		select {
-		case v.sendValidationsChan <- struct{}{}:
-		default:
-		}
+		v.triggerSendValidations()
 	})
 	return nil
 }
@@ -409,10 +413,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	if v.lastValidationEntryBlock < blockNum {
 		v.lastValidationEntryBlock = blockNum
 	}
-	select {
-	case v.sendValidationsChan <- struct{}{}:
-	default:
-	}
+	v.triggerSendValidations()
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
@@ -558,10 +559,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	entry := validationStatus.Entry
 	defer func() {
 		atomic.AddInt32(&v.atomicValidationsRunning, -1)
-		select {
-		case v.sendValidationsChan <- struct{}{}:
-		default:
-		}
+		v.triggerSendValidations()
 	}()
 	entry.BatchInfo = append(entry.BatchInfo, BatchInfo{
 		Number: entry.StartPosition.BatchNumber,
@@ -792,6 +790,7 @@ func (v *BlockValidator) sendRecords(ctx context.Context) {
 		if currentStatus == RecordFailed {
 			// retry
 			v.validations.Delete(nextRecord)
+			v.triggerSendValidations()
 			return
 		}
 		if currentStatus == Unprepared {
@@ -971,11 +970,7 @@ func (v *BlockValidator) ProcessBatches(pos uint64, batches [][]byte) {
 		v.sequencerBatches.Store(pos+uint64(i), msg)
 	}
 	v.nextBatchKept = pos + uint64(len(batches))
-
-	select {
-	case v.sendValidationsChan <- struct{}{}:
-	default:
-	}
+	v.triggerSendValidations()
 }
 
 func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) error {
