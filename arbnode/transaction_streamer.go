@@ -454,12 +454,6 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	}})
 }
 
-func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error) {
-	s.insertionMutex.Lock()
-	defer s.insertionMutex.Unlock()
-	return s.GetMessageCount()
-}
-
 func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
@@ -774,7 +768,7 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 			// This is a delayed message
 			continue
 		}
-		if header.Kind != arbos.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress || header.L1BaseFee != nil {
+		if header.Kind != arbos.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress || header.RequestId != nil {
 			// This shouldn't exist?
 			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
 			continue
