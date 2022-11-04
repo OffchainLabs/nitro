@@ -454,6 +454,13 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	}})
 }
 
+// Used in tests
+func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error) {
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+	return s.GetMessageCount()
+}
+
 func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
