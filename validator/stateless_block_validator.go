@@ -405,8 +405,7 @@ func (v *StatelessBlockValidator) RecordBlockCreation(
 	if err != nil {
 		return common.Hash{}, nil, nil, err
 	}
-
-	if keepReference && err == nil {
+	if keepReference {
 		prevHeader = nil
 	}
 	return blockHash, preimages, readBatchInfo, err
