@@ -67,7 +67,7 @@ type TransactionStreamer struct {
 	latestBlock                *types.Block
 	latestMessage              *arbos.L1IncomingMessage
 	newBlockNotifier           chan struct{}
-	reorgSequencing            *arbos.SequencingHooks
+	reorgSequencing            func() *arbos.SequencingHooks
 
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
@@ -77,7 +77,7 @@ type TransactionStreamer struct {
 
 type TransactionStreamerConfig struct {
 	MaxBroadcastQueueSize   int   `koanf:"max-broadcaster-queue-size"`
-	MaxReorgResequenceDepth int64 `koanf:"max-reorg-resequence-depth"`
+	MaxReorgResequenceDepth int64 `koanf:"max-reorg-resequence-depth" reload:"hot"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
@@ -153,6 +153,16 @@ func (s *TransactionStreamer) SetInboxReader(inboxReader *InboxReader) {
 		panic("trying to set inbox reader when already set")
 	}
 	s.inboxReader = inboxReader
+}
+
+func (s *TransactionStreamer) SetReorgSequencingPolicy(reorgSequencing func() *arbos.SequencingHooks) {
+	if s.Started() {
+		panic("trying to set reorg sequencing policy after start")
+	}
+	if s.reorgSequencing != nil {
+		panic("trying to set reorg sequencing policy when already set")
+	}
+	s.reorgSequencing = reorgSequencing
 }
 
 func (s *TransactionStreamer) cleanupInconsistentState() error {
@@ -775,7 +785,7 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
 		}
-		_, err = s.sequenceTransactionsWithInsertionMutex(msg.Message.Header, txes, s.reorgSequencing)
+		_, err = s.sequenceTransactionsWithInsertionMutex(msg.Message.Header, txes, s.reorgSequencing())
 		if err != nil {
 			log.Error("failed to re-sequence old messages removed by reorg", "err", err)
 			return
