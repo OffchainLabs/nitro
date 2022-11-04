@@ -32,11 +32,11 @@ func (comm *StateCommitment) Hash() common.Hash {
 	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.height), comm.state.Bytes())
 }
 
-type L2AssertionChain struct {
-	inner *AssertionChain
+type AssertionChain struct {
+	inner *InnerAssertionChain
 }
 
-type AssertionChain struct {
+type InnerAssertionChain struct {
 	mutex           sync.RWMutex
 	timeReference   util.TimeReference
 	challengePeriod util.SecondsDuration
@@ -46,13 +46,13 @@ type AssertionChain struct {
 	feed            *EventFeed[AssertionChainEvent]
 }
 
-func (chain *L2AssertionChain) Tx(clo func(*AssertionChain) error) error {
+func (chain *AssertionChain) Tx(clo func(*InnerAssertionChain) error) error {
 	chain.inner.mutex.Lock()
 	defer chain.inner.mutex.Unlock()
 	return clo(chain.inner)
 }
 
-func (chain *L2AssertionChain) Call(clo func(*AssertionChain) error) error {
+func (chain *AssertionChain) Call(clo func(*InnerAssertionChain) error) error {
 	chain.inner.mutex.RLock()
 	defer chain.inner.mutex.RUnlock()
 	return clo(chain.inner)
@@ -67,7 +67,7 @@ const (
 type AssertionState int
 
 type Assertion struct {
-	chain                   *AssertionChain
+	chain                   *InnerAssertionChain
 	status                  AssertionState
 	sequenceNum             uint64
 	stateCommitment         StateCommitment
@@ -79,7 +79,7 @@ type Assertion struct {
 	staker                  util.Option[common.Address]
 }
 
-func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod util.SecondsDuration) *L2AssertionChain {
+func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod util.SecondsDuration) *AssertionChain {
 	genesis := &Assertion{
 		chain:       nil,
 		status:      ConfirmedAssertionState,
@@ -95,7 +95,7 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		challenge:               util.EmptyOption[*Challenge](),
 		staker:                  util.EmptyOption[common.Address](),
 	}
-	chain := &AssertionChain{
+	chain := &InnerAssertionChain{
 		mutex:           sync.RWMutex{},
 		timeReference:   timeRef,
 		challengePeriod: challengePeriod,
@@ -105,18 +105,18 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		feed:            NewEventFeed[AssertionChainEvent](ctx),
 	}
 	genesis.chain = chain
-	return &L2AssertionChain{chain}
+	return &AssertionChain{chain}
 }
 
-func (chain *AssertionChain) LatestConfirmed() *Assertion {
+func (chain *InnerAssertionChain) LatestConfirmed() *Assertion {
 	return chain.assertions[chain.confirmedLatest]
 }
 
-func (chain *AssertionChain) Subscribe(ctx context.Context) <-chan AssertionChainEvent {
+func (chain *InnerAssertionChain) Subscribe(ctx context.Context) <-chan AssertionChainEvent {
 	return chain.feed.Subscribe(ctx)
 }
 
-func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
+func (chain *InnerAssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
 	if prev.chain != chain {
 		return nil, ErrWrongChain
 	}
