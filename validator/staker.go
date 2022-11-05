@@ -10,11 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbstate"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
@@ -64,6 +61,7 @@ type L1ValidatorConfig struct {
 	ConfirmationBlocks       int64             `koanf:"confirmation-blocks"`
 	UseSmartContractWallet   bool              `koanf:"use-smart-contract-wallet"`
 	OnlyCreateWalletContract bool              `koanf:"only-create-wallet-contract"`
+	StartFromStaked          bool              `koanf:"start-validation-from-staked"`
 	ContractWalletAddress    string            `koanf:"contract-wallet-address"`
 	GasRefunderAddress       string            `koanf:"gas-refunder-address"`
 	Dangerous                DangerousConfig   `koanf:"dangerous"`
@@ -80,6 +78,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	ConfirmationBlocks:       12,
 	UseSmartContractWallet:   false,
 	OnlyCreateWalletContract: false,
+	StartFromStaked:          true,
 	ContractWalletAddress:    "",
 	GasRefunderAddress:       "",
 	Dangerous:                DefaultDangerousConfig,
@@ -96,6 +95,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	f.Bool(prefix+".use-smart-contract-wallet", DefaultL1ValidatorConfig.UseSmartContractWallet, "use a smart contract wallet instead of an EOA address")
 	f.Bool(prefix+".only-create-wallet-contract", DefaultL1ValidatorConfig.OnlyCreateWalletContract, "only create smart wallet contract and exit")
+	f.Bool(prefix+".start-validation-from-staked", DefaultL1ValidatorConfig.StartFromStaked, "assume staked nodes are valid")
 	f.String(prefix+".contract-wallet-address", DefaultL1ValidatorConfig.ContractWalletAddress, "validator smart contract wallet public address")
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
@@ -131,7 +131,7 @@ type Staker struct {
 	inactiveLastCheckedNode *nodeAndHash
 	bringActiveUntilNode    uint64
 	inboxReader             InboxReaderInterface
-	nitroMachineLoader      *NitroMachineLoader
+	statelessBlockValidator *StatelessBlockValidator
 }
 
 func stakerStrategyFromString(s string) (StakerStrategy, error) {
@@ -155,13 +155,8 @@ func NewStaker(
 	wallet ValidatorWalletInterface,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
-	l2Blockchain *core.BlockChain,
-	das arbstate.DataAvailabilityReader,
-	inboxReader InboxReaderInterface,
-	inboxTracker InboxTrackerInterface,
-	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
-	nitroMachineLoader *NitroMachineLoader,
+	statelessBlockValidator *StatelessBlockValidator,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
 	strategy, err := stakerStrategyFromString(config.Strategy)
@@ -172,20 +167,21 @@ func NewStaker(
 		return nil, errors.New("invalid validator gas refunder address")
 	}
 	client := l1Reader.Client()
-	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, das, inboxTracker, txStreamer, blockValidator)
+	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts,
+		statelessBlockValidator.blockchain, statelessBlockValidator.daService, statelessBlockValidator.inboxTracker, statelessBlockValidator.streamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
 	return &Staker{
-		L1Validator:         val,
-		l1Reader:            l1Reader,
-		strategy:            strategy,
-		baseCallOpts:        callOpts,
-		config:              config,
-		highGasBlocksBuffer: big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
-		lastActCalledBlock:  nil,
-		inboxReader:         inboxReader,
-		nitroMachineLoader:  nitroMachineLoader,
+		L1Validator:             val,
+		l1Reader:                l1Reader,
+		strategy:                strategy,
+		baseCallOpts:            callOpts,
+		config:                  config,
+		highGasBlocksBuffer:     big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
+		lastActCalledBlock:      nil,
+		inboxReader:             statelessBlockValidator.inboxReader,
+		statelessBlockValidator: statelessBlockValidator,
 	}, nil
 }
 
@@ -194,19 +190,21 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
-	if err != nil {
-		return err
-	}
-	if latestStaked == 0 {
-		return nil
-	}
-	stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
-	if err != nil {
-		return err
-	}
 
-	if s.blockValidator != nil {
+	if s.blockValidator != nil && s.config.StartFromStaked {
+		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, s.wallet.AddressOrZero())
+		if err != nil {
+			return err
+		}
+		if latestStaked == 0 {
+			return nil
+		}
+
+		stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
+		if err != nil {
+			return err
+		}
+
 		return s.blockValidator.AssumeValid(stakedInfo.AfterState().GlobalState)
 	}
 
@@ -518,11 +516,8 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.wallet.ChallengeManagerAddress(),
 			*info.CurrentChallenge,
 			s.l2Blockchain,
-			s.das,
-			s.inboxReader,
 			s.inboxTracker,
-			s.txStreamer,
-			s.nitroMachineLoader,
+			s.statelessBlockValidator,
 			latestConfirmedCreated,
 			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,
