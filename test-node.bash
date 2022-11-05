@@ -2,7 +2,7 @@
 
 set -e
 
-NITRO_NODE_VERSION=offchainlabs/nitro-node:v2.0.4-d6a431c-dev
+NITRO_NODE_VERSION=offchainlabs/nitro-node:v2.0.8-5b9fe9c-dev
 BLOCKSCOUT_VERSION=offchainlabs/blockscout:v1.0.0-c8db5b1
 
 mydir=`dirname $0`
