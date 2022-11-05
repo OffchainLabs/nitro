@@ -215,11 +215,6 @@ func mainImpl() int {
 		}
 	}
 
-	if (nodeConfig.Node.BlockValidator.Enable || validatorCanAct) && !nodeConfig.Node.Caching.Archive {
-		flag.Usage()
-		log.Crit("validator requires --node.caching.archive")
-	}
-
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Validator.UseSmartContractWallet {
