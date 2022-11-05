@@ -203,7 +203,7 @@ pub struct WasmEnvArc {
 impl Deref for WasmEnvArc {
     type Target = Mutex<WasmEnv>;
     fn deref(&self) -> &Self::Target {
-        &*self.env
+        &self.env
     }
 }
 
