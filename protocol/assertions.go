@@ -285,7 +285,7 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 		},
 		prev:                 nil,
 		presumptiveSuccessor: nil,
-		psTimer:              newCountUpTimer(parent.chain.timeReference),
+		psTimer:              util.NewCountUpTimer(parent.chain.timeReference),
 		subChallenge:         nil,
 	}
 	ret := &Challenge{
@@ -323,10 +323,10 @@ func (chal *Challenge) AddLeaf(assertion *Assertion, history util.HistoryCommitm
 		return nil, ErrPastDeadline
 	}
 
-	timer := newCountUpTimer(chain.timeReference)
+	timer := util.NewCountUpTimer(chain.timeReference)
 	if assertion.isFirstChild {
 		delta := prev.secondChildCreationTime.OpenKnownFull().Sub(prev.firstChildCreationTime.OpenKnownFull())
-		timer.set(delta)
+		timer.Set(delta)
 	}
 	leaf := &ChallengeVertex{
 		challenge:            chal,
@@ -370,23 +370,23 @@ type ChallengeVertex struct {
 	commitment           util.HistoryCommitment
 	prev                 *ChallengeVertex
 	presumptiveSuccessor *ChallengeVertex
-	psTimer              *countUpTimer
+	psTimer              *util.CountUpTimer
 	subChallenge         *SubChallenge
 	winnerIfConfirmed    *Assertion
 }
 
 func (vertex *ChallengeVertex) eligibleForNewSuccessor() bool {
-	return vertex.presumptiveSuccessor == nil || vertex.presumptiveSuccessor.psTimer.get() <= vertex.challenge.parent.chain.challengePeriod
+	return vertex.presumptiveSuccessor == nil || vertex.presumptiveSuccessor.psTimer.Get() <= vertex.challenge.parent.chain.challengePeriod
 }
 
 func (vertex *ChallengeVertex) maybeNewPresumptiveSuccessor(succ *ChallengeVertex) {
 	if vertex.presumptiveSuccessor != nil && succ.commitment.Height < vertex.presumptiveSuccessor.commitment.Height {
-		vertex.presumptiveSuccessor.psTimer.stop()
+		vertex.presumptiveSuccessor.psTimer.Stop()
 		vertex.presumptiveSuccessor = nil
 	}
 	if vertex.presumptiveSuccessor == nil {
 		vertex.presumptiveSuccessor = succ
-		succ.psTimer.start()
+		succ.psTimer.Start()
 	}
 }
 
@@ -419,7 +419,7 @@ func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []co
 		return err
 	}
 
-	vertex.psTimer.stop()
+	vertex.psTimer.Stop()
 	newVertex := &ChallengeVertex{
 		challenge:            vertex.challenge,
 		sequenceNum:          vertex.challenge.nextSequenceNum,
@@ -427,7 +427,7 @@ func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []co
 		commitment:           history,
 		prev:                 vertex.prev,
 		presumptiveSuccessor: nil,
-		psTimer:              vertex.psTimer.clone(),
+		psTimer:              vertex.psTimer.Clone(),
 	}
 	newVertex.challenge.nextSequenceNum++
 	newVertex.maybeNewPresumptiveSuccessor(vertex)
@@ -457,7 +457,7 @@ func (vertex *ChallengeVertex) Merge(newPrev *ChallengeVertex, proof []common.Ha
 	}
 
 	vertex.prev = newPrev
-	newPrev.psTimer.add(vertex.psTimer.get())
+	newPrev.psTimer.Add(vertex.psTimer.Get())
 	newPrev.maybeNewPresumptiveSuccessor(vertex)
 	vertex.challenge.feed.Append(&ChallengeMergeEvent{
 		deeperSequenceNum:    vertex.sequenceNum,
@@ -489,7 +489,7 @@ func (vertex *ChallengeVertex) ConfirmForPsTimer() error {
 	if vertex.prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
-	if vertex.psTimer.get() <= vertex.challenge.parent.chain.challengePeriod {
+	if vertex.psTimer.Get() <= vertex.challenge.parent.chain.challengePeriod {
 		return ErrNotYet
 	}
 	vertex._confirm()
