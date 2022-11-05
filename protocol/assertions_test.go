@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const testChallengePeriod = util.SecondsDuration(100)
+const testChallengePeriod = time.Duration(100 * time.Second)
 
 func TestAssertionChain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -50,7 +50,7 @@ func TestAssertionChain(t *testing.T) {
 	if err := newAssertion.ConfirmNoRival(); !errors.Is(err, ErrNotYet) {
 		t.Fatal(err)
 	}
-	timeRef.Add(testChallengePeriod + 1)
+	timeRef.Add(testChallengePeriod + time.Second)
 	Require(t, newAssertion.ConfirmNoRival())
 	if chain.LatestConfirmed() != newAssertion {
 		t.Fatal()
@@ -70,7 +70,7 @@ func TestAssertionChain(t *testing.T) {
 	comm = StateCommitment{2, correctBlockHashes[199]}
 	branch1, err := chain.CreateLeaf(newAssertion, comm, staker1)
 	Require(t, err)
-	timeRef.Add(5)
+	timeRef.Add(5 * time.Second)
 	verifyCreateLeafEventInFeed(t, eventChan, 2, 1, staker1, comm)
 	comm = StateCommitment{2, wrongBlockHashes[199]}
 	branch2, err := chain.CreateLeaf(newAssertion, comm, staker2)
