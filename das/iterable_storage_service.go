@@ -36,7 +36,7 @@ func (i *IterationCompatibleStorageServiceAdaptor) putKeyValue(ctx context.Conte
 	return nil
 }
 
-func convertStorageServiceToIterationCompatibleStorageService(storageService StorageService) IterationCompatibleStorageService {
+func ConvertStorageServiceToIterationCompatibleStorageService(storageService StorageService) IterationCompatibleStorageService {
 	service, ok := storageService.(IterationCompatibleStorageService)
 	if ok {
 		return service

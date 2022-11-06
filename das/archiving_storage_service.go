@@ -79,7 +79,7 @@ func NewArchivingStorageService(
 					// we successfully archived putByKeyValue inputs, and our input chan is closed.
 					archiveChanKeyValue = nil
 				}
-				err := convertStorageServiceToIterationCompatibleStorageService(archiveTo).putKeyValue(hardStopCtx, keyValue.key, keyValue.value)
+				err := ConvertStorageServiceToIterationCompatibleStorageService(archiveTo).putKeyValue(hardStopCtx, keyValue.key, keyValue.value)
 				if err != nil {
 					// we hit an error writing to the archive; record the error and keep going
 					ret.archiverError = err
@@ -136,7 +136,7 @@ func (serv *ArchivingStorageService) Put(ctx context.Context, data []byte, expir
 }
 
 func (serv *ArchivingStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	if err := convertStorageServiceToIterationCompatibleStorageService(serv.inner).putKeyValue(ctx, key, value); err != nil {
+	if err := ConvertStorageServiceToIterationCompatibleStorageService(serv.inner).putKeyValue(ctx, key, value); err != nil {
 		return err
 	}
 	select {

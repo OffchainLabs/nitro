@@ -24,10 +24,12 @@ import (
 )
 
 type RedisConfig struct {
-	Enable     bool          `koanf:"enable"`
-	RedisUrl   string        `koanf:"redis-url"`
-	Expiration time.Duration `koanf:"redis-expiration"`
-	KeyConfig  string        `koanf:"redis-key-config"`
+	Enable                  bool          `koanf:"enable"`
+	RedisUrl                string        `koanf:"redis-url"`
+	Expiration              time.Duration `koanf:"redis-expiration"`
+	KeyConfig               string        `koanf:"redis-key-config"`
+	SyncFromStorageServices bool          `koanf:"sync-from-storage-service"`
+	SyncToStorageServices   bool          `koanf:"sync-to-storage-service"`
 }
 
 var DefaultRedisConfig = RedisConfig{
@@ -41,6 +43,8 @@ func RedisConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultRedisConfig.RedisUrl, "Redis url")
 	f.Duration(prefix+".redis-expiration", DefaultRedisConfig.Expiration, "Redis expiration")
 	f.String(prefix+".redis-key-config", DefaultRedisConfig.KeyConfig, "Redis key config")
+	f.Bool(prefix+".sync-from-storage-service", DefaultRedisConfig.SyncFromStorageServices, "enable Redis to be used as a source for regular sync storage")
+	f.Bool(prefix+".sync-to-storage-service", DefaultRedisConfig.SyncToStorageServices, "enable Redis to be used as a sink for regular sync storage")
 }
 
 type RedisStorageService struct {
@@ -136,7 +140,7 @@ func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout ui
 }
 
 func (rs *RedisStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	err := convertStorageServiceToIterationCompatibleStorageService(rs.baseStorageService).putKeyValue(ctx, key, value)
+	err := ConvertStorageServiceToIterationCompatibleStorageService(rs.baseStorageService).putKeyValue(ctx, key, value)
 	if err != nil {
 		return err
 	}

@@ -88,7 +88,7 @@ func (r *RedundantStorageService) putKeyValue(ctx context.Context, key common.Ha
 	wg.Add(len(r.innerServices))
 	for _, serv := range r.innerServices {
 		go func(s StorageService) {
-			err := convertStorageServiceToIterationCompatibleStorageService(s).putKeyValue(ctx, key, value)
+			err := ConvertStorageServiceToIterationCompatibleStorageService(s).putKeyValue(ctx, key, value)
 			if err != nil {
 				errorMutex.Lock()
 				anyError = err

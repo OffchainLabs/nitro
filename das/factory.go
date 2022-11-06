@@ -18,6 +18,8 @@ import (
 func CreatePersistentStorageService(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
+	syncFromStorageServices *[]*IterableStorageService,
+	syncToStorageServices *[]StorageService,
 ) (StorageService, *LifecycleManager, error) {
 	storageServices := make([]StorageService, 0, 10)
 	var lifecycleManager LifecycleManager
@@ -27,6 +29,12 @@ func CreatePersistentStorageService(
 			return nil, nil, err
 		}
 		lifecycleManager.Register(s)
+		if config.LocalDBStorageConfig.SyncToStorageServices {
+			*syncToStorageServices = append(*syncToStorageServices, s)
+		}
+		if config.LocalDBStorageConfig.SyncFromStorageServices {
+			*syncFromStorageServices = append(*syncFromStorageServices, NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s)))
+		}
 		storageServices = append(storageServices, s)
 	}
 
@@ -36,6 +44,12 @@ func CreatePersistentStorageService(
 			return nil, nil, err
 		}
 		lifecycleManager.Register(s)
+		if config.LocalFileStorageConfig.SyncToStorageServices {
+			*syncToStorageServices = append(*syncToStorageServices, s)
+		}
+		if config.LocalFileStorageConfig.SyncFromStorageServices {
+			*syncFromStorageServices = append(*syncFromStorageServices, NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s)))
+		}
 		storageServices = append(storageServices, s)
 	}
 
@@ -45,6 +59,12 @@ func CreatePersistentStorageService(
 			return nil, nil, err
 		}
 		lifecycleManager.Register(s)
+		if config.S3StorageServiceConfig.SyncToStorageServices {
+			*syncToStorageServices = append(*syncToStorageServices, s)
+		}
+		if config.S3StorageServiceConfig.SyncFromStorageServices {
+			*syncFromStorageServices = append(*syncFromStorageServices, NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s)))
+		}
 		storageServices = append(storageServices, s)
 	}
 
