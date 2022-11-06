@@ -63,11 +63,13 @@ func CreatePersistentStorageService(
 			return nil, nil, err
 		}
 		lifecycleManager.Register(s)
+		if config.S3StorageServiceConfig.SyncFromStorageServices {
+			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
+			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
+			s = iterableStorageService
+		}
 		if config.S3StorageServiceConfig.SyncToStorageServices {
 			*syncToStorageServices = append(*syncToStorageServices, s)
-		}
-		if config.S3StorageServiceConfig.SyncFromStorageServices {
-			*syncFromStorageServices = append(*syncFromStorageServices, NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s)))
 		}
 		storageServices = append(storageServices, s)
 	}
