@@ -1289,11 +1289,13 @@ func SetUpDataAvailability(
 		if err != nil {
 			return nil, nil, err
 		}
+		if config.RedisCacheConfig.SyncFromStorageServices {
+			iterableStorageService := das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache))
+			syncFromStorageServices = append(syncFromStorageServices, iterableStorageService)
+			cache = iterableStorageService
+		}
 		if config.RedisCacheConfig.SyncToStorageServices {
 			syncToStorageServices = append(syncToStorageServices, cache)
-		}
-		if config.RedisCacheConfig.SyncFromStorageServices {
-			syncFromStorageServices = append(syncFromStorageServices, das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache)))
 		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
@@ -1303,11 +1305,13 @@ func SetUpDataAvailability(
 		if err != nil {
 			return nil, nil, err
 		}
+		if config.LocalCacheConfig.SyncFromStorageServices {
+			iterableStorageService := das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache))
+			syncFromStorageServices = append(syncFromStorageServices, iterableStorageService)
+			cache = iterableStorageService
+		}
 		if config.LocalCacheConfig.SyncToStorageServices {
 			syncToStorageServices = append(syncToStorageServices, cache)
-		}
-		if config.LocalCacheConfig.SyncFromStorageServices {
-			syncFromStorageServices = append(syncFromStorageServices, das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache)))
 		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
