@@ -296,7 +296,6 @@ services:
       - "l1keystore:/home/user/l1keystore"
       - "config:/config"
     depends_on:
-      - geth
       - redis
 
   relay:

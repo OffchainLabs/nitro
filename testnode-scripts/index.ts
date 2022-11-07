@@ -2,7 +2,7 @@ import { hideBin } from 'yargs/helpers';
 import Yargs from 'yargs/yargs';
 import { stressOptions } from './stress'
 import { redisReadCommand, redisInitCommand } from './redis'
-import { writeConfigCommand } from './config'
+import { writeConfigCommand, writeGethGenesisCommand } from './config'
 import { printAddressCommand, namedAccountHelpString } from "./accounts";
 import { bridgeFundsCommand, sendL1Command, sendL2Command, sendRPCCommand } from './ethcommands'
 
@@ -19,6 +19,7 @@ async function main() {
         .command(sendL2Command)
         .command(sendRPCCommand)
         .command(writeConfigCommand)
+        .command(writeGethGenesisCommand)
         .command(printAddressCommand)
         .command(redisReadCommand)
         .command(redisInitCommand)
