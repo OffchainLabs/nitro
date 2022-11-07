@@ -45,9 +45,10 @@ type DataAvailabilityConfig struct {
 	LocalCacheConfig BigCacheConfig `koanf:"local-cache"`
 	RedisCacheConfig RedisConfig    `koanf:"redis-cache"`
 
-	LocalDBStorageConfig   LocalDBStorageConfig   `koanf:"local-db-storage"`
-	LocalFileStorageConfig LocalFileStorageConfig `koanf:"local-file-storage"`
-	S3StorageServiceConfig S3StorageServiceConfig `koanf:"s3-storage"`
+	LocalDBStorageConfig     LocalDBStorageConfig     `koanf:"local-db-storage"`
+	LocalFileStorageConfig   LocalFileStorageConfig   `koanf:"local-file-storage"`
+	S3StorageServiceConfig   S3StorageServiceConfig   `koanf:"s3-storage"`
+	RegularSyncStorageConfig RegularSyncStorageConfig `koanf:"regular-sync-storage"`
 
 	KeyConfig KeyConfig `koanf:"key"`
 
@@ -100,6 +101,7 @@ func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	LocalDBStorageConfigAddOptions(prefix+".local-db-storage", f)
 	LocalFileStorageConfigAddOptions(prefix+".local-file-storage", f)
 	S3ConfigAddOptions(prefix+".s3-storage", f)
+	RegularSyncStorageConfigAddOptions(prefix+".regular-sync-storage", f)
 
 	// Key config for storage
 	KeyConfigAddOptions(prefix+".key", f)
