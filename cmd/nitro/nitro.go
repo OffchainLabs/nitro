@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 	"github.com/syndtr/goleveldb/leveldb"
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -57,13 +58,77 @@ func printSampleUsage(name string) {
 	fmt.Printf("Sample usage: %s --help \n", name)
 }
 
-func initLog(logType string, logLevel log.Lvl) error {
+type FileLogger struct {
+	writer *lumberjack.Logger
+	lock   sync.Mutex
+}
+
+// Closes previous lumberjack.Logger instance.
+// If file logging is enabled in config returns new Writer, otherwise returns nil interface
+func (l *FileLogger) NewWriter(config *genericconf.FileLoggingConfig) *lumberjack.Logger {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	if l.writer != nil {
+		l.writer.Close()
+		l.writer = nil
+	}
+	if config.Enable {
+		l.writer = &lumberjack.Logger{
+			Filename:   config.File,
+			MaxSize:    config.MaxSize,
+			MaxBackups: config.MaxBackups,
+			MaxAge:     config.MaxAge,
+			Compress:   config.Compress,
+		}
+	}
+	return l.writer
+}
+
+var fileLogger = FileLogger{}
+
+func initLog(logType string, logLevel log.Lvl, config *genericconf.FileLoggingConfig) error {
 	logFormat, err := genericconf.ParseLogType(logType)
 	if err != nil {
 		flag.Usage()
 		return fmt.Errorf("error parsing log type: %w", err)
 	}
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
+	// always call NewWriter, as it closes previously used writer
+	fileWriter := fileLogger.NewWriter(config)
+	var glogger *log.GlogHandler
+	if fileWriter == nil {
+		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
+	} else {
+		// lumberjack.Logger already locks on Write, no need for SyncHandler proxy as used in StreamHandler
+		unsafeStreamHandler := log.LazyHandler(log.FuncHandler(func(r *log.Record) error {
+			_, err := fileWriter.Write(logFormat.Format(r))
+			return err
+		}))
+		droppingChannelHandler := func(records chan<- *log.Record) log.Handler {
+			return log.FuncHandler(func(r *log.Record) error {
+				select {
+				case records <- r:
+					return nil
+				default:
+					// TODO(magic) would be great to log how many records were dropped
+					return fmt.Errorf("Buffer overflow, dropping record")
+				}
+			})
+		}
+		droppingBufferedHandler := func(bufSize int, h log.Handler) log.Handler {
+			records := make(chan *log.Record, bufSize)
+			go func() {
+				for m := range records {
+					_ = h.Log(m)
+				}
+			}()
+			return droppingChannelHandler(records)
+		}
+		glogger = log.NewGlogHandler(
+			log.MultiHandler(
+				log.StreamHandler(os.Stderr, logFormat),
+				droppingBufferedHandler(config.BufSize, unsafeStreamHandler),
+			))
+	}
 	glogger.Verbosity(logLevel)
 	log.Root().SetHandler(glogger)
 	return nil
@@ -143,7 +208,7 @@ func mainImpl() int {
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
-	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel))
+	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		os.Exit(1)
@@ -394,6 +459,7 @@ type NodeConfig struct {
 	L2            conf.L2Config                   `koanf:"l2"`
 	LogLevel      int                             `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`
+	FileLogging   genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
@@ -426,6 +492,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
+	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	conf.PersistentConfigAddOptions("persistent", f)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
@@ -747,7 +814,7 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	if err := c.config.CanReload(config); err != nil {
 		return err
 	}
-	if err := initLog(config.LogType, log.Lvl(config.LogLevel)); err != nil {
+	if err := initLog(config.LogType, log.Lvl(config.LogLevel), &config.FileLogging); err != nil {
 		return err
 	}
 	if err := c.onReloadHook(c.config, config); err != nil {
