@@ -38,7 +38,7 @@ tokenbridge=true
 redundantsequencers=0
 dev_build=false
 batchposters=1
-devprivkey=e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2
+devprivkey=b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -119,15 +119,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 if $dev_build; then
-  docker tag nitro-node-dev:latest nitro-node-dev-testnode
-  docker tag blockscout:latest blockscout-testnode
-else
-  docker tag $NITRO_NODE_VERSION nitro-node-dev-testnode
-  docker tag $BLOCKSCOUT_VERSION blockscout-testnode
-fi
-
-if $force_init; then
+  if $force_init; then
     force_build=true
+  fi
+  if [[ "$(docker images -q nitro-node-dev:latest 2> /dev/null)" == "" ]]; then
+    force_build=true
+  fi
+  if [[ "$(docker images -q blockscout:latest 2> /dev/null)" == "" ]]; then
+    force_build=true
+  fi
+else
+  if $force_build; then
+    echo "Can only build in dev mode with --dev"
+    exit 1
+  fi
 fi
 
 NODES="sequencer"
@@ -164,8 +169,22 @@ fi
 
 if $force_build; then
     echo == Building..
-#    docker build . -t nitro-node-dev --target nitro-node-dev
-#    docker build blockscout -t blockscout -f blockscout/docker/Dockerfile
+    docker build . -t nitro-node-dev --target nitro-node-dev
+    docker build blockscout -t blockscout -f blockscout/docker/Dockerfile
+    docker-compose build --no-rm $NODES testnode-scripts
+fi
+
+if $dev_build; then
+  docker tag nitro-node-dev:latest nitro-node-dev-testnode
+  docker tag blockscout:latest blockscout-testnode
+else
+  docker pull $NITRO_NODE_VERSION
+  docker pull $BLOCKSCOUT_VERSION
+  docker tag $NITRO_NODE_VERSION nitro-node-dev-testnode
+  docker tag $BLOCKSCOUT_VERSION blockscout-testnode
+fi
+
+if $force_build; then
     docker-compose build --no-rm $NODES testnode-scripts
 fi
 

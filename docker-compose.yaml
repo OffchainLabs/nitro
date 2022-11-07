@@ -149,9 +149,7 @@ services:
 
   poster_b:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:9147:8547"
       - "127.0.0.1:9148:8548"
@@ -166,9 +164,7 @@ services:
 
   poster_c:
     pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
+    image: nitro-node-dev-testnode
     ports:
       - "127.0.0.1:9247:8547"
       - "127.0.0.1:9248:8548"
