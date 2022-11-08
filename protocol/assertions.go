@@ -143,6 +143,8 @@ func (chain *AssertionChain) Subscribe(ctx context.Context) <-chan AssertionChai
 }
 
 func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment util.HistoryCommitment, staker common.Address) (*Assertion, error) {
+	chain.mutex.Lock()
+	defer chain.mutex.Unlock()
 	if prev.chain != chain {
 		return nil, ErrWrongChain
 	}
