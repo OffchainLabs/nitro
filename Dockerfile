@@ -154,12 +154,6 @@ RUN ./download-machine.sh consensus-v9 0xd1842bfbe047322b3f3b3635b5fe62eb6115577
 
 FROM golang:1.19-bullseye as node-builder
 WORKDIR /workspace
-ARG version=""
-ARG datetime=""
-ARG modified=""
-ENV NITRO_VERSION=$version
-ENV NITRO_DATETIME=$datetime
-ENV NITRO_MODIFIED=$modified
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
@@ -179,6 +173,12 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM debian:bullseye-slim as nitro-node-slim
 WORKDIR /home/user
+ARG version=""
+ARG datetime=""
+ARG modified=""
+ENV NITRO_VERSION=$version
+ENV NITRO_DATETIME=$datetime
+ENV NITRO_MODIFIED=$modified
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
