@@ -100,7 +100,7 @@ func TestSequencerFeePaid(t *testing.T) {
 		return networkRevenue, tipPaidToNet
 	}
 
-	if version < 11 {
+	if version != 9 {
 		testFees(3)
 		return
 	}
