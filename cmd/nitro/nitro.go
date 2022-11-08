@@ -63,9 +63,9 @@ type FileLogger struct {
 	lock   sync.Mutex
 }
 
-// Closes previous lumberjack.Logger instance.
-// If file logging is enabled returns new Writer, otherwise returns nil
 func (l *FileLogger) NewWriter(config *genericconf.FileLoggingConfig) io.Writer {
+	l.lock.Lock()
+	defer l.lock.Unlock()
 	l.writer = &lumberjack.Logger{
 		Filename:   config.File,
 		MaxSize:    config.MaxSize,
