@@ -215,11 +215,6 @@ func mainImpl() int {
 		}
 	}
 
-	if (nodeConfig.Node.BlockValidator.Enable || validatorCanAct) && !nodeConfig.Node.Caching.Archive {
-		flag.Usage()
-		log.Crit("validator requires --node.caching.archive")
-	}
-
 	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Validator.UseSmartContractWallet {
@@ -335,8 +330,8 @@ func mainImpl() int {
 		log.Error("failed to create node", "err", err)
 		return 1
 	}
-	liveNodeConfig.setOnReloadHook(func(old *NodeConfig, new *NodeConfig) error {
-		return currentNode.OnConfigReload(&old.Node, &new.Node)
+	liveNodeConfig.setOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
+		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
 	})
 
 	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.Init.DevInit {

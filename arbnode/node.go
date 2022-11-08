@@ -417,6 +417,7 @@ type Config struct {
 	Caching                CachingConfig                  `koanf:"caching"`
 	Archive                bool                           `koanf:"archive"`
 	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
+	TransactionStreamer    TransactionStreamerConfig      `koanf:"transaction-streamer"`
 }
 
 func (c *Config) Validate() error {
@@ -478,6 +479,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
+	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
@@ -503,6 +505,7 @@ var ConfigDefault = Config{
 	Archive:                false,
 	TxLookupLimit:          40_000_000,
 	Caching:                DefaultCachingConfig,
+	TransactionStreamer:    DefaultTransactionStreamerConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -652,6 +655,8 @@ var DefaultCachingConfig = CachingConfig{
 }
 
 type Node struct {
+	ChainDB                 ethdb.Database
+	ArbDB                   ethdb.Database
 	Stack                   *node.Node
 	Backend                 *arbitrum.Backend
 	FilterSystem            *filters.FilterSystem
@@ -700,9 +705,10 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	for version != currentDbSchemaVersion {
 		batch := arbDb.NewBatch()
 		switch version {
-		case ^uint64(0):
-			// TODO: write db format upgrade code
-			// This code path is here to avoid a bunch of linter errors
+		case 0:
+			// No database updates are necessary for database format version 0->1.
+			// This version adds a new format for delayed messages in the inbox tracker,
+			// but it can still read the old format for old messages.
 		default:
 			return fmt.Errorf("unsupported database format version %v", version)
 		}
@@ -791,7 +797,8 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &config.Get().L1Reader })
 	}
 
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan)
+	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &config.Get().TransactionStreamer }
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -871,6 +878,7 @@ func createNodeImpl(
 			l2ChainId,
 			currentMessageCount,
 			txStreamer,
+			nil,
 			fatalErrChan,
 			bpVerifier,
 		)
@@ -880,6 +888,8 @@ func createNodeImpl(
 	}
 	if !config.L1Reader.Enable {
 		return &Node{
+			chainDb,
+			arbDb,
 			stack,
 			backend,
 			filterSystem,
@@ -971,38 +981,40 @@ func createNodeImpl(
 	var blockValidator *validator.BlockValidator
 	var statelessBlockValidator *validator.StatelessBlockValidator
 
-	if !foundMachines && blockValidatorConf.Enable {
-		return nil, fmt.Errorf("failed to find machines %v", machinesPath)
-	} else if !foundMachines {
-		log.Warn("Failed to find machines", "path", machinesPath)
-	} else {
+	if foundMachines {
 		statelessBlockValidator, err = validator.NewStatelessBlockValidator(
 			nitroMachineLoader,
 			inboxReader,
 			inboxTracker,
 			txStreamer,
 			l2BlockChain,
+			chainDb,
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
 			&config.Get().BlockValidator,
-			fatalErrChan,
 		)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		if blockValidatorConf.Enable || config.Validator.Enable {
+			return nil, fmt.Errorf("failed to find machines %v", machinesPath)
+		}
+		log.Warn("Failed to find machines", "path", machinesPath)
+	}
 
-		if blockValidatorConf.Enable {
-			blockValidator, err = validator.NewBlockValidator(
-				statelessBlockValidator,
-				inboxTracker,
-				txStreamer,
-				nitroMachineLoader,
-				reorgingToBlock,
-				func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
-			)
-			if err != nil {
-				return nil, err
-			}
+	if blockValidatorConf.Enable {
+		blockValidator, err = validator.NewBlockValidator(
+			statelessBlockValidator,
+			inboxTracker,
+			txStreamer,
+			nitroMachineLoader,
+			reorgingToBlock,
+			func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
+			fatalErrChan,
+		)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -1032,7 +1044,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, daReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -1071,6 +1083,8 @@ func createNodeImpl(
 	}
 
 	return &Node{
+		chainDb,
+		arbDb,
 		stack,
 		backend,
 		filterSystem,
@@ -1475,6 +1489,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.BlockValidator != nil && n.BlockValidator.Started() {
 		n.BlockValidator.StopAndWait()
+	}
+	if n.StatelessBlockValidator != nil {
+		n.StatelessBlockValidator.Stop()
 	}
 	if n.BatchPoster != nil && n.BatchPoster.Started() {
 		n.BatchPoster.StopAndWait()
