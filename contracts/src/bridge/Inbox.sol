@@ -412,7 +412,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         // ensure the user's deposit alone will make submission succeed
         // certain legacy caller can bypass this check and revert to the unsafe behaviour
         if (
-            msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas) ||
+            msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas) &&
             msg.sender != UNSAFE_CREATERETRYABLETICKET_CALLER
         ) {
             revert InsufficientValue(
