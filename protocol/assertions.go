@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"sync"
+	"time"
+
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"sync"
-	"time"
 )
 
 var (
@@ -24,6 +25,39 @@ var (
 	ErrNotImplemented        = errors.New("not yet implemented")
 )
 
+// OnChainProtocol defines an interface for interacting with the smart contract implementation
+// of the assertion protocol, with methods to issue mutating transactions, make eth calls, create
+// leafs in the protocol, issue challenges, and subscribe to chain events wrapped in simple abstractions.
+type OnChainProtocol interface {
+	ChainReader
+	ChainWriter
+	EventProvider
+	AssertionManager
+}
+
+// ChainReader can make non-mutating calls to the on-chain protocol.
+type ChainReader interface {
+	ChallengePeriodLength() time.Duration
+	Call(clo func(*AssertionChain) error) error
+}
+
+// ChainWriter can make mutating calls to the on-chain protocol.
+type ChainWriter interface {
+	Tx(clo func(*AssertionChain) error) error
+}
+
+// EventProvider allows subscribing to chain events for the on-chain protocol.
+type EventProvider interface {
+	Subscribe(ctx context.Context) <-chan AssertionChainEvent
+}
+
+// AssertionManager allows the creation of new leaves for a Staker with a State Commitment
+// and a previous assertion.
+type AssertionManager interface {
+	LatestConfirmed() *Assertion
+	CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
+}
+
 type StateCommitment struct {
 	height uint64
 	state  common.Hash
@@ -34,10 +68,6 @@ func (comm *StateCommitment) Hash() common.Hash {
 }
 
 type AssertionChain struct {
-	inner *InnerAssertionChain
-}
-
-type InnerAssertionChain struct {
 	mutex           sync.RWMutex
 	timeReference   util.TimeReference
 	challengePeriod time.Duration
@@ -47,16 +77,16 @@ type InnerAssertionChain struct {
 	feed            *EventFeed[AssertionChainEvent]
 }
 
-func (chain *AssertionChain) Tx(clo func(*InnerAssertionChain) error) error {
-	chain.inner.mutex.Lock()
-	defer chain.inner.mutex.Unlock()
-	return clo(chain.inner)
+func (chain *AssertionChain) Tx(clo func(chain *AssertionChain) error) error {
+	chain.mutex.Lock()
+	defer chain.mutex.Unlock()
+	return clo(chain)
 }
 
-func (chain *AssertionChain) Call(clo func(*InnerAssertionChain) error) error {
-	chain.inner.mutex.RLock()
-	defer chain.inner.mutex.RUnlock()
-	return clo(chain.inner)
+func (chain *AssertionChain) Call(clo func(chain *AssertionChain) error) error {
+	chain.mutex.RLock()
+	defer chain.mutex.RUnlock()
+	return clo(chain)
 }
 
 const (
@@ -68,7 +98,7 @@ const (
 type AssertionState int
 
 type Assertion struct {
-	chain                   *InnerAssertionChain
+	chain                   *AssertionChain
 	status                  AssertionState
 	sequenceNum             uint64
 	stateCommitment         StateCommitment
@@ -96,7 +126,7 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		challenge:               util.EmptyOption[*Challenge](),
 		staker:                  util.EmptyOption[common.Address](),
 	}
-	chain := &InnerAssertionChain{
+	chain := &AssertionChain{
 		mutex:           sync.RWMutex{},
 		timeReference:   timeRef,
 		challengePeriod: challengePeriod,
@@ -106,18 +136,22 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		feed:            NewEventFeed[AssertionChainEvent](ctx),
 	}
 	genesis.chain = chain
-	return &AssertionChain{chain}
+	return chain
 }
 
-func (chain *InnerAssertionChain) LatestConfirmed() *Assertion {
+func (chain *AssertionChain) ChallengePeriodLength() time.Duration {
+	return chain.challengePeriod
+}
+
+func (chain *AssertionChain) LatestConfirmed() *Assertion {
 	return chain.assertions[chain.confirmedLatest]
 }
 
-func (chain *InnerAssertionChain) Subscribe(ctx context.Context) <-chan AssertionChainEvent {
+func (chain *AssertionChain) Subscribe(ctx context.Context) <-chan AssertionChainEvent {
 	return chain.feed.Subscribe(ctx)
 }
 
-func (chain *InnerAssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
+func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
 	if prev.chain != chain {
 		return nil, ErrWrongChain
 	}
