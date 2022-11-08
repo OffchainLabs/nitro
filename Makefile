@@ -96,7 +96,7 @@ build-prover-bin: $(arbitrator_prover_bin)
 
 build-jit: $(arbitrator_jit)
 
-build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machines/latest/machine.wavm.br
+build-replay-env: $(arbitrator_prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machines/latest/machine.wavm.br
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
@@ -117,7 +117,7 @@ test-go: .make/test-go
 	@printf $(done)
 
 test-go-challenge: test-go-deps
-	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
+	go test -v -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
 test-go-redis: test-go-deps

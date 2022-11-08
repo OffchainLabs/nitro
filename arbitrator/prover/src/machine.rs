@@ -38,7 +38,7 @@ use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, Tab
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
     h.update("Call indirect:");
-    h.update(&(table as u64).to_be_bytes());
+    h.update((table as u64).to_be_bytes());
     h.update(ty.hash());
     h.finalize().into()
 }
@@ -154,7 +154,7 @@ impl StackFrame {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Stack frame:");
-        h.update(&self.return_ref.hash());
+        h.update(self.return_ref.hash());
         h.update(
             Merkle::new(
                 MerkleType::Value,
@@ -221,7 +221,7 @@ struct Table {
 impl Table {
     fn serialize_for_proof(&self) -> Result<Vec<u8>> {
         let mut data = vec![ArbValueType::try_from(self.ty.element_type)?.serialize()];
-        data.extend(&(self.elems.len() as u64).to_be_bytes());
+        data.extend((self.elems.len() as u64).to_be_bytes());
         data.extend(self.elems_merkle.root());
         Ok(data)
     }
@@ -229,8 +229,8 @@ impl Table {
     fn hash(&self) -> Result<Bytes32> {
         let mut h = Keccak256::new();
         h.update("Table:");
-        h.update(&[ArbValueType::try_from(self.ty.element_type)?.serialize()]);
-        h.update(&(self.elems.len() as u64).to_be_bytes());
+        h.update([ArbValueType::try_from(self.ty.element_type)?.serialize()]);
+        h.update((self.elems.len() as u64).to_be_bytes());
         h.update(self.elems_merkle.root());
         Ok(h.finalize().into())
     }
@@ -759,7 +759,7 @@ where
         let mut h = Keccak256::new();
         h.update(prefix);
         h.update(item.as_ref());
-        h.update(&hash);
+        h.update(hash);
         hash = h.finalize().into();
     }
     hash
@@ -2079,13 +2079,13 @@ impl Machine {
         match self.status {
             MachineStatus::Running => {
                 h.update(b"Machine running:");
-                h.update(&hash_value_stack(&self.value_stack));
-                h.update(&hash_value_stack(&self.internal_stack));
+                h.update(hash_value_stack(&self.value_stack));
+                h.update(hash_value_stack(&self.internal_stack));
                 h.update(hash_stack_frame_stack(&self.frame_stack));
                 h.update(self.global_state.hash());
-                h.update(&u32::try_from(self.pc.module).unwrap().to_be_bytes());
-                h.update(&u32::try_from(self.pc.func).unwrap().to_be_bytes());
-                h.update(&u32::try_from(self.pc.inst).unwrap().to_be_bytes());
+                h.update(u32::try_from(self.pc.module).unwrap().to_be_bytes());
+                h.update(u32::try_from(self.pc.func).unwrap().to_be_bytes());
+                h.update(u32::try_from(self.pc.inst).unwrap().to_be_bytes());
                 h.update(self.get_modules_root());
             }
             MachineStatus::Finished => {
@@ -2130,9 +2130,9 @@ impl Machine {
 
         data.extend(self.global_state.hash());
 
-        data.extend(&(self.pc.module as u32).to_be_bytes());
-        data.extend(&(self.pc.func as u32).to_be_bytes());
-        data.extend(&(self.pc.inst as u32).to_be_bytes());
+        data.extend((self.pc.module as u32).to_be_bytes());
+        data.extend((self.pc.func as u32).to_be_bytes());
+        data.extend((self.pc.inst as u32).to_be_bytes());
         let mod_merkle = self.get_modules_merkle();
         data.extend(mod_merkle.root());
 
@@ -2210,6 +2210,8 @@ impl Machine {
                 Opcode::MemoryLoad { .. } | Opcode::MemoryStore { .. },
             ) {
                 let is_store = matches!(next_inst.opcode, Opcode::MemoryStore { .. });
+                // this isn't really a bool -> int, it's determining an offset based on a bool
+                #[allow(clippy::bool_to_int_with_if)]
                 let stack_idx_offset = if is_store {
                     // The index is one item below the top stack item for a memory store
                     1
@@ -2256,7 +2258,7 @@ impl Machine {
                     ),
                 };
                 let ty = &module.types[usize::try_from(ty).unwrap()];
-                data.extend(&(table as u64).to_be_bytes());
+                data.extend((table as u64).to_be_bytes());
                 data.extend(ty.hash());
                 let table_usize = usize::try_from(table).unwrap();
                 let table = &module.tables[table_usize];
