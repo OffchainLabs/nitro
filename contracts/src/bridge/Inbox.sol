@@ -413,7 +413,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         // certain legacy caller can bypass this check and revert to the unsafe behaviour
         if (
             msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas) ||
-            msg.sender == UNSAFE_CREATERETRYABLETICKET_CALLER
+            msg.sender != UNSAFE_CREATERETRYABLETICKET_CALLER
         ) {
             revert InsufficientValue(
                 maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
