@@ -32,8 +32,7 @@ func (feed *EventFeed[Event]) Append(event Event) {
 	feed.mutex.Unlock()
 }
 
-func (feed *EventFeed[Event]) SubscribeWithFilter(ctx context.Context, filter func(Event) bool) <-chan Event {
-	c := make(chan Event)
+func (feed *EventFeed[Event]) SubscribeWithFilter(ctx context.Context, c chan<- Event, filter func(Event) bool) {
 	go func() {
 		defer close(c)
 		numRead := 0
@@ -72,9 +71,8 @@ func (feed *EventFeed[Event]) SubscribeWithFilter(ctx context.Context, filter fu
 			}
 		}
 	}()
-	return c
 }
 
-func (feed *EventFeed[Event]) Subscribe(ctx context.Context) <-chan Event {
-	return feed.SubscribeWithFilter(ctx, func(Event) bool { return true })
+func (feed *EventFeed[Event]) Subscribe(ctx context.Context, c chan<- Event) {
+	feed.SubscribeWithFilter(ctx, c, func(Event) bool { return true })
 }

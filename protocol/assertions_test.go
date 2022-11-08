@@ -36,7 +36,8 @@ func TestAssertionChain(t *testing.T) {
 		t.Fatal()
 	}
 
-	eventChan := chain.feed.Subscribe(ctx)
+	eventChan := make(chan AssertionChainEvent)
+	chain.feed.Subscribe(ctx, eventChan)
 
 	// add an assertion, then confirm it
 	comm := util.HistoryCommitment{Height: 1, Merkle: correctBlockHashes[99]}
@@ -114,7 +115,7 @@ func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seq
 	ev := <-c
 	switch e := ev.(type) {
 	case *CreateLeafEvent:
-		if e.seqNum != seqNum || e.prevSeqNum != prevSeqNum || e.staker != staker || e.commitment != comm {
+		if e.SeqNum != seqNum || e.PrevSeqNum != prevSeqNum || e.Staker != staker || e.Commitment != comm {
 			t.Fatal(e)
 		}
 	default:
@@ -127,7 +128,7 @@ func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum
 	ev := <-c
 	switch e := ev.(type) {
 	case *ConfirmEvent:
-		if e.seqNum != seqNum {
+		if e.SeqNum != seqNum {
 			t.Fatal(e)
 		}
 	default:
@@ -140,7 +141,7 @@ func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum 
 	ev := <-c
 	switch e := ev.(type) {
 	case *RejectEvent:
-		if e.seqNum != seqNum {
+		if e.SeqNum != seqNum {
 			t.Fatal(e)
 		}
 	default:
@@ -153,7 +154,7 @@ func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent,
 	ev := <-c
 	switch e := ev.(type) {
 	case *StartChallengeEvent:
-		if e.parentSeqNum != parentSeqNum {
+		if e.ParentSeqNum != parentSeqNum {
 			t.Fatal(e)
 		}
 	default:

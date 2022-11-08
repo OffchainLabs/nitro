@@ -48,7 +48,7 @@ type ChainWriter interface {
 
 // EventProvider allows subscribing to chain events for the on-chain protocol.
 type EventProvider interface {
-	Subscribe(ctx context.Context) <-chan AssertionChainEvent
+	SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent)
 }
 
 // AssertionManager allows the creation of new leaves for a Staker with a State Commitment
@@ -138,8 +138,8 @@ func (chain *AssertionChain) LatestConfirmed() *Assertion {
 	return chain.assertions[chain.confirmedLatest]
 }
 
-func (chain *AssertionChain) Subscribe(ctx context.Context) <-chan AssertionChainEvent {
-	return chain.feed.Subscribe(ctx)
+func (chain *AssertionChain) SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent) {
+	chain.feed.Subscribe(ctx, ch)
 }
 
 func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment util.HistoryCommitment, staker common.Address) (*Assertion, error) {
@@ -176,10 +176,10 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment util.History
 	chain.assertions = append(chain.assertions, leaf)
 	chain.dedupe[dedupeCode] = true
 	chain.feed.Append(&CreateLeafEvent{
-		prevSeqNum: prev.sequenceNum,
-		seqNum:     leaf.sequenceNum,
-		commitment: leaf.stateCommitment,
-		staker:     staker,
+		PrevSeqNum: prev.sequenceNum,
+		SeqNum:     leaf.sequenceNum,
+		Commitment: leaf.stateCommitment,
+		Staker:     staker,
 	})
 	return leaf, nil
 }
@@ -196,7 +196,7 @@ func (a *Assertion) RejectForPrev() error {
 	}
 	a.status = RejectedAssertionState
 	a.chain.feed.Append(&RejectEvent{
-		seqNum: a.sequenceNum,
+		SeqNum: a.sequenceNum,
 	})
 	return nil
 }
@@ -221,7 +221,7 @@ func (a *Assertion) RejectForLoss() error {
 	}
 	a.status = RejectedAssertionState
 	a.chain.feed.Append(&RejectEvent{
-		seqNum: a.sequenceNum,
+		SeqNum: a.sequenceNum,
 	})
 	return nil
 }
@@ -246,7 +246,7 @@ func (a *Assertion) ConfirmNoRival() error {
 	a.status = ConfirmedAssertionState
 	a.chain.confirmedLatest = a.sequenceNum
 	a.chain.feed.Append(&ConfirmEvent{
-		seqNum: a.sequenceNum,
+		SeqNum: a.sequenceNum,
 	})
 	return nil
 }
@@ -275,7 +275,7 @@ func (a *Assertion) ConfirmForWin() error {
 	a.status = ConfirmedAssertionState
 	a.chain.confirmedLatest = a.sequenceNum
 	a.chain.feed.Append(&ConfirmEvent{
-		seqNum: a.sequenceNum,
+		SeqNum: a.sequenceNum,
 	})
 	return nil
 }
@@ -329,7 +329,7 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 	ret.includedHistories[root.commitment.Hash()] = true
 	parent.challenge = util.FullOption[*Challenge](ret)
 	parent.chain.feed.Append(&StartChallengeEvent{
-		parentSeqNum: parent.sequenceNum,
+		ParentSeqNum: parent.sequenceNum,
 	})
 	return ret, nil
 }
@@ -370,10 +370,10 @@ func (chal *Challenge) AddLeaf(assertion *Assertion, history util.HistoryCommitm
 	chal.nextSequenceNum++
 	chal.root.maybeNewPresumptiveSuccessor(leaf)
 	chal.feed.Append(&ChallengeLeafEvent{
-		sequenceNum:       leaf.sequenceNum,
-		winnerIfConfirmed: assertion.sequenceNum,
-		history:           history,
-		becomesPS:         leaf.prev.presumptiveSuccessor == leaf,
+		SequenceNum:       leaf.sequenceNum,
+		WinnerIfConfirmed: assertion.sequenceNum,
+		History:           history,
+		BecomesPS:         leaf.prev.presumptiveSuccessor == leaf,
 	})
 	return leaf, nil
 }
@@ -461,10 +461,10 @@ func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []co
 	newVertex.prev.maybeNewPresumptiveSuccessor(vertex)
 	newVertex.challenge.includedHistories[history.Hash()] = true
 	newVertex.challenge.feed.Append(&ChallengeBisectEvent{
-		fromSequenceNum: vertex.sequenceNum,
-		sequenceNum:     newVertex.sequenceNum,
-		history:         newVertex.commitment,
-		becomesPS:       newVertex.prev.presumptiveSuccessor == newVertex,
+		FromSequenceNum: vertex.sequenceNum,
+		SequenceNum:     newVertex.sequenceNum,
+		History:         newVertex.commitment,
+		BecomesPS:       newVertex.prev.presumptiveSuccessor == newVertex,
 	})
 	return nil
 }
@@ -487,9 +487,9 @@ func (vertex *ChallengeVertex) Merge(newPrev *ChallengeVertex, proof []common.Ha
 	newPrev.psTimer.Add(vertex.psTimer.Get())
 	newPrev.maybeNewPresumptiveSuccessor(vertex)
 	vertex.challenge.feed.Append(&ChallengeMergeEvent{
-		deeperSequenceNum:    vertex.sequenceNum,
-		shallowerSequenceNum: newPrev.sequenceNum,
-		becomesPS:            newPrev.presumptiveSuccessor == vertex,
+		DeeperSequenceNum:    vertex.sequenceNum,
+		ShallowerSequenceNum: newPrev.sequenceNum,
+		BecomesPS:            newPrev.presumptiveSuccessor == vertex,
 	})
 	return nil
 }
