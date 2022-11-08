@@ -2,14 +2,15 @@ package protocol
 
 import (
 	"context"
-	"errors"
-	"github.com/OffchainLabs/new-rollup-exploration/util"
-	"github.com/ethereum/go-ethereum/common"
 	"testing"
 	"time"
+
+	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
 )
 
-const testChallengePeriod = time.Duration(100 * time.Second)
+const testChallengePeriod = 100 * time.Second
 
 func TestAssertionChain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -22,79 +23,64 @@ func TestAssertionChain(t *testing.T) {
 	staker2 := common.BytesToAddress([]byte{2})
 
 	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod).inner
-	if len(chain.assertions) != 1 {
-		t.Fatal()
-	}
-	if chain.confirmedLatest != 0 {
-		t.Fatal()
-	}
+	require.Equal(t, 1, len(chain.assertions))
+	require.Equal(t, 0, chain.confirmedLatest)
 	genesis := chain.LatestConfirmed()
-	if genesis.stateCommitment != (StateCommitment{0, common.Hash{}}) {
-		t.Fatal()
-	}
+	require.Equal(t, StateCommitment{
+		height: 0,
+		state:  common.Hash{},
+	}, genesis)
 
 	eventChan := chain.feed.Subscribe(ctx)
 
 	// add an assertion, then confirm it
 	comm := StateCommitment{1, correctBlockHashes[99]}
 	newAssertion, err := chain.CreateLeaf(genesis, comm, staker1)
-	Require(t, err)
-	if len(chain.assertions) != 2 {
-		t.Fatal()
-	}
-	if chain.LatestConfirmed() != genesis {
-		t.Fatal()
-	}
+	require.NoError(t, err)
+	require.Equal(t, 2, len(chain.assertions))
+	require.Equal(t, genesis, chain.LatestConfirmed())
 	verifyCreateLeafEventInFeed(t, eventChan, 1, 0, staker1, comm)
 
-	if err := newAssertion.ConfirmNoRival(); !errors.Is(err, ErrNotYet) {
-		t.Fatal(err)
-	}
+	err = newAssertion.ConfirmNoRival()
+	require.ErrorIs(t, err, ErrNotYet)
 	timeRef.Add(testChallengePeriod + time.Second)
-	Require(t, newAssertion.ConfirmNoRival())
-	if chain.LatestConfirmed() != newAssertion {
-		t.Fatal()
-	}
-	if newAssertion.status != ConfirmedAssertionState {
-		t.Fatal(newAssertion.status)
-	}
+	require.NoError(t, newAssertion.ConfirmForWin())
+
+	require.Equal(t, newAssertion, chain.LatestConfirmed())
+	require.Equal(t, ConfirmedAssertionState, newAssertion.status)
 	verifyConfirmEventInFeed(t, eventChan, 1)
 
 	// try to create a duplicate assertion
 	_, err = chain.CreateLeaf(genesis, StateCommitment{1, correctBlockHashes[99]}, staker1)
-	if !errors.Is(err, ErrVertexAlreadyExists) {
-		t.Fatal(err)
-	}
+	require.ErrorIs(t, err, ErrVertexAlreadyExists)
 
 	// create a fork, let first branch win by timeout
 	comm = StateCommitment{2, correctBlockHashes[199]}
 	branch1, err := chain.CreateLeaf(newAssertion, comm, staker1)
-	Require(t, err)
+	require.NoError(t, err)
 	timeRef.Add(5 * time.Second)
 	verifyCreateLeafEventInFeed(t, eventChan, 2, 1, staker1, comm)
 	comm = StateCommitment{2, wrongBlockHashes[199]}
 	branch2, err := chain.CreateLeaf(newAssertion, comm, staker2)
+	require.NoError(t, err)
 	verifyCreateLeafEventInFeed(t, eventChan, 3, 1, staker2, comm)
-	Require(t, err)
 	challenge, err := newAssertion.CreateChallenge(ctx)
-	Require(t, err)
+	require.NoError(t, err)
 	verifyStartChallengeEventInFeed(t, eventChan, newAssertion.sequenceNum)
 	chal1, err := challenge.AddLeaf(branch1, util.HistoryCommitment{100, util.ExpansionFromLeaves(correctBlockHashes[99:200]).Root()})
-	Require(t, err)
+	require.NoError(t, err)
 	_, err = challenge.AddLeaf(branch2, util.HistoryCommitment{100, util.ExpansionFromLeaves(wrongBlockHashes[99:200]).Root()})
-	Require(t, err)
+	require.NoError(t, err)
 	err = chal1.ConfirmForPsTimer()
-	if !errors.Is(err, ErrNotYet) {
-		t.Fatal(err)
-	}
+	require.ErrorIs(t, err, ErrNotYet)
+
 	timeRef.Add(testChallengePeriod)
-	Require(t, chal1.ConfirmForPsTimer())
-	Require(t, branch1.ConfirmForWin())
-	if chain.LatestConfirmed() != branch1 {
-		t.Fatal()
-	}
+	require.NoError(t, chal1.ConfirmForPsTimer())
+	require.NoError(t, branch1.ConfirmForWin())
+	require.Equal(t, branch1, chain.LatestConfirmed())
+
 	verifyConfirmEventInFeed(t, eventChan, 2)
-	Require(t, branch2.RejectForLoss())
+	require.NoError(t, branch2.RejectForLoss())
 	verifyRejectEventInFeed(t, eventChan, 3)
 
 	// verify that feed is empty
@@ -170,15 +156,15 @@ func TestChallengeBisections(t *testing.T) {
 
 	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod).inner
 	correctBranch, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{100, correctBlockHashes[100]}, staker1)
-	Require(t, err)
+	require.NoError(t, err)
 	wrongBranch, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{100, wrongBlockHashes[100]}, staker2)
-	Require(t, err)
+	require.NoError(t, err)
 	challenge, err := chain.LatestConfirmed().CreateChallenge(ctx)
-	Require(t, err)
+	require.NoError(t, err)
 	correctLeaf, err := challenge.AddLeaf(correctBranch, util.HistoryCommitment{100, util.ExpansionFromLeaves(correctBlockHashes[101:200]).Root()})
-	Require(t, err)
+	require.NoError(t, err)
 	wrongLeaf, err := challenge.AddLeaf(wrongBranch, util.HistoryCommitment{100, util.ExpansionFromLeaves(wrongBlockHashes[101:200]).Root()})
-	Require(t, err)
+	require.NoError(t, err)
 
 	_ = correctLeaf
 	_ = wrongLeaf
@@ -198,11 +184,4 @@ func wrongBlockHashesForTest(numBlocks uint64) []common.Hash {
 		ret = append(ret, util.HashForUint(71285937102384-i))
 	}
 	return ret
-}
-
-func Require(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
-	}
 }
