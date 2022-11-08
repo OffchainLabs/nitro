@@ -65,7 +65,7 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:      "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
 	L1LookBehind:          2,
-	MaxFeeCapGwei:         100.,
+	MaxFeeCapGwei:         105.,
 	MaxFeeCapDoubling:     2 * time.Hour,
 	MaxQueuedTransactions: 64,
 }
@@ -74,7 +74,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:      "1s,2s,5s,10s,20s,30s,1m,5m",
 	RedisSigner:           signature.TestSimpleHmacConfig,
 	L1LookBehind:          0,
-	MaxFeeCapGwei:         100.,
+	MaxFeeCapGwei:         105.,
 	MaxFeeCapDoubling:     5 * time.Second,
 	MaxQueuedTransactions: 64,
 }
