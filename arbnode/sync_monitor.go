@@ -1,6 +1,8 @@
 package arbnode
 
 import (
+	"context"
+	"errors"
 	"sync/atomic"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -125,6 +127,30 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	}
 
 	return res
+}
+
+func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
+	if s.inboxReader == nil || !s.initialized {
+		return 0, errors.New("not set up for safeblock")
+	}
+	msg, err := s.inboxReader.GetSafeMsg(ctx)
+	if err != nil {
+		return 0, err
+	}
+	block, err := s.txStreamer.MessageCountToBlockNumber(msg)
+	return uint64(block), err
+}
+
+func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
+	if s.inboxReader == nil || !s.initialized {
+		return 0, errors.New("not set up for safeblock")
+	}
+	msg, err := s.inboxReader.GetFinalizedMsg(ctx)
+	if err != nil {
+		return 0, err
+	}
+	block, err := s.txStreamer.MessageCountToBlockNumber(msg)
+	return uint64(block), err
 }
 
 func (s *SyncMonitor) Synced() bool {
