@@ -110,9 +110,7 @@ func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum
 	ev := <-c
 	switch e := ev.(type) {
 	case *ConfirmEvent:
-		if e.seqNum != seqNum {
-			t.Fatal(e)
-		}
+		require.Equal(t, seqNum, e.seqNum)
 	default:
 		t.Fatal()
 	}
@@ -123,9 +121,7 @@ func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum 
 	ev := <-c
 	switch e := ev.(type) {
 	case *RejectEvent:
-		if e.seqNum != seqNum {
-			t.Fatal(e)
-		}
+		require.Equal(t, seqNum, e.seqNum)
 	default:
 		t.Fatal()
 	}
@@ -136,9 +132,7 @@ func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent,
 	ev := <-c
 	switch e := ev.(type) {
 	case *StartChallengeEvent:
-		if e.parentSeqNum != parentSeqNum {
-			t.Fatal(e)
-		}
+		require.Equal(t, parentSeqNum, e.parentSeqNum)
 	default:
 		t.Fatal()
 	}
@@ -161,13 +155,10 @@ func TestChallengeBisections(t *testing.T) {
 	require.NoError(t, err)
 	challenge, err := chain.LatestConfirmed().CreateChallenge(ctx)
 	require.NoError(t, err)
-	correctLeaf, err := challenge.AddLeaf(correctBranch, util.HistoryCommitment{100, util.ExpansionFromLeaves(correctBlockHashes[101:200]).Root()})
+	_, err = challenge.AddLeaf(correctBranch, util.HistoryCommitment{100, util.ExpansionFromLeaves(correctBlockHashes[101:200]).Root()})
 	require.NoError(t, err)
-	wrongLeaf, err := challenge.AddLeaf(wrongBranch, util.HistoryCommitment{100, util.ExpansionFromLeaves(wrongBlockHashes[101:200]).Root()})
+	_, err = challenge.AddLeaf(wrongBranch, util.HistoryCommitment{100, util.ExpansionFromLeaves(wrongBlockHashes[101:200]).Root()})
 	require.NoError(t, err)
-
-	_ = correctLeaf
-	_ = wrongLeaf
 }
 
 func correctBlockHashesForTest(numBlocks uint64) []common.Hash {
