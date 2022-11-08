@@ -64,41 +64,41 @@ type FileLogger struct {
 }
 
 // Closes previous lumberjack.Logger instance.
-// If file logging is enabled in config returns new Writer, otherwise returns nil interface
-func (l *FileLogger) NewWriter(config *genericconf.FileLoggingConfig) *lumberjack.Logger {
+// If file logging is enabled returns new Writer, otherwise returns nil
+func (l *FileLogger) NewWriter(config *genericconf.FileLoggingConfig) io.Writer {
+	l.writer = &lumberjack.Logger{
+		Filename:   config.File,
+		MaxSize:    config.MaxSize,
+		MaxBackups: config.MaxBackups,
+		MaxAge:     config.MaxAge,
+		Compress:   config.Compress,
+	}
+	return l.writer
+}
+
+func (l *FileLogger) Close() {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	if l.writer != nil {
 		l.writer.Close()
 		l.writer = nil
 	}
-	if config.Enable {
-		l.writer = &lumberjack.Logger{
-			Filename:   config.File,
-			MaxSize:    config.MaxSize,
-			MaxBackups: config.MaxBackups,
-			MaxAge:     config.MaxAge,
-			Compress:   config.Compress,
-		}
-	}
-	return l.writer
 }
 
 var fileLogger = FileLogger{}
 
-func initLog(logType string, logLevel log.Lvl, config *genericconf.FileLoggingConfig) error {
+func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.FileLoggingConfig) error {
 	logFormat, err := genericconf.ParseLogType(logType)
 	if err != nil {
 		flag.Usage()
 		return fmt.Errorf("error parsing log type: %w", err)
 	}
-	// always call NewWriter, as it closes previously used writer
-	fileWriter := fileLogger.NewWriter(config)
 	var glogger *log.GlogHandler
-	if fileWriter == nil {
-		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
-	} else {
-		// lumberjack.Logger already locks on Write, no need for SyncHandler proxy as used in StreamHandler
+	// always close previous instance of file logger
+	fileLogger.Close()
+	if fileLoggingConfig.Enable {
+		fileWriter := fileLogger.NewWriter(fileLoggingConfig)
+		// lumberjack.Logger already locks on Write, no need for SyncHandler proxy which is used in StreamHandler
 		unsafeStreamHandler := log.LazyHandler(log.FuncHandler(func(r *log.Record) error {
 			_, err := fileWriter.Write(logFormat.Format(r))
 			return err
@@ -109,11 +109,11 @@ func initLog(logType string, logLevel log.Lvl, config *genericconf.FileLoggingCo
 				case records <- r:
 					return nil
 				default:
-					// TODO(magic) would be great to log how many records were dropped
 					return fmt.Errorf("Buffer overflow, dropping record")
 				}
 			})
 		}
+		// on overflow records are dropped silently
 		droppingBufferedHandler := func(bufSize int, h log.Handler) log.Handler {
 			records := make(chan *log.Record, bufSize)
 			go func() {
@@ -126,8 +126,10 @@ func initLog(logType string, logLevel log.Lvl, config *genericconf.FileLoggingCo
 		glogger = log.NewGlogHandler(
 			log.MultiHandler(
 				log.StreamHandler(os.Stderr, logFormat),
-				droppingBufferedHandler(config.BufSize, unsafeStreamHandler),
+				droppingBufferedHandler(fileLoggingConfig.BufSize, unsafeStreamHandler),
 			))
+	} else {
+		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	}
 	glogger.Verbosity(logLevel)
 	log.Root().SetHandler(glogger)
