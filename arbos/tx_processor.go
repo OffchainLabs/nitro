@@ -634,13 +634,13 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 
 func (p *TxProcessor) DropTip() bool {
 	version := p.state.ArbOSVersion()
-	return (version != 9 && version < 11) || p.delayedInbox
+	return version != 9 || p.delayedInbox
 }
 
 func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	gasPrice := p.evm.GasPrice
 	version := p.state.ArbOSVersion()
-	if version != 9 && version < 11 {
+	if version != 9 {
 		gasPrice = p.evm.Context.BaseFee
 		if p.msg.RunMode() != types.MessageCommitMode && p.msg.GasFeeCap().Sign() == 0 {
 			gasPrice.SetInt64(0) // gasprice zero behavior
