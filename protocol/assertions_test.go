@@ -24,12 +24,12 @@ func TestAssertionChain(t *testing.T) {
 
 	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod).inner
 	require.Equal(t, 1, len(chain.assertions))
-	require.Equal(t, 0, chain.confirmedLatest)
+	require.Equal(t, uint64(0), chain.confirmedLatest)
 	genesis := chain.LatestConfirmed()
 	require.Equal(t, StateCommitment{
 		height: 0,
 		state:  common.Hash{},
-	}, genesis)
+	}, genesis.stateCommitment)
 
 	eventChan := chain.feed.Subscribe(ctx)
 
@@ -44,10 +44,10 @@ func TestAssertionChain(t *testing.T) {
 	err = newAssertion.ConfirmNoRival()
 	require.ErrorIs(t, err, ErrNotYet)
 	timeRef.Add(testChallengePeriod + time.Second)
-	require.NoError(t, newAssertion.ConfirmForWin())
+	require.NoError(t, newAssertion.ConfirmNoRival())
 
 	require.Equal(t, newAssertion, chain.LatestConfirmed())
-	require.Equal(t, ConfirmedAssertionState, newAssertion.status)
+	require.Equal(t, ConfirmedAssertionState, int(newAssertion.status))
 	verifyConfirmEventInFeed(t, eventChan, 1)
 
 	// try to create a duplicate assertion
