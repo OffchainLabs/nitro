@@ -83,15 +83,14 @@ type FileLoggingConfig struct {
 }
 
 var DefaultFileLoggingConfig = FileLoggingConfig{
-	// TODO use some reasonable defaults
 	Enable:     false,
-	File:       "nitro-log",
-	MaxSize:    100, // 100Mb
-	MaxAge:     0,   // Don't remove old files based on age
-	MaxBackups: 10,
+	File:       "logs",
+	MaxSize:    100,   // 100Mb
+	MaxAge:     0,     // don't remove old files based on age
+	MaxBackups: 0,     // keep all old files
 	LocalTime:  false, // use UTC time
 	Compress:   true,
-	BufSize:    1024,
+	BufSize:    512,
 }
 
 func FileLoggingConfigAddOptions(prefix string, f *flag.FlagSet) {
