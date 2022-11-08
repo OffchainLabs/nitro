@@ -76,13 +76,15 @@ func (l *FileLogger) NewWriter(config *genericconf.FileLoggingConfig) io.Writer 
 	return l.writer
 }
 
-func (l *FileLogger) Close() {
+func (l *FileLogger) Close() error {
+	var err error
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	if l.writer != nil {
-		l.writer.Close()
+		err = l.writer.Close()
 		l.writer = nil
 	}
+	return err
 }
 
 var fileLogger = FileLogger{}
@@ -95,7 +97,9 @@ func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.Fi
 	}
 	var glogger *log.GlogHandler
 	// always close previous instance of file logger
-	fileLogger.Close()
+	if err := fileLogger.Close(); err != nil {
+		return fmt.Errorf("failed to close FileLogger: %w", err)
+	}
 	if fileLoggingConfig.Enable {
 		fileWriter := fileLogger.NewWriter(fileLoggingConfig)
 		// lumberjack.Logger already locks on Write, no need for SyncHandler proxy which is used in StreamHandler
