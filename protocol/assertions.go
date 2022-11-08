@@ -55,16 +55,7 @@ type EventProvider interface {
 // and a previous assertion.
 type AssertionManager interface {
 	LatestConfirmed() *Assertion
-	CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
-}
-
-type StateCommitment struct {
-	height uint64
-	state  common.Hash
-}
-
-func (comm *StateCommitment) Hash() common.Hash {
-	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.height), comm.state.Bytes())
+	CreateLeaf(prev *Assertion, commitment util.HistoryCommitment, staker common.Address) (*Assertion, error)
 }
 
 type AssertionChain struct {
@@ -101,7 +92,7 @@ type Assertion struct {
 	chain                   *AssertionChain
 	status                  AssertionState
 	sequenceNum             uint64
-	stateCommitment         StateCommitment
+	stateCommitment         util.HistoryCommitment
 	prev                    util.Option[*Assertion]
 	isFirstChild            bool
 	firstChildCreationTime  util.Option[time.Time]
@@ -115,9 +106,9 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		chain:       nil,
 		status:      ConfirmedAssertionState,
 		sequenceNum: 0,
-		stateCommitment: StateCommitment{
-			height: 0,
-			state:  common.Hash{},
+		stateCommitment: util.HistoryCommitment{
+			Height: 0,
+			Merkle: common.Hash{},
 		},
 		prev:                    util.EmptyOption[*Assertion](),
 		isFirstChild:            false,
@@ -151,11 +142,11 @@ func (chain *AssertionChain) Subscribe(ctx context.Context) <-chan AssertionChai
 	return chain.feed.Subscribe(ctx)
 }
 
-func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
+func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment util.HistoryCommitment, staker common.Address) (*Assertion, error) {
 	if prev.chain != chain {
 		return nil, ErrWrongChain
 	}
-	if prev.stateCommitment.height >= commitment.height {
+	if prev.stateCommitment.Height >= commitment.Height {
 		return nil, ErrInvalid
 	}
 	dedupeCode := crypto.Keccak256Hash(binary.BigEndian.AppendUint64(commitment.Hash().Bytes(), prev.sequenceNum))

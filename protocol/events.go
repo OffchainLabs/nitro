@@ -17,7 +17,7 @@ type CreateLeafEvent struct {
 	genericAssertionChainEvent
 	prevSeqNum uint64
 	seqNum     uint64
-	commitment StateCommitment
+	commitment util.HistoryCommitment
 	staker     common.Address
 }
 
