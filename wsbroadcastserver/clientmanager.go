@@ -75,14 +75,15 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 			log.Error("Recovered in registerClient", "recover", r)
 		}
 	}()
+
+	clientsConnectedGauge.Inc(1)
+	clientsTotalCounter.Inc(1)
 	if err := cm.catchupBuffer.OnRegisterClient(ctx, clientConnection); err != nil {
 		return err
 	}
 
 	clientConnection.Start(ctx)
 	cm.clientPtrMap[clientConnection] = true
-	clientsConnectedGauge.Inc(1)
-	clientsTotalCounter.Inc(1)
 	atomic.AddInt32(&cm.clientCount, 1)
 
 	return nil
