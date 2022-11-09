@@ -55,6 +55,43 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 	}
 }
 
+type L2PricingStorageMap struct {
+	storageKey          storage.StorageKey
+	speedLimitPerSecond storage.MappedStorageOffset
+	perBlockGasLimit    storage.MappedStorageOffset
+	baseFeeWei          storage.MappedStorageOffset
+	minBaseFeeWei       storage.MappedStorageOffset
+	gasBacklog          storage.MappedStorageOffset
+	pricingInertia      storage.MappedStorageOffset
+	backlogTolerance    storage.MappedStorageOffset
+}
+
+func MakeL2PricingStorageMap(storageKey storage.StorageKey) *L2PricingStorageMap {
+	return &L2PricingStorageMap{
+		storageKey:          storageKey,
+		speedLimitPerSecond: storageKey.MapUintOffset(speedLimitPerSecondOffset),
+		perBlockGasLimit:    storageKey.MapUintOffset(perBlockGasLimitOffset),
+		baseFeeWei:          storageKey.MapUintOffset(baseFeeWeiOffset),
+		minBaseFeeWei:       storageKey.MapUintOffset(minBaseFeeWeiOffset),
+		gasBacklog:          storageKey.MapUintOffset(gasBacklogOffset),
+		pricingInertia:      storageKey.MapUintOffset(pricingInertiaOffset),
+		backlogTolerance:    storageKey.MapUintOffset(backlogToleranceOffset),
+	}
+}
+
+func (theMap *L2PricingStorageMap) Open(rootStorage *storage.Storage) *L2PricingState {
+	return &L2PricingState{
+		storage:             rootStorage.OpenSubWithKey(theMap.storageKey),
+		speedLimitPerSecond: rootStorage.OpenMappedBackedUint64(theMap.speedLimitPerSecond),
+		perBlockGasLimit:    rootStorage.OpenMappedBackedUint64(theMap.perBlockGasLimit),
+		baseFeeWei:          rootStorage.OpenMappedBackedBigUint(theMap.baseFeeWei),
+		minBaseFeeWei:       rootStorage.OpenMappedBackedBigUint(theMap.minBaseFeeWei),
+		gasBacklog:          rootStorage.OpenMappedBackedUint64(theMap.gasBacklog),
+		pricingInertia:      rootStorage.OpenMappedBackedUint64(theMap.pricingInertia),
+		backlogTolerance:    rootStorage.OpenMappedBackedUint64(theMap.backlogTolerance),
+	}
+}
+
 func (ps *L2PricingState) BaseFeeWei() (*big.Int, error) {
 	return ps.baseFeeWei.Get()
 }
