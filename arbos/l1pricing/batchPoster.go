@@ -31,6 +31,28 @@ type BatchPostersTable struct {
 	totalFundsDue storage.StorageBackedBigInt
 }
 
+type BatchPostersTableMap struct {
+	posterAddrsMap *addressSet.MapForAddressSet
+	posterInfoKey  storage.StorageKey
+	totalFundsDue  storage.MappedStorageOffset
+}
+
+func MakeBatchPostersTableMap(rootKey storage.StorageKey) *BatchPostersTableMap {
+	return &BatchPostersTableMap{
+		posterAddrsMap: addressSet.MakeMapForAddressSet(rootKey.SubspaceKey(PosterAddrsKey)),
+		posterInfoKey:  rootKey.SubspaceKey(PosterInfoKey),
+		totalFundsDue:  rootKey.MapUintOffset(totalFundsDueOffset),
+	}
+}
+
+func (theMap *BatchPostersTableMap) Open(rootStorage *storage.Storage) *BatchPostersTable {
+	return &BatchPostersTable{
+		posterAddrs:   theMap.posterAddrsMap.Open(rootStorage),
+		posterInfo:    rootStorage.OpenSubWithKey(theMap.posterInfoKey),
+		totalFundsDue: rootStorage.OpenMappedBackedBigInt(theMap.totalFundsDue),
+	}
+}
+
 type BatchPosterState struct {
 	fundsDue     storage.StorageBackedBigInt
 	payTo        storage.StorageBackedAddress

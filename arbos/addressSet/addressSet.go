@@ -18,6 +18,20 @@ type AddressSet struct {
 	byAddress      *storage.Storage
 }
 
+type MapForAddressSet struct {
+	rootKey      storage.StorageKey
+	sizeOffset   storage.MappedStorageOffset
+	byAddressKey storage.StorageKey
+}
+
+func MakeMapForAddressSet(rootKey storage.StorageKey) *MapForAddressSet {
+	return &MapForAddressSet{
+		rootKey:      rootKey,
+		sizeOffset:   rootKey.MapUintOffset(0),
+		byAddressKey: rootKey.SubspaceKey([]byte{0}),
+	}
+}
+
 func Initialize(sto *storage.Storage) error {
 	return sto.SetUint64ByUint64(0, 0)
 }
@@ -27,6 +41,14 @@ func OpenAddressSet(sto *storage.Storage) *AddressSet {
 		sto,
 		sto.OpenStorageBackedUint64(0),
 		sto.OpenSubStorage([]byte{0}),
+	}
+}
+
+func (theMap *MapForAddressSet) Open(rootStorage *storage.Storage) *AddressSet {
+	return &AddressSet{
+		backingStorage: rootStorage.OpenSubWithKey(theMap.rootKey),
+		size:           rootStorage.OpenMappedBackedUint64(theMap.sizeOffset),
+		byAddress:      rootStorage.OpenSubWithKey(theMap.byAddressKey),
 	}
 }
 

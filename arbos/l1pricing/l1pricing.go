@@ -71,6 +71,61 @@ const (
 	l1FeesAvailableOffset
 )
 
+type L1PricingStorageMap struct {
+	storageKey           storage.StorageKey
+	batchPostersTableMap *BatchPostersTableMap
+	payRewardsTo         storage.MappedStorageOffset
+	equilibrationUnits   storage.MappedStorageOffset
+	inertia              storage.MappedStorageOffset
+	perUnitReward        storage.MappedStorageOffset
+	lastUpdateTime       storage.MappedStorageOffset
+	fundsDueForRewards   storage.MappedStorageOffset
+	unitsSince           storage.MappedStorageOffset
+	pricePerUnit         storage.MappedStorageOffset
+	lastSurplus          storage.MappedStorageOffset
+	perBatchGasCost      storage.MappedStorageOffset
+	amortizedCostCapBips storage.MappedStorageOffset
+	l1FeesAvailable      storage.MappedStorageOffset
+}
+
+func MakeL1PricingStorageMap(rootKey storage.StorageKey) *L1PricingStorageMap {
+	return &L1PricingStorageMap{
+		storageKey:           rootKey,
+		batchPostersTableMap: MakeBatchPostersTableMap(rootKey.SubspaceKey(BatchPosterTableKey)),
+		payRewardsTo:         rootKey.MapUintOffset(payRewardsToOffset),
+		equilibrationUnits:   rootKey.MapUintOffset(equilibrationUnitsOffset),
+		inertia:              rootKey.MapUintOffset(inertiaOffset),
+		perUnitReward:        rootKey.MapUintOffset(perUnitRewardOffset),
+		lastUpdateTime:       rootKey.MapUintOffset(lastUpdateTimeOffset),
+		fundsDueForRewards:   rootKey.MapUintOffset(fundsDueForRewardsOffset),
+		unitsSince:           rootKey.MapUintOffset(unitsSinceOffset),
+		pricePerUnit:         rootKey.MapUintOffset(pricePerUnitOffset),
+		lastSurplus:          rootKey.MapUintOffset(lastSurplusOffset),
+		perBatchGasCost:      rootKey.MapUintOffset(perBatchGasCostOffset),
+		amortizedCostCapBips: rootKey.MapUintOffset(amortizedCostCapBipsOffset),
+		l1FeesAvailable:      rootKey.MapUintOffset(l1FeesAvailableOffset),
+	}
+}
+
+func (theMap *L1PricingStorageMap) Open(rootStorage *storage.Storage) *L1PricingState {
+	return &L1PricingState{
+		storage:              rootStorage.OpenSubWithKey(theMap.storageKey),
+		batchPosterTable:     theMap.batchPostersTableMap.Open(rootStorage),
+		payRewardsTo:         rootStorage.OpenMappedBackedAddress(theMap.payRewardsTo),
+		equilibrationUnits:   rootStorage.OpenMappedBackedBigUint(theMap.equilibrationUnits),
+		inertia:              rootStorage.OpenMappedBackedUint64(theMap.inertia),
+		perUnitReward:        rootStorage.OpenMappedBackedUint64(theMap.perUnitReward),
+		lastUpdateTime:       rootStorage.OpenMappedBackedUint64(theMap.lastUpdateTime),
+		fundsDueForRewards:   rootStorage.OpenMappedBackedBigInt(theMap.fundsDueForRewards),
+		unitsSinceUpdate:     rootStorage.OpenMappedBackedUint64(theMap.unitsSince),
+		pricePerUnit:         rootStorage.OpenMappedBackedBigUint(theMap.pricePerUnit),
+		lastSurplus:          rootStorage.OpenMappedBackedBigInt(theMap.lastSurplus),
+		perBatchGasCost:      rootStorage.OpenMappedBackedInt64(theMap.perBatchGasCost),
+		amortizedCostCapBips: rootStorage.OpenMappedBackedUint64(theMap.amortizedCostCapBips),
+		l1FeesAvailable:      rootStorage.OpenMappedBackedBigUint(theMap.l1FeesAvailable),
+	}
+}
+
 const (
 	InitialInertia           = 10
 	InitialPerUnitReward     = 10

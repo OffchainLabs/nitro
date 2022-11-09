@@ -69,7 +69,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
-		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
+		l1PricingStorageMap.Open(backingStorage),
 		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace)),
 		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
@@ -140,7 +140,10 @@ const (
 type SubspaceID []byte
 
 var (
-	l1PricingSubspace    SubspaceID = []byte{0}
+	l1PricingSubspace    = []byte{0}
+	l1PricingSubspaceKey = storage.RootStorageKey.SubspaceKey(l1PricingSubspace)
+	l1PricingStorageMap  = l1pricing.MakeL1PricingStorageMap(l1PricingSubspaceKey)
+
 	l2PricingSubspace    SubspaceID = []byte{1}
 	retryablesSubspace   SubspaceID = []byte{2}
 	addressTableSubspace SubspaceID = []byte{3}
