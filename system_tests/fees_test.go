@@ -37,6 +37,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 
+	version := l2node.ArbInterface.BlockChain().Config().ArbitrumChainParams.InitialArbOSVersion
 	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
 	// get the network fee account
@@ -79,8 +80,12 @@ func TestSequencerFeePaid(t *testing.T) {
 		gasUsedForL2 := receipt.GasUsed - receipt.GasUsedForL1
 		feePaidForL2 := arbmath.BigMulByUint(gasPrice, gasUsedForL2)
 		tipPaidToNet := arbmath.BigMulByUint(tipCap, receipt.GasUsedForL1)
-		if !arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet)) {
+		gotTip := arbmath.BigEquals(networkRevenue, arbmath.BigAdd(feePaidForL2, tipPaidToNet))
+		if !gotTip && version == 9 {
 			Fail(t, "network didn't receive expected payment", networkRevenue, feePaidForL2, tipPaidToNet)
+		}
+		if gotTip && version != 9 {
+			Fail(t, "tips are somehow enabled")
 		}
 
 		txSize := compressedTxSize(t, tx)
@@ -93,6 +98,11 @@ func TestSequencerFeePaid(t *testing.T) {
 			Fail(t, "the sequencer's future revenue does not match its costs", l1GasBought, l1GasActual)
 		}
 		return networkRevenue, tipPaidToNet
+	}
+
+	if version != 9 {
+		testFees(3)
+		return
 	}
 
 	net0, tip0 := testFees(0)
