@@ -75,7 +75,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	Ping:           5 * time.Second,
 	ClientTimeout:  15 * time.Second,
 	Queue:          100,
-	Workers:        100,
+	Workers:        1000,
 	MaxSendQueue:   4096,
 	RequireVersion: false,
 	DisableSigning: true,
