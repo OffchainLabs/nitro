@@ -1,38 +1,30 @@
 package util
 
 import (
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"testing"
+	"github.com/stretchr/testify/require"
 )
 
 var nullHash = common.Hash{}
 
 func TestMerkleExpansion(t *testing.T) {
 	me := NewEmptyMerkleExpansion()
-	if me.Root() != nullHash {
-		t.Fatal(me.Root())
-	}
+	require.Equal(t, nullHash, me.Root())
 	compUncompTest(t, me)
 
 	h0 := crypto.Keccak256Hash([]byte{0})
 	me, err := me.AppendCompleteSubtree(0, h0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if me.Root() != h0 {
-		t.Fatal(me.Root(), h0)
-	}
+	require.NoError(t, err)
+	require.Equal(t, h0, me.Root())
 	compUncompTest(t, me)
 
 	h1 := crypto.Keccak256Hash([]byte{1})
 	me, err = me.AppendCompleteSubtree(0, h1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if me.Root() != crypto.Keccak256Hash(h0.Bytes(), h1.Bytes()) {
-		t.Fatal(me.Root(), h0)
-	}
+	require.NoError(t, err)
+	require.Equal(t, crypto.Keccak256Hash(h0.Bytes(), h1.Bytes()), me.Root())
 	compUncompTest(t, me)
 
 	me2 := me.Clone()
@@ -40,26 +32,16 @@ func TestMerkleExpansion(t *testing.T) {
 	h3 := crypto.Keccak256Hash([]byte{2})
 	h23 := crypto.Keccak256Hash(h2.Bytes(), h3.Bytes())
 	me, err = me.AppendCompleteSubtree(1, h23)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if me.Root() != crypto.Keccak256Hash(me2.Root().Bytes(), h23.Bytes()) {
-		t.Fatal(me.Root())
-	}
+	require.NoError(t, err)
+	require.Equal(t, crypto.Keccak256Hash(me2.Root().Bytes(), h23.Bytes()), me.Root())
 	compUncompTest(t, me)
 
 	me4 := me.Clone()
 	me, err = me2.AppendCompleteSubtree(0, h2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	me, err = me.AppendCompleteSubtree(0, h3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if me4.Root() != me.Root() {
-		t.Fatal(me4.Root(), me.Root())
-	}
+	require.NoError(t, err)
+	require.Equal(t, me.Root(), me4.Root())
 	compUncompTest(t, me)
 
 	me2Compact, _ := me2.Compact()
@@ -75,19 +57,14 @@ func TestMerkleExpansion(t *testing.T) {
 		me2Compact,
 		h23,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func compUncompTest(t *testing.T, me MerkleExpansion) {
 	t.Helper()
 	comp, compSz := me.Compact()
-	me2, sz := MerkleExpansionFromCompact(comp, compSz)
-	if me.Root() != me2.Root() {
-		t.Fatal(me.Root(), me2.Root())
-	}
-	_ = sz
+	me2, _ := MerkleExpansionFromCompact(comp, compSz)
+	require.Equal(t, me.Root(), me2.Root())
 }
 
 func TestMerkleProof(t *testing.T) {
@@ -119,9 +96,7 @@ func TestMerkleProof(t *testing.T) {
 			},
 			proof,
 		)
-		if err != nil {
-			t.Fatal(c.lo, c.hi, err)
-		}
+		require.NoError(t, err, c.lo, c.hi)
 	}
 }
 

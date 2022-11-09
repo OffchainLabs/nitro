@@ -1,8 +1,9 @@
 package util
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestBisectionPoint(t *testing.T) {
@@ -18,9 +19,7 @@ func TestBisectionPoint(t *testing.T) {
 	}
 	for _, testCase := range errorTestCases {
 		_, err := BisectionPoint(testCase.pre, testCase.post)
-		if !errors.Is(err, ErrUnableToBisect) {
-			t.Fatal(testCase, err)
-		}
+		require.ErrorIs(t, err, ErrUnableToBisect, testCase)
 	}
 	testCases := []bpTestCase{
 		{0, 2, 1},
@@ -37,11 +36,7 @@ func TestBisectionPoint(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		res, err := BisectionPoint(testCase.pre, testCase.post)
-		if err != nil {
-			t.Fatal(err, testCase)
-		}
-		if res != testCase.expected {
-			t.Fatal(testCase, res)
-		}
+		require.NoError(t, err, testCase)
+		require.Equal(t, testCase.expected, res)
 	}
 }
