@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,6 +45,12 @@ func NewClientConnection(
 	requestedSeqNum arbutil.MessageIndex,
 	connectingIP string,
 ) *ClientConnection {
+	if len(connectingIP) == 0 {
+		parts := strings.Split(conn.RemoteAddr().String(), ":")
+		if len(parts) > 0 {
+			connectingIP = parts[0]
+		}
+	}
 	return &ClientConnection{
 		conn:            conn,
 		desc:            desc,
