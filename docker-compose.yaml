@@ -20,7 +20,7 @@ services:
         ETHEREUM_JSONRPC_VARIANT: 'geth'
         ETHEREUM_JSONRPC_HTTP_URL: http://sequencer:8547/
         INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
-        DATABASE_URL: postgresql://postgres:@postgres:5432/blockscout?ssl=false
+        DATABASE_URL: postgresql://postgres:@postgres:5432/blockscout
         ECTO_USE_SSL: "false"
     ports:
       - "127.0.0.1:4000:4000"
