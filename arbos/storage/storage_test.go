@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"bytes"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"math/big"
 	"testing"
 
@@ -89,5 +91,59 @@ func TestStorageBackedBigInt(t *testing.T) {
 		requirePanic(t, in, func() {
 			_ = sbbi.SetChecked(in)
 		})
+	}
+}
+
+func TestStorageBackedQueue(t *testing.T) {
+	rootStorage := NewMemoryBacked(burn.NewSystemBurner(nil, false))
+	key1 := []byte("a key")
+	key2 := []byte("another key")
+	subSto := rootStorage.OpenSubStorage(key1).OpenSubStorage(key2)
+	Require(t, InitializeQueue(subSto))
+
+	q1 := OpenQueue(subSto)
+
+	queueMap := MakeMapForQueue(RootStorageKey.SubspaceKey(key1).SubspaceKey(key2))
+	q2 := queueMap.Open(rootStorage)
+
+	if !bytes.Equal(q1.storage.StorageKey, q2.storage.StorageKey) {
+		t.Fatal()
+	}
+
+	empty, err := q1.IsEmpty()
+	Require(t, err)
+	if !empty {
+		t.Fatal()
+	}
+	empty, err = q2.IsEmpty()
+	Require(t, err)
+	if !empty {
+		t.Fatal()
+	}
+
+	Require(t, q1.Put(util.UintToHash(13)))
+	Require(t, q2.Put(util.UintToHash(34)))
+	res, err := q2.Get()
+	Require(t, err)
+	if *res != util.UintToHash(13) {
+		t.Fatal()
+	}
+	res, err = q1.Get()
+	Require(t, err)
+	if *res != util.UintToHash(34) {
+		t.Fatal()
+	}
+
+	empty, err = q2.IsEmpty()
+	Require(t, err)
+	if !empty {
+		t.Fatal()
+	}
+}
+
+func Require(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

@@ -68,10 +68,10 @@ func TestStorageSlots(t *testing.T) {
 
 	println("nil address", colors.Blue, storage.NilAddressRepresentation.String(), colors.Clear)
 
-	a := sto.GetStorageSlot(util.IntToHash(0))
-	b := sto.GetStorageSlot(util.IntToHash(1))
-	c := sto.GetStorageSlot(util.IntToHash(255))
-	d := sto.GetStorageSlot(util.IntToHash(256)) // should be in its own page
+	a := sto.StorageKey.MapOffset(util.IntToHash(0))
+	b := sto.StorageKey.MapOffset(util.IntToHash(1))
+	c := sto.StorageKey.MapOffset(util.IntToHash(255))
+	d := sto.StorageKey.MapOffset(util.IntToHash(256)) // should be in its own page
 
 	if !bytes.Equal(a[:31], b[:31]) {
 		Fail(t, "upper bytes are unequal", a.String(), b.String())
@@ -89,5 +89,29 @@ func TestStorageSlots(t *testing.T) {
 		println("offset 255\t", colors.Red, c.String(), colors.Clear)
 		println("offset 256\t", colors.Red, d.String(), colors.Clear)
 		Fail(t, "page offset mismatch")
+	}
+}
+
+func TestStorageKeys(t *testing.T) {
+	state, _ := NewArbosMemoryBackedArbOSState()
+	rootStorage := state.BackingStorage()
+
+	key1 := []byte("a key")
+	key2 := []byte("some other key")
+	sub1 := rootStorage.OpenSubStorage(key1).OpenSubStorage(key2)
+	mappedKey := storage.RootStorageKey.SubspaceKey(key1).SubspaceKey(key2)
+	sub2 := rootStorage.OpenSubWithKey(mappedKey)
+	if !bytes.Equal(sub1.Key(), sub2.Key()) {
+		t.Fatal()
+	}
+
+	sbu1 := sub1.OpenStorageBackedUint64(73)
+	sbu2 := rootStorage.OpenMappedBackedUint64(mappedKey.MapUintOffset(73))
+
+	Require(t, sbu1.Set(999))
+	x, err := sbu2.Get()
+	Require(t, err)
+	if x != 999 {
+		t.Fatal(x)
 	}
 }

@@ -41,8 +41,41 @@ import (
 type Storage struct {
 	account    common.Address
 	db         vm.StateDB
-	storageKey []byte
+	StorageKey StorageKey
 	burner     burn.Burner
+}
+
+type StorageKey []byte
+
+var RootStorageKey = StorageKey([]byte{})
+
+func (skey StorageKey) SubspaceKey(subKey []byte) StorageKey {
+	return crypto.Keccak256(skey, subKey)
+}
+
+type MappedStorageOffset common.Hash
+
+// We map addresses using "pages" of 256 storage slots. We hash over the page number but not the offset within
+// a page, to preserve contiguity within a page. This will reduce cost if/when Ethereum switches to storage
+// representations that reward contiguity.
+// Because page numbers are 248 bits, this gives us 124-bit security against collision attacks, which is good enough.
+func (skey StorageKey) MapOffset(key common.Hash) MappedStorageOffset {
+	keyBytes := key.Bytes()
+	boundary := common.HashLength - 1
+	return MappedStorageOffset(common.BytesToHash(
+		append(
+			crypto.Keccak256(skey, keyBytes[:boundary])[:boundary],
+			keyBytes[boundary],
+		),
+	))
+}
+
+func (skey StorageKey) MapUintOffset(key uint64) MappedStorageOffset {
+	return skey.MapOffset(util.UintToHash(key))
+}
+
+func (offset MappedStorageOffset) String() string {
+	return common.Hash(offset).String()
 }
 
 const StorageReadCost = params.SloadGasEIP2200
@@ -56,7 +89,7 @@ func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	return &Storage{
 		account:    account,
 		db:         statedb,
-		storageKey: []byte{},
+		StorageKey: RootStorageKey,
 		burner:     burner,
 	}
 }
@@ -77,21 +110,6 @@ func NewMemoryBackedStateDB() vm.StateDB {
 	return statedb
 }
 
-// We map addresses using "pages" of 256 storage slots. We hash over the page number but not the offset within
-// a page, to preserve contiguity within a page. This will reduce cost if/when Ethereum switches to storage
-// representations that reward contiguity.
-// Because page numbers are 248 bits, this gives us 124-bit security against collision attacks, which is good enough.
-func mapAddress(storageKey []byte, key common.Hash) common.Hash {
-	keyBytes := key.Bytes()
-	boundary := common.HashLength - 1
-	return common.BytesToHash(
-		append(
-			crypto.Keccak256(storageKey, keyBytes[:boundary])[:boundary],
-			keyBytes[boundary],
-		),
-	)
-}
-
 func writeCost(value common.Hash) uint64 {
 	if value == (common.Hash{}) {
 		return StorageWriteZeroCost
@@ -103,6 +121,10 @@ func (store *Storage) Account() common.Address {
 	return store.account
 }
 
+func (store *Storage) Key() StorageKey {
+	return store.StorageKey
+}
+
 func (store *Storage) Get(key common.Hash) (common.Hash, error) {
 	err := store.burner.Burn(StorageReadCost)
 	if err != nil {
@@ -111,11 +133,7 @@ func (store *Storage) Get(key common.Hash) (common.Hash, error) {
 	if info := store.burner.TracingInfo(); info != nil {
 		info.RecordStorageGet(key)
 	}
-	return store.db.GetState(store.account, mapAddress(store.storageKey, key)), nil
-}
-
-func (store *Storage) GetStorageSlot(key common.Hash) common.Hash {
-	return mapAddress(store.storageKey, key)
+	return store.db.GetState(store.account, common.Hash(store.StorageKey.MapOffset(key))), nil
 }
 
 func (store *Storage) GetUint64(key common.Hash) (uint64, error) {
@@ -143,7 +161,7 @@ func (store *Storage) Set(key common.Hash, value common.Hash) error {
 	if info := store.burner.TracingInfo(); info != nil {
 		info.RecordStorageSet(key, value)
 	}
-	store.db.SetState(store.account, mapAddress(store.storageKey, key), value)
+	store.db.SetState(store.account, common.Hash(store.StorageKey.MapOffset(key)), value)
 	return nil
 }
 
@@ -175,7 +193,16 @@ func (store *Storage) OpenSubStorage(id []byte) *Storage {
 	return &Storage{
 		store.account,
 		store.db,
-		crypto.Keccak256(store.storageKey, id),
+		store.StorageKey.SubspaceKey(id),
+		store.burner,
+	}
+}
+
+func (store *Storage) OpenSubWithKey(key StorageKey) *Storage {
+	return &Storage{
+		store.account,
+		store.db,
+		key,
 		store.burner,
 	}
 }
@@ -272,40 +299,44 @@ func (sto *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
 }
 
 type StorageSlot struct {
-	account common.Address
-	db      vm.StateDB
-	slot    common.Hash
-	burner  burn.Burner
+	storage      *Storage
+	mappedOffset MappedStorageOffset
 }
 
 func (sto *Storage) NewSlot(offset uint64) StorageSlot {
-	return StorageSlot{sto.account, sto.db, mapAddress(sto.storageKey, util.UintToHash(offset)), sto.burner}
+	return StorageSlot{sto, sto.StorageKey.MapUintOffset(offset)}
+}
+
+func (sto *Storage) NewSlotMapped(mappedOffset MappedStorageOffset) StorageSlot {
+	return StorageSlot{sto, mappedOffset}
 }
 
 func (ss *StorageSlot) Get() (common.Hash, error) {
-	err := ss.burner.Burn(StorageReadCost)
+	sto := ss.storage
+	err := sto.burner.Burn(StorageReadCost)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	if info := ss.burner.TracingInfo(); info != nil {
-		info.RecordStorageGet(ss.slot)
+	if info := sto.burner.TracingInfo(); info != nil {
+		info.RecordStorageGet(common.Hash(ss.mappedOffset))
 	}
-	return ss.db.GetState(ss.account, ss.slot), nil
+	return sto.db.GetState(sto.account, common.Hash(ss.mappedOffset)), nil
 }
 
 func (ss *StorageSlot) Set(value common.Hash) error {
-	if ss.burner.ReadOnly() {
+	sto := ss.storage
+	if sto.burner.ReadOnly() {
 		log.Error("Read-only burner attempted to mutate state", "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := ss.burner.Burn(writeCost(value))
+	err := sto.burner.Burn(writeCost(value))
 	if err != nil {
 		return err
 	}
-	if info := ss.burner.TracingInfo(); info != nil {
-		info.RecordStorageSet(ss.slot, value)
+	if info := sto.burner.TracingInfo(); info != nil {
+		info.RecordStorageSet(common.Hash(ss.mappedOffset), value)
 	}
-	ss.db.SetState(ss.account, ss.slot, value)
+	sto.db.SetState(sto.account, common.Hash(ss.mappedOffset), value)
 	return nil
 }
 
@@ -320,6 +351,10 @@ type StorageBackedInt64 struct {
 
 func (sto *Storage) OpenStorageBackedInt64(offset uint64) StorageBackedInt64 {
 	return StorageBackedInt64{sto.NewSlot(offset)}
+}
+
+func (sto *Storage) OpenMappedBackedInt64(mappedOffset MappedStorageOffset) StorageBackedInt64 {
+	return StorageBackedInt64{sto.NewSlotMapped(mappedOffset)}
 }
 
 func (sbu *StorageBackedInt64) Get() (int64, error) {
@@ -343,6 +378,10 @@ func (sto *Storage) OpenStorageBackedBips(offset uint64) StorageBackedBips {
 	return StorageBackedBips{StorageBackedInt64{sto.NewSlot(offset)}}
 }
 
+func (sto *Storage) OpenMappedBackedBips(mappedOffset MappedStorageOffset) StorageBackedBips {
+	return StorageBackedBips{sto.OpenMappedBackedInt64(mappedOffset)}
+}
+
 func (sbu *StorageBackedBips) Get() (arbmath.Bips, error) {
 	value, err := sbu.backing.Get()
 	return arbmath.Bips(value), err
@@ -358,6 +397,10 @@ type StorageBackedUint64 struct {
 
 func (sto *Storage) OpenStorageBackedUint64(offset uint64) StorageBackedUint64 {
 	return StorageBackedUint64{sto.NewSlot(offset)}
+}
+
+func (sto *Storage) OpenMappedBackedUint64(mappedOffset MappedStorageOffset) StorageBackedUint64 {
+	return StorageBackedUint64{sto.NewSlotMapped(mappedOffset)}
 }
 
 func (sbu *StorageBackedUint64) Get() (uint64, error) {
@@ -448,6 +491,10 @@ func (sto *Storage) OpenStorageBackedBigUint(offset uint64) StorageBackedBigUint
 	return StorageBackedBigUint{sto.NewSlot(offset)}
 }
 
+func (sto *Storage) OpenMappedBackedBigUint(mappedOffset MappedStorageOffset) StorageBackedBigUint {
+	return StorageBackedBigUint{sto.NewSlotMapped(mappedOffset)}
+}
+
 func (sbbi *StorageBackedBigUint) Get() (*big.Int, error) {
 	asHash, err := sbbi.StorageSlot.Get()
 	if err != nil {
@@ -459,10 +506,11 @@ func (sbbi *StorageBackedBigUint) Get() (*big.Int, error) {
 // Warning: this will panic if it underflows or overflows with a system burner
 // SetSaturatingWithWarning is likely better
 func (sbbi *StorageBackedBigUint) SetChecked(val *big.Int) error {
+	sto := sbbi.storage
 	if val.Sign() < 0 {
-		return sbbi.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigUint.Set setting value %v", val))
+		return sto.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigUint.Set setting value %v", val))
 	} else if val.BitLen() > 256 {
-		return sbbi.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigUint.Set setting value %v", val))
+		return sto.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigUint.Set setting value %v", val))
 	}
 	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
@@ -486,6 +534,10 @@ func (sto *Storage) OpenStorageBackedBigInt(offset uint64) StorageBackedBigInt {
 	return StorageBackedBigInt{sto.NewSlot(offset)}
 }
 
+func (sto *Storage) OpenMappedBackedBigInt(mappedOffset MappedStorageOffset) StorageBackedBigInt {
+	return StorageBackedBigInt{sto.NewSlotMapped(mappedOffset)}
+}
+
 func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
 	asHash, err := sbbi.StorageSlot.Get()
 	if err != nil {
@@ -501,13 +553,14 @@ func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
 // Warning: this will panic if it underflows or overflows with a system burner
 // SetSaturatingWithWarning is likely better
 func (sbbi *StorageBackedBigInt) SetChecked(val *big.Int) error {
+	sto := sbbi.storage
 	if val.Sign() < 0 {
 		val = new(big.Int).Add(val, twoToThe256)
 		if val.BitLen() < 256 || val.Sign() <= 0 { // require that it's positive and the top bit is set
-			return sbbi.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigInt.Set setting value %v", val))
+			return sto.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigInt.Set setting value %v", val))
 		}
 	} else if val.BitLen() >= 256 {
-		return sbbi.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigInt.Set setting value %v", val))
+		return sto.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigInt.Set setting value %v", val))
 	}
 	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
@@ -543,6 +596,10 @@ func (sto *Storage) OpenStorageBackedAddress(offset uint64) StorageBackedAddress
 	return StorageBackedAddress{sto.NewSlot(offset)}
 }
 
+func (sto *Storage) OpenMappedBackedAddress(mappedOffset MappedStorageOffset) StorageBackedAddress {
+	return StorageBackedAddress{sto.NewSlotMapped(mappedOffset)}
+}
+
 func (sba *StorageBackedAddress) Get() (common.Address, error) {
 	value, err := sba.StorageSlot.Get()
 	return common.BytesToAddress(value.Bytes()), err
@@ -564,6 +621,10 @@ func init() {
 
 func (sto *Storage) OpenStorageBackedAddressOrNil(offset uint64) StorageBackedAddressOrNil {
 	return StorageBackedAddressOrNil{sto.NewSlot(offset)}
+}
+
+func (sto *Storage) OpenMappedBackedAddressOrNil(mappedOffset MappedStorageOffset) StorageBackedAddressOrNil {
+	return StorageBackedAddressOrNil{sto.NewSlotMapped(mappedOffset)}
 }
 
 func (sba *StorageBackedAddressOrNil) Get() (*common.Address, error) {
@@ -592,6 +653,10 @@ func (sto *Storage) OpenStorageBackedBytes(id []byte) StorageBackedBytes {
 	return StorageBackedBytes{
 		*sto.OpenSubStorage(id),
 	}
+}
+
+func (sto *Storage) ToBackedBytes() StorageBackedBytes {
+	return StorageBackedBytes{*sto}
 }
 
 func (sbb *StorageBackedBytes) Get() ([]byte, error) {

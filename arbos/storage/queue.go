@@ -15,6 +15,12 @@ type Queue struct {
 	nextGetOffset StorageBackedUint64
 }
 
+type MapForQueue struct {
+	storageKey    StorageKey
+	mappedNextPut MappedStorageOffset
+	mappedNextGet MappedStorageOffset
+}
+
 func InitializeQueue(sto *Storage) error {
 	err := sto.SetUint64ByUint64(0, 2)
 	if err != nil {
@@ -28,6 +34,22 @@ func OpenQueue(sto *Storage) *Queue {
 		sto,
 		sto.OpenStorageBackedUint64(0),
 		sto.OpenStorageBackedUint64(1),
+	}
+}
+
+func MakeMapForQueue(storageKey StorageKey) *MapForQueue {
+	return &MapForQueue{
+		storageKey:    storageKey,
+		mappedNextPut: storageKey.MapUintOffset(0),
+		mappedNextGet: storageKey.MapUintOffset(1),
+	}
+}
+
+func (mfq *MapForQueue) Open(rootStorage *Storage) *Queue {
+	return &Queue{
+		rootStorage.OpenSubWithKey(mfq.storageKey),
+		rootStorage.OpenMappedBackedUint64(mfq.mappedNextPut),
+		rootStorage.OpenMappedBackedUint64(mfq.mappedNextGet),
 	}
 }
 
