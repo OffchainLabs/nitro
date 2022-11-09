@@ -55,7 +55,7 @@ type EventProvider interface {
 // and a previous assertion.
 type AssertionManager interface {
 	LatestConfirmed() *Assertion
-	CreateLeaf(prev *Assertion, commitment util.HistoryCommitment, staker common.Address) (*Assertion, error)
+	CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
 }
 
 type AssertionChain struct {
@@ -91,8 +91,8 @@ type AssertionState int
 type Assertion struct {
 	chain                   *AssertionChain
 	status                  AssertionState
-	sequenceNum             uint64
-	stateCommitment         util.HistoryCommitment
+	SequenceNum             uint64
+	StateCommitment         StateCommitment
 	prev                    util.Option[*Assertion]
 	isFirstChild            bool
 	firstChildCreationTime  util.Option[time.Time]
@@ -101,14 +101,23 @@ type Assertion struct {
 	staker                  util.Option[common.Address]
 }
 
+type StateCommitment struct {
+	Height    uint64
+	StateRoot common.Hash
+}
+
+func (comm *StateCommitment) Hash() common.Hash {
+	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.Height), comm.StateRoot.Bytes())
+}
+
 func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod time.Duration) *AssertionChain {
 	genesis := &Assertion{
 		chain:       nil,
 		status:      ConfirmedAssertionState,
-		sequenceNum: 0,
-		stateCommitment: util.HistoryCommitment{
-			Height: 0,
-			Merkle: common.Hash{},
+		SequenceNum: 0,
+		StateCommitment: StateCommitment{
+			Height:    0,
+			StateRoot: common.Hash{},
 		},
 		prev:                    util.EmptyOption[*Assertion](),
 		isFirstChild:            false,
@@ -142,24 +151,24 @@ func (chain *AssertionChain) SubscribeChainEvents(ctx context.Context, ch chan<-
 	chain.feed.Subscribe(ctx, ch)
 }
 
-func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment util.HistoryCommitment, staker common.Address) (*Assertion, error) {
+func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
 	chain.mutex.Lock()
 	defer chain.mutex.Unlock()
 	if prev.chain != chain {
 		return nil, ErrWrongChain
 	}
-	if prev.stateCommitment.Height >= commitment.Height {
+	if prev.StateCommitment.Height >= commitment.Height {
 		return nil, ErrInvalid
 	}
-	dedupeCode := crypto.Keccak256Hash(binary.BigEndian.AppendUint64(commitment.Hash().Bytes(), prev.sequenceNum))
+	dedupeCode := crypto.Keccak256Hash(binary.BigEndian.AppendUint64(commitment.Hash().Bytes(), prev.SequenceNum))
 	if chain.dedupe[dedupeCode] {
 		return nil, ErrVertexAlreadyExists
 	}
 	leaf := &Assertion{
 		chain:                   chain,
 		status:                  PendingAssertionState,
-		sequenceNum:             uint64(len(chain.assertions)),
-		stateCommitment:         commitment,
+		SequenceNum:             uint64(len(chain.assertions)),
+		StateCommitment:         commitment,
 		prev:                    util.FullOption[*Assertion](prev),
 		isFirstChild:            prev.firstChildCreationTime.IsEmpty(),
 		firstChildCreationTime:  util.EmptyOption[time.Time](),
@@ -176,10 +185,10 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment util.History
 	chain.assertions = append(chain.assertions, leaf)
 	chain.dedupe[dedupeCode] = true
 	chain.feed.Append(&CreateLeafEvent{
-		PrevSeqNum: prev.sequenceNum,
-		SeqNum:     leaf.sequenceNum,
-		Commitment: leaf.stateCommitment,
-		Staker:     staker,
+		PrevSeqNum:      prev.SequenceNum,
+		SeqNum:          leaf.SequenceNum,
+		StateCommitment: leaf.StateCommitment,
+		Staker:          staker,
 	})
 	return leaf, nil
 }
@@ -196,7 +205,7 @@ func (a *Assertion) RejectForPrev() error {
 	}
 	a.status = RejectedAssertionState
 	a.chain.feed.Append(&RejectEvent{
-		SeqNum: a.sequenceNum,
+		SeqNum: a.SequenceNum,
 	})
 	return nil
 }
@@ -221,7 +230,7 @@ func (a *Assertion) RejectForLoss() error {
 	}
 	a.status = RejectedAssertionState
 	a.chain.feed.Append(&RejectEvent{
-		SeqNum: a.sequenceNum,
+		SeqNum: a.SequenceNum,
 	})
 	return nil
 }
@@ -244,9 +253,9 @@ func (a *Assertion) ConfirmNoRival() error {
 		return ErrNotYet
 	}
 	a.status = ConfirmedAssertionState
-	a.chain.confirmedLatest = a.sequenceNum
+	a.chain.confirmedLatest = a.SequenceNum
 	a.chain.feed.Append(&ConfirmEvent{
-		SeqNum: a.sequenceNum,
+		SeqNum: a.SequenceNum,
 	})
 	return nil
 }
@@ -273,9 +282,9 @@ func (a *Assertion) ConfirmForWin() error {
 		return ErrInvalid
 	}
 	a.status = ConfirmedAssertionState
-	a.chain.confirmedLatest = a.sequenceNum
+	a.chain.confirmedLatest = a.SequenceNum
 	a.chain.feed.Append(&ConfirmEvent{
-		SeqNum: a.sequenceNum,
+		SeqNum: a.SequenceNum,
 	})
 	return nil
 }
@@ -329,7 +338,7 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 	ret.includedHistories[root.commitment.Hash()] = true
 	parent.challenge = util.FullOption[*Challenge](ret)
 	parent.chain.feed.Append(&StartChallengeEvent{
-		ParentSeqNum: parent.sequenceNum,
+		ParentSeqNum: parent.SequenceNum,
 	})
 	return ret, nil
 }
@@ -371,7 +380,7 @@ func (chal *Challenge) AddLeaf(assertion *Assertion, history util.HistoryCommitm
 	chal.root.maybeNewPresumptiveSuccessor(leaf)
 	chal.feed.Append(&ChallengeLeafEvent{
 		SequenceNum:       leaf.sequenceNum,
-		WinnerIfConfirmed: assertion.sequenceNum,
+		WinnerIfConfirmed: assertion.SequenceNum,
 		History:           history,
 		BecomesPS:         leaf.prev.presumptiveSuccessor == leaf,
 	})
