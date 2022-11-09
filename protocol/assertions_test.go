@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var _ = OnChainProtocol(&AssertionChain{})
+
 const testChallengePeriod = 100 * time.Second
 
 func TestAssertionChain(t *testing.T) {
@@ -22,19 +24,20 @@ func TestAssertionChain(t *testing.T) {
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
-	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod).inner
+	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
 	require.Equal(t, 1, len(chain.assertions))
 	require.Equal(t, uint64(0), chain.confirmedLatest)
 	genesis := chain.LatestConfirmed()
 	require.Equal(t, StateCommitment{
-		height: 0,
-		state:  common.Hash{},
-	}, genesis.stateCommitment)
+		Height:    0,
+		StateRoot: common.Hash{},
+	}, genesis.StateCommitment)
 
-	eventChan := chain.feed.Subscribe(ctx)
+	eventChan := make(chan AssertionChainEvent)
+	chain.feed.Subscribe(ctx, eventChan)
 
 	// add an assertion, then confirm it
-	comm := StateCommitment{1, correctBlockHashes[99]}
+	comm := StateCommitment{Height: 1, StateRoot: correctBlockHashes[99]}
 	newAssertion, err := chain.CreateLeaf(genesis, comm, staker1)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(chain.assertions))
@@ -66,7 +69,7 @@ func TestAssertionChain(t *testing.T) {
 	verifyCreateLeafEventInFeed(t, eventChan, 3, 1, staker2, comm)
 	challenge, err := newAssertion.CreateChallenge(ctx)
 	require.NoError(t, err)
-	verifyStartChallengeEventInFeed(t, eventChan, newAssertion.sequenceNum)
+	verifyStartChallengeEventInFeed(t, eventChan, newAssertion.SequenceNum)
 	chal1, err := challenge.AddLeaf(branch1, util.HistoryCommitment{100, util.ExpansionFromLeaves(correctBlockHashes[99:200]).Root()})
 	require.NoError(t, err)
 	_, err = challenge.AddLeaf(branch2, util.HistoryCommitment{100, util.ExpansionFromLeaves(wrongBlockHashes[99:200]).Root()})
@@ -97,7 +100,7 @@ func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seq
 	ev := <-c
 	switch e := ev.(type) {
 	case *CreateLeafEvent:
-		if e.seqNum != seqNum || e.prevSeqNum != prevSeqNum || e.staker != staker || e.commitment != comm {
+		if e.SeqNum != seqNum || e.PrevSeqNum != prevSeqNum || e.Staker != staker || e.StateCommitment != comm {
 			t.Fatal(e)
 		}
 	default:
@@ -110,7 +113,7 @@ func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum
 	ev := <-c
 	switch e := ev.(type) {
 	case *ConfirmEvent:
-		require.Equal(t, seqNum, e.seqNum)
+		require.Equal(t, seqNum, e.SeqNum)
 	default:
 		t.Fatal()
 	}
@@ -121,7 +124,7 @@ func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum 
 	ev := <-c
 	switch e := ev.(type) {
 	case *RejectEvent:
-		require.Equal(t, seqNum, e.seqNum)
+		require.Equal(t, seqNum, e.SeqNum)
 	default:
 		t.Fatal()
 	}
@@ -132,7 +135,7 @@ func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent,
 	ev := <-c
 	switch e := ev.(type) {
 	case *StartChallengeEvent:
-		require.Equal(t, parentSeqNum, e.parentSeqNum)
+		require.Equal(t, parentSeqNum, e.ParentSeqNum)
 	default:
 		t.Fatal()
 	}
@@ -148,7 +151,7 @@ func TestChallengeBisections(t *testing.T) {
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
-	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod).inner
+	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
 	correctBranch, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{100, correctBlockHashes[100]}, staker1)
 	require.NoError(t, err)
 	wrongBranch, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{100, wrongBlockHashes[100]}, staker2)

@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"sync"
+	"time"
+
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"sync"
-	"time"
 )
 
 var (
@@ -24,20 +25,40 @@ var (
 	ErrNotImplemented        = errors.New("not yet implemented")
 )
 
-type StateCommitment struct {
-	height uint64
-	state  common.Hash
+// OnChainProtocol defines an interface for interacting with the smart contract implementation
+// of the assertion protocol, with methods to issue mutating transactions, make eth calls, create
+// leafs in the protocol, issue challenges, and subscribe to chain events wrapped in simple abstractions.
+type OnChainProtocol interface {
+	ChainReader
+	ChainWriter
+	EventProvider
+	AssertionManager
 }
 
-func (comm *StateCommitment) Hash() common.Hash {
-	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.height), comm.state.Bytes())
+// ChainReader can make non-mutating calls to the on-chain protocol.
+type ChainReader interface {
+	ChallengePeriodLength() time.Duration
+	Call(clo func(*AssertionChain) error) error
+}
+
+// ChainWriter can make mutating calls to the on-chain protocol.
+type ChainWriter interface {
+	Tx(clo func(*AssertionChain) error) error
+}
+
+// EventProvider allows subscribing to chain events for the on-chain protocol.
+type EventProvider interface {
+	SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent)
+}
+
+// AssertionManager allows the creation of new leaves for a Staker with a State Commitment
+// and a previous assertion.
+type AssertionManager interface {
+	LatestConfirmed() *Assertion
+	CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
 }
 
 type AssertionChain struct {
-	inner *InnerAssertionChain
-}
-
-type InnerAssertionChain struct {
 	mutex           sync.RWMutex
 	timeReference   util.TimeReference
 	challengePeriod time.Duration
@@ -47,16 +68,16 @@ type InnerAssertionChain struct {
 	feed            *EventFeed[AssertionChainEvent]
 }
 
-func (chain *AssertionChain) Tx(clo func(*InnerAssertionChain) error) error {
-	chain.inner.mutex.Lock()
-	defer chain.inner.mutex.Unlock()
-	return clo(chain.inner)
+func (chain *AssertionChain) Tx(clo func(chain *AssertionChain) error) error {
+	chain.mutex.Lock()
+	defer chain.mutex.Unlock()
+	return clo(chain)
 }
 
-func (chain *AssertionChain) Call(clo func(*InnerAssertionChain) error) error {
-	chain.inner.mutex.RLock()
-	defer chain.inner.mutex.RUnlock()
-	return clo(chain.inner)
+func (chain *AssertionChain) Call(clo func(chain *AssertionChain) error) error {
+	chain.mutex.RLock()
+	defer chain.mutex.RUnlock()
+	return clo(chain)
 }
 
 const (
@@ -68,10 +89,10 @@ const (
 type AssertionState int
 
 type Assertion struct {
-	chain                   *InnerAssertionChain
+	chain                   *AssertionChain
 	status                  AssertionState
-	sequenceNum             uint64
-	stateCommitment         StateCommitment
+	SequenceNum             uint64
+	StateCommitment         StateCommitment
 	prev                    util.Option[*Assertion]
 	isFirstChild            bool
 	firstChildCreationTime  util.Option[time.Time]
@@ -80,14 +101,23 @@ type Assertion struct {
 	staker                  util.Option[common.Address]
 }
 
+type StateCommitment struct {
+	Height    uint64
+	StateRoot common.Hash
+}
+
+func (comm *StateCommitment) Hash() common.Hash {
+	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.Height), comm.StateRoot.Bytes())
+}
+
 func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod time.Duration) *AssertionChain {
 	genesis := &Assertion{
 		chain:       nil,
 		status:      ConfirmedAssertionState,
-		sequenceNum: 0,
-		stateCommitment: StateCommitment{
-			height: 0,
-			state:  common.Hash{},
+		SequenceNum: 0,
+		StateCommitment: StateCommitment{
+			Height:    0,
+			StateRoot: common.Hash{},
 		},
 		prev:                    util.EmptyOption[*Assertion](),
 		isFirstChild:            false,
@@ -96,7 +126,7 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		challenge:               util.EmptyOption[*Challenge](),
 		staker:                  util.EmptyOption[common.Address](),
 	}
-	chain := &InnerAssertionChain{
+	chain := &AssertionChain{
 		mutex:           sync.RWMutex{},
 		timeReference:   timeRef,
 		challengePeriod: challengePeriod,
@@ -106,33 +136,39 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		feed:            NewEventFeed[AssertionChainEvent](ctx),
 	}
 	genesis.chain = chain
-	return &AssertionChain{chain}
+	return chain
 }
 
-func (chain *InnerAssertionChain) LatestConfirmed() *Assertion {
+func (chain *AssertionChain) ChallengePeriodLength() time.Duration {
+	return chain.challengePeriod
+}
+
+func (chain *AssertionChain) LatestConfirmed() *Assertion {
 	return chain.assertions[chain.confirmedLatest]
 }
 
-func (chain *InnerAssertionChain) Subscribe(ctx context.Context) <-chan AssertionChainEvent {
-	return chain.feed.Subscribe(ctx)
+func (chain *AssertionChain) SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent) {
+	chain.feed.Subscribe(ctx, ch)
 }
 
-func (chain *InnerAssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
+func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
+	chain.mutex.Lock()
+	defer chain.mutex.Unlock()
 	if prev.chain != chain {
 		return nil, ErrWrongChain
 	}
-	if prev.stateCommitment.height >= commitment.height {
+	if prev.StateCommitment.Height >= commitment.Height {
 		return nil, ErrInvalid
 	}
-	dedupeCode := crypto.Keccak256Hash(binary.BigEndian.AppendUint64(commitment.Hash().Bytes(), prev.sequenceNum))
+	dedupeCode := crypto.Keccak256Hash(binary.BigEndian.AppendUint64(commitment.Hash().Bytes(), prev.SequenceNum))
 	if chain.dedupe[dedupeCode] {
 		return nil, ErrVertexAlreadyExists
 	}
 	leaf := &Assertion{
 		chain:                   chain,
 		status:                  PendingAssertionState,
-		sequenceNum:             uint64(len(chain.assertions)),
-		stateCommitment:         commitment,
+		SequenceNum:             uint64(len(chain.assertions)),
+		StateCommitment:         commitment,
 		prev:                    util.FullOption[*Assertion](prev),
 		isFirstChild:            prev.firstChildCreationTime.IsEmpty(),
 		firstChildCreationTime:  util.EmptyOption[time.Time](),
@@ -149,10 +185,10 @@ func (chain *InnerAssertionChain) CreateLeaf(prev *Assertion, commitment StateCo
 	chain.assertions = append(chain.assertions, leaf)
 	chain.dedupe[dedupeCode] = true
 	chain.feed.Append(&CreateLeafEvent{
-		prevSeqNum: prev.sequenceNum,
-		seqNum:     leaf.sequenceNum,
-		commitment: leaf.stateCommitment,
-		staker:     staker,
+		PrevSeqNum:      prev.SequenceNum,
+		SeqNum:          leaf.SequenceNum,
+		StateCommitment: leaf.StateCommitment,
+		Staker:          staker,
 	})
 	return leaf, nil
 }
@@ -169,7 +205,7 @@ func (a *Assertion) RejectForPrev() error {
 	}
 	a.status = RejectedAssertionState
 	a.chain.feed.Append(&RejectEvent{
-		seqNum: a.sequenceNum,
+		SeqNum: a.SequenceNum,
 	})
 	return nil
 }
@@ -194,7 +230,7 @@ func (a *Assertion) RejectForLoss() error {
 	}
 	a.status = RejectedAssertionState
 	a.chain.feed.Append(&RejectEvent{
-		seqNum: a.sequenceNum,
+		SeqNum: a.SequenceNum,
 	})
 	return nil
 }
@@ -217,9 +253,9 @@ func (a *Assertion) ConfirmNoRival() error {
 		return ErrNotYet
 	}
 	a.status = ConfirmedAssertionState
-	a.chain.confirmedLatest = a.sequenceNum
+	a.chain.confirmedLatest = a.SequenceNum
 	a.chain.feed.Append(&ConfirmEvent{
-		seqNum: a.sequenceNum,
+		SeqNum: a.SequenceNum,
 	})
 	return nil
 }
@@ -246,9 +282,9 @@ func (a *Assertion) ConfirmForWin() error {
 		return ErrInvalid
 	}
 	a.status = ConfirmedAssertionState
-	a.chain.confirmedLatest = a.sequenceNum
+	a.chain.confirmedLatest = a.SequenceNum
 	a.chain.feed.Append(&ConfirmEvent{
-		seqNum: a.sequenceNum,
+		SeqNum: a.SequenceNum,
 	})
 	return nil
 }
@@ -302,7 +338,7 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 	ret.includedHistories[root.commitment.Hash()] = true
 	parent.challenge = util.FullOption[*Challenge](ret)
 	parent.chain.feed.Append(&StartChallengeEvent{
-		parentSeqNum: parent.sequenceNum,
+		ParentSeqNum: parent.SequenceNum,
 	})
 	return ret, nil
 }
@@ -343,10 +379,10 @@ func (chal *Challenge) AddLeaf(assertion *Assertion, history util.HistoryCommitm
 	chal.nextSequenceNum++
 	chal.root.maybeNewPresumptiveSuccessor(leaf)
 	chal.feed.Append(&ChallengeLeafEvent{
-		sequenceNum:       leaf.sequenceNum,
-		winnerIfConfirmed: assertion.sequenceNum,
-		history:           history,
-		becomesPS:         leaf.prev.presumptiveSuccessor == leaf,
+		SequenceNum:       leaf.sequenceNum,
+		WinnerIfConfirmed: assertion.SequenceNum,
+		History:           history,
+		BecomesPS:         leaf.prev.presumptiveSuccessor == leaf,
 	})
 	return leaf, nil
 }
@@ -434,10 +470,10 @@ func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []co
 	newVertex.prev.maybeNewPresumptiveSuccessor(vertex)
 	newVertex.challenge.includedHistories[history.Hash()] = true
 	newVertex.challenge.feed.Append(&ChallengeBisectEvent{
-		fromSequenceNum: vertex.sequenceNum,
-		sequenceNum:     newVertex.sequenceNum,
-		history:         newVertex.commitment,
-		becomesPS:       newVertex.prev.presumptiveSuccessor == newVertex,
+		FromSequenceNum: vertex.sequenceNum,
+		SequenceNum:     newVertex.sequenceNum,
+		History:         newVertex.commitment,
+		BecomesPS:       newVertex.prev.presumptiveSuccessor == newVertex,
 	})
 	return nil
 }
@@ -460,9 +496,9 @@ func (vertex *ChallengeVertex) Merge(newPrev *ChallengeVertex, proof []common.Ha
 	newPrev.psTimer.Add(vertex.psTimer.Get())
 	newPrev.maybeNewPresumptiveSuccessor(vertex)
 	vertex.challenge.feed.Append(&ChallengeMergeEvent{
-		deeperSequenceNum:    vertex.sequenceNum,
-		shallowerSequenceNum: newPrev.sequenceNum,
-		becomesPS:            newPrev.presumptiveSuccessor == vertex,
+		DeeperSequenceNum:    vertex.sequenceNum,
+		ShallowerSequenceNum: newPrev.sequenceNum,
+		BecomesPS:            newPrev.presumptiveSuccessor == vertex,
 	})
 	return nil
 }
