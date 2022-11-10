@@ -1305,14 +1305,6 @@ func SetUpDataAvailability(
 		if err != nil {
 			return nil, nil, err
 		}
-		if config.LocalCacheConfig.SyncFromStorageServices {
-			iterableStorageService := das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache))
-			syncFromStorageServices = append(syncFromStorageServices, iterableStorageService)
-			cache = iterableStorageService
-		}
-		if config.LocalCacheConfig.SyncToStorageServices {
-			syncToStorageServices = append(syncToStorageServices, cache)
-		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
 

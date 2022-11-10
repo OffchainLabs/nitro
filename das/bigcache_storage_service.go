@@ -95,10 +95,6 @@ func (bcs *BigCacheStorageService) Put(ctx context.Context, value []byte, timeou
 	return bcs.bigCache.Set(string(dastree.HashBytes(value)), value)
 }
 
-func (bcs *BigCacheStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	return bcs.bigCache.Set(string(key.Bytes()), value)
-}
-
 func (bcs *BigCacheStorageService) Sync(ctx context.Context) error {
 	return bcs.baseStorageService.Sync(ctx)
 }
