@@ -194,18 +194,28 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 	if chain.dedupe[dedupeCode] {
 		return nil, ErrVertexAlreadyExists
 	}
-	if (!prev.staker.IsEmpty()) && prev.staker.OpenKnownFull() == staker {
-		// move the stake from prev to the new leaf
-		prev.staker = util.EmptyOption[common.Address]()
-	} else {
-		if err := chain.DeductFromBalance(staker, AssertionStakeWei); err != nil {
-			return nil, err
-		}
-		if !prev.staker.IsEmpty() {
-			chain.AddToBalance(prev.staker.OpenKnownFull(), AssertionStakeWei)
-			prev.staker = util.EmptyOption[common.Address]()
-		}
+
+	if err := prev.staker.IfLet(
+		func(oldStaker common.Address) error {
+			if staker != oldStaker {
+				if err := chain.DeductFromBalance(staker, AssertionStakeWei); err != nil {
+					return err
+				}
+				chain.AddToBalance(staker, AssertionStakeWei)
+				prev.staker = util.EmptyOption[common.Address]()
+			}
+			return nil
+		},
+		func() error {
+			if err := chain.DeductFromBalance(staker, AssertionStakeWei); err != nil {
+				return err
+			}
+			return nil
+		},
+	); err != nil {
+		return nil, err
 	}
+
 	leaf := &Assertion{
 		chain:                   chain,
 		status:                  PendingAssertionState,

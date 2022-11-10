@@ -39,6 +39,23 @@ func OptionMap[T, U any](o Option[T], f func(T) U) Option[U] {
 	return Option[U]{&u}
 }
 
+func OptionMapOrElse[T, U any](o Option[T], f func(T) U, valueIfEmpty U) U {
+	if o.value == nil {
+		return valueIfEmpty
+	}
+	return f(*o.value)
+}
+
+func (o Option[T]) IfLet(fullFunc func(T) error, emptyFunc func() error) error {
+	if o.value == nil {
+		if emptyFunc != nil {
+			emptyFunc()
+		}
+	} else {
+		fullFunc(*o.value)
+	}
+}
+
 type Result[T any] struct {
 	err   error
 	value T
