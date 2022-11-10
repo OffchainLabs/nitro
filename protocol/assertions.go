@@ -434,25 +434,25 @@ func (vertex *ChallengeVertex) requiredBisectionHeight() (uint64, error) {
 	return util.BisectionPoint(vertex.prev.commitment.Height, vertex.commitment.Height)
 }
 
-func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []common.Hash) error {
+func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []common.Hash) (*ChallengeVertex, error) {
 	if vertex.isPresumptiveSuccessor() {
-		return ErrWrongState
+		return nil, ErrWrongState
 	}
 	if !vertex.prev.eligibleForNewSuccessor() {
-		return ErrPastDeadline
+		return nil, ErrPastDeadline
 	}
 	if vertex.challenge.includedHistories[history.Hash()] {
-		return ErrVertexAlreadyExists
+		return nil, ErrVertexAlreadyExists
 	}
 	bisectionHeight, err := vertex.requiredBisectionHeight()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if bisectionHeight != history.Height {
-		return ErrInvalidHeight
+		return nil, ErrInvalidHeight
 	}
 	if err := util.VerifyPrefixProof(history, vertex.commitment, proof); err != nil {
-		return err
+		return nil, err
 	}
 
 	vertex.psTimer.Stop()
@@ -475,7 +475,7 @@ func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []co
 		History:         newVertex.commitment,
 		BecomesPS:       newVertex.prev.presumptiveSuccessor == newVertex,
 	})
-	return nil
+	return newVertex, nil
 }
 
 func (vertex *ChallengeVertex) Merge(newPrev *ChallengeVertex, proof []common.Hash) error {
