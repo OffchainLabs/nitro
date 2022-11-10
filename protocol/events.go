@@ -3,6 +3,7 @@ package protocol
 import (
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
+	"math/big"
 )
 
 type AssertionChainEvent interface {
@@ -34,6 +35,12 @@ type RejectEvent struct {
 type StartChallengeEvent struct {
 	genericAssertionChainEvent
 	ParentSeqNum uint64
+}
+
+type SetBalanceEvent struct {
+	genericAssertionChainEvent
+	Addr    common.Address
+	Balance *big.Int
 }
 
 type ChallengeEvent interface {

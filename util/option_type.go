@@ -70,3 +70,43 @@ func ResultMap[T, U any](res Result[T], f func(T) U) Result[U] {
 	}
 	return SuccessResult[U](f(res.value))
 }
+
+type MapWithDefault[K, V comparable] struct {
+	contents      map[K]V
+	defaultValue  V
+	equalsDefault func(V) bool
+}
+
+func NewMapWithDefault[K, V comparable](defaultValue V) *MapWithDefault[K, V] {
+	return NewMapWithDefaultAdvanced[K, V](defaultValue, nil)
+}
+
+func NewMapWithDefaultAdvanced[K, V comparable](
+	defaultValue V,
+	equalsDefault func(V) bool, // tests for equality with the default; if nil, == test will be used
+) *MapWithDefault[K, V] {
+	if equalsDefault == nil {
+		equalsDefault = func(v V) bool { return v == defaultValue }
+	}
+	return &MapWithDefault[K, V]{
+		contents:      make(map[K]V),
+		defaultValue:  defaultValue,
+		equalsDefault: equalsDefault,
+	}
+}
+
+func (md *MapWithDefault[K, V]) Get(key K) V {
+	val, exists := md.contents[key]
+	if exists {
+		return val
+	} else {
+		return md.defaultValue
+	}
+}
+
+func (md *MapWithDefault[K, V]) Set(key K, value V) {
+	if value == md.defaultValue {
+		delete(md.contents, key)
+	}
+	md.contents[key] = value
+}

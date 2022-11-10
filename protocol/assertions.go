@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"math/big"
 	"sync"
 	"time"
 
@@ -65,6 +66,7 @@ type AssertionChain struct {
 	confirmedLatest uint64
 	assertions      []*Assertion
 	dedupe          map[common.Hash]bool
+	balances        *util.MapWithDefault[common.Address, *big.Int]
 	feed            *EventFeed[AssertionChainEvent]
 }
 
@@ -133,10 +135,20 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		confirmedLatest: 0,
 		assertions:      []*Assertion{genesis},
 		dedupe:          make(map[common.Hash]bool), // no need to insert genesis assertion here
+		balances:        util.NewMapWithDefaultAdvanced[common.Address, *big.Int](common.Big0, func(x *big.Int) bool { return x.Sign() == 0 }),
 		feed:            NewEventFeed[AssertionChainEvent](ctx),
 	}
 	genesis.chain = chain
 	return chain
+}
+
+func (chain *AssertionChain) GetBalance(addr common.Address) *big.Int {
+	return chain.balances.Get(addr)
+}
+
+func (chain *AssertionChain) SetBalance(addr common.Address, balance *big.Int) {
+	chain.balances.Set(addr, balance)
+	chain.feed.Append(&SetBalanceEvent{Addr: addr, Balance: balance})
 }
 
 func (chain *AssertionChain) ChallengePeriodLength() time.Duration {
