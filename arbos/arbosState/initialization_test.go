@@ -157,13 +157,16 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 				t.Fatal()
 			}
 			err := db.ForEachStorage(addr, func(key common.Hash, value common.Hash) bool {
-				val2, exists := acct.ContractInfo.ContractStorage[key]
-				if val2 == (common.Hash{}) {
-					// There seems to be a bug in geth where it'll give us non-existent storage values while iterating
+				if key == (common.Hash{}) {
+					// Unfortunately, geth doesn't seem capable of giving us storage keys any more.
+					// Even with the triedb Preimages set to true, it doesn't record the necessary
+					// hashed storage key -> raw storage key mapping. This means that geth will always
+					// give us an empty storage key when iterating, which we can't validate.
 					return true
 				}
+				val2, exists := acct.ContractInfo.ContractStorage[key]
 				if !exists {
-					t.Fatal("address", addr, "key", key, "found in storage as", val2, "but not in initialization data")
+					t.Fatal("address", addr, "key", key, "found in storage as", value, "but not in initialization data")
 				}
 				if value != val2 {
 					t.Fatal("address", addr, "key", key, "value", val2, "isn't what was specified in initialization data", value)
