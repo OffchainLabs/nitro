@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"math/big"
 	"testing"
 	"time"
 
@@ -33,8 +34,19 @@ func TestAssertionChain(t *testing.T) {
 		StateRoot: common.Hash{},
 	}, genesis.StateCommitment)
 
+	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	chain.SetBalance(staker1, bigBalance)
+	chain.SetBalance(staker2, bigBalance)
+
 	eventChan := make(chan AssertionChainEvent)
-	chain.feed.Subscribe(ctx, eventChan)
+	chain.feed.SubscribeWithFilter(ctx, eventChan, func(ev AssertionChainEvent) bool {
+		switch ev.(type) {
+		case *SetBalanceEvent:
+			return false
+		default:
+			return true
+		}
+	})
 
 	// add an assertion, then confirm it
 	comm := StateCommitment{Height: 1, StateRoot: correctBlockHashes[99]}
@@ -43,11 +55,13 @@ func TestAssertionChain(t *testing.T) {
 	require.Equal(t, 2, len(chain.assertions))
 	require.Equal(t, genesis, chain.LatestConfirmed())
 	verifyCreateLeafEventInFeed(t, eventChan, 1, 0, staker1, comm)
+	require.True(t, new(big.Int).Add(chain.GetBalance(staker1), AssertionStakeWei).Cmp(bigBalance) == 0)
 
 	err = newAssertion.ConfirmNoRival()
 	require.ErrorIs(t, err, ErrNotYet)
 	timeRef.Add(testChallengePeriod + time.Second)
 	require.NoError(t, newAssertion.ConfirmNoRival())
+	require.True(t, chain.GetBalance(staker1).Cmp(bigBalance) == 0)
 
 	require.Equal(t, newAssertion, chain.LatestConfirmed())
 	require.Equal(t, ConfirmedAssertionState, int(newAssertion.status))
@@ -104,7 +118,7 @@ func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seq
 			t.Fatal(e)
 		}
 	default:
-		t.Fatal()
+		t.Fatal(e)
 	}
 }
 
@@ -152,6 +166,11 @@ func TestChallengeBisections(t *testing.T) {
 	staker2 := common.BytesToAddress([]byte{2})
 
 	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+
+	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	chain.SetBalance(staker1, bigBalance)
+	chain.SetBalance(staker2, bigBalance)
+
 	correctBranch, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{100, correctBlockHashes[100]}, staker1)
 	require.NoError(t, err)
 	wrongBranch, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{100, wrongBlockHashes[100]}, staker2)

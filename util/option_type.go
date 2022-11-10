@@ -83,7 +83,7 @@ func NewMapWithDefault[K, V comparable](defaultValue V) *MapWithDefault[K, V] {
 
 func NewMapWithDefaultAdvanced[K, V comparable](
 	defaultValue V,
-	equalsDefault func(V) bool, // tests for equality with the default; if nil, == test will be used
+	equalsDefault func(V) bool, // tests for equality with the default; if this arg is nil, == test will be used
 ) *MapWithDefault[K, V] {
 	if equalsDefault == nil {
 		equalsDefault = func(v V) bool { return v == defaultValue }

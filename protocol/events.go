@@ -39,8 +39,9 @@ type StartChallengeEvent struct {
 
 type SetBalanceEvent struct {
 	genericAssertionChainEvent
-	Addr    common.Address
-	Balance *big.Int
+	Addr       common.Address
+	OldBalance *big.Int
+	NewBalance *big.Int
 }
 
 type ChallengeEvent interface {
