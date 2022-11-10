@@ -155,9 +155,9 @@ func TestBisectionChallengeGame(t *testing.T) {
 
 	// We create a fork with genesis as the parent, where one branch is a higher depth than the other.
 	genesis := chain.LatestConfirmed()
-	correctBranch, err := chain.CreateLeaf(genesis, StateCommitment{6, wrongBlockHashes[6]}, staker1)
+	correctBranch, err := chain.CreateLeaf(genesis, StateCommitment{6, correctBlockHashes[6]}, staker1)
 	require.NoError(t, err)
-	wrongBranch, err := chain.CreateLeaf(genesis, StateCommitment{7, correctBlockHashes[7]}, staker2)
+	wrongBranch, err := chain.CreateLeaf(genesis, StateCommitment{7, wrongBlockHashes[7]}, staker2)
 	require.NoError(t, err)
 
 	challenge, err := genesis.CreateChallenge(ctx)
@@ -167,14 +167,14 @@ func TestBisectionChallengeGame(t *testing.T) {
 	expectedBisectionHeight := uint64(4)
 	lo := expectedBisectionHeight
 	hi := uint64(7)
-	loExp := util.ExpansionFromLeaves(correctBlockHashes[:lo])
-	hiExp := util.ExpansionFromLeaves(correctBlockHashes[:hi])
+	loExp := util.ExpansionFromLeaves(wrongBlockHashes[:lo])
+	hiExp := util.ExpansionFromLeaves(wrongBlockHashes[:hi])
 
 	cl1, err := challenge.AddLeaf(
 		wrongBranch,
 		util.HistoryCommitment{
 			Height: 6,
-			Merkle: util.ExpansionFromLeaves(wrongBlockHashes[:7]).Root(),
+			Merkle: util.ExpansionFromLeaves(correctBlockHashes[:7]).Root(),
 		},
 	)
 	require.NoError(t, err)
@@ -196,9 +196,19 @@ func TestBisectionChallengeGame(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedBisectionHeight, bisectionHeight)
 
+	proof := util.GeneratePrefixProof(lo, loExp, correctBlockHashes[lo:6])
+	_, err = cl1.Bisect(
+		util.HistoryCommitment{
+			Height: lo,
+			Merkle: loExp.Root(),
+		},
+		proof,
+	)
+	require.ErrorIs(t, err, ErrWrongState)
+
 	// Generate a prefix proof for the associated history commitments from the bisection
 	// height up to the height of the state commitment for the non-presumptive challenge leaf.
-	proof := util.GeneratePrefixProof(lo, loExp, correctBlockHashes[lo:hi])
+	proof = util.GeneratePrefixProof(lo, loExp, wrongBlockHashes[lo:hi])
 	bisection, err := cl2.Bisect(
 		util.HistoryCommitment{
 			Height: lo,
