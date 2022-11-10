@@ -141,7 +141,6 @@ func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout ui
 
 func (rs *RedisStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
 	// Expiration is set to zero here, since we want to keep the index inserted for iterable storage forever.
-	// This exception will be removed once we have a cleanup mechanism for iterable storage.
 	err := rs.client.Set(
 		ctx, string(key.Bytes()), rs.signMessage(value), 0,
 	).Err()
