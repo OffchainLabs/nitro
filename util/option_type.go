@@ -106,7 +106,8 @@ func (md *MapWithDefault[K, V]) Get(key K) V {
 
 func (md *MapWithDefault[K, V]) Set(key K, value V) {
 	if md.equalsDefault(value) {
-		delete(md.contents, key)
+		delete(md.contents, key) // save storage by removing item that has default value
+	} else {
+		md.contents[key] = value
 	}
-	md.contents[key] = value
 }
