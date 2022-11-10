@@ -20,11 +20,9 @@ import (
 
 type BigCacheConfig struct {
 	// TODO add other config information like HardMaxCacheSize
-	Enable                  bool          `koanf:"enable"`
-	Expiration              time.Duration `koanf:"expiration"`
-	SyncFromStorageServices bool          `koanf:"sync-from-storage-service"`
-	SyncToStorageServices   bool          `koanf:"sync-to-storage-service"`
-	MaxEntriesInWindow      int
+	Enable             bool          `koanf:"enable"`
+	Expiration         time.Duration `koanf:"expiration"`
+	MaxEntriesInWindow int
 }
 
 var DefaultBigCacheConfig = BigCacheConfig{
@@ -40,8 +38,6 @@ var TestBigCacheConfig = BigCacheConfig{
 func BigCacheConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBigCacheConfig.Enable, "Enable local in-memory caching of sequencer batch data")
 	f.Duration(prefix+".expiration", DefaultBigCacheConfig.Expiration, "Expiration time for in-memory cached sequencer batches")
-	f.Bool(prefix+".sync-from-storage-service", DefaultBigCacheConfig.SyncFromStorageServices, "enable local in-memory caching to be used as a source for regular sync storage")
-	f.Bool(prefix+".sync-to-storage-service", DefaultBigCacheConfig.SyncToStorageServices, "enable local in-memory caching to be used as a sink for regular sync storage")
 }
 
 type BigCacheStorageService struct {
