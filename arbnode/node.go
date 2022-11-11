@@ -1165,7 +1165,8 @@ func SetUpDataAvailability(
 	if !config.Enable {
 		return nil, nil, nil
 	}
-
+	var syncFromStorageServices []*das.IterableStorageService
+	var syncToStorageServices []das.StorageService
 	var seqInbox *bridgegen.SequencerInbox
 	var err error
 	var seqInboxCaller *bridgegen.SequencerInboxCaller
@@ -1211,7 +1212,7 @@ func SetUpDataAvailability(
 
 		          → : X--delegates to-->Y
 	*/
-	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config)
+	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1296,6 +1297,14 @@ func SetUpDataAvailability(
 		if err != nil {
 			return nil, nil, err
 		}
+		if config.RedisCacheConfig.SyncFromStorageServices {
+			iterableStorageService := das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache))
+			syncFromStorageServices = append(syncFromStorageServices, iterableStorageService)
+			cache = iterableStorageService
+		}
+		if config.RedisCacheConfig.SyncToStorageServices {
+			syncToStorageServices = append(syncToStorageServices, cache)
+		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
 	if config.LocalCacheConfig.Enable {
@@ -1305,6 +1314,11 @@ func SetUpDataAvailability(
 			return nil, nil, err
 		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
+	}
+
+	if config.RegularSyncStorageConfig.Enable && len(syncFromStorageServices) != 0 && len(syncToStorageServices) != 0 {
+		regularlySyncStorage := das.NewRegularlySyncStorage(syncFromStorageServices, syncToStorageServices, config.RegularSyncStorageConfig)
+		regularlySyncStorage.Start(ctx)
 	}
 
 	if topLevelDas != nil && seqInbox != nil {
