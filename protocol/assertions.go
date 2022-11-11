@@ -66,6 +66,7 @@ type AssertionChain struct {
 	assertions      []*Assertion
 	dedupe          map[common.Hash]bool
 	feed            *EventFeed[AssertionChainEvent]
+	inbox           *Inbox
 }
 
 func (chain *AssertionChain) Tx(clo func(chain *AssertionChain) error) error {
@@ -134,9 +135,18 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		assertions:      []*Assertion{genesis},
 		dedupe:          make(map[common.Hash]bool), // no need to insert genesis assertion here
 		feed:            NewEventFeed[AssertionChainEvent](ctx),
+		inbox:           NewInbox(ctx),
 	}
 	genesis.chain = chain
 	return chain
+}
+
+func (chain *AssertionChain) TimeReference() util.TimeReference {
+	return chain.timeReference
+}
+
+func (chain *AssertionChain) Inbox() *Inbox {
+	return chain.inbox
 }
 
 func (chain *AssertionChain) ChallengePeriodLength() time.Duration {
