@@ -192,8 +192,7 @@ if $force_init; then
     docker-compose up create_beacon_chain_genesis
 
     echo == Running prysm
-    docker-compose up -d prysm_beacon_chain
-    docker-compose up prysm_validator_client
+    docker-compose up prysm_beacon_chain
 
 #    echo == Funding validator and sequencer
 #    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
