@@ -64,82 +64,77 @@ services:
       - --http.corsdomain=*
       - --ws
       - --ws.addr=0.0.0.0
-      - --dev
-      - --dev.period=1
       - --ws.api=personal,eth,net,web3,debug,txpool
       - --allow-insecure-unlock
       - --password=/root/.ethereum/passphrase
       - --authrpc.jwtsecret=0x98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4 \
+      - --nodiscover
       - --syncmode=full
       - --gcmode=archive
 
   # Creates a genesis state for the beacon chain using a YAML configuration file and
   # a deterministic set of validators
   # TODO: Make num validators customizable
-#  create_beacon_chain_genesis:
-#    image: "gcr.io/prysmaticlabs/prysm/cmd/prysmctl:latest"
-#    command:
-#      - testnet
-#      - generate-genesis
-#      - --num-validators=64
-#      - --output-ssz=/consensus/genesis.ssz
-#      - --chain-config-file=/config/prysm_config.yaml
-#    volumes:
-#      - "consensus:/consensus"
-#      - "config:/config"
-#
-#  # Runs a Prysm beacon chain from a specified genesis state created in the previous step
-#  # and connects to go-ethereum in the same network as the execution client.
-#  # The account used in go-ethereum is set as the suggested fee recipient for transactions
-#  # proposed via the validators attached to the beacon node.
-#  prysm_beacon_chain:
-#    image: "gcr.io/prysmaticlabs/prysm/beacon-chain:stable"
-#    command:
-#      - --datadir=/consensus/beacondata
-#      # No peers to sync with in this testnet, so setting to 0
-#      - --min-sync-peers=0
-#      - --interop-genesis-state=/consensus/genesis.ssz
-#      - --interop-eth1data-votes
-#      - --bootstrap-node=
-#      # The chain configuration file used for setting up Prysm
-#      - --chain-config-file=/config/prysm_config.yaml
-#      # We specify the chain id used by our execution client
-#      - --rpc-host=0.0.0.0
-#      - --grpc-gateway-host=0.0.0.0
-#      - --execution-endpoint=http://geth:8545
-#      - --accept-terms-of-use
-#      # TODO: Configure jwt secret
-#      - --jwt-secret=/execution/jwtsecret
-#    depends_on:
-#      geth:
-#        condition: service_started
-#      create_beacon_chain_genesis:
-#        condition: service_completed_successfully
-#    ports:
-#      - "127.0.0.1:4000:4000"
-#      - "127.0.0.1:3500:3500"
-#    volumes:
-#      # TODO: Add JWT from geth
-#      - "consensus:/consensus"
-#      - "config:/consensus"
-#
-#  # We run a validator client with 64, deterministically-generated keys that match
-#  # The validator keys present in the beacon chain genesis state generated a few steps above.
-#  prysm_validator:
-#    image: "gcr.io/prysmaticlabs/prysm/validator:stable"
-#    command:
-#      - --beacon-rpc-provider=prysm_beacon_chain:4000
-#      - --datadir=/consensus/validatordata
-#      - --accept-terms-of-use
-#      - --interop-num-validators=64
-#      - --interop-start-index=0
-#      - --chain-config-file=/config/prysm_config.yaml
-#    depends_on:
-#      prysm_beacon_chain:
-#        condition: service_started
-#    volumes:
-#      - "consensus:/consensus"
-#      - "config:/config"
+  create_beacon_chain_genesis:
+    image: "gcr.io/prysmaticlabs/prysm/cmd/prysmctl:latest"
+    command:
+      - testnet
+      - generate-genesis
+      - --num-validators=64
+      - --output-ssz=/consensus/genesis.ssz
+      - --chain-config-file=/config/prysm.yaml
+    volumes:
+      - "consensus:/consensus"
+      - "config:/config"
+
+  # Runs a Prysm beacon chain from a specified genesis state created in the previous step
+  # and connects to go-ethereum in the same network as the execution client.
+  # The account used in go-ethereum is set as the suggested fee recipient for transactions
+  # proposed via the validators attached to the beacon node.
+  prysm_beacon_chain:
+    image: "gcr.io/prysmaticlabs/prysm/beacon-chain:stable"
+    command:
+      - --datadir=/consensus/beacondata
+      - --min-sync-peers=0
+      - --interop-genesis-state=/consensus/genesis.ssz
+      - --interop-eth1data-votes
+      - --bootstrap-node=
+      - --chain-config-file=/config/prysm.yaml
+      - --rpc-host=0.0.0.0
+      - --grpc-gateway-host=0.0.0.0
+      - --execution-endpoint=http://geth:8545
+      - --accept-terms-of-use
+      - --jwt-secret=/config/jwt.hex
+    depends_on:
+      geth:
+        condition: service_started
+      create_beacon_chain_genesis:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:4000:4000"
+      - "127.0.0.1:3500:3500"
+    volumes:
+      # TODO: Add JWT from geth
+      - "consensus:/consensus"
+      - "config:/consensus"
+
+  # We run a validator client with 64, deterministically-generated keys that match
+  # The validator keys present in the beacon chain genesis state generated a few steps above.
+  prysm_validator:
+    image: "gcr.io/prysmaticlabs/prysm/validator:stable"
+    command:
+      - --beacon-rpc-provider=prysm_beacon_chain:4000
+      - --datadir=/consensus/validatordata
+      - --accept-terms-of-use
+      - --interop-num-validators=64
+      - --interop-start-index=0
+      - --chain-config-file=/config/prysm.yaml
+    depends_on:
+      prysm_beacon_chain:
+        condition: service_started
+    volumes:
+      - "consensus:/consensus"
+      - "config:/config"
 
   sequencer:
     pid: host # allow debugging
