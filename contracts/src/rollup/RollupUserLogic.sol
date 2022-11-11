@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IRollupUser} from "./IRollupLogic.sol";
 import "../libraries/UUPSNotUpgradeable.sol";
 import "./RollupCore.sol";
+import {ETH_POS_BLOCK_TIME} from "../libraries/Constants.sol";
 
 abstract contract AbsRollupUserLogic is
     RollupCore,
@@ -20,8 +21,41 @@ abstract contract AbsRollupUserLogic is
     using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
-        require(isValidator[msg.sender], "NOT_VALIDATOR");
+        require(isValidator[msg.sender] || validatorWhitelistDisabled, "NOT_VALIDATOR");
         _;
+    }
+
+    uint256 internal immutable deployTimeChainId = block.chainid;
+
+    function _chainIdChanged() internal view returns (bool) {
+        return deployTimeChainId != block.chainid;
+    }
+
+    /**
+     * @notice Extra number of blocks the validator can remain inactive before considered inactive
+     *         This is 7 days assuming a 13.2 seconds block time
+     */
+    uint256 public constant VALIDATOR_AFK_BLOCKS = 45818;
+
+    function _validatorIsAfk() internal view returns (bool) {
+        Node memory latestNode = getNodeStorage(latestNodeCreated());
+        if (latestNode.createdAtBlock == 0) return false;
+        if (latestNode.createdAtBlock + confirmPeriodBlocks + VALIDATOR_AFK_BLOCKS < block.number) {
+            return true;
+        }
+        return false;
+    }
+
+    function removeWhitelistAfterFork() external {
+        require(!validatorWhitelistDisabled, "WHITELIST_DISABLED");
+        require(_chainIdChanged(), "CHAIN_ID_NOT_CHANGED");
+        validatorWhitelistDisabled = true;
+    }
+
+    function removeWhitelistAfterValidatorAfk() external {
+        require(!validatorWhitelistDisabled, "WHITELIST_DISABLED");
+        require(_validatorIsAfk(), "VALIDATOR_NOT_AFK");
+        validatorWhitelistDisabled = true;
     }
 
     function isERC20Enabled() public view override returns (bool) {
@@ -239,7 +273,7 @@ abstract contract AbsRollupUserLogic is
      * @param globalStates The before and after global state for the first assertion
      * @param numBlocks The number of L2 blocks contained in the first assertion
      * @param secondExecutionHash The execution hash of the second assertion
-     * @param proposedTimes Times that the two nodes were proposed
+     * @param proposedBlocks L1 block numbers that the two nodes were proposed at
      * @param wasmModuleRoots The wasm module roots at the time of the creation of each assertion
      */
     function createChallenge(
@@ -249,7 +283,7 @@ abstract contract AbsRollupUserLogic is
         GlobalState[2] calldata globalStates,
         uint64 numBlocks,
         bytes32 secondExecutionHash,
-        uint256[2] calldata proposedTimes,
+        uint256[2] calldata proposedBlocks,
         bytes32[2] calldata wasmModuleRoots
     ) external onlyValidator whenNotPaused {
         require(nodeNums[0] < nodeNums[1], "WRONG_ORDER");
@@ -274,7 +308,7 @@ abstract contract AbsRollupUserLogic is
             node1.challengeHash ==
                 RollupLib.challengeRootHash(
                     RollupLib.executionHash(machineStatuses, globalStates, numBlocks),
-                    proposedTimes[0],
+                    proposedBlocks[0],
                     wasmModuleRoots[0]
                 ),
             "CHAL_HASH1"
@@ -284,18 +318,18 @@ abstract contract AbsRollupUserLogic is
             node2.challengeHash ==
                 RollupLib.challengeRootHash(
                     secondExecutionHash,
-                    proposedTimes[1],
+                    proposedBlocks[1],
                     wasmModuleRoots[1]
                 ),
             "CHAL_HASH2"
         );
 
         // Calculate upper limit for allowed node proposal time:
-        uint256 commonEndTime = getNodeStorage(node1.prevNum).firstChildBlock +
+        uint256 commonEndBlock = getNodeStorage(node1.prevNum).firstChildBlock +
             // Dispute start: dispute timer for a node starts when its first child is created
-            (node1.deadlineBlock - proposedTimes[0]) +
+            (node1.deadlineBlock - proposedBlocks[0]) +
             extraChallengeTimeBlocks; // add dispute window to dispute start time
-        if (commonEndTime < proposedTimes[1]) {
+        if (commonEndBlock < proposedBlocks[1]) {
             // The 2nd node was created too late; loses challenge automatically.
             completeChallengeImpl(stakers[0], stakers[1]);
             return;
@@ -307,8 +341,9 @@ abstract contract AbsRollupUserLogic is
             globalStates,
             numBlocks,
             wasmModuleRoots,
-            commonEndTime - proposedTimes[0],
-            commonEndTime - proposedTimes[1]
+            // convert from block counts to real second based timestamps
+            (commonEndBlock - proposedBlocks[0]) * ETH_POS_BLOCK_TIME,
+            (commonEndBlock - proposedBlocks[1]) * ETH_POS_BLOCK_TIME
         ); // trusted external call
 
         challengeStarted(stakers[0], stakers[1], challengeIndex);

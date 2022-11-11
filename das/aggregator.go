@@ -74,7 +74,7 @@ func (this *ServiceDetails) String() string {
 
 func NewServiceDetails(service DataAvailabilityServiceWriter, pubKey blsSignatures.PublicKey, signersMask uint64, metricName string) (*ServiceDetails, error) {
 	if bits.OnesCount64(signersMask) != 1 {
-		return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
+		return nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", service, signersMask)
 	}
 	return &ServiceDetails{
 		service:     service,
@@ -124,13 +124,13 @@ func NewAggregatorWithSeqInboxCaller(
 	pubKeys := []blsSignatures.PublicKey{}
 	for _, d := range services {
 		if bits.OnesCount64(d.signersMask) != 1 {
-			return nil, fmt.Errorf("Tried to configure backend DAS %v with invalid signersMask %X", d.service, d.signersMask)
+			return nil, fmt.Errorf("tried to configure backend DAS %v with invalid signersMask %X", d.service, d.signersMask)
 		}
 		aggSignersMask |= d.signersMask
 		pubKeys = append(pubKeys, d.pubKey)
 	}
 	if bits.OnesCount64(aggSignersMask) != len(services) {
-		return nil, errors.New("At least two signers share a mask")
+		return nil, errors.New("at least two signers share a mask")
 	}
 
 	keyset := &arbstate.DataAvailabilityKeyset{
@@ -218,17 +218,17 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			var metricWithServiceName string = metricBase + "/" + d.metricName
 			defer cancel()
 			incFailureMetric := func() {
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/failure", nil).Inc(1)
-				metrics.GetOrRegisterGauge(metricBase+"/all/failure", nil).Inc(1)
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/total", nil).Inc(1)
+				metrics.GetOrRegisterCounter(metricBase+"/error/all/total", nil).Inc(1)
 			}
 
 			cert, err := d.service.Store(storeCtx, message, timeout, sig)
 			if err != nil {
 				incFailureMetric()
 				if errors.Is(err, context.DeadlineExceeded) {
-					metrics.GetOrRegisterGauge(metricWithServiceName+"/timeout", nil).Inc(1)
+					metrics.GetOrRegisterCounter(metricWithServiceName+"/error/timeout/total", nil).Inc(1)
 				} else {
-					metrics.GetOrRegisterGauge(metricWithServiceName+"/client_error", nil).Inc(1)
+					metrics.GetOrRegisterCounter(metricWithServiceName+"/error/client/total", nil).Inc(1)
 				}
 				responses <- storeResponse{d, nil, err}
 				return
@@ -239,14 +239,14 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 			)
 			if err != nil {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
 				responses <- storeResponse{d, nil, err}
 				return
 			}
 			if !verified {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
-				responses <- storeResponse{d, nil, errors.New("Signature verification failed.")}
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
+				responses <- storeResponse{d, nil, errors.New("signature verification failed")}
 				return
 			}
 
@@ -254,19 +254,19 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 			if cert.DataHash != expectedHash {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
-				responses <- storeResponse{d, nil, errors.New("Hash verification failed.")}
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
+				responses <- storeResponse{d, nil, errors.New("hash verification failed")}
 				return
 			}
 			if cert.Timeout != timeout {
 				incFailureMetric()
-				metrics.GetOrRegisterGauge(metricWithServiceName+"/bad_response", nil).Inc(1)
-				responses <- storeResponse{d, nil, fmt.Errorf("Timeout was %d, expected %d", cert.Timeout, timeout)}
+				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
+				responses <- storeResponse{d, nil, fmt.Errorf("timeout was %d, expected %d", cert.Timeout, timeout)}
 				return
 			}
 
-			metrics.GetOrRegisterGauge(metricWithServiceName+"/success", nil).Inc(1)
-			metrics.GetOrRegisterGauge(metricBase+"/success", nil).Inc(1)
+			metrics.GetOrRegisterCounter(metricWithServiceName+"/success/total", nil).Inc(1)
+			metrics.GetOrRegisterCounter(metricBase+"/success/all/total", nil).Inc(1)
 			responses <- storeResponse{d, cert.Sig, nil}
 		}(ctx, d)
 	}
@@ -320,7 +320,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 					returned = true
 				} else if storeFailures > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
-					cd.err = fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest)", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest)
+					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest)", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest)
 					certDetailsChan <- cd
 					returned = true
 				}
@@ -349,7 +349,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 		return nil, err
 	}
 	if !verified {
-		return nil, errors.New("Failed aggregate signature check")
+		return nil, errors.New("failed aggregate signature check")
 	}
 	return &aggCert, nil
 }

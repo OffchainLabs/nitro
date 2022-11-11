@@ -15,15 +15,15 @@ endif
 
 
 ifneq ($(origin NITRO_VERSION),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util.version=$(NITRO_VERSION)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.version=$(NITRO_VERSION)
 endif
 
 ifneq ($(origin NITRO_DATETIME),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util.datetime=$(NITRO_DATETIME)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.datetime=$(NITRO_DATETIME)
 endif
 
 ifneq ($(origin NITRO_MODIFIED),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util.modified=$(NITRO_MODIFIED)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
 endif
 
 ifneq ($(origin GOLANG_LDFLAGS),undefined)
@@ -96,7 +96,7 @@ build-prover-bin: $(arbitrator_prover_bin)
 
 build-jit: $(arbitrator_jit)
 
-build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machines/latest/machine.wavm.br
+build-replay-env: $(arbitrator_prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machines/latest/machine.wavm.br
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
@@ -117,11 +117,11 @@ test-go: .make/test-go
 	@printf $(done)
 
 test-go-challenge: test-go-deps
-	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
+	go test -v -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
 test-go-redis: test-go-deps
-	go test -p 1 -run TestSeqCoordinator -tags redistest ./system_tests/... ./arbnode/...
+	go test -p 1 -run TestRedis -tags redistest ./system_tests/... ./arbnode/...
 	@printf $(done)
 
 test-gen-proofs: \
@@ -181,17 +181,17 @@ $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 
 $(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	mkdir -p `dirname $(arbitrator_prover_bin)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover
+	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
 	install arbitrator/target/release/prover $@
 
 $(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	mkdir -p `dirname $(arbitrator_prover_lib)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover
+	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover ${CARGOFLAGS}
 	install arbitrator/target/release/libprover.a $@
 
 $(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib arbitrator/jit/src/*.rs arbitrator/jit/*.rs arbitrator/jit/Cargo.toml
 	mkdir -p `dirname $(arbitrator_jit)`
-	cargo build --manifest-path arbitrator/Cargo.toml --release --bin jit
+	cargo build --manifest-path arbitrator/Cargo.toml --release --bin jit ${CARGOFLAGS}
 	install arbitrator/target/release/jit $@
 
 $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs

@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/relay"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -28,6 +29,11 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.Config {
 	return &broadcastclient.Config{
 		URLs:    []string{fmt.Sprintf("ws://localhost:%d/feed", port)},
 		Timeout: 200 * time.Millisecond,
+		Verifier: signature.VerifierConfig{
+			Dangerous: signature.DangerousVerifierConfig{
+				AcceptMissing: true,
+			},
+		},
 	}
 }
 
@@ -38,14 +44,14 @@ func TestSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
-	defer requireClose(t, l2stackA)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	defer nodeA.StopAndWait()
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, _, client2, l2stackB := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
-	defer requireClose(t, l2stackB)
+	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	defer nodeB.StopAndWait()
 
 	l2info1.GenerateAccount("User2")
 
@@ -73,21 +79,21 @@ func TestRelayedSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	l2info1, nodeA, client1, l2stackA := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
-	defer requireClose(t, l2stackA)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
+	defer nodeA.StopAndWait()
 
 	bigChainId, err := client1.ChainID(ctx)
 	Require(t, err)
-	chainId := bigChainId.Uint64()
 
+	config := relay.ConfigDefault
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
-	feedConfig := broadcastclient.FeedConfig{
-		Input:  *newBroadcastClientConfigTest(port),
-		Output: *newBroadcasterConfigTest(),
-	}
+	config.Node.Feed.Input = *newBroadcastClientConfigTest(port)
+	config.Node.Feed.Output = *newBroadcasterConfigTest()
+	config.L2.ChainId = bigChainId.Uint64()
 
 	feedErrChan := make(chan error, 10)
-	currentRelay := relay.NewRelay(feedConfig, chainId, feedErrChan)
+	currentRelay, err := relay.NewRelay(&config, feedErrChan)
+	Require(t, err)
 	err = currentRelay.Start(ctx)
 	Require(t, err)
 	defer currentRelay.StopAndWait()
@@ -95,9 +101,9 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port = currentRelay.GetListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
-	_, _, client3, l2stackC := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
-	defer requireClose(t, l2stackC)
-	StartWatchChanErr(t, ctx, feedErrChan, l2stackC)
+	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
+	defer nodeC.StopAndWait()
+	StartWatchChanErr(t, ctx, feedErrChan, nodeC)
 
 	l2info1.GenerateAccount("User2")
 
@@ -129,9 +135,9 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
-	l2infoA, nodeA, l2clientA, l2stackA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
+	l2infoA, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig, nil)
 	defer requireClose(t, l1stack, "unable to close l1stack")
-	defer requireClose(t, l2stackA, "unable to close l2stackA")
+	defer nodeA.StopAndWait()
 
 	authorizeDASKeyset(t, ctx, dasSignerKey, l1info, l1client)
 
@@ -141,8 +147,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigC.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigC.DataAvailability.AggregatorConfig.Enable = false
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest()
-	l2clientC, nodeC, l2stackC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
-	defer requireClose(t, l2stackC, "unable to close l2stackC")
+	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigC)
+	defer nodeC.StopAndWait()
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
@@ -152,8 +158,8 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability = nodeConfigA.DataAvailability
 	nodeConfigB.DataAvailability.AggregatorConfig.Enable = false
-	l2clientB, _, l2stackB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
-	defer requireClose(t, l2stackB, "unable to close l2stackB")
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2infoA.ArbInitData, nodeConfigB)
+	defer nodeB.StopAndWait()
 
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")

@@ -22,9 +22,9 @@ func TestAliasing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
+	l2info, node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
 	defer requireClose(t, l1stack)
-	defer requireClose(t, l2stack)
+	defer node.StopAndWait()
 
 	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	user := l1info.GetDefaultTransactOpts("User", ctx)

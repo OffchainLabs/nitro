@@ -78,7 +78,7 @@ func init() {
 		}
 		unpack := func(data []byte) (map[string]interface{}, error) {
 			if len(data) < 4 {
-				return nil, errors.New("Data not long enough")
+				return nil, errors.New("data not long enough")
 			}
 			args := make(map[string]interface{})
 			return args, method.Inputs.UnpackIntoMap(args, data[4:])

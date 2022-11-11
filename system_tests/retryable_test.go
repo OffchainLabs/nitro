@@ -38,7 +38,7 @@ func retryableSetup(t *testing.T) (
 	func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l2info, _, l2client, l2stack, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
+	l2info, l2node, l2client, l1info, _, l1client, l1stack := createTestNodeOnL1(t, ctx, true)
 
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("Beneficiary")
@@ -50,7 +50,7 @@ func retryableSetup(t *testing.T) (
 	Require(t, err)
 
 	lookupSubmitRetryableL2TxHash := func(l1Receipt *types.Receipt) common.Hash {
-		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber)
+		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
 			Fail(t, "didn't find message for retryable submission")
@@ -94,7 +94,7 @@ func retryableSetup(t *testing.T) (
 
 		cancel()
 
-		requireClose(t, l2stack)
+		l2node.StopAndWait()
 		requireClose(t, l1stack)
 	}
 	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
@@ -103,13 +103,13 @@ func retryableSetup(t *testing.T) (
 func TestRetryableNoExist(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, _, l2client, l2stack := CreateTestL2(t, ctx)
-	defer requireClose(t, l2stack)
+	_, node, l2client := CreateTestL2(t, ctx)
+	defer node.StopAndWait()
 
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
 	Require(t, err)
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, common.Hash{})
-	if err.Error() != "error NoTicketWithID()" {
+	if err.Error() != "execution reverted: error NoTicketWithID()" {
 		Fail(t, "didn't get expected NoTicketWithID error")
 	}
 }

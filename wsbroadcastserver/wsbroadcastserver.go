@@ -15,38 +15,45 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-const HTTPHeaderFeedServerVersion = "Arbitrum-Feed-Server-Version"
-const HTTPHeaderFeedClientVersion = "Arbitrum-Feed-Client-Version"
-const HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
-const HTTPHeaderChainId = "Arbitrum-Chain-Id"
-const FeedServerVersion = 2
-const FeedClientVersion = 2
+const (
+	HTTPHeaderFeedServerVersion       = "Arbitrum-Feed-Server-Version"
+	HTTPHeaderFeedClientVersion       = "Arbitrum-Feed-Client-Version"
+	HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
+	HTTPHeaderChainId                 = "Arbitrum-Chain-Id"
+	FeedServerVersion                 = 2
+	FeedClientVersion                 = 2
+	LivenessProbeURI                  = "livenessprobe"
+)
 
 type BroadcasterConfig struct {
 	Enable         bool          `koanf:"enable"`
-	Addr           string        `koanf:"addr"`
-	IOTimeout      time.Duration `koanf:"io-timeout"`
-	Port           string        `koanf:"port"`
-	Ping           time.Duration `koanf:"ping"`
-	ClientTimeout  time.Duration `koanf:"client-timeout"`
-	Queue          int           `koanf:"queue"`
-	Workers        int           `koanf:"workers"`
-	MaxSendQueue   int           `koanf:"max-send-queue"`
-	RequireVersion bool          `koanf:"require-version"`
+	Signed         bool          `koanf:"signed"`
+	Addr           string        `koanf:"addr"`                         // TODO(magic) needs tcp server restart on change
+	IOTimeout      time.Duration `koanf:"io-timeout" reload:"hot"`      // reloading will affect only new connections
+	Port           string        `koanf:"port"`                         // TODO(magic) needs tcp server restart on change
+	Ping           time.Duration `koanf:"ping" reload:"hot"`            // reloaded value will change future ping intervals
+	ClientTimeout  time.Duration `koanf:"client-timeout" reload:"hot"`  // reloaded value will affect all clients (next time the timeout is checked)
+	Queue          int           `koanf:"queue"`                        // TODO(magic) ClientManager.pool needs to be recreated on change
+	Workers        int           `koanf:"workers"`                      // TODO(magic) ClientManager.pool needs to be recreated on change
+	MaxSendQueue   int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
+	RequireVersion bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
 	DisableSigning bool          `koanf:"disable-signing"`
 }
 
+type BroadcasterConfigFetcher func() *BroadcasterConfig
+
 func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBroadcasterConfig.Enable, "enable broadcaster")
+	f.Bool(prefix+".signed", DefaultBroadcasterConfig.Signed, "sign broadcast messages")
 	f.String(prefix+".addr", DefaultBroadcasterConfig.Addr, "address to bind the relay feed output to")
 	f.Duration(prefix+".io-timeout", DefaultBroadcasterConfig.IOTimeout, "duration to wait before timing out HTTP to WS upgrade")
 	f.String(prefix+".port", DefaultBroadcasterConfig.Port, "port to bind the relay feed output to")
@@ -61,6 +68,7 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
 	Enable:         false,
+	Signed:         false,
 	Addr:           "",
 	IOTimeout:      5 * time.Second,
 	Port:           "9642",
@@ -75,6 +83,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	Enable:         false,
+	Signed:         false,
 	Addr:           "0.0.0.0",
 	IOTimeout:      2 * time.Second,
 	Port:           "0",
@@ -95,7 +104,7 @@ type WSBroadcastServer struct {
 	acceptDesc      *netpoll.Desc
 
 	listener      net.Listener
-	settings      BroadcasterConfig
+	config        BroadcasterConfigFetcher
 	started       bool
 	clientManager *ClientManager
 	catchupBuffer CatchupBuffer
@@ -103,9 +112,9 @@ type WSBroadcastServer struct {
 	fatalErrChan  chan error
 }
 
-func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
+func NewWSBroadcastServer(config BroadcasterConfigFetcher, catchupBuffer CatchupBuffer, chainId uint64, fatalErrChan chan error) *WSBroadcastServer {
 	return &WSBroadcastServer{
-		settings:      settings,
+		config:        config,
 		started:       false,
 		catchupBuffer: catchupBuffer,
 		chainId:       chainId,
@@ -127,7 +136,7 @@ func (s *WSBroadcastServer) Initialize() error {
 
 	// Make pool of X size, Y sized work queue and one pre-spawned
 	// goroutine.
-	s.clientManager = NewClientManager(s.poller, s.settings, s.catchupBuffer)
+	s.clientManager = NewClientManager(s.poller, s.config, s.catchupBuffer)
 
 	return nil
 }
@@ -158,11 +167,20 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	// Called below in accept() loop.
 	handle := func(conn net.Conn) {
 
-		safeConn := deadliner{conn, s.settings.IOTimeout}
+		safeConn := deadliner{conn, s.config().IOTimeout}
 
+		// Set requestedSeqNum to max if client doesn't provide it
+		requestedSeqNum := arbutil.MessageIndex(^uint64(0))
 		var feedClientVersionSeen bool
-		var requestedSeqNum arbutil.MessageIndex
 		upgrader := ws.Upgrader{
+			OnRequest: func(uri []byte) error {
+				if strings.Contains(string(uri), LivenessProbeURI) {
+					return ws.RejectConnectionError(
+						ws.RejectionStatus(http.StatusOK),
+					)
+				}
+				return nil
+			},
 			OnHeader: func(key []byte, value []byte) error {
 				headerName := string(key)
 				if headerName == HTTPHeaderFeedClientVersion {
@@ -188,7 +206,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				return nil
 			},
 			OnBeforeUpgrade: func() (ws.HandshakeHeader, error) {
-				if s.settings.RequireVersion && !feedClientVersionSeen {
+				if s.config().RequireVersion && !feedClientVersionSeen {
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusBadRequest),
 						ws.RejectionReason(HTTPHeaderFeedClientVersion+" HTTP header missing"),
@@ -199,14 +217,14 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 
 		// Zero-copy upgrade to WebSocket connection.
-		hs, err := upgrader.Upgrade(safeConn)
+		_, err := upgrader.Upgrade(safeConn)
 		if err != nil {
 			log.Warn("websocket upgrade error", "connection_name", nameConn(safeConn), "err", err)
 			_ = safeConn.Close()
 			return
 		}
 
-		log.Info(fmt.Sprintf("established websocket connection: %+v", hs), "connection-name", nameConn(safeConn))
+		log.Info("established websocket connection", "remoteAddr", safeConn.RemoteAddr())
 
 		// Create netpoll event descriptor to handle only read events.
 		desc, err := netpoll.HandleRead(conn)
@@ -236,8 +254,10 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			// receive client messages, close on error
 			s.clientManager.pool.Schedule(func() {
 				// Ignore any messages sent from client
-				if _, _, err := client.Receive(ctx, s.settings.ClientTimeout); err != nil {
-					log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
+				if _, _, err := client.Receive(ctx, s.config().ClientTimeout); err != nil {
+					if errors.Is(err, wsutil.ClosedError{}) {
+						log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
+					}
 					s.clientManager.Remove(client)
 					return
 				}
@@ -250,7 +270,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	}
 
 	// Create tcp server for relay connections
-	ln, err := net.Listen("tcp", s.settings.Addr+":"+s.settings.Port)
+	ln, err := net.Listen("tcp", s.config().Addr+":"+s.config().Port)
 	if err != nil {
 		log.Error("error calling net.Listen", "err", err)
 		return err
@@ -363,6 +383,10 @@ func (s *WSBroadcastServer) StopAndWait() {
 
 	s.clientManager.StopAndWait()
 	s.started = false
+}
+
+func (s *WSBroadcastServer) Started() bool {
+	return s.started
 }
 
 // Broadcast sends batch item to all clients.

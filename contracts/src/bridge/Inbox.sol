@@ -15,7 +15,9 @@ import {
     InsufficientSubmissionCost,
     NotAllowedOrigin,
     RetryableData,
-    NotRollupOrOwner
+    NotRollupOrOwner,
+    L1Forked,
+    NotForked
 } from "../libraries/Error.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
@@ -33,6 +35,7 @@ import {
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
+import "../precompiles/ArbSys.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
@@ -92,6 +95,12 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         _;
     }
 
+    uint256 internal immutable deployTimeChainId = block.chainid;
+
+    function _chainIdChanged() internal view returns (bool) {
+        return deployTimeChainId != block.chainid;
+    }
+
     /// @inheritdoc IInbox
     function pause() external onlyRollupOrOwner {
         _pause();
@@ -114,16 +123,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     /// @inheritdoc IInbox
-    function postUpgradeInit(IBridge _bridge) external onlyDelegated onlyProxyOwner {
-        uint8 slotsToWipe = 3;
-        for (uint8 i = 0; i < slotsToWipe; i++) {
-            assembly {
-                sstore(i, 0)
-            }
-        }
-        allowListEnabled = false;
-        bridge = _bridge;
-    }
+    function postUpgradeInit(IBridge) external onlyDelegated onlyProxyOwner {}
 
     /// @inheritdoc IInbox
     function sendL2MessageFromOrigin(bytes calldata messageData)
@@ -132,6 +132,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         onlyAllowed
         returns (uint256)
     {
+        if (_chainIdChanged()) revert L1Forked();
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
         if (messageData.length > MAX_DATA_SIZE)
@@ -148,6 +149,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         onlyAllowed
         returns (uint256)
     {
+        if (_chainIdChanged()) revert L1Forked();
         return _deliverMessage(L2_MSG, msg.sender, messageData);
     }
 
@@ -237,6 +239,91 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     uint256(uint160(to)),
                     value,
                     data
+                )
+            );
+    }
+
+    /// @inheritdoc IInbox
+    function sendL1FundedUnsignedTransactionToFork(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        address to,
+        bytes calldata data
+    ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        if (!_chainIdChanged()) revert NotForked();
+        // solhint-disable-next-line avoid-tx-origin
+        if (msg.sender != tx.origin) revert NotOrigin();
+        return
+            _deliverMessage(
+                L1MessageType_L2FundedByL1,
+                // undoing sender alias here to cancel out the aliasing
+                AddressAliasHelper.undoL1ToL2Alias(msg.sender),
+                abi.encodePacked(
+                    L2MessageType_unsignedEOATx,
+                    gasLimit,
+                    maxFeePerGas,
+                    nonce,
+                    uint256(uint160(to)),
+                    msg.value,
+                    data
+                )
+            );
+    }
+
+    /// @inheritdoc IInbox
+    function sendUnsignedTransactionToFork(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external whenNotPaused onlyAllowed returns (uint256) {
+        if (!_chainIdChanged()) revert NotForked();
+        // solhint-disable-next-line avoid-tx-origin
+        if (msg.sender != tx.origin) revert NotOrigin();
+        return
+            _deliverMessage(
+                L2_MSG,
+                // undoing sender alias here to cancel out the aliasing
+                AddressAliasHelper.undoL1ToL2Alias(msg.sender),
+                abi.encodePacked(
+                    L2MessageType_unsignedEOATx,
+                    gasLimit,
+                    maxFeePerGas,
+                    nonce,
+                    uint256(uint160(to)),
+                    value,
+                    data
+                )
+            );
+    }
+
+    /// @inheritdoc IInbox
+    function sendWithdrawEthToFork(
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        uint256 nonce,
+        uint256 value,
+        address withdrawTo
+    ) external whenNotPaused onlyAllowed returns (uint256) {
+        if (!_chainIdChanged()) revert NotForked();
+        // solhint-disable-next-line avoid-tx-origin
+        if (msg.sender != tx.origin) revert NotOrigin();
+        return
+            _deliverMessage(
+                L2_MSG,
+                // undoing sender alias here to cancel out the aliasing
+                AddressAliasHelper.undoL1ToL2Alias(msg.sender),
+                abi.encodePacked(
+                    L2MessageType_unsignedEOATx,
+                    gasLimit,
+                    maxFeePerGas,
+                    nonce,
+                    uint256(uint160(address(100))), // ArbSys address
+                    value,
+                    abi.encode(ArbSys.withdrawEth.selector, withdrawTo)
                 )
             );
     }

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -80,9 +81,12 @@ func (i WavmInbox) SetPositionWithinMessage(pos uint64) {
 	wavmio.SetPositionWithinMessage(pos)
 }
 
-func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
 	log.Info("ReadDelayedMsg", "seqNum", seqNum)
-	return wavmio.ReadDelayedInboxMessage(seqNum), nil
+	data := wavmio.ReadDelayedInboxMessage(seqNum)
+	return arbos.ParseIncomingL1Message(bytes.NewReader(data), func(batchNum uint64) ([]byte, error) {
+		return wavmio.ReadInboxMessage(batchNum), nil
+	})
 }
 
 type PreimageDASReader struct {
@@ -143,7 +147,7 @@ func main() {
 	}
 
 	log.Info("Initial State", "lastBlockHash", lastBlockHash, "lastBlockStateRoot", lastBlockStateRoot)
-	statedb, err := state.New(lastBlockStateRoot, db, nil)
+	statedb, err := state.NewDeterministic(lastBlockStateRoot, db)
 	if err != nil {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
