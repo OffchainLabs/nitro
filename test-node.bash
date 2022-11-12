@@ -36,6 +36,7 @@ consensusclient=false
 redundantsequencers=0
 batchposters=1
 devprivkey=45a915e4d060149eb4365960e6a7a45f334393093061116b197e3240065ff2d8
+etherbaseprivkey=e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -115,42 +116,42 @@ if $force_init; then
     force_build=true
 fi
 
-NODES="sequencer"
+NODES=""
 
-if [ $redundantsequencers -gt 0 ]; then
-    NODES="$NODES sequencer_b"
-fi
-if [ $redundantsequencers -gt 1 ]; then
-    NODES="$NODES sequencer_c"
-fi
-if [ $redundantsequencers -gt 2 ]; then
-    NODES="$NODES sequencer_d"
-fi
+#if [ $redundantsequencers -gt 0 ]; then
+#    NODES="$NODES sequencer_b"
+#fi
+#if [ $redundantsequencers -gt 1 ]; then
+#    NODES="$NODES sequencer_c"
+#fi
+#if [ $redundantsequencers -gt 2 ]; then
+#    NODES="$NODES sequencer_d"
+#fi
+#
+#if [ $batchposters -gt 0 ]; then
+#    NODES="$NODES poster"
+#fi
+#if [ $batchposters -gt 1 ]; then
+#    NODES="$NODES poster_b"
+#fi
+#if [ $batchposters -gt 2 ]; then
+#    NODES="$NODES poster_c"
+#fi
 
-if [ $batchposters -gt 0 ]; then
-    NODES="$NODES poster"
-fi
-if [ $batchposters -gt 1 ]; then
-    NODES="$NODES poster_b"
-fi
-if [ $batchposters -gt 2 ]; then
-    NODES="$NODES poster_c"
-fi
 
-
-if $validate; then
-    NODES="$NODES validator"
-else
-    NODES="$NODES staker-unsafe"
-fi
-if $blockscout; then
-    NODES="$NODES blockscout"
-fi
-if $consensusclient; then
-    NODES="$NODES create_beacon_chain_genesis"
-    NODES="$NODES prysm_beacon_node"
-    NODES="$NODES prysm_validator_client"
-fi
+#if $validate; then
+#    NODES="$NODES validator"
+#else
+#    NODES="$NODES staker-unsafe"
+#fi
+#if $blockscout; then
+#    NODES="$NODES blockscout"
+#fi
+#if $consensusclient; then
+#    NODES="$NODES create_beacon_chain_genesis"
+#    NODES="$NODES prysm_beacon_node"
+#    NODES="$NODES prysm_validator_client"
+#fi
 
 if $force_build; then
     echo == Building..
@@ -169,8 +170,10 @@ if $force_init; then
     echo == Generating l1 keys
     docker-compose run --entrypoint sh geth -c "echo passphrase > /root/.ethereum/passphrase"
     docker-compose run --entrypoint sh geth -c "echo $devprivkey > /root/.ethereum/tmp-funnelkey"
-    docker-compose run geth account import --password /root/.ethereum/passphrase --keystore /keystore /root/.ethereum/tmp-funnelkey
+    docker-compose run geth account import --password /root/.ethereum/passphrase --keystore=/keystore /root/.ethereum/tmp-funnelkey
     docker-compose run --entrypoint sh geth -c "rm /root/.ethereum/tmp-funnelkey"
+    docker-compose run --entrypoint sh geth -c "echo $etherbaseprivkey > /root/.ethereum/tmp-etherbasekey"
+    docker-compose run geth account import --password /root/.ethereum/passphrase --keystore=/keystore /root/.ethereum/tmp-etherbasekey
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /keystore"
@@ -192,7 +195,8 @@ if $force_init; then
     docker-compose up create_beacon_chain_genesis
 
     echo == Running prysm
-    docker-compose up prysm_beacon_chain
+    docker-compose up -d prysm_beacon_chain
+    docker-compose up -d prysm_validator
 
 #    echo == Funding validator and sequencer
 #    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator

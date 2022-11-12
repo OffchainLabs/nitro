@@ -1,29 +1,29 @@
 version: "3.9"
 services:
-  blockscout:
-    depends_on:
-      - postgres
-      - sequencer
-    build:
-      context: blockscout
-      dockerfile: docker/Dockerfile
-    restart: always
-    container_name: 'blockscout'
-    links:
-      - postgres:database
-    command: 'sh -c "mix do ecto.create, ecto.migrate; node init/install.js postgres 5432; mix do phx.server"'
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
-    env_file:
-      -  ./blockscout/nitro.env
-    environment:
-        ETHEREUM_JSONRPC_VARIANT: 'geth'
-        ETHEREUM_JSONRPC_HTTP_URL: http://sequencer:8547/
-        INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
-        DATABASE_URL: postgresql://postgres:@postgres:5432/blockscout?ssl=false
-        ECTO_USE_SSL: "false"
-    ports:
-      - "127.0.0.1:4000:4000"
+#  blockscout:
+#    depends_on:
+#      - postgres
+#      - sequencer
+#    build:
+#      context: blockscout
+#      dockerfile: docker/Dockerfile
+#    restart: always
+#    container_name: 'blockscout'
+#    links:
+#      - postgres:database
+#    command: 'sh -c "mix do ecto.create, ecto.migrate; node init/install.js postgres 5432; mix do phx.server"'
+#    extra_hosts:
+#      - 'host.docker.internal:host-gateway'
+#    env_file:
+#      -  ./blockscout/nitro.env
+#    environment:
+#        ETHEREUM_JSONRPC_VARIANT: 'geth'
+#        ETHEREUM_JSONRPC_HTTP_URL: http://sequencer:8547/
+#        INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
+#        DATABASE_URL: postgresql://postgres:@postgres:5432/blockscout?ssl=false
+#        ECTO_USE_SSL: "false"
+#    ports:
+#      - "127.0.0.1:4000:4000"
 
   postgres:
     image: postgres:13.6
@@ -44,9 +44,10 @@ services:
       - "127.0.0.1:6379:6379"
 
   geth:
-    image: ethereum/client-go:stable
+    image: ethereum/client-go:latest
     ports:
       - "127.0.0.1:8545:8545"
+      - "127.0.0.1:8551:8551"
       - "127.0.0.1:8546:8546"
       - "127.0.0.1:30303:30303"
     volumes:
@@ -54,10 +55,12 @@ services:
       - "l1keystore:/keystore"
       - "config:/config"
     command:
-      - --keystore=/keystore \
+      - --keystore=/keystore
       - --http
+      - --datadir=/root/.ethereum
       - --http.addr=0.0.0.0
       - --authrpc.vhosts=*
+      - --authrpc.port=8551
       - --authrpc.addr=0.0.0.0
       - --http.vhosts=*
       - --http.api=engine,personal,eth,net,web3
@@ -66,10 +69,13 @@ services:
       - --ws.addr=0.0.0.0
       - --ws.api=personal,eth,net,web3,debug,txpool
       - --allow-insecure-unlock
+      - --unlock=0xa94f5374Fce5edBC8E2a8697C15331677e6EbF0B
       - --password=/root/.ethereum/passphrase
-      - --authrpc.jwtsecret=0x98ea6e4f216f2fb4b69fff9b3a44842c38686ca685f3f55dc48c5d3fb1107be4 \
+      - --authrpc.jwtsecret=/config/jwt.hex
       - --nodiscover
       - --syncmode=full
+      - --mine
+      - --miner.etherbase=0xa94f5374Fce5edBC8E2a8697C15331677e6EbF0B
       - --gcmode=archive
 
   # Creates a genesis state for the beacon chain using a YAML configuration file and
@@ -102,7 +108,8 @@ services:
       - --chain-config-file=/config/prysm.yaml
       - --rpc-host=0.0.0.0
       - --grpc-gateway-host=0.0.0.0
-      - --execution-endpoint=http://geth:8545
+      - --chain-id=32382
+      - --execution-endpoint=http://geth:8551
       - --accept-terms-of-use
       - --jwt-secret=/config/jwt.hex
     depends_on:
@@ -116,7 +123,7 @@ services:
     volumes:
       # TODO: Add JWT from geth
       - "consensus:/consensus"
-      - "config:/consensus"
+      - "config:/config"
 
   # We run a validator client with 64, deterministically-generated keys that match
   # The validator keys present in the beacon chain genesis state generated a few steps above.
@@ -136,155 +143,155 @@ services:
       - "consensus:/consensus"
       - "config:/config"
 
-  sequencer:
-    pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:8547:8547"
-      - "127.0.0.1:8548:8548"
-      - "127.0.0.1:9642:9642"
-    volumes:
-      - "seqdata:/home/user/.arbitrum/local/nitro"
-      - "config:/config"
-    command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642  --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://sequencer:8548 --graphql.enable --graphql.vhosts * --graphql.corsdomain *
-    depends_on:
-      - geth
-      - redis
-
-  sequencer_b:
-    pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:8647:8547"
-      - "127.0.0.1:8648:8548"
-    volumes:
-      - "seqdata_b:/home/user/.arbitrum/local/nitro"
-      - "config:/config"
-    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_b:8548
-    depends_on:
-      - geth
-      - redis
-
-  sequencer_c:
-    pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:8747:8547"
-      - "127.0.0.1:8748:8548"
-    volumes:
-      - "seqdata_c:/home/user/.arbitrum/local/nitro"
-      - "config:/config"
-    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_c:8548
-    depends_on:
-      - geth
-      - redis
-
-  sequencer_d:
-    pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:8847:8547"
-      - "127.0.0.1:8848:8548"
-    volumes:
-      - "seqdata_d:/home/user/.arbitrum/local/nitro"
-      - "config:/config"
-    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_d:8548
-    depends_on:
-      - geth
-      - redis
-
-  staker-unsafe:
-    pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:8047:8547"
-      - "127.0.0.1:8048:8548"
-    volumes:
-      - "unsafestaker-data:/home/user/.arbitrum/local/nitro"
-      - "l1keystore:/home/user/l1keystore"
-      - "config:/config"
-    command: --conf.file /config/unsafe_staker_config.json
-    depends_on:
-      - sequencer
-      - redis
-
-  poster:
-    pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:8147:8547"
-      - "127.0.0.1:8148:8548"
-    volumes:
-      - "poster-data:/home/user/.arbitrum/local/nitro"
-      - "l1keystore:/home/user/l1keystore"
-      - "config:/config"
-    command: --conf.file /config/poster_config.json
-    depends_on:
-      - geth
-      - redis
-
-  poster_b:
-    pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:9147:8547"
-      - "127.0.0.1:9148:8548"
-    volumes:
-      - "poster-data-b:/home/user/.arbitrum/local/nitro"
-      - "l1keystore:/home/user/l1keystore"
-      - "config:/config"
-    command: --conf.file /config/poster_config.json
-    depends_on:
-      - geth
-      - redis
-
-  poster_c:
-    pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:9247:8547"
-      - "127.0.0.1:9248:8548"
-    volumes:
-      - "poster-data-c:/home/user/.arbitrum/local/nitro"
-      - "l1keystore:/home/user/l1keystore"
-      - "config:/config"
-    command: --conf.file /config/poster_config.json
-    depends_on:
-      - geth
-      - redis
-
-  validator:
-    pid: host # allow debugging
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:8247:8547"
-      - "127.0.0.1:8248:8548"
-    volumes:
-      - "validator-data:/home/user/.arbitrum/local/nitro"
-      - "l1keystore:/home/user/l1keystore"
-      - "config:/config"
-    command: --conf.file /config/validator_config.json --http.port 8547 --http.api net,web3,arb,debug --ws.port 8548
-    depends_on:
-      - sequencer
-
+#  sequencer:
+#    pid: host # allow debugging
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:8547:8547"
+#      - "127.0.0.1:8548:8548"
+#      - "127.0.0.1:9642:9642"
+#    volumes:
+#      - "seqdata:/home/user/.arbitrum/local/nitro"
+#      - "config:/config"
+#    command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642  --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://sequencer:8548 --graphql.enable --graphql.vhosts * --graphql.corsdomain *
+#    depends_on:
+#      - geth
+#      - redis
+#
+#  sequencer_b:
+#    pid: host # allow debugging
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:8647:8547"
+#      - "127.0.0.1:8648:8548"
+#    volumes:
+#      - "seqdata_b:/home/user/.arbitrum/local/nitro"
+#      - "config:/config"
+#    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_b:8548
+#    depends_on:
+#      - geth
+#      - redis
+#
+#  sequencer_c:
+#    pid: host # allow debugging
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:8747:8547"
+#      - "127.0.0.1:8748:8548"
+#    volumes:
+#      - "seqdata_c:/home/user/.arbitrum/local/nitro"
+#      - "config:/config"
+#    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_c:8548
+#    depends_on:
+#      - geth
+#      - redis
+#
+#  sequencer_d:
+#    pid: host # allow debugging
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:8847:8547"
+#      - "127.0.0.1:8848:8548"
+#    volumes:
+#      - "seqdata_d:/home/user/.arbitrum/local/nitro"
+#      - "config:/config"
+#    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_d:8548
+#    depends_on:
+#      - geth
+#      - redis
+#
+#  staker-unsafe:
+#    pid: host # allow debugging
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:8047:8547"
+#      - "127.0.0.1:8048:8548"
+#    volumes:
+#      - "unsafestaker-data:/home/user/.arbitrum/local/nitro"
+#      - "l1keystore:/home/user/l1keystore"
+#      - "config:/config"
+#    command: --conf.file /config/unsafe_staker_config.json
+#    depends_on:
+#      - sequencer
+#      - redis
+#
+#  poster:
+#    pid: host # allow debugging
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:8147:8547"
+#      - "127.0.0.1:8148:8548"
+#    volumes:
+#      - "poster-data:/home/user/.arbitrum/local/nitro"
+#      - "l1keystore:/home/user/l1keystore"
+#      - "config:/config"
+#    command: --conf.file /config/poster_config.json
+#    depends_on:
+#      - geth
+#      - redis
+#
+#  poster_b:
+#    pid: host # allow debugging
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:9147:8547"
+#      - "127.0.0.1:9148:8548"
+#    volumes:
+#      - "poster-data-b:/home/user/.arbitrum/local/nitro"
+#      - "l1keystore:/home/user/l1keystore"
+#      - "config:/config"
+#    command: --conf.file /config/poster_config.json
+#    depends_on:
+#      - geth
+#      - redis
+#
+#  poster_c:
+#    pid: host # allow debugging
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:9247:8547"
+#      - "127.0.0.1:9248:8548"
+#    volumes:
+#      - "poster-data-c:/home/user/.arbitrum/local/nitro"
+#      - "l1keystore:/home/user/l1keystore"
+#      - "config:/config"
+#    command: --conf.file /config/poster_config.json
+#    depends_on:
+#      - geth
+#      - redis
+#
+#  validator:
+#    pid: host # allow debugging
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:8247:8547"
+#      - "127.0.0.1:8248:8548"
+#    volumes:
+#      - "validator-data:/home/user/.arbitrum/local/nitro"
+#      - "l1keystore:/home/user/l1keystore"
+#      - "config:/config"
+#    command: --conf.file /config/validator_config.json --http.port 8547 --http.api net,web3,arb,debug --ws.port 8548
+#    depends_on:
+#      - sequencer
+#
   testnode-scripts:
     build: testnode-scripts/
     volumes:
@@ -293,28 +300,28 @@ services:
     depends_on:
       - redis
 
-  relay:
-    pid: host
-    build:
-      context: .
-      target: nitro-node-dev
-    ports:
-      - "127.0.0.1:9652:9652"
-    entrypoint: bin/relay
-    command: --node.feed.output.port 9652 --node.feed.input.url ws://sequencer:9652
-
-  testnode-tokenbridge:
-    depends_on:
-      - geth
-      - sequencer
-    pid: host
-    build: testnode-tokenbridge/
-    environment:
-      - ARB_URL=http://sequencer:8547
-      - ETH_URL=http://geth:8545
-    volumes:
-      - "sdk-data:/workspace"
-      - /var/run/docker.sock:/var/run/docker.sock
+#  relay:
+#    pid: host
+#    build:
+#      context: .
+#      target: nitro-node-dev
+#    ports:
+#      - "127.0.0.1:9652:9652"
+#    entrypoint: bin/relay
+#    command: --node.feed.output.port 9652 --node.feed.input.url ws://sequencer:9652
+#
+#  testnode-tokenbridge:
+#    depends_on:
+#      - geth
+#      - sequencer
+#    pid: host
+#    build: testnode-tokenbridge/
+#    environment:
+#      - ARB_URL=http://sequencer:8547
+#      - ETH_URL=http://geth:8545
+#    volumes:
+#      - "sdk-data:/workspace"
+#      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   l1data:
