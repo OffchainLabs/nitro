@@ -173,7 +173,10 @@ func TestBisectionChallengeGame(t *testing.T) {
 	err := chain.Tx(func(tx *ActiveTx, chain *AssertionChain) error {
 		// We create a fork with genesis as the parent, where one branch is a higher depth than the other.
 		genesis := chain.LatestConfirmed(tx)
-		require.NoError(chain, AddTo)
+		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+		chain.SetBalance(tx, staker1, bigBalance)
+		chain.SetBalance(tx, staker2, bigBalance)
+
 		correctBranch, err := chain.CreateLeaf(tx, genesis, StateCommitment{6, correctBlockHashes[6]}, staker1)
 		require.NoError(t, err)
 		wrongBranch, err := chain.CreateLeaf(tx, genesis, StateCommitment{7, wrongBlockHashes[7]}, staker2)
