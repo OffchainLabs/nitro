@@ -39,6 +39,23 @@ func OptionMap[T, U any](o Option[T], f func(T) U) Option[U] {
 	return Option[U]{&u}
 }
 
+func OptionMapOrElse[T, U any](o Option[T], f func(T) U, valueIfEmpty U) U {
+	if o.value == nil {
+		return valueIfEmpty
+	}
+	return f(*o.value)
+}
+
+func (o Option[T]) IfLet(fullFunc func(T) error, emptyFunc func() error) error {
+	if o.value == nil {
+		if emptyFunc != nil {
+			emptyFunc()
+		}
+	} else {
+		fullFunc(*o.value)
+	}
+}
+
 type Result[T any] struct {
 	err   error
 	value T
@@ -69,4 +86,45 @@ func ResultMap[T, U any](res Result[T], f func(T) U) Result[U] {
 		return ErrorResult[U](res.err)
 	}
 	return SuccessResult[U](f(res.value))
+}
+
+type MapWithDefault[K, V comparable] struct {
+	contents      map[K]V
+	defaultValue  V
+	equalsDefault func(V) bool
+}
+
+func NewMapWithDefault[K, V comparable](defaultValue V) *MapWithDefault[K, V] {
+	return NewMapWithDefaultAdvanced[K, V](defaultValue, nil)
+}
+
+func NewMapWithDefaultAdvanced[K, V comparable](
+	defaultValue V,
+	equalsDefault func(V) bool, // tests for equality with the default; if this arg is nil, == test will be used
+) *MapWithDefault[K, V] {
+	if equalsDefault == nil {
+		equalsDefault = func(v V) bool { return v == defaultValue }
+	}
+	return &MapWithDefault[K, V]{
+		contents:      make(map[K]V),
+		defaultValue:  defaultValue,
+		equalsDefault: equalsDefault,
+	}
+}
+
+func (md *MapWithDefault[K, V]) Get(key K) V {
+	val, exists := md.contents[key]
+	if exists {
+		return val
+	} else {
+		return md.defaultValue
+	}
+}
+
+func (md *MapWithDefault[K, V]) Set(key K, value V) {
+	if md.equalsDefault(value) {
+		delete(md.contents, key) // save storage by removing item that has default value
+	} else {
+		md.contents[key] = value
+	}
 }

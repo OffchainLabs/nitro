@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"math/big"
 	"testing"
 	"time"
 
@@ -35,8 +36,19 @@ func TestAssertionChain(t *testing.T) {
 			StateRoot: common.Hash{},
 		}, genesis.StateCommitment)
 
-		eventChan = make(chan AssertionChainEvent)
-		chain.feed.Subscribe(ctx, eventChan)
+		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+		chain.SetBalance(tx, staker1, bigBalance)
+		chain.SetBalance(tx, staker2, bigBalance)
+
+		eventChan := make(chan AssertionChainEvent)
+		chain.feed.SubscribeWithFilter(ctx, eventChan, func(ev AssertionChainEvent) bool {
+			switch ev.(type) {
+			case *SetBalanceEvent:
+				return false
+			default:
+				return true
+			}
+		})
 
 		// add an assertion, then confirm it
 		comm := StateCommitment{Height: 1, StateRoot: correctBlockHashes[99]}
@@ -58,7 +70,7 @@ func TestAssertionChain(t *testing.T) {
 		// try to create a duplicate assertion
 		_, err = chain.CreateLeaf(tx, genesis, StateCommitment{1, correctBlockHashes[99]}, staker1)
 		require.ErrorIs(t, err, ErrVertexAlreadyExists)
-		
+
 		// create a fork, let first branch win by timeout
 		comm = StateCommitment{2, correctBlockHashes[199]}
 		branch1, err := chain.CreateLeaf(tx, newAssertion, comm, staker1)
@@ -109,7 +121,7 @@ func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seq
 			t.Fatal(e)
 		}
 	default:
-		t.Fatal()
+		t.Fatal(e)
 	}
 }
 
@@ -161,6 +173,7 @@ func TestBisectionChallengeGame(t *testing.T) {
 	err := chain.Tx(func(tx *ActiveTx, chain *AssertionChain) error {
 		// We create a fork with genesis as the parent, where one branch is a higher depth than the other.
 		genesis := chain.LatestConfirmed(tx)
+		require.NoError(chain, AddTo)
 		correctBranch, err := chain.CreateLeaf(tx, genesis, StateCommitment{6, correctBlockHashes[6]}, staker1)
 		require.NoError(t, err)
 		wrongBranch, err := chain.CreateLeaf(tx, genesis, StateCommitment{7, wrongBlockHashes[7]}, staker2)
@@ -234,6 +247,7 @@ func TestBisectionChallengeGame(t *testing.T) {
 		require.Equal(t, true, bisection.prev.isPresumptiveSuccessor())
 		return nil
 	})
+
 	require.NoError(t, err)
 }
 

@@ -39,13 +39,18 @@ func (feed *EventFeed[Event]) SubscribeWithFilter(ctx context.Context, c chan<- 
 		for {
 			feed.mutex.RLock()
 			closed := feed.closed
+			atEnd := false
 			var event *Event
 			if numRead < len(feed.events) {
 				ev := feed.events[numRead]
 				if filter(ev) {
 					event = &ev
+				} else {
+					event = nil
 				}
 				numRead++
+			} else {
+				atEnd = true
 			}
 			pingChan := feed.pingChan
 			feed.mutex.RUnlock()
@@ -60,13 +65,21 @@ func (feed *EventFeed[Event]) SubscribeWithFilter(ctx context.Context, c chan<- 
 				case <-feed.ctx.Done():
 					return
 				}
-			} else {
+			} else if atEnd {
 				select {
 				case <-pingChan:
 				case <-ctx.Done():
 					return
 				case <-feed.ctx.Done():
 					return
+				}
+			} else {
+				select {
+				case <-ctx.Done():
+					return
+				case <-feed.ctx.Done():
+					return
+				default:
 				}
 			}
 		}
