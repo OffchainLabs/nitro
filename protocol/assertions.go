@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -44,6 +45,7 @@ type OnChainProtocol interface {
 type ChainReader interface {
 	ChallengePeriodLength() time.Duration
 	AssertionBySequenceNumber(ctx context.Context, seqNum uint64) (*Assertion, error)
+	NumAssertions() uint64
 	Call(clo func(*AssertionChain) error) error
 }
 
@@ -131,7 +133,7 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		firstChildCreationTime:  util.EmptyOption[time.Time](),
 		secondChildCreationTime: util.EmptyOption[time.Time](),
 		challenge:               util.EmptyOption[*Challenge](),
-		staker:                  util.EmptyOption[common.Address](),
+		Staker:                  util.EmptyOption[common.Address](),
 	}
 	chain := &AssertionChain{
 		mutex:           sync.RWMutex{},
@@ -178,6 +180,17 @@ func (chain *AssertionChain) LatestConfirmed() *Assertion {
 	return chain.assertions[chain.confirmedLatest]
 }
 
+func (chain *AssertionChain) NumAssertions() uint64 {
+	return uint64(len(chain.assertions))
+}
+
+func (chain *AssertionChain) AssertionBySequenceNumber(ctx context.Context, seqNum uint64) (*Assertion, error) {
+	if seqNum >= uint64(len(chain.assertions)) {
+		return nil, fmt.Errorf("sequencer number out of range %d >= %d", seqNum, len(chain.assertions))
+	}
+	return chain.assertions[seqNum], nil
+}
+
 func (chain *AssertionChain) SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent) {
 	chain.feed.Subscribe(ctx, ch)
 }
@@ -196,14 +209,14 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 		return nil, ErrVertexAlreadyExists
 	}
 
-	if err := prev.staker.IfLet(
+	if err := prev.Staker.IfLet(
 		func(oldStaker common.Address) error {
 			if staker != oldStaker {
 				if err := chain.DeductFromBalance(staker, AssertionStakeWei); err != nil {
 					return err
 				}
 				chain.AddToBalance(staker, AssertionStakeWei)
-				prev.staker = util.EmptyOption[common.Address]()
+				prev.Staker = util.EmptyOption[common.Address]()
 			}
 			return nil
 		},
@@ -227,7 +240,7 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 		firstChildCreationTime:  util.EmptyOption[time.Time](),
 		secondChildCreationTime: util.EmptyOption[time.Time](),
 		challenge:               util.EmptyOption[*Challenge](),
-		staker:                  util.FullOption[common.Address](staker),
+		Staker:                  util.FullOption[common.Address](staker),
 	}
 	if prev.firstChildCreationTime.IsEmpty() {
 		prev.firstChildCreationTime = util.FullOption[time.Time](chain.timeReference.Get())
@@ -309,9 +322,9 @@ func (a *Assertion) ConfirmNoRival() error {
 	a.chain.feed.Append(&ConfirmEvent{
 		SeqNum: a.SequenceNum,
 	})
-	if !a.staker.IsEmpty() {
-		a.chain.AddToBalance(a.staker.OpenKnownFull(), AssertionStakeWei)
-		a.staker = util.EmptyOption[common.Address]()
+	if !a.Staker.IsEmpty() {
+		a.chain.AddToBalance(a.Staker.OpenKnownFull(), AssertionStakeWei)
+		a.Staker = util.EmptyOption[common.Address]()
 	}
 	return nil
 }
@@ -343,6 +356,10 @@ func (a *Assertion) ConfirmForWin() error {
 		SeqNum: a.SequenceNum,
 	})
 	return nil
+}
+
+func (a *Assertion) Prev() util.Option[*Assertion] {
+	return a.prev
 }
 
 type Challenge struct {

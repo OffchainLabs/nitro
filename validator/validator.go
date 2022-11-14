@@ -87,7 +87,7 @@ func New(
 		address:                     common.Address{},
 		createLeafInterval:          5 * time.Second,
 		assertionEvents:             make(chan protocol.AssertionChainEvent, 1),
-		stateUpdateEvents:           make(chan *L2StateEvent, 1),
+		l2StateUpdateEvents:         make(chan *L2StateEvent, 1),
 		createdLeaves:               make(map[common.Hash]*protocol.Assertion),
 		assertionsByParentStateRoot: make(map[common.Hash][]*protocol.Assertion),
 	}
@@ -95,7 +95,7 @@ func New(
 		o(v)
 	}
 	v.protocol.SubscribeChainEvents(ctx, v.assertionEvents)
-	v.stateManager.SubscribeStateEvents(ctx, v.stateUpdateEvents)
+	v.stateManager.SubscribeStateEvents(ctx, v.l2StateUpdateEvents)
 	return v, nil
 }
 
@@ -183,9 +183,9 @@ func (v *Validator) submitLeafCreation(ctx context.Context) *protocol.Assertion 
 	logFields := logrus.Fields{
 		"name":                       v.name,
 		"latestValidParentHeight":    fmt.Sprintf("%+v", parentAssertion.StateCommitment.Height),
-		"latestValidParentStateRoot": util.FormatHash(parentAssertion.StateCommitment.StateRoot),
+		"latestValidParentStateRoot": fmt.Sprintf("%#x", parentAssertion.StateCommitment.StateRoot),
 		"leafHeight":                 currentCommit.Height,
-		"leafCommitmentMerkle":       util.FormatHash(currentCommit.Merkle),
+		"leafCommitmentMerkle":       fmt.Sprintf("%#x", currentCommit.Merkle),
 	}
 	leaf, err := v.protocol.CreateLeaf(parentAssertion, stateCommit, v.address)
 	switch {
@@ -209,7 +209,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) *protocol.Assertion 
 func (v *Validator) findLatestValidAssertion(ctx context.Context) (*protocol.Assertion, error) {
 	latestValidParent := v.protocol.LatestConfirmed()
 	for s := latestValidParent.SequenceNum; s < v.protocol.NumAssertions(); s++ {
-		a, err := v.protocol.AssertionBySequenceNumber(s)
+		a, err := v.protocol.AssertionBySequenceNumber(ctx, s)
 		if err != nil {
 			return nil, err
 		}
@@ -240,7 +240,7 @@ func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
 func (v *Validator) processLeafCreation(ctx context.Context, seqNum uint64, stateCommit protocol.StateCommitment) error {
 	// Detect if there is a fork, then decide if we want to challenge.
 	// We check if the parent assertion has > 1 child.
-	assertion, err := v.protocol.AssertionBySequenceNumber(seqNum)
+	assertion, err := v.protocol.AssertionBySequenceNumber(ctx, seqNum)
 	if err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ func (v *Validator) processLeafCreation(ctx context.Context, seqNum uint64, stat
 
 func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.StartChallengeEvent) error {
 	// Checks if the challenge has to do with a vertex we created.
-	challengedAssertion, err := v.protocol.AssertionBySequenceNumber(ev.ParentSeqNum)
+	challengedAssertion, err := v.protocol.AssertionBySequenceNumber(ctx, ev.ParentSeqNum)
 	if err != nil {
 		return err
 	}
