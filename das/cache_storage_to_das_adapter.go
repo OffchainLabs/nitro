@@ -83,10 +83,6 @@ func (s *emptyStorageService) Put(ctx context.Context, data []byte, expiration u
 	return nil
 }
 
-func (s *emptyStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	return nil
-}
-
 func (s *emptyStorageService) Sync(ctx context.Context) error {
 	return nil
 }

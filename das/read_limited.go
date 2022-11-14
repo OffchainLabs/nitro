@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
@@ -27,10 +26,6 @@ type readLimitedStorageService struct {
 
 func (s *readLimitedStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
 	panic("Logic error: readLimitedStorageService.Put shouldn't be called.")
-}
-
-func (s *readLimitedStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	panic("Logic error: readLimitedStorageService.putKeyValue shouldn't be called.")
 }
 
 func (s *readLimitedStorageService) Sync(ctx context.Context) error {
