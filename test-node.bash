@@ -36,7 +36,6 @@ consensusclient=false
 redundantsequencers=0
 batchposters=1
 devprivkey=45a915e4d060149eb4365960e6a7a45f334393093061116b197e3240065ff2d8
-etherbaseprivkey=e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -116,37 +115,37 @@ if $force_init; then
     force_build=true
 fi
 
-NODES=""
+NODES="sequencer"
 
-#if [ $redundantsequencers -gt 0 ]; then
-#    NODES="$NODES sequencer_b"
-#fi
-#if [ $redundantsequencers -gt 1 ]; then
-#    NODES="$NODES sequencer_c"
-#fi
-#if [ $redundantsequencers -gt 2 ]; then
-#    NODES="$NODES sequencer_d"
-#fi
-#
-#if [ $batchposters -gt 0 ]; then
-#    NODES="$NODES poster"
-#fi
-#if [ $batchposters -gt 1 ]; then
-#    NODES="$NODES poster_b"
-#fi
-#if [ $batchposters -gt 2 ]; then
-#    NODES="$NODES poster_c"
-#fi
+if [ $redundantsequencers -gt 0 ]; then
+    NODES="$NODES sequencer_b"
+fi
+if [ $redundantsequencers -gt 1 ]; then
+    NODES="$NODES sequencer_c"
+fi
+if [ $redundantsequencers -gt 2 ]; then
+    NODES="$NODES sequencer_d"
+fi
+
+if [ $batchposters -gt 0 ]; then
+    NODES="$NODES poster"
+fi
+if [ $batchposters -gt 1 ]; then
+    NODES="$NODES poster_b"
+fi
+if [ $batchposters -gt 2 ]; then
+    NODES="$NODES poster_c"
+fi
 
 
-#if $validate; then
-#    NODES="$NODES validator"
-#else
-#    NODES="$NODES staker-unsafe"
-#fi
-#if $blockscout; then
-#    NODES="$NODES blockscout"
-#fi
+if $validate; then
+    NODES="$NODES validator"
+else
+    NODES="$NODES staker-unsafe"
+fi
+if $blockscout; then
+    NODES="$NODES blockscout"
+fi
 #if $consensusclient; then
 #    NODES="$NODES create_beacon_chain_genesis"
 #    NODES="$NODES prysm_beacon_node"
@@ -172,8 +171,6 @@ if $force_init; then
     docker-compose run --entrypoint sh geth -c "echo $devprivkey > /root/.ethereum/tmp-funnelkey"
     docker-compose run geth account import --password /root/.ethereum/passphrase --keystore=/keystore /root/.ethereum/tmp-funnelkey
     docker-compose run --entrypoint sh geth -c "rm /root/.ethereum/tmp-funnelkey"
-    docker-compose run --entrypoint sh geth -c "echo $etherbaseprivkey > /root/.ethereum/tmp-etherbasekey"
-    docker-compose run geth account import --password /root/.ethereum/passphrase --keystore=/keystore /root/.ethereum/tmp-etherbasekey
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /keystore"
@@ -198,39 +195,39 @@ if $force_init; then
     docker-compose up -d prysm_beacon_chain
     docker-compose up -d prysm_validator
 
-#    echo == Funding validator and sequencer
-#    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
-#    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer
-#
-#    echo == Deploying L2
-#    sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
-#    docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines
-#
-#    echo == Writing configs
-#    docker-compose run testnode-scripts write-config
-#
-#    echo == Initializing redis
-#    docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
-#
-#    docker-compose run testnode-scripts bridge-funds --ethamount 100000
-#
-#    if $tokenbridge; then
-#        echo == Deploying token bridge
-#        docker-compose run -e ARB_KEY=$devprivkey -e ETH_KEY=$devprivkey testnode-tokenbridge gen:network
-#        docker-compose run --entrypoint sh testnode-tokenbridge -c "cat localNetwork.json"
-#        echo
-#    fi
+    echo == Funding validator and sequencer
+    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
+    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer
+
+    echo == Deploying L2
+    sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
+    docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines
+
+    echo == Writing configs
+    docker-compose run testnode-scripts write-config
+
+    echo == Initializing redis
+    docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
+
+    docker-compose run testnode-scripts bridge-funds --ethamount 100000
+
+    if $tokenbridge; then
+        echo == Deploying token bridge
+        docker-compose run -e ARB_KEY=$devprivkey -e ETH_KEY=$devprivkey testnode-tokenbridge gen:network
+        docker-compose run --entrypoint sh testnode-tokenbridge -c "cat localNetwork.json"
+        echo
+    fi
 fi
 
-#if $run; then
-#    UP_FLAG=""
-#    if $detach; then
-#        UP_FLAG="-d"
-#    fi
-#
-#    echo == Launching Sequencer
-#    echo if things go wrong - use --init to create a new chain
-#    echo
-#
-#    docker-compose up $UP_FLAG $NODES
-#fi
+if $run; then
+    UP_FLAG=""
+    if $detach; then
+        UP_FLAG="-d"
+    fi
+
+    echo == Launching Sequencer
+    echo if things go wrong - use --init to create a new chain
+    echo
+
+    docker-compose up $UP_FLAG $NODES
+fi
