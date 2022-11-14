@@ -43,6 +43,7 @@ type OnChainProtocol interface {
 // ChainReader can make non-mutating calls to the on-chain protocol.
 type ChainReader interface {
 	ChallengePeriodLength() time.Duration
+	AssertionBySequenceNumber(ctx context.Context, seqNum uint64) (*Assertion, error)
 	Call(clo func(*AssertionChain) error) error
 }
 
@@ -95,16 +96,16 @@ const (
 type AssertionState int
 
 type Assertion struct {
-	chain                   *AssertionChain
-	status                  AssertionState
 	SequenceNum             uint64
 	StateCommitment         StateCommitment
+	Staker                  util.Option[common.Address]
+	chain                   *AssertionChain
+	status                  AssertionState
 	prev                    util.Option[*Assertion]
 	isFirstChild            bool
 	firstChildCreationTime  util.Option[time.Time]
 	secondChildCreationTime util.Option[time.Time]
 	challenge               util.Option[*Challenge]
-	staker                  util.Option[common.Address]
 }
 
 type StateCommitment struct {
