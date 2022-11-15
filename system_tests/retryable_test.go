@@ -50,7 +50,7 @@ func retryableSetup(t *testing.T) (
 	Require(t, err)
 
 	lookupSubmitRetryableL2TxHash := func(l1Receipt *types.Receipt) common.Hash {
-		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber)
+		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber, nil)
 		Require(t, err)
 		if len(messages) == 0 {
 			Fail(t, "didn't find message for retryable submission")

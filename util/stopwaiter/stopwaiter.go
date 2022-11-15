@@ -117,11 +117,11 @@ func getAllStackTraces() string {
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 	s.StopOnly()
-	timer := time.NewTimer(warningTimeout)
 	waitChan, err := s.GetWaitChannel()
 	if err != nil {
 		return err
 	}
+	timer := time.NewTimer(warningTimeout)
 
 	select {
 	case <-timer.C:
@@ -129,6 +129,7 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 		log.Warn("taking too long to stop", "name", s.name, "delay[s]", warningTimeout.Seconds())
 		log.Warn(traces)
 	case <-waitChan:
+		timer.Stop()
 		return nil
 	}
 	<-waitChan
