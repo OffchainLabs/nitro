@@ -25,12 +25,13 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	msg := L1IncomingMessage{
 		&header,
 		[]byte{3, 2, 1},
+		nil,
 	}
 	serialized, err := msg.Serialize()
 	if err != nil {
 		t.Error(err)
 	}
-	newMsg, err := ParseIncomingL1Message(bytes.NewReader(serialized))
+	newMsg, err := ParseIncomingL1Message(bytes.NewReader(serialized), nil)
 	if err != nil {
 		t.Error(err)
 	}

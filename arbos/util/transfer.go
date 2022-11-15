@@ -43,7 +43,7 @@ func TransferBalance(
 		if evm.Depth() != 0 && scenario != TracingDuringEVM {
 			// A non-zero depth implies this transfer is occuring inside EVM execution
 			log.Error("Tracing scenario mismatch", "scenario", scenario, "depth", evm.Depth())
-			return errors.New("Tracing scenario mismatch")
+			return errors.New("tracing scenario mismatch")
 		}
 
 		if scenario != TracingDuringEVM {

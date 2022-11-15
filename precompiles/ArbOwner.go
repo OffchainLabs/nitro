@@ -5,6 +5,7 @@ package precompiles
 
 import (
 	"errors"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -134,4 +135,24 @@ func (con ArbOwner) SetPerBatchGasCharge(c ctx, evm mech, cost int64) error {
 
 func (con ArbOwner) SetAmortizedCostCapBips(c ctx, evm mech, cap uint64) error {
 	return c.State.L1PricingState().SetAmortizedCostCapBips(cap)
+}
+
+func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease huge) (huge, error) {
+	balance := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
+	l1p := c.State.L1PricingState()
+	recognized, err := l1p.L1FeesAvailable()
+	if err != nil {
+		return nil, err
+	}
+	weiToTransfer := new(big.Int).Sub(balance, recognized)
+	if weiToTransfer.Sign() < 0 {
+		return common.Big0, nil
+	}
+	if weiToTransfer.Cmp(maxWeiToRelease) > 0 {
+		weiToTransfer = maxWeiToRelease
+	}
+	if _, err := l1p.AddToL1FeesAvailable(weiToTransfer); err != nil {
+		return nil, err
+	}
+	return weiToTransfer, nil
 }
