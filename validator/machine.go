@@ -123,6 +123,11 @@ func (m *ArbitratorMachine) IsErrored() bool {
 	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_ERRORED
 }
 
+func (m *ArbitratorMachine) Status() uint8 {
+	defer runtime.KeepAlive(m)
+	return uint8(C.arbitrator_get_status(m.ptr))
+}
+
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
 	haveStep := m.GetStepCount()
 	if haveStep > requestedStep {
