@@ -116,7 +116,7 @@ func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.Fi
 		glogger = log.NewGlogHandler(
 			log.MultiHandler(
 				log.StreamHandler(os.Stderr, logFormat),
-				// on overflow records are dropped silently MultiHandler ignores errors
+				// on overflow records are dropped silently as MultiHandler ignores errors
 				log.FuncHandler(func(r *log.Record) error {
 					select {
 					case records <- r:
