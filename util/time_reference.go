@@ -47,7 +47,7 @@ type realTimeTicker struct {
 }
 
 func newRealTimeTicker(duration time.Duration) *realTimeTicker {
-	return &realTimeTicker{time.NewTicker(time.Duration(duration) * time.Second)}
+	return &realTimeTicker{time.NewTicker(duration * time.Second)}
 }
 
 func (ticker *realTimeTicker) C() <-chan time.Time {

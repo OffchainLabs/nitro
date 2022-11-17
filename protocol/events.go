@@ -1,9 +1,10 @@
 package protocol
 
 import (
+	"math/big"
+
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
-	"math/big"
 )
 
 type AssertionChainEvent interface {
