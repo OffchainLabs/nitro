@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/holiman/uint256"
 )
 
@@ -39,10 +40,11 @@ func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenar
 	if evm.Config.Tracer == nil || !evm.Config.Debug {
 		return nil
 	}
+	// TODO firehose context
 	return &TracingInfo{
 		Tracer:   evm.Config.Tracer,
 		Scenario: scenario,
-		Contract: vm.NewContract(addressHolder{to}, addressHolder{from}, big.NewInt(0), 0),
+		Contract: vm.NewContract(addressHolder{to}, addressHolder{from}, big.NewInt(0), 0, firehose.NoOpContext),
 		Depth:    evm.Depth(),
 	}
 }
@@ -79,7 +81,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 	tracer := info.Tracer
 	depth := info.Depth
 
-	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, amount, gas)
+	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, amount, gas, firehose.NoOpContext)
 
 	scope := &vm.ScopeContext{
 		Memory: TracingMemoryFromBytes(input),

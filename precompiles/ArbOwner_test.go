@@ -4,11 +4,13 @@
 package precompiles
 
 import (
-	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math/big"
 	"testing"
 
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/firehose"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -111,7 +113,8 @@ func TestArbOwner(t *testing.T) {
 		Fail(t, avail)
 	}
 	deposited := big.NewInt(1000000)
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, deposited)
+	isPrecompiledAddr := true
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, deposited, isPrecompiledAddr, firehose.NoOpContext, firehose.IgnoredBalanceChangeReason)
 	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
 	Require(t, err)
 	if avail.Sign() != 0 {

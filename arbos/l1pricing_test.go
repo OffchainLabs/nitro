@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -171,7 +172,9 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	// create some fake collection
 	balanceAdded := big.NewInt(int64(testParams.fundsCollectedPerSecond * 3))
 	unitsAdded := uint64(testParams.unitsPerSecond * 3)
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, balanceAdded)
+	// TODO isPrecompiledAddr
+	isPrecompiledAddr := true
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, balanceAdded, isPrecompiledAddr, firehose.NoOpContext, firehose.IgnoredBalanceChangeReason)
 	err = l1p.SetL1FeesAvailable(balanceAdded)
 	Require(t, err)
 	err = l1p.SetUnitsSinceUpdate(unitsAdded)
@@ -319,7 +322,7 @@ func newMockEVMForTesting() *vm.EVM {
 		GasLimit:    ^uint64(0),
 		Time:        big.NewInt(0),
 	}
-	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{}, firehose.NoOpContext)
 	evm.ProcessingHook = &TxProcessor{}
 	return evm
 }

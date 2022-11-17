@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -48,15 +49,15 @@ func (e Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 	return nil
 }
 
-func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
+func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, firehoseContext *firehose.Context) {
 	FinalizeBlock(header, txs, state, chain.Config())
 	header.Root = state.IntermediateRoot(true)
 }
 
 func (e Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction,
-	uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
+	uncles []*types.Header, receipts []*types.Receipt, firehoseContext *firehose.Context) (*types.Block, error) {
 
-	e.Finalize(chain, header, state, txs, uncles)
+	e.Finalize(chain, header, state, txs, uncles, firehoseContext)
 
 	block := types.NewBlock(header, txs, nil, receipts, trie.NewStackTrie(nil))
 	return block, nil

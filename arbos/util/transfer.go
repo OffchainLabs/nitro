@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -32,10 +33,13 @@ func TransferBalance(
 		if arbmath.BigLessThan(balance, amount) {
 			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
 		}
-		evm.StateDB.SubBalance(*from, amount)
+		// TODO firehose context & reason
+		evm.StateDB.SubBalance(*from, amount, firehose.NoOpContext, firehose.IgnoredBalanceChangeReason)
 	}
 	if to != nil {
-		evm.StateDB.AddBalance(*to, amount)
+		// TODO firehose context & reason & isPrecompiledAddr
+		isPrecompiledAddr := true
+		evm.StateDB.AddBalance(*to, amount, isPrecompiledAddr, firehose.NoOpContext, firehose.IgnoredBalanceChangeReason)
 	}
 	if evm.Config.Debug {
 		tracer := evm.Config.Tracer
@@ -58,10 +62,11 @@ func TransferBalance(
 			to = &common.Address{}
 		}
 
+		// TODO firehose context
 		info := &TracingInfo{
 			Tracer:   evm.Config.Tracer,
 			Scenario: scenario,
-			Contract: vm.NewContract(addressHolder{*to}, addressHolder{*from}, big.NewInt(0), 0),
+			Contract: vm.NewContract(addressHolder{*to}, addressHolder{*from}, big.NewInt(0), 0, firehose.NoOpContext),
 			Depth:    evm.Depth(),
 		}
 		info.MockCall([]byte{}, 0, *from, *to, amount)

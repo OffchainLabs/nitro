@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -280,6 +281,7 @@ func ProduceBlockAdvanced(
 			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
 
 			gasPool := gethGas
+			// TODO firehose context
 			receipt, result, err := core.ApplyTransactionWithResultFilter(
 				chainConfig,
 				chainContext,
@@ -293,6 +295,7 @@ func ProduceBlockAdvanced(
 				func(result *core.ExecutionResult) error {
 					return hooks.PostTxFilter(header, state, tx, sender, dataGas, result)
 				},
+				firehose.NoOpContext,
 			)
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function

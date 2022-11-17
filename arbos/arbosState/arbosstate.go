@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -192,7 +193,8 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	// Solidity requires call targets have code, but precompiles don't.
 	// To work around this, we give precompiles fake code.
 	for _, precompile := range getArbitrumOnlyPrecompiles(chainConfig) {
-		stateDB.SetCode(precompile, []byte{byte(vm.INVALID)})
+		// TODO firehose context
+		stateDB.SetCode(precompile, []byte{byte(vm.INVALID)}, firehose.NoOpContext)
 	}
 
 	// may be the zero address

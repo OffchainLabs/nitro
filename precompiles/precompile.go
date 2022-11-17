@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -428,7 +429,8 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Pre
 				//   TxHash, TxIndex, Index, and Removed
 			}
 
-			state.AddLog(event)
+			// TODO firehose context
+			state.AddLog(event, firehose.NoOpContext)
 			return []reflect.Value{nilError}
 		}
 

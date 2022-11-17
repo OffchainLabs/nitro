@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -87,7 +88,8 @@ func init() {
 				return msg, nil, nil
 			}
 
-			evm, vmError, err := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true})
+			// TODO firehoseContext
+			evm, vmError, err := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true}, firehose.NoOpContext)
 			if err != nil {
 				return msg, nil, err
 			}

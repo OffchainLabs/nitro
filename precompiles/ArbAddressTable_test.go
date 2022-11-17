@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -164,7 +165,7 @@ func newMockEVMForTestingWithVersion(version *uint64) *vm.EVM {
 		GasLimit:    ^uint64(0),
 		Time:        big.NewInt(0),
 	}
-	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{}, firehose.NoOpContext)
 	evm.ProcessingHook = &arbos.TxProcessor{}
 	return evm
 }

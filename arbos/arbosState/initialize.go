@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -141,12 +142,13 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		if err != nil {
 			return common.Hash{}, err
 		}
-		statedb.SetBalance(account.Addr, account.EthBalance)
-		statedb.SetNonce(account.Addr, account.Nonce)
+		// TODO firehose context & reason
+		statedb.SetBalance(account.Addr, account.EthBalance, firehose.NoOpContext, firehose.IgnoredBalanceChangeReason)
+		statedb.SetNonce(account.Addr, account.Nonce, firehose.NoOpContext)
 		if account.ContractInfo != nil {
-			statedb.SetCode(account.Addr, account.ContractInfo.Code)
+			statedb.SetCode(account.Addr, account.ContractInfo.Code, firehose.NoOpContext)
 			for k, v := range account.ContractInfo.ContractStorage {
-				statedb.SetState(account.Addr, k, v)
+				statedb.SetState(account.Addr, k, v, firehose.NoOpContext)
 			}
 		}
 		accountsRead++
@@ -172,7 +174,9 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 			return err
 		}
 		if r.Timeout <= currentTimestamp {
-			statedb.AddBalance(r.Beneficiary, r.Callvalue)
+			// TODO firehose context & reason & isPrecompiledAddr
+			isPrecompiledAddr := true
+			statedb.AddBalance(r.Beneficiary, r.Callvalue, isPrecompiledAddr, firehose.NoOpContext, firehose.IgnoredBalanceChangeReason)
 			continue
 		}
 		retryablesList = append(retryablesList, r)
@@ -190,7 +194,9 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 		if r.To != (common.Address{}) {
 			to = &r.To
 		}
-		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), r.Callvalue)
+		// TODO firehose context & reason & isPrecompiledAddr
+		isPrecompiledAddr := true
+		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), r.Callvalue, isPrecompiledAddr, firehose.NoOpContext, firehose.IgnoredBalanceChangeReason)
 		_, err := rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
