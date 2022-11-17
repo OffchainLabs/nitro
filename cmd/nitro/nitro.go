@@ -107,31 +107,24 @@ func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.Fi
 			_, err := fileWriter.Write(logFormat.Format(r))
 			return err
 		}))
-		droppingChannelHandler := func(records chan<- *log.Record) log.Handler {
-			return log.FuncHandler(func(r *log.Record) error {
-				select {
-				case records <- r:
-					return nil
-				default:
-					return fmt.Errorf("Buffer overflow, dropping record")
-				}
-			})
-		}
-		// on overflow records are dropped silently
-		droppingBufferedHandler := func(bufSize int, h log.Handler) log.Handler {
-			records := make(chan *log.Record, bufSize)
-			go func() {
-				for m := range records {
-					_ = h.Log(m)
-				}
-			}()
-			return droppingChannelHandler(records)
-		}
+		records := make(chan *log.Record, fileLoggingConfig.BufSize)
+		go func() {
+			for r := range records {
+				_ = unsafeStreamHandler.Log(r)
+			}
+		}()
 		glogger = log.NewGlogHandler(
 			log.MultiHandler(
 				log.StreamHandler(os.Stderr, logFormat),
-				droppingBufferedHandler(fileLoggingConfig.BufSize, unsafeStreamHandler),
-			))
+				// on overflow records are dropped silently MultiHandler ignores errors
+				log.FuncHandler(func(r *log.Record) error {
+					select {
+					case records <- r:
+						return nil
+					default:
+						return fmt.Errorf("Buffer overflow, dropping record")
+					}
+				})))
 	} else {
 		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	}
