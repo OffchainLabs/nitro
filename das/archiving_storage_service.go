@@ -18,15 +18,10 @@ import (
 
 var ErrArchiveTimeout = errors.New("archiver timed out")
 
-type keyValue struct {
-	key   common.Hash
-	value []byte
-}
 type ArchivingStorageService struct {
 	inner                  StorageService
 	archiveTo              StorageService
 	archiveChan            chan []byte
-	archiveChanKeyValue    chan keyValue
 	archiveChanClosed      bool
 	archiveChanClosedMutex sync.Mutex
 	hardStopFunc           func()
@@ -42,13 +37,11 @@ func NewArchivingStorageService(
 	archiveExpirationSeconds uint64,
 ) (*ArchivingStorageService, error) {
 	archiveChan := make(chan []byte, 256)
-	archiveChanKeyValue := make(chan keyValue, 256)
 	hardStopCtx, hardStopFunc := context.WithCancel(ctx)
 	ret := &ArchivingStorageService{
 		inner:               inner,
 		archiveTo:           archiveTo,
 		archiveChan:         archiveChan,
-		archiveChanKeyValue: archiveChanKeyValue,
 		hardStopFunc:        hardStopFunc,
 		stoppedSignal:       make(chan interface{}),
 		archiverErrorSignal: make(chan interface{}),
@@ -61,25 +54,11 @@ func NewArchivingStorageService(
 			select {
 			case data, stillOpen := <-archiveChan:
 				if !stillOpen {
-					// we successfully archived Put inputs, and our input chan is closed.
-					archiveChan = nil
+					// we successfully archived everything, and our input chan is closed, so shut down cleanly.
+					return
 				}
 				expiration := arbmath.SaturatingUAdd(uint64(time.Now().Unix()), archiveExpirationSeconds)
 				err := archiveTo.Put(hardStopCtx, data, expiration)
-				if err != nil {
-					// we hit an error writing to the archive; record the error and keep going
-					ret.archiverError = err
-					if !anyErrors {
-						close(ret.archiverErrorSignal)
-						anyErrors = true
-					}
-				}
-			case keyValue, stillOpen := <-archiveChanKeyValue:
-				if !stillOpen {
-					// we successfully archived putByKeyValue inputs, and our input chan is closed.
-					archiveChanKeyValue = nil
-				}
-				err := convertStorageServiceToIterationCompatibleStorageService(archiveTo).putKeyValue(hardStopCtx, keyValue.key, keyValue.value)
 				if err != nil {
 					// we hit an error writing to the archive; record the error and keep going
 					ret.archiverError = err
@@ -94,10 +73,6 @@ func NewArchivingStorageService(
 				if !anyErrors {
 					close(ret.archiverErrorSignal)
 				}
-				return
-			}
-			if archiveChan == nil && archiveChanKeyValue == nil {
-				// we successfully archived everything, and our both input chan is closed, so shut down cleanly
 				return
 			}
 		}
@@ -135,18 +110,6 @@ func (serv *ArchivingStorageService) Put(ctx context.Context, data []byte, expir
 	}
 }
 
-func (serv *ArchivingStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	if err := convertStorageServiceToIterationCompatibleStorageService(serv.inner).putKeyValue(ctx, key, value); err != nil {
-		return err
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case serv.archiveChanKeyValue <- keyValue{key: key, value: value}:
-		return nil
-	}
-}
-
 func (serv *ArchivingStorageService) Sync(ctx context.Context) error { // syncs inner but not the archiver
 	return serv.inner.Sync(ctx)
 }
@@ -156,7 +119,6 @@ func (serv *ArchivingStorageService) Close(ctx context.Context) error {
 	serv.archiveChanClosedMutex.Lock()
 	if !serv.archiveChanClosed {
 		close(serv.archiveChan)
-		close(serv.archiveChanKeyValue)
 		serv.archiveChanClosed = true
 	}
 	serv.archiveChanClosedMutex.Unlock()
