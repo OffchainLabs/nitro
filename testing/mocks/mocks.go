@@ -20,13 +20,18 @@ func (m *MockStateManager) LatestHistoryCommitment(ctx context.Context) util.His
 	return args.Get(0).(util.HistoryCommitment)
 }
 
-func (m *MockStateManager) HasStateRoot(ctx context.Context, stateRoot common.Hash) bool {
-	args := m.Called(ctx, stateRoot)
+func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit protocol.StateCommitment) bool {
+	args := m.Called(ctx, commit)
 	return args.Bool(0)
 }
 
 func (m *MockStateManager) StateCommitmentAtHeight(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
 	args := m.Called(ctx, height)
+	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+}
+
+func (m *MockStateManager) LatestStateCommitment(ctx context.Context) (util.HistoryCommitment, error) {
+	args := m.Called(ctx)
 	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
