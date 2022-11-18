@@ -17,11 +17,7 @@ type MockStateManager struct {
 
 func (m *MockStateManager) LatestHistoryCommitment(ctx context.Context) util.HistoryCommitment {
 	args := m.Called(ctx)
-	ret, ok := args.Get(0).(util.HistoryCommitment)
-	if !ok {
-		panic("not ok")
-	}
-	return ret
+	return args.Get(0).(util.HistoryCommitment)
 }
 
 func (m *MockStateManager) HasStateRoot(ctx context.Context, stateRoot common.Hash) bool {
@@ -31,11 +27,7 @@ func (m *MockStateManager) HasStateRoot(ctx context.Context, stateRoot common.Ha
 
 func (m *MockStateManager) StateCommitmentAtHeight(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
 	args := m.Called(ctx, height)
-	ret, ok := args.Get(0).(util.HistoryCommitment)
-	if !ok {
-		panic("not ok")
-	}
-	return ret, args.Error(1)
+	return args.Get(0).(util.HistoryCommitment), args.Error(1)
 }
 
 func (m *MockStateManager) SubscribeStateEvents(ctx context.Context, ch chan<- *statemanager.L2StateEvent) {
@@ -55,47 +47,27 @@ func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- proto
 
 func (m *MockProtocol) LatestConfirmed() *protocol.Assertion {
 	args := m.Called()
-	ret, ok := args.Get(0).(*protocol.Assertion)
-	if !ok {
-		panic("not ok")
-	}
-	return ret
+	return args.Get(0).(*protocol.Assertion)
 }
 
 func (m *MockProtocol) CreateLeaf(prev *protocol.Assertion, commitment protocol.StateCommitment, staker common.Address) (*protocol.Assertion, error) {
 	args := m.Called(prev, commitment, staker)
-	ret, ok := args.Get(0).(*protocol.Assertion)
-	if !ok {
-		panic("not ok")
-	}
-	return ret, args.Error(1)
+	return args.Get(0).(*protocol.Assertion), args.Error(1)
 }
 
 func (m *MockProtocol) ChallengePeriodLength() time.Duration {
 	args := m.Called()
-	dur, ok := args.Get(0).(time.Duration)
-	if !ok {
-		panic("not ok")
-	}
-	return dur
+	return args.Get(0).(time.Duration)
 }
 
 func (m *MockProtocol) AssertionBySequenceNumber(ctx context.Context, seqNum uint64) (*protocol.Assertion, error) {
 	args := m.Called(ctx, seqNum)
-	r, ok := args.Get(0).(*protocol.Assertion)
-	if !ok {
-		panic("not ok")
-	}
-	return r, args.Error(1)
+	return args.Get(0).(*protocol.Assertion), args.Error(1)
 }
 
 func (m *MockProtocol) NumAssertions() uint64 {
 	args := m.Called()
-	r, ok := args.Get(0).(uint64)
-	if !ok {
-		panic("not ok")
-	}
-	return r
+	return args.Get(0).(uint64)
 }
 
 func (m *MockProtocol) Call(clo func(*protocol.AssertionChain) error) error {

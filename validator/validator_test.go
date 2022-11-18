@@ -2,29 +2,56 @@ package validator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/OffchainLabs/new-rollup-exploration/testing/mocks"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/sirupsen/logrus/hooks/test"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func Test_processChallengeStart(t *testing.T) {
-	p := &mocks.MockProtocol{}
-	p.On("NumAssertions").Return(uint64(100))
-	n := p.NumAssertions()
-	assert.Equal(t, uint64(100), n)
 	ctx := context.Background()
-	s := &mocks.MockStateManager{}
 
-	v, err := New(ctx, p, s)
-	require.NoError(t, err)
-	_ = v
+	seq := uint64(1)
+	wantErr := errors.New("not found")
+
+	t.Run("reading assertion fails", func(t *testing.T) {
+		p := &mocks.MockProtocol{}
+		s := &mocks.MockStateManager{}
+		v, err := New(ctx, p, s)
+		require.NoError(t, err)
+
+		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
+		err = v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
+			ParentSeqNum: seq,
+		})
+		require.ErrorIs(t, err, wantErr)
+	})
+	t.Run("challenge does not concern us", func(t *testing.T) {
+		p := &mocks.MockProtocol{}
+		s := &mocks.MockStateManager{}
+		v, err := New(ctx, p, s)
+		require.NoError(t, err)
+
+		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{
+			StateCommitment: protocol.StateCommitment{
+				Height:    0,
+				StateRoot: common.BytesToHash([]byte("foo")),
+			},
+		}, nil)
+		err = v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
+			ParentSeqNum: seq,
+		})
+		require.NoError(t, err)
+	})
+
 }
 
 type assertionLoggerFn func(string, ...interface{})
