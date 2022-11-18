@@ -58,14 +58,15 @@ func printSampleUsage(name string) {
 	fmt.Printf("Sample usage: %s --help \n", name)
 }
 
-type FileLogger struct {
-	writer *lumberjack.Logger
-	lock   sync.Mutex
+type fileHandlerFactory struct {
+	writer  *lumberjack.Logger
+	records chan *log.Record
+	cancel  context.CancelFunc
 }
 
-func (l *FileLogger) NewWriter(config *genericconf.FileLoggingConfig) io.Writer {
-	l.lock.Lock()
-	defer l.lock.Unlock()
+// newHandler is not threadsafe
+func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *genericconf.FileLoggingConfig) log.Handler {
+	l.close()
 	l.writer = &lumberjack.Logger{
 		Filename:   config.File,
 		MaxSize:    config.MaxSize,
@@ -73,22 +74,55 @@ func (l *FileLogger) NewWriter(config *genericconf.FileLoggingConfig) io.Writer 
 		MaxAge:     config.MaxAge,
 		Compress:   config.Compress,
 	}
-	return l.writer
+	// capture copy of the pointer
+	writer := l.writer
+	// lumberjack.Logger already locks on Write, no need for SyncHandler proxy which is used in StreamHandler
+	unsafeStreamHandler := log.LazyHandler(log.FuncHandler(func(r *log.Record) error {
+		_, err := writer.Write(logFormat.Format(r))
+		return err
+	}))
+	l.records = make(chan *log.Record, config.BufSize)
+	// capture copy
+	records := l.records
+	var consumerCtx context.Context
+	consumerCtx, l.cancel = context.WithCancel(context.Background())
+	go func() {
+		for {
+			select {
+			case r := <-records:
+				_ = unsafeStreamHandler.Log(r)
+			case <-consumerCtx.Done():
+				return
+			}
+		}
+	}()
+	return log.FuncHandler(func(r *log.Record) error {
+		select {
+		case records <- r:
+			return nil
+		default:
+			return fmt.Errorf("Buffer overflow, dropping record")
+		}
+	})
 }
 
-func (l *FileLogger) Close() error {
-	var err error
-	l.lock.Lock()
-	defer l.lock.Unlock()
+func (l *fileHandlerFactory) close() error {
+	if l.cancel != nil {
+		l.cancel()
+		l.cancel = nil
+	}
 	if l.writer != nil {
-		err = l.writer.Close()
+		if err := l.writer.Close(); err != nil {
+			return err
+		}
 		l.writer = nil
 	}
-	return err
+	return nil
 }
 
-var fileLogger = FileLogger{}
+var globalFileHandlerFactory = fileHandlerFactory{}
 
+// initLog is not threadsafe
 func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.FileLoggingConfig) error {
 	logFormat, err := genericconf.ParseLogType(logType)
 	if err != nil {
@@ -97,34 +131,16 @@ func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.Fi
 	}
 	var glogger *log.GlogHandler
 	// always close previous instance of file logger
-	if err := fileLogger.Close(); err != nil {
-		return fmt.Errorf("failed to close FileLogger: %w", err)
+	if err := globalFileHandlerFactory.close(); err != nil {
+		return fmt.Errorf("failed to close file writer: %w", err)
 	}
 	if fileLoggingConfig.Enable {
-		fileWriter := fileLogger.NewWriter(fileLoggingConfig)
-		// lumberjack.Logger already locks on Write, no need for SyncHandler proxy which is used in StreamHandler
-		unsafeStreamHandler := log.LazyHandler(log.FuncHandler(func(r *log.Record) error {
-			_, err := fileWriter.Write(logFormat.Format(r))
-			return err
-		}))
-		records := make(chan *log.Record, fileLoggingConfig.BufSize)
-		go func() {
-			for r := range records {
-				_ = unsafeStreamHandler.Log(r)
-			}
-		}()
 		glogger = log.NewGlogHandler(
 			log.MultiHandler(
 				log.StreamHandler(os.Stderr, logFormat),
 				// on overflow records are dropped silently as MultiHandler ignores errors
-				log.FuncHandler(func(r *log.Record) error {
-					select {
-					case records <- r:
-						return nil
-					default:
-						return fmt.Errorf("Buffer overflow, dropping record")
-					}
-				})))
+				globalFileHandlerFactory.newHandler(logFormat, fileLoggingConfig),
+			))
 	} else {
 		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	}
