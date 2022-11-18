@@ -4,9 +4,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/bits"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"math/bits"
 )
 
 var (
