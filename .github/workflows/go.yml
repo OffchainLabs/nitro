@@ -34,7 +34,7 @@ jobs:
         run: | # https://github.com/securego/gosec/issues/469
           export PATH=$PATH:$(go env GOPATH)/bin
           go install github.com/securego/gosec/v2/cmd/gosec@v2.12.0
-          gosec -exclude=G307
+          gosec -exclude=G307 ./...
 
   lint:
     name: Lint
@@ -53,7 +53,7 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: v1.47.2
-          args: --out-${NO_FUTURE}format colored-line-number
+          args: colored-line-number
 
   build:
     name: Build
