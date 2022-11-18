@@ -18,6 +18,8 @@ var log = logrus.WithField("prefix", "validator")
 
 type Opt = func(val *Validator)
 
+// Validator defines a validator client instances in the assertion protocol, which will be
+// an active participant in interacting with the on-chain contracts.
 type Validator struct {
 	protocol                          protocol.OnChainProtocol
 	stateManager                      statemanager.Manager
@@ -35,36 +37,45 @@ type Validator struct {
 	chaosMonkeyProbability            float64
 }
 
+// WithChaosMonkeyProbability adds a probability a validator will take
+// irrational or chaotic actions during challenges.
 func WithChaosMonkeyProbability(p float64) Opt {
 	return func(val *Validator) {
 		val.chaosMonkeyProbability = p
 	}
 }
 
+// WithName is a human-readable identifier for this validator client for logging purposes.
 func WithName(name string) Opt {
 	return func(val *Validator) {
 		val.name = name
 	}
 }
 
+// WithAddress gives a staker address to the validator.
 func WithAddress(addr common.Address) Opt {
 	return func(val *Validator) {
 		val.address = addr
 	}
 }
 
+// WithKnownValidators provides a map of known validator names by address for
+// cleaner and more understandable logging.
 func WithKnownValidators(vals map[common.Address]string) Opt {
 	return func(val *Validator) {
 		val.knownValidatorNames = vals
 	}
 }
 
+// WithCreateLeafEvery sets a parameter that tells the validator when to initiate leaf creation.
 func WithCreateLeafEvery(d time.Duration) Opt {
 	return func(val *Validator) {
 		val.createLeafInterval = d
 	}
 }
 
+// New sets up a validator client instances provided a protocol, state manager,
+// and additional options.
 func New(
 	ctx context.Context,
 	onChainProtocol protocol.OnChainProtocol,
@@ -227,6 +238,7 @@ func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
 	log.WithFields(logFields).Info("Confirmed leaf passed challenge period successfully on-chain")
 }
 
+// Processes new leaf creation events from the protocol that were not initiated by self.
 func (v *Validator) processLeafCreation(ctx context.Context, seqNum uint64, stateCommit protocol.StateCommitment) error {
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
@@ -269,6 +281,7 @@ func (v *Validator) processLeafCreation(ctx context.Context, seqNum uint64, stat
 	return v.challengeLeaf(ctx, assertion)
 }
 
+// Process new challenge creation events from the protocol that were not initiated by self.
 func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.StartChallengeEvent) error {
 	// Checks if the challenge has to do with a vertex we created.
 	challengedAssertion, err := v.protocol.AssertionBySequenceNumber(ctx, ev.ParentSeqNum)
