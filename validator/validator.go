@@ -154,6 +154,9 @@ func (v *Validator) listenForAssertionEvents(ctx context.Context) {
 	}
 }
 
+// TODO: Include leaf creation validity conditions which are more complex than this.
+// For example, a validator must include messages from the inbox that were not included
+// by the last validator in the last leaf's creation.
 func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion, error) {
 	// Ensure that we only build on a valid parent from this validator's perspective.
 	// the validator should also have ready access to historical commitments to make sure it can select
