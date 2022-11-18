@@ -201,9 +201,6 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) *protocol.Asse
 			continue
 		}
 		if v.stateManager.HasStateCommitment(ctx, a.StateCommitment) {
-			if a == nil {
-				continue
-			}
 			latestValidParent = a
 		}
 	}

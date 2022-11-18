@@ -187,6 +187,83 @@ func Test_processChallengeStart(t *testing.T) {
 	})
 }
 
+func Test_findLatestValidAssertion(t *testing.T) {
+	ctx := context.Background()
+	t.Run("only valid latest assertion is genesis", func(t *testing.T) {
+		v, p, _ := setupValidator(t)
+		genesis := &protocol.Assertion{
+			SequenceNum: 0,
+			StateCommitment: protocol.StateCommitment{
+				Height:    0,
+				StateRoot: common.Hash{},
+			},
+			Prev:   util.EmptyOption[*protocol.Assertion](),
+			Staker: util.EmptyOption[common.Address](),
+		}
+		p.On("LatestConfirmed").Return(genesis)
+		p.On("NumAssertions").Return(uint64(100))
+		latestValid := v.findLatestValidAssertion(ctx)
+		require.Equal(t, genesis, latestValid)
+	})
+	t.Run("all are valid, latest one is picked", func(t *testing.T) {
+		v, p, s := setupValidator(t)
+		assertions := setupAssertions(10)
+		for _, a := range assertions {
+			v.assertions[a.SequenceNum] = a
+			s.On("HasStateCommitment", ctx, a.StateCommitment).Return(true)
+		}
+		p.On("LatestConfirmed").Return(assertions[0])
+		p.On("NumAssertions").Return(uint64(len(assertions)))
+
+		latestValid := v.findLatestValidAssertion(ctx)
+		require.Equal(t, assertions[len(assertions)-1], latestValid)
+	})
+	t.Run("latest valid is behind", func(t *testing.T) {
+		v, p, s := setupValidator(t)
+		assertions := setupAssertions(10)
+		for i, a := range assertions {
+			v.assertions[a.SequenceNum] = a
+			if i <= 5 {
+				s.On("HasStateCommitment", ctx, a.StateCommitment).Return(true)
+			} else {
+				s.On("HasStateCommitment", ctx, a.StateCommitment).Return(false)
+			}
+		}
+		p.On("LatestConfirmed").Return(assertions[0])
+		p.On("NumAssertions").Return(uint64(len(assertions)))
+		latestValid := v.findLatestValidAssertion(ctx)
+		require.Equal(t, assertions[5], latestValid)
+	})
+}
+
+func setupAssertions(num int) []*protocol.Assertion {
+	if num == 0 {
+		return make([]*protocol.Assertion, 0)
+	}
+	genesis := &protocol.Assertion{
+		SequenceNum: 0,
+		StateCommitment: protocol.StateCommitment{
+			Height:    0,
+			StateRoot: common.Hash{},
+		},
+		Prev:   util.EmptyOption[*protocol.Assertion](),
+		Staker: util.EmptyOption[common.Address](),
+	}
+	assertions := []*protocol.Assertion{genesis}
+	for i := 1; i < num; i++ {
+		assertions = append(assertions, &protocol.Assertion{
+			SequenceNum: uint64(i),
+			StateCommitment: protocol.StateCommitment{
+				Height:    uint64(i),
+				StateRoot: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
+			},
+			Prev:   util.FullOption[*protocol.Assertion](assertions[i-1]),
+			Staker: util.EmptyOption[common.Address](),
+		})
+	}
+	return assertions
+}
+
 func setupValidator(t testing.TB) (*Validator, *mocks.MockProtocol, *mocks.MockStateManager) {
 	p := &mocks.MockProtocol{}
 	s := &mocks.MockStateManager{}
