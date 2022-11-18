@@ -52,11 +52,10 @@ jobs:
       - name: Golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.47.2
-          args: colored-line-number
+          version: latest
 
   build:
-    name: Build
+    name: Build and Test
     runs-on: ubuntu-latest
     steps:
       - name: Set up Go 1.x
