@@ -263,7 +263,7 @@ func (v *Validator) processLeafCreation(ctx context.Context, seqNum uint64, stat
 	}
 	// If there is a fork, we challenge if we disagree with its state commitment. Otherwise,
 	// we will defend challenge moves that agree with our local state.
-	if !v.stateManager.HasStateCommitment(ctx, assertion.StateCommitment) {
+	if v.stateManager.HasStateCommitment(ctx, assertion.StateCommitment) {
 		return v.defendLeaf(ctx, assertion)
 	}
 	return v.challengeLeaf(ctx, assertion)

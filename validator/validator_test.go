@@ -36,30 +36,101 @@ func Test_processLeafCreation(t *testing.T) {
 		logsHook := test.NewGlobal()
 		v, p, _ := setupValidator(t)
 
-		seq := uint64(1)
+		parentSeqNum := uint64(1)
 		prevRoot := common.BytesToHash([]byte("foo"))
-		p.On("AssertionBySequenceNumber", ctx, seq+1).Return(&protocol.Assertion{
-			Prev: util.FullOption[*protocol.Assertion](&protocol.Assertion{
-				StateCommitment: protocol.StateCommitment{
-					StateRoot: prevRoot,
-					Height:    seq,
-				},
-			}),
-		}, nil)
+		parentAssertion := &protocol.Assertion{
+			StateCommitment: protocol.StateCommitment{
+				StateRoot: prevRoot,
+				Height:    parentSeqNum,
+			},
+		}
+		seqNum := parentSeqNum + 1
+		newlyCreatedAssertion := &protocol.Assertion{
+			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
+			SequenceNum: seqNum,
+		}
+		p.On("AssertionBySequenceNumber", ctx, seqNum).Return(newlyCreatedAssertion, nil)
 
-		err := v.processLeafCreation(ctx, seq+1, protocol.StateCommitment{
-			StateRoot: common.BytesToHash([]byte("bar")),
-			Height:    seq + 1,
-		})
+		err := v.processLeafCreation(ctx, seqNum, protocol.StateCommitment{})
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
 	})
 	t.Run("fork leads validator to defend leaf", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		v, p, s := setupValidator(t)
 
+		parentSeqNum := uint64(1)
+		prevRoot := common.BytesToHash([]byte("foo"))
+		parentAssertion := &protocol.Assertion{
+			StateCommitment: protocol.StateCommitment{
+				StateRoot: prevRoot,
+				Height:    parentSeqNum,
+			},
+		}
+		seqNum := parentSeqNum + 1
+		newlyCreatedAssertion := &protocol.Assertion{
+			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
+			SequenceNum: seqNum,
+		}
+		forkSeqNum := seqNum + 1
+		forkedAssertion := &protocol.Assertion{
+			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
+			SequenceNum: forkSeqNum,
+			StateCommitment: protocol.StateCommitment{
+				StateRoot: common.BytesToHash([]byte("bar")),
+				Height:    2,
+			},
+		}
+
+		p.On("AssertionBySequenceNumber", ctx, seqNum).Return(newlyCreatedAssertion, nil)
+		p.On("AssertionBySequenceNumber", ctx, forkSeqNum).Return(forkedAssertion, nil)
+		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(true)
+
+		err := v.processLeafCreation(ctx, seqNum, protocol.StateCommitment{})
+		require.NoError(t, err)
+		err = v.processLeafCreation(ctx, forkSeqNum, protocol.StateCommitment{})
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "preparing to defend")
 	})
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		v, p, s := setupValidator(t)
 
+		parentSeqNum := uint64(1)
+		prevRoot := common.BytesToHash([]byte("foo"))
+		parentAssertion := &protocol.Assertion{
+			StateCommitment: protocol.StateCommitment{
+				StateRoot: prevRoot,
+				Height:    parentSeqNum,
+			},
+		}
+		seqNum := parentSeqNum + 1
+		newlyCreatedAssertion := &protocol.Assertion{
+			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
+			SequenceNum: seqNum,
+		}
+		forkSeqNum := seqNum + 1
+		forkedAssertion := &protocol.Assertion{
+			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
+			SequenceNum: forkSeqNum,
+			StateCommitment: protocol.StateCommitment{
+				StateRoot: common.BytesToHash([]byte("bar")),
+				Height:    2,
+			},
+		}
+
+		p.On("AssertionBySequenceNumber", ctx, seqNum).Return(newlyCreatedAssertion, nil)
+		p.On("AssertionBySequenceNumber", ctx, forkSeqNum).Return(forkedAssertion, nil)
+		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(false)
+
+		err := v.processLeafCreation(ctx, seqNum, protocol.StateCommitment{})
+		require.NoError(t, err)
+		err = v.processLeafCreation(ctx, forkSeqNum, protocol.StateCommitment{})
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "Initiating challenge")
 	})
 }
 
