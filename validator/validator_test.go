@@ -11,6 +11,7 @@ import (
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/OffchainLabs/new-rollup-exploration/testing/mocks"
+	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
@@ -35,6 +36,7 @@ func Test_processChallengeStart(t *testing.T) {
 		require.ErrorIs(t, err, wantErr)
 	})
 	t.Run("challenge does not concern us", func(t *testing.T) {
+		logsHook := test.NewGlobal()
 		p := &mocks.MockProtocol{}
 		s := &mocks.MockStateManager{}
 		v, err := New(ctx, p, s)
@@ -50,6 +52,31 @@ func Test_processChallengeStart(t *testing.T) {
 			ParentSeqNum: seq,
 		})
 		require.NoError(t, err)
+		AssertLogsDoNotContain(t, logsHook, "Received challenge")
+	})
+	t.Run("challenge concerns us, we should act", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		p := &mocks.MockProtocol{}
+		s := &mocks.MockStateManager{}
+		v, err := New(ctx, p, s)
+		require.NoError(t, err)
+
+		commitment := protocol.StateCommitment{
+			Height:    0,
+			StateRoot: common.BytesToHash([]byte("foo")),
+		}
+		leaf := &protocol.Assertion{
+			StateCommitment: commitment,
+			Staker:          util.EmptyOption[common.Address](),
+		}
+		v.createdLeaves[commitment.StateRoot] = leaf
+
+		p.On("AssertionBySequenceNumber", ctx, seq).Return(leaf, nil)
+		err = v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
+			ParentSeqNum: seq,
+		})
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "Received challenge")
 	})
 
 }
