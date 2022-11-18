@@ -101,9 +101,9 @@ type Assertion struct {
 	SequenceNum             uint64
 	StateCommitment         StateCommitment
 	Staker                  util.Option[common.Address]
+	Prev                    util.Option[*Assertion]
 	chain                   *AssertionChain
 	status                  AssertionState
-	prev                    util.Option[*Assertion]
 	isFirstChild            bool
 	firstChildCreationTime  util.Option[time.Time]
 	secondChildCreationTime util.Option[time.Time]
@@ -128,7 +128,7 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 			Height:    0,
 			StateRoot: common.Hash{},
 		},
-		prev:                    util.EmptyOption[*Assertion](),
+		Prev:                    util.EmptyOption[*Assertion](),
 		isFirstChild:            false,
 		firstChildCreationTime:  util.EmptyOption[time.Time](),
 		secondChildCreationTime: util.EmptyOption[time.Time](),
@@ -235,7 +235,7 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 		status:                  PendingAssertionState,
 		SequenceNum:             uint64(len(chain.assertions)),
 		StateCommitment:         commitment,
-		prev:                    util.FullOption[*Assertion](prev),
+		Prev:                    util.FullOption[*Assertion](prev),
 		isFirstChild:            prev.firstChildCreationTime.IsEmpty(),
 		firstChildCreationTime:  util.EmptyOption[time.Time](),
 		secondChildCreationTime: util.EmptyOption[time.Time](),
@@ -262,10 +262,10 @@ func (a *Assertion) RejectForPrev() error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.IsEmpty() {
+	if a.Prev.IsEmpty() {
 		return ErrInvalid
 	}
-	if a.prev.OpenKnownFull().status != RejectedAssertionState {
+	if a.Prev.OpenKnownFull().status != RejectedAssertionState {
 		return ErrWrongPredecessorState
 	}
 	a.status = RejectedAssertionState
@@ -279,10 +279,10 @@ func (a *Assertion) RejectForLoss() error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.IsEmpty() {
+	if a.Prev.IsEmpty() {
 		return ErrInvalid
 	}
-	chal := a.prev.OpenKnownFull().challenge
+	chal := a.Prev.OpenKnownFull().challenge
 	if chal.IsEmpty() {
 		return util.ErrOptionIsEmpty
 	}
@@ -304,10 +304,10 @@ func (a *Assertion) ConfirmNoRival() error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.IsEmpty() {
+	if a.Prev.IsEmpty() {
 		return ErrInvalid
 	}
-	prev := a.prev.OpenKnownFull()
+	prev := a.Prev.OpenKnownFull()
 	if prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
@@ -333,10 +333,10 @@ func (a *Assertion) ConfirmForWin() error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.IsEmpty() {
+	if a.Prev.IsEmpty() {
 		return ErrInvalid
 	}
-	prev := a.prev.OpenKnownFull()
+	prev := a.Prev.OpenKnownFull()
 	if prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
@@ -356,10 +356,6 @@ func (a *Assertion) ConfirmForWin() error {
 		SeqNum: a.SequenceNum,
 	})
 	return nil
-}
-
-func (a *Assertion) Prev() util.Option[*Assertion] {
-	return a.prev
 }
 
 type Challenge struct {
@@ -417,10 +413,10 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 }
 
 func (chal *Challenge) AddLeaf(assertion *Assertion, history util.HistoryCommitment) (*ChallengeVertex, error) {
-	if assertion.prev.IsEmpty() {
+	if assertion.Prev.IsEmpty() {
 		return nil, ErrInvalid
 	}
-	prev := assertion.prev.OpenKnownFull()
+	prev := assertion.Prev.OpenKnownFull()
 	if prev != chal.parent {
 		return nil, ErrInvalid
 	}

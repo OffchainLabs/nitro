@@ -245,8 +245,8 @@ func (v *Validator) processLeafCreation(ctx context.Context, seqNum uint64, stat
 
 	// Keep track of assertions by parent state root to more easily detect forks.
 	key := common.Hash{}
-	if !assertion.Prev().IsEmpty() {
-		parentAssertion := assertion.Prev().OpenKnownFull()
+	if !assertion.Prev.IsEmpty() {
+		parentAssertion := assertion.Prev.OpenKnownFull()
 		key = parentAssertion.StateCommitment.Hash()
 	}
 	v.assertionsByParentStateCommitment[key] = append(
@@ -258,6 +258,7 @@ func (v *Validator) processLeafCreation(ctx context.Context, seqNum uint64, stat
 
 	// If this leaf's creation has not triggered fork, we have nothing else to do.
 	if !hasForked {
+		log.Info("No fork detected in assertion tree upon leaf creation")
 		return nil
 	}
 	// If there is a fork, we challenge if we disagree with its state commitment. Otherwise,

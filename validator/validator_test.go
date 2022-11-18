@@ -22,45 +22,64 @@ func Test_processLeafCreation(t *testing.T) {
 	_ = ctx
 	t.Run("fails to fetch assertion", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		p := &mocks.MockProtocol{}
-		s := &mocks.MockStateManager{}
-		v, err := New(ctx, p, s)
-		require.NoError(t, err)
+		v, p, _ := setupValidator(t)
 
 		seq := uint64(0)
 		wantErr := errors.New("not found")
 		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
 
-		err = v.processLeafCreation(ctx, seq, protocol.StateCommitment{})
+		err := v.processLeafCreation(ctx, seq, protocol.StateCommitment{})
 		require.ErrorIs(t, err, wantErr)
 		AssertLogsContain(t, logsHook, "New leaf appended")
+	})
+	t.Run("no fork detected", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		v, p, _ := setupValidator(t)
+
+		seq := uint64(1)
+		prevRoot := common.BytesToHash([]byte("foo"))
+		p.On("AssertionBySequenceNumber", ctx, seq+1).Return(&protocol.Assertion{
+			Prev: util.FullOption[*protocol.Assertion](&protocol.Assertion{
+				StateCommitment: protocol.StateCommitment{
+					StateRoot: prevRoot,
+					Height:    seq,
+				},
+			}),
+		}, nil)
+
+		err := v.processLeafCreation(ctx, seq+1, protocol.StateCommitment{
+			StateRoot: common.BytesToHash([]byte("bar")),
+			Height:    seq + 1,
+		})
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
+	})
+	t.Run("fork leads validator to defend leaf", func(t *testing.T) {
+
+	})
+	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
+
 	})
 }
 
 func Test_processChallengeStart(t *testing.T) {
 	ctx := context.Background()
-
 	seq := uint64(1)
 
 	t.Run("reading assertion fails", func(t *testing.T) {
-		p := &mocks.MockProtocol{}
-		s := &mocks.MockStateManager{}
-		v, err := New(ctx, p, s)
-		require.NoError(t, err)
+		v, p, _ := setupValidator(t)
 
 		wantErr := errors.New("not found")
 		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
-		err = v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
+		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum: seq,
 		})
 		require.ErrorIs(t, err, wantErr)
 	})
 	t.Run("challenge does not concern us", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		p := &mocks.MockProtocol{}
-		s := &mocks.MockStateManager{}
-		v, err := New(ctx, p, s)
-		require.NoError(t, err)
+		v, p, _ := setupValidator(t)
 
 		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{
 			StateCommitment: protocol.StateCommitment{
@@ -68,7 +87,7 @@ func Test_processChallengeStart(t *testing.T) {
 				StateRoot: common.BytesToHash([]byte("foo")),
 			},
 		}, nil)
-		err = v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
+		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum: seq,
 		})
 		require.NoError(t, err)
@@ -76,10 +95,7 @@ func Test_processChallengeStart(t *testing.T) {
 	})
 	t.Run("challenge concerns us, we should act", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		p := &mocks.MockProtocol{}
-		s := &mocks.MockStateManager{}
-		v, err := New(ctx, p, s)
-		require.NoError(t, err)
+		v, p, _ := setupValidator(t)
 
 		commitment := protocol.StateCommitment{
 			Height:    0,
@@ -92,12 +108,20 @@ func Test_processChallengeStart(t *testing.T) {
 		v.createdLeaves[commitment.StateRoot] = leaf
 
 		p.On("AssertionBySequenceNumber", ctx, seq).Return(leaf, nil)
-		err = v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
+		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum: seq,
 		})
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Received challenge")
 	})
+}
+
+func setupValidator(t testing.TB) (*Validator, *mocks.MockProtocol, *mocks.MockStateManager) {
+	p := &mocks.MockProtocol{}
+	s := &mocks.MockStateManager{}
+	v, err := New(context.Background(), p, s)
+	require.NoError(t, err)
+	return v, p, s
 }
 
 type assertionLoggerFn func(string, ...interface{})
