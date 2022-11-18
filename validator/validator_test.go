@@ -17,11 +17,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func Test_processLeafCreation(t *testing.T) {
+	ctx := context.Background()
+	_ = ctx
+	t.Run("fails to fetch assertion", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		p := &mocks.MockProtocol{}
+		s := &mocks.MockStateManager{}
+		v, err := New(ctx, p, s)
+		require.NoError(t, err)
+
+		seq := uint64(0)
+		wantErr := errors.New("not found")
+		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
+
+		err = v.processLeafCreation(ctx, seq, protocol.StateCommitment{})
+		require.ErrorIs(t, err, wantErr)
+		AssertLogsContain(t, logsHook, "New leaf appended")
+	})
+}
+
 func Test_processChallengeStart(t *testing.T) {
 	ctx := context.Background()
 
 	seq := uint64(1)
-	wantErr := errors.New("not found")
 
 	t.Run("reading assertion fails", func(t *testing.T) {
 		p := &mocks.MockProtocol{}
@@ -29,6 +48,7 @@ func Test_processChallengeStart(t *testing.T) {
 		v, err := New(ctx, p, s)
 		require.NoError(t, err)
 
+		wantErr := errors.New("not found")
 		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
 		err = v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum: seq,
@@ -78,7 +98,6 @@ func Test_processChallengeStart(t *testing.T) {
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Received challenge")
 	})
-
 }
 
 type assertionLoggerFn func(string, ...interface{})
