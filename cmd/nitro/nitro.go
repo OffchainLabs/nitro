@@ -106,6 +106,7 @@ func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *genericcon
 	})
 }
 
+// close is not threadsafe
 func (l *fileHandlerFactory) close() error {
 	if l.cancel != nil {
 		l.cancel()
