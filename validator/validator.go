@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
-	"github.com/OffchainLabs/new-rollup-exploration/util"
+	statemanager "github.com/OffchainLabs/new-rollup-exploration/state-manager"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/sirupsen/logrus"
 )
@@ -18,22 +18,11 @@ var log = logrus.WithField("prefix", "validator")
 
 type Opt = func(val *Validator)
 
-// StateManager defines a struct that can provide local state data and historical
-// Merkle commitments to L2 state for the validator.
-type StateManager interface {
-	LatestHistoryCommitment(ctx context.Context) util.HistoryCommitment
-	HasStateRoot(ctx context.Context, stateRoot common.Hash) bool
-	StateCommitmentAtHeight(ctx context.Context, height uint64) (util.HistoryCommitment, error)
-	SubscribeStateEvents(ctx context.Context, ch chan<- *L2StateEvent)
-}
-
-type L2StateEvent struct{}
-
 type Validator struct {
 	protocol                    protocol.OnChainProtocol
-	stateManager                StateManager
+	stateManager                statemanager.Manager
 	assertionEvents             chan protocol.AssertionChainEvent
-	l2StateUpdateEvents         chan *L2StateEvent
+	l2StateUpdateEvents         chan *statemanager.L2StateEvent
 	address                     common.Address
 	name                        string
 	knownValidatorNames         map[common.Address]string
@@ -78,7 +67,7 @@ func WithCreateLeafEvery(d time.Duration) Opt {
 func New(
 	ctx context.Context,
 	onChainProtocol protocol.OnChainProtocol,
-	stateManager StateManager,
+	stateManager statemanager.Manager,
 	opts ...Opt,
 ) (*Validator, error) {
 	v := &Validator{
@@ -87,7 +76,7 @@ func New(
 		address:                     common.Address{},
 		createLeafInterval:          5 * time.Second,
 		assertionEvents:             make(chan protocol.AssertionChainEvent, 1),
-		l2StateUpdateEvents:         make(chan *L2StateEvent, 1),
+		l2StateUpdateEvents:         make(chan *statemanager.L2StateEvent, 1),
 		createdLeaves:               make(map[common.Hash]*protocol.Assertion),
 		assertionsByParentStateRoot: make(map[common.Hash][]*protocol.Assertion),
 	}
