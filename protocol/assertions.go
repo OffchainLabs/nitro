@@ -201,7 +201,7 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 				if err := chain.DeductFromBalance(staker, AssertionStakeWei); err != nil {
 					return err
 				}
-				chain.AddToBalance(staker, AssertionStakeWei)
+				chain.AddToBalance(oldStaker, AssertionStakeWei)
 				prev.staker = util.EmptyOption[common.Address]()
 			}
 			return nil

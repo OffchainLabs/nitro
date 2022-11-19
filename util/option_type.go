@@ -54,6 +54,7 @@ func (o Option[T]) IfLet(fullFunc func(T) error, emptyFunc func() error) error {
 	} else {
 		fullFunc(*o.value)
 	}
+	return nil
 }
 
 type Result[T any] struct {
