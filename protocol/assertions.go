@@ -574,7 +574,7 @@ func (vertex *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitme
 	}
 	newVertex.challenge.nextSequenceNum++
 	newVertex.maybeNewPresumptiveSuccessor(vertex)
-	newVertex.prev.maybeNewPresumptiveSuccessor(vertex)
+	newVertex.prev.maybeNewPresumptiveSuccessor(newVertex)
 	newVertex.challenge.includedHistories[history.Hash()] = true
 	newVertex.challenge.feed.Append(&ChallengeBisectEvent{
 		FromSequenceNum: vertex.sequenceNum,

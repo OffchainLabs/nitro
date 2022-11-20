@@ -204,8 +204,8 @@ func TestBisectionChallengeGame(t *testing.T) {
 	defer cancel()
 
 	timeRef := util.NewArtificialTimeReference()
-	correctBlockHashes := correctBlockHashesForTest(8)
-	wrongBlockHashes := wrongBlockHashesForTest(8)
+	correctBlockHashes := correctBlockHashesForTest(10)
+	wrongBlockHashes := wrongBlockHashesForTest(10)
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
