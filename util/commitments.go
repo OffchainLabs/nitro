@@ -2,6 +2,7 @@ package util
 
 import (
 	"encoding/binary"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )

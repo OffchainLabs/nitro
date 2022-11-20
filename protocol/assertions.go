@@ -244,7 +244,7 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 				if err := chain.DeductFromBalance(tx, staker, AssertionStakeWei); err != nil {
 					return err
 				}
-				chain.AddToBalance(tx, staker, AssertionStakeWei)
+				chain.AddToBalance(tx, oldStaker, AssertionStakeWei)
 				prev.staker = util.EmptyOption[common.Address]()
 			}
 			return nil

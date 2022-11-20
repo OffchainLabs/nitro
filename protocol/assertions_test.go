@@ -112,6 +112,41 @@ func TestAssertionChain(t *testing.T) {
 	}
 }
 
+func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+
+	oldStaker := common.BytesToAddress([]byte{1})
+	staker := common.BytesToAddress([]byte{2})
+	require.Equal(t, chain.GetBalance(oldStaker), big.NewInt(0)) // Old staker has 0 because it's already staked.
+	chain.SetBalance(staker, AssertionStakeWei)
+	require.Equal(t, chain.GetBalance(staker), AssertionStakeWei) // New staker has full balance because it's not yet staked.
+
+	lc := chain.LatestConfirmed()
+	lc.staker = util.FullOption[common.Address](oldStaker)
+	_, err := chain.CreateLeaf(lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
+	require.NoError(t, err)
+
+	require.Equal(t, chain.GetBalance(staker), big.NewInt(0))        // New staker has 0 balance after staking.
+	require.Equal(t, chain.GetBalance(oldStaker), AssertionStakeWei) // Old staker has full balance after unstaking.
+}
+
+func TestAssertionChain_LeafCreationsInsufficientStakes(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	lc := chain.LatestConfirmed()
+
+	staker := common.BytesToAddress([]byte{1})
+	lc.staker = util.EmptyOption[common.Address]()
+	_, err := chain.CreateLeaf(lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
+	require.ErrorIs(t, err, ErrInsufficientBalance)
+
+	diffStaker := common.BytesToAddress([]byte{2})
+	lc.staker = util.FullOption[common.Address](diffStaker)
+	_, err = chain.CreateLeaf(lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
+	require.ErrorIs(t, err, ErrInsufficientBalance)
+}
+
 func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum, prevSeqNum uint64, staker common.Address, comm StateCommitment) {
 	t.Helper()
 	ev := <-c

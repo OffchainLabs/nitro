@@ -49,14 +49,10 @@ func OptionMapOrElse[T, U any](o Option[T], f func(T) U, valueIfEmpty U) U {
 func (o Option[T]) IfLet(fullFunc func(T) error, emptyFunc func() error) error {
 	if o.value == nil {
 		if emptyFunc != nil {
-			if err := emptyFunc(); err != nil {
-				return err
-			}
+			return emptyFunc()
 		}
 	} else {
-		if err := fullFunc(*o.value); err != nil {
-			return err
-		}
+		return fullFunc(*o.value)
 	}
 	return nil
 }
