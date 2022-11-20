@@ -15,7 +15,7 @@ import (
 func TestIpfsStorageServiceAddAndGet(t *testing.T) {
 	enableLogging()
 	ctx := context.Background()
-	svc, err := NewIpfsStorageService(ctx, "/tmp/ipfstest", "test")
+	svc, err := NewIpfsStorageService(ctx, IpfsStorageServiceConfig{true, "/tmp/ipfstest", false, "test"})
 	Require(t, err)
 	data := []byte("hello world")
 

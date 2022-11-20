@@ -129,7 +129,7 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 	//     2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
 	//     3. We also accept old-style flat hashes
 	//     4. Only the committee can produce trees unwrapped by this function
-	//     5. Only the replay binary calls this
+	//     5. Only the replay binary calls this - TODO remove this note
 	//
 
 	unpeal := func(hash bytes32) (byte, []byte, error) {

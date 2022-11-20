@@ -17,17 +17,28 @@ import (
 	"github.com/multiformats/go-multihash"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
+	flag "github.com/spf13/pflag"
 )
 
 type IpfsStorageServiceConfig struct {
-	Enable  bool   `koanf:"enable"`
-	RepoDir string `koanf:"repo-dir"`
-	// Something about expiry
+	Enable              bool   `koanf:"enable"`
+	RepoDir             string `koanf:"repo-dir"`
+	DiscardAfterTimeout bool   `koanf:"discard-after-timeout"`
+	Profiles            string `koanf:"profiles"`
 }
 
 var DefaultIpfsStorageServiceConfig = IpfsStorageServiceConfig{
-	Enable:  false,
-	RepoDir: "",
+	Enable:              false,
+	RepoDir:             "",
+	DiscardAfterTimeout: false,
+	Profiles:            "test",
+}
+
+func IpfsStorageServiceConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultIpfsStorageServiceConfig.Enable, "enable storage/retrieval of sequencer batch data from IPFS")
+	f.String(prefix+".repo-dir", DefaultIpfsStorageServiceConfig.RepoDir, "directory to use to store the local IPFS repo")
+	f.Bool(prefix+".discard-after-timeout", DefaultIpfsStorageServiceConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
+	f.String(prefix+".profiles", DefaultIpfsStorageServiceConfig.Profiles, "comma separated list of IPFS profiles to use")
 }
 
 type IpfsStorageService struct {
@@ -35,8 +46,8 @@ type IpfsStorageService struct {
 	ipfsApi    icore.CoreAPI
 }
 
-func NewIpfsStorageService(ctx context.Context, repoDirectory string, profiles string) (*IpfsStorageService, error) {
-	ipfsHelper, err := ipfshelper.CreateIpfsHelper(ctx, repoDirectory, false, profiles)
+func NewIpfsStorageService(ctx context.Context, config IpfsStorageServiceConfig) (*IpfsStorageService, error) {
+	ipfsHelper, err := ipfshelper.CreateIpfsHelper(ctx, config.RepoDir, false, config.Profiles)
 	if err != nil {
 		return nil, err
 	}
