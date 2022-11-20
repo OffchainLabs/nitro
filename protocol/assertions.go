@@ -201,7 +201,7 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 				if err := chain.DeductFromBalance(staker, AssertionStakeWei); err != nil {
 					return err
 				}
-				chain.AddToBalance(staker, AssertionStakeWei)
+				chain.AddToBalance(oldStaker, AssertionStakeWei)
 				prev.staker = util.EmptyOption[common.Address]()
 			}
 			return nil
@@ -522,7 +522,7 @@ func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []co
 	}
 	newVertex.challenge.nextSequenceNum++
 	newVertex.maybeNewPresumptiveSuccessor(vertex)
-	newVertex.prev.maybeNewPresumptiveSuccessor(vertex)
+	newVertex.prev.maybeNewPresumptiveSuccessor(newVertex)
 	newVertex.challenge.includedHistories[history.Hash()] = true
 	newVertex.challenge.feed.Append(&ChallengeBisectEvent{
 		FromSequenceNum: vertex.sequenceNum,
