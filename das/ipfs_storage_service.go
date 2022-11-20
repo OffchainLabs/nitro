@@ -17,6 +17,7 @@ import (
 	"github.com/multiformats/go-multihash"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
+	"github.com/offchainlabs/nitro/das/dastree"
 	flag "github.com/spf13/pflag"
 )
 
@@ -73,34 +74,43 @@ func hashToCid(hash common.Hash) (cid.Cid, error) {
 }
 
 func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	thisCid, err := hashToCid(hash)
-	if err != nil {
-		return nil, err
+	oracle := func(h common.Hash) []byte {
+		thisCid, err := hashToCid(h)
+		if err != nil {
+			panic(err)
+		}
+
+		ipfsPath := path.IpfsPath(thisCid)
+		log.Info("Retrieving path", "path", ipfsPath.String())
+
+		rdr, err := s.ipfsApi.Block().Get(ctx, ipfsPath)
+		if err != nil {
+			panic(err)
+		}
+
+		data, err := ioutil.ReadAll(rdr)
+		if err != nil {
+			panic(err)
+		}
+		return data
 	}
 
-	ipfsPath := path.IpfsPath(thisCid)
-	log.Info("Retrieving path", "path", ipfsPath.String())
-
-	rdr, err := s.ipfsApi.Block().Get(ctx, ipfsPath)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := ioutil.ReadAll(rdr)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
+	return dastree.Content(hash, oracle)
 }
 
 func (s *IpfsStorageService) Put(ctx context.Context, data []byte, expirationTime uint64) error {
 	_ = expirationTime // TODO do something with this
 
-	blockStat, err := s.ipfsApi.Block().Put(ctx, bytes.NewReader(data), options.Block.CidCodec("raw"), options.Block.Hash(multihash.KECCAK_256, -1), options.Block.Pin(true))
-	if err != nil {
-		return err
+	record := func(_ common.Hash, value []byte) {
+		blockStat, err := s.ipfsApi.Block().Put(ctx, bytes.NewReader(value), options.Block.CidCodec("raw"), options.Block.Hash(multihash.KECCAK_256, -1), options.Block.Pin(true))
+		if err != nil {
+			panic(err) // TODO make this not a panic
+		}
+		log.Info("Written path", "path", blockStat.Path().String())
 	}
-	log.Info("Written path", "path", blockStat.Path().String())
+
+	_ = dastree.RecordHash(record, data)
+
 	return nil
 }
 
