@@ -310,3 +310,59 @@ func wrongBlockHashesForTest(numBlocks uint64) []common.Hash {
 	}
 	return ret
 }
+
+func TestAssertionChain_StakerInsufficientBalance(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	require.Equal(t, chain.DeductFromBalance(common.BytesToAddress([]byte{1}), AssertionStakeWei), ErrInsufficientBalance)
+}
+
+func TestAssertionChain_ChallengePeriodLength(t *testing.T) {
+	ctx := context.Background()
+	cp := 123 * time.Second
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), cp)
+	require.Equal(t, chain.ChallengePeriodLength(), cp)
+}
+
+func TestAssertionChain_LeafCreationErrors(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	badChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod+1)
+	lc := chain.LatestConfirmed()
+	_, err := badChain.CreateLeaf(lc, StateCommitment{}, common.BytesToAddress([]byte{}))
+	require.ErrorIs(t, err, ErrWrongChain)
+	_, err = chain.CreateLeaf(lc, StateCommitment{}, common.BytesToAddress([]byte{}))
+	require.ErrorIs(t, err, ErrInvalid)
+}
+
+func TestAssertion_ErrWrongState(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	a := chain.LatestConfirmed()
+	require.ErrorIs(t, a.RejectForPrev(), ErrWrongState)
+	require.ErrorIs(t, a.RejectForLoss(), ErrWrongState)
+	require.ErrorIs(t, a.ConfirmForWin(), ErrWrongState)
+}
+
+func TestAssertion_ErrWrongPredecessorState(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	staker := common.BytesToAddress([]byte{1})
+	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	chain.SetBalance(staker, bigBalance)
+	newA, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{Height: 1}, staker)
+	require.NoError(t, err)
+	require.ErrorIs(t, newA.RejectForPrev(), ErrWrongPredecessorState)
+	require.ErrorIs(t, newA.ConfirmForWin(), ErrWrongPredecessorState)
+}
+
+func TestAssertion_ErrNotYet(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	staker := common.BytesToAddress([]byte{1})
+	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	chain.SetBalance(staker, bigBalance)
+	newA, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{Height: 1}, staker)
+	require.NoError(t, err)
+	require.ErrorIs(t, newA.ConfirmNoRival(), ErrNotYet)
+}
