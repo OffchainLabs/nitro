@@ -34,7 +34,7 @@ import {
     L2MessageType_unsignedEOATx,
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
-import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
+import {MAX_DATA_SIZE, UNSAFE_CREATERETRYABLETICKET_CALLER} from "../libraries/Constants.sol";
 import "../precompiles/ArbSys.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
@@ -410,7 +410,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bytes calldata data
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
-        if (msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
+        // certain legacy caller can bypass this check and revert to the unsafe behaviour
+        if (
+            msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas) &&
+            msg.sender != UNSAFE_CREATERETRYABLETICKET_CALLER
+        ) {
             revert InsufficientValue(
                 maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas,
                 msg.value

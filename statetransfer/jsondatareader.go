@@ -52,11 +52,11 @@ func (l *JsonListReader) Close() error {
 	return nil
 }
 
-func (m *JsonInitDataReader) getListReader(fileName string) (JsonListReader, error) {
+func (r *JsonInitDataReader) getListReader(fileName string) (JsonListReader, error) {
 	if fileName == "" {
 		return JsonListReader{}, nil
 	}
-	filePath := path.Join(m.basePath, fileName)
+	filePath := path.Join(r.basePath, fileName)
 	inboundFile, err := os.OpenFile(filePath, os.O_RDONLY, 0664)
 	if err != nil {
 		return JsonListReader{}, err
@@ -82,7 +82,7 @@ func NewJsonInitDataReader(filepath string) (InitDataReader, error) {
 	return &reader, nil
 }
 
-func (m *JsonInitDataReader) Close() error {
+func (r *JsonInitDataReader) Close() error {
 	return nil
 }
 
@@ -131,8 +131,8 @@ func (r *JsonRetryableDataReader) GetNext() (*InitializationDataForRetryable, er
 	}, nil
 }
 
-func (m *JsonInitDataReader) GetRetryableDataReader() (RetryableDataReader, error) {
-	listreader, err := m.getListReader(m.data.RetryableDataPath)
+func (r *JsonInitDataReader) GetRetryableDataReader() (RetryableDataReader, error) {
+	listreader, err := r.getListReader(r.data.RetryableDataPath)
 	if err != nil {
 		return nil, err
 	}
@@ -156,8 +156,8 @@ func (r *JsonAddressReader) GetNext() (*common.Address, error) {
 	return &elem, nil
 }
 
-func (m *JsonInitDataReader) GetAddressTableReader() (AddressReader, error) {
-	listreader, err := m.getListReader(m.data.AddressTableContentsPath)
+func (r *JsonInitDataReader) GetAddressTableReader() (AddressReader, error) {
+	listreader, err := r.getListReader(r.data.AddressTableContentsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -201,8 +201,8 @@ func (r *JsonAccountDataReaderr) GetNext() (*AccountInitializationInfo, error) {
 	}, nil
 }
 
-func (m *JsonInitDataReader) GetAccountDataReader() (AccountDataReader, error) {
-	listreader, err := m.getListReader(m.data.AccountsPath)
+func (r *JsonInitDataReader) GetAccountDataReader() (AccountDataReader, error) {
+	listreader, err := r.getListReader(r.data.AccountsPath)
 	if err != nil {
 		return nil, err
 	}
