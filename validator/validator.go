@@ -23,7 +23,7 @@ type Opt = func(val *Validator)
 // Validator defines a validator client instances in the assertion protocol, which will be
 // an active participant in interacting with the on-chain contracts.
 type Validator struct {
-	protocol                               protocol.OnChainProtocol
+	chain                                  protocol.ChainReadWriter
 	stateManager                           statemanager.Manager
 	assertionEvents                        chan protocol.AssertionChainEvent
 	l2StateUpdateEvents                    chan *statemanager.L2StateEvent
@@ -80,12 +80,12 @@ func WithCreateLeafEvery(d time.Duration) Opt {
 // and additional options.
 func New(
 	ctx context.Context,
-	onChainProtocol protocol.OnChainProtocol,
+	chain protocol.ChainReadWriter,
 	stateManager statemanager.Manager,
 	opts ...Opt,
 ) (*Validator, error) {
 	v := &Validator{
-		protocol:                               onChainProtocol,
+		chain:                                  chain,
 		stateManager:                           stateManager,
 		address:                                common.Address{},
 		createLeafInterval:                     defaultCreateLeafInterval,
@@ -98,7 +98,7 @@ func New(
 	for _, o := range opts {
 		o(v)
 	}
-	v.protocol.SubscribeChainEvents(ctx, v.assertionEvents)
+	v.chain.SubscribeChainEvents(ctx, v.assertionEvents)
 	v.stateManager.SubscribeStateEvents(ctx, v.l2StateUpdateEvents)
 	return v, nil
 }
@@ -173,7 +173,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 	parentAssertionSeq := v.findLatestValidAssertion(ctx)
 	var parentAssertion *protocol.Assertion
 	var err error
-	if err = v.protocol.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		parentAssertion, err = p.AssertionBySequenceNum(tx, parentAssertionSeq)
 		if err != nil {
 			return err
@@ -191,7 +191,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 		StateRoot: currentCommit.Merkle,
 	}
 	var leaf *protocol.Assertion
-	err = v.protocol.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		leaf, err = p.CreateLeaf(tx, parentAssertion, stateCommit, v.address)
 		if err != nil {
 			return err
@@ -223,7 +223,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 func (v *Validator) findLatestValidAssertion(ctx context.Context) uint64 {
 	var numAssertions uint64
 	var latestConfirmed uint64
-	_ = v.protocol.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	_ = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		numAssertions = p.NumAssertions(tx)
 		latestConfirmed = p.LatestConfirmed(tx).SequenceNum
 		return nil
@@ -245,15 +245,19 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) uint64 {
 // For a leaf created by a validator, we confirm the leaf has no rival after the challenge deadline has passed.
 // This function is meant to be ran as a goroutine for each leaf created by the validator.
 func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
-	tx := &protocol.ActiveTx{}
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(v.protocol.ChallengePeriodLength(tx)))
+	var challengePeriodLength time.Duration
+	_ = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		challengePeriodLength = p.ChallengePeriodLength(tx)
+		return nil
+	})
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(challengePeriodLength))
 	defer cancel()
 	<-ctx.Done()
 	logFields := logrus.Fields{
 		"height":      leaf.StateCommitment.Height,
 		"sequenceNum": leaf.SequenceNum,
 	}
-	if err := v.protocol.Tx(func(tx *protocol.ActiveTx, _ protocol.OnChainProtocol) error {
+	if err := v.chain.Tx(func(tx *protocol.ActiveTx, _ protocol.OnChainProtocol) error {
 		return leaf.ConfirmNoRival(tx)
 	}); err != nil {
 		log.WithError(err).WithFields(logFields).Warn("Could not confirm that created leaf had no rival")

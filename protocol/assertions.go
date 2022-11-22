@@ -35,10 +35,15 @@ var (
 // of the assertion protocol, with methods to issue mutating transactions, make eth calls, create
 // leafs in the protocol, issue challenges, and subscribe to chain events wrapped in simple abstractions.
 type OnChainProtocol interface {
+	ChainReadWriter
+	AssertionManager
+}
+
+// ChainReadWriter can make mutating and non-mutating calls to the blockchain.
+type ChainReadWriter interface {
 	ChainReader
 	ChainWriter
 	EventProvider
-	AssertionManager
 }
 
 // ChainReader can make non-mutating calls to the on-chain protocol.
