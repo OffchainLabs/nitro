@@ -82,16 +82,23 @@ func (t *InboxTracker) Initialize() error {
 	return batch.Write()
 }
 
-var accumulatorNotFound error = errors.New("accumulator not found")
+var AccumulatorNotFoundErr error = errors.New("accumulator not found")
 
 func (t *InboxTracker) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
-	key := dbKey(delayedMessagePrefix, seqNum)
+	key := dbKey(rlpDelayedMessagePrefix, seqNum)
 	hasKey, err := t.db.Has(key)
 	if err != nil {
 		return common.Hash{}, err
 	}
 	if !hasKey {
-		return common.Hash{}, accumulatorNotFound
+		key = dbKey(legacyDelayedMessagePrefix, seqNum)
+		hasKey, err = t.db.Has(key)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		if !hasKey {
+			return common.Hash{}, AccumulatorNotFoundErr
+		}
 	}
 	data, err := t.db.Get(key)
 	if err != nil {
@@ -132,7 +139,7 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 		return BatchMetadata{}, err
 	}
 	if !hasKey {
-		return BatchMetadata{}, accumulatorNotFound
+		return BatchMetadata{}, AccumulatorNotFoundErr
 	}
 	data, err := t.db.Get(key)
 	if err != nil {
@@ -148,7 +155,7 @@ func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex
 	return metadata.MessageCount, err
 }
 
-// Convenience function wrapping GetBatchMetadata
+// GetBatchAcc is a convenience function wrapping GetBatchMetadata
 func (t *InboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
 	return metadata.Accumulator, err
@@ -167,27 +174,42 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 	return count, nil
 }
 
-func (t *InboxTracker) getDelayedMessageBytesAndAccumulator(seqNum uint64) ([]byte, common.Hash, error) {
-	key := dbKey(delayedMessagePrefix, seqNum)
+func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*arbos.L1IncomingMessage, common.Hash, error) {
+	key := dbKey(legacyDelayedMessagePrefix, seqNum)
 	data, err := t.db.Get(key)
 	if err != nil {
 		return nil, common.Hash{}, err
 	}
 	if len(data) < 32 {
-		return nil, common.Hash{}, errors.New("delayed message entry missing accumulator")
+		return nil, common.Hash{}, errors.New("delayed message legacy entry missing accumulator")
 	}
 	var acc common.Hash
 	copy(acc[:], data[:32])
-	return data[32:], acc, err
+	msg, err := arbos.ParseIncomingL1Message(bytes.NewReader(data[32:]), nil)
+	return msg, acc, err
 }
 
 func (t *InboxTracker) GetDelayedMessageAndAccumulator(seqNum uint64) (*arbos.L1IncomingMessage, common.Hash, error) {
-	data, acc, err := t.getDelayedMessageBytesAndAccumulator(seqNum)
+	key := dbKey(rlpDelayedMessagePrefix, seqNum)
+	exists, err := t.db.Has(key)
 	if err != nil {
-		return nil, acc, err
+		return nil, common.Hash{}, err
 	}
-	message, err := arbos.ParseIncomingL1Message(bytes.NewReader(data))
-	return message, acc, err
+	if !exists {
+		return t.legacyGetDelayedMessageAndAccumulator(seqNum)
+	}
+	data, err := t.db.Get(key)
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
+	if len(data) < 32 {
+		return nil, common.Hash{}, errors.New("delayed message new entry missing accumulator")
+	}
+	var acc common.Hash
+	copy(acc[:], data[:32])
+	var msg *arbos.L1IncomingMessage
+	err = rlp.DecodeBytes(data[32:], &msg)
+	return msg, acc, err
 }
 
 func (t *InboxTracker) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
@@ -196,8 +218,11 @@ func (t *InboxTracker) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessag
 }
 
 func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
-	data, _, err := t.getDelayedMessageBytesAndAccumulator(seqNum)
-	return data, err
+	msg, err := t.GetDelayedMessage(seqNum)
+	if err != nil {
+		return nil, err
+	}
+	return msg.Serialize()
 }
 
 func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool) error {
@@ -220,7 +245,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 				// We already have these delayed messages
 				return nil
 			}
-		} else if !errors.Is(err, accumulatorNotFound) {
+		} else if !errors.Is(err, AccumulatorNotFoundErr) {
 			return err
 		}
 	}
@@ -230,7 +255,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		var err error
 		nextAcc, err = t.GetDelayedAcc(pos - 1)
 		if err != nil {
-			if errors.Is(err, accumulatorNotFound) {
+			if errors.Is(err, AccumulatorNotFoundErr) {
 				return errors.New("missing previous delayed message")
 			} else {
 				return err
@@ -254,9 +279,9 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		}
 		nextAcc = message.AfterInboxAcc()
 
-		msgKey := dbKey(delayedMessagePrefix, seqNum)
+		msgKey := dbKey(rlpDelayedMessagePrefix, seqNum)
 
-		msgData, err := message.Message.Serialize()
+		msgData, err := rlp.EncodeToBytes(message.Message)
 		if err != nil {
 			return err
 		}
@@ -277,7 +302,11 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 // Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
 // Also deletes any future delayed messages.
 func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newDelayedCount uint64, canReorgBatches bool) error {
-	err := deleteStartingAt(t.db, batch, delayedMessagePrefix, uint64ToKey(newDelayedCount))
+	err := deleteStartingAt(t.db, batch, rlpDelayedMessagePrefix, uint64ToKey(newDelayedCount))
+	if err != nil {
+		return err
+	}
+	err = deleteStartingAt(t.db, batch, legacyDelayedMessagePrefix, uint64ToKey(newDelayedCount))
 	if err != nil {
 		return err
 	}
@@ -390,12 +419,11 @@ func (b *multiplexerBackend) SetPositionWithinMessage(pos uint64) {
 	b.positionWithinMessage = pos
 }
 
-func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
 	if len(b.batches) == 0 || seqNum >= b.batches[0].AfterDelayedCount {
 		return nil, errors.New("attempted to read past end of sequencer batch delayed messages")
 	}
-	data, _, err := b.inbox.getDelayedMessageBytesAndAccumulator(seqNum)
-	return data, err
+	return b.inbox.GetDelayedMessage(seqNum)
 }
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
@@ -415,7 +443,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		var err error
 		prevbatchmeta, err = t.GetBatchMetadata(pos - 1)
 		nextAcc = prevbatchmeta.Accumulator
-		if errors.Is(err, accumulatorNotFound) {
+		if errors.Is(err, AccumulatorNotFoundErr) {
 			return errors.New("missing previous sequencer batch")
 		} else if err != nil {
 			return err
@@ -438,7 +466,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 
 		if batch.AfterDelayedCount > 0 {
 			haveDelayedAcc, err := t.GetDelayedAcc(batch.AfterDelayedCount - 1)
-			if errors.Is(err, accumulatorNotFound) {
+			if errors.Is(err, AccumulatorNotFoundErr) {
 				// We somehow missed a referenced delayed message; go back and look for it
 				return delayedMessagesMismatch
 			} else if err != nil {
@@ -566,7 +594,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 
 	if t.txStreamer.broadcastServer != nil && pos > 1 {
 		prevprevbatchmeta, err := t.GetBatchMetadata(pos - 2)
-		if errors.Is(err, accumulatorNotFound) {
+		if errors.Is(err, AccumulatorNotFoundErr) {
 			return errors.New("missing previous previous sequencer batch")
 		} else if err != nil {
 			return err
@@ -605,7 +633,7 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	if count > 0 {
 		var err error
 		prevBatchMeta, err = t.GetBatchMetadata(count - 1)
-		if errors.Is(err, accumulatorNotFound) {
+		if errors.Is(err, AccumulatorNotFoundErr) {
 			return errors.New("attempted to reorg to future batch count")
 		} else if err != nil {
 			return err

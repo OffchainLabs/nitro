@@ -10,6 +10,6 @@ If anywhere between 2 and 18 of the committee members are well behaved, the AnyT
 
 In what should be the common and happy case, however, in which at least 19 of the 20 committee members are well behaved, the system operates without the posting the L2 chain's data on L1, and thus, users pay significantly lower fees. This is the core upside of AnyTrust chains over rollups.
 
-Variants of the AnyTrust model in which the new trust assumption is minmimized are under consideration; stay tuned.
+Variants of the AnyTrust model in which the new trust assumption is minimized are under consideration; stay tuned.
 
 For more, see [Inside AnyTrust](../inside-anytrust.md).

@@ -4,6 +4,8 @@
 package burn
 
 import (
+	"fmt"
+
 	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
@@ -12,6 +14,7 @@ type Burner interface {
 	Burn(amount uint64) error
 	Burned() uint64
 	Restrict(err error)
+	HandleError(err error) error
 	ReadOnly() bool
 	TracingInfo() *util.TracingInfo
 }
@@ -42,6 +45,10 @@ func (burner *SystemBurner) Restrict(err error) {
 	if err != nil {
 		glog.Error("Restrict() received an error", "err", err)
 	}
+}
+
+func (burner *SystemBurner) HandleError(err error) error {
+	panic(fmt.Sprintf("fatal error in system burner: %v", err))
 }
 
 func (burner *SystemBurner) ReadOnly() bool {

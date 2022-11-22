@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -48,7 +49,7 @@ const StorageReadCost = params.SloadGasEIP2200
 const StorageWriteCost = params.SstoreSetGasEIP2200
 const StorageWriteZeroCost = params.SstoreResetGasEIP2200
 
-// Use a Geth database to create an evm key-value store
+// NewGeth uses a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
@@ -60,12 +61,12 @@ func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	}
 }
 
-// Use Geth's memory-backed database to create an evm key-value store
+// NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store
 func NewMemoryBacked(burner burn.Burner) *Storage {
 	return NewGeth(NewMemoryBackedStateDB(), burner)
 }
 
-// Use Geth's memory-backed database to create a statedb
+// NewMemoryBackedStateDB uses Geth's memory-backed database to create a statedb
 func NewMemoryBackedStateDB() vm.StateDB {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
@@ -249,24 +250,24 @@ func (store *Storage) ClearBytes() error {
 	return store.ClearByUint64(0)
 }
 
-func (sto *Storage) Burner() burn.Burner {
-	return sto.burner // not public because these should never be changed once set
+func (store *Storage) Burner() burn.Burner {
+	return store.burner // not public because these should never be changed once set
 }
 
-func (sto *Storage) Keccak(data ...[]byte) ([]byte, error) {
+func (store *Storage) Keccak(data ...[]byte) ([]byte, error) {
 	byteCount := 0
 	for _, part := range data {
 		byteCount += len(part)
 	}
 	cost := 30 + 6*arbmath.WordsForBytes(uint64(byteCount))
-	if err := sto.burner.Burn(cost); err != nil {
+	if err := store.burner.Burn(cost); err != nil {
 		return nil, err
 	}
 	return crypto.Keccak256(data...), nil
 }
 
-func (sto *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
-	bytes, err := sto.Keccak(data...)
+func (store *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
+	bytes, err := store.Keccak(data...)
 	return common.BytesToHash(bytes), err
 }
 
@@ -277,8 +278,8 @@ type StorageSlot struct {
 	burner  burn.Burner
 }
 
-func (sto *Storage) NewSlot(offset uint64) StorageSlot {
-	return StorageSlot{sto.account, sto.db, mapAddress(sto.storageKey, util.UintToHash(offset)), sto.burner}
+func (store *Storage) NewSlot(offset uint64) StorageSlot {
+	return StorageSlot{store.account, store.db, mapAddress(store.storageKey, util.UintToHash(offset)), store.burner}
 }
 
 func (ss *StorageSlot) Get() (common.Hash, error) {
@@ -308,7 +309,8 @@ func (ss *StorageSlot) Set(value common.Hash) error {
 	return nil
 }
 
-// Implementation note for StorageBackedInt64: Conversions between big.Int and common.Hash give weird results
+// StorageBackedInt64 is an int64 stored inside the StateDB.
+// Implementation note: Conversions between big.Int and common.Hash give weird results
 // for negative values, so we cast to uint64 before writing to storage and cast back to int64 after reading.
 // Golang casting between uint64 and int64 doesn't change the data, it just reinterprets the same 8 bytes,
 // so this is a hacky but reliable way to store an 8-byte int64 in a common.Hash storage slot.
@@ -316,8 +318,8 @@ type StorageBackedInt64 struct {
 	StorageSlot
 }
 
-func (sto *Storage) OpenStorageBackedInt64(offset uint64) StorageBackedInt64 {
-	return StorageBackedInt64{sto.NewSlot(offset)}
+func (store *Storage) OpenStorageBackedInt64(offset uint64) StorageBackedInt64 {
+	return StorageBackedInt64{store.NewSlot(offset)}
 }
 
 func (sbu *StorageBackedInt64) Get() (int64, error) {
@@ -332,13 +334,13 @@ func (sbu *StorageBackedInt64) Set(value int64) error {
 	return sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
 }
 
-// Represents a number of basis points
+// StorageBackedBips represents a number of basis points
 type StorageBackedBips struct {
 	backing StorageBackedInt64
 }
 
-func (sto *Storage) OpenStorageBackedBips(offset uint64) StorageBackedBips {
-	return StorageBackedBips{StorageBackedInt64{sto.NewSlot(offset)}}
+func (store *Storage) OpenStorageBackedBips(offset uint64) StorageBackedBips {
+	return StorageBackedBips{StorageBackedInt64{store.NewSlot(offset)}}
 }
 
 func (sbu *StorageBackedBips) Get() (arbmath.Bips, error) {
@@ -354,8 +356,8 @@ type StorageBackedUint64 struct {
 	StorageSlot
 }
 
-func (sto *Storage) OpenStorageBackedUint64(offset uint64) StorageBackedUint64 {
-	return StorageBackedUint64{sto.NewSlot(offset)}
+func (store *Storage) OpenStorageBackedUint64(offset uint64) StorageBackedUint64 {
+	return StorageBackedUint64{store.NewSlot(offset)}
 }
 
 func (sbu *StorageBackedUint64) Get() (uint64, error) {
@@ -433,21 +435,100 @@ type WrappedUint64 interface {
 	Decrement() (uint64, error)
 }
 
+var twoToThe256 = new(big.Int).Lsh(common.Big1, 256)
+var twoToThe256MinusOne = new(big.Int).Sub(twoToThe256, common.Big1)
+var twoToThe255 = new(big.Int).Lsh(common.Big1, 255)
+var twoToThe255MinusOne = new(big.Int).Sub(twoToThe255, common.Big1)
+
+type StorageBackedBigUint struct {
+	StorageSlot
+}
+
+func (store *Storage) OpenStorageBackedBigUint(offset uint64) StorageBackedBigUint {
+	return StorageBackedBigUint{store.NewSlot(offset)}
+}
+
+func (sbbu *StorageBackedBigUint) Get() (*big.Int, error) {
+	asHash, err := sbbu.StorageSlot.Get()
+	if err != nil {
+		return nil, err
+	}
+	return asHash.Big(), nil
+}
+
+// Warning: this will panic if it underflows or overflows with a system burner
+// SetSaturatingWithWarning is likely better
+func (sbbu *StorageBackedBigUint) SetChecked(val *big.Int) error {
+	if val.Sign() < 0 {
+		return sbbu.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigUint.Set setting value %v", val))
+	} else if val.BitLen() > 256 {
+		return sbbu.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigUint.Set setting value %v", val))
+	}
+	return sbbu.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+}
+
+func (sbbu *StorageBackedBigUint) SetSaturatingWithWarning(val *big.Int, name string) error {
+	if val.Sign() < 0 {
+		log.Warn("ArbOS storage big uint underflowed", "name", name, "value", val)
+		val = common.Big0
+	} else if val.BitLen() > 256 {
+		log.Warn("ArbOS storage big uint overflowed", "name", name, "value", val)
+		val = twoToThe256MinusOne
+	}
+	return sbbu.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+}
+
 type StorageBackedBigInt struct {
 	StorageSlot
 }
 
-func (sto *Storage) OpenStorageBackedBigInt(offset uint64) StorageBackedBigInt {
-	return StorageBackedBigInt{sto.NewSlot(offset)}
+func (store *Storage) OpenStorageBackedBigInt(offset uint64) StorageBackedBigInt {
+	return StorageBackedBigInt{store.NewSlot(offset)}
 }
 
 func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
-	value, err := sbbi.StorageSlot.Get()
-	return value.Big(), err
+	asHash, err := sbbi.StorageSlot.Get()
+	if err != nil {
+		return nil, err
+	}
+	asBig := new(big.Int).SetBytes(asHash[:])
+	if asBig.Bit(255) != 0 {
+		asBig = new(big.Int).Sub(asBig, twoToThe256)
+	}
+	return asBig, err
 }
 
-func (sbbi *StorageBackedBigInt) Set(val *big.Int) error {
-	return sbbi.StorageSlot.Set(common.BigToHash(val))
+// Warning: this will panic if it underflows or overflows with a system burner
+// SetSaturatingWithWarning is likely better
+func (sbbi *StorageBackedBigInt) SetChecked(val *big.Int) error {
+	if val.Sign() < 0 {
+		val = new(big.Int).Add(val, twoToThe256)
+		if val.BitLen() < 256 || val.Sign() <= 0 { // require that it's positive and the top bit is set
+			return sbbi.burner.HandleError(fmt.Errorf("underflow in StorageBackedBigInt.Set setting value %v", val))
+		}
+	} else if val.BitLen() >= 256 {
+		return sbbi.burner.HandleError(fmt.Errorf("overflow in StorageBackedBigInt.Set setting value %v", val))
+	}
+	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+}
+
+func (sbbi *StorageBackedBigInt) SetSaturatingWithWarning(val *big.Int, name string) error {
+	if val.Sign() < 0 {
+		origVal := val
+		val = new(big.Int).Add(val, twoToThe256)
+		if val.BitLen() < 256 || val.Sign() <= 0 { // require that it's positive and the top bit is set
+			log.Warn("ArbOS storage big uint underflowed", "name", name, "value", origVal)
+			val.Set(twoToThe255)
+		}
+	} else if val.BitLen() >= 256 {
+		log.Warn("ArbOS storage big uint overflowed", "name", name, "value", val)
+		val = twoToThe255MinusOne
+	}
+	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+}
+
+func (sbbi *StorageBackedBigInt) Set_preVersion7(val *big.Int) error {
+	return sbbi.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
 
 func (sbbi *StorageBackedBigInt) SetByUint(val uint64) error {
@@ -458,8 +539,8 @@ type StorageBackedAddress struct {
 	StorageSlot
 }
 
-func (sto *Storage) OpenStorageBackedAddress(offset uint64) StorageBackedAddress {
-	return StorageBackedAddress{sto.NewSlot(offset)}
+func (store *Storage) OpenStorageBackedAddress(offset uint64) StorageBackedAddress {
+	return StorageBackedAddress{store.NewSlot(offset)}
 }
 
 func (sba *StorageBackedAddress) Get() (common.Address, error) {
@@ -481,8 +562,8 @@ func init() {
 	NilAddressRepresentation = common.BigToHash(new(big.Int).Lsh(big.NewInt(1), 255))
 }
 
-func (sto *Storage) OpenStorageBackedAddressOrNil(offset uint64) StorageBackedAddressOrNil {
-	return StorageBackedAddressOrNil{sto.NewSlot(offset)}
+func (store *Storage) OpenStorageBackedAddressOrNil(offset uint64) StorageBackedAddressOrNil {
+	return StorageBackedAddressOrNil{store.NewSlot(offset)}
 }
 
 func (sba *StorageBackedAddressOrNil) Get() (*common.Address, error) {
@@ -507,9 +588,9 @@ type StorageBackedBytes struct {
 	Storage
 }
 
-func (sto *Storage) OpenStorageBackedBytes(id []byte) StorageBackedBytes {
+func (store *Storage) OpenStorageBackedBytes(id []byte) StorageBackedBytes {
 	return StorageBackedBytes{
-		*sto.OpenSubStorage(id),
+		*store.OpenSubStorage(id),
 	}
 }
 

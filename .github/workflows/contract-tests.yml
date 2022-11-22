@@ -11,7 +11,7 @@ on:
 jobs:
   tests:
     name: Contract tests
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-8
     defaults:
       run:
         shell: bash
@@ -42,13 +42,16 @@ jobs:
       - name: Interface compatibility
         run: yarn run test:compatibility
 
+      - name: Test Storage Layouts
+        run: yarn run test:storage
+
       - name: Run coverage
         run: yarn hardhat coverage --testfiles "test/contract/*.spec.ts"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           files: ./contracts/coverage.json
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}

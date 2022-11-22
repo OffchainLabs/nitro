@@ -3,7 +3,7 @@
 #### Q: Hello! What’s Arbitrum?
 Hi! Arbitrum is a technology suite designed to scale Ethereum. You can use Arbitrum chains to do all things you do on Ethereum — use Web3 apps, deploy smart contracts, etc., but your transactions will be cheaper and faster. Our flagship product — Arbitrum Rollup — is an Optimistic rollup protocol that inherits Ethereum-level security.
 
-#### Q:  What, what’s “Ethereum”? What's a “smart contract”? Where am I?
+#### Q: What, what’s “Ethereum”? What's a “smart contract”? Where am I?
 If you aren’t yet familiar with the Ethereum ecosystem, you can check out [ethereum.org](https://ethereum.org/en/learn/) for an intro. Come back whenever you're ready, no rush. 
 	
 #### Q: You said Arbitrum exists to “scale” Ethereum; why does Ethereum need this help? Is there something wrong with Ethereum?
@@ -17,7 +17,7 @@ The combination of these two factors — every node has to process every transac
 
 
 #### Q: And Arbitrum Rollup fixes this?
-Arbitrum rollup fixes this! The basic idea is this: an Arbitrum Rollup chain runs as a sort of sub-module within Ethereum. Unlike regular, layer 1 ( “L1”) Ethereum transactions, we don’t require Ethereum nodes to process every Arbitrum transaction; rather, Ethereum adopts an [“innocent until proven guilty"](https://insights.deribit.com/market-research/making-sense-of-rollups-part-2-dispute-resolution-on-arbitrum-and-optimism/) attitude to Arbitrum. Layer 1 initially “optimistically assumes” activity on Arbitrum is following the proper rules. If a violation occurs  (i.e., somebody claims “now I have all of your money”), this claim can be disputed back on L1; fraud will be proven, the invalid claim disregarded, and the malicious party will be financially penalized.
+Arbitrum rollup fixes this! The basic idea is this: an Arbitrum Rollup chain runs as a sort of sub-module within Ethereum. Unlike regular, layer 1 ( “L1”) Ethereum transactions, we don’t require Ethereum nodes to process every Arbitrum transaction; rather, Ethereum adopts an [“innocent until proven guilty"](https://insights.deribit.com/market-research/making-sense-of-rollups-part-2-dispute-resolution-on-arbitrum-and-optimism/) attitude to Arbitrum. Layer 1 initially “optimistically assumes” activity on Arbitrum is following the proper rules. If a violation occurs (i.e., somebody claims “now I have all of your money”), this claim can be disputed back on L1; fraud will be proven, the invalid claim disregarded, and the malicious party will be financially penalized.
 
 This ability to adjudicate and prove fraud on L1 is Arbitrum’s key, fundamental feature, and is how and why the system inherits Ethereum’s security. 
 
@@ -27,7 +27,7 @@ Yes, indeed we can be. This is where the “rollup” part comes in. The data th
 #### Q: Who actually does this work (of checking for fraud, proving it, etc?)
 The parties who move the Arbitrum chain state forward on L1 — i.e., making claims about the chain’s state, disputing other’s claims, etc. — are called validators. 
 In practice, we don’t expect the average Arbitrum user to be interested in running a 
-validator, just like the average Ethereum user typically doesn’t run their own layer 1 mining (or staking) node. The crucial property, however, is that anybody can; becoming an Arbitrum validator requires no special permission ([post-mainnet beta](../mainnet-beta.md)), only that a user runs the [open source validator software](https://github.com/OffchainLabs/nitro) (and stakes Ether when/if they need to take action).
+validator, just like the average Ethereum user typically doesn’t run their own layer 1 staking node. The crucial property, however, is that anybody can; becoming an Arbitrum validator requires no special permission ([post-mainnet beta](../mainnet-beta.md)), only that a user runs the [open source validator software](https://github.com/OffchainLabs/nitro) (and stakes Ether when/if they need to take action).
 
 Additionally, as long as there’s even just one honest validator, the chain will remain secure; i.e., it only takes one non-malicious fraud-prover to catch any number of malicious trouble-makers. These properties together make the system “trustless”; users are not relying on any special designated party for their funds to be secure.
 
@@ -36,7 +36,7 @@ Additionally, as long as there’s even just one honest validator, the chain wil
 Oh, it’s not so bad. In essence: if two validators disagree, only one of them (at most) can be telling the truth. In a dispute, the two validators play an interactive, call-and-response game, in which they narrow down their dispute to a single computational step (think of something small and simple, like multiplying two numbers). This one step gets executed on L1, and will, by necessity, prove that the honest party was telling the truth. For a more detailed rundown, see [here](../proving/challenge-manager.md). 	
 
 #### Q: This dispute game obviously takes some time; does this impose any sort of delay on Arbitrum users' transactions?
-The only delay that's felt by a user is in "withdrawing" — moving their funds from Arbitrum back to Ethereum; if users are withdrawing directly from Arbitrum to Ethereum, they must typically wait 1 week before receiving their funds on L1. If users use a fast-bridge application, however, they can bypass this delay period entirely (likely for a small fee). Anything else a user does — i.e., depositing funds from Ethereum onto Arbitrum, or using a dapp deployed on an Arbitrum chain — doesn't incur this delay period.  
+The only delay that's felt by a user is in "withdrawing" — moving their funds from Arbitrum back to Ethereum; if users are withdrawing directly from Arbitrum to Ethereum, they must typically wait 1 week before receiving their funds on L1. If users use a fast-bridge application, however, they can bypass this delay period entirely (likely for a small fee). Anything else a user does — i.e., depositing funds from Ethereum onto Arbitrum, or using a dapp deployed on an Arbitrum chain — doesn't incur this delay period.
 
 
 #### Q: Okay, so backing up: the “optimistic execution” part is how and why Arbitrum is able to offer low fees, yes?

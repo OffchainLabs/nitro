@@ -15,7 +15,6 @@ use wasmer::{
     RuntimeError, Store, Universal, WasmerEnv,
 };
 use wasmer_compiler_cranelift::Cranelift;
-use wasmer_compiler_llvm::LLVM;
 
 use std::{
     collections::BTreeMap,
@@ -44,11 +43,16 @@ pub fn create(opts: &Opts, env: WasmEnvArc) -> (Instance, WasmEnvArc) {
             Universal::new(compiler).engine()
         }
         false => {
-            let mut compiler = LLVM::new();
-            compiler.canonicalize_nans(true);
-            compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
-            compiler.enable_verifier();
-            Universal::new(compiler).engine()
+            #[cfg(not(feature = "llvm"))]
+            panic!("Please rebuild with the \"llvm\" feature for LLVM support");
+            #[cfg(feature = "llvm")]
+            {
+                let mut compiler = wasmer_compiler_llvm::LLVM::new();
+                compiler.canonicalize_nans(true);
+                compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
+                compiler.enable_verifier();
+                Universal::new(compiler).engine()
+            }
         }
     };
 
@@ -199,7 +203,7 @@ pub struct WasmEnvArc {
 impl Deref for WasmEnvArc {
     type Target = Mutex<WasmEnv>;
     fn deref(&self) -> &Self::Target {
-        &*self.env
+        &self.env
     }
 }
 

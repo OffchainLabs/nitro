@@ -32,6 +32,7 @@ function writeConfigs(argv: any) {
                 "disable-challenge": false,
                 "enable": false,
                 "staker-interval": "10s",
+                "make-assertion-interval": "10s",
                 "strategy": "MakeNodes",
                 "target-machine-count": 4,
             },
@@ -50,11 +51,16 @@ function writeConfigs(argv: any) {
                 "retry-interval": "0.5s",
                 "seq-num-duration": "24h0m0s",
                 "update-interval": "3s",
-                "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             },
             "batch-poster": {
                 "enable": false,
+                "redis-url": argv.redisUrl,
                 "max-interval": "30s",
+                "data-poster": {
+                    "redis-signer": {
+                      "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    }
+                }
             }
         },
         "init": {
@@ -67,7 +73,9 @@ function writeConfigs(argv: any) {
             "addr": "0.0.0.0"
         },
         "http": {
-            "addr": "0.0.0.0"
+            "addr": "0.0.0.0",
+            "vhosts": "*",
+            "corsdomain": "*"
         },
     }
     const baseConfJSON = JSON.stringify(baseConfig)
@@ -75,6 +83,7 @@ function writeConfigs(argv: any) {
     let validatorConfig = JSON.parse(baseConfJSON)
     validatorConfig.l1.wallet.account = namedAccount("validator").address
     validatorConfig.node.validator.enable = true
+    validatorConfig.node.validator["use-smart-contract-wallet"] = true
     let validconfJSON = JSON.stringify(validatorConfig)
     fs.writeFileSync(path.join(consts.configpath, "validator_config.json"), validconfJSON)
 

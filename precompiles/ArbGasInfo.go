@@ -13,7 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// Provides insight into the cost of using the rollup.
+// ArbGasInfo provides insight into the cost of using the rollup.
 type ArbGasInfo struct {
 	Address addr // 0x6c
 }
@@ -22,13 +22,13 @@ var storageArbGas = big.NewInt(int64(storage.StorageWriteCost))
 
 const AssumedSimpleTxSize = 140
 
-// Get prices in wei when using the provided aggregator
+// GetPricesInWeiWithAggregator gets  prices in wei when using the provided aggregator
 func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	c ctx,
 	evm mech,
 	aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
-	if c.State.FormatVersion() < 4 {
+	if c.State.ArbOSVersion() < 4 {
 		return con._preVersion4_GetPricesInWeiWithAggregator(c, evm, aggregator)
 	}
 
@@ -87,14 +87,14 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 	return perL2Tx, weiForL1Calldata, weiForL2Storage, perArbGasBase, perArbGasCongestion, perArbGasTotal, nil
 }
 
-// Get prices in wei when using the caller's preferred aggregator
+// GetPricesInWei gets prices in wei when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
 	return con.GetPricesInWeiWithAggregator(c, evm, addr{})
 }
 
-// Get prices in ArbGas when using the provided aggregator
+// GetPricesInArbGasWithAggregator gets prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
-	if c.State.FormatVersion() < 4 {
+	if c.State.ArbOSVersion() < 4 {
 		return con._preVersion4_GetPricesInArbGasWithAggregator(c, evm, aggregator)
 	}
 	l1GasPrice, err := c.State.L1PricingState().PricePerUnit()
@@ -134,12 +134,12 @@ func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm me
 	return perL2Tx, gasForL1Calldata, storageArbGas, nil
 }
 
-// Get prices in ArbGas when using the caller's preferred aggregator
+// GetPricesInArbGas gets prices in ArbGas when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, error) {
 	return con.GetPricesInArbGasWithAggregator(c, evm, addr{})
 }
 
-// Get the rollup's speed limit, pool size, and tx gas limit
+// GetGasAccountingParams gets the rollup's speed limit, pool size, and tx gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
 	l2pricing := c.State.L2PricingState()
 	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
@@ -147,47 +147,68 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 	return arbmath.UintToBig(speedLimit), arbmath.UintToBig(maxTxGasLimit), arbmath.UintToBig(maxTxGasLimit), err
 }
 
-// Get the minimum gas price needed for a transaction to succeed
+// GetMinimumGasPrice gets the minimum gas price needed for a transaction to succeed
 func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
 	return c.State.L2PricingState().MinBaseFeeWei()
 }
 
-// Get the current estimate of the L1 basefee
+// GetL1BaseFeeEstimate gets the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimate(c ctx, evm mech) (huge, error) {
 	return c.State.L1PricingState().PricePerUnit()
 }
 
-// Get how slowly ArbOS updates its estimate of the L1 basefee
+// GetL1BaseFeeEstimateInertia gets how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().Inertia()
 }
 
-// Get the current estimate of the L1 basefee
+// GetL1GasPriceEstimate gets the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 	return con.GetL1BaseFeeEstimate(c, evm)
 }
 
-// Get the fee paid to the aggregator for posting this tx
+// GetCurrentTxL1GasFees gets the fee paid to the aggregator for posting this tx
 func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 	return c.txProcessor.PosterFee, nil
 }
 
-// Get the backlogged amount of gas burnt in excess of the speed limit
+// GetGasBacklog gets the backlogged amount of gas burnt in excess of the speed limit
 func (con ArbGasInfo) GetGasBacklog(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().GasBacklog()
 }
 
-// Get how slowly ArbOS updates the L2 basefee in response to backlogged gas
+// GetPricingInertia gets the L2 basefee in response to backlogged gas
 func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().PricingInertia()
 }
 
-// Get the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
+// GetGasBacklogTolerance gets the forgivable amount of backlogged gas ArbOS will ignore when raising the basefee
 func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().BacklogTolerance()
 }
 
 func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
+	if c.State.ArbOSVersion() < 10 {
+		return con._preversion10_GetL1PricingSurplus(c, evm)
+	}
+	ps := c.State.L1PricingState()
+	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
+	if err != nil {
+		return nil, err
+	}
+	fundsDueForRewards, err := ps.FundsDueForRewards()
+	if err != nil {
+		return nil, err
+	}
+	haveFunds, err := ps.L1FeesAvailable()
+	if err != nil {
+		return nil, err
+	}
+	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
+	return arbmath.BigSub(haveFunds, needFunds), nil
+}
+
+func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	ps := c.State.L1PricingState()
 	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
 	if err != nil {
@@ -208,4 +229,8 @@ func (con ArbGasInfo) GetPerBatchGasCharge(c ctx, evm mech) (int64, error) {
 
 func (con ArbGasInfo) GetAmortizedCostCapBips(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().AmortizedCostCapBips()
+}
+
+func (con ArbGasInfo) GetL1FeesAvailable(c ctx, evm mech) (huge, error) {
+	return c.State.L1PricingState().L1FeesAvailable()
 }

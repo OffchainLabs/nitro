@@ -31,7 +31,10 @@ force_build=false
 validate=false
 detach=false
 blockscout=true
+tokenbridge=true
 redundantsequencers=0
+batchposters=1
+devprivkey=e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -59,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             blockscout=false
             shift
             ;;
+        --no-tokenbridge)
+            tokenbridge=false
+            shift
+            ;;
         --no-run)
             run=false
             shift
@@ -67,10 +74,20 @@ while [[ $# -gt 0 ]]; do
             detach=true
             shift
             ;;
+        --batchposters)
+            batchposters=$2
+            if ! [[ $batchposters =~ [0-3] ]] ; then
+                echo "batchposters must be between 0 and 3 value:$batchposters."
+                exit 1
+            fi
+            shift
+            shift
+            ;;
         --redundantsequencers)
             redundantsequencers=$2
-            if ! [[ $redundantsequencers =~ "[0-3]" ]] ; then
-                echo "redundantsequencers must be between 0 and 3"
+            if ! [[ $redundantsequencers =~ [0-3] ]] ; then
+                echo "redundantsequencers must be between 0 and 3 value:$redundantsequencers."
+                exit 1
             fi
             shift
             shift
@@ -83,6 +100,7 @@ while [[ $# -gt 0 ]]; do
             echo --build:           rebuild docker image
             echo --init:            remove all data, rebuild, deploy new rollup
             echo --validate:        heavy computation, validating all blocks in WASM
+            echo --batchposters:    batch posters [0-3]
             echo --redundantsequencers redundant sequencers [0-3]
             echo --detach:          detach from nodes after running them
             echo --no-run:          does not launch nodes \(usefull with build or init\)
@@ -96,7 +114,7 @@ if $force_init; then
     force_build=true
 fi
 
-NODES="sequencer poster"
+NODES="sequencer"
 
 if [ $redundantsequencers -gt 0 ]; then
     NODES="$NODES sequencer_b"
@@ -107,6 +125,17 @@ fi
 if [ $redundantsequencers -gt 2 ]; then
     NODES="$NODES sequencer_d"
 fi
+
+if [ $batchposters -gt 0 ]; then
+    NODES="$NODES poster"
+fi
+if [ $batchposters -gt 1 ]; then
+    NODES="$NODES poster_b"
+fi
+if [ $batchposters -gt 2 ]; then
+    NODES="$NODES poster_c"
+fi
+
 
 if $validate; then
     NODES="$NODES validator"
@@ -133,7 +162,7 @@ if $force_init; then
 
     echo == Generating l1 keys
     docker-compose run --entrypoint sh geth -c "echo passphrase > /root/.ethereum/passphrase"
-    docker-compose run --entrypoint sh geth -c "echo e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2 > /root/.ethereum/tmp-funnelkey"
+    docker-compose run --entrypoint sh geth -c "echo $devprivkey > /root/.ethereum/tmp-funnelkey"
     docker-compose run geth account import --password /root/.ethereum/passphrase --keystore /keystore /root/.ethereum/tmp-funnelkey
     docker-compose run --entrypoint sh geth -c "rm /root/.ethereum/tmp-funnelkey"
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
@@ -156,6 +185,13 @@ if $force_init; then
     docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
 
     docker-compose run testnode-scripts bridge-funds --ethamount 100000
+
+    if $tokenbridge; then
+        echo == Deploying token bridge
+        docker-compose run -e ARB_KEY=$devprivkey -e ETH_KEY=$devprivkey testnode-tokenbridge gen:network
+        docker-compose run --entrypoint sh testnode-tokenbridge -c "cat localNetwork.json"
+        echo 
+    fi
 fi
 
 if $run; then

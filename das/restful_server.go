@@ -107,7 +107,7 @@ func (rds *RestfulDasServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Health requests for remote health-checks
+// HealthHandler implements health requests for remote health-checks
 func (rds *RestfulDasServer) HealthHandler(w http.ResponseWriter, r *http.Request, requestPath string) {
 	err := rds.storage.HealthCheck(r.Context())
 	if err != nil {

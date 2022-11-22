@@ -6,13 +6,14 @@ package wsbroadcastserver
 import (
 	"context"
 	"encoding/json"
-	"github.com/offchainlabs/nitro/arbutil"
 	"math/rand"
 	"net"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -44,14 +45,13 @@ func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *Clien
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
-		out:             make(chan []byte, clientManager.settings.MaxSendQueue),
+		out:             make(chan []byte, clientManager.config().MaxSendQueue),
 	}
 }
 
 func (cc *ClientConnection) Start(parentCtx context.Context) {
-	cc.StopWaiter.Start(parentCtx)
+	cc.StopWaiter.Start(parentCtx, cc)
 	cc.LaunchThread(func(ctx context.Context) {
-		defer close(cc.out)
 		for {
 			select {
 			case <-ctx.Done():
@@ -61,26 +61,19 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 				if err != nil {
 					logWarn(err, "error writing data to client")
 					cc.clientManager.Remove(cc)
-					for {
-						// Consume and ignore channel data until client properly stopped to prevent deadlock
-						select {
-						case <-ctx.Done():
-							return
-						case <-cc.out:
-						}
-					}
+					return
 				}
 			}
 		}
 	})
 }
 
-func (cc *ClientConnection) StopAndWait() {
-	if !cc.Started() {
-		// If client connection never started, need to close channel
-		close(cc.out)
+func (cc *ClientConnection) StopOnly() {
+	// Ignore errors from conn.Close since we are just shutting down
+	_ = cc.conn.Close()
+	if cc.Started() {
+		cc.StopWaiter.StopOnly()
 	}
-	cc.StopWaiter.StopAndWait()
 }
 
 func (cc *ClientConnection) RequestedSeqNum() arbutil.MessageIndex {

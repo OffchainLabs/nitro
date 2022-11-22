@@ -33,7 +33,7 @@ type MachineInterface interface {
 	ProveNextStep() []byte
 }
 
-// Holds an arbitrator machine pointer, and manages its lifetime
+// ArbitratorMachine holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
 	ptr       *C.struct_Machine
 	contextId *int64 // has a finalizer attached to remove the preimage resolver from the global map
@@ -121,6 +121,11 @@ func (m *ArbitratorMachine) IsRunning() bool {
 func (m *ArbitratorMachine) IsErrored() bool {
 	defer runtime.KeepAlive(m)
 	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_ERRORED
+}
+
+func (m *ArbitratorMachine) Status() uint8 {
+	defer runtime.KeepAlive(m)
+	return uint8(C.arbitrator_get_status(m.ptr))
 }
 
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
