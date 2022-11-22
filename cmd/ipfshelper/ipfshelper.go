@@ -39,7 +39,7 @@ type IpfsHelper struct {
 func (h *IpfsHelper) createRepo(repoDirectory string, profiles string) error {
 	fileInfo, err := os.Stat(repoDirectory)
 	if err != nil {
-		return fmt.Errorf("failed to stat ipfs repo directory, %s : %w", repoDirectory, err)
+		return fmt.Errorf("failed to stat ipfs repo directory: %w", repoDirectory, err)
 	}
 	if !fileInfo.IsDir() {
 		return fmt.Errorf("%s is not a directory", repoDirectory)
@@ -163,6 +163,7 @@ func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destina
 		return "", fmt.Errorf("could not get file with CID: %w", err)
 	}
 	outputFilePath := filepath.Join(destinationDirectory, resolvedPath.Cid().String())
+	_ = os.Remove(outputFilePath)
 	err = files.WriteTo(rootNodeDirectory, outputFilePath)
 	if err != nil {
 		return "", fmt.Errorf("could not write out the fetched CID: %w", err)
