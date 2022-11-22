@@ -142,16 +142,16 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 	return buf
 }
 
-func (cert *DataAvailabilityCertificate) RecoverKeyset(
+func (c *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
 	da DataAvailabilityReader,
 	assumeKeysetValid bool,
 ) (*DataAvailabilityKeyset, error) {
-	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash)
+	keysetBytes, err := da.GetByHash(ctx, c.KeysetHash)
 	if err != nil {
 		return nil, err
 	}
-	if !dastree.ValidHash(cert.KeysetHash, keysetBytes) {
+	if !dastree.ValidHash(c.KeysetHash, keysetBytes) {
 		return nil, errors.New("keyset hash does not match cert")
 	}
 	return DeserializeKeyset(bytes.NewReader(keysetBytes), assumeKeysetValid)
