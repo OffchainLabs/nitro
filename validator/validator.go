@@ -2,7 +2,6 @@ package validator
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"sync"
 	"time"
@@ -114,8 +113,6 @@ func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			randDuration := rand.Int31n(2000) // 2000 ms simulating latency in submitting leaf creation.
-			time.Sleep(time.Millisecond * time.Duration(randDuration))
 			leaf, err := v.submitLeafCreation(ctx)
 			if err != nil {
 				log.WithError(err).Error("Could not submit leaf to protocol")
