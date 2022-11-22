@@ -293,10 +293,7 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 	chain.assertions = append(chain.assertions, leaf)
 	chain.dedupe[dedupeCode] = true
 	chain.feed.Append(&CreateLeafEvent{
-		PrevSeqNum:      prev.SequenceNum,
-		SeqNum:          leaf.SequenceNum,
-		StateCommitment: leaf.StateCommitment,
-		Staker:          staker,
+		Leaf: leaf,
 	})
 	return leaf, nil
 }

@@ -29,9 +29,11 @@ func Test_processLeafCreation(t *testing.T) {
 		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
 
 		ev := &protocol.CreateLeafEvent{
-			SeqNum:          seq,
-			StateCommitment: protocol.StateCommitment{},
-			Staker:          common.BytesToAddress([]byte("foo")),
+			Leaf: &protocol.Assertion{
+				SequenceNum:     seq,
+				StateCommitment: protocol.StateCommitment{},
+				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			},
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.ErrorIs(t, err, wantErr)
@@ -57,9 +59,11 @@ func Test_processLeafCreation(t *testing.T) {
 		p.On("AssertionBySequenceNumber", ctx, seqNum).Return(newlyCreatedAssertion, nil)
 
 		ev := &protocol.CreateLeafEvent{
-			SeqNum:          seqNum,
-			StateCommitment: protocol.StateCommitment{},
-			Staker:          common.BytesToAddress([]byte("foo")),
+			Leaf: &protocol.Assertion{
+				SequenceNum:     seqNum,
+				StateCommitment: protocol.StateCommitment{},
+				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			},
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
@@ -98,16 +102,20 @@ func Test_processLeafCreation(t *testing.T) {
 		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(true)
 
 		ev := &protocol.CreateLeafEvent{
-			SeqNum:          seqNum,
-			StateCommitment: protocol.StateCommitment{},
-			Staker:          common.BytesToAddress([]byte("foo")),
+			Leaf: &protocol.Assertion{
+				SequenceNum:     seqNum,
+				StateCommitment: protocol.StateCommitment{},
+				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			},
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		ev = &protocol.CreateLeafEvent{
-			SeqNum:          forkSeqNum,
-			StateCommitment: protocol.StateCommitment{},
-			Staker:          common.BytesToAddress([]byte("foo")),
+			Leaf: &protocol.Assertion{
+				SequenceNum:     forkSeqNum,
+				StateCommitment: protocol.StateCommitment{},
+				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			},
 		}
 		err = v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
@@ -146,16 +154,20 @@ func Test_processLeafCreation(t *testing.T) {
 		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(false)
 
 		ev := &protocol.CreateLeafEvent{
-			SeqNum:          seqNum,
-			StateCommitment: protocol.StateCommitment{},
-			Staker:          common.BytesToAddress([]byte("foo")),
+			Leaf: &protocol.Assertion{
+				SequenceNum:     seqNum,
+				StateCommitment: protocol.StateCommitment{},
+				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			},
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		ev = &protocol.CreateLeafEvent{
-			SeqNum:          forkSeqNum,
-			StateCommitment: protocol.StateCommitment{},
-			Staker:          common.BytesToAddress([]byte("foo")),
+			Leaf: &protocol.Assertion{
+				SequenceNum:     forkSeqNum,
+				StateCommitment: protocol.StateCommitment{},
+				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			},
 		}
 		err = v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)

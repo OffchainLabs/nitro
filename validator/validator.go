@@ -245,11 +245,11 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	if ev == nil {
 		return nil
 	}
-	if v.isFromSelf(ev.Staker) {
+	if v.isFromSelf(ev.Leaf.Staker.OpenKnownFull()) {
 		return nil
 	}
-	seqNum := ev.SeqNum
-	stateCommit := ev.StateCommitment
+	seqNum := ev.Leaf.SequenceNum
+	stateCommit := ev.Leaf.StateCommitment
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
 		"stateRoot": fmt.Sprintf("%#x", stateCommit.StateRoot),
@@ -261,6 +261,7 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	if err != nil {
 		return err
 	}
+
 	v.assertionsLock.Lock()
 	// Keep track of the created assertion locally.
 	v.assertions[seqNum] = assertion

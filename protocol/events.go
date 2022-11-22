@@ -17,10 +17,7 @@ func (ev *genericAssertionChainEvent) IsAssertionChainEvent() bool { return true
 
 type CreateLeafEvent struct {
 	genericAssertionChainEvent
-	PrevSeqNum      uint64
-	SeqNum          uint64
-	StateCommitment StateCommitment
-	Staker          common.Address
+	Leaf *Assertion
 }
 
 type ConfirmEvent struct {
