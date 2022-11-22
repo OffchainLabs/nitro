@@ -2,8 +2,8 @@ package validator
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 
