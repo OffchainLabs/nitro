@@ -28,7 +28,12 @@ func Test_processLeafCreation(t *testing.T) {
 		wantErr := errors.New("not found")
 		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
 
-		err := v.processLeafCreation(ctx, seq, protocol.StateCommitment{})
+		ev := &protocol.CreateLeafEvent{
+			SeqNum:          seq,
+			StateCommitment: protocol.StateCommitment{},
+			Staker:          common.BytesToAddress([]byte("foo")),
+		}
+		err := v.processLeafCreation(ctx, ev)
 		require.ErrorIs(t, err, wantErr)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 	})
@@ -51,7 +56,12 @@ func Test_processLeafCreation(t *testing.T) {
 		}
 		p.On("AssertionBySequenceNumber", ctx, seqNum).Return(newlyCreatedAssertion, nil)
 
-		err := v.processLeafCreation(ctx, seqNum, protocol.StateCommitment{})
+		ev := &protocol.CreateLeafEvent{
+			SeqNum:          seqNum,
+			StateCommitment: protocol.StateCommitment{},
+			Staker:          common.BytesToAddress([]byte("foo")),
+		}
+		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
@@ -87,9 +97,19 @@ func Test_processLeafCreation(t *testing.T) {
 		p.On("AssertionBySequenceNumber", ctx, forkSeqNum).Return(forkedAssertion, nil)
 		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(true)
 
-		err := v.processLeafCreation(ctx, seqNum, protocol.StateCommitment{})
+		ev := &protocol.CreateLeafEvent{
+			SeqNum:          seqNum,
+			StateCommitment: protocol.StateCommitment{},
+			Staker:          common.BytesToAddress([]byte("foo")),
+		}
+		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
-		err = v.processLeafCreation(ctx, forkSeqNum, protocol.StateCommitment{})
+		ev = &protocol.CreateLeafEvent{
+			SeqNum:          forkSeqNum,
+			StateCommitment: protocol.StateCommitment{},
+			Staker:          common.BytesToAddress([]byte("foo")),
+		}
+		err = v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "preparing to defend")
@@ -125,9 +145,19 @@ func Test_processLeafCreation(t *testing.T) {
 		p.On("AssertionBySequenceNumber", ctx, forkSeqNum).Return(forkedAssertion, nil)
 		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(false)
 
-		err := v.processLeafCreation(ctx, seqNum, protocol.StateCommitment{})
+		ev := &protocol.CreateLeafEvent{
+			SeqNum:          seqNum,
+			StateCommitment: protocol.StateCommitment{},
+			Staker:          common.BytesToAddress([]byte("foo")),
+		}
+		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
-		err = v.processLeafCreation(ctx, forkSeqNum, protocol.StateCommitment{})
+		ev = &protocol.CreateLeafEvent{
+			SeqNum:          forkSeqNum,
+			StateCommitment: protocol.StateCommitment{},
+			Staker:          common.BytesToAddress([]byte("foo")),
+		}
+		err = v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "Initiating challenge")
@@ -145,6 +175,7 @@ func Test_processChallengeStart(t *testing.T) {
 		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
 		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum: seq,
+			Staker:       common.BytesToAddress([]byte("foo")),
 		})
 		require.ErrorIs(t, err, wantErr)
 	})
@@ -160,6 +191,7 @@ func Test_processChallengeStart(t *testing.T) {
 		}, nil)
 		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum: seq,
+			Staker:       common.BytesToAddress([]byte("foo")),
 		})
 		require.NoError(t, err)
 		AssertLogsDoNotContain(t, logsHook, "Received challenge")
@@ -181,6 +213,7 @@ func Test_processChallengeStart(t *testing.T) {
 		p.On("AssertionBySequenceNumber", ctx, seq).Return(leaf, nil)
 		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum: seq,
+			Staker:       common.BytesToAddress([]byte("foo")),
 		})
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Received challenge")

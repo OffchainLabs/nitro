@@ -200,25 +200,26 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 	return leaf, nil
 }
 
-// Finds the latest valid assertion a validator should build their new leaves upon. This starts from
-// the latest confirmed assertion and makes it down the tree to the latest assertion that has a state
-// commitment matching in the validator's database.
+// Finds the latest valid assertion a validator should build their new leaves upon. This walks
+// down from the number of assertions in the protocol down until it finds
+// an assertion that we have a state commitment for.
 func (v *Validator) findLatestValidAssertion(ctx context.Context) *protocol.Assertion {
 	tx := &protocol.ActiveTx{}
-	latestValidParent := v.protocol.LatestConfirmed(tx)
+	latestConfirmed := v.protocol.LatestConfirmed(tx)
 	numAssertions := v.protocol.NumAssertions()
+	latestConfirmedSeqNum := latestConfirmed.SequenceNum
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
-	for s := latestValidParent.SequenceNum; s < numAssertions; s++ {
+	for s := numAssertions; s > latestConfirmedSeqNum; s-- {
 		a, ok := v.assertions[s]
 		if !ok {
 			continue
 		}
 		if v.stateManager.HasStateCommitment(ctx, a.StateCommitment) {
-			latestValidParent = a
+			return a
 		}
 	}
-	return latestValidParent
+	return latestConfirmed
 }
 
 // For a leaf created by a validator, we confirm the leaf has no rival after the challenge deadline has passed.
