@@ -248,8 +248,9 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	if v.isFromSelf(ev.Leaf.Staker.OpenKnownFull()) {
 		return nil
 	}
-	seqNum := ev.Leaf.SequenceNum
-	stateCommit := ev.Leaf.StateCommitment
+	leaf := ev.Leaf
+	seqNum := leaf.SequenceNum
+	stateCommit := leaf.StateCommitment
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
 		"stateRoot": fmt.Sprintf("%#x", stateCommit.StateRoot),
@@ -257,24 +258,19 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	}).Info("New leaf appended to protocol")
 	// Detect if there is a fork, then decide if we want to challenge.
 	// We check if the parent assertion has > 1 child.
-	assertion, err := v.protocol.AssertionBySequenceNumber(ctx, seqNum)
-	if err != nil {
-		return err
-	}
-
 	v.assertionsLock.Lock()
 	// Keep track of the created assertion locally.
-	v.assertions[seqNum] = assertion
+	v.assertions[seqNum] = leaf
 
 	// Keep track of assertions by parent state root to more easily detect forks.
 	key := common.Hash{}
-	if !assertion.Prev.IsEmpty() {
-		parentAssertion := assertion.Prev.OpenKnownFull()
+	if !leaf.Prev.IsEmpty() {
+		parentAssertion := leaf.Prev.OpenKnownFull()
 		key = parentAssertion.StateCommitment.Hash()
 	}
 	v.sequenceNumbersByParentStateCommitment[key] = append(
 		v.sequenceNumbersByParentStateCommitment[key],
-		assertion.SequenceNum,
+		leaf.SequenceNum,
 	)
 	hasForked := len(v.sequenceNumbersByParentStateCommitment[key]) > 1
 	v.assertionsLock.Unlock()
@@ -286,10 +282,10 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	}
 	// If there is a fork, we challenge if we disagree with its state commitment. Otherwise,
 	// we will defend challenge moves that agree with our local state.
-	if v.stateManager.HasStateCommitment(ctx, assertion.StateCommitment) {
-		return v.defendLeaf(ctx, assertion)
+	if v.stateManager.HasStateCommitment(ctx, stateCommit) {
+		return v.defendLeaf(ctx, leaf)
 	}
-	return v.challengeLeaf(ctx, assertion)
+	return v.challengeLeaf(ctx, leaf)
 }
 
 // Process new challenge creation events from the protocol that were not initiated by self.

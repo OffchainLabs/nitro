@@ -20,28 +20,9 @@ import (
 func Test_processLeafCreation(t *testing.T) {
 	ctx := context.Background()
 	_ = ctx
-	t.Run("fails to fetch assertion", func(t *testing.T) {
-		logsHook := test.NewGlobal()
-		v, p, _ := setupValidator(t)
-
-		seq := uint64(0)
-		wantErr := errors.New("not found")
-		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
-
-		ev := &protocol.CreateLeafEvent{
-			Leaf: &protocol.Assertion{
-				SequenceNum:     seq,
-				StateCommitment: protocol.StateCommitment{},
-				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
-			},
-		}
-		err := v.processLeafCreation(ctx, ev)
-		require.ErrorIs(t, err, wantErr)
-		AssertLogsContain(t, logsHook, "New leaf appended")
-	})
 	t.Run("no fork detected", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		v, p, _ := setupValidator(t)
+		v, _, _ := setupValidator(t)
 
 		parentSeqNum := uint64(1)
 		prevRoot := common.BytesToHash([]byte("foo"))
@@ -53,17 +34,13 @@ func Test_processLeafCreation(t *testing.T) {
 		}
 		seqNum := parentSeqNum + 1
 		newlyCreatedAssertion := &protocol.Assertion{
-			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
-			SequenceNum: seqNum,
+			Prev:            util.FullOption[*protocol.Assertion](parentAssertion),
+			SequenceNum:     seqNum,
+			StateCommitment: protocol.StateCommitment{},
+			Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
-		p.On("AssertionBySequenceNumber", ctx, seqNum).Return(newlyCreatedAssertion, nil)
-
 		ev := &protocol.CreateLeafEvent{
-			Leaf: &protocol.Assertion{
-				SequenceNum:     seqNum,
-				StateCommitment: protocol.StateCommitment{},
-				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
-			},
+			Leaf: newlyCreatedAssertion,
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
@@ -72,7 +49,7 @@ func Test_processLeafCreation(t *testing.T) {
 	})
 	t.Run("fork leads validator to defend leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		v, p, s := setupValidator(t)
+		v, _, s := setupValidator(t)
 
 		parentSeqNum := uint64(1)
 		prevRoot := common.BytesToHash([]byte("foo"))
@@ -81,11 +58,17 @@ func Test_processLeafCreation(t *testing.T) {
 				StateRoot: prevRoot,
 				Height:    parentSeqNum,
 			},
+			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 		seqNum := parentSeqNum + 1
 		newlyCreatedAssertion := &protocol.Assertion{
 			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
 			SequenceNum: seqNum,
+			StateCommitment: protocol.StateCommitment{
+				StateRoot: common.BytesToHash([]byte("bar")),
+				Height:    2,
+			},
+			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 		forkSeqNum := seqNum + 1
 		forkedAssertion := &protocol.Assertion{
@@ -95,27 +78,18 @@ func Test_processLeafCreation(t *testing.T) {
 				StateRoot: common.BytesToHash([]byte("bar")),
 				Height:    2,
 			},
+			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 
-		p.On("AssertionBySequenceNumber", ctx, seqNum).Return(newlyCreatedAssertion, nil)
-		p.On("AssertionBySequenceNumber", ctx, forkSeqNum).Return(forkedAssertion, nil)
 		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(true)
 
 		ev := &protocol.CreateLeafEvent{
-			Leaf: &protocol.Assertion{
-				SequenceNum:     seqNum,
-				StateCommitment: protocol.StateCommitment{},
-				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
-			},
+			Leaf: newlyCreatedAssertion,
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		ev = &protocol.CreateLeafEvent{
-			Leaf: &protocol.Assertion{
-				SequenceNum:     forkSeqNum,
-				StateCommitment: protocol.StateCommitment{},
-				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
-			},
+			Leaf: forkedAssertion,
 		}
 		err = v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
@@ -124,7 +98,7 @@ func Test_processLeafCreation(t *testing.T) {
 	})
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		v, p, s := setupValidator(t)
+		v, _, s := setupValidator(t)
 
 		parentSeqNum := uint64(1)
 		prevRoot := common.BytesToHash([]byte("foo"))
@@ -133,11 +107,17 @@ func Test_processLeafCreation(t *testing.T) {
 				StateRoot: prevRoot,
 				Height:    parentSeqNum,
 			},
+			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 		seqNum := parentSeqNum + 1
 		newlyCreatedAssertion := &protocol.Assertion{
 			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
 			SequenceNum: seqNum,
+			StateCommitment: protocol.StateCommitment{
+				StateRoot: common.BytesToHash([]byte("foo")),
+				Height:    2,
+			},
+			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 		forkSeqNum := seqNum + 1
 		forkedAssertion := &protocol.Assertion{
@@ -147,27 +127,18 @@ func Test_processLeafCreation(t *testing.T) {
 				StateRoot: common.BytesToHash([]byte("bar")),
 				Height:    2,
 			},
+			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 
-		p.On("AssertionBySequenceNumber", ctx, seqNum).Return(newlyCreatedAssertion, nil)
-		p.On("AssertionBySequenceNumber", ctx, forkSeqNum).Return(forkedAssertion, nil)
 		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(false)
 
 		ev := &protocol.CreateLeafEvent{
-			Leaf: &protocol.Assertion{
-				SequenceNum:     seqNum,
-				StateCommitment: protocol.StateCommitment{},
-				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
-			},
+			Leaf: newlyCreatedAssertion,
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		ev = &protocol.CreateLeafEvent{
-			Leaf: &protocol.Assertion{
-				SequenceNum:     forkSeqNum,
-				StateCommitment: protocol.StateCommitment{},
-				Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
-			},
+			Leaf: forkedAssertion,
 		}
 		err = v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
