@@ -3,9 +3,10 @@ package inbox_feeder
 import (
 	"context"
 	"encoding/binary"
+	"time"
+
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/ethereum/go-ethereum/crypto"
-	"time"
 )
 
 func StartInboxFeeder(ctx context.Context, chain *protocol.AssertionChain, messageInterval time.Duration, randomSeed []byte) {
@@ -17,7 +18,7 @@ func StartInboxFeeder(ctx context.Context, chain *protocol.AssertionChain, messa
 			select {
 			case <-ticker.C():
 				message := crypto.Keccak256(binary.BigEndian.AppendUint64(randomSeed, msgNum))
-				_ = chain.Tx(func(tx *protocol.ActiveTx, innerChain *protocol.AssertionChain) error {
+				_ = chain.Tx(func(tx *protocol.ActiveTx, innerChain protocol.OnChainProtocol) error {
 					innerChain.Inbox().Append(tx, message)
 					return nil
 				})

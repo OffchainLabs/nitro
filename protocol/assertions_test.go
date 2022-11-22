@@ -25,12 +25,13 @@ func TestAssertionChain(t *testing.T) {
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
-	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
-	require.Equal(t, 1, len(chain.assertions))
-	require.Equal(t, uint64(0), chain.confirmedLatest)
+	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+	require.Equal(t, 1, len(assertionsChain.assertions))
+	require.Equal(t, uint64(0), assertionsChain.confirmedLatest)
 	var eventChan chan AssertionChainEvent
-	err := chain.Tx(func(tx *ActiveTx, chain *AssertionChain) error {
-		genesis := chain.LatestConfirmed(tx)
+	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
+		genesis := p.LatestConfirmed(tx)
 		require.Equal(t, StateCommitment{
 			Height:    0,
 			StateRoot: common.Hash{},
@@ -114,9 +115,10 @@ func TestAssertionChain(t *testing.T) {
 
 func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
 	ctx := context.Background()
-	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	assertionsChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 
-	require.NoError(t, chain.Tx(func(tx *ActiveTx, chian *AssertionChain) error {
+	require.NoError(t, assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
 		oldStaker := common.BytesToAddress([]byte{1})
 		staker := common.BytesToAddress([]byte{2})
 		require.Equal(t, chain.GetBalance(tx, oldStaker), big.NewInt(0)) // Old staker has 0 because it's already staked.
@@ -136,9 +138,10 @@ func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
 
 func TestAssertionChain_LeafCreationsInsufficientStakes(t *testing.T) {
 	ctx := context.Background()
-	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	assertionsChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 
-	require.NoError(t, chain.Tx(func(tx *ActiveTx, chain *AssertionChain) error {
+	require.NoError(t, assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
 		lc := chain.LatestConfirmed(tx)
 		staker := common.BytesToAddress([]byte{1})
 		lc.Staker = util.EmptyOption[common.Address]()
@@ -209,9 +212,10 @@ func TestBisectionChallengeGame(t *testing.T) {
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
-	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
 
-	err := chain.Tx(func(tx *ActiveTx, chain *AssertionChain) error {
+	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
 		// We create a fork with genesis as the parent, where one branch is a higher depth than the other.
 		genesis := chain.LatestConfirmed(tx)
 		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))

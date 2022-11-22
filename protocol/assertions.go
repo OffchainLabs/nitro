@@ -43,12 +43,12 @@ type OnChainProtocol interface {
 
 // ChainReader can make non-mutating calls to the on-chain protocol.
 type ChainReader interface {
-	Call(clo func(*ActiveTx, *AssertionChain) error) error
+	Call(clo func(*ActiveTx, OnChainProtocol) error) error
 }
 
 // ChainWriter can make mutating calls to the on-chain protocol.
 type ChainWriter interface {
-	Tx(clo func(*ActiveTx, *AssertionChain) error) error
+	Tx(clo func(*ActiveTx, OnChainProtocol) error) error
 }
 
 // EventProvider allows subscribing to chain events for the on-chain protocol.
@@ -59,6 +59,7 @@ type EventProvider interface {
 // AssertionManager allows the creation of new leaves for a Staker with a State Commitment
 // and a previous assertion.
 type AssertionManager interface {
+	Inbox() *Inbox
 	NumAssertions(tx *ActiveTx) uint64
 	AssertionBySequenceNum(tx *ActiveTx, seqNum uint64) (*Assertion, error)
 	ChallengePeriodLength(tx *ActiveTx) time.Duration
@@ -100,7 +101,7 @@ func (tx *ActiveTx) verifyReadWrite() {
 	}
 }
 
-func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, chain *AssertionChain) error) error {
+func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.Lock()
 	defer chain.mutex.Unlock()
 	tx := &ActiveTx{txStatus: readWriteTxStatus}
@@ -109,7 +110,7 @@ func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, chain *AssertionChain) er
 	return err
 }
 
-func (chain *AssertionChain) Call(clo func(tx *ActiveTx, chain *AssertionChain) error) error {
+func (chain *AssertionChain) Call(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.RLock()
 	defer chain.mutex.RUnlock()
 	tx := &ActiveTx{txStatus: readOnlyTxStatus}

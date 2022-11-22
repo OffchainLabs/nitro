@@ -42,9 +42,13 @@ type MockProtocol struct {
 	mock.Mock
 }
 
-func (m *MockProtocol) Tx(clo func(*protocol.ActiveTx, *protocol.AssertionChain) error) error {
-	args := m.Called(clo)
-	return args.Error(0)
+func (m *MockProtocol) Inbox() *protocol.Inbox {
+	args := m.Called()
+	return args.Get(0).(*protocol.Inbox)
+}
+
+func (m *MockProtocol) Tx(clo func(tx *protocol.ActiveTx, pro protocol.OnChainProtocol) error) error {
+	return clo(&protocol.ActiveTx{}, m)
 }
 
 func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- protocol.AssertionChainEvent) {
@@ -75,7 +79,6 @@ func (m *MockProtocol) NumAssertions(tx *protocol.ActiveTx) uint64 {
 	return args.Get(0).(uint64)
 }
 
-func (m *MockProtocol) Call(clo func(*protocol.ActiveTx, *protocol.AssertionChain) error) error {
-	args := m.Called(clo)
-	return args.Error(0)
+func (m *MockProtocol) Call(clo func(*protocol.ActiveTx, protocol.OnChainProtocol) error) error {
+	return clo(&protocol.ActiveTx{}, m)
 }

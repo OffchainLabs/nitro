@@ -171,9 +171,15 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 	// the validator should also have ready access to historical commitments to make sure it can select
 	// the valid parent based on its commitment state root.
 	parentAssertionSeq := v.findLatestValidAssertion(ctx)
-	tx := &protocol.ActiveTx{}
-	parentAssertion, err := v.protocol.AssertionBySequenceNum(tx, parentAssertionSeq)
-	if err != nil {
+	var parentAssertion *protocol.Assertion
+	var err error
+	if err = v.protocol.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		parentAssertion, err = p.AssertionBySequenceNum(tx, parentAssertionSeq)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	currentCommit, err := v.stateManager.LatestStateCommitment(ctx)
@@ -184,7 +190,14 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 		Height:    currentCommit.Height,
 		StateRoot: currentCommit.Merkle,
 	}
-	leaf, err := v.protocol.CreateLeaf(tx, parentAssertion, stateCommit, v.address)
+	var leaf *protocol.Assertion
+	err = v.protocol.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		leaf, err = p.CreateLeaf(tx, parentAssertion, stateCommit, v.address)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	switch {
 	case errors.Is(err, protocol.ErrVertexAlreadyExists):
 		return nil, errors.Wrap(err, "vertex already exists, unable to create new leaf")
@@ -208,9 +221,13 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 // down from the number of assertions in the protocol down until it finds
 // an assertion that we have a state commitment for.
 func (v *Validator) findLatestValidAssertion(ctx context.Context) uint64 {
-	tx := &protocol.ActiveTx{}
-	latestConfirmed := v.protocol.LatestConfirmed(tx).SequenceNum
-	numAssertions := v.protocol.NumAssertions(tx)
+	var numAssertions uint64
+	var latestConfirmed uint64
+	_ = v.protocol.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		numAssertions = p.NumAssertions(tx)
+		latestConfirmed = p.LatestConfirmed(tx).SequenceNum
+		return nil
+	})
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
 	for s := numAssertions; s > latestConfirmed; s-- {
@@ -236,7 +253,9 @@ func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
 		"height":      leaf.StateCommitment.Height,
 		"sequenceNum": leaf.SequenceNum,
 	}
-	if err := leaf.ConfirmNoRival(tx); err != nil {
+	if err := v.protocol.Tx(func(tx *protocol.ActiveTx, _ protocol.OnChainProtocol) error {
+		return leaf.ConfirmNoRival(tx)
+	}); err != nil {
 		log.WithError(err).WithFields(logFields).Warn("Could not confirm that created leaf had no rival")
 		return
 	}
