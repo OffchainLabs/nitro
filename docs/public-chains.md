@@ -22,7 +22,6 @@ Users can now use [Alchemy](https://alchemy.com/?a=arbitrum-docs), [Infura](http
 
 **Arbitrum Nova**: Arbitrum Nova is the first mainnet [AnyTrust](inside-anytrust) chain. The following are the members of the initial data availability committee (DAC):
 - Consensys
-- FTX
 - Google Cloud
 - Offchain Labs
 - P2P
