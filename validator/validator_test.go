@@ -189,6 +189,7 @@ func Test_processChallengeStart(t *testing.T) {
 
 func Test_findLatestValidAssertion(t *testing.T) {
 	ctx := context.Background()
+	tx := &protocol.ActiveTx{}
 	t.Run("only valid latest assertion is genesis", func(t *testing.T) {
 		v, p, _ := setupValidator(t)
 		genesis := &protocol.Assertion{
@@ -200,7 +201,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 			Prev:   util.EmptyOption[*protocol.Assertion](),
 			Staker: util.EmptyOption[common.Address](),
 		}
-		p.On("LatestConfirmed").Return(genesis)
+		p.On("LatestConfirmed", tx).Return(genesis)
 		p.On("NumAssertions").Return(uint64(100))
 		latestValid := v.findLatestValidAssertion(ctx)
 		require.Equal(t, genesis, latestValid)
@@ -212,7 +213,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 			v.assertions[a.SequenceNum] = a
 			s.On("HasStateCommitment", ctx, a.StateCommitment).Return(true)
 		}
-		p.On("LatestConfirmed").Return(assertions[0])
+		p.On("LatestConfirmed", tx).Return(assertions[0])
 		p.On("NumAssertions").Return(uint64(len(assertions)))
 
 		latestValid := v.findLatestValidAssertion(ctx)
@@ -229,7 +230,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 				s.On("HasStateCommitment", ctx, a.StateCommitment).Return(false)
 			}
 		}
-		p.On("LatestConfirmed").Return(assertions[0])
+		p.On("LatestConfirmed", tx).Return(assertions[0])
 		p.On("NumAssertions").Return(uint64(len(assertions)))
 		latestValid := v.findLatestValidAssertion(ctx)
 		require.Equal(t, assertions[5], latestValid)

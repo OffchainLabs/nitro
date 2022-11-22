@@ -43,15 +43,15 @@ type OnChainProtocol interface {
 
 // ChainReader can make non-mutating calls to the on-chain protocol.
 type ChainReader interface {
-	ChallengePeriodLength() time.Duration
 	AssertionBySequenceNumber(ctx context.Context, seqNum uint64) (*Assertion, error)
 	NumAssertions() uint64
-	Call(clo func(*AssertionChain) error) error
+	ChallengePeriodLength(tx *ActiveTx) time.Duration
+	Call(clo func(*ActiveTx, *AssertionChain) error) error
 }
 
 // ChainWriter can make mutating calls to the on-chain protocol.
 type ChainWriter interface {
-	Tx(clo func(*AssertionChain) error) error
+	Tx(clo func(*ActiveTx, *AssertionChain) error) error
 }
 
 // EventProvider allows subscribing to chain events for the on-chain protocol.
@@ -62,8 +62,8 @@ type EventProvider interface {
 // AssertionManager allows the creation of new leaves for a Staker with a State Commitment
 // and a previous assertion.
 type AssertionManager interface {
-	LatestConfirmed() *Assertion
-	CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
+	LatestConfirmed(*ActiveTx) *Assertion
+	CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
 }
 
 type AssertionChain struct {
@@ -75,18 +75,47 @@ type AssertionChain struct {
 	dedupe          map[common.Hash]bool
 	balances        *util.MapWithDefault[common.Address, *big.Int]
 	feed            *EventFeed[AssertionChainEvent]
+	inbox           *Inbox
 }
 
-func (chain *AssertionChain) Tx(clo func(chain *AssertionChain) error) error {
+const (
+	deadTxStatus = iota
+	readOnlyTxStatus
+	readWriteTxStatus
+)
+
+type ActiveTx struct {
+	txStatus int
+}
+
+func (tx *ActiveTx) verifyRead() {
+	if tx.txStatus == deadTxStatus {
+		panic("tried to read chain after call ended")
+	}
+}
+
+func (tx *ActiveTx) verifyReadWrite() {
+	if tx.txStatus != readWriteTxStatus {
+		panic("tried to modify chain in read-only call")
+	}
+}
+
+func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, chain *AssertionChain) error) error {
 	chain.mutex.Lock()
 	defer chain.mutex.Unlock()
-	return clo(chain)
+	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	err := clo(tx, chain)
+	tx.txStatus = deadTxStatus
+	return err
 }
 
-func (chain *AssertionChain) Call(clo func(chain *AssertionChain) error) error {
+func (chain *AssertionChain) Call(clo func(tx *ActiveTx, chain *AssertionChain) error) error {
 	chain.mutex.RLock()
 	defer chain.mutex.RUnlock()
-	return clo(chain)
+	tx := &ActiveTx{txStatus: readOnlyTxStatus}
+	err := clo(tx, chain)
+	tx.txStatus = deadTxStatus
+	return err
 }
 
 const (
@@ -144,39 +173,54 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		dedupe:          make(map[common.Hash]bool), // no need to insert genesis assertion here
 		balances:        util.NewMapWithDefaultAdvanced[common.Address, *big.Int](common.Big0, func(x *big.Int) bool { return x.Sign() == 0 }),
 		feed:            NewEventFeed[AssertionChainEvent](ctx),
+		inbox:           NewInbox(ctx),
 	}
 	genesis.chain = chain
 	return chain
 }
 
-func (chain *AssertionChain) GetBalance(addr common.Address) *big.Int {
+func (chain *AssertionChain) TimeReference() util.TimeReference {
+	return chain.timeReference
+}
+
+func (chain *AssertionChain) Inbox() *Inbox {
+	return chain.inbox
+}
+
+func (chain *AssertionChain) GetBalance(tx *ActiveTx, addr common.Address) *big.Int {
+	tx.verifyRead()
 	return chain.balances.Get(addr)
 }
 
-func (chain *AssertionChain) SetBalance(addr common.Address, balance *big.Int) {
+func (chain *AssertionChain) SetBalance(tx *ActiveTx, addr common.Address, balance *big.Int) {
+	tx.verifyReadWrite()
 	oldBalance := chain.balances.Get(addr)
 	chain.balances.Set(addr, balance)
 	chain.feed.Append(&SetBalanceEvent{Addr: addr, OldBalance: oldBalance, NewBalance: balance})
 }
 
-func (chain *AssertionChain) AddToBalance(addr common.Address, amount *big.Int) {
-	chain.SetBalance(addr, new(big.Int).Add(chain.GetBalance(addr), amount))
+func (chain *AssertionChain) AddToBalance(tx *ActiveTx, addr common.Address, amount *big.Int) {
+	tx.verifyReadWrite()
+	chain.SetBalance(tx, addr, new(big.Int).Add(chain.GetBalance(tx, addr), amount))
 }
 
-func (chain *AssertionChain) DeductFromBalance(addr common.Address, amount *big.Int) error {
-	balance := chain.GetBalance(addr)
+func (chain *AssertionChain) DeductFromBalance(tx *ActiveTx, addr common.Address, amount *big.Int) error {
+	tx.verifyReadWrite()
+	balance := chain.GetBalance(tx, addr)
 	if balance.Cmp(amount) < 0 {
 		return ErrInsufficientBalance
 	}
-	chain.SetBalance(addr, new(big.Int).Sub(balance, amount))
+	chain.SetBalance(tx, addr, new(big.Int).Sub(balance, amount))
 	return nil
 }
 
-func (chain *AssertionChain) ChallengePeriodLength() time.Duration {
+func (chain *AssertionChain) ChallengePeriodLength(tx *ActiveTx) time.Duration {
+	tx.verifyRead()
 	return chain.challengePeriod
 }
 
-func (chain *AssertionChain) LatestConfirmed() *Assertion {
+func (chain *AssertionChain) LatestConfirmed(tx *ActiveTx) *Assertion {
+	tx.verifyRead()
 	return chain.assertions[chain.confirmedLatest]
 }
 
@@ -195,9 +239,8 @@ func (chain *AssertionChain) SubscribeChainEvents(ctx context.Context, ch chan<-
 	chain.feed.Subscribe(ctx, ch)
 }
 
-func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
-	chain.mutex.Lock()
-	defer chain.mutex.Unlock()
+func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
+	tx.verifyReadWrite()
 	if prev.chain != chain {
 		return nil, ErrWrongChain
 	}
@@ -212,16 +255,16 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 	if err := prev.Staker.IfLet(
 		func(oldStaker common.Address) error {
 			if staker != oldStaker {
-				if err := chain.DeductFromBalance(staker, AssertionStakeWei); err != nil {
+				if err := chain.DeductFromBalance(tx, staker, AssertionStakeWei); err != nil {
 					return err
 				}
-				chain.AddToBalance(oldStaker, AssertionStakeWei)
+				chain.AddToBalance(tx, oldStaker, AssertionStakeWei)
 				prev.Staker = util.EmptyOption[common.Address]()
 			}
 			return nil
 		},
 		func() error {
-			if err := chain.DeductFromBalance(staker, AssertionStakeWei); err != nil {
+			if err := chain.DeductFromBalance(tx, staker, AssertionStakeWei); err != nil {
 				return err
 			}
 			return nil
@@ -258,7 +301,8 @@ func (chain *AssertionChain) CreateLeaf(prev *Assertion, commitment StateCommitm
 	return leaf, nil
 }
 
-func (a *Assertion) RejectForPrev() error {
+func (a *Assertion) RejectForPrev(tx *ActiveTx) error {
+	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
@@ -275,7 +319,8 @@ func (a *Assertion) RejectForPrev() error {
 	return nil
 }
 
-func (a *Assertion) RejectForLoss() error {
+func (a *Assertion) RejectForLoss(tx *ActiveTx) error {
+	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
@@ -286,7 +331,7 @@ func (a *Assertion) RejectForLoss() error {
 	if chal.IsEmpty() {
 		return util.ErrOptionIsEmpty
 	}
-	winner, err := chal.OpenKnownFull().Winner()
+	winner, err := chal.OpenKnownFull().Winner(tx)
 	if err != nil {
 		return err
 	}
@@ -300,7 +345,8 @@ func (a *Assertion) RejectForLoss() error {
 	return nil
 }
 
-func (a *Assertion) ConfirmNoRival() error {
+func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
+	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
@@ -323,13 +369,14 @@ func (a *Assertion) ConfirmNoRival() error {
 		SeqNum: a.SequenceNum,
 	})
 	if !a.Staker.IsEmpty() {
-		a.chain.AddToBalance(a.Staker.OpenKnownFull(), AssertionStakeWei)
+		a.chain.AddToBalance(tx, a.Staker.OpenKnownFull(), AssertionStakeWei)
 		a.Staker = util.EmptyOption[common.Address]()
 	}
 	return nil
 }
 
-func (a *Assertion) ConfirmForWin() error {
+func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
+	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
@@ -343,7 +390,7 @@ func (a *Assertion) ConfirmForWin() error {
 	if prev.challenge.IsEmpty() {
 		return ErrWrongPredecessorState
 	}
-	winner, err := prev.challenge.OpenKnownFull().Winner()
+	winner, err := prev.challenge.OpenKnownFull().Winner(tx)
 	if err != nil {
 		return err
 	}
@@ -369,8 +416,9 @@ type Challenge struct {
 	feed              *EventFeed[ChallengeEvent]
 }
 
-func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error) {
-	if parent.status != PendingAssertionState && parent.chain.LatestConfirmed() != parent {
+func (parent *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context) (*Challenge, error) {
+	tx.verifyReadWrite()
+	if parent.status != PendingAssertionState && parent.chain.LatestConfirmed(tx) != parent {
 		return nil, ErrWrongState
 	}
 	if !parent.challenge.IsEmpty() {
@@ -412,7 +460,8 @@ func (parent *Assertion) CreateChallenge(ctx context.Context) (*Challenge, error
 	return ret, nil
 }
 
-func (chal *Challenge) AddLeaf(assertion *Assertion, history util.HistoryCommitment) (*ChallengeVertex, error) {
+func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment) (*ChallengeVertex, error) {
+	tx.verifyReadWrite()
 	if assertion.Prev.IsEmpty() {
 		return nil, ErrInvalid
 	}
@@ -420,7 +469,7 @@ func (chal *Challenge) AddLeaf(assertion *Assertion, history util.HistoryCommitm
 	if prev != chal.parent {
 		return nil, ErrInvalid
 	}
-	if chal.Completed() {
+	if chal.Completed(tx) {
 		return nil, ErrWrongState
 	}
 	chain := assertion.chain
@@ -456,11 +505,13 @@ func (chal *Challenge) AddLeaf(assertion *Assertion, history util.HistoryCommitm
 	return leaf, nil
 }
 
-func (chal *Challenge) Completed() bool {
+func (chal *Challenge) Completed(tx *ActiveTx) bool {
+	tx.verifyRead()
 	return chal.winner != nil
 }
 
-func (chal *Challenge) Winner() (*Assertion, error) {
+func (chal *Challenge) Winner(tx *ActiveTx) (*Assertion, error) {
+	tx.verifyRead()
 	if chal.winner == nil {
 		return nil, ErrNoWinnerYet
 	}
@@ -503,7 +554,8 @@ func (vertex *ChallengeVertex) requiredBisectionHeight() (uint64, error) {
 	return util.BisectionPoint(vertex.prev.commitment.Height, vertex.commitment.Height)
 }
 
-func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []common.Hash) (*ChallengeVertex, error) {
+func (vertex *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash) (*ChallengeVertex, error) {
+	tx.verifyReadWrite()
 	if vertex.isPresumptiveSuccessor() {
 		return nil, ErrWrongState
 	}
@@ -547,7 +599,8 @@ func (vertex *ChallengeVertex) Bisect(history util.HistoryCommitment, proof []co
 	return newVertex, nil
 }
 
-func (vertex *ChallengeVertex) Merge(newPrev *ChallengeVertex, proof []common.Hash) error {
+func (vertex *ChallengeVertex) Merge(tx *ActiveTx, newPrev *ChallengeVertex, proof []common.Hash) error {
+	tx.verifyReadWrite()
 	if !newPrev.eligibleForNewSuccessor() {
 		return ErrPastDeadline
 	}
@@ -572,7 +625,8 @@ func (vertex *ChallengeVertex) Merge(newPrev *ChallengeVertex, proof []common.Ha
 	return nil
 }
 
-func (vertex *ChallengeVertex) ConfirmForSubChallengeWin() error {
+func (vertex *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
+	tx.verifyReadWrite()
 	if vertex.status != PendingAssertionState {
 		return ErrWrongState
 	}
@@ -587,7 +641,8 @@ func (vertex *ChallengeVertex) ConfirmForSubChallengeWin() error {
 	return nil
 }
 
-func (vertex *ChallengeVertex) ConfirmForPsTimer() error {
+func (vertex *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
+	tx.verifyReadWrite()
 	if vertex.status != PendingAssertionState {
 		return ErrWrongState
 	}
@@ -601,7 +656,8 @@ func (vertex *ChallengeVertex) ConfirmForPsTimer() error {
 	return nil
 }
 
-func (vertex *ChallengeVertex) ConfirmForChallengeDeadline() error {
+func (vertex *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
+	tx.verifyReadWrite()
 	if vertex.status != PendingAssertionState {
 		return ErrWrongState
 	}
@@ -624,7 +680,8 @@ func (vertex *ChallengeVertex) _confirm() {
 	}
 }
 
-func (vertex *ChallengeVertex) CreateSubChallenge() error {
+func (vertex *ChallengeVertex) CreateSubChallenge(tx *ActiveTx) error {
+	tx.verifyReadWrite()
 	if vertex.subChallenge != nil {
 		return ErrVertexAlreadyExists
 	}
@@ -643,7 +700,8 @@ type SubChallenge struct {
 	winner *ChallengeVertex
 }
 
-func (sc *SubChallenge) SetWinner(winner *ChallengeVertex) error {
+func (sc *SubChallenge) SetWinner(tx *ActiveTx, winner *ChallengeVertex) error {
+	tx.verifyReadWrite()
 	if sc.winner != nil {
 		return ErrInvalid
 	}

@@ -181,7 +181,8 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 		Height:    currentCommit.Height,
 		StateRoot: currentCommit.Merkle,
 	}
-	leaf, err := v.protocol.CreateLeaf(parentAssertion, stateCommit, v.address)
+	tx := &protocol.ActiveTx{}
+	leaf, err := v.protocol.CreateLeaf(tx, parentAssertion, stateCommit, v.address)
 	switch {
 	case errors.Is(err, protocol.ErrVertexAlreadyExists):
 		return nil, errors.Wrap(err, "vertex already exists, unable to create new leaf")
@@ -205,7 +206,8 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 // the latest confirmed assertion and makes it down the tree to the latest assertion that has a state
 // commitment matching in the validator's database.
 func (v *Validator) findLatestValidAssertion(ctx context.Context) *protocol.Assertion {
-	latestValidParent := v.protocol.LatestConfirmed()
+	tx := &protocol.ActiveTx{}
+	latestValidParent := v.protocol.LatestConfirmed(tx)
 	numAssertions := v.protocol.NumAssertions()
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
@@ -224,14 +226,15 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) *protocol.Asse
 // For a leaf created by a validator, we confirm the leaf has no rival after the challenge deadline has passed.
 // This function is meant to be ran as a goroutine for each leaf created by the validator.
 func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(v.protocol.ChallengePeriodLength()))
+	tx := &protocol.ActiveTx{}
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(v.protocol.ChallengePeriodLength(tx)))
 	defer cancel()
 	<-ctx.Done()
 	logFields := logrus.Fields{
 		"height":      leaf.StateCommitment.Height,
 		"sequenceNum": leaf.SequenceNum,
 	}
-	if err := leaf.ConfirmNoRival(); err != nil {
+	if err := leaf.ConfirmNoRival(tx); err != nil {
 		log.WithError(err).WithFields(logFields).Warn("Could not confirm that created leaf had no rival")
 		return
 	}
