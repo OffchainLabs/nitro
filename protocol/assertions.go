@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -59,6 +60,7 @@ type EventProvider interface {
 // and a previous assertion.
 type AssertionManager interface {
 	NumAssertions(tx *ActiveTx) uint64
+	AssertionBySequenceNum(tx *ActiveTx, seqNum uint64) (*Assertion, error)
 	ChallengePeriodLength(tx *ActiveTx) time.Duration
 	LatestConfirmed(*ActiveTx) *Assertion
 	CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
@@ -227,6 +229,14 @@ func (chain *AssertionChain) NumAssertions(tx *ActiveTx) uint64 {
 	return uint64(len(chain.assertions))
 }
 
+func (chain *AssertionChain) AssertionBySequenceNum(tx *ActiveTx, seqNum uint64) (*Assertion, error) {
+	tx.verifyRead()
+	if seqNum >= uint64(len(chain.assertions)) {
+		return nil, fmt.Errorf("assertion sequence out of range %d >= %d", seqNum, len(chain.assertions))
+	}
+	return chain.assertions[seqNum], nil
+}
+
 func (chain *AssertionChain) SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent) {
 	chain.feed.Subscribe(ctx, ch)
 }
@@ -285,7 +295,11 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 	chain.assertions = append(chain.assertions, leaf)
 	chain.dedupe[dedupeCode] = true
 	chain.feed.Append(&CreateLeafEvent{
-		Leaf: leaf,
+		PrevStateCommitment: prev.StateCommitment,
+		PrevSeqNum:          prev.SequenceNum,
+		SeqNum:              leaf.SequenceNum,
+		StateCommitment:     leaf.StateCommitment,
+		Staker:              staker,
 	})
 	return leaf, nil
 }
@@ -443,8 +457,14 @@ func (parent *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context) (*Ch
 	root.challenge = ret
 	ret.includedHistories[root.commitment.Hash()] = true
 	parent.challenge = util.FullOption[*Challenge](ret)
+	parentStaker := common.Address{}
+	if !parent.Staker.IsEmpty() {
+		parentStaker = parent.Staker.OpenKnownFull()
+	}
 	parent.chain.feed.Append(&StartChallengeEvent{
-		ChallengedAssertion: parent,
+		ParentSeqNum:          parent.SequenceNum,
+		ParentStateCommitment: parent.StateCommitment,
+		ParentStaker:          parentStaker,
 	})
 	return ret, nil
 }

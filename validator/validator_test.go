@@ -39,7 +39,11 @@ func Test_processLeafCreation(t *testing.T) {
 			Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 		ev := &protocol.CreateLeafEvent{
-			Leaf: newlyCreatedAssertion,
+			PrevSeqNum:          parentAssertion.SequenceNum,
+			PrevStateCommitment: parentAssertion.StateCommitment,
+			SeqNum:              newlyCreatedAssertion.SequenceNum,
+			StateCommitment:     newlyCreatedAssertion.StateCommitment,
+			Staker:              newlyCreatedAssertion.Staker.OpenKnownFull(),
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
@@ -83,12 +87,20 @@ func Test_processLeafCreation(t *testing.T) {
 		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(true)
 
 		ev := &protocol.CreateLeafEvent{
-			Leaf: newlyCreatedAssertion,
+			PrevSeqNum:          parentAssertion.SequenceNum,
+			PrevStateCommitment: parentAssertion.StateCommitment,
+			SeqNum:              newlyCreatedAssertion.SequenceNum,
+			StateCommitment:     newlyCreatedAssertion.StateCommitment,
+			Staker:              newlyCreatedAssertion.Staker.OpenKnownFull(),
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		ev = &protocol.CreateLeafEvent{
-			Leaf: forkedAssertion,
+			PrevSeqNum:          parentAssertion.SequenceNum,
+			PrevStateCommitment: parentAssertion.StateCommitment,
+			SeqNum:              forkedAssertion.SequenceNum,
+			StateCommitment:     forkedAssertion.StateCommitment,
+			Staker:              forkedAssertion.Staker.OpenKnownFull(),
 		}
 		err = v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
@@ -132,12 +144,20 @@ func Test_processLeafCreation(t *testing.T) {
 		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(false)
 
 		ev := &protocol.CreateLeafEvent{
-			Leaf: newlyCreatedAssertion,
+			PrevSeqNum:          parentAssertion.SequenceNum,
+			PrevStateCommitment: parentAssertion.StateCommitment,
+			SeqNum:              newlyCreatedAssertion.SequenceNum,
+			StateCommitment:     newlyCreatedAssertion.StateCommitment,
+			Staker:              newlyCreatedAssertion.Staker.OpenKnownFull(),
 		}
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		ev = &protocol.CreateLeafEvent{
-			Leaf: forkedAssertion,
+			PrevSeqNum:          parentAssertion.SequenceNum,
+			PrevStateCommitment: parentAssertion.StateCommitment,
+			SeqNum:              forkedAssertion.SequenceNum,
+			StateCommitment:     forkedAssertion.StateCommitment,
+			Staker:              forkedAssertion.Staker.OpenKnownFull(),
 		}
 		err = v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
@@ -155,12 +175,10 @@ func Test_processChallengeStart(t *testing.T) {
 		v, _, _ := setupValidator(t)
 
 		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
-			ChallengedAssertion: &protocol.Assertion{
-				SequenceNum: seq,
-				StateCommitment: protocol.StateCommitment{
-					Height:    0,
-					StateRoot: common.BytesToHash([]byte("foo")),
-				},
+			ParentSeqNum: seq,
+			ParentStateCommitment: protocol.StateCommitment{
+				Height:    0,
+				StateRoot: common.BytesToHash([]byte("foo")),
 			},
 			Challenger: common.BytesToAddress([]byte("foo")),
 		})
@@ -182,8 +200,9 @@ func Test_processChallengeStart(t *testing.T) {
 		v.createdLeaves[commitment.StateRoot] = leaf
 
 		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
-			ChallengedAssertion: leaf,
-			Challenger:          common.BytesToAddress([]byte("foo")),
+			ParentSeqNum:          leaf.SequenceNum,
+			ParentStateCommitment: leaf.StateCommitment,
+			Challenger:            common.BytesToAddress([]byte("foo")),
 		})
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Received challenge")
@@ -207,26 +226,32 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		p.On("LatestConfirmed", tx).Return(genesis)
 		p.On("NumAssertions", tx).Return(uint64(100))
 		latestValid := v.findLatestValidAssertion(ctx)
-		require.Equal(t, genesis, latestValid)
+		require.Equal(t, genesis.SequenceNum, latestValid)
 	})
 	t.Run("all are valid, latest one is picked", func(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for _, a := range assertions {
-			v.assertions[a.SequenceNum] = a
+			v.assertions[a.SequenceNum] = &protocol.CreateLeafEvent{
+				StateCommitment: a.StateCommitment,
+				SeqNum:          a.SequenceNum,
+			}
 			s.On("HasStateCommitment", ctx, a.StateCommitment).Return(true)
 		}
 		p.On("LatestConfirmed", tx).Return(assertions[0])
 		p.On("NumAssertions", tx).Return(uint64(len(assertions)))
 
 		latestValid := v.findLatestValidAssertion(ctx)
-		require.Equal(t, assertions[len(assertions)-1], latestValid)
+		require.Equal(t, assertions[len(assertions)-1].SequenceNum, latestValid)
 	})
 	t.Run("latest valid is behind", func(t *testing.T) {
 		v, p, s := setupValidator(t)
 		assertions := setupAssertions(10)
 		for i, a := range assertions {
-			v.assertions[a.SequenceNum] = a
+			v.assertions[a.SequenceNum] = &protocol.CreateLeafEvent{
+				StateCommitment: a.StateCommitment,
+				SeqNum:          a.SequenceNum,
+			}
 			if i <= 5 {
 				s.On("HasStateCommitment", ctx, a.StateCommitment).Return(true)
 			} else {
@@ -236,7 +261,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 		p.On("LatestConfirmed", tx).Return(assertions[0])
 		p.On("NumAssertions", tx).Return(uint64(len(assertions)))
 		latestValid := v.findLatestValidAssertion(ctx)
-		require.Equal(t, assertions[5], latestValid)
+		require.Equal(t, assertions[5].SequenceNum, latestValid)
 	})
 }
 

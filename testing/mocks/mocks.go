@@ -50,6 +50,11 @@ func (m *MockProtocol) Tx(clo func(*protocol.ActiveTx, *protocol.AssertionChain)
 func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- protocol.AssertionChainEvent) {
 }
 
+func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum uint64) (*protocol.Assertion, error) {
+	args := m.Called(tx, seqNum)
+	return args.Get(0).(*protocol.Assertion), args.Error(1)
+}
+
 func (m *MockProtocol) LatestConfirmed(tx *protocol.ActiveTx) *protocol.Assertion {
 	args := m.Called(tx)
 	return args.Get(0).(*protocol.Assertion)

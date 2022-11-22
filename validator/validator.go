@@ -33,7 +33,7 @@ type Validator struct {
 	createdLeaves                          map[common.Hash]*protocol.Assertion
 	assertionsLock                         sync.RWMutex
 	sequenceNumbersByParentStateCommitment map[common.Hash][]uint64
-	assertions                             map[uint64]*protocol.Assertion
+	assertions                             map[uint64]*protocol.CreateLeafEvent
 	leavesLock                             sync.RWMutex
 	createLeafInterval                     time.Duration
 	chaosMonkeyProbability                 float64
@@ -93,7 +93,7 @@ func New(
 		l2StateUpdateEvents:                    make(chan *statemanager.L2StateEvent, 1),
 		createdLeaves:                          make(map[common.Hash]*protocol.Assertion),
 		sequenceNumbersByParentStateCommitment: make(map[common.Hash][]uint64),
-		assertions:                             make(map[uint64]*protocol.Assertion),
+		assertions:                             make(map[uint64]*protocol.CreateLeafEvent),
 	}
 	for _, o := range opts {
 		o(v)
@@ -170,7 +170,12 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 	// Ensure that we only build on a valid parent from this validator's perspective.
 	// the validator should also have ready access to historical commitments to make sure it can select
 	// the valid parent based on its commitment state root.
-	parentAssertion := v.findLatestValidAssertion(ctx)
+	parentAssertionSeq := v.findLatestValidAssertion(ctx)
+	tx := &protocol.ActiveTx{}
+	parentAssertion, err := v.protocol.AssertionBySequenceNum(tx, parentAssertionSeq)
+	if err != nil {
+		return nil, err
+	}
 	currentCommit, err := v.stateManager.LatestStateCommitment(ctx)
 	if err != nil {
 		return nil, err
@@ -179,7 +184,6 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 		Height:    currentCommit.Height,
 		StateRoot: currentCommit.Merkle,
 	}
-	tx := &protocol.ActiveTx{}
 	leaf, err := v.protocol.CreateLeaf(tx, parentAssertion, stateCommit, v.address)
 	switch {
 	case errors.Is(err, protocol.ErrVertexAlreadyExists):
@@ -200,23 +204,22 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 	return leaf, nil
 }
 
-// Finds the latest valid assertion a validator should build their new leaves upon. This walks
+// Finds the latest valid assertion sequence num a validator should build their new leaves upon. This walks
 // down from the number of assertions in the protocol down until it finds
 // an assertion that we have a state commitment for.
-func (v *Validator) findLatestValidAssertion(ctx context.Context) *protocol.Assertion {
+func (v *Validator) findLatestValidAssertion(ctx context.Context) uint64 {
 	tx := &protocol.ActiveTx{}
-	latestConfirmed := v.protocol.LatestConfirmed(tx)
+	latestConfirmed := v.protocol.LatestConfirmed(tx).SequenceNum
 	numAssertions := v.protocol.NumAssertions(tx)
-	latestConfirmedSeqNum := latestConfirmed.SequenceNum
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
-	for s := numAssertions; s > latestConfirmedSeqNum; s-- {
+	for s := numAssertions; s > latestConfirmed; s-- {
 		a, ok := v.assertions[s]
 		if !ok {
 			continue
 		}
 		if v.stateManager.HasStateCommitment(ctx, a.StateCommitment) {
-			return a
+			return a.SeqNum
 		}
 	}
 	return latestConfirmed
@@ -245,15 +248,11 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	if ev == nil {
 		return nil
 	}
-	if ev.Leaf == nil {
+	if v.isFromSelf(ev.Staker) {
 		return nil
 	}
-	if v.isFromSelf(ev.Leaf.Staker.OpenKnownFull()) {
-		return nil
-	}
-	leaf := ev.Leaf
-	seqNum := leaf.SequenceNum
-	stateCommit := leaf.StateCommitment
+	seqNum := ev.SeqNum
+	stateCommit := ev.StateCommitment
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
 		"stateRoot": fmt.Sprintf("%#x", stateCommit.StateRoot),
@@ -263,17 +262,13 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	// We check if the parent assertion has > 1 child.
 	v.assertionsLock.Lock()
 	// Keep track of the created assertion locally.
-	v.assertions[seqNum] = leaf
+	v.assertions[seqNum] = ev
 
 	// Keep track of assertions by parent state root to more easily detect forks.
-	key := common.Hash{}
-	if !leaf.Prev.IsEmpty() {
-		parentAssertion := leaf.Prev.OpenKnownFull()
-		key = parentAssertion.StateCommitment.Hash()
-	}
+	key := ev.PrevStateCommitment.Hash()
 	v.sequenceNumbersByParentStateCommitment[key] = append(
 		v.sequenceNumbersByParentStateCommitment[key],
-		leaf.SequenceNum,
+		ev.SeqNum,
 	)
 	hasForked := len(v.sequenceNumbersByParentStateCommitment[key]) > 1
 	v.assertionsLock.Unlock()
@@ -286,9 +281,9 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	// If there is a fork, we challenge if we disagree with its state commitment. Otherwise,
 	// we will defend challenge moves that agree with our local state.
 	if v.stateManager.HasStateCommitment(ctx, stateCommit) {
-		return v.defendLeaf(ctx, leaf)
+		return v.defendLeaf(ctx, ev)
 	}
-	return v.challengeLeaf(ctx, leaf)
+	return v.challengeLeaf(ctx, ev)
 }
 
 // Process new challenge creation events from the protocol that were not initiated by self.
@@ -296,17 +291,13 @@ func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.Star
 	if ev == nil {
 		return nil
 	}
-	if ev.ChallengedAssertion == nil {
-		return nil
-	}
 	if v.isFromSelf(ev.Challenger) {
 		return nil
 	}
 	// Checks if the challenge has to do with a vertex we created.
-	challengedAssertion := ev.ChallengedAssertion
 	v.leavesLock.RLock()
 	defer v.leavesLock.RUnlock()
-	leaf, ok := v.createdLeaves[challengedAssertion.StateCommitment.StateRoot]
+	leaf, ok := v.createdLeaves[ev.ParentStateCommitment.StateRoot]
 	if !ok {
 		// TODO: Act on the honest vertices even if this challenge does not have to do with us by
 		// keeping track of associated challenge vertices' clocks and acting if the associated
@@ -334,16 +325,14 @@ func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.Star
 // Prepares to defend a leaf that matches our local history and is part of a fork
 // in the assertions tree. This leaf may be challenged and the local validator should
 // be ready to perform proper challenge moves on the assertion if no one else is making them.
-func (v *Validator) defendLeaf(ctx context.Context, as *protocol.Assertion) error {
+func (v *Validator) defendLeaf(ctx context.Context, ev *protocol.CreateLeafEvent) error {
 	logFields := logrus.Fields{}
-	if !as.Staker.IsEmpty() {
-		if name, ok := v.knownValidatorNames[as.Staker.OpenKnownFull()]; ok {
-			logFields["createdBy"] = name
-		}
+	if name, ok := v.knownValidatorNames[ev.Staker]; ok {
+		logFields["createdBy"] = name
 	}
 	logFields["name"] = v.name
-	logFields["height"] = as.StateCommitment.Height
-	logFields["stateRoot"] = fmt.Sprintf("%#x", as.StateCommitment.StateRoot)
+	logFields["height"] = ev.StateCommitment.Height
+	logFields["stateRoot"] = fmt.Sprintf("%#x", ev.StateCommitment.StateRoot)
 	log.WithFields(logFields).Info(
 		"New leaf created by another validator matching local state has " +
 			"forked the protocol, preparing to defend",
@@ -352,11 +341,11 @@ func (v *Validator) defendLeaf(ctx context.Context, as *protocol.Assertion) erro
 }
 
 // Initiates a challenge on a created leaf.
-func (v *Validator) challengeLeaf(ctx context.Context, as *protocol.Assertion) error {
+func (v *Validator) challengeLeaf(ctx context.Context, ev *protocol.CreateLeafEvent) error {
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
-	logFields["height"] = as.StateCommitment.Height
-	logFields["stateRoot"] = fmt.Sprintf("%#x", as.StateCommitment.StateRoot)
+	logFields["height"] = ev.StateCommitment.Height
+	logFields["stateRoot"] = fmt.Sprintf("%#x", ev.StateCommitment.StateRoot)
 	log.WithFields(logFields).Info("Initiating challenge on leaf validator disagrees with")
 	return nil
 }
