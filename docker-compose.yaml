@@ -110,7 +110,7 @@ services:
   # The account used in go-ethereum is set as the suggested fee recipient for transactions
   # proposed via the validators attached to the beacon node.
   prysm_beacon_chain:
-    image: "gcr.io/prysmaticlabs/prysm/beacon-chain:stable"
+    image: "gcr.io/prysmaticlabs/prysm/beacon-chain:v3.1.2"
     command:
       - --datadir=/consensus/beacondata
       - --min-sync-peers=0
@@ -140,7 +140,7 @@ services:
   # We run a validator client with 64, deterministically-generated keys that match
   # The validator keys present in the beacon chain genesis state generated a few steps above.
   prysm_validator:
-    image: "gcr.io/prysmaticlabs/prysm/validator:stable"
+    image: "gcr.io/prysmaticlabs/prysm/validator:v3.1.2"
     command:
       - --beacon-rpc-provider=prysm_beacon_chain:4000
       - --datadir=/consensus/validatordata
