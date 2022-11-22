@@ -108,8 +108,6 @@ func (v *Validator) Start(ctx context.Context) {
 	go v.prepareLeafCreationPeriodically(ctx)
 }
 
-// TODO: Simulate posting leaf events with some jitter delay, validators will have
-// latency in posting created leaves to the protocol.
 func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
 	ticker := time.NewTicker(v.createLeafInterval)
 	defer ticker.Stop()
