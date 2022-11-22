@@ -36,15 +36,15 @@ type IpfsHelper struct {
 	repo     repo.Repo
 }
 
-func (h *IpfsHelper) createRepo(repoDirectory string, profiles string) error {
-	fileInfo, err := os.Stat(repoDirectory)
+func (h *IpfsHelper) createRepo(downloadPath string, profiles string) error {
+	fileInfo, err := os.Stat(downloadPath)
 	if err != nil {
 		return fmt.Errorf("failed to stat ipfs repo directory: %w", err)
 	}
 	if !fileInfo.IsDir() {
-		return fmt.Errorf("%s is not a directory", repoDirectory)
+		return fmt.Errorf("%s is not a directory", downloadPath)
 	}
-	h.repoPath = repoDirectory
+	h.repoPath = filepath.Join(downloadPath, "ipfs-repo")
 	// Create a config with default options and a 2048 bit key
 	h.cfg, err = config.Init(io.Discard, 2048)
 	if err != nil {
@@ -183,8 +183,8 @@ func (h *IpfsHelper) AddFile(ctx context.Context, filePath string, includeHidden
 	return h.api.Unixfs().Add(ctx, fileNode)
 }
 
-func CreateIpfsHelper(ctx context.Context, repoDirectory string, clientOnly bool) (*IpfsHelper, error) {
-	return createIpfsHelperImpl(ctx, repoDirectory, clientOnly, []string{}, "")
+func CreateIpfsHelper(ctx context.Context, downloadPath string, clientOnly bool) (*IpfsHelper, error) {
+	return createIpfsHelperImpl(ctx, downloadPath, clientOnly, []string{}, "")
 }
 
 func (h *IpfsHelper) Close() error {
@@ -208,7 +208,7 @@ func setupPlugins() error {
 
 var loadPluginsOnce sync.Once
 
-func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly bool, peerList []string, profiles string) (*IpfsHelper, error) {
+func createIpfsHelperImpl(ctx context.Context, downloadPath string, clientOnly bool, peerList []string, profiles string) (*IpfsHelper, error) {
 	var onceErr error
 	loadPluginsOnce.Do(func() {
 		onceErr = setupPlugins()
@@ -217,7 +217,7 @@ func createIpfsHelperImpl(ctx context.Context, repoDirectory string, clientOnly 
 		return nil, onceErr
 	}
 	client := IpfsHelper{}
-	err := client.createRepo(repoDirectory, profiles)
+	err := client.createRepo(downloadPath, profiles)
 	if err != nil {
 		return nil, err
 	}
