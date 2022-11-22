@@ -39,7 +39,7 @@ type IpfsHelper struct {
 func (h *IpfsHelper) createRepo(repoDirectory string, profiles string) error {
 	fileInfo, err := os.Stat(repoDirectory)
 	if err != nil {
-		return fmt.Errorf("failed to stat ipfs repo directory: %w", repoDirectory, err)
+		return fmt.Errorf("failed to stat ipfs repo directory: %w", err)
 	}
 	if !fileInfo.IsDir() {
 		return fmt.Errorf("%s is not a directory", repoDirectory)
