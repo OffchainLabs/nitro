@@ -14,6 +14,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const defaultCreateLeafInterval = time.Second * 5
+
 var log = logrus.WithField("prefix", "validator")
 
 type Opt = func(val *Validator)
@@ -86,7 +88,7 @@ func New(
 		protocol:                          onChainProtocol,
 		stateManager:                      stateManager,
 		address:                           common.Address{},
-		createLeafInterval:                5 * time.Second,
+		createLeafInterval:                defaultCreateLeafInterval,
 		assertionEvents:                   make(chan protocol.AssertionChainEvent, 1),
 		l2StateUpdateEvents:               make(chan *statemanager.L2StateEvent, 1),
 		createdLeaves:                     make(map[common.Hash]*protocol.Assertion),
@@ -137,12 +139,8 @@ func (v *Validator) listenForAssertionEvents(ctx context.Context) {
 		case genericEvent := <-v.assertionEvents:
 			switch ev := genericEvent.(type) {
 			case *protocol.CreateLeafEvent:
-				// TODO: Ignore all events from self, not just CreateLeafEvent.
-				if v.isFromSelf(ev) {
-					return
-				}
 				go func() {
-					if err := v.processLeafCreation(ctx, ev.SeqNum, ev.StateCommitment); err != nil {
+					if err := v.processLeafCreation(ctx, ev); err != nil {
 						log.WithError(err).Error("Could not process leaf creation event")
 					}
 				}()
@@ -242,7 +240,15 @@ func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
 }
 
 // Processes new leaf creation events from the protocol that were not initiated by self.
-func (v *Validator) processLeafCreation(ctx context.Context, seqNum uint64, stateCommit protocol.StateCommitment) error {
+func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.CreateLeafEvent) error {
+	if ev == nil {
+		return nil
+	}
+	if v.isFromSelf(ev.Staker) {
+		return nil
+	}
+	seqNum := ev.SeqNum
+	stateCommit := ev.StateCommitment
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
 		"stateRoot": fmt.Sprintf("%#x", stateCommit.StateRoot),
@@ -286,6 +292,12 @@ func (v *Validator) processLeafCreation(ctx context.Context, seqNum uint64, stat
 
 // Process new challenge creation events from the protocol that were not initiated by self.
 func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.StartChallengeEvent) error {
+	if ev == nil {
+		return nil
+	}
+	if v.isFromSelf(ev.Staker) {
+		return nil
+	}
 	// Checks if the challenge has to do with a vertex we created.
 	challengedAssertion, err := v.protocol.AssertionBySequenceNumber(ctx, ev.ParentSeqNum)
 	if err != nil {
@@ -348,6 +360,6 @@ func (v *Validator) challengeLeaf(ctx context.Context, as *protocol.Assertion) e
 	return nil
 }
 
-func (v *Validator) isFromSelf(ev *protocol.CreateLeafEvent) bool {
-	return v.address == ev.Staker
+func (v *Validator) isFromSelf(staker common.Address) bool {
+	return v.address == staker
 }

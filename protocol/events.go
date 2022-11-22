@@ -36,6 +36,7 @@ type RejectEvent struct {
 type StartChallengeEvent struct {
 	genericAssertionChainEvent
 	ParentSeqNum uint64
+	Staker       common.Address
 }
 
 type SetBalanceEvent struct {
