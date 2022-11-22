@@ -43,20 +43,8 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
 
-#  geth:
-#    image: ethereum/client-go:stable
-#    ports:
-#      - "127.0.0.1:8545:8545"
-#      - "127.0.0.1:8546:8546"
-#      - "127.0.0.1:30303:30303"
-#    volumes:
-#      - "l1data:/root/.ethereum"
-#      - "l1keystore:/keystore"
-#      - "config:/config"
-#    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --http.corsdomain * --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /root/.ethereum/passphrase --gcmode archive
-
   geth:
-    image: ethereum/client-go:latest
+    image: ethereum/client-go:stable
     ports:
       - "127.0.0.1:8545:8545"
       - "127.0.0.1:8551:8551"
