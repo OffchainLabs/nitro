@@ -19,7 +19,7 @@ ALTAIR_FORK_VERSION: 0x20000090
 # Merge
 BELLATRIX_FORK_EPOCH: 4
 BELLATRIX_FORK_VERSION: 0x20000091
-TERMINAL_TOTAL_DIFFICULTY: 1
+TERMINAL_TOTAL_DIFFICULTY: 50
 
 # Time parameters
 SECONDS_PER_SLOT: 12
@@ -29,46 +29,6 @@ SLOTS_PER_EPOCH: 6
 DEPOSIT_CONTRACT_ADDRESS: 0x4242424242424242424242424242424242424242
     `
     fs.writeFileSync(path.join(consts.configpath, "prysm.yaml"), prysm)
-}
-
-function writeGethPOSFlags(argv: any) {
-    const flags = `
-    `
-    fs.writeFileSync(path.join(consts.configpath, "geth.flags.toml"), flags)
-}
-
-// --keystore /keystore
-// --http
-// --http.addr 0.0.0.0
-// --http.vhosts *
-// --http.api
-// personal,eth,net,web3
-// --http.corsdomain *
-// --ws
-// --ws.addr 0.0.0.0
-// --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /root/.ethereum/passphrase --gcmode archive
-function writeGethPOWFlags(argv: any) {
-    const flags = `
-[Eth]
-SyncMode = "full"
-NoPruning = true
-
-[Node]
-DataDir = ""
-HTTPPort = 8545
-HTTPVirtualHosts = ["*"]
-HTTPModules = ["web3"]
-WSHost = "0.0.0.0"
-WSPort = 8546
-WSOrigins = ["http://#REPLACE-WITH-HOSTNAME"]
-WSModules = ["net", "web3", "eth"]
-GraphQLPort = 8547
-GraphQLVirtualHosts = ["localhost"]
-
-[Node.P2P]
-NoDiscovery = true
-    `
-    fs.writeFileSync(path.join(consts.configpath, "geth.flags.toml"), flags)
 }
 
 function writeGethGenesisConfig(argv: any) {
@@ -98,7 +58,7 @@ function writeGethGenesisConfig(argv: any) {
                 "period": 5,
                     "epoch": 30000
             },
-            "terminalTotalDifficulty": 1
+            "terminalTotalDifficulty": 50
         },
         "difficulty": "1",
         "extradata": "0x0000000000000000000000000000000000000000000000000000000000000000683642c22feDE752415D4793832Ab75EFdF6223c0B0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
