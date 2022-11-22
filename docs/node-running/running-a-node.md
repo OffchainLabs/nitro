@@ -31,8 +31,12 @@ Note: If you’re interested in accessing an Arbitrum chain, but you don’t wan
 ### Important ports
 
 - RPC: `8547`
-- WebSocket: `8548`
 - Sequencer Feed: `9642`
+- WebSocket: `8548`
+  - WS port `8548` needs extra args to be opened. Please use these flags:
+    - --ws.port=8548
+    - --ws.addr=0.0.0.0
+    - --ws.origins=*
 
 ### Putting it all together
 
