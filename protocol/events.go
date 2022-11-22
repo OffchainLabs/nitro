@@ -33,7 +33,7 @@ type RejectEvent struct {
 type StartChallengeEvent struct {
 	genericAssertionChainEvent
 	ChallengedAssertion *Assertion
-	Staker              common.Address
+	Challenger          common.Address
 }
 
 type SetBalanceEvent struct {

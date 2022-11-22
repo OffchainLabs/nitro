@@ -299,7 +299,7 @@ func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.Star
 	if ev.ChallengedAssertion == nil {
 		return nil
 	}
-	if v.isFromSelf(ev.Staker) {
+	if v.isFromSelf(ev.Challenger) {
 		return nil
 	}
 	// Checks if the challenge has to do with a vertex we created.

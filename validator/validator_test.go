@@ -162,7 +162,7 @@ func Test_processChallengeStart(t *testing.T) {
 					StateRoot: common.BytesToHash([]byte("foo")),
 				},
 			},
-			Staker: common.BytesToAddress([]byte("foo")),
+			Challenger: common.BytesToAddress([]byte("foo")),
 		})
 		require.NoError(t, err)
 		AssertLogsDoNotContain(t, logsHook, "Received challenge")
@@ -183,7 +183,7 @@ func Test_processChallengeStart(t *testing.T) {
 
 		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
 			ChallengedAssertion: leaf,
-			Staker:              common.BytesToAddress([]byte("foo")),
+			Challenger:          common.BytesToAddress([]byte("foo")),
 		})
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Received challenge")
