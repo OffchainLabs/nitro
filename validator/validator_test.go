@@ -301,8 +301,6 @@ func setupValidator(t testing.TB) (*Validator, *mocks.MockProtocol, *mocks.MockS
 	return v, p, s
 }
 
-type assertionLoggerFn func(string, ...interface{})
-
 // AssertLogsContain checks that the desired string is a subset of the current log output.
 func AssertLogsContain(tb testing.TB, hook *test.Hook, want string, msg ...interface{}) {
 	checkLogs(tb, hook, want, true, msg...)
