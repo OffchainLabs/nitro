@@ -23,20 +23,20 @@ type Opt = func(val *Validator)
 // Validator defines a validator client instances in the assertion protocol, which will be
 // an active participant in interacting with the on-chain contracts.
 type Validator struct {
-	protocol                          protocol.OnChainProtocol
-	stateManager                      statemanager.Manager
-	assertionEvents                   chan protocol.AssertionChainEvent
-	l2StateUpdateEvents               chan *statemanager.L2StateEvent
-	address                           common.Address
-	name                              string
-	knownValidatorNames               map[common.Address]string
-	createdLeaves                     map[common.Hash]*protocol.Assertion
-	assertionsLock                    sync.RWMutex
-	assertionsByParentStateCommitment map[common.Hash][]*protocol.Assertion
-	assertions                        map[uint64]*protocol.Assertion
-	leavesLock                        sync.RWMutex
-	createLeafInterval                time.Duration
-	chaosMonkeyProbability            float64
+	protocol                               protocol.OnChainProtocol
+	stateManager                           statemanager.Manager
+	assertionEvents                        chan protocol.AssertionChainEvent
+	l2StateUpdateEvents                    chan *statemanager.L2StateEvent
+	address                                common.Address
+	name                                   string
+	knownValidatorNames                    map[common.Address]string
+	createdLeaves                          map[common.Hash]*protocol.Assertion
+	assertionsLock                         sync.RWMutex
+	sequenceNumbersByParentStateCommitment map[common.Hash][]uint64
+	assertions                             map[uint64]*protocol.Assertion
+	leavesLock                             sync.RWMutex
+	createLeafInterval                     time.Duration
+	chaosMonkeyProbability                 float64
 }
 
 // WithChaosMonkeyProbability adds a probability a validator will take
@@ -85,15 +85,15 @@ func New(
 	opts ...Opt,
 ) (*Validator, error) {
 	v := &Validator{
-		protocol:                          onChainProtocol,
-		stateManager:                      stateManager,
-		address:                           common.Address{},
-		createLeafInterval:                defaultCreateLeafInterval,
-		assertionEvents:                   make(chan protocol.AssertionChainEvent, 1),
-		l2StateUpdateEvents:               make(chan *statemanager.L2StateEvent, 1),
-		createdLeaves:                     make(map[common.Hash]*protocol.Assertion),
-		assertionsByParentStateCommitment: make(map[common.Hash][]*protocol.Assertion),
-		assertions:                        make(map[uint64]*protocol.Assertion),
+		protocol:                               onChainProtocol,
+		stateManager:                           stateManager,
+		address:                                common.Address{},
+		createLeafInterval:                     defaultCreateLeafInterval,
+		assertionEvents:                        make(chan protocol.AssertionChainEvent, 1),
+		l2StateUpdateEvents:                    make(chan *statemanager.L2StateEvent, 1),
+		createdLeaves:                          make(map[common.Hash]*protocol.Assertion),
+		sequenceNumbersByParentStateCommitment: make(map[common.Hash][]uint64),
+		assertions:                             make(map[uint64]*protocol.Assertion),
 	}
 	for _, o := range opts {
 		o(v)
@@ -271,11 +271,11 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 		parentAssertion := assertion.Prev.OpenKnownFull()
 		key = parentAssertion.StateCommitment.Hash()
 	}
-	v.assertionsByParentStateCommitment[key] = append(
-		v.assertionsByParentStateCommitment[key],
-		assertion,
+	v.sequenceNumbersByParentStateCommitment[key] = append(
+		v.sequenceNumbersByParentStateCommitment[key],
+		assertion.SequenceNum,
 	)
-	hasForked := len(v.assertionsByParentStateCommitment[key]) > 1
+	hasForked := len(v.sequenceNumbersByParentStateCommitment[key]) > 1
 	v.assertionsLock.Unlock()
 
 	// If this leaf's creation has not triggered fork, we have nothing else to do.
