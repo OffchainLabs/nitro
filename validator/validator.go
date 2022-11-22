@@ -245,6 +245,9 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	if ev == nil {
 		return nil
 	}
+	if ev.Leaf == nil {
+		return nil
+	}
 	if v.isFromSelf(ev.Leaf.Staker.OpenKnownFull()) {
 		return nil
 	}
@@ -293,14 +296,14 @@ func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.Star
 	if ev == nil {
 		return nil
 	}
+	if ev.ChallengedAssertion == nil {
+		return nil
+	}
 	if v.isFromSelf(ev.Staker) {
 		return nil
 	}
 	// Checks if the challenge has to do with a vertex we created.
-	challengedAssertion, err := v.protocol.AssertionBySequenceNumber(ctx, ev.ParentSeqNum)
-	if err != nil {
-		return err
-	}
+	challengedAssertion := ev.ChallengedAssertion
 	v.leavesLock.RLock()
 	defer v.leavesLock.RUnlock()
 	leaf, ok := v.createdLeaves[challengedAssertion.StateCommitment.StateRoot]

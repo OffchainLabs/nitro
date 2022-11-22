@@ -196,7 +196,7 @@ func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent,
 	ev := <-c
 	switch e := ev.(type) {
 	case *StartChallengeEvent:
-		require.Equal(t, parentSeqNum, e.ParentSeqNum)
+		require.Equal(t, parentSeqNum, e.ChallengedAssertion.SequenceNum)
 	default:
 		t.Fatal()
 	}

@@ -2,7 +2,6 @@ package validator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -151,37 +150,26 @@ func Test_processChallengeStart(t *testing.T) {
 	ctx := context.Background()
 	seq := uint64(1)
 
-	t.Run("reading assertion fails", func(t *testing.T) {
-		v, p, _ := setupValidator(t)
-
-		wantErr := errors.New("not found")
-		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{}, wantErr)
-		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
-			ParentSeqNum: seq,
-			Staker:       common.BytesToAddress([]byte("foo")),
-		})
-		require.ErrorIs(t, err, wantErr)
-	})
 	t.Run("challenge does not concern us", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		v, p, _ := setupValidator(t)
+		v, _, _ := setupValidator(t)
 
-		p.On("AssertionBySequenceNumber", ctx, seq).Return(&protocol.Assertion{
-			StateCommitment: protocol.StateCommitment{
-				Height:    0,
-				StateRoot: common.BytesToHash([]byte("foo")),
-			},
-		}, nil)
 		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
-			ParentSeqNum: seq,
-			Staker:       common.BytesToAddress([]byte("foo")),
+			ChallengedAssertion: &protocol.Assertion{
+				SequenceNum: seq,
+				StateCommitment: protocol.StateCommitment{
+					Height:    0,
+					StateRoot: common.BytesToHash([]byte("foo")),
+				},
+			},
+			Staker: common.BytesToAddress([]byte("foo")),
 		})
 		require.NoError(t, err)
 		AssertLogsDoNotContain(t, logsHook, "Received challenge")
 	})
 	t.Run("challenge concerns us, we should act", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		v, p, _ := setupValidator(t)
+		v, _, _ := setupValidator(t)
 
 		commitment := protocol.StateCommitment{
 			Height:    0,
@@ -193,10 +181,9 @@ func Test_processChallengeStart(t *testing.T) {
 		}
 		v.createdLeaves[commitment.StateRoot] = leaf
 
-		p.On("AssertionBySequenceNumber", ctx, seq).Return(leaf, nil)
 		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
-			ParentSeqNum: seq,
-			Staker:       common.BytesToAddress([]byte("foo")),
+			ChallengedAssertion: leaf,
+			Staker:              common.BytesToAddress([]byte("foo")),
 		})
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Received challenge")

@@ -452,7 +452,7 @@ func (parent *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context) (*Ch
 	ret.includedHistories[root.commitment.Hash()] = true
 	parent.challenge = util.FullOption[*Challenge](ret)
 	parent.chain.feed.Append(&StartChallengeEvent{
-		ParentSeqNum: parent.SequenceNum,
+		ChallengedAssertion: parent,
 	})
 	return ret, nil
 }
