@@ -23,7 +23,13 @@ type node struct {
 	size uint32
 }
 
-func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
+// RecordHash chunks the preimage into 64kB bins and generates a recursive hash tree,
+// calling the caller-supplied record function for each hash/preimage pair created in
+// building the tree structure.
+//
+// Notes
+//     1. RecordHash must only return an error if record returns an error.
+func RecordHash(record func(bytes32, []byte) error, preimage ...[]byte) (bytes32, error) {
 	// Algorithm
 	//  1. split the preimage into 64kB bins and double hash them to produce the tree's leaves
 	//  2. repeatedly hash pairs and their combined length, bubbling up any odd-one's out, to form the root
@@ -43,10 +49,10 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 	//  Intermediate hashes like '*' from above may be recorded via the `record` closure
 	//
 
-	keccord := func(value []byte) bytes32 {
+	keccord := func(value []byte) (bytes32, error) {
 		hash := crypto.Keccak256Hash(value)
-		record(hash, value)
-		return hash
+		err := record(hash, value)
+		return hash, err
 	}
 	prepend := func(before byte, slice []byte) []byte {
 		return append([]byte{before}, slice...)
@@ -54,15 +60,33 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 
 	unrolled := arbmath.ConcatByteSlices(preimage...)
 	if len(unrolled) == 0 {
-		return arbmath.FlipBit(keccord(prepend(LeafByte, keccord([]byte{}).Bytes())), 0)
+		dataHash, err := keccord([]byte{})
+		if err != nil {
+			return bytes32{}, err
+		}
+
+		leafHash, err := keccord(prepend(LeafByte, dataHash.Bytes()))
+		if err != nil {
+			return bytes32{}, err
+		}
+
+		return arbmath.FlipBit(leafHash, 0), nil
 	}
 
 	length := uint32(len(unrolled))
 	leaves := []node{}
 	for bin := uint32(0); bin < length; bin += BinSize {
 		end := arbmath.MinUint32(bin+BinSize, length)
-		hash := keccord(prepend(LeafByte, keccord(unrolled[bin:end]).Bytes()))
-		leaves = append(leaves, node{hash, end - bin})
+		dataHash, err := keccord(unrolled[bin:end])
+		if err != nil {
+			return bytes32{}, err
+		}
+
+		leafHash, err := keccord(prepend(LeafByte, dataHash.Bytes()))
+		if err != nil {
+			return bytes32{}, err
+		}
+		leaves = append(leaves, node{leafHash, end - bin})
 	}
 
 	layer := leaves
@@ -75,10 +99,15 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 			otherHash := layer[i+1].hash.Bytes()
 			sizeUnder := layer[i].size + layer[i+1].size
 			dataUnder := arbmath.ConcatByteSlices(firstHash, otherHash, arbmath.Uint32ToBytes(sizeUnder))
+			nodeHash, err := keccord(prepend(NodeByte, dataUnder))
+			if err != nil {
+				return bytes32{}, err
+			}
 			parent := node{
-				keccord(prepend(NodeByte, dataUnder)),
+				nodeHash,
 				sizeUnder,
 			}
+
 			paired[i/2] = parent
 		}
 		if prior%2 == 1 {
@@ -86,12 +115,16 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 		}
 		layer = paired
 	}
-	return arbmath.FlipBit(layer[0].hash, 0)
+	return arbmath.FlipBit(layer[0].hash, 0), nil
 }
 
 func Hash(preimage ...[]byte) bytes32 {
 	// Merkelizes without recording anything. All but the validator's DAS will call this
-	return RecordHash(func(bytes32, []byte) {}, preimage...)
+	hash, err := RecordHash(func(bytes32, []byte) error { return nil }, preimage...)
+	if err != nil {
+		panic(err) // RecordHash should only return error if the record function returns an error.
+	}
+	return hash
 }
 
 func HashBytes(preimage ...[]byte) []byte {
@@ -120,20 +153,22 @@ func ValidHash(hash bytes32, preimage []byte) bool {
 	return false
 }
 
-func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
-	// Reverses hashes to reveal the full preimage under the root using the preimage oracle.
-	// This function also checks that the size-data is consistent and that the hash is canonical.
-	//
-	// Notes
-	//     1. Because we accept degenerate dastrees, we can't check that single-leaf trees are canonical.
-	//     2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
-	//     3. We also accept old-style flat hashes
-	//     4. Only the committee can produce trees unwrapped by this function
-	//     5. Only the replay binary calls this - TODO remove this note
-	//
+// Reverses hashes to reveal the full preimage under the root using the preimage oracle.
+// This function also checks that the size-data is consistent and that the hash is canonical.
+//
+// Notes
+//     1. Because we accept degenerate dastrees, we can't check that single-leaf trees are canonical.
+//     2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
+//     3. We also accept old-style flat hashes
+//     4. Only the committee can produce trees unwrapped by this function
+//     5. When the replay binary calls this, the oracle function supplied must not be able to return an error.
+func Content(root bytes32, oracle func(bytes32) ([]byte, error)) ([]byte, error) {
 
 	unpeal := func(hash bytes32) (byte, []byte, error) {
-		data := oracle(hash)
+		data, err := oracle(hash)
+		if err != nil {
+			return 0, nil, err
+		}
 		size := len(data)
 		if size == 0 {
 			return 0, nil, fmt.Errorf("invalid node %v", hash)
@@ -153,7 +188,7 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 	}
 	switch kind {
 	case LeafByte:
-		return oracle(common.BytesToHash(upper)), nil
+		return oracle(common.BytesToHash(upper))
 	case NodeByte:
 		total = binary.BigEndian.Uint32(upper[64:])
 	default:
@@ -204,7 +239,10 @@ func Content(root bytes32, oracle func(bytes32) []byte) ([]byte, error) {
 
 	preimage := []byte{}
 	for i, leaf := range leaves {
-		bin := oracle(leaf.hash)
+		bin, err := oracle(leaf.hash)
+		if err != nil {
+			return nil, err
+		}
 		if len(bin) != int(leaf.size) {
 			return nil, fmt.Errorf("leaf %v has an incorrectly sized bin: %v vs %v", i, len(bin), leaf.size)
 		}

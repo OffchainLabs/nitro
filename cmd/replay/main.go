@@ -27,11 +27,14 @@ import (
 )
 
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
-	enc := wavmio.ResolvePreImage(hash)
-	header := &types.Header{}
-	err := rlp.DecodeBytes(enc, &header)
+	enc, err := wavmio.ResolvePreImage(hash)
 	if err != nil {
-		panic(fmt.Sprintf("Error parsing resolved block header: %v", err))
+		panic(fmt.Errorf("Error resolving preimage: %w", err))
+	}
+	header := &types.Header{}
+	err = rlp.DecodeBytes(enc, &header)
+	if err != nil {
+		panic(fmt.Errorf("Error parsing resolved block header: %w", err))
 	}
 	return header
 }
