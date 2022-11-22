@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -34,21 +35,25 @@ var (
 // of the assertion protocol, with methods to issue mutating transactions, make eth calls, create
 // leafs in the protocol, issue challenges, and subscribe to chain events wrapped in simple abstractions.
 type OnChainProtocol interface {
+	ChainReadWriter
+	AssertionManager
+}
+
+// ChainReadWriter can make mutating and non-mutating calls to the blockchain.
+type ChainReadWriter interface {
 	ChainReader
 	ChainWriter
 	EventProvider
-	AssertionManager
 }
 
 // ChainReader can make non-mutating calls to the on-chain protocol.
 type ChainReader interface {
-	ChallengePeriodLength(tx *ActiveTx) time.Duration
-	Call(clo func(*ActiveTx, *AssertionChain) error) error
+	Call(clo func(*ActiveTx, OnChainProtocol) error) error
 }
 
 // ChainWriter can make mutating calls to the on-chain protocol.
 type ChainWriter interface {
-	Tx(clo func(*ActiveTx, *AssertionChain) error) error
+	Tx(clo func(*ActiveTx, OnChainProtocol) error) error
 }
 
 // EventProvider allows subscribing to chain events for the on-chain protocol.
@@ -59,6 +64,10 @@ type EventProvider interface {
 // AssertionManager allows the creation of new leaves for a Staker with a State Commitment
 // and a previous assertion.
 type AssertionManager interface {
+	Inbox() *Inbox
+	NumAssertions(tx *ActiveTx) uint64
+	AssertionBySequenceNum(tx *ActiveTx, seqNum uint64) (*Assertion, error)
+	ChallengePeriodLength(tx *ActiveTx) time.Duration
 	LatestConfirmed(*ActiveTx) *Assertion
 	CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
 }
@@ -97,7 +106,7 @@ func (tx *ActiveTx) verifyReadWrite() {
 	}
 }
 
-func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, chain *AssertionChain) error) error {
+func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.Lock()
 	defer chain.mutex.Unlock()
 	tx := &ActiveTx{txStatus: readWriteTxStatus}
@@ -106,7 +115,7 @@ func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, chain *AssertionChain) er
 	return err
 }
 
-func (chain *AssertionChain) Call(clo func(tx *ActiveTx, chain *AssertionChain) error) error {
+func (chain *AssertionChain) Call(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.RLock()
 	defer chain.mutex.RUnlock()
 	tx := &ActiveTx{txStatus: readOnlyTxStatus}
@@ -124,16 +133,16 @@ const (
 type AssertionState int
 
 type Assertion struct {
-	chain                   *AssertionChain
-	status                  AssertionState
 	SequenceNum             uint64
 	StateCommitment         StateCommitment
-	prev                    util.Option[*Assertion]
+	Staker                  util.Option[common.Address]
+	Prev                    util.Option[*Assertion]
+	chain                   *AssertionChain
+	status                  AssertionState
 	isFirstChild            bool
 	firstChildCreationTime  util.Option[time.Time]
 	secondChildCreationTime util.Option[time.Time]
 	challenge               util.Option[*Challenge]
-	staker                  util.Option[common.Address]
 }
 
 type StateCommitment struct {
@@ -154,12 +163,12 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 			Height:    0,
 			StateRoot: common.Hash{},
 		},
-		prev:                    util.EmptyOption[*Assertion](),
+		Prev:                    util.EmptyOption[*Assertion](),
 		isFirstChild:            false,
 		firstChildCreationTime:  util.EmptyOption[time.Time](),
 		secondChildCreationTime: util.EmptyOption[time.Time](),
 		challenge:               util.EmptyOption[*Challenge](),
-		staker:                  util.EmptyOption[common.Address](),
+		Staker:                  util.EmptyOption[common.Address](),
 	}
 	chain := &AssertionChain{
 		mutex:           sync.RWMutex{},
@@ -221,6 +230,19 @@ func (chain *AssertionChain) LatestConfirmed(tx *ActiveTx) *Assertion {
 	return chain.assertions[chain.confirmedLatest]
 }
 
+func (chain *AssertionChain) NumAssertions(tx *ActiveTx) uint64 {
+	tx.verifyRead()
+	return uint64(len(chain.assertions))
+}
+
+func (chain *AssertionChain) AssertionBySequenceNum(tx *ActiveTx, seqNum uint64) (*Assertion, error) {
+	tx.verifyRead()
+	if seqNum >= uint64(len(chain.assertions)) {
+		return nil, fmt.Errorf("assertion sequence out of range %d >= %d", seqNum, len(chain.assertions))
+	}
+	return chain.assertions[seqNum], nil
+}
+
 func (chain *AssertionChain) SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent) {
 	chain.feed.Subscribe(ctx, ch)
 }
@@ -238,14 +260,14 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 		return nil, ErrVertexAlreadyExists
 	}
 
-	if err := prev.staker.IfLet(
+	if err := prev.Staker.IfLet(
 		func(oldStaker common.Address) error {
 			if staker != oldStaker {
 				if err := chain.DeductFromBalance(tx, staker, AssertionStakeWei); err != nil {
 					return err
 				}
 				chain.AddToBalance(tx, oldStaker, AssertionStakeWei)
-				prev.staker = util.EmptyOption[common.Address]()
+				prev.Staker = util.EmptyOption[common.Address]()
 			}
 			return nil
 		},
@@ -264,12 +286,12 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 		status:                  PendingAssertionState,
 		SequenceNum:             uint64(len(chain.assertions)),
 		StateCommitment:         commitment,
-		prev:                    util.FullOption[*Assertion](prev),
+		Prev:                    util.FullOption[*Assertion](prev),
 		isFirstChild:            prev.firstChildCreationTime.IsEmpty(),
 		firstChildCreationTime:  util.EmptyOption[time.Time](),
 		secondChildCreationTime: util.EmptyOption[time.Time](),
 		challenge:               util.EmptyOption[*Challenge](),
-		staker:                  util.FullOption[common.Address](staker),
+		Staker:                  util.FullOption[common.Address](staker),
 	}
 	if prev.firstChildCreationTime.IsEmpty() {
 		prev.firstChildCreationTime = util.FullOption[time.Time](chain.timeReference.Get())
@@ -279,10 +301,11 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 	chain.assertions = append(chain.assertions, leaf)
 	chain.dedupe[dedupeCode] = true
 	chain.feed.Append(&CreateLeafEvent{
-		PrevSeqNum:      prev.SequenceNum,
-		SeqNum:          leaf.SequenceNum,
-		StateCommitment: leaf.StateCommitment,
-		Staker:          staker,
+		PrevStateCommitment: prev.StateCommitment,
+		PrevSeqNum:          prev.SequenceNum,
+		SeqNum:              leaf.SequenceNum,
+		StateCommitment:     leaf.StateCommitment,
+		Staker:              staker,
 	})
 	return leaf, nil
 }
@@ -292,10 +315,10 @@ func (a *Assertion) RejectForPrev(tx *ActiveTx) error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.IsEmpty() {
+	if a.Prev.IsEmpty() {
 		return ErrInvalid
 	}
-	if a.prev.OpenKnownFull().status != RejectedAssertionState {
+	if a.Prev.OpenKnownFull().status != RejectedAssertionState {
 		return ErrWrongPredecessorState
 	}
 	a.status = RejectedAssertionState
@@ -310,10 +333,10 @@ func (a *Assertion) RejectForLoss(tx *ActiveTx) error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.IsEmpty() {
+	if a.Prev.IsEmpty() {
 		return ErrInvalid
 	}
-	chal := a.prev.OpenKnownFull().challenge
+	chal := a.Prev.OpenKnownFull().challenge
 	if chal.IsEmpty() {
 		return util.ErrOptionIsEmpty
 	}
@@ -336,10 +359,10 @@ func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.IsEmpty() {
+	if a.Prev.IsEmpty() {
 		return ErrInvalid
 	}
-	prev := a.prev.OpenKnownFull()
+	prev := a.Prev.OpenKnownFull()
 	if prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
@@ -354,9 +377,9 @@ func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 	a.chain.feed.Append(&ConfirmEvent{
 		SeqNum: a.SequenceNum,
 	})
-	if !a.staker.IsEmpty() {
-		a.chain.AddToBalance(tx, a.staker.OpenKnownFull(), AssertionStakeWei)
-		a.staker = util.EmptyOption[common.Address]()
+	if !a.Staker.IsEmpty() {
+		a.chain.AddToBalance(tx, a.Staker.OpenKnownFull(), AssertionStakeWei)
+		a.Staker = util.EmptyOption[common.Address]()
 	}
 	return nil
 }
@@ -366,10 +389,10 @@ func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if a.prev.IsEmpty() {
+	if a.Prev.IsEmpty() {
 		return ErrInvalid
 	}
-	prev := a.prev.OpenKnownFull()
+	prev := a.Prev.OpenKnownFull()
 	if prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
@@ -440,18 +463,24 @@ func (parent *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context) (*Ch
 	root.challenge = ret
 	ret.includedHistories[root.commitment.Hash()] = true
 	parent.challenge = util.FullOption[*Challenge](ret)
+	parentStaker := common.Address{}
+	if !parent.Staker.IsEmpty() {
+		parentStaker = parent.Staker.OpenKnownFull()
+	}
 	parent.chain.feed.Append(&StartChallengeEvent{
-		ParentSeqNum: parent.SequenceNum,
+		ParentSeqNum:          parent.SequenceNum,
+		ParentStateCommitment: parent.StateCommitment,
+		ParentStaker:          parentStaker,
 	})
 	return ret, nil
 }
 
 func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
-	if assertion.prev.IsEmpty() {
+	if assertion.Prev.IsEmpty() {
 		return nil, ErrInvalid
 	}
-	prev := assertion.prev.OpenKnownFull()
+	prev := assertion.Prev.OpenKnownFull()
 	if prev != chal.parent {
 		return nil, ErrInvalid
 	}

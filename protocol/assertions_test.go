@@ -25,12 +25,13 @@ func TestAssertionChain(t *testing.T) {
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
-	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
-	require.Equal(t, 1, len(chain.assertions))
-	require.Equal(t, uint64(0), chain.confirmedLatest)
+	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+	require.Equal(t, 1, len(assertionsChain.assertions))
+	require.Equal(t, uint64(0), assertionsChain.confirmedLatest)
 	var eventChan chan AssertionChainEvent
-	err := chain.Tx(func(tx *ActiveTx, chain *AssertionChain) error {
-		genesis := chain.LatestConfirmed(tx)
+	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
+		genesis := p.LatestConfirmed(tx)
 		require.Equal(t, StateCommitment{
 			Height:    0,
 			StateRoot: common.Hash{},
@@ -114,9 +115,10 @@ func TestAssertionChain(t *testing.T) {
 
 func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
 	ctx := context.Background()
-	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	assertionsChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 
-	require.NoError(t, chain.Tx(func(tx *ActiveTx, chian *AssertionChain) error {
+	require.NoError(t, assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
 		oldStaker := common.BytesToAddress([]byte{1})
 		staker := common.BytesToAddress([]byte{2})
 		require.Equal(t, chain.GetBalance(tx, oldStaker), big.NewInt(0)) // Old staker has 0 because it's already staked.
@@ -124,7 +126,7 @@ func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
 		require.Equal(t, chain.GetBalance(tx, staker), AssertionStakeWei) // New staker has full balance because it's not yet staked.
 
 		lc := chain.LatestConfirmed(tx)
-		lc.staker = util.FullOption[common.Address](oldStaker)
+		lc.Staker = util.FullOption[common.Address](oldStaker)
 		_, err := chain.CreateLeaf(tx, lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
 		require.NoError(t, err)
 
@@ -136,17 +138,18 @@ func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
 
 func TestAssertionChain_LeafCreationsInsufficientStakes(t *testing.T) {
 	ctx := context.Background()
-	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	assertionsChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 
-	require.NoError(t, chain.Tx(func(tx *ActiveTx, chain *AssertionChain) error {
+	require.NoError(t, assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
 		lc := chain.LatestConfirmed(tx)
 		staker := common.BytesToAddress([]byte{1})
-		lc.staker = util.EmptyOption[common.Address]()
+		lc.Staker = util.EmptyOption[common.Address]()
 		_, err := chain.CreateLeaf(tx, lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
 		require.ErrorIs(t, err, ErrInsufficientBalance)
 
 		diffStaker := common.BytesToAddress([]byte{2})
-		lc.staker = util.FullOption[common.Address](diffStaker)
+		lc.Staker = util.FullOption[common.Address](diffStaker)
 		_, err = chain.CreateLeaf(tx, lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
 		require.ErrorIs(t, err, ErrInsufficientBalance)
 		return nil
@@ -209,9 +212,10 @@ func TestBisectionChallengeGame(t *testing.T) {
 	staker1 := common.BytesToAddress([]byte{1})
 	staker2 := common.BytesToAddress([]byte{2})
 
-	chain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
 
-	err := chain.Tx(func(tx *ActiveTx, chain *AssertionChain) error {
+	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
 		// We create a fork with genesis as the parent, where one branch is a higher depth than the other.
 		genesis := chain.LatestConfirmed(tx)
 		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
@@ -314,34 +318,41 @@ func wrongBlockHashesForTest(numBlocks uint64) []common.Hash {
 func TestAssertionChain_StakerInsufficientBalance(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
-	require.Equal(t, chain.DeductFromBalance(common.BytesToAddress([]byte{1}), AssertionStakeWei), ErrInsufficientBalance)
+	require.Equal(t, chain.DeductFromBalance(
+		&ActiveTx{txStatus: readWriteTxStatus},
+		common.BytesToAddress([]byte{1}),
+		AssertionStakeWei,
+	), ErrInsufficientBalance)
 }
 
 func TestAssertionChain_ChallengePeriodLength(t *testing.T) {
 	ctx := context.Background()
 	cp := 123 * time.Second
+	tx := &ActiveTx{txStatus: readOnlyTxStatus}
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), cp)
-	require.Equal(t, chain.ChallengePeriodLength(), cp)
+	require.Equal(t, chain.ChallengePeriodLength(tx), cp)
 }
 
 func TestAssertionChain_LeafCreationErrors(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	badChain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod+1)
-	lc := chain.LatestConfirmed()
-	_, err := badChain.CreateLeaf(lc, StateCommitment{}, common.BytesToAddress([]byte{}))
+	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	lc := chain.LatestConfirmed(tx)
+	_, err := badChain.CreateLeaf(tx, lc, StateCommitment{}, common.BytesToAddress([]byte{}))
 	require.ErrorIs(t, err, ErrWrongChain)
-	_, err = chain.CreateLeaf(lc, StateCommitment{}, common.BytesToAddress([]byte{}))
+	_, err = chain.CreateLeaf(tx, lc, StateCommitment{}, common.BytesToAddress([]byte{}))
 	require.ErrorIs(t, err, ErrInvalid)
 }
 
 func TestAssertion_ErrWrongState(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
-	a := chain.LatestConfirmed()
-	require.ErrorIs(t, a.RejectForPrev(), ErrWrongState)
-	require.ErrorIs(t, a.RejectForLoss(), ErrWrongState)
-	require.ErrorIs(t, a.ConfirmForWin(), ErrWrongState)
+	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	a := chain.LatestConfirmed(tx)
+	require.ErrorIs(t, a.RejectForPrev(tx), ErrWrongState)
+	require.ErrorIs(t, a.RejectForLoss(tx), ErrWrongState)
+	require.ErrorIs(t, a.ConfirmForWin(tx), ErrWrongState)
 }
 
 func TestAssertion_ErrWrongPredecessorState(t *testing.T) {
@@ -349,11 +360,12 @@ func TestAssertion_ErrWrongPredecessorState(t *testing.T) {
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	staker := common.BytesToAddress([]byte{1})
 	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
-	chain.SetBalance(staker, bigBalance)
-	newA, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{Height: 1}, staker)
+	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	chain.SetBalance(tx, staker, bigBalance)
+	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
 	require.NoError(t, err)
-	require.ErrorIs(t, newA.RejectForPrev(), ErrWrongPredecessorState)
-	require.ErrorIs(t, newA.ConfirmForWin(), ErrWrongPredecessorState)
+	require.ErrorIs(t, newA.RejectForPrev(tx), ErrWrongPredecessorState)
+	require.ErrorIs(t, newA.ConfirmForWin(tx), ErrWrongPredecessorState)
 }
 
 func TestAssertion_ErrNotYet(t *testing.T) {
@@ -361,8 +373,9 @@ func TestAssertion_ErrNotYet(t *testing.T) {
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
 	staker := common.BytesToAddress([]byte{1})
 	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
-	chain.SetBalance(staker, bigBalance)
-	newA, err := chain.CreateLeaf(chain.LatestConfirmed(), StateCommitment{Height: 1}, staker)
+	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	chain.SetBalance(tx, staker, bigBalance)
+	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
 	require.NoError(t, err)
-	require.ErrorIs(t, newA.ConfirmNoRival(), ErrNotYet)
+	require.ErrorIs(t, newA.ConfirmNoRival(tx), ErrNotYet)
 }

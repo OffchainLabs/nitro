@@ -2,11 +2,12 @@ package inbox_feeder
 
 import (
 	"context"
+	"testing"
+	"time"
+
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 func TestInboxFeeder(t *testing.T) {
@@ -20,7 +21,7 @@ func TestInboxFeeder(t *testing.T) {
 	getNumMsgs := func() uint64 {
 		t.Helper()
 		var numMsgs uint64
-		err := chain.Call(func(tx *protocol.ActiveTx, innerChain *protocol.AssertionChain) error {
+		err := chain.Call(func(tx *protocol.ActiveTx, innerChain protocol.OnChainProtocol) error {
 			numMsgs = innerChain.Inbox().NumMessages(tx)
 			return nil
 		})
