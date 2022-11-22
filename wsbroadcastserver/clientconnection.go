@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,11 +38,23 @@ type ClientConnection struct {
 	out           chan []byte
 }
 
-func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *ClientManager, requestedSeqNum arbutil.MessageIndex) *ClientConnection {
+func NewClientConnection(
+	conn net.Conn,
+	desc *netpoll.Desc,
+	clientManager *ClientManager,
+	requestedSeqNum arbutil.MessageIndex,
+	connectingIP string,
+) *ClientConnection {
+	if len(connectingIP) == 0 {
+		parts := strings.Split(conn.RemoteAddr().String(), ":")
+		if len(parts) > 0 {
+			connectingIP = parts[0]
+		}
+	}
 	return &ClientConnection{
 		conn:            conn,
 		desc:            desc,
-		Name:            conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
+		Name:            connectingIP + "@" + conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
@@ -68,11 +81,11 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 	})
 }
 
-func (cc *ClientConnection) StopAndWait() {
+func (cc *ClientConnection) StopOnly() {
 	// Ignore errors from conn.Close since we are just shutting down
 	_ = cc.conn.Close()
 	if cc.Started() {
-		cc.StopWaiter.StopAndWait()
+		cc.StopWaiter.StopOnly()
 	}
 }
 

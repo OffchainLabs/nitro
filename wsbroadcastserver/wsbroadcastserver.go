@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	HTTPHeaderCloudflareConnectingIP  = "cf-connecting-ip"
 	HTTPHeaderFeedServerVersion       = "Arbitrum-Feed-Server-Version"
 	HTTPHeaderFeedClientVersion       = "Arbitrum-Feed-Client-Version"
 	HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
@@ -169,8 +170,10 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 
 		safeConn := deadliner{conn, s.config().IOTimeout}
 
+		// Set requestedSeqNum to max if client doesn't provide it
+		requestedSeqNum := arbutil.MessageIndex(^uint64(0))
 		var feedClientVersionSeen bool
-		var requestedSeqNum arbutil.MessageIndex
+		var connectingIP string
 		upgrader := ws.Upgrader{
 			OnRequest: func(uri []byte) error {
 				if strings.Contains(string(uri), LivenessProbeURI) {
@@ -200,6 +203,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 						return fmt.Errorf("unable to parse HTTP header key: %s, value: %s", headerName, string(value))
 					}
 					requestedSeqNum = arbutil.MessageIndex(num)
+				} else if headerName == HTTPHeaderCloudflareConnectingIP {
+					connectingIP = string(value)
 				}
 
 				return nil
@@ -234,7 +239,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 
 		// Register incoming client in clientManager.
-		client := s.clientManager.Register(safeConn, desc, requestedSeqNum)
+		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP)
 
 		// Subscribe to events about conn.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {

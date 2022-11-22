@@ -15,15 +15,15 @@ endif
 
 
 ifneq ($(origin NITRO_VERSION),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util.version=$(NITRO_VERSION)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.version=$(NITRO_VERSION)
 endif
 
 ifneq ($(origin NITRO_DATETIME),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util.datetime=$(NITRO_DATETIME)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.datetime=$(NITRO_DATETIME)
 endif
 
 ifneq ($(origin NITRO_MODIFIED),undefined)
- GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util.modified=$(NITRO_MODIFIED)
+ GOLANG_LDFLAGS += -X github.com/offchainlabs/nitro/cmd/util/confighelpers.modified=$(NITRO_MODIFIED)
 endif
 
 ifneq ($(origin GOLANG_LDFLAGS),undefined)
@@ -96,7 +96,7 @@ build-prover-bin: $(arbitrator_prover_bin)
 
 build-jit: $(arbitrator_jit)
 
-build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machines/latest/machine.wavm.br
+build-replay-env: $(arbitrator_prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machines/latest/machine.wavm.br
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
@@ -117,7 +117,7 @@ test-go: .make/test-go
 	@printf $(done)
 
 test-go-challenge: test-go-deps
-	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
+	go test -v -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
 test-go-redis: test-go-deps

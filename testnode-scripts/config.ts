@@ -32,6 +32,7 @@ function writeConfigs(argv: any) {
                 "disable-challenge": false,
                 "enable": false,
                 "staker-interval": "10s",
+                "make-assertion-interval": "10s",
                 "strategy": "MakeNodes",
                 "target-machine-count": 4,
             },
@@ -82,6 +83,7 @@ function writeConfigs(argv: any) {
     let validatorConfig = JSON.parse(baseConfJSON)
     validatorConfig.l1.wallet.account = namedAccount("validator").address
     validatorConfig.node.validator.enable = true
+    validatorConfig.node.validator["use-smart-contract-wallet"] = true
     let validconfJSON = JSON.stringify(validatorConfig)
     fs.writeFileSync(path.join(consts.configpath, "validator_config.json"), validconfJSON)
 
