@@ -60,18 +60,13 @@ func (m *MockProtocol) CreateLeaf(tx *protocol.ActiveTx, prev *protocol.Assertio
 	return args.Get(0).(*protocol.Assertion), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengePeriodLength(*protocol.ActiveTx) time.Duration {
-	args := m.Called()
+func (m *MockProtocol) ChallengePeriodLength(tx *protocol.ActiveTx) time.Duration {
+	args := m.Called(tx)
 	return args.Get(0).(time.Duration)
 }
 
-func (m *MockProtocol) AssertionBySequenceNumber(ctx context.Context, seqNum uint64) (*protocol.Assertion, error) {
-	args := m.Called(ctx, seqNum)
-	return args.Get(0).(*protocol.Assertion), args.Error(1)
-}
-
-func (m *MockProtocol) NumAssertions() uint64 {
-	args := m.Called()
+func (m *MockProtocol) NumAssertions(tx *protocol.ActiveTx) uint64 {
+	args := m.Called(tx)
 	return args.Get(0).(uint64)
 }
 

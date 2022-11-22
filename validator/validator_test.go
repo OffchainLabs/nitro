@@ -205,7 +205,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 			Staker: util.EmptyOption[common.Address](),
 		}
 		p.On("LatestConfirmed", tx).Return(genesis)
-		p.On("NumAssertions").Return(uint64(100))
+		p.On("NumAssertions", tx).Return(uint64(100))
 		latestValid := v.findLatestValidAssertion(ctx)
 		require.Equal(t, genesis, latestValid)
 	})
@@ -217,7 +217,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 			s.On("HasStateCommitment", ctx, a.StateCommitment).Return(true)
 		}
 		p.On("LatestConfirmed", tx).Return(assertions[0])
-		p.On("NumAssertions").Return(uint64(len(assertions)))
+		p.On("NumAssertions", tx).Return(uint64(len(assertions)))
 
 		latestValid := v.findLatestValidAssertion(ctx)
 		require.Equal(t, assertions[len(assertions)-1], latestValid)
@@ -234,7 +234,7 @@ func Test_findLatestValidAssertion(t *testing.T) {
 			}
 		}
 		p.On("LatestConfirmed", tx).Return(assertions[0])
-		p.On("NumAssertions").Return(uint64(len(assertions)))
+		p.On("NumAssertions", tx).Return(uint64(len(assertions)))
 		latestValid := v.findLatestValidAssertion(ctx)
 		require.Equal(t, assertions[5], latestValid)
 	})

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -43,9 +42,6 @@ type OnChainProtocol interface {
 
 // ChainReader can make non-mutating calls to the on-chain protocol.
 type ChainReader interface {
-	AssertionBySequenceNumber(ctx context.Context, seqNum uint64) (*Assertion, error)
-	NumAssertions() uint64
-	ChallengePeriodLength(tx *ActiveTx) time.Duration
 	Call(clo func(*ActiveTx, *AssertionChain) error) error
 }
 
@@ -62,6 +58,8 @@ type EventProvider interface {
 // AssertionManager allows the creation of new leaves for a Staker with a State Commitment
 // and a previous assertion.
 type AssertionManager interface {
+	NumAssertions(tx *ActiveTx) uint64
+	ChallengePeriodLength(tx *ActiveTx) time.Duration
 	LatestConfirmed(*ActiveTx) *Assertion
 	CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
 }
@@ -224,15 +222,9 @@ func (chain *AssertionChain) LatestConfirmed(tx *ActiveTx) *Assertion {
 	return chain.assertions[chain.confirmedLatest]
 }
 
-func (chain *AssertionChain) NumAssertions() uint64 {
+func (chain *AssertionChain) NumAssertions(tx *ActiveTx) uint64 {
+	tx.verifyRead()
 	return uint64(len(chain.assertions))
-}
-
-func (chain *AssertionChain) AssertionBySequenceNumber(ctx context.Context, seqNum uint64) (*Assertion, error) {
-	if seqNum >= uint64(len(chain.assertions)) {
-		return nil, fmt.Errorf("sequencer number out of range %d >= %d", seqNum, len(chain.assertions))
-	}
-	return chain.assertions[seqNum], nil
 }
 
 func (chain *AssertionChain) SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent) {

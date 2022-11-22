@@ -206,7 +206,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 func (v *Validator) findLatestValidAssertion(ctx context.Context) *protocol.Assertion {
 	tx := &protocol.ActiveTx{}
 	latestConfirmed := v.protocol.LatestConfirmed(tx)
-	numAssertions := v.protocol.NumAssertions()
+	numAssertions := v.protocol.NumAssertions(tx)
 	latestConfirmedSeqNum := latestConfirmed.SequenceNum
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
