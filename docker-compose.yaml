@@ -86,6 +86,8 @@ services:
       - --authrpc.jwtsecret=/config/jwt.hex
       - --nodiscover
       - --syncmode=full
+      - --dev
+      - --dev.period=1
       - --mine
       - --miner.etherbase=0x683642c22feDE752415D4793832Ab75EFdF6223c
       - --gcmode=archive

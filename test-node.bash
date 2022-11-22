@@ -36,6 +36,7 @@ consensusclient=false
 redundantsequencers=0
 batchposters=1
 devprivkey=e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2
+l1chainid=1337
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -86,6 +87,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --consensusclient)
             consensusclient=true
+            l1chainid=32382
             shift
             ;;
         --redundantsequencers)
@@ -204,7 +206,7 @@ if $force_init; then
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
 
-    docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=32382
+    docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=$l1chainid
 
     echo == Writing configs
     docker-compose run testnode-scripts write-config
