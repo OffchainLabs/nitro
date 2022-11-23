@@ -76,19 +76,39 @@ func TestIpfsHelper(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 }
 
+func TestNormalizeCidString(t *testing.T) {
+	for _, test := range []struct {
+		input    string
+		expected string
+	}{
+		{"ipfs://QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ", "/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"},
+		{"ipns://k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8", "/ipns/k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8"},
+		{"ipns://docs.ipfs.tech/introduction/", "/ipns/docs.ipfs.tech/introduction/"},
+		{"/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ", "/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"},
+		{"/ipns/k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8", "/ipns/k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8"},
+		{"QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ", "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"},
+	} {
+		if res := normalizeCidString(test.input); res != test.expected {
+			testhelpers.FailImpl(t, "Failed to normalize cid string, input: ", test.input, " got: ", res, " expected: ", test.expected)
+		}
+	}
+}
+
 func TestCanBeIpfsPath(t *testing.T) {
 	correctPaths := []string{
 		"QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
 		"/ipfs/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-		"/ipns/k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8 ",
+		"/ipns/k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8",
 		"/ipns/docs.ipfs.tech/introduction/",
+		"ipfs://QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+		"ipns://k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8",
 	}
 	for _, path := range correctPaths {
 		if !CanBeIpfsPath(path) {
 			testhelpers.FailImpl(t, "false negative result for path:", path)
 		}
 	}
-	incorrectPaths := []string{"www.ipfs.tech", "/ipfs/", "https://www.ipfs.tech", "QmIncorrect"}
+	incorrectPaths := []string{"www.ipfs.tech", "https://www.ipfs.tech", "QmIncorrect"}
 	for _, path := range incorrectPaths {
 		if CanBeIpfsPath(path) {
 			testhelpers.FailImpl(t, "false positive result for path:", path)
