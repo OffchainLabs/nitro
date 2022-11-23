@@ -28,6 +28,8 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 )
 
+const DefaultIpfsProfiles = ""
+
 type IpfsHelper struct {
 	api      icore.CoreAPI
 	node     *core.IpfsNode
@@ -183,8 +185,8 @@ func (h *IpfsHelper) AddFile(ctx context.Context, filePath string, includeHidden
 	return h.api.Unixfs().Add(ctx, fileNode)
 }
 
-func CreateIpfsHelper(ctx context.Context, downloadPath string, clientOnly bool) (*IpfsHelper, error) {
-	return createIpfsHelperImpl(ctx, downloadPath, clientOnly, []string{}, "")
+func CreateIpfsHelper(ctx context.Context, downloadPath string, clientOnly bool, profiles string) (*IpfsHelper, error) {
+	return createIpfsHelperImpl(ctx, downloadPath, clientOnly, []string{}, profiles)
 }
 
 func (h *IpfsHelper) Close() error {
