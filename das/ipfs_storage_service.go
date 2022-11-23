@@ -1,6 +1,10 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+// IPFS DAS backend.
+// It takes advantage of IPFS' content addressing scheme to be able to directly retrieve
+// the batches from IPFS using their root hash from the L1 sequencer inbox contract.
+
 package das
 
 import (
@@ -31,7 +35,7 @@ type IpfsStorageServiceConfig struct {
 var DefaultIpfsStorageServiceConfig = IpfsStorageServiceConfig{
 	Enable:   false,
 	RepoDir:  "",
-	Profiles: "test",
+	Profiles: "test", // Default to test, see profiles here https://github.com/ipfs/kubo/blob/e550d9e4761ea394357c413c02ade142c0dea88c/config/profile.go
 }
 
 func IpfsStorageServiceConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -70,6 +74,8 @@ func hashToCid(hash common.Hash) (cid.Cid, error) {
 	return cid.NewCidV1(cid.Raw, multiHash), nil
 }
 
+// GetByHash retrieves and reconstructs one batch's data, using IPFS to retrieve the preimages
+// for each chunk of data and the dastree nodes.
 func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	oracle := func(h common.Hash) ([]byte, error) {
 		thisCid, err := hashToCid(h)
@@ -78,7 +84,7 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 		}
 
 		ipfsPath := path.IpfsPath(thisCid)
-		log.Info("Retrieving path", "path", ipfsPath.String())
+		log.Trace("Retrieving IPFS path", "path", ipfsPath.String())
 
 		rdr, err := s.ipfsApi.Block().Get(ctx, ipfsPath)
 		if err != nil {
@@ -95,13 +101,27 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 	return dastree.Content(hash, oracle)
 }
 
+// Put stores all the preimages required to reconstruct the dastree for single batch,
+// ie the hashed data chunks and dastree nodes.
+// This takes advantage of IPFS supporting keccak256 on raw data blocks for calculating
+// its CIDs, and the fact that the dastree structure uses keccak256 for addressing its
+// nodes, to directly store the dastree structure in IPFS.
+// IPFS default block size is 256KB and dastree max block size is 64KB so each dastree
+// node and data chunk easily fits within an IPFS block.
 func (s *IpfsStorageService) Put(ctx context.Context, data []byte, _ uint64) error {
 	record := func(_ common.Hash, value []byte) error {
-		blockStat, err := s.ipfsApi.Block().Put(ctx, bytes.NewReader(value), options.Block.CidCodec("raw"), options.Block.Hash(multihash.KECCAK_256, -1), options.Block.Pin(true))
+		blockStat, err := s.ipfsApi.Block().Put(
+			ctx,
+			bytes.NewReader(value),
+			options.Block.CidCodec("raw"), // Store the data in raw form since the hash in the CID must be the hash
+			// of the preimage for our lookup scheme to work.
+			options.Block.Hash(multihash.KECCAK_256, -1), // Use keccak256 to calculate the hash to put in the block's
+			// CID, since it is the same algo used by dastree.
+			options.Block.Pin(true)) // Keep the data in the local IPFS repo, don't GC it.
 		if err != nil {
 			return err
 		}
-		log.Info("Written path", "path", blockStat.Path().String())
+		log.Trace("Wrote IPFS path", "path", blockStat.Path().String())
 		return nil
 	}
 
