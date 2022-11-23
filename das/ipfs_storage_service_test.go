@@ -28,7 +28,7 @@ func runAddAndGetTest(t *testing.T, ctx context.Context, svc *IpfsStorageService
 	hash := dastree.Hash(data).Bytes()
 	returnedData, err := svc.GetByHash(ctx, common.BytesToHash(hash))
 	Require(t, err)
-	if bytes.Compare(data, returnedData) != 0 {
+	if !bytes.Equal(data, returnedData) {
 		Fail(t, "Returned data didn't match!")
 	}
 
