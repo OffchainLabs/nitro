@@ -65,6 +65,7 @@ func (h *IpfsHelper) createRepo(downloadPath string, profiles string) error {
 		}
 	}
 	// Create the repo with the config
+	// fsrepo.Init initializes new repo only if it's not initialized yet
 	err = fsrepo.Init(h.repoPath, h.cfg)
 	if err != nil {
 		return fmt.Errorf("failed to init ipfs repo: %w", err)
