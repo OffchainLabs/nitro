@@ -333,6 +333,32 @@ func TestAssertionChain_ChallengePeriodLength(t *testing.T) {
 	require.Equal(t, chain.ChallengePeriodLength(tx), cp)
 }
 
+func TestAssertionChain_Inbox(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	require.Equal(t, chain.Inbox().messages, NewInbox(ctx).messages)
+}
+
+func TestAssertionChain_RetrieveAssertions(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	require.Equal(t, chain.Inbox().messages, NewInbox(ctx).messages)
+	staker := common.BytesToAddress([]byte{1})
+	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	chain.SetBalance(tx, staker, bigBalance)
+	p := chain.LatestConfirmed(tx)
+	a, err := chain.CreateLeaf(tx, p, StateCommitment{Height: 1}, staker)
+	require.NoError(t, err)
+	require.Equal(t, chain.NumAssertions(tx), uint64(2))
+	got, err := chain.AssertionBySequenceNum(tx, 0)
+	require.NoError(t, err)
+	require.Equal(t, got, p)
+	got, err = chain.AssertionBySequenceNum(tx, 1)
+	require.NoError(t, err)
+	require.Equal(t, got, a)
+}
+
 func TestAssertionChain_LeafCreationErrors(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
@@ -378,4 +404,20 @@ func TestAssertion_ErrNotYet(t *testing.T) {
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
 	require.NoError(t, err)
 	require.ErrorIs(t, newA.ConfirmNoRival(tx), ErrNotYet)
+}
+
+func TestAssertion_ErrInvalid(t *testing.T) {
+	ctx := context.Background()
+	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
+	staker := common.BytesToAddress([]byte{1})
+	bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
+	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	chain.SetBalance(tx, staker, bigBalance)
+	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
+	require.NoError(t, err)
+	newA.Prev = util.EmptyOption[*Assertion]()
+	require.ErrorIs(t, newA.RejectForPrev(tx), ErrInvalid)
+	require.ErrorIs(t, newA.RejectForLoss(tx), ErrInvalid)
+	require.ErrorIs(t, newA.ConfirmNoRival(tx), ErrInvalid)
+	require.ErrorIs(t, newA.ConfirmForWin(tx), ErrInvalid)
 }
