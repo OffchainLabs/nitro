@@ -466,7 +466,8 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 		return errors.WithStack(err)
 	}
 	if len(logs) == 0 {
-		return errors.New("expected ExecutionChallengeBegun event")
+		// ExecutionChallengeBegun has not been emitted, it's not an error.
+		return nil
 	}
 	if len(logs) > 1 {
 		return errors.New("expected only one ExecutionChallengeBegun event")
