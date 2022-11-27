@@ -89,9 +89,14 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 }
 
 // Register registers new connection as a Client.
-func (cm *ClientManager) Register(conn net.Conn, desc *netpoll.Desc, requestedSeqNum arbutil.MessageIndex) *ClientConnection {
+func (cm *ClientManager) Register(
+	conn net.Conn,
+	desc *netpoll.Desc,
+	requestedSeqNum arbutil.MessageIndex,
+	connectingIP string,
+) *ClientConnection {
 	createClient := ClientConnectionAction{
-		NewClientConnection(conn, desc, cm, requestedSeqNum),
+		NewClientConnection(conn, desc, cm, requestedSeqNum, connectingIP),
 		true,
 	}
 

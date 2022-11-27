@@ -13,7 +13,7 @@ func (q *Queue[T]) Push(item T) {
 }
 
 // If cap(slice) >= len(slice)*shrinkRatio && cap(slice) >= shrinkMinimum,
-// shrink the slice capacity back down to its length by re-allocating it.
+// shrink the slice capacity back down to twice its length by re-allocating it.
 const shrinkRatio = 16
 const shrinkMinimum = 512
 
@@ -31,6 +31,7 @@ func (q *Queue[T]) Pop() T {
 		return empty
 	}
 	item := q.slice[0]
+	q.slice[0] = empty
 	q.slice = q.slice[1:]
 	q.shrink()
 	return item

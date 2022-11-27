@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -109,10 +110,15 @@ func ProduceBlock(
 	batchFetcher FallibleBatchFetcher,
 ) (*types.Block, types.Receipts, error) {
 	var batchFetchErr error
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64) []byte {
+	txes, err := message.ParseL2Transactions(chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
 		data, err := batchFetcher(batchNum)
 		if err != nil {
 			batchFetchErr = err
+			return nil
+		}
+		dataHash := crypto.Keccak256Hash(data)
+		if dataHash != batchHash {
+			batchFetchErr = fmt.Errorf("expecting batch %v hash %v but got data with hash %v", batchNum, batchHash, dataHash)
 			return nil
 		}
 		return data
@@ -405,20 +411,20 @@ func ProduceBlockAdvanced(
 		}
 	}
 
-	FinalizeBlock(header, complete, statedb)
+	FinalizeBlock(header, complete, statedb, chainConfig)
 	header.Root = statedb.IntermediateRoot(true)
 
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
-		return nil, nil, fmt.Errorf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
+		return nil, nil, fmt.Errorf("block has %d txes but %d receipts", len(block.Transactions()), len(receipts))
 	}
 
 	balanceDelta := statedb.GetUnexpectedBalanceDelta()
 	if !arbmath.BigEquals(balanceDelta, expectedBalanceDelta) {
 		// Fail if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
-			return nil, nil, fmt.Errorf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
+			return nil, nil, fmt.Errorf("unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
 		} else {
 			// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
 			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
@@ -428,20 +434,37 @@ func ProduceBlockAdvanced(
 	return block, receipts, nil
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB, chainConfig *params.ChainConfig) {
 	if header != nil {
-		state, _ := arbosState.OpenSystemArbosState(statedb, nil, true)
+		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
+			panic("cannot finalize blocks before genesis")
+		}
 
-		// Add outbox info to the header for client-side proving
-		acc := state.SendMerkleAccumulator()
-		root, _ := acc.Root()
-		size, _ := acc.Size()
-		nextL1BlockNumber, _ := state.Blockhashes().L1BlockNumber()
+		var sendRoot common.Hash
+		var sendCount uint64
+		var nextL1BlockNumber uint64
+		var arbosVersion uint64
+
+		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
+			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
+		} else {
+			state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+			if err != nil {
+				newErr := fmt.Errorf("%w while opening arbos state. Block: %d root: %v", err, header.Number, header.Root)
+				panic(newErr)
+			}
+			// Add outbox info to the header for client-side proving
+			acc := state.SendMerkleAccumulator()
+			sendRoot, _ = acc.Root()
+			sendCount, _ = acc.Size()
+			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
+			arbosVersion = state.ArbOSVersion()
+		}
 		arbitrumHeader := types.HeaderInfo{
-			SendRoot:           root,
-			SendCount:          size,
+			SendRoot:           sendRoot,
+			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
-			ArbOSFormatVersion: state.ArbOSVersion(),
+			ArbOSFormatVersion: arbosVersion,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}

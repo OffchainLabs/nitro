@@ -25,7 +25,7 @@ type DataAvailabilityReader interface {
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
 }
 
-var ErrHashMismatch = errors.New("Result does not match expected hash")
+var ErrHashMismatch = errors.New("result does not match expected hash")
 
 // DASMessageHeaderFlag indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.
@@ -78,7 +78,7 @@ func DeserializeDASCertFrom(rd io.Reader) (c *DataAvailabilityCertificate, err e
 		return nil, err
 	}
 	if !IsDASMessageHeaderByte(header) {
-		return nil, errors.New("Tried to deserialize a message that doesn't have the DAS header.")
+		return nil, errors.New("tried to deserialize a message that doesn't have the DAS header")
 	}
 
 	_, err = io.ReadFull(r, c.KeysetHash[:])
@@ -142,16 +142,16 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 	return buf
 }
 
-func (cert *DataAvailabilityCertificate) RecoverKeyset(
+func (c *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
 	da DataAvailabilityReader,
 	assumeKeysetValid bool,
 ) (*DataAvailabilityKeyset, error) {
-	keysetBytes, err := da.GetByHash(ctx, cert.KeysetHash)
+	keysetBytes, err := da.GetByHash(ctx, c.KeysetHash)
 	if err != nil {
 		return nil, err
 	}
-	if !dastree.ValidHash(cert.KeysetHash, keysetBytes) {
+	if !dastree.ValidHash(c.KeysetHash, keysetBytes) {
 		return nil, errors.New("keyset hash does not match cert")
 	}
 	return DeserializeKeyset(bytes.NewReader(keysetBytes), assumeKeysetValid)
