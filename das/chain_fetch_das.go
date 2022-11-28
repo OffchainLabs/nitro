@@ -86,16 +86,16 @@ func NewChainFetchReaderWithSeqInbox(inner arbstate.DataAvailabilityReader, seqI
 	}, nil
 }
 
-func (this *ChainFetchDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+func (c *ChainFetchDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	log.Trace("das.ChainFetchDAS.GetByHash", "hash", pretty.PrettyHash(hash))
-	return chainFetchGetByHash(ctx, this.DataAvailabilityService, &this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
+	return chainFetchGetByHash(ctx, c.DataAvailabilityService, &c.keysetCache, c.seqInboxCaller, c.seqInboxFilterer, hash)
 }
 
-func (this *ChainFetchReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+func (c *ChainFetchReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	log.Trace("das.ChainFetchReader.GetByHash", "hash", pretty.PrettyHash(hash))
-	return chainFetchGetByHash(ctx, this.DataAvailabilityReader, &this.keysetCache, this.seqInboxCaller, this.seqInboxFilterer, hash)
+	return chainFetchGetByHash(ctx, c.DataAvailabilityReader, &c.keysetCache, c.seqInboxCaller, c.seqInboxFilterer, hash)
 }
-func (this *ChainFetchReader) String() string {
+func (c *ChainFetchReader) String() string {
 	return "ChainFetchReader"
 }
 

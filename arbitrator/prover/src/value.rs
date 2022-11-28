@@ -168,7 +168,7 @@ impl Value {
     pub fn hash(self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update(b"Value:");
-        h.update(&[self.ty() as u8]);
+        h.update([self.ty() as u8]);
         h.update(self.contents_for_proof());
         h.finalize().into()
     }
@@ -256,11 +256,11 @@ impl FunctionType {
         h.update(b"Function type:");
         h.update(Bytes32::from(self.inputs.len()));
         for input in &self.inputs {
-            h.update(&[*input as u8]);
+            h.update([*input as u8]);
         }
         h.update(Bytes32::from(self.outputs.len()));
         for output in &self.outputs {
-            h.update(&[*output as u8]);
+            h.update([*output as u8]);
         }
         h.finalize().into()
     }
