@@ -3,6 +3,10 @@
 
 Note: If you’re interested in accessing an Arbitrum chain, but you don’t want to set up your own node, see our [Node Providers](./node-providers.md) to get RPC access to fully-managed nodes hosted by a third party provider
 
+### Required Hardware
+
+The hardware requirements for running the Nitro full node is same as the Geth full node requirements
+
 ### Required Artifacts
 
 - Latest Docker Image: `offchainlabs/nitro-node:v2.0.8-5b9fe9c`
