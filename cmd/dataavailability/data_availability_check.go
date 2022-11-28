@@ -171,8 +171,8 @@ func (d *DataAvailabilityCheck) start(ctx context.Context) error {
 func (d *DataAvailabilityCheck) checkDataAvailabilityForNewHashInBlockRange(ctx context.Context, latestBlock uint64, oldBlock uint64) error {
 	for latestBlock-d.config.L1BlocksPerRead >= oldBlock {
 		query := ethereum.FilterQuery{
-			FromBlock: new(big.Int).SetUint64(latestBlock),
-			ToBlock:   new(big.Int).SetUint64(latestBlock - d.config.L1BlocksPerRead),
+			FromBlock: new(big.Int).SetUint64(latestBlock - d.config.L1BlocksPerRead),
+			ToBlock:   new(big.Int).SetUint64(latestBlock),
 			Addresses: []common.Address{*d.inboxAddr},
 			Topics:    [][]common.Hash{{batchDeliveredID}},
 		}
