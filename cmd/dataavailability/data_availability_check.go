@@ -274,7 +274,7 @@ func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliv
 
 	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(data))
 	if err != nil {
-		return false, nil
+		return true, err
 	}
 	var dataNotFound []string
 	for url, reader := range d.urlToReaderMap {
