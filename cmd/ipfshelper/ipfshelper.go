@@ -4,16 +4,19 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 
 	files "github.com/ipfs/go-ipfs-files"
 	ipfspath "github.com/ipfs/go-path"
 	icore "github.com/ipfs/interface-go-ipfs-core"
+	"github.com/ipfs/interface-go-ipfs-core/options"
 	"github.com/ipfs/interface-go-ipfs-core/path"
 	icorepath "github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/ipfs/kubo/config"
@@ -154,23 +157,52 @@ func normalizeCidString(cidString string) string {
 	return cidString
 }
 
-func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDirectory string) (string, error) {
+func (h *IpfsHelper) DownloadFile(ctx context.Context, cidString string, destinationDir string) (string, error) {
 	cidString = normalizeCidString(cidString)
 	cidPath := icorepath.New(cidString)
 	resolvedPath, err := h.api.ResolvePath(ctx, cidPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path: %w", err)
 	}
+	// first pin the root node, then all its children nodes in random order to improve sharing with peers started at the same time
+	if err := h.api.Pin().Add(ctx, resolvedPath, options.Pin.Recursive(false)); err != nil {
+		return "", fmt.Errorf("failed to pin root path: %w", err)
+	}
+	links, err := h.api.Object().Links(ctx, resolvedPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get root links: %w", err)
+	}
+	log.Info("Pinning ipfs subtrees...")
+	printProgress := func(done int, all int) {
+		if all == 0 {
+			all = 1 // avoid division by 0
+			done = 1
+		}
+		fmt.Printf("\033[2K\rPinned %d / %d subtrees (%.2f%%)", done, all, float32(done)/float32(all)*100)
+	}
+	rand.Seed(time.Now().UnixNano())
+	permutation := rand.Perm(len(links))
+	printProgress(0, len(links))
+	for i, j := range permutation {
+		link := links[j]
+		if err := h.api.Pin().Add(ctx, icorepath.IpfsPath(link.Cid), options.Pin.Recursive(true)); err != nil {
+			return "", fmt.Errorf("failed to pin child path: %w", err)
+		}
+		printProgress(i+1, len(links))
+	}
+	fmt.Printf("\n")
 	rootNodeDirectory, err := h.api.Unixfs().Get(ctx, cidPath)
 	if err != nil {
 		return "", fmt.Errorf("could not get file with CID: %w", err)
 	}
-	outputFilePath := filepath.Join(destinationDirectory, resolvedPath.Cid().String())
+	log.Info("Writing file...")
+	outputFilePath := filepath.Join(destinationDir, resolvedPath.Cid().String())
 	_ = os.Remove(outputFilePath)
 	err = files.WriteTo(rootNodeDirectory, outputFilePath)
 	if err != nil {
 		return "", fmt.Errorf("could not write out the fetched CID: %w", err)
 	}
+	log.Info("Download done.")
 	return outputFilePath, nil
 }
 
