@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -78,6 +79,25 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 	}
 	if strings.HasPrefix(initConfig.Url, "file:") {
 		return initConfig.Url[5:], nil
+	}
+	if ipfshelper.CanBeIpfsPath(initConfig.Url) {
+		ipfsNode, err := ipfshelper.CreateIpfsHelper(ctx, initConfig.DownloadPath, false, ipfshelper.DefaultIpfsProfiles)
+		if err != nil {
+			return "", err
+		}
+		log.Info("Downloading initial database via IPFS", "url", initConfig.Url)
+		initFile, downloadErr := ipfsNode.DownloadFile(ctx, initConfig.Url, initConfig.DownloadPath)
+		closeErr := ipfsNode.Close()
+		if downloadErr != nil {
+			if closeErr != nil {
+				log.Error("Failed to close IPFS node after download error", "err", closeErr)
+			}
+			return "", fmt.Errorf("Failed to download file from IPFS: %w", downloadErr)
+		}
+		if closeErr != nil {
+			return "", fmt.Errorf("Failed to close IPFS node: %w", err)
+		}
+		return initFile, nil
 	}
 	grabclient := grab.NewClient()
 	log.Info("Downloading initial database", "url", initConfig.Url)
