@@ -1,0 +1,293 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"fmt"
+	"math/big"
+	"os"
+
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+
+	flag "github.com/spf13/pflag"
+)
+
+var sequencerInboxABI *abi.ABI
+var batchDeliveredID common.Hash
+var sequencerBatchDataABI abi.Event
+var addSequencerL2BatchFromOriginCallABI abi.Method
+
+const sequencerBatchDataEvent = "SequencerBatchData"
+const sequencerBatchDeliveredEvent = "SequencerBatchDelivered"
+
+type batchDataLocation uint8
+
+const (
+	batchDataTxInput batchDataLocation = iota
+	batchDataSeparateEvent
+)
+
+func init() {
+	var err error
+	sequencerInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	batchDeliveredID = sequencerInboxABI.Events[sequencerBatchDeliveredEvent].ID
+	sequencerBatchDataABI = sequencerInboxABI.Events[sequencerBatchDataEvent]
+	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin"]
+}
+
+type DataAvailabilityCheckConfig struct {
+	OnlineUrlList         string `koanf:"online-url-list"`
+	L1NodeURL             string `koanf:"l1-node-url"`
+	L1ConnectionAttempts  int    `koanf:"l1-connection-attempts"`
+	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
+	L1BlocksPerRead       uint64 `koanf:"l1-blocks-per-read"`
+}
+
+var DefaultDataAvailabilityCheckConfig = DataAvailabilityCheckConfig{
+	OnlineUrlList:        "",
+	L1ConnectionAttempts: 15,
+	L1BlocksPerRead:      100,
+}
+
+type DataAvailabilityCheck struct {
+	l1Client       *ethclient.Client
+	config         *DataAvailabilityCheckConfig
+	inboxAddr      *common.Address
+	inboxContract  *bridgegen.SequencerInbox
+	dataSource     arbstate.DataAvailabilityReader
+	urlToReaderMap map[string]arbstate.DataAvailabilityReader
+}
+
+func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *DataAvailabilityCheckConfig) (*DataAvailabilityCheck, error) {
+	l1Client, err := das.GetL1Client(ctx, dataAvailabilityCheckConfig.L1ConnectionAttempts, dataAvailabilityCheckConfig.L1NodeURL)
+	if err != nil {
+		return nil, err
+	}
+	seqInboxAddress, err := das.OptionalAddressFromString(dataAvailabilityCheckConfig.SequencerInboxAddress)
+	if err != nil {
+		return nil, err
+	}
+	inboxContract, err := bridgegen.NewSequencerInbox(*seqInboxAddress, l1Client)
+	if err != nil {
+		return nil, err
+	}
+	dataSource, err := das.NewChainFetchReader(das.NewEmptyStorageService(), l1Client, *seqInboxAddress)
+	if err != nil {
+		return nil, err
+	}
+	onlineUrls, err := das.RestfulServerURLsFromList(ctx, dataAvailabilityCheckConfig.OnlineUrlList)
+	if err != nil {
+		return nil, err
+	}
+	urlToReaderMap := make(map[string]arbstate.DataAvailabilityReader)
+	for _, url := range onlineUrls {
+		reader, err := das.NewRestfulDasClientFromURL(url)
+		if err != nil {
+			return nil, err
+		}
+		urlToReaderMap[url] = reader
+	}
+	return &DataAvailabilityCheck{
+		l1Client:       l1Client,
+		config:         dataAvailabilityCheckConfig,
+		inboxAddr:      seqInboxAddress,
+		inboxContract:  inboxContract,
+		dataSource:     dataSource,
+		urlToReaderMap: urlToReaderMap,
+	}, nil
+}
+
+func parseDataAvailabilityCheckConfig(args []string) (*DataAvailabilityCheckConfig, error) {
+	f := flag.NewFlagSet("dataavailabilitycheck", flag.ContinueOnError)
+	f.String("online-url-list", DefaultDataAvailabilityCheckConfig.OnlineUrlList, "a URL to a list of URLs of REST das endpoints that is checked for data availability")
+	f.String("l1-node-url", DefaultDataAvailabilityCheckConfig.L1NodeURL, "URL for L1 node")
+	f.Int("l1-connection-attempts", DefaultDataAvailabilityCheckConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
+	f.String("sequencer-inbox-address", DefaultDataAvailabilityCheckConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
+	f.Uint64("l1-blocks-per-read", DefaultDataAvailabilityCheckConfig.L1BlocksPerRead, "max l1 blocks to read per poll")
+	k, err := confighelpers.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var config DataAvailabilityCheckConfig
+	if err := confighelpers.EndCommonParse(k, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+func main() {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+	dataAvailabilityCheckConfig, err := parseDataAvailabilityCheckConfig(os.Args[1:])
+	if err != nil {
+		panic(err)
+	}
+	dataAvailabilityCheck, err := newDataAvailabilityCheck(ctx, dataAvailabilityCheckConfig)
+	if err != nil {
+		panic(err)
+	}
+	if err := dataAvailabilityCheck.start(ctx); err != nil {
+		panic(err)
+	}
+}
+
+func (d *DataAvailabilityCheck) start(ctx context.Context) error {
+	latestHeader, err := d.l1Client.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+	if err != nil {
+		return err
+	}
+	latestBlockNumber := latestHeader.Number.Uint64()
+	oldBlockNumber := latestBlockNumber - 86400 // 12 days old block number
+
+	err = d.checkDataAvailabilityForNewHashInBlockRange(ctx, latestBlockNumber, oldBlockNumber)
+	if err != nil {
+		return err
+	}
+	err = d.checkDataAvailabilityForOldHashInBlockRange(ctx, oldBlockNumber, latestBlockNumber)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *DataAvailabilityCheck) checkDataAvailabilityForNewHashInBlockRange(ctx context.Context, latestBlock uint64, oldBlock uint64) error {
+	for latestBlock-d.config.L1BlocksPerRead >= oldBlock {
+		query := ethereum.FilterQuery{
+			FromBlock: new(big.Int).SetUint64(latestBlock),
+			ToBlock:   new(big.Int).SetUint64(latestBlock - d.config.L1BlocksPerRead),
+			Addresses: []common.Address{*d.inboxAddr},
+			Topics:    [][]common.Hash{{batchDeliveredID}},
+		}
+		logs, err := d.l1Client.FilterLogs(ctx, query)
+		if err != nil {
+			return err
+		}
+		for _, deliveredLog := range logs {
+			isDasMessage, err := d.checkDataAvailability(ctx, deliveredLog)
+			if err != nil {
+				return err
+			}
+			if isDasMessage {
+				return nil
+			}
+		}
+		latestBlock = latestBlock - d.config.L1BlocksPerRead
+	}
+	return fmt.Errorf("no das message found between block %d and block %d", latestBlock, oldBlock)
+}
+
+func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx context.Context, oldBlock uint64, latestBlock uint64) error {
+	for oldBlock+d.config.L1BlocksPerRead <= latestBlock {
+		query := ethereum.FilterQuery{
+			FromBlock: new(big.Int).SetUint64(oldBlock),
+			ToBlock:   new(big.Int).SetUint64(oldBlock + d.config.L1BlocksPerRead),
+			Addresses: []common.Address{*d.inboxAddr},
+			Topics:    [][]common.Hash{{batchDeliveredID}},
+		}
+		logs, err := d.l1Client.FilterLogs(ctx, query)
+		if err != nil {
+			return err
+		}
+		for _, deliveredLog := range logs {
+			isDasMessage, err := d.checkDataAvailability(ctx, deliveredLog)
+			if err != nil {
+				return err
+			}
+			if isDasMessage {
+				return nil
+			}
+		}
+		oldBlock = oldBlock + d.config.L1BlocksPerRead
+	}
+	return fmt.Errorf("no das message found between block %d and block %d", oldBlock, latestBlock)
+}
+
+// Trys to find if DAS message is present in the given log and if present
+// returns true and validates if the data is available in the storage service.
+func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliveredLog types.Log) (bool, error) {
+	data := []byte{}
+	deliveredEvent, err := d.inboxContract.ParseSequencerBatchDelivered(deliveredLog)
+	if err != nil {
+		return false, err
+	}
+	if deliveredEvent.DataLocation == uint8(batchDataSeparateEvent) {
+		query := ethereum.FilterQuery{
+			BlockHash: &deliveredLog.BlockHash,
+			Addresses: []common.Address{*d.inboxAddr},
+			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {common.BigToHash(deliveredEvent.BatchSequenceNumber)}},
+		}
+		logs, err := d.l1Client.FilterLogs(ctx, query)
+		if err != nil {
+			return false, err
+		}
+		if len(logs) != 1 {
+			return false, fmt.Errorf("found %d data logs for sequence 0x%x (expected 1)", len(logs), deliveredEvent.BatchSequenceNumber)
+		}
+		dataEvent, err := d.inboxContract.ParseSequencerBatchData(logs[0])
+		if err != nil {
+			return false, err
+		}
+		data = dataEvent.Data
+	} else if deliveredEvent.DataLocation == uint8(batchDataTxInput) {
+		txData, err := arbutil.GetLogEmitterTxData(ctx, d.l1Client, deliveredLog)
+		if err != nil {
+			return false, err
+		}
+		args := make(map[string]interface{})
+		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, txData[4:])
+		if err != nil {
+			return false, err
+		}
+		var ok bool
+		data, ok = args["data"].([]byte)
+		if !ok {
+			return false, fmt.Errorf("couldn't parse data for sequence 0x%x", deliveredEvent.BatchSequenceNumber)
+		}
+	}
+	if len(data) < 1 {
+		return false, nil
+	}
+	if !arbstate.IsDASMessageHeaderByte(data[0]) {
+		return false, nil
+	}
+
+	header := make([]byte, 40)
+	binary.BigEndian.PutUint64(header[:8], deliveredEvent.TimeBounds.MinTimestamp)
+	binary.BigEndian.PutUint64(header[8:16], deliveredEvent.TimeBounds.MaxTimestamp)
+	binary.BigEndian.PutUint64(header[16:24], deliveredEvent.TimeBounds.MinBlockNumber)
+	binary.BigEndian.PutUint64(header[24:32], deliveredEvent.TimeBounds.MaxBlockNumber)
+	binary.BigEndian.PutUint64(header[32:40], deliveredEvent.AfterDelayedMessagesRead.Uint64())
+
+	data = append(header, data...)
+	preimages := make(map[common.Hash][]byte)
+	if _, err = arbstate.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, d.dataSource, preimages, arbstate.KeysetValidate); err != nil {
+		return true, err
+	}
+	for hash := range preimages {
+		for url, reader := range d.urlToReaderMap {
+			_, err = reader.GetByHash(ctx, hash)
+			if err != nil {
+				fmt.Printf("Data with hash: %s not found for: %s", hash, url)
+			}
+		}
+	}
+	return true, nil
+}
