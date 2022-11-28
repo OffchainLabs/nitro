@@ -3,9 +3,15 @@
 
 Note: If you’re interested in accessing an Arbitrum chain, but you don’t want to set up your own node, see our [Node Providers](./node-providers.md) to get RPC access to fully-managed nodes hosted by a third party provider
 
-### Required Hardware
+### Minimum Hardware Configuration
 
-The hardware requirements for running the Nitro full node is same as the Geth full node requirements
+This is the minimum hardware configuration required to setup a Nitro full node:
+
+- RAM: 8-16 GB
+- CPU: 4-8 core CPU (For AWS: t3 xLarge)
+- Storage: Minimum 1.2TB SSD (make sure it is extendable)
+
+❗️Note: The minimum storage requirements will change over time as the Nitro chain grows. It is recommended to use more than the minimum requirements to run a robust full node.
 
 ### Required Artifacts
 
