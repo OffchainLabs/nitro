@@ -4,8 +4,8 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"math/big"
 	"os"
@@ -157,13 +157,16 @@ func (d *DataAvailabilityCheck) start(ctx context.Context) error {
 	latestBlockNumber := latestHeader.Number.Uint64()
 	oldBlockNumber := latestBlockNumber - 86400 // 12 days old block number
 
-	err = d.checkDataAvailabilityForNewHashInBlockRange(ctx, latestBlockNumber, oldBlockNumber)
-	if err != nil {
-		return err
-	}
-	err = d.checkDataAvailabilityForOldHashInBlockRange(ctx, oldBlockNumber, latestBlockNumber)
-	if err != nil {
-		return err
+	fmt.Println("Running new hash data availability check")
+	newHashErr := d.checkDataAvailabilityForNewHashInBlockRange(ctx, latestBlockNumber, oldBlockNumber)
+	fmt.Println("Completed new hash data availability check")
+
+	fmt.Println("Running old hash data availability check")
+	oldHashErr := d.checkDataAvailabilityForOldHashInBlockRange(ctx, oldBlockNumber, latestBlockNumber)
+	fmt.Println("Completed old hash data availability check")
+
+	if newHashErr != nil || oldHashErr != nil {
+		return fmt.Errorf("New Hash Check: %w, Old Hash Check: %s", newHashErr, oldHashErr)
 	}
 	return nil
 }
@@ -269,25 +272,20 @@ func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliv
 		return false, nil
 	}
 
-	header := make([]byte, 40)
-	binary.BigEndian.PutUint64(header[:8], deliveredEvent.TimeBounds.MinTimestamp)
-	binary.BigEndian.PutUint64(header[8:16], deliveredEvent.TimeBounds.MaxTimestamp)
-	binary.BigEndian.PutUint64(header[16:24], deliveredEvent.TimeBounds.MinBlockNumber)
-	binary.BigEndian.PutUint64(header[24:32], deliveredEvent.TimeBounds.MaxBlockNumber)
-	binary.BigEndian.PutUint64(header[32:40], deliveredEvent.AfterDelayedMessagesRead.Uint64())
-
-	data = append(header, data...)
-	preimages := make(map[common.Hash][]byte)
-	if _, err = arbstate.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, d.dataSource, preimages, arbstate.KeysetValidate); err != nil {
-		return true, err
+	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(data))
+	if err != nil {
+		return false, nil
 	}
-	for hash := range preimages {
-		for url, reader := range d.urlToReaderMap {
-			_, err = reader.GetByHash(ctx, hash)
-			if err != nil {
-				fmt.Printf("Data with hash: %s not found for: %s", hash, url)
-			}
+	var dataNotFound []string
+	for url, reader := range d.urlToReaderMap {
+		_, err = reader.GetByHash(ctx, cert.DataHash)
+		if err != nil {
+			dataNotFound = append(dataNotFound, url)
+			fmt.Printf("Data with hash: %s not found for: %s\n", common.Hash(cert.DataHash).String(), url)
 		}
+	}
+	if len(dataNotFound) > 0 {
+		return true, fmt.Errorf("data with hash: %s not found for das:%s", common.Hash(cert.DataHash).String(), dataNotFound)
 	}
 	return true, nil
 }
