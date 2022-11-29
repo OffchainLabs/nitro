@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 	"os"
 
@@ -25,6 +26,15 @@ import (
 
 	flag "github.com/spf13/pflag"
 )
+
+// Data availability check is done to as to make sure that the data that is being stored by DAS is available at all time.
+// This done by taking the latest stored hash and an old stored hash (12 days) and it is checked if these two hashes are
+// present across all the DAS provided in the list, if a DAS does not have these hashes an error is thrown.
+// This approach does not guarantee 100% data availability, but it's an efficient and easy heuristic for our use case.
+//
+// This can be used in following manner (not an exhaustive list)
+// 1. Continuously call the function by exposing a REST API and create alert if error is returned.
+// 2. Call the function in an adhoc manner to check if the provided DAS is live and functioning properly.
 
 var sequencerInboxABI *abi.ABI
 var batchDeliveredID common.Hash
@@ -96,7 +106,7 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 	if err != nil {
 		return nil, err
 	}
-	urlToReaderMap := make(map[string]arbstate.DataAvailabilityReader)
+	urlToReaderMap := make(map[string]arbstate.DataAvailabilityReader, len(onlineUrls))
 	for _, url := range onlineUrls {
 		reader, err := das.NewRestfulDasClientFromURL(url)
 		if err != nil {
@@ -157,13 +167,13 @@ func (d *DataAvailabilityCheck) start(ctx context.Context) error {
 	latestBlockNumber := latestHeader.Number.Uint64()
 	oldBlockNumber := latestBlockNumber - 86400 // 12 days old block number
 
-	fmt.Println("Running new hash data availability check")
+	log.Info("Running new hash data availability check")
 	newHashErr := d.checkDataAvailabilityForNewHashInBlockRange(ctx, latestBlockNumber, oldBlockNumber)
-	fmt.Println("Completed new hash data availability check")
+	log.Info("Completed new hash data availability check")
 
-	fmt.Println("Running old hash data availability check")
+	log.Info("Running old hash data availability check")
 	oldHashErr := d.checkDataAvailabilityForOldHashInBlockRange(ctx, oldBlockNumber, latestBlockNumber)
-	fmt.Println("Completed old hash data availability check")
+	log.Info("Completed old hash data availability check")
 
 	if newHashErr != nil || oldHashErr != nil {
 		return fmt.Errorf("New Hash Check: %w, Old Hash Check: %s", newHashErr, oldHashErr)
