@@ -182,10 +182,11 @@ func (d *DataAvailabilityCheck) start(ctx context.Context) error {
 }
 
 func (d *DataAvailabilityCheck) checkDataAvailabilityForNewHashInBlockRange(ctx context.Context, latestBlock uint64, oldBlock uint64) error {
-	for latestBlock-d.config.L1BlocksPerRead >= oldBlock {
+	currentBlock := latestBlock
+	for currentBlock-d.config.L1BlocksPerRead >= oldBlock {
 		query := ethereum.FilterQuery{
-			FromBlock: new(big.Int).SetUint64(latestBlock - d.config.L1BlocksPerRead),
-			ToBlock:   new(big.Int).SetUint64(latestBlock),
+			FromBlock: new(big.Int).SetUint64(currentBlock - d.config.L1BlocksPerRead),
+			ToBlock:   new(big.Int).SetUint64(currentBlock),
 			Addresses: []common.Address{*d.inboxAddr},
 			Topics:    [][]common.Hash{{batchDeliveredID}},
 		}
@@ -202,16 +203,17 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForNewHashInBlockRange(ctx 
 				return nil
 			}
 		}
-		latestBlock = latestBlock - d.config.L1BlocksPerRead
+		currentBlock = currentBlock - d.config.L1BlocksPerRead
 	}
 	return fmt.Errorf("no das message found between block %d and block %d", latestBlock, oldBlock)
 }
 
 func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx context.Context, oldBlock uint64, latestBlock uint64) error {
-	for oldBlock+d.config.L1BlocksPerRead <= latestBlock {
+	currentBlock := oldBlock
+	for currentBlock+d.config.L1BlocksPerRead <= latestBlock {
 		query := ethereum.FilterQuery{
-			FromBlock: new(big.Int).SetUint64(oldBlock),
-			ToBlock:   new(big.Int).SetUint64(oldBlock + d.config.L1BlocksPerRead),
+			FromBlock: new(big.Int).SetUint64(currentBlock),
+			ToBlock:   new(big.Int).SetUint64(currentBlock + d.config.L1BlocksPerRead),
 			Addresses: []common.Address{*d.inboxAddr},
 			Topics:    [][]common.Hash{{batchDeliveredID}},
 		}
@@ -228,7 +230,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 				return nil
 			}
 		}
-		oldBlock = oldBlock + d.config.L1BlocksPerRead
+		currentBlock = currentBlock + d.config.L1BlocksPerRead
 	}
 	return fmt.Errorf("no das message found between block %d and block %d", oldBlock, latestBlock)
 }
