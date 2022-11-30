@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -196,7 +197,11 @@ func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbuti
 	if err != nil {
 		return err
 	}
-	s.resequenceReorgedMessages(oldMessages)
+	lastDelayedRead, err := s.getPrevPrevDelayedRead(count)
+	if err != nil {
+		return err
+	}
+	s.resequenceReorgedMessages(oldMessages, lastDelayedRead)
 	return nil
 }
 
@@ -615,7 +620,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	config := s.config()
 	shouldResequence := config.MaxReorgResequenceDepth < 0 || s.bc.CurrentBlock().Header().Number.Int64()+config.MaxReorgResequenceDepth >= startBlockNum
 
-	prevDelayedRead, err := s.getPrevPrevDelayedRead(messageStartPos)
+	lastDelayedRead, err := s.getPrevPrevDelayedRead(messageStartPos)
 	if err != nil {
 		return err
 	}
@@ -640,8 +645,8 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	var feedReorg bool
 	var confirmedReorg bool
 	// Skip any duplicate messages already in the database
-	feedReorg, confirmedReorg, prevDelayedRead, messageStartPos, messages, err = s.skipDuplicateMessages(
-		prevDelayedRead,
+	feedReorg, confirmedReorg, lastDelayedRead, messageStartPos, messages, err = s.skipDuplicateMessages(
+		lastDelayedRead,
 		messageStartPos,
 		messages,
 		confirmedMessageCount,
@@ -659,11 +664,11 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	// Validate delayed message counts of remaining messages
 	for i, msg := range messages {
 		msgPos := messageStartPos + arbutil.MessageIndex(i)
-		diff := msg.DelayedMessagesRead - prevDelayedRead
+		diff := msg.DelayedMessagesRead - lastDelayedRead
 		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, msgPos)
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", lastDelayedRead, msg.DelayedMessagesRead, msgPos)
 		}
-		prevDelayedRead = msg.DelayedMessagesRead
+		lastDelayedRead = msg.DelayedMessagesRead
 		if msg.Message == nil {
 			return fmt.Errorf("attempted to insert nil message at position %v", msgPos)
 		}
@@ -690,7 +695,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 						log.Error("unable to create block after reorg", "err", err)
 						return
 					}
-					s.resequenceReorgedMessages(oldMessages)
+					s.resequenceReorgedMessages(oldMessages, lastDelayedRead)
 				}()
 			} else {
 				log.Error("unable to re-sequence old messages because block production was not caught up")
@@ -762,7 +767,7 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 }
 
 // The caller must hold the insertionMutex
-func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.MessageWithMetadata) {
+func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.MessageWithMetadata, lastDelayedSeqNum uint64) {
 	for _, msg := range messages {
 		// Check if the message is non-nil just to be safe
 		if msg == nil || msg.Message == nil || msg.Message.Header == nil {
@@ -771,6 +776,47 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 		header := msg.Message.Header
 		if header.RequestId != nil {
 			// This is a delayed message
+			delayedSeqNum := header.RequestId.Big().Uint64()
+			if delayedSeqNum+1 != msg.DelayedMessagesRead {
+				log.Error("delayed message header RequestId doesn't match database DelayedMessagesRead", "header", msg.Message.Header, "delayedMessagesRead", msg.DelayedMessagesRead)
+				continue
+			}
+			if delayedSeqNum != lastDelayedSeqNum {
+				// This is the wrong position for the delayed message
+				continue
+			}
+			lastDelayedSeqNum++
+			if s.inboxReader != nil {
+				// Verify that the delayed message we're re-sequencing matches what we have after the reorg
+				haveDelayedMessage, err := s.inboxReader.tracker.GetDelayedMessage(delayedSeqNum)
+				if err != nil {
+					if !strings.Contains(err.Error(), "not found") {
+						log.Error("failed to lookup delayed message to re-sequence", "id", header.RequestId, "err", err)
+					}
+					continue
+				}
+				haveDelayedMessageBytes, err := haveDelayedMessage.Serialize()
+				if err != nil {
+					log.Error("failed to serialize new delayed message from database", "err", err)
+					continue
+				}
+				oldDelayedMessageBytes, err := msg.Message.Serialize()
+				if err != nil {
+					log.Error("failed to serialize old delayed message from database", "err", err)
+					continue
+				}
+				if !bytes.Equal(haveDelayedMessageBytes, oldDelayedMessageBytes) {
+					// This delayed message is different, so we'll save re-sequencing it for the real delayed sequencer later
+					continue
+				}
+			}
+			// The context is only necessary for batch fetching,
+			// which will no longer be necessary with the batch posting report refactor.
+			err := s.sequenceDelayedMessagesWithInsertionMutex(context.TODO(), []*arbos.L1IncomingMessage{msg.Message}, delayedSeqNum)
+			if err != nil {
+				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
+				continue
+			}
 			continue
 		}
 		if header.Kind != arbos.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
@@ -786,7 +832,7 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 		}
 		_, err = s.sequenceTransactionsWithInsertionMutex(msg.Message.Header, txes, s.reorgSequencing())
 		if err != nil {
-			log.Error("failed to re-sequence old messages removed by reorg", "err", err)
+			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
 			return
 		}
 	}
@@ -917,7 +963,10 @@ func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arb
 func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
+	return s.sequenceDelayedMessagesWithInsertionMutex(ctx, messages, firstDelayedSeqNum)
+}
 
+func (s *TransactionStreamer) sequenceDelayedMessagesWithInsertionMutex(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
 	pos, err := s.GetMessageCount()
 	if err != nil {
 		return err

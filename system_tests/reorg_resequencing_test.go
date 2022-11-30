@@ -56,23 +56,29 @@ func TestReorgResequencing(t *testing.T) {
 
 	prevMessage, err := node.TxStreamer.GetMessage(startMsgCount - 1)
 	Require(t, err)
+	delayedIndexHash := common.BigToHash(big.NewInt(int64(prevMessage.DelayedMessagesRead)))
 	newMessage := &arbos.L1IncomingMessage{
 		Header: &arbos.L1IncomingMessageHeader{
 			Kind:        arbos.L1MessageType_EthDeposit,
 			Poster:      [20]byte{},
 			BlockNumber: 0,
 			Timestamp:   0,
-			RequestId:   &common.Hash{},
+			RequestId:   &delayedIndexHash,
 			L1BaseFee:   common.Big0,
 		},
 		L2msg: append(l2info.GetAddress("User4").Bytes(), math.U256Bytes(big.NewInt(params.Ether))...),
 	}
 	err = node.TxStreamer.AddMessages(startMsgCount, true, []arbstate.MessageWithMetadata{{
 		Message:             newMessage,
-		DelayedMessagesRead: prevMessage.DelayedMessagesRead,
+		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
 	}})
 	Require(t, err)
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
 	verifyBalances("after reorg with new deposit")
+
+	err = node.TxStreamer.ReorgTo(startMsgCount)
+	Require(t, err)
+
+	verifyBalances("after second empty reorg")
 }
