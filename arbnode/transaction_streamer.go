@@ -238,7 +238,8 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 		for i := count; i < targetMsgCount; i++ {
 			oldMessage, err := s.GetMessage(i)
 			if err != nil {
-				return nil, err
+				log.Error("unable to lookup old message for re-sequencing", "position", i, "err", err)
+				break
 			}
 			oldMessages = append(oldMessages, oldMessage)
 		}
@@ -772,7 +773,7 @@ func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.Mes
 			// This is a delayed message
 			continue
 		}
-		if header.Kind != arbos.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress || header.RequestId != nil {
+		if header.Kind != arbos.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
 			// This shouldn't exist?
 			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
 			continue

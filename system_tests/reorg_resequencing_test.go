@@ -8,7 +8,11 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func TestReorgResequencing(t *testing.T) {
@@ -26,6 +30,7 @@ func TestReorgResequencing(t *testing.T) {
 	l2info.GenerateAccount("User1")
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("User3")
+	l2info.GenerateAccount("User4")
 	TransferBalance(t, "Owner", "User1", big.NewInt(params.Ether), l2info, client, ctx)
 	TransferBalance(t, "Owner", "Intermediate", big.NewInt(params.Ether*3), l2info, client, ctx)
 	TransferBalance(t, "Intermediate", "User2", big.NewInt(params.Ether), l2info, client, ctx)
@@ -47,5 +52,27 @@ func TestReorgResequencing(t *testing.T) {
 	err = node.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 
-	verifyBalances("after reorg")
+	verifyBalances("after empty reorg")
+
+	prevMessage, err := node.TxStreamer.GetMessage(startMsgCount - 1)
+	Require(t, err)
+	newMessage := &arbos.L1IncomingMessage{
+		Header: &arbos.L1IncomingMessageHeader{
+			Kind:        arbos.L1MessageType_EthDeposit,
+			Poster:      [20]byte{},
+			BlockNumber: 0,
+			Timestamp:   0,
+			RequestId:   &common.Hash{},
+			L1BaseFee:   common.Big0,
+		},
+		L2msg: append(l2info.GetAddress("User4").Bytes(), math.U256Bytes(big.NewInt(params.Ether))...),
+	}
+	err = node.TxStreamer.AddMessages(startMsgCount, true, []arbstate.MessageWithMetadata{{
+		Message:             newMessage,
+		DelayedMessagesRead: prevMessage.DelayedMessagesRead,
+	}})
+	Require(t, err)
+
+	accountsWithBalance = append(accountsWithBalance, "User4")
+	verifyBalances("after reorg with new deposit")
 }
