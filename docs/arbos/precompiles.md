@@ -5,7 +5,7 @@ From the perspective of user applications, precompiles live as contracts at the 
 
 | Precompile                                     | Address &nbsp; | Purpose                                            |
 |:-----------------------------------------------|:---------------|:---------------------------------------------------|
-| [`ArbAddressTable`](#ArbAddressTable)          | `0x66`         | Supporting compression of addresses                |
+| [`ArbAddressTable`](#ArbAddressTable)        | `0x66`         | Supporting compression of addresses                |
 | [`ArbAggregator`](#ArbAggregator)              | `0x6d`         | Configuring transaction aggregation                |
 | [`ArbBLS`](#ArbBLS)                            | `0x67`         | Managing BLS keys                                  |
 | [`ArbDebug`](#ArbDebug)                        | `0xff`         | Testing tools                                      |
@@ -20,7 +20,7 @@ From the perspective of user applications, precompiles live as contracts at the 
 | [`ArbSys`](#ArbSys)                            | `0x64`         | System-level functionality                         |
 
 [ArbAddressTable_link]: https://github.com/OffchainLabs/nitro/blob/master/precompiles/ArbAddressTable.go
-[ArbAggregator_link]: https://github.com/OffchainLabs/nitro/blob/master/precompiles/ArbAddressTable.go
+[ArbAggregator_link]: https://github.com/OffchainLabs/nitro/blob/master/precompiles/ArbAggregator.go
 [ArbBLS_link]: https://github.com/OffchainLabs/nitro/blob/master/precompiles/ArbBLS.go
 [ArbDebug_link]: https://github.com/OffchainLabs/nitro/blob/master/precompiles/ArbDebug.go
 [ArbFunctionTable_link]: https://github.com/OffchainLabs/nitro/blob/master/precompiles/ArbFunctionTable.go
@@ -33,8 +33,8 @@ From the perspective of user applications, precompiles live as contracts at the 
 [ArbStatistics_link]: https://github.com/OffchainLabs/nitro/blob/master/precompiles/ArbStatistics.go
 [ArbSys_link]: https://github.com/OffchainLabs/nitro/blob/master/precompiles/ArbSys.go
 
-# [ArbAddressTable][ArbAddressTable_link]
-Provides the ability to create short-hands for commonly used accounts.
+# ArbAddressTable
+[ArbAddressTable][ArbAddressTable_link] provides the ability to create short-hands for commonly used accounts.
 
 | Methods                                                         |                                                                                           |
 |:----------------------------------------------------------------|:------------------------------------------------------------------------------------------|
@@ -63,8 +63,8 @@ Provides the ability to create short-hands for commonly used accounts.
 [ATs6]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbAddressTable.sol#L73
 
 
-# [ArbAggregator][ArbAggregator_link]
-Provides aggregators and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
+# ArbAggregator
+[ArbAggregator][ArbAggregator_link] provides aggregators and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
 Compression ratios are measured in basis points. Methods that are checkmarked are access-controlled and will revert if not called by the aggregator, its fee collector, or a chain owner.
 
@@ -108,8 +108,8 @@ Compression ratios are measured in basis points. Methods that are checkmarked ar
 [Ads0]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L67
 [Ads1]: https://github.com/OffchainLabs/nitro/blob/ba3a86afb2e7057bdc3cce54b28be4c1c0579180/solgen/src/precompiles/ArbAggregator.sol#L75
 
-# [ArbBLS][ArbBLS_link]
-Provides a registry of BLS public keys for accounts.
+# ArbBLS
+[ArbBLS][ArbBLS_link] provides a registry of BLS public keys for accounts.
 
 | Methods                                                             |                                                             |
 |:--------------------------------------------------------------------|:------------------------------------------------------------|
@@ -140,8 +140,8 @@ Provides a registry of BLS public keys for accounts.
 [Bds1]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbBLS.sol#L33
 
 
-# [ArbDebug][ArbDebug_link]
-Provides mechanisms useful for testing. The methods of `ArbDebug` are only available for chains with the `AllowDebugPrecompiles` chain parameter set. Otherwise, calls to this precompile will revert.
+# ArbDebug
+[ArbDebug][ArbDebug_link] provides mechanisms useful for testing. The methods of `ArbDebug` are only available for chains with the `AllowDebugPrecompiles` chain parameter set. Otherwise, calls to this precompile will revert.
 
 | Methods                                                |                                                    |
 |:-------------------------------------------------------|:---------------------------------------------------|
@@ -170,8 +170,8 @@ Provides mechanisms useful for testing. The methods of `ArbDebug` are only avail
 [Des2]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbDebug.sol#L41
 
 
-# [ArbFunctionTable][ArbFunctionTable_link]
-Provided aggregator's the ability to manage function tables, to enable one form of transaction compression. The Nitro aggregator implementation does not use these, so these methods have been stubbed and their effects disabled. They are kept for backwards compatibility.
+# ArbFunctionTable
+[ArbFunctionTable][ArbFunctionTable_link] provides aggregators the ability to manage function tables, to enable one form of transaction compression. The Nitro aggregator implementation does not use these, so these methods have been stubbed and their effects disabled. They are kept for backwards compatibility.
 
 | Methods                                                  |                                            |
 |:---------------------------------------------------------|:-------------------------------------------|
@@ -188,8 +188,8 @@ Provided aggregator's the ability to manage function tables, to enable one form 
 [FTs2]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbFunctionTable.sol#L29
 
 
-# [ArbGasInfo][ArbGasInfo_link]
-Provides insight into the cost of using the chain. These methods have been adjusted to account for Nitro's heavy use of calldata compression. Of note to end-users, we no longer make a distinction between non-zero and zero-valued calldata bytes.
+# ArbGasInfo
+[ArbGasInfo][ArbGasInfo_link] orovides insight into the cost of using the chain. These methods have been adjusted to account for Nitro's heavy use of calldata compression. Of note to end-users, we no longer make a distinction between non-zero and zero-valued calldata bytes.
 
 | Methods                                                                   |                                                                                                  |
 |:--------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------|
@@ -249,8 +249,8 @@ Provides insight into the cost of using the chain. These methods have been adjus
 [GIs17]: https://github.com/OffchainLabs/nitro/blob/6b6de9068662883518cff13c67b885161763f52c/contracts/src/precompiles/ArbGasInfo.sol#L129
 
 
-# [ArbInfo][ArbInfo_link]
-Provides the ability to lookup basic info about accounts and contracts.
+# ArbInfo
+[ArbInfo][ArbInfo_link] provides the ability to lookup basic info about accounts and contracts.
 
 | Methods                                                |                                      |
 |:-------------------------------------------------------|:-------------------------------------|
@@ -264,8 +264,8 @@ Provides the ability to lookup basic info about accounts and contracts.
 [Is1]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbInfo.sol#L28
 
 
-# [ArbosTest][ArbosTest_link]
-Provides a method of burning arbitrary amounts of gas, which exists for historical reasons. In Classic, `ArbosTest` had additional methods only the zero address could call. These have been removed since users don't use them and calls to missing methods revert.
+# ArbosTest
+[ArbosTest][ArbosTest_link] Ppovides a method of burning arbitrary amounts of gas, which exists for historical reasons. In Classic, `ArbosTest` had additional methods only the zero address could call. These have been removed since users don't use them and calls to missing methods revert.
 
 | Methods                                               |                                                     | Nitro changes |
 |:------------------------------------------------------|:----------------------------------------------------|---------------|
@@ -276,8 +276,8 @@ Provides a method of burning arbitrary amounts of gas, which exists for historic
 [Ts0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbosTest.sol#L27
 
 
-# [ArbOwner][ArbOwner_link]
-Provides owners with tools for managing the rollup. Calls by non-owners will always revert.
+# ArbOwner
+[ArbOwner][ArbOwner_link] provides owners with tools for managing the rollup. Calls by non-owners will always revert.
 
 Most of Arbitrum Classic's owner methods have been removed since they no longer make sense in Nitro:
 
@@ -347,8 +347,8 @@ Most of Arbitrum Classic's owner methods have been removed since they no longer 
 [Oes0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbOwner.sol#L78
 
 
-# [ArbOwnerPublic][ArbOwnerPublic_link]
-Provides non-owners with info about the current chain owners.
+# ArbOwnerPublic
+[ArbOwnerPublic][ArbOwnerPublic_link] provides non-owners with info about the current chain owners.
 
 | Methods                                                    |                                 |
 |:-----------------------------------------------------------|:--------------------------------|
@@ -365,8 +365,8 @@ Provides non-owners with info about the current chain owners.
 [OPs2]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbOwnerPublic.sol#L31
 
 
-# [ArbRetryableTx][ArbRetryableTx_link]
-Provides methods for managing retryables. The model has been adjusted for Nitro, most notably in terms of how retry transactions are scheduled. For more information on retryables, please see [the retryable documentation](arbos.md#Retryables).
+# ArbRetryableTx
+[ArbRetryableTx][ArbRetryableTx_link] provides methods for managing retryables. The model has been adjusted for Nitro, most notably in terms of how retry transactions are scheduled. For more information on retryables, please see [the retryable documentation](arbos.md#Retryables).
 
 
 | Methods                                                     |                                                                                    | Nitro changes          |
@@ -411,8 +411,8 @@ Provides methods for managing retryables. The model has been adjusted for Nitro,
 
 [old_event_link]: https://github.com/OffchainLabs/arb-os/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/arb_os/arbretryable.mini#L90
 
-# [ArbStatistics][ArbStatistics_link]
-Provides statistics about the chain as of just before the Nitro upgrade. In Arbitrum Classic, this was how a user would get info such as the total number of accounts, but there are better ways to get that info in Nitro.
+# ArbStatistics
+[ArbStatistics][ArbStatistics_link] provides statistics about the chain as of just before the Nitro upgrade. In Arbitrum Classic, this was how a user would get info such as the total number of accounts, but there are better ways to get that info in Nitro.
 
 | Methods                                         |                                                                                         |
 |:------------------------------------------------|:----------------------------------------------------------------------------------------|
@@ -423,8 +423,8 @@ Provides statistics about the chain as of just before the Nitro upgrade. In Arbi
 [STs0]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbStatistics.sol#L32
 
 
-# [ArbSys][ArbSys_link]
-Provides system-level functionality for interacting with L1 and understanding the call stack.
+# ArbSys
+[ArbSys][ArbSys_link] provides system-level functionality for interacting with L1 and understanding the call stack.
 
 | Methods                                                                                  |                                                                                                              | Nitro changes     |
 |:-----------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------|:------------------|
