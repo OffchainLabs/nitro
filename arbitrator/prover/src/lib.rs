@@ -4,8 +4,6 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 pub mod binary;
-/// cbindgen:ignore
-pub mod console;
 mod host;
 pub mod machine;
 /// cbindgen:ignore

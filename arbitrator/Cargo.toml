@@ -2,6 +2,7 @@
 members = [
         "prover",
         "jit",
+        "arbutil",
 ]
 
 [profile.release]

@@ -415,13 +415,11 @@ impl Sub for StackState {
     type Output = isize;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let s = match self {
-            Self::Reachable(s) => s,
-            Self::Unreachable => return 0,
+        let Self::Reachable(s) = self else {
+            return 0
         };
-        let rhs = match rhs {
-            Self::Reachable(rhs) => rhs,
-            Self::Unreachable => return 0,
+        let Self::Reachable(rhs) = rhs else {
+            return 0
         };
         s as isize - rhs as isize
     }
@@ -555,9 +553,8 @@ pub fn wasm_to_wavm<'a>(
 
             let func = $func;
             let sig = func.signature();
-            let (module, func) = match fp_impls.get(&func) {
-                Some((module, func)) => (module, func),
-                None => bail!("No implementation for floating point operation {:?}", &func),
+            let Some((module, func)) = fp_impls.get(&func) else {
+                bail!("No implementation for floating point operation {:?}", &func)
             };
 
             // Reinterpret float args into ints
