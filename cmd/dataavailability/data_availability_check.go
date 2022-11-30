@@ -11,7 +11,6 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -19,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -35,32 +33,6 @@ import (
 // This can be used in following manner (not an exhaustive list)
 // 1. Continuously call the function by exposing a REST API and create alert if error is returned.
 // 2. Call the function in an adhoc manner to check if the provided DAS is live and functioning properly.
-
-var sequencerInboxABI *abi.ABI
-var batchDeliveredID common.Hash
-var sequencerBatchDataABI abi.Event
-var addSequencerL2BatchFromOriginCallABI abi.Method
-
-const sequencerBatchDataEvent = "SequencerBatchData"
-const sequencerBatchDeliveredEvent = "SequencerBatchDelivered"
-
-type batchDataLocation uint8
-
-const (
-	batchDataTxInput batchDataLocation = iota
-	batchDataSeparateEvent
-)
-
-func init() {
-	var err error
-	sequencerInboxABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	batchDeliveredID = sequencerInboxABI.Events[sequencerBatchDeliveredEvent].ID
-	sequencerBatchDataABI = sequencerInboxABI.Events[sequencerBatchDataEvent]
-	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin"]
-}
 
 type DataAvailabilityCheckConfig struct {
 	OnlineUrlList         string `koanf:"online-url-list"`
@@ -176,7 +148,7 @@ func (d *DataAvailabilityCheck) start(ctx context.Context) error {
 	log.Info("Completed old hash data availability check")
 
 	if newHashErr != nil || oldHashErr != nil {
-		return fmt.Errorf("New Hash Check: %w, Old Hash Check: %s", newHashErr, oldHashErr)
+		return fmt.Errorf("new hash check: %w, old hash check: %s", newHashErr, oldHashErr)
 	}
 	return nil
 }
@@ -188,7 +160,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForNewHashInBlockRange(ctx 
 			FromBlock: new(big.Int).SetUint64(currentBlock - d.config.L1BlocksPerRead),
 			ToBlock:   new(big.Int).SetUint64(currentBlock),
 			Addresses: []common.Address{*d.inboxAddr},
-			Topics:    [][]common.Hash{{batchDeliveredID}},
+			Topics:    [][]common.Hash{{das.BatchDeliveredID}},
 		}
 		logs, err := d.l1Client.FilterLogs(ctx, query)
 		if err != nil {
@@ -215,7 +187,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 			FromBlock: new(big.Int).SetUint64(currentBlock),
 			ToBlock:   new(big.Int).SetUint64(currentBlock + d.config.L1BlocksPerRead),
 			Addresses: []common.Address{*d.inboxAddr},
-			Topics:    [][]common.Hash{{batchDeliveredID}},
+			Topics:    [][]common.Hash{{das.BatchDeliveredID}},
 		}
 		logs, err := d.l1Client.FilterLogs(ctx, query)
 		if err != nil {
@@ -238,52 +210,17 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 // Trys to find if DAS message is present in the given log and if present
 // returns true and validates if the data is available in the storage service.
 func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliveredLog types.Log) (bool, error) {
-	data := []byte{}
 	deliveredEvent, err := d.inboxContract.ParseSequencerBatchDelivered(deliveredLog)
 	if err != nil {
 		return false, err
 	}
-	if deliveredEvent.DataLocation == uint8(batchDataSeparateEvent) {
-		query := ethereum.FilterQuery{
-			BlockHash: &deliveredLog.BlockHash,
-			Addresses: []common.Address{*d.inboxAddr},
-			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {common.BigToHash(deliveredEvent.BatchSequenceNumber)}},
-		}
-		logs, err := d.l1Client.FilterLogs(ctx, query)
-		if err != nil {
-			return false, err
-		}
-		if len(logs) != 1 {
-			return false, fmt.Errorf("found %d data logs for sequence 0x%x (expected 1)", len(logs), deliveredEvent.BatchSequenceNumber)
-		}
-		dataEvent, err := d.inboxContract.ParseSequencerBatchData(logs[0])
-		if err != nil {
-			return false, err
-		}
-		data = dataEvent.Data
-	} else if deliveredEvent.DataLocation == uint8(batchDataTxInput) {
-		txData, err := arbutil.GetLogEmitterTxData(ctx, d.l1Client, deliveredLog)
-		if err != nil {
-			return false, err
-		}
-		args := make(map[string]interface{})
-		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, txData[4:])
-		if err != nil {
-			return false, err
-		}
-		var ok bool
-		data, ok = args["data"].([]byte)
-		if !ok {
-			return false, fmt.Errorf("couldn't parse data for sequence 0x%x", deliveredEvent.BatchSequenceNumber)
-		}
+	data, err := das.FindDASDataFromLog(ctx, d.inboxContract, deliveredEvent, *d.inboxAddr, d.l1Client, deliveredLog)
+	if err != nil {
+		return false, err
 	}
-	if len(data) < 1 {
+	if data == nil {
 		return false, nil
 	}
-	if !arbstate.IsDASMessageHeaderByte(data[0]) {
-		return false, nil
-	}
-
 	cert, err := arbstate.DeserializeDASCertFrom(bytes.NewReader(data))
 	if err != nil {
 		return true, err
