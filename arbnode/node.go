@@ -1485,6 +1485,7 @@ func (n *Node) Start(ctx context.Context) error {
 				select {
 				case <-n.InboxReader.CaughtUp():
 				case <-ctx.Done():
+					return
 				}
 			}
 			n.BroadcastClients.Start(ctx)
