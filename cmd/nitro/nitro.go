@@ -351,7 +351,7 @@ func mainImpl() int {
 	}
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
-		if err := graphql.New(stack, currentNode.Backend.APIBackend(), gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
+		if err := graphql.New(stack, currentNode.Backend.APIBackend(), currentNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
 			log.Error("failed to register the GraphQL service", "err", err)
 			return 1
 		}
