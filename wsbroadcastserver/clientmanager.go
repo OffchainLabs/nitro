@@ -78,6 +78,7 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	}()
 
 	clientsConnectedGauge.Inc(1)
+	atomic.AddInt32(&cm.clientCount, 1)
 	if err := cm.catchupBuffer.OnRegisterClient(ctx, clientConnection); err != nil {
 		clientsTotalFailedCounter.Inc(1)
 		return err
@@ -86,7 +87,6 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 	clientConnection.Start(ctx)
 	cm.clientPtrMap[clientConnection] = true
 	clientsTotalSuccessCounter.Inc(1)
-	atomic.AddInt32(&cm.clientCount, 1)
 
 	return nil
 }
