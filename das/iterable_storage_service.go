@@ -36,7 +36,7 @@ func (i *IterationCompatibleStorageServiceAdaptor) putKeyValue(ctx context.Conte
 	return nil
 }
 
-func convertStorageServiceToIterationCompatibleStorageService(storageService StorageService) IterationCompatibleStorageService {
+func ConvertStorageServiceToIterationCompatibleStorageService(storageService StorageService) IterationCompatibleStorageService {
 	service, ok := storageService.(IterationCompatibleStorageService)
 	if ok {
 		return service
@@ -61,6 +61,15 @@ func NewIterableStorageService(storageService IterationCompatibleStorageService)
 }
 
 func (i *IterableStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
+	dataHash := dastree.Hash(data)
+
+	// Do not insert data if data is already present.
+	// (This is being done to avoid redundant hash being added to the
+	//  linked list ,since it can lead to loops in the linked list.)
+	if _, err := i.IterationCompatibleStorageService.GetByHash(ctx, dataHash); err == nil {
+		return nil
+	}
+
 	if err := i.IterationCompatibleStorageService.Put(ctx, data, expiration); err != nil {
 		return err
 	}
@@ -72,7 +81,6 @@ func (i *IterableStorageService) Put(ctx context.Context, data []byte, expiratio
 	i.mutex.Lock()
 	defer i.mutex.Unlock()
 
-	dataHash := dastree.Hash(data)
 	endHash := i.End(ctx)
 	if (endHash == common.Hash{}) {
 		// First element being inserted in the chain.
