@@ -285,8 +285,8 @@ fn main() -> Result<()> {
             }
 
             if pc.inst == 0 {
-                func_stack.push((pc.module, pc.func, SimpleProfile::default()));
-                backtrace_stack.push((pc.module, pc.func));
+                func_stack.push((pc.module(), pc.func(), SimpleProfile::default()));
+                backtrace_stack.push((pc.module(), pc.func()));
             }
             let this_func_profile = &mut func_stack.last_mut().unwrap().2;
             if !skipping_profiling {
