@@ -443,9 +443,11 @@ func (bc *BroadcastClient) StopAndWait() {
 	bc.connMutex.Lock()
 	defer bc.connMutex.Unlock()
 
-	bc.shuttingDown = true
-	if bc.conn != nil {
-		_ = bc.conn.Close()
+	if !bc.shuttingDown {
+		bc.shuttingDown = true
+		if bc.conn != nil {
+			_ = bc.conn.Close()
+		}
 	}
 }
 
