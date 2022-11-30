@@ -21,7 +21,7 @@ func Test_processLeafCreation(t *testing.T) {
 	_ = ctx
 	t.Run("no fork detected", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		v, _, _ := setupValidator(t)
+		v, _, s := setupValidator(t)
 
 		parentSeqNum := uint64(1)
 		prevRoot := common.BytesToHash([]byte("foo"))
@@ -45,67 +45,12 @@ func Test_processLeafCreation(t *testing.T) {
 			StateCommitment:     newlyCreatedAssertion.StateCommitment,
 			Staker:              newlyCreatedAssertion.Staker.OpenKnownFull(),
 		}
+		s.On("HasStateCommitment", ctx, ev.StateCommitment).Return(false)
+
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
-	})
-	t.Run("fork leads validator to defend leaf", func(t *testing.T) {
-		logsHook := test.NewGlobal()
-		v, _, s := setupValidator(t)
-
-		parentSeqNum := uint64(1)
-		prevRoot := common.BytesToHash([]byte("foo"))
-		parentAssertion := &protocol.Assertion{
-			StateCommitment: protocol.StateCommitment{
-				StateRoot: prevRoot,
-				Height:    parentSeqNum,
-			},
-			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
-		}
-		seqNum := parentSeqNum + 1
-		newlyCreatedAssertion := &protocol.Assertion{
-			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
-			SequenceNum: seqNum,
-			StateCommitment: protocol.StateCommitment{
-				StateRoot: common.BytesToHash([]byte("bar")),
-				Height:    2,
-			},
-			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
-		}
-		forkSeqNum := seqNum + 1
-		forkedAssertion := &protocol.Assertion{
-			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
-			SequenceNum: forkSeqNum,
-			StateCommitment: protocol.StateCommitment{
-				StateRoot: common.BytesToHash([]byte("bar")),
-				Height:    2,
-			},
-			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
-		}
-
-		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(true)
-
-		ev := &protocol.CreateLeafEvent{
-			PrevSeqNum:          parentAssertion.SequenceNum,
-			PrevStateCommitment: parentAssertion.StateCommitment,
-			SeqNum:              newlyCreatedAssertion.SequenceNum,
-			StateCommitment:     newlyCreatedAssertion.StateCommitment,
-			Staker:              newlyCreatedAssertion.Staker.OpenKnownFull(),
-		}
-		err := v.processLeafCreation(ctx, ev)
-		require.NoError(t, err)
-		ev = &protocol.CreateLeafEvent{
-			PrevSeqNum:          parentAssertion.SequenceNum,
-			PrevStateCommitment: parentAssertion.StateCommitment,
-			SeqNum:              forkedAssertion.SequenceNum,
-			StateCommitment:     forkedAssertion.StateCommitment,
-			Staker:              forkedAssertion.Staker.OpenKnownFull(),
-		}
-		err = v.processLeafCreation(ctx, ev)
-		require.NoError(t, err)
-		AssertLogsContain(t, logsHook, "New leaf appended")
-		AssertLogsContain(t, logsHook, "preparing to defend")
 	})
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
@@ -141,8 +86,6 @@ func Test_processLeafCreation(t *testing.T) {
 			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 
-		s.On("HasStateCommitment", ctx, forkedAssertion.StateCommitment).Return(false)
-
 		ev := &protocol.CreateLeafEvent{
 			PrevSeqNum:          parentAssertion.SequenceNum,
 			PrevStateCommitment: parentAssertion.StateCommitment,
@@ -150,6 +93,8 @@ func Test_processLeafCreation(t *testing.T) {
 			StateCommitment:     newlyCreatedAssertion.StateCommitment,
 			Staker:              newlyCreatedAssertion.Staker.OpenKnownFull(),
 		}
+		s.On("HasStateCommitment", ctx, ev.StateCommitment).Return(false)
+
 		err := v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		ev = &protocol.CreateLeafEvent{
@@ -159,6 +104,8 @@ func Test_processLeafCreation(t *testing.T) {
 			StateCommitment:     forkedAssertion.StateCommitment,
 			Staker:              forkedAssertion.Staker.OpenKnownFull(),
 		}
+		s.On("HasStateCommitment", ctx, ev.StateCommitment).Return(false)
+
 		err = v.processLeafCreation(ctx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")

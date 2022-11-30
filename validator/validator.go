@@ -271,6 +271,11 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	}
 	seqNum := ev.SeqNum
 	stateCommit := ev.StateCommitment
+	// If there exists a statement for new leaf, it means it has already been seen.
+	if v.stateManager.HasStateCommitment(ctx, stateCommit) {
+		return nil
+	}
+
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
 		"stateRoot": fmt.Sprintf("%#x", stateCommit.StateRoot),
@@ -296,11 +301,7 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 		log.Info("No fork detected in assertion tree upon leaf creation")
 		return nil
 	}
-	// If there is a fork, we challenge if we disagree with its state commitment. Otherwise,
-	// we will defend challenge moves that agree with our local state.
-	if v.stateManager.HasStateCommitment(ctx, stateCommit) {
-		return v.defendLeaf(ctx, ev)
-	}
+
 	return v.challengeLeaf(ctx, ev)
 }
 
