@@ -16,6 +16,11 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+const (
+	// Do not send cache if requested seqnum is older than last cached minus maxRequestedSeqNumOffset
+	maxRequestedSeqNumOffset = arbutil.MessageIndex(10_000)
+)
+
 var (
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
 )
@@ -51,6 +56,9 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
 			return nil
 		}
+	} else if firstCachedSeqNum > maxRequestedSeqNumOffset && requestedSeqNum < (firstCachedSeqNum-maxRequestedSeqNumOffset) {
+		// Requested seqnum is too old, don't send any cache
+		return nil
 	}
 
 	messagesToSend := b.messages[startingIndex:]
