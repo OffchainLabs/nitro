@@ -162,6 +162,10 @@ func NewBroadcastClient(
 
 func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn, bc)
+	if bc.StopWaiter.Stopped() {
+		log.Info("broadcast client has already been stopped, not starting")
+		return
+	}
 	bc.LaunchThread(func(ctx context.Context) {
 		backoffDuration := bc.config.ReconnectInitialBackoff
 		for {
