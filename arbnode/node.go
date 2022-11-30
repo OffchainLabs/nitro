@@ -1480,7 +1480,15 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.BroadcastClients != nil {
-		n.BroadcastClients.Start(ctx)
+		go func() {
+			if n.InboxReader != nil {
+				select {
+				case <-n.InboxReader.CaughtUp():
+				case <-ctx.Done():
+				}
+			}
+			n.BroadcastClients.Start(ctx)
+		}()
 	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)

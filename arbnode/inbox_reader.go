@@ -84,7 +84,7 @@ type InboxReader struct {
 	tracker        *InboxTracker
 	delayedBridge  *DelayedBridge
 	sequencerInbox *SequencerInbox
-	caughtUpChan   chan bool
+	caughtUpChan   chan struct{}
 	client         arbutil.L1Interface
 	l1Reader       *headerreader.HeaderReader
 
@@ -109,7 +109,7 @@ func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader 
 		client:            client,
 		l1Reader:          l1Reader,
 		firstMessageBlock: firstMessageBlock,
-		caughtUpChan:      make(chan bool, 1),
+		caughtUpChan:      make(chan struct{}),
 		config:            config,
 	}, nil
 }
@@ -165,6 +165,10 @@ func (r *InboxReader) Tracker() *InboxTracker {
 
 func (r *InboxReader) DelayedBridge() *DelayedBridge {
 	return r.delayedBridge
+}
+
+func (r *InboxReader) CaughtUp() chan struct{} {
+	return r.caughtUpChan
 }
 
 func (r *InboxReader) run(ctx context.Context, hadError bool) error {
@@ -356,7 +360,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if !r.caughtUp && to.Cmp(currentHeight) == 0 {
 				// TODO better caught up tracking
 				r.caughtUp = true
-				r.caughtUpChan <- true
+				close(r.caughtUpChan)
 			}
 			if len(sequencerBatches) > 0 {
 				missingSequencer = false
