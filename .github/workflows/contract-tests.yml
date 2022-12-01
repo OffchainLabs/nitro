@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+        with:
+          token: ${{ secrets.PRIVATE_CHECKOUT }}
 
       - name: Setup nodejs
         uses: actions/setup-node@v2
