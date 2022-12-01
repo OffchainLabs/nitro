@@ -9,18 +9,21 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 
 	flag "github.com/spf13/pflag"
 )
@@ -34,27 +37,34 @@ import (
 // 1. Continuously call the function by exposing a REST API and create alert if error is returned.
 // 2. Call the function in an adhoc manner to check if the provided DAS is live and functioning properly.
 
+const metricBaseOldHash = "arb/das/dataavailability/oldhash/"
+const metricBaseNewHash = "arb/das/dataavailability/oldhash/"
+
 type DataAvailabilityCheckConfig struct {
-	OnlineUrlList         string `koanf:"online-url-list"`
-	L1NodeURL             string `koanf:"l1-node-url"`
-	L1ConnectionAttempts  int    `koanf:"l1-connection-attempts"`
-	SequencerInboxAddress string `koanf:"sequencer-inbox-address"`
-	L1BlocksPerRead       uint64 `koanf:"l1-blocks-per-read"`
+	OnlineUrlList         string        `koanf:"online-url-list"`
+	L1NodeURL             string        `koanf:"l1-node-url"`
+	L1ConnectionAttempts  int           `koanf:"l1-connection-attempts"`
+	SequencerInboxAddress string        `koanf:"sequencer-inbox-address"`
+	L1BlocksPerRead       uint64        `koanf:"l1-blocks-per-read"`
+	CheckInterval         time.Duration `koanf:"check-interval"`
 }
 
 var DefaultDataAvailabilityCheckConfig = DataAvailabilityCheckConfig{
 	OnlineUrlList:        "",
 	L1ConnectionAttempts: 15,
 	L1BlocksPerRead:      100,
+	CheckInterval:        5 * time.Minute,
 }
 
 type DataAvailabilityCheck struct {
+	stopwaiter.StopWaiter
 	l1Client       *ethclient.Client
 	config         *DataAvailabilityCheckConfig
 	inboxAddr      *common.Address
 	inboxContract  *bridgegen.SequencerInbox
 	dataSource     arbstate.DataAvailabilityReader
 	urlToReaderMap map[string]arbstate.DataAvailabilityReader
+	checkInterval  time.Duration
 }
 
 func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *DataAvailabilityCheckConfig) (*DataAvailabilityCheck, error) {
@@ -93,6 +103,7 @@ func newDataAvailabilityCheck(ctx context.Context, dataAvailabilityCheckConfig *
 		inboxContract:  inboxContract,
 		dataSource:     dataSource,
 		urlToReaderMap: urlToReaderMap,
+		checkInterval:  dataAvailabilityCheckConfig.CheckInterval,
 	}, nil
 }
 
@@ -126,15 +137,15 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if err := dataAvailabilityCheck.start(ctx); err != nil {
-		panic(err)
-	}
+	dataAvailabilityCheck.StopWaiter.Start(ctx, dataAvailabilityCheck)
+	dataAvailabilityCheck.CallIteratively(dataAvailabilityCheck.start)
 }
 
-func (d *DataAvailabilityCheck) start(ctx context.Context) error {
+func (d *DataAvailabilityCheck) start(ctx context.Context) time.Duration {
 	latestHeader, err := d.l1Client.HeaderByNumber(ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))
 	if err != nil {
-		return err
+		log.Error(err.Error())
+		return d.checkInterval
 	}
 	latestBlockNumber := latestHeader.Number.Uint64()
 	oldBlockNumber := latestBlockNumber - 86400 // 12 days old block number
@@ -148,9 +159,9 @@ func (d *DataAvailabilityCheck) start(ctx context.Context) error {
 	log.Info("Completed old hash data availability check")
 
 	if newHashErr != nil || oldHashErr != nil {
-		return fmt.Errorf("new hash check: %w, old hash check: %s", newHashErr, oldHashErr)
+		log.Error("new hash check: %w, old hash check: %s", newHashErr, oldHashErr)
 	}
-	return nil
+	return d.checkInterval
 }
 
 func (d *DataAvailabilityCheck) checkDataAvailabilityForNewHashInBlockRange(ctx context.Context, latestBlock uint64, oldBlock uint64) error {
@@ -167,7 +178,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForNewHashInBlockRange(ctx 
 			return err
 		}
 		for _, deliveredLog := range logs {
-			isDasMessage, err := d.checkDataAvailability(ctx, deliveredLog)
+			isDasMessage, err := d.checkDataAvailability(ctx, deliveredLog, metricBaseNewHash)
 			if err != nil {
 				return err
 			}
@@ -194,7 +205,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 			return err
 		}
 		for _, deliveredLog := range logs {
-			isDasMessage, err := d.checkDataAvailability(ctx, deliveredLog)
+			isDasMessage, err := d.checkDataAvailability(ctx, deliveredLog, metricBaseOldHash)
 			if err != nil {
 				return err
 			}
@@ -209,7 +220,7 @@ func (d *DataAvailabilityCheck) checkDataAvailabilityForOldHashInBlockRange(ctx 
 
 // Trys to find if DAS message is present in the given log and if present
 // returns true and validates if the data is available in the storage service.
-func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliveredLog types.Log) (bool, error) {
+func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliveredLog types.Log, metricBase string) (bool, error) {
 	deliveredEvent, err := d.inboxContract.ParseSequencerBatchDelivered(deliveredLog)
 	if err != nil {
 		return false, err
@@ -229,8 +240,11 @@ func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliv
 	for url, reader := range d.urlToReaderMap {
 		_, err = reader.GetByHash(ctx, cert.DataHash)
 		if err != nil {
+			metrics.GetOrRegisterCounter(metricBase+"/"+url+"/failure", nil).Inc(1)
 			dataNotFound = append(dataNotFound, url)
-			fmt.Printf("Data with hash: %s not found for: %s\n", common.Hash(cert.DataHash).String(), url)
+			log.Error("Data with hash: %s not found for: %s\n", common.Hash(cert.DataHash).String(), url)
+		} else {
+			metrics.GetOrRegisterCounter(metricBase+"/"+url+"/success", nil).Inc(1)
 		}
 	}
 	if len(dataNotFound) > 0 {
