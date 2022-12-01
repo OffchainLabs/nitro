@@ -57,6 +57,7 @@ func init() {
 }
 
 type SyncToStorageConfig struct {
+	CheckAlreadyExists   bool          `koanf:"check-already-exists"`
 	Eager                bool          `koanf:"eager"`
 	EagerLowerBoundBlock uint64        `koanf:"eager-lower-bound-block"`
 	RetentionPeriod      time.Duration `koanf:"retention-period"`
@@ -67,6 +68,7 @@ type SyncToStorageConfig struct {
 }
 
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
+	CheckAlreadyExists:   true,
 	Eager:                false,
 	EagerLowerBoundBlock: 0,
 	RetentionPeriod:      time.Duration(math.MaxInt64),
@@ -77,6 +79,7 @@ var DefaultSyncToStorageConfig = SyncToStorageConfig{
 }
 
 func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".check-already-exists", DefaultSyncToStorageConfig.CheckAlreadyExists, "check if the data already exists in this DAS's storage. Must be disabled for fast sync with an IPFS backend")
 	f.Bool(prefix+".eager", DefaultSyncToStorageConfig.Eager, "eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily")
 	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block. Only used if there is no sync state")
 	f.Uint64(prefix+".l1-blocks-per-read", DefaultSyncToStorageConfig.L1BlocksPerRead, "when eagerly syncing, max l1 blocks to read per poll")
@@ -252,8 +255,11 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 		return err
 	}
 	for hash, contents := range preimages {
-		_, err := s.syncTo.GetByHash(ctx, hash)
-		if errors.Is(err, ErrNotFound) {
+		var err error
+		if s.config.CheckAlreadyExists {
+			_, err = s.syncTo.GetByHash(ctx, hash)
+		}
+		if err == nil || errors.Is(err, ErrNotFound) {
 			if err := s.syncTo.Put(ctx, contents, storeUntil); err != nil {
 				return err
 			}
