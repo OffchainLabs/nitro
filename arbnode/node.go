@@ -503,7 +503,7 @@ var ConfigDefault = Config{
 	SyncMonitor:            DefaultSyncMonitorConfig,
 	Dangerous:              DefaultDangerousConfig,
 	Archive:                false,
-	TxLookupLimit:          40_000_000,
+	TxLookupLimit:          126_100_000, // 1 year at 4 blocks per second
 	Caching:                DefaultCachingConfig,
 	TransactionStreamer:    DefaultTransactionStreamerConfig,
 }
