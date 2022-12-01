@@ -325,11 +325,11 @@ func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.Star
 		return nil
 	}
 	challengerName := "unknown-name"
-	if !leaf.Staker.IsEmpty() {
-		if name, ok := v.knownValidatorNames[leaf.Staker.OpenKnownFull()]; ok {
+	if !leaf.Staker.IsNone() {
+		if name, ok := v.knownValidatorNames[leaf.Staker.Unwrap()]; ok {
 			challengerName = name
 		} else {
-			challengerName = leaf.Staker.OpenKnownFull().Hex()
+			challengerName = leaf.Staker.Unwrap().Hex()
 		}
 	}
 	log.WithFields(logrus.Fields{

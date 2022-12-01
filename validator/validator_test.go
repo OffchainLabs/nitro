@@ -33,17 +33,17 @@ func Test_processLeafCreation(t *testing.T) {
 		}
 		seqNum := parentSeqNum + 1
 		newlyCreatedAssertion := &protocol.Assertion{
-			Prev:            util.FullOption[*protocol.Assertion](parentAssertion),
+			Prev:            util.Some[*protocol.Assertion](parentAssertion),
 			SequenceNum:     seqNum,
 			StateCommitment: protocol.StateCommitment{},
-			Staker:          util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			Staker:          util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 		ev := &protocol.CreateLeafEvent{
 			PrevSeqNum:          parentAssertion.SequenceNum,
 			PrevStateCommitment: parentAssertion.StateCommitment,
 			SeqNum:              newlyCreatedAssertion.SequenceNum,
 			StateCommitment:     newlyCreatedAssertion.StateCommitment,
-			Staker:              newlyCreatedAssertion.Staker.OpenKnownFull(),
+			Staker:              newlyCreatedAssertion.Staker.Unwrap(),
 		}
 		s.On("HasStateCommitment", ctx, ev.StateCommitment).Return(false)
 
@@ -63,27 +63,27 @@ func Test_processLeafCreation(t *testing.T) {
 				StateRoot: prevRoot,
 				Height:    parentSeqNum,
 			},
-			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			Staker: util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 		seqNum := parentSeqNum + 1
 		newlyCreatedAssertion := &protocol.Assertion{
-			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
+			Prev:        util.Some[*protocol.Assertion](parentAssertion),
 			SequenceNum: seqNum,
 			StateCommitment: protocol.StateCommitment{
 				StateRoot: common.BytesToHash([]byte("foo")),
 				Height:    2,
 			},
-			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			Staker: util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 		forkSeqNum := seqNum + 1
 		forkedAssertion := &protocol.Assertion{
-			Prev:        util.FullOption[*protocol.Assertion](parentAssertion),
+			Prev:        util.Some[*protocol.Assertion](parentAssertion),
 			SequenceNum: forkSeqNum,
 			StateCommitment: protocol.StateCommitment{
 				StateRoot: common.BytesToHash([]byte("bar")),
 				Height:    2,
 			},
-			Staker: util.FullOption[common.Address](common.BytesToAddress([]byte("foo"))),
+			Staker: util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
 		}
 
 		ev := &protocol.CreateLeafEvent{
@@ -91,7 +91,7 @@ func Test_processLeafCreation(t *testing.T) {
 			PrevStateCommitment: parentAssertion.StateCommitment,
 			SeqNum:              newlyCreatedAssertion.SequenceNum,
 			StateCommitment:     newlyCreatedAssertion.StateCommitment,
-			Staker:              newlyCreatedAssertion.Staker.OpenKnownFull(),
+			Staker:              newlyCreatedAssertion.Staker.Unwrap(),
 		}
 		s.On("HasStateCommitment", ctx, ev.StateCommitment).Return(false)
 
@@ -102,7 +102,7 @@ func Test_processLeafCreation(t *testing.T) {
 			PrevStateCommitment: parentAssertion.StateCommitment,
 			SeqNum:              forkedAssertion.SequenceNum,
 			StateCommitment:     forkedAssertion.StateCommitment,
-			Staker:              forkedAssertion.Staker.OpenKnownFull(),
+			Staker:              forkedAssertion.Staker.Unwrap(),
 		}
 		s.On("HasStateCommitment", ctx, ev.StateCommitment).Return(false)
 
@@ -142,7 +142,7 @@ func Test_processChallengeStart(t *testing.T) {
 		}
 		leaf := &protocol.Assertion{
 			StateCommitment: commitment,
-			Staker:          util.EmptyOption[common.Address](),
+			Staker:          util.None[common.Address](),
 		}
 		v.createdLeaves[commitment.StateRoot] = leaf
 
@@ -167,8 +167,8 @@ func Test_findLatestValidAssertion(t *testing.T) {
 				Height:    0,
 				StateRoot: common.Hash{},
 			},
-			Prev:   util.EmptyOption[*protocol.Assertion](),
-			Staker: util.EmptyOption[common.Address](),
+			Prev:   util.None[*protocol.Assertion](),
+			Staker: util.None[common.Address](),
 		}
 		p.On("LatestConfirmed", tx).Return(genesis)
 		p.On("NumAssertions", tx).Return(uint64(100))
@@ -222,8 +222,8 @@ func setupAssertions(num int) []*protocol.Assertion {
 			Height:    0,
 			StateRoot: common.Hash{},
 		},
-		Prev:   util.EmptyOption[*protocol.Assertion](),
-		Staker: util.EmptyOption[common.Address](),
+		Prev:   util.None[*protocol.Assertion](),
+		Staker: util.None[common.Address](),
 	}
 	assertions := []*protocol.Assertion{genesis}
 	for i := 1; i < num; i++ {
@@ -233,8 +233,8 @@ func setupAssertions(num int) []*protocol.Assertion {
 				Height:    uint64(i),
 				StateRoot: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
 			},
-			Prev:   util.FullOption[*protocol.Assertion](assertions[i-1]),
-			Staker: util.EmptyOption[common.Address](),
+			Prev:   util.Some[*protocol.Assertion](assertions[i-1]),
+			Staker: util.None[common.Address](),
 		})
 	}
 	return assertions
