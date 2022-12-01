@@ -242,7 +242,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		}
 		senderWhitelist[common.HexToAddress(address)] = struct{}{}
 	}
-	return &Sequencer{
+	s := &Sequencer{
 		txStreamer:      txStreamer,
 		txQueue:         make(chan txQueueItem, config.QueueSize),
 		l1Reader:        l1Reader,
@@ -251,7 +251,9 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		nonceCache:      newNonceCache(config.NonceCacheSize),
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
-	}, nil
+	}
+	txStreamer.SetReorgSequencingPolicy(s.makeSequencingHooks)
+	return s, nil
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")
@@ -421,6 +423,15 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 
 var sequencerInternalError = errors.New("sequencer internal error")
 
+func (s *Sequencer) makeSequencingHooks() *arbos.SequencingHooks {
+	return &arbos.SequencingHooks{
+		PreTxFilter:            s.preTxFilter,
+		PostTxFilter:           s.postTxFilter,
+		DiscardInvalidTxsEarly: true,
+		TxErrors:               []error{},
+	}
+}
+
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var txes types.Transactions
 	var queueItems []txQueueItem
@@ -520,12 +531,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
-	hooks := &arbos.SequencingHooks{
-		PreTxFilter:            s.preTxFilter,
-		PostTxFilter:           s.postTxFilter,
-		DiscardInvalidTxsEarly: true,
-		TxErrors:               []error{},
-	}
+	hooks := s.makeSequencingHooks()
 	start := time.Now()
 	block, err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	blockCreationTimer.Update(time.Since(start))
