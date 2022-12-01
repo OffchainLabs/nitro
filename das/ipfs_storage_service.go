@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"io/ioutil"
 	"time"
 
@@ -105,7 +106,7 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 			return nil, err
 		}
 
-		data, err := ioutil.ReadAll(rdr)
+		data, err := io.ReadAll(rdr)
 		if err != nil {
 			return nil, err
 		}

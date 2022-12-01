@@ -17,13 +17,11 @@ import (
 
 func runAddAndGetTest(t *testing.T, ctx context.Context, svc *IpfsStorageService, size int) {
 
-	src := rand.NewSource(87432489732)
 	data := make([]byte, size)
-	for i := range data {
-		data[i] = byte(src.Int63() & 0xff)
-	}
+	_, err := rand.Read(data)
+	Require(t, err)
 
-	err := svc.Put(ctx, data, 0)
+	err = svc.Put(ctx, data, 0)
 	Require(t, err)
 
 	hash := dastree.Hash(data).Bytes()
