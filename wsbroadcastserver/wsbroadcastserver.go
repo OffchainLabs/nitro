@@ -170,10 +170,9 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 
 		safeConn := deadliner{conn, s.config().IOTimeout}
 
-		// Set requestedSeqNum to max if client doesn't provide it
-		requestedSeqNum := arbutil.MessageIndex(^uint64(0))
 		var feedClientVersionSeen bool
 		var connectingIP string
+		var requestedSeqNum arbutil.MessageIndex
 		upgrader := ws.Upgrader{
 			OnRequest: func(uri []byte) error {
 				if strings.Contains(string(uri), LivenessProbeURI) {

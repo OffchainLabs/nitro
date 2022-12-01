@@ -417,7 +417,7 @@ type Config struct {
 	Caching                CachingConfig                  `koanf:"caching"`
 	Archive                bool                           `koanf:"archive"`
 	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
-	TransactionStreamer    TransactionStreamerConfig      `koanf:"transaction-streamer"`
+	TransactionStreamer    TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -503,7 +503,7 @@ var ConfigDefault = Config{
 	SyncMonitor:            DefaultSyncMonitorConfig,
 	Dangerous:              DefaultDangerousConfig,
 	Archive:                false,
-	TxLookupLimit:          40_000_000,
+	TxLookupLimit:          126_230_400, // 1 year at 4 blocks per second
 	Caching:                DefaultCachingConfig,
 	TransactionStreamer:    DefaultTransactionStreamerConfig,
 }
@@ -1480,7 +1480,16 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.BroadcastClients != nil {
-		n.BroadcastClients.Start(ctx)
+		go func() {
+			if n.InboxReader != nil {
+				select {
+				case <-n.InboxReader.CaughtUp():
+				case <-ctx.Done():
+					return
+				}
+			}
+			n.BroadcastClients.Start(ctx)
+		}()
 	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
