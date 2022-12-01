@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 	"sync"
 	"time"
 
@@ -62,6 +63,7 @@ type SyncToStorageConfig struct {
 	DelayOnError         time.Duration `koanf:"delay-on-error"`
 	IgnoreWriteErrors    bool          `koanf:"ignore-write-errors"`
 	L1BlocksPerRead      uint64        `koanf:"l1-blocks-per-read"`
+	StateDir             string        `koanf:"state-dir"`
 }
 
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
@@ -71,15 +73,17 @@ var DefaultSyncToStorageConfig = SyncToStorageConfig{
 	DelayOnError:         time.Second,
 	IgnoreWriteErrors:    true,
 	L1BlocksPerRead:      100,
+	StateDir:             "",
 }
 
 func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".eager", DefaultSyncToStorageConfig.Eager, "eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily")
-	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block")
+	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block. Only used if there is no sync state")
 	f.Uint64(prefix+".l1-blocks-per-read", DefaultSyncToStorageConfig.L1BlocksPerRead, "when eagerly syncing, max l1 blocks to read per poll")
 	f.Duration(prefix+".retention-period", DefaultSyncToStorageConfig.RetentionPeriod, "period to retain synced data (defaults to forever)")
 	f.Duration(prefix+".delay-on-error", DefaultSyncToStorageConfig.DelayOnError, "time to wait if encountered an error before retrying")
 	f.Bool(prefix+".ignore-write-errors", DefaultSyncToStorageConfig.IgnoreWriteErrors, "log only on failures to write when syncing; otherwise treat it as an error")
+	f.String(prefix+".state-dir", DefaultSyncToStorageConfig.StateDir, "directory to store the sync state in, ie the block number currently synced up to, so that we don't sync from scratch each time")
 }
 
 type l1SyncService struct {
@@ -97,6 +101,61 @@ type l1SyncService struct {
 	lowBlockNr     uint64
 	lastBatchCount *big.Int
 	lastBatchAcc   common.Hash
+}
+
+const nextBlockNoFilename = "nextBlockNumber"
+
+func readSyncStateOrDefault(syncDir string, dflt uint64) uint64 {
+	if syncDir == "" {
+		return dflt
+	}
+
+	path := syncDir + "/" + nextBlockNoFilename
+
+	f, err := os.Open(path)
+	if err != nil {
+		log.Info("Couldn't open sync state file, using default sync start block number", "err", err, "path", path, "default", dflt)
+		return dflt
+	}
+	var blockNr uint64
+	n, err := fmt.Fscanln(f, &blockNr)
+	if err != nil {
+		log.Warn("Invalid data in sync state file, using default sync start block number", "err", err, "path", path, "default", dflt)
+		return dflt
+	}
+	if n != 1 {
+		log.Warn("Incorrect number of fields in sync state file, using default sync start block number", "n", n, "path", path, "default", dflt)
+		return dflt
+	}
+	return blockNr
+}
+
+func writeSyncState(syncDir string, blockNr uint64) error {
+	if syncDir == "" {
+		return fmt.Errorf("No sync-to-storage.state-dir has been configured")
+	}
+
+	path := syncDir + "/" + nextBlockNoFilename
+
+	// Use a temp file and rename to achieve atomic writes.
+	f, err := os.CreateTemp(syncDir, nextBlockNoFilename)
+	if err != nil {
+		return err
+	}
+	err = f.Chmod(0600)
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString(fmt.Sprintf("%d\n", blockNr))
+	if err != nil {
+		return err
+	}
+	err = f.Close()
+	if err != nil {
+		return err
+	}
+
+	return os.Rename(f.Name(), path)
 }
 
 func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSource arbstate.DataAvailabilityReader, l1Reader *headerreader.HeaderReader, inboxAddr common.Address) (*l1SyncService, error) {
@@ -118,7 +177,7 @@ func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSo
 		inboxContract:  inboxContract,
 		inboxAddr:      inboxAddr,
 		catchingUp:     true,
-		lowBlockNr:     config.EagerLowerBoundBlock,
+		lowBlockNr:     readSyncStateOrDefault(config.StateDir, config.EagerLowerBoundBlock),
 		lastBatchCount: big.NewInt(0),
 	}, nil
 }
@@ -278,6 +337,10 @@ func (s *l1SyncService) readMore(ctx context.Context) error {
 		return err
 	}
 	s.lowBlockNr = finalizedHighBlockNr + 1
+	err = writeSyncState(s.config.StateDir, s.lowBlockNr)
+	if err != nil {
+		log.Warn("sync-to-storage failed to write next block number to sync.", "err", err, "blockNr", s.lowBlockNr)
+	}
 	return nil
 }
 
