@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
 )
 
@@ -83,6 +84,8 @@ func hashToCid(hash common.Hash) (cid.Cid, error) {
 // GetByHash retrieves and reconstructs one batch's data, using IPFS to retrieve the preimages
 // for each chunk of data and the dastree nodes.
 func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	log.Trace("das.IpfsStorageService.GetByHash", "hash", pretty.PrettyHash(hash))
+
 	oracle := func(h common.Hash) ([]byte, error) {
 		thisCid, err := hashToCid(h)
 		if err != nil {
@@ -96,6 +99,9 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 		defer cancel()
 		rdr, err := s.ipfsApi.Block().Get(timeoutCtx, ipfsPath)
 		if err != nil {
+			if timeoutCtx.Err() != nil {
+				return nil, ErrNotFound
+			}
 			return nil, err
 		}
 
@@ -116,7 +122,8 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 // nodes, to directly store the dastree structure in IPFS.
 // IPFS default block size is 256KB and dastree max block size is 64KB so each dastree
 // node and data chunk easily fits within an IPFS block.
-func (s *IpfsStorageService) Put(ctx context.Context, data []byte, _ uint64) error {
+func (s *IpfsStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
+	logPut("das.IpfsStorageService.Put", data, timeout, s)
 	record := func(_ common.Hash, value []byte) error {
 		blockStat, err := s.ipfsApi.Block().Put(
 			ctx,
