@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -114,6 +116,7 @@ func parseDataAvailabilityCheckConfig(args []string) (*DataAvailabilityCheckConf
 	f.Int("l1-connection-attempts", DefaultDataAvailabilityCheckConfig.L1ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
 	f.String("sequencer-inbox-address", DefaultDataAvailabilityCheckConfig.SequencerInboxAddress, "L1 address of SequencerInbox contract")
 	f.Uint64("l1-blocks-per-read", DefaultDataAvailabilityCheckConfig.L1BlocksPerRead, "max l1 blocks to read per poll")
+	f.Duration("check-interval", DefaultDataAvailabilityCheckConfig.CheckInterval, "interval for running data availability check")
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
@@ -139,6 +142,14 @@ func main() {
 	}
 	dataAvailabilityCheck.StopWaiter.Start(ctx, dataAvailabilityCheck)
 	dataAvailabilityCheck.CallIteratively(dataAvailabilityCheck.start)
+
+	sigint := make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+
+	<-sigint
+	signal.Stop(sigint)
+	close(sigint)
+	dataAvailabilityCheck.StopAndWait()
 }
 
 func (d *DataAvailabilityCheck) start(ctx context.Context) time.Duration {
@@ -159,7 +170,7 @@ func (d *DataAvailabilityCheck) start(ctx context.Context) time.Duration {
 	log.Info("Completed old hash data availability check")
 
 	if newHashErr != nil || oldHashErr != nil {
-		log.Error("new hash check: %w, old hash check: %s", newHashErr, oldHashErr)
+		log.Error(fmt.Sprintf("new hash check: %s, old hash check: %s", newHashErr, oldHashErr))
 	}
 	return d.checkInterval
 }
@@ -242,7 +253,7 @@ func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliv
 		if err != nil {
 			metrics.GetOrRegisterCounter(metricBase+"/"+url+"/failure", nil).Inc(1)
 			dataNotFound = append(dataNotFound, url)
-			log.Error("Data with hash: %s not found for: %s\n", common.Hash(cert.DataHash).String(), url)
+			log.Error(fmt.Sprintf("Data with hash: %s not found for: %s\n", common.Hash(cert.DataHash).String(), url))
 		} else {
 			metrics.GetOrRegisterCounter(metricBase+"/"+url+"/success", nil).Inc(1)
 		}
