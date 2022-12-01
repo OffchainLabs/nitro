@@ -82,6 +82,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     cargo install --force cbindgen
 COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
 COPY ./Makefile ./
+COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/jit arbitrator/jit
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
@@ -99,6 +100,7 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     apt-get update && \
     apt-get install -y llvm-12-dev libclang-common-12-dev
 COPY arbitrator/Cargo.* arbitrator/
+COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
