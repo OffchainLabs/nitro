@@ -42,6 +42,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
       with:
+        token: ${{ secrets.PRIVATE_CHECKOUT }}
         submodules: true
 
     # Initializes the CodeQL tools for scanning.

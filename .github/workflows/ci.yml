@@ -29,6 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
+          token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: true
 
       - name: Install dependencies
@@ -48,8 +49,8 @@ jobs:
 
       - name: Install wasm-ld
         run: |
-          sudo apt-get update && sudo apt-get install -y lld-10
-          sudo ln -s /usr/bin/wasm-ld-10 /usr/local/bin/wasm-ld
+          sudo apt-get update && sudo apt-get install -y lld-12
+          sudo ln -s /usr/bin/wasm-ld-12 /usr/local/bin/wasm-ld
 
       - name: Install rust wasm32-unknown-unknown
         uses: actions-rs/toolchain@v1

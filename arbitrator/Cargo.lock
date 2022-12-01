@@ -47,6 +47,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbutil"
+version = "0.1.0"
+
+[[package]]
 name = "arrayvec"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -999,6 +1003,7 @@ dependencies = [
 name = "prover"
 version = "0.1.0"
 dependencies = [
+ "arbutil",
  "bincode",
  "brotli2",
  "digest",

@@ -1,9 +1,13 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use std::convert::TryFrom;
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt::Display,
+};
 
-use crate::{binary::FloatType, console::Color, utils::Bytes32};
+use crate::{binary::FloatType, utils::Bytes32};
+use arbutil::Color;
 use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -168,7 +172,7 @@ impl Value {
     pub fn hash(self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update(b"Value:");
-        h.update(&[self.ty() as u8]);
+        h.update([self.ty() as u8]);
         h.update(self.contents_for_proof());
         h.finalize().into()
     }
@@ -186,20 +190,20 @@ impl Value {
     }
 
     pub fn pretty_print(&self) -> String {
-        let lparem = Color::grey("(");
-        let rparem = Color::grey(")");
+        let lparem = "(".grey();
+        let rparem = ")".grey();
 
         macro_rules! single {
             ($ty:expr, $value:expr) => {{
-                format!("{}{}{}{}", Color::grey($ty), lparem, $value, rparem)
+                format!("{}{}{}{}", $ty.grey(), lparem, $value, rparem)
             }};
         }
         macro_rules! pair {
             ($ty:expr, $left:expr, $right:expr) => {{
-                let eq = Color::grey("=");
+                let eq = "=".grey();
                 format!(
                     "{}{}{} {} {}{}",
-                    Color::grey($ty),
+                    $ty.grey(),
                     lparem,
                     $left,
                     eq,
@@ -232,9 +236,62 @@ impl Value {
     }
 }
 
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = self.pretty_print();
+        write!(f, "{}", text)
+    }
+}
+
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         self.ty() == other.ty() && self.contents_for_proof() == other.contents_for_proof()
+    }
+}
+
+impl From<u32> for Value {
+    fn from(value: u32) -> Self {
+        Value::I32(value as u32)
+    }
+}
+
+impl From<u64> for Value {
+    fn from(value: u64) -> Self {
+        Value::I64(value as u64)
+    }
+}
+
+impl From<f32> for Value {
+    fn from(value: f32) -> Self {
+        Value::F32(value)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Value::F64(value)
+    }
+}
+
+impl TryInto<u32> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<u32, Self::Error> {
+        match self {
+            Value::I32(value) => Ok(value as u32),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryInto<u64> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<u64, Self::Error> {
+        match self {
+            Value::I64(value) => Ok(value as u64),
+            _ => Err(()),
+        }
     }
 }
 
@@ -256,11 +313,11 @@ impl FunctionType {
         h.update(b"Function type:");
         h.update(Bytes32::from(self.inputs.len()));
         for input in &self.inputs {
-            h.update(&[*input as u8]);
+            h.update([*input as u8]);
         }
         h.update(Bytes32::from(self.outputs.len()));
         for output in &self.outputs {
-            h.update(&[*output as u8]);
+            h.update([*output as u8]);
         }
         h.finalize().into()
     }

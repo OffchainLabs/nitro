@@ -174,11 +174,11 @@ impl Memory {
             ArbValueType::I64 => Value::I64(contents as u64),
             ArbValueType::F32 => {
                 assert!(bytes == 4 && !signed, "Invalid source for f32");
-                Value::F32(f32::from_bits(contents as u32))
+                f32::from_bits(contents as u32).into()
             }
             ArbValueType::F64 => {
                 assert!(bytes == 8 && !signed, "Invalid source for f64");
-                Value::F64(f64::from_bits(contents as u64))
+                f64::from_bits(contents as u64).into()
             }
             _ => panic!("Invalid memory load output type {:?}", ty),
         })
@@ -186,9 +186,8 @@ impl Memory {
 
     #[must_use]
     pub fn store_value(&mut self, idx: u64, value: u64, bytes: u8) -> bool {
-        let end_idx = match idx.checked_add(bytes.into()) {
-            Some(x) => x,
-            None => return false,
+        let Some(end_idx) = idx.checked_add(bytes.into()) else {
+            return false
         };
         if end_idx > self.buffer.len() as u64 {
             return false;
@@ -216,9 +215,8 @@ impl Memory {
         if idx % Self::LEAF_SIZE as u64 != 0 {
             return false;
         }
-        let end_idx = match idx.checked_add(value.len() as u64) {
-            Some(x) => x,
-            None => return false,
+        let Some(end_idx) = idx.checked_add(value.len() as u64) else {
+            return false;
         };
         if end_idx > self.buffer.len() as u64 {
             return false;
@@ -242,9 +240,8 @@ impl Memory {
         if idx % Self::LEAF_SIZE as u64 != 0 {
             return None;
         }
-        let idx = match usize::try_from(idx) {
-            Ok(x) => x,
-            Err(_) => return None,
+        let Ok(idx) = usize::try_from(idx) else {
+            return None;
         };
 
         let slice = self.get_range(idx, 32)?;
