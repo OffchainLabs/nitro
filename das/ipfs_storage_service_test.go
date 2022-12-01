@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/das/dastree"
@@ -37,7 +38,13 @@ func runAddAndGetTest(t *testing.T, ctx context.Context, svc *IpfsStorageService
 func TestIpfsStorageServiceAddAndGet(t *testing.T) {
 	enableLogging()
 	ctx := context.Background()
-	svc, err := NewIpfsStorageService(ctx, IpfsStorageServiceConfig{true, t.TempDir(), "test"})
+	svc, err := NewIpfsStorageService(ctx,
+		IpfsStorageServiceConfig{
+			Enable:      true,
+			RepoDir:     t.TempDir(),
+			ReadTimeout: time.Minute,
+			Profiles:    "test",
+		})
 	defer svc.Close(ctx)
 	Require(t, err)
 

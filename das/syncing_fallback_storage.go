@@ -263,7 +263,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 			if err := s.syncTo.Put(ctx, contents, storeUntil); err != nil {
 				return err
 			}
-		} else if err != nil {
+		} else {
 			return err
 		}
 	}
