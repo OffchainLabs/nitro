@@ -12,7 +12,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
