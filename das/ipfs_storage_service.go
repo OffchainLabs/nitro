@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"io/ioutil"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -27,24 +28,28 @@ import (
 )
 
 type IpfsStorageServiceConfig struct {
-	Enable   bool   `koanf:"enable"`
-	RepoDir  string `koanf:"repo-dir"`
-	Profiles string `koanf:"profiles"`
+	Enable      bool          `koanf:"enable"`
+	RepoDir     string        `koanf:"repo-dir"`
+	ReadTimeout time.Duration `koanf:"read-timeout"`
+	Profiles    string        `koanf:"profiles"`
 }
 
 var DefaultIpfsStorageServiceConfig = IpfsStorageServiceConfig{
-	Enable:   false,
-	RepoDir:  "",
-	Profiles: "test", // Default to test, see profiles here https://github.com/ipfs/kubo/blob/e550d9e4761ea394357c413c02ade142c0dea88c/config/profile.go
+	Enable:      false,
+	RepoDir:     "",
+	ReadTimeout: time.Minute,
+	Profiles:    "test", // Default to test, see profiles here https://github.com/ipfs/kubo/blob/e550d9e4761ea394357c413c02ade142c0dea88c/config/profile.go
 }
 
 func IpfsStorageServiceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultIpfsStorageServiceConfig.Enable, "enable storage/retrieval of sequencer batch data from IPFS")
 	f.String(prefix+".repo-dir", DefaultIpfsStorageServiceConfig.RepoDir, "directory to use to store the local IPFS repo")
+	f.Duration(prefix+".read-timeout", DefaultIpfsStorageServiceConfig.ReadTimeout, "timeout for IPFS reads, since by default it will wait forever. Treat timeout as not found")
 	f.String(prefix+".profiles", DefaultIpfsStorageServiceConfig.Profiles, "comma separated list of IPFS profiles to use")
 }
 
 type IpfsStorageService struct {
+	config     IpfsStorageServiceConfig
 	ipfsHelper *ipfshelper.IpfsHelper
 	ipfsApi    icore.CoreAPI
 }
@@ -55,6 +60,7 @@ func NewIpfsStorageService(ctx context.Context, config IpfsStorageServiceConfig)
 		return nil, err
 	}
 	return &IpfsStorageService{
+		config:     config,
 		ipfsHelper: ipfsHelper,
 		ipfsApi:    ipfsHelper.GetAPI(),
 	}, nil
@@ -86,7 +92,9 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 		ipfsPath := path.IpfsPath(thisCid)
 		log.Trace("Retrieving IPFS path", "path", ipfsPath.String())
 
-		rdr, err := s.ipfsApi.Block().Get(ctx, ipfsPath)
+		timeoutCtx, cancel := context.WithTimeout(ctx, s.config.ReadTimeout)
+		defer cancel()
+		rdr, err := s.ipfsApi.Block().Get(timeoutCtx, ipfsPath)
 		if err != nil {
 			return nil, err
 		}
