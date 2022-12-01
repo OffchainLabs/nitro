@@ -271,6 +271,11 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	}
 	seqNum := ev.SeqNum
 	stateCommit := ev.StateCommitment
+	// If there exists a statement for new leaf, it means it has already been seen.
+	if v.stateManager.HasStateCommitment(ctx, stateCommit) {
+		return nil
+	}
+
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
 		"stateRoot": fmt.Sprintf("%#x", stateCommit.StateRoot),
@@ -296,11 +301,7 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 		log.Info("No fork detected in assertion tree upon leaf creation")
 		return nil
 	}
-	// If there is a fork, we challenge if we disagree with its state commitment. Otherwise,
-	// we will defend challenge moves that agree with our local state.
-	if v.stateManager.HasStateCommitment(ctx, stateCommit) {
-		return v.defendLeaf(ctx, ev)
-	}
+
 	return v.challengeLeaf(ctx, ev)
 }
 
@@ -337,24 +338,6 @@ func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.Star
 		"challengingStateRoot": fmt.Sprintf("%#x", leaf.StateCommitment.StateRoot),
 		"challengingHeight":    leaf.StateCommitment.Height,
 	}).Warn("Received challenge for a created leaf!")
-	return nil
-}
-
-// Prepares to defend a leaf that matches our local history and is part of a fork
-// in the assertions tree. This leaf may be challenged and the local validator should
-// be ready to perform proper challenge moves on the assertion if no one else is making them.
-func (v *Validator) defendLeaf(ctx context.Context, ev *protocol.CreateLeafEvent) error {
-	logFields := logrus.Fields{}
-	if name, ok := v.knownValidatorNames[ev.Staker]; ok {
-		logFields["createdBy"] = name
-	}
-	logFields["name"] = v.name
-	logFields["height"] = ev.StateCommitment.Height
-	logFields["stateRoot"] = fmt.Sprintf("%#x", ev.StateCommitment.StateRoot)
-	log.WithFields(logFields).Info(
-		"New leaf created by another validator matching local state has " +
-			"forked the protocol, preparing to defend",
-	)
 	return nil
 }
 
