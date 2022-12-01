@@ -3,15 +3,15 @@
 
 #![allow(dead_code)]
 
-pub const BLUE: &'static str = "\x1b[34;1m";
-pub const DIM: &'static str = "\x1b[2m";
-pub const GREY: &'static str = "\x1b[0;0m\x1b[90m";
-pub const MINT: &'static str = "\x1b[38;5;48;1m";
-pub const PINK: &'static str = "\x1b[38;5;161;1m";
-pub const RED: &'static str = "\x1b[31;1m";
-pub const CLEAR: &'static str = "\x1b[0;0m";
-pub const WHITE: &'static str = "\x1b[0;1m";
-pub const YELLOW: &'static str = "\x1b[33;1m";
+pub const BLUE: &str = "\x1b[34;1m";
+pub const DIM: &str = "\x1b[2m";
+pub const GREY: &str = "\x1b[0;0m\x1b[90m";
+pub const MINT: &str = "\x1b[38;5;48;1m";
+pub const PINK: &str = "\x1b[38;5;161;1m";
+pub const RED: &str = "\x1b[31;1m";
+pub const CLEAR: &str = "\x1b[0;0m";
+pub const WHITE: &str = "\x1b[0;1m";
+pub const YELLOW: &str = "\x1b[33;1m";
 
 pub trait Color {
     fn color(&self, color: &str) -> String;
