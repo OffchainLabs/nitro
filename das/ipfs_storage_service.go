@@ -151,12 +151,15 @@ func (s *IpfsStorageService) ExpirationPolicy(ctx context.Context) (arbstate.Exp
 func (s *IpfsStorageService) Sync(ctx context.Context) error {
 	return nil
 }
+
 func (s *IpfsStorageService) Close(ctx context.Context) error {
 	return s.ipfsHelper.Close()
 }
+
 func (s *IpfsStorageService) String() string {
 	return "IpfsStorageService"
 }
+
 func (s *IpfsStorageService) HealthCheck(ctx context.Context) error {
 	testData := []byte("Test-Data")
 	err := s.Put(ctx, testData, 0)
