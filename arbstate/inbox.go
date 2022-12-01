@@ -174,9 +174,8 @@ func RecoverPayloadFromDasBatch(
 		return nil, nil
 	}
 	version := cert.Version
-	recordPreimage := func(key common.Hash, value []byte) error {
+	recordPreimage := func(key common.Hash, value []byte) {
 		preimages[key] = value
-		return nil
 	}
 
 	if version >= 2 {
@@ -218,10 +217,7 @@ func RecoverPayloadFromDasBatch(
 		return nil, err
 	}
 	if preimages != nil {
-		_, err = dastree.RecordHash(recordPreimage, keysetPreimage)
-		if err != nil {
-			return nil, err
-		}
+		dastree.RecordHash(recordPreimage, keysetPreimage)
 	}
 
 	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage), keysetValidationMode == KeysetDontValidate)
@@ -258,10 +254,7 @@ func RecoverPayloadFromDasBatch(
 			preimages[dataHash] = payload
 			preimages[crypto.Keccak256Hash(treeLeaf)] = treeLeaf
 		} else {
-			_, err := dastree.RecordHash(recordPreimage, payload)
-			if err != nil {
-				return nil, err
-			}
+			dastree.RecordHash(recordPreimage, payload)
 		}
 	}
 

@@ -133,12 +133,12 @@ func AdvanceInboxMessage() {
 	seqAdvanced++
 }
 
-func ResolvePreImage(hash common.Hash) ([]byte, error) {
+func ResolvePreImage(hash common.Hash) []byte {
 	val, ok := preimages[hash]
 	if !ok {
 		panic("preimage not found")
 	}
-	return val, nil
+	return val
 }
 
 func SetLastBlockHash(hash [32]byte) {
