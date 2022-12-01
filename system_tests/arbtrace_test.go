@@ -121,11 +121,11 @@ func (s *ArbTraceAPIStub) Get(ctx context.Context, txHash hexutil.Bytes, path []
 	return &traceFrame{}, nil
 }
 
-func (a *ArbTraceAPIStub) Block(ctx context.Context, blockNum rpc.BlockNumberOrHash) ([]traceFrame, error) {
+func (s *ArbTraceAPIStub) Block(ctx context.Context, blockNum rpc.BlockNumberOrHash) ([]traceFrame, error) {
 	return []traceFrame{{}}, nil
 }
 
-func (a *ArbTraceAPIStub) Filter(ctx context.Context, filter *filterRequest) ([]traceFrame, error) {
+func (s *ArbTraceAPIStub) Filter(ctx context.Context, filter *filterRequest) ([]traceFrame, error) {
 	return []traceFrame{{}}, nil
 }
 
