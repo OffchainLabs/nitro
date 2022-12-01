@@ -8,19 +8,19 @@ type Option[T any] struct {
 	value *T
 }
 
-func EmptyOption[T any]() Option[T] {
+func None[T any]() Option[T] {
 	return Option[T]{nil}
 }
 
-func FullOption[T any](x T) Option[T] {
+func Some[T any](x T) Option[T] {
 	return Option[T]{&x}
 }
 
-func (x Option[T]) IsEmpty() bool {
+func (x Option[T]) IsNone() bool {
 	return x.value == nil
 }
 
-func (x Option[T]) OpenKnownFull() T {
+func (x Option[T]) Unwrap() T {
 	return *x.value
 }
 

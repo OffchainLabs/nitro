@@ -126,7 +126,7 @@ func TestAssertionChain_LeafCreationThroughDiffStakers(t *testing.T) {
 		require.Equal(t, chain.GetBalance(tx, staker), AssertionStakeWei) // New staker has full balance because it's not yet staked.
 
 		lc := chain.LatestConfirmed(tx)
-		lc.Staker = util.FullOption[common.Address](oldStaker)
+		lc.Staker = util.Some[common.Address](oldStaker)
 		_, err := chain.CreateLeaf(tx, lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
 		require.NoError(t, err)
 
@@ -144,12 +144,12 @@ func TestAssertionChain_LeafCreationsInsufficientStakes(t *testing.T) {
 		chain := p.(*AssertionChain)
 		lc := chain.LatestConfirmed(tx)
 		staker := common.BytesToAddress([]byte{1})
-		lc.Staker = util.EmptyOption[common.Address]()
+		lc.Staker = util.None[common.Address]()
 		_, err := chain.CreateLeaf(tx, lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
 		require.ErrorIs(t, err, ErrInsufficientBalance)
 
 		diffStaker := common.BytesToAddress([]byte{2})
-		lc.Staker = util.FullOption[common.Address](diffStaker)
+		lc.Staker = util.Some[common.Address](diffStaker)
 		_, err = chain.CreateLeaf(tx, lc, StateCommitment{Height: 1, StateRoot: common.Hash{}}, staker)
 		require.ErrorIs(t, err, ErrInsufficientBalance)
 		return nil
@@ -415,7 +415,7 @@ func TestAssertion_ErrInvalid(t *testing.T) {
 	chain.SetBalance(tx, staker, bigBalance)
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
 	require.NoError(t, err)
-	newA.Prev = util.EmptyOption[*Assertion]()
+	newA.Prev = util.None[*Assertion]()
 	require.ErrorIs(t, newA.RejectForPrev(tx), ErrInvalid)
 	require.ErrorIs(t, newA.RejectForLoss(tx), ErrInvalid)
 	require.ErrorIs(t, newA.ConfirmNoRival(tx), ErrInvalid)
