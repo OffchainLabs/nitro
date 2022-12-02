@@ -25,7 +25,6 @@ type Validator struct {
 	chain                                  protocol.ChainReadWriter
 	stateManager                           statemanager.Manager
 	assertionEvents                        chan protocol.AssertionChainEvent
-	l2StateUpdateEvents                    chan *statemanager.L2StateEvent
 	address                                common.Address
 	name                                   string
 	knownValidatorNames                    map[common.Address]string
@@ -89,7 +88,6 @@ func New(
 		address:                                common.Address{},
 		createLeafInterval:                     defaultCreateLeafInterval,
 		assertionEvents:                        make(chan protocol.AssertionChainEvent, 1),
-		l2StateUpdateEvents:                    make(chan *statemanager.L2StateEvent, 1),
 		createdLeaves:                          make(map[common.Hash]*protocol.Assertion),
 		sequenceNumbersByParentStateCommitment: make(map[common.Hash][]uint64),
 		assertions:                             make(map[uint64]*protocol.CreateLeafEvent),
@@ -98,7 +96,6 @@ func New(
 		o(v)
 	}
 	v.chain.SubscribeChainEvents(ctx, v.assertionEvents)
-	v.stateManager.SubscribeStateEvents(ctx, v.l2StateUpdateEvents)
 	return v, nil
 }
 
@@ -183,7 +180,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 	}
 	stateCommit := protocol.StateCommitment{
 		Height:    currentCommit.Height,
-		StateRoot: currentCommit.Merkle,
+		StateRoot: currentCommit.StateRoot,
 	}
 	var leaf *protocol.Assertion
 	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
@@ -206,7 +203,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 		"latestValidParentHeight":    fmt.Sprintf("%+v", parentAssertion.StateCommitment.Height),
 		"latestValidParentStateRoot": fmt.Sprintf("%#x", parentAssertion.StateCommitment.StateRoot),
 		"leafHeight":                 currentCommit.Height,
-		"leafCommitmentMerkle":       fmt.Sprintf("%#x", currentCommit.Merkle),
+		"leafCommitmentMerkle":       fmt.Sprintf("%#x", currentCommit.StateRoot),
 	}
 	log.WithFields(logFields).Info("Submitted leaf creation")
 	return leaf, nil
