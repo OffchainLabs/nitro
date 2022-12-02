@@ -29,6 +29,7 @@ var (
 	clientsConnectedGauge      = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
 	clientsTotalSuccessCounter = metrics.NewRegisteredCounter("arb/feed/clients/success", nil)
 	clientsTotalFailedCounter  = metrics.NewRegisteredCounter("arb/feed/clients/failed", nil)
+	clientsOverflowCounter     = metrics.NewRegisteredCounter("arb/feed/clients/overflow", nil)
 )
 
 // CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
@@ -68,6 +69,10 @@ func NewClientManager(poller netpoll.Poller, configFetcher BroadcasterConfigFetc
 		config:        configFetcher,
 		catchupBuffer: catchupBuffer,
 	}
+}
+
+func (cm *ClientManager) ClientOverflowIncrement() {
+	clientsOverflowCounter.Inc(1)
 }
 
 func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *ClientConnection) error {

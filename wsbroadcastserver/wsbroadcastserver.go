@@ -21,6 +21,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -322,12 +323,15 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 		if err != nil {
 			if errors.Is(err, gopool.ErrScheduleTimeout) {
-				var netError net.Error
-				isNetError := errors.As(err, &netError)
 				if strings.Contains(err.Error(), "file descriptor was not registered") {
 					log.Error("broadcast poller unable to register file descriptor", "err", err)
-				} else if !isNetError || !netError.Timeout() {
-					log.Error("broadcast poller error", "err", err)
+				} else {
+					var netError net.Error
+					isNetError := errors.As(err, &netError)
+					if !isNetError || !netError.Timeout() {
+						s.clientManager.ClientOverflowIncrement()
+						log.Error("broadcast poller error", "err", err)
+					}
 				}
 			}
 
