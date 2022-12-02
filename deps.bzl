@@ -630,12 +630,16 @@ def go_dependencies():
         sum = "h1:O8mE0/t419eoIwhTFpKVkHiTs/Igowgfkj25AcZrtiE=",
         version = "v0.0.0-20210220033141-f8bda1e9f3ba",
     )
+
+    # Need to keep this version of golang.org/x/tools. See https://github.com/bazelbuild/rules_go/issues/3230
     go_repository(
         name = "org_golang_x_tools",
         importpath = "golang.org/x/tools",
-        sum = "h1:0c3L82FDQ5rt1bjTBlchS8t6RQ6299/+5bWMnRLh+uI=",
-        version = "v0.1.8-0.20211029000441-d6a9af8af023",
+        replace = "golang.org/x/tools",
+        sum = "h1:VveCTK38A2rkS8ZqFY25HIDFscX5X9OoEhJd3quQmXU=",  # keep
+        version = "v0.1.12",  # keep
     )
+
     go_repository(
         name = "org_golang_x_xerrors",
         importpath = "golang.org/x/xerrors",
