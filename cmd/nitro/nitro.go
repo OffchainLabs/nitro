@@ -65,10 +65,10 @@ type fileHandlerFactory struct {
 }
 
 // newHandler is not threadsafe
-func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *genericconf.FileLoggingConfig) log.Handler {
+func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *genericconf.FileLoggingConfig, pathResolver func(string) string) log.Handler {
 	l.close()
 	l.writer = &lumberjack.Logger{
-		Filename:   config.File,
+		Filename:   pathResolver(config.File),
 		MaxSize:    config.MaxSize,
 		MaxBackups: config.MaxBackups,
 		MaxAge:     config.MaxAge,
@@ -124,7 +124,7 @@ func (l *fileHandlerFactory) close() error {
 var globalFileHandlerFactory = fileHandlerFactory{}
 
 // initLog is not threadsafe
-func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.FileLoggingConfig) error {
+func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.FileLoggingConfig, pathResolver func(string) string) error {
 	logFormat, err := genericconf.ParseLogType(logType)
 	if err != nil {
 		flag.Usage()
@@ -140,7 +140,7 @@ func initLog(logType string, logLevel log.Lvl, fileLoggingConfig *genericconf.Fi
 			log.MultiHandler(
 				log.StreamHandler(os.Stderr, logFormat),
 				// on overflow records are dropped silently as MultiHandler ignores errors
-				globalFileHandlerFactory.newHandler(logFormat, fileLoggingConfig),
+				globalFileHandlerFactory.newHandler(logFormat, fileLoggingConfig, pathResolver),
 			))
 	} else {
 		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
@@ -224,7 +224,22 @@ func mainImpl() int {
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
-	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging)
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = nodeConfig.Persistent.Chain
+	nodeConfig.HTTP.Apply(&stackConf)
+	nodeConfig.WS.Apply(&stackConf)
+	nodeConfig.IPC.Apply(&stackConf)
+	nodeConfig.GraphQL.Apply(&stackConf)
+	if nodeConfig.WS.ExposeAll {
+		stackConf.WSModules = append(stackConf.WSModules, "personal")
+	}
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
+	vcsRevision, vcsTime := confighelpers.GetVersion()
+	stackConf.Version = vcsRevision
+
+	err = initLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, stackConf.ResolvePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		os.Exit(1)
@@ -234,7 +249,6 @@ func mainImpl() int {
 		nodeConfig.Node.Caching.Archive = true
 	}
 
-	vcsRevision, vcsTime := confighelpers.GetVersion()
 	log.Info("Running Arbitrum nitro node", "revision", vcsRevision, "vcs.time", vcsTime)
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
@@ -296,7 +310,7 @@ func mainImpl() int {
 		}
 	}
 
-	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig)
+	liveNodeConfig := NewLiveNodeConfig(args, nodeConfig, stackConf.ResolvePath)
 	if nodeConfig.Node.Validator.OnlyCreateWalletContract {
 		if !nodeConfig.Node.Validator.UseSmartContractWallet {
 			flag.Usage()
@@ -322,19 +336,6 @@ func mainImpl() int {
 		nodeConfig.Node.TxLookupLimit = 0
 	}
 
-	stackConf := node.DefaultConfig
-	stackConf.DataDir = nodeConfig.Persistent.Chain
-	nodeConfig.HTTP.Apply(&stackConf)
-	nodeConfig.WS.Apply(&stackConf)
-	nodeConfig.IPC.Apply(&stackConf)
-	nodeConfig.GraphQL.Apply(&stackConf)
-	if nodeConfig.WS.ExposeAll {
-		stackConf.WSModules = append(stackConf.WSModules, "personal")
-	}
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.NoDiscovery = true
-	stackConf.Version = vcsRevision
 	stack, err := node.New(&stackConf)
 	if err != nil {
 		flag.Usage()
@@ -809,6 +810,7 @@ type LiveNodeConfig struct {
 	mutex        sync.RWMutex
 	args         []string
 	config       *NodeConfig
+	pathResolver func(string) string
 	onReloadHook OnReloadHook
 }
 
@@ -825,7 +827,7 @@ func (c *LiveNodeConfig) set(config *NodeConfig) error {
 	if err := c.config.CanReload(config); err != nil {
 		return err
 	}
-	if err := initLog(config.LogType, log.Lvl(config.LogLevel), &config.FileLogging); err != nil {
+	if err := initLog(config.LogType, log.Lvl(config.LogLevel), &config.FileLogging, c.pathResolver); err != nil {
 		return err
 	}
 	if err := c.onReloadHook(c.config, config); err != nil {
@@ -883,10 +885,11 @@ func (c *LiveNodeConfig) setOnReloadHook(hook OnReloadHook) {
 	c.onReloadHook = hook
 }
 
-func NewLiveNodeConfig(args []string, config *NodeConfig) *LiveNodeConfig {
+func NewLiveNodeConfig(args []string, config *NodeConfig, pathResolver func(string) string) *LiveNodeConfig {
 	return &LiveNodeConfig{
 		args:         args,
 		config:       config,
+		pathResolver: pathResolver,
 		onReloadHook: noopOnReloadHook,
 	}
 }
