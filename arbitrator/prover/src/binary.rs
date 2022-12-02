@@ -311,7 +311,6 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         .collect::<Result<_, _>>()?;
 
     let mut binary = WasmBinary::default();
-    //binary.names.module = name.into();
 
     for mut section in sections.into_iter() {
         use Payload::*;
