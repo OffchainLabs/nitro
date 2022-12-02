@@ -17,3 +17,6 @@
 .idea/new-rollup-exploration.iml
 .idea/modules.xml
 .idea/workspace.xml
+
+# bazel stuff
+bazel-*
