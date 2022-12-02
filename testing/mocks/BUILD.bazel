@@ -9,7 +9,7 @@ go_library(
         "//protocol",
         "//state-manager",
         "//util",
-        "@com_github_ethereum_go_ethereum//common:go_default_library",
-        "@com_github_stretchr_testify//mock:go_default_library",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_stretchr_testify//mock",
     ],
 )

@@ -19,3 +19,6 @@ require (
 	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// Fix for nogo. See https://github.com/bazelbuild/rules_go/issues/3230
+replace golang.org/x/tools => golang.org/x/tools v0.1.12
