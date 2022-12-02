@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -28,6 +29,7 @@ type DelayedSequencer struct {
 	txStreamer               *TransactionStreamer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock *big.Int
+	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
 }
 
@@ -62,14 +64,18 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
-	return &DelayedSequencer{
+	d := &DelayedSequencer{
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
 		inbox:       reader.Tracker(),
 		coordinator: coordinator,
 		txStreamer:  txStreamer,
 		config:      config,
-	}, nil
+	}
+	if coordinator != nil {
+		coordinator.SetDelayedSequencer(d)
+	}
+	return d, nil
 }
 
 func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
@@ -84,10 +90,17 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 	return lastMsg.DelayedMessagesRead, nil
 }
 
-func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.Header) error {
+func (d *DelayedSequencer) trySequence(ctx context.Context, lastBlockHeader *types.Header) error {
 	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
 		return nil
 	}
+
+	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
+}
+
+func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlockHeader *types.Header) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
 
 	config := d.config()
 	if !config.Enable {
@@ -182,6 +195,15 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 	return nil
 }
 
+// Dangerous: bypasses lockout check!
+func (d *DelayedSequencer) ForceSequenceDelayed(ctx context.Context) error {
+	lastBlockHeader, err := d.l1Reader.LastHeader(ctx)
+	if err != nil {
+		return err
+	}
+	return d.sequenceWithoutLockout(ctx, lastBlockHeader)
+}
+
 func (d *DelayedSequencer) run(ctx context.Context) {
 	headerChan, cancel := d.l1Reader.Subscribe(false)
 	defer cancel()
@@ -193,7 +215,7 @@ func (d *DelayedSequencer) run(ctx context.Context) {
 				log.Info("delayed sequencer: header channel close")
 				return
 			}
-			if err := d.update(ctx, nextHeader); err != nil {
+			if err := d.trySequence(ctx, nextHeader); err != nil {
 				log.Error("Delayed sequencer error", "err", err)
 			}
 		case <-ctx.Done():

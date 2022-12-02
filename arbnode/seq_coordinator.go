@@ -38,11 +38,12 @@ type SeqCoordinator struct {
 
 	redisutil.RedisCoordinator
 
-	sync      *SyncMonitor
-	streamer  *TransactionStreamer
-	sequencer *Sequencer
-	signer    *signature.SignVerify
-	config    SeqCoordinatorConfig
+	sync             *SyncMonitor
+	streamer         *TransactionStreamer
+	sequencer        *Sequencer
+	delayedSequencer *DelayedSequencer
+	signer           *signature.SignVerify
+	config           SeqCoordinatorConfig
 
 	prevChosenSequencer string
 	reportedAlive       bool
@@ -137,8 +138,19 @@ func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contrac
 		config:           config,
 		signer:           signer,
 	}
+	sequencer.DontForward(false)
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
+}
+
+func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer) {
+	if c.Started() {
+		panic("trying to set delayed sequencer after start")
+	}
+	if c.delayedSequencer != nil {
+		panic("trying to set delayed sequencer when already set")
+	}
+	c.delayedSequencer = delayedSequencer
 }
 
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
@@ -559,6 +571,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
+		c.sequencer.DontForward(false)
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
@@ -567,10 +580,17 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			if err := c.livelinessUpdate(ctx); err != nil {
 				log.Warn("failed to update liveliness", "err", err)
 			}
+			c.prevChosenSequencer = ""
 			return c.retryAfterRedisError()
 		}
 		log.Info("caught chosen-coordinator lock")
-		c.sequencer.DontForward()
+		if c.delayedSequencer != nil {
+			err = c.delayedSequencer.ForceSequenceDelayed(ctx)
+			if err != nil {
+				log.Warn("failed sequencing delayed messages after catching lock", "err", err)
+			}
+		}
+		c.sequencer.DontForward(true)
 		c.prevChosenSequencer = c.config.MyUrl()
 		return c.noRedisError()
 	}

@@ -225,8 +225,9 @@ type Sequencer struct {
 	l1BlockNumber       uint64
 	l1Timestamp         uint64
 
-	forwarderMutex sync.Mutex
-	forwarder      *TxForwarder
+	activeMutex sync.Mutex
+	seqActive   bool
+	forwarder   *TxForwarder
 }
 
 func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -251,6 +252,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		nonceCache:      newNonceCache(config.NonceCacheSize),
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
+		seqActive:       true,
 	}
 	txStreamer.SetReorgSequencingPolicy(s.makeSequencingHooks)
 	return s, nil
@@ -270,7 +272,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	sequencerBacklogGauge.Inc(1)
 	defer sequencerBacklogGauge.Dec(1)
 
-	forwarder := s.GetForwarder()
+	_, forwarder := s.GetActiveAndForwarder()
 	if forwarder != nil {
 		err := forwarder.PublishTransaction(parentCtx, tx)
 		if !errors.Is(err, ErrNoSequencer) {
@@ -339,13 +341,16 @@ func (s *Sequencer) postTxFilter(header *types.Header, _ *arbosState.ArbosState,
 }
 
 func (s *Sequencer) CheckHealth(ctx context.Context) error {
-	s.forwarderMutex.Lock()
+	s.activeMutex.Lock()
 	forwarder := s.forwarder
-	s.forwarderMutex.Unlock()
+	active := s.seqActive
+	s.activeMutex.Unlock()
 	if forwarder != nil {
 		return forwarder.CheckHealth(ctx)
 	}
-
+	if !active {
+		return nil
+	}
 	if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
 		return ErrNoSequencer
 	}
@@ -353,8 +358,8 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 }
 
 func (s *Sequencer) ForwardTarget() string {
-	s.forwarderMutex.Lock()
-	defer s.forwarderMutex.Unlock()
+	s.activeMutex.Lock()
+	defer s.activeMutex.Unlock()
 	if s.forwarder == nil {
 		return ""
 	}
@@ -362,8 +367,9 @@ func (s *Sequencer) ForwardTarget() string {
 }
 
 func (s *Sequencer) ForwardTo(url string) error {
-	s.forwarderMutex.Lock()
-	defer s.forwarderMutex.Unlock()
+	s.activeMutex.Lock()
+	defer s.activeMutex.Unlock()
+	s.seqActive = false
 	if s.forwarder != nil {
 		if s.forwarder.target == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
@@ -380,9 +386,10 @@ func (s *Sequencer) ForwardTo(url string) error {
 	return err
 }
 
-func (s *Sequencer) DontForward() {
-	s.forwarderMutex.Lock()
-	defer s.forwarderMutex.Unlock()
+func (s *Sequencer) DontForward(active bool) {
+	s.activeMutex.Lock()
+	defer s.activeMutex.Unlock()
+	s.seqActive = active
 	if s.forwarder != nil {
 		s.forwarder.Disable()
 	}
@@ -399,16 +406,19 @@ func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
 	}
 }
 
-func (s *Sequencer) GetForwarder() *TxForwarder {
-	s.forwarderMutex.Lock()
-	defer s.forwarderMutex.Unlock()
-	return s.forwarder
+func (s *Sequencer) GetActiveAndForwarder() (bool, *TxForwarder) {
+	s.activeMutex.Lock()
+	defer s.activeMutex.Unlock()
+	return s.seqActive, s.forwarder
 }
 
-func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
-	forwarder := s.GetForwarder()
-	if forwarder == nil {
+func (s *Sequencer) handleInactive(queueItems []txQueueItem) bool {
+	active, forwarder := s.GetActiveAndForwarder()
+	if active {
 		return false
+	}
+	if forwarder == nil {
+		return true
 	}
 	for _, item := range queueItems {
 		res := forwarder.PublishTransaction(item.ctx, item.tx)
@@ -500,7 +510,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		queueItems = append(queueItems, queueItem)
 	}
 
-	if s.forwardIfSet(queueItems) {
+	if s.handleInactive(queueItems) {
 		return false
 	}
 
@@ -541,7 +551,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	if errors.Is(err, ErrRetrySequencer) {
 		// we changed roles
 		// forward if we have where to
-		if s.forwardIfSet(queueItems) {
+		if s.handleInactive(queueItems) {
 			return false
 		}
 		// try to add back to queue otherwise
@@ -664,7 +674,7 @@ func (s *Sequencer) StopAndWait() {
 	}
 	// this usually means that coordinator's safe-shutdown-delay is too low
 	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
-	forwarder := s.GetForwarder()
+	_, forwarder := s.GetActiveAndForwarder()
 	if forwarder != nil {
 	emptyqueues:
 		for {
@@ -685,7 +695,6 @@ func (s *Sequencer) StopAndWait() {
 			if err != nil {
 				log.Warn("failed to forward transaction while shutting down", "source", source, "err", err)
 			}
-
 		}
 	}
 }
