@@ -124,24 +124,46 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 // node and data chunk easily fits within an IPFS block.
 func (s *IpfsStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
 	logPut("das.IpfsStorageService.Put", data, timeout, s)
-	record := func(_ common.Hash, value []byte) error {
-		blockStat, err := s.ipfsApi.Block().Put(
-			ctx,
-			bytes.NewReader(value),
-			options.Block.CidCodec("raw"), // Store the data in raw form since the hash in the CID must be the hash
-			// of the preimage for our lookup scheme to work.
-			options.Block.Hash(multihash.KECCAK_256, -1), // Use keccak256 to calculate the hash to put in the block's
-			// CID, since it is the same algo used by dastree.
-			options.Block.Pin(true)) // Keep the data in the local IPFS repo, don't GC it.
+
+	var chunks [][]byte
+
+	record := func(_ common.Hash, value []byte) {
+		chunks = append(chunks, value)
+	}
+
+	_ = dastree.RecordHash(record, data)
+
+	numChunks := len(chunks)
+	resultChan := make(chan error, numChunks)
+	for _, chunk := range chunks {
+		_chunk := chunk
+		go func() {
+			blockStat, err := s.ipfsApi.Block().Put(
+				ctx,
+				bytes.NewReader(_chunk),
+				options.Block.CidCodec("raw"), // Store the data in raw form since the hash in the CID must be the hash
+				// of the preimage for our lookup scheme to work.
+				options.Block.Hash(multihash.KECCAK_256, -1), // Use keccak256 to calculate the hash to put in the block's
+				// CID, since it is the same algo used by dastree.
+				options.Block.Pin(true)) // Keep the data in the local IPFS repo, don't GC it.
+			if err != nil {
+				log.Trace("Wrote IPFS path", "path", blockStat.Path().String())
+			}
+			resultChan <- err
+		}()
+	}
+
+	successfullyWrittenChunks := 0
+	for err := range resultChan {
 		if err != nil {
 			return err
 		}
-		log.Trace("Wrote IPFS path", "path", blockStat.Path().String())
-		return nil
+		successfullyWrittenChunks++
+		if successfullyWrittenChunks == numChunks {
+			return nil
+		}
 	}
-
-	_, err := dastree.RecordHash(record, data)
-	return err
+	panic("unreachable")
 }
 
 func (s *IpfsStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {

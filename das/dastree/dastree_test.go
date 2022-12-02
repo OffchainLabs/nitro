@@ -41,7 +41,7 @@ func TestDASTree(t *testing.T) {
 			Fail(t, "key not the hash of preimage")
 		}
 		colors.PrintBlue("loading ", key, " ", pretty.PrettyBytes(preimage))
-		return preimage
+		return preimage, nil
 	}
 
 	hashes := map[bytes32][]byte{}
