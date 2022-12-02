@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math/rand"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -33,13 +34,20 @@ type IpfsStorageServiceConfig struct {
 	RepoDir     string        `koanf:"repo-dir"`
 	ReadTimeout time.Duration `koanf:"read-timeout"`
 	Profiles    string        `koanf:"profiles"`
+
+	// Pinning options
+	PinAfterGet   bool    `koanf:"pin-after-get"`
+	PinPercentage float64 `koanf:"pin-percentage"`
 }
 
 var DefaultIpfsStorageServiceConfig = IpfsStorageServiceConfig{
 	Enable:      false,
 	RepoDir:     "",
 	ReadTimeout: time.Minute,
-	Profiles:    "test", // Default to test, see profiles here https://github.com/ipfs/kubo/blob/e550d9e4761ea394357c413c02ade142c0dea88c/config/profile.go
+	Profiles:    "test", // Default to test, see profiles here https://github.com/ipfs/kubo/blob/e550d9e4761ea394357c413c02ade142c0dea88c/config/profile.go,
+
+	PinAfterGet:   true,
+	PinPercentage: 100.0,
 }
 
 func IpfsStorageServiceConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -47,6 +55,8 @@ func IpfsStorageServiceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".repo-dir", DefaultIpfsStorageServiceConfig.RepoDir, "directory to use to store the local IPFS repo")
 	f.Duration(prefix+".read-timeout", DefaultIpfsStorageServiceConfig.ReadTimeout, "timeout for IPFS reads, since by default it will wait forever. Treat timeout as not found")
 	f.String(prefix+".profiles", DefaultIpfsStorageServiceConfig.Profiles, "comma separated list of IPFS profiles to use")
+	f.Bool(prefix+".pin-after-get", DefaultIpfsStorageServiceConfig.PinAfterGet, "pin sequencer batch data in IPFS")
+	f.Float64(prefix+".pin-percentage", DefaultIpfsStorageServiceConfig.PinPercentage, "percent of sequencer batch data to pin, as a floating point number in the range 0.0 to 100.0")
 }
 
 type IpfsStorageService struct {
@@ -86,6 +96,17 @@ func hashToCid(hash common.Hash) (cid.Cid, error) {
 func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
 	log.Trace("das.IpfsStorageService.GetByHash", "hash", pretty.PrettyHash(hash))
 
+	doPin := false // If true, pin every block related to this batch
+	if s.config.PinAfterGet {
+		if s.config.PinPercentage == 100.0 {
+			doPin = true
+		} else {
+			if (rand.Float64() * 100.0) <= s.config.PinPercentage {
+				doPin = true
+			}
+		}
+	}
+
 	oracle := func(h common.Hash) ([]byte, error) {
 		thisCid, err := hashToCid(h)
 		if err != nil {
@@ -103,6 +124,12 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 				return nil, ErrNotFound
 			}
 			return nil, err
+		}
+
+		if doPin {
+			s.ipfsApi.Pin().Add(ctx, ipfsPath)
+			// Recursive pinning not needed, each dastree preimage fits in a single
+			// IPFS block.
 		}
 
 		data, err := io.ReadAll(rdr)
