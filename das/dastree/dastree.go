@@ -127,11 +127,11 @@ func ValidHash(hash bytes32, preimage []byte) bool {
 // This function also checks that the size-data is consistent and that the hash is canonical.
 //
 // Notes
-//     1. Because we accept degenerate dastrees, we can't check that single-leaf trees are canonical.
-//     2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
-//     3. We also accept old-style flat hashes
-//     4. Only the committee can produce trees unwrapped by this function
-//     5. When the replay binary calls this, the oracle function must be infallable.
+//  1. Because we accept degenerate dastrees, we can't check that single-leaf trees are canonical.
+//  2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
+//  3. We also accept old-style flat hashes
+//  4. Only the committee can produce trees unwrapped by this function
+//  5. When the replay binary calls this, the oracle function must be infallable.
 func Content(root bytes32, oracle func(bytes32) ([]byte, error)) ([]byte, error) {
 
 	unpeal := func(hash bytes32) (byte, []byte, error) {
