@@ -51,6 +51,8 @@ type SetBalanceEvent struct {
 
 type ChallengeEvent interface {
 	IsChallengeEvent() bool // this method is just a marker that the type intends to be a ChallengeEvent
+	ParentStateCommitmentHash() common.Hash
+	ActorAddress() common.Address
 }
 
 type genericChallengeEvent struct{}
@@ -59,23 +61,55 @@ func (ev *genericChallengeEvent) IsChallengeEvent() bool { return true }
 
 type ChallengeLeafEvent struct {
 	genericChallengeEvent
+	ParentSeqNum      uint64
 	SequenceNum       uint64
 	WinnerIfConfirmed uint64
+	ParentStateCommit StateCommitment
 	History           util.HistoryCommitment
 	BecomesPS         bool
+	Actor             common.Address
 }
 
 type ChallengeBisectEvent struct {
 	genericChallengeEvent
-	FromSequenceNum uint64 // previously existing vertex
-	SequenceNum     uint64 // newly created vertex
-	History         util.HistoryCommitment
-	BecomesPS       bool
+	FromSequenceNum   uint64 // previously existing vertex
+	SequenceNum       uint64 // newly created vertex
+	ParentStateCommit StateCommitment
+	History           util.HistoryCommitment
+	BecomesPS         bool
+	Actor             common.Address
 }
 
 type ChallengeMergeEvent struct {
 	genericChallengeEvent
+	History              util.HistoryCommitment
+	ParentStateCommit    StateCommitment
 	DeeperSequenceNum    uint64
 	ShallowerSequenceNum uint64
 	BecomesPS            bool
+	Actor                common.Address
+}
+
+func (c *ChallengeLeafEvent) ParentStateCommitmentHash() common.Hash {
+	return c.ParentStateCommit.Hash()
+}
+
+func (c *ChallengeBisectEvent) ParentStateCommitmentHash() common.Hash {
+	return c.ParentStateCommit.Hash()
+}
+
+func (c *ChallengeMergeEvent) ParentStateCommitmentHash() common.Hash {
+	return c.ParentStateCommit.Hash()
+}
+
+func (c *ChallengeLeafEvent) ActorAddress() common.Address {
+	return c.Actor
+}
+
+func (c *ChallengeBisectEvent) ActorAddress() common.Address {
+	return c.Actor
+}
+
+func (c *ChallengeMergeEvent) ActorAddress() common.Address {
+	return c.Actor
 }
