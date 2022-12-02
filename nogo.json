@@ -34,6 +34,11 @@
             "external/.*": "Third party code"
         }
     },
+    "copylocks": {
+        "exclude_files": {
+            "external/.*": "Third party code"
+        }
+    },
     "deepequalerrors": {
         "exclude_files": {
             "external/.*": "Third party code"
