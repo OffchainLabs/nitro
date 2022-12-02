@@ -16,6 +16,28 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+func pollLogMessagesFromJSONFile(t *testing.T, path string, expected []string) ([]string, error) {
+	t.Helper()
+	var msgs []string
+Retry:
+	for i := 0; i < 20; i++ {
+		time.Sleep(20 * time.Millisecond)
+		msgs, err := readLogMessagesFromJSONFile(t, path)
+		if err != nil {
+			return []string{}, err
+		}
+		if len(msgs) == len(expected) {
+			for i, m := range msgs {
+				if m != expected[i] {
+					continue Retry
+				}
+			}
+			return msgs, nil
+		}
+	}
+	return msgs, nil
+}
+
 func readLogMessagesFromJSONFile(t *testing.T, path string) ([]string, error) {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -57,8 +79,7 @@ func testFileHandler(t *testing.T, testCompressed bool) {
 	for _, e := range expected {
 		log.Warn(e)
 	}
-	time.Sleep(100 * time.Millisecond)
-	msgs, err := readLogMessagesFromJSONFile(t, testFile)
+	msgs, err := pollLogMessagesFromJSONFile(t, testFile, expected)
 	testhelpers.RequireImpl(t, err)
 	if len(msgs) != len(expected) {
 		testhelpers.FailImpl(t, "Unexpected number of messages logged to file")
@@ -76,8 +97,7 @@ func testFileHandler(t *testing.T, testCompressed bool) {
 	// make sure logs size exceeds 1MB, while keeping log msg < 1MB
 	log.Warn(bigString)
 	log.Warn(bigString)
-	time.Sleep(100 * time.Millisecond)
-	msgs, err = readLogMessagesFromJSONFile(t, testFile)
+	msgs, err = pollLogMessagesFromJSONFile(t, testFile, []string{bigString})
 	testhelpers.RequireImpl(t, err)
 	if len(msgs) != 1 {
 		testhelpers.FailImpl(t, "Unexpected number of messages in the logfile - possible file rotation failure, have: ", len(msgs), " wants: 1")
@@ -85,18 +105,24 @@ func testFileHandler(t *testing.T, testCompressed bool) {
 	if msgs[0] != bigString {
 		testhelpers.FailImpl(t, "Unexpected message logged to file, have: ", msgs[0], " want:", bigString)
 	}
-	if testCompressed {
-		time.Sleep(100 * time.Millisecond)
-	}
-	entries, err := os.ReadDir(testDir)
-	testhelpers.RequireImpl(t, err)
 	var gzFiles int
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), testFileName) {
-			testhelpers.FailImpl(t, "Unexpected file in test dir:", entry.Name())
+	var entries []os.DirEntry
+	for i := 0; i < 20; i++ {
+		time.Sleep(20 * time.Millisecond)
+		gzFiles = 0
+		var err error
+		entries, err = os.ReadDir(testDir)
+		testhelpers.RequireImpl(t, err)
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), testFileName) {
+				testhelpers.FailImpl(t, "Unexpected file in test dir:", entry.Name())
+			}
+			if strings.HasSuffix(entry.Name(), ".gz") {
+				gzFiles++
+			}
 		}
-		if strings.HasSuffix(entry.Name(), ".gz") {
-			gzFiles++
+		if len(entries) == 2 && (!testCompressed || gzFiles == 1) {
+			break
 		}
 	}
 	if testCompressed && gzFiles != 1 {
