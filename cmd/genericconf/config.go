@@ -4,9 +4,11 @@
 package genericconf
 
 import (
+	"path/filepath"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 )
@@ -83,11 +85,11 @@ type FileLoggingConfig struct {
 }
 
 var DefaultFileLoggingConfig = FileLoggingConfig{
-	Enable:     false,
-	File:       "logs",
-	MaxSize:    100,   // 100Mb
+	Enable:     true,
+	File:       filepath.Join(node.DefaultConfig.DataDir, "nitro-log"),
+	MaxSize:    5,     // 100Mb
 	MaxAge:     0,     // don't remove old files based on age
-	MaxBackups: 0,     // keep all old files
+	MaxBackups: 20,    // keep all old file
 	LocalTime:  false, // use UTC time
 	Compress:   true,
 	BufSize:    512,
