@@ -1,0 +1,23 @@
+load("@bazel_gazelle//:def.bzl", "gazelle")
+
+# gazelle:prefix github.com/OffchainLabs/new-rollup-exploration
+gazelle(name = "gazelle")
+
+gazelle(
+    name = "gazelle-update-repos",
+    args = [
+        "-from_file=go.mod",
+        "-to_macro=deps.bzl%go_dependencies",
+        "-prune",
+    ],
+    command = "update-repos",
+)
+
+load("@io_bazel_rules_go//go:def.bzl", "nogo", "TOOLS_NOGO")
+
+nogo(
+    name = "nogo",
+    deps = TOOLS_NOGO,
+    visibility = ["//visibility:public"],
+    config = ":nogo.json",
+)
