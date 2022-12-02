@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "mocks",
+    srcs = ["mocks.go"],
+    importpath = "github.com/OffchainLabs/new-rollup-exploration/testing/mocks",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//protocol",
+        "//state-manager",
+        "//util",
+        "@com_github_ethereum_go_ethereum//common:go_default_library",
+        "@com_github_stretchr_testify//mock:go_default_library",
+    ],
+)

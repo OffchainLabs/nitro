@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "inbox_feeder",
+    srcs = ["inbox_feeder.go"],
+    importpath = "github.com/OffchainLabs/new-rollup-exploration/inbox_feeder",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//protocol",
+        "@com_github_ethereum_go_ethereum//crypto:go_default_library",
+    ],
+)
+
+go_test(
+    name = "inbox_feeder_test",
+    srcs = ["inbox_feeder_test.go"],
+    embed = [":inbox_feeder"],
+    deps = [
+        "//protocol",
+        "//util",
+        "@com_github_stretchr_testify//require:go_default_library",
+    ],
+)

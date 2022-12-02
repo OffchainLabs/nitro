@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "protocol",
+    srcs = [
+        "assertions.go",
+        "event_feed.go",
+        "events.go",
+        "inbox.go",
+    ],
+    importpath = "github.com/OffchainLabs/new-rollup-exploration/protocol",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util",
+        "@com_github_ethereum_go_ethereum//common:go_default_library",
+        "@com_github_ethereum_go_ethereum//crypto:go_default_library",
+    ],
+)
+
+go_test(
+    name = "protocol_test",
+    srcs = [
+        "assertions_test.go",
+        "inbox_test.go",
+    ],
+    embed = [":protocol"],
+    deps = [
+        "//util",
+        "@com_github_ethereum_go_ethereum//common:go_default_library",
+        "@com_github_stretchr_testify//require:go_default_library",
+    ],
+)
