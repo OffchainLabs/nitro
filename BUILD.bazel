@@ -12,3 +12,12 @@ gazelle(
     ],
     command = "update-repos",
 )
+
+load("@io_bazel_rules_go//go:def.bzl", "nogo", "TOOLS_NOGO")
+
+nogo(
+    name = "nogo",
+    deps = TOOLS_NOGO,
+    visibility = ["//visibility:public"],
+    config = ":nogo.json",
+)

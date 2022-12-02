@@ -41,7 +41,7 @@ func TestAssertionChain(t *testing.T) {
 		chain.SetBalance(tx, staker1, bigBalance)
 		chain.SetBalance(tx, staker2, bigBalance)
 
-		eventChan := make(chan AssertionChainEvent)
+		eventChan = make(chan AssertionChainEvent)
 		chain.feed.SubscribeWithFilter(ctx, eventChan, func(ev AssertionChainEvent) bool {
 			switch ev.(type) {
 			case *SetBalanceEvent:

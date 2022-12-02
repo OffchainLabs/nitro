@@ -29,6 +29,7 @@ go_rules_dependencies()
 
 go_register_toolchains(
     version = "1.19.3",
+    nogo = "@//:nogo",
 )
 
 gazelle_dependencies()
