@@ -139,8 +139,11 @@ contract BridgeStub is IBridge {
         InOutInfo storage info = allowedDelayedInboxesMap[inbox];
         bool alreadyEnabled = info.allowed;
         emit InboxToggle(inbox, enabled);
-        if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
-            return;
+        /// @solidity memory-safe-assembly
+        assembly {
+            if eq(alreadyEnabled, enabled) {
+                stop()
+            }
         }
         if (enabled) {
             allowedDelayedInboxesMap[inbox] = InOutInfo(allowedDelayedInboxList.length, true);
