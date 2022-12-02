@@ -30,7 +30,7 @@ import (
 )
 
 var sequencerInboxABI *abi.ABI
-var batchDeliveredID common.Hash
+var BatchDeliveredID common.Hash
 var addSequencerL2BatchFromOriginCallABI abi.Method
 var sequencerBatchDataABI abi.Event
 
@@ -51,7 +51,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	batchDeliveredID = sequencerInboxABI.Events[sequencerBatchDeliveredEvent].ID
+	BatchDeliveredID = sequencerInboxABI.Events[sequencerBatchDeliveredEvent].ID
 	sequencerBatchDataABI = sequencerInboxABI.Events[sequencerBatchDataEvent]
 	addSequencerL2BatchFromOriginCallABI = sequencerInboxABI.Methods["addSequencerL2BatchFromOrigin"]
 }
@@ -186,7 +186,6 @@ func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSo
 }
 
 func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDeliveredLog types.Log) error {
-	data := []byte{}
 	deliveredEvent, err := s.inboxContract.ParseSequencerBatchDelivered(batchDeliveredLog)
 	if err != nil {
 		return err
@@ -197,47 +196,11 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 		// old batch - no need to store
 		return nil
 	}
-	if deliveredEvent.DataLocation == uint8(batchDataSeparateEvent) {
-		query := ethereum.FilterQuery{
-			BlockHash: &batchDeliveredLog.BlockHash,
-			Addresses: []common.Address{s.inboxAddr},
-			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {common.BigToHash(deliveredEvent.BatchSequenceNumber)}},
-		}
-		logs, err := s.l1Reader.Client().FilterLogs(ctx, query)
-		if err != nil {
-			return err
-		}
-		if len(logs) != 1 {
-			return fmt.Errorf("found %d data logs for sequence 0x%x (expected 1)", len(logs), deliveredEvent.BatchSequenceNumber)
-		}
-		dataEvent, err := s.inboxContract.ParseSequencerBatchData(logs[0])
-		if err != nil {
-			return err
-		}
-		data = dataEvent.Data
-	} else if deliveredEvent.DataLocation == uint8(batchDataTxInput) {
-		txData, err := arbutil.GetLogEmitterTxData(ctx, s.l1Reader.Client(), batchDeliveredLog)
-		if err != nil {
-			return err
-		}
-		args := make(map[string]interface{})
-		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, txData[4:])
-		if err != nil {
-			return err
-		}
-		var ok bool
-		data, ok = args["data"].([]byte)
-		if !ok {
-			return fmt.Errorf("couldn't parse data for sequence 0x%x", deliveredEvent.BatchSequenceNumber)
-		}
+	data, err := FindDASDataFromLog(ctx, s.inboxContract, deliveredEvent, s.inboxAddr, s.l1Reader.Client(), batchDeliveredLog)
+	if err != nil {
+		return err
 	}
-	if len(data) < 1 {
-		// no data - nothing to do
-		log.Warn("BatchDelivered - no data found", "data", data)
-		return nil
-	}
-	if !arbstate.IsDASMessageHeaderByte(data[0]) {
-		log.Warn("BatchDelivered - data not DAS")
+	if data == nil {
 		return nil
 	}
 
@@ -279,12 +242,66 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 	return nil
 }
 
+func FindDASDataFromLog(
+	ctx context.Context,
+	inboxContract *bridgegen.SequencerInbox,
+	deliveredEvent *bridgegen.SequencerInboxSequencerBatchDelivered,
+	inboxAddr common.Address,
+	l1Client arbutil.L1Interface,
+	batchDeliveredLog types.Log) ([]byte, error) {
+	data := []byte{}
+	if deliveredEvent.DataLocation == uint8(batchDataSeparateEvent) {
+		query := ethereum.FilterQuery{
+			BlockHash: &batchDeliveredLog.BlockHash,
+			Addresses: []common.Address{inboxAddr},
+			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {common.BigToHash(deliveredEvent.BatchSequenceNumber)}},
+		}
+		logs, err := l1Client.FilterLogs(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		if len(logs) != 1 {
+			return nil, fmt.Errorf("found %d data logs for sequence 0x%x (expected 1)", len(logs), deliveredEvent.BatchSequenceNumber)
+		}
+		dataEvent, err := inboxContract.ParseSequencerBatchData(logs[0])
+		if err != nil {
+			return nil, err
+		}
+		data = dataEvent.Data
+	} else if deliveredEvent.DataLocation == uint8(batchDataTxInput) {
+		txData, err := arbutil.GetLogEmitterTxData(ctx, l1Client, batchDeliveredLog)
+		if err != nil {
+			return nil, err
+		}
+		args := make(map[string]interface{})
+		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, txData[4:])
+		if err != nil {
+			return nil, err
+		}
+		var ok bool
+		data, ok = args["data"].([]byte)
+		if !ok {
+			return nil, fmt.Errorf("couldn't parse data for sequence 0x%x", deliveredEvent.BatchSequenceNumber)
+		}
+	}
+	if len(data) < 1 {
+		// no data - nothing to do
+		log.Warn("BatchDelivered - no data found", "data", data)
+		return nil, nil
+	}
+	if !arbstate.IsDASMessageHeaderByte(data[0]) {
+		log.Warn("BatchDelivered - data not DAS")
+		return nil, nil
+	}
+	return data, nil
+}
+
 func (s *l1SyncService) processBlockRange(ctx context.Context, lowerBound, higherBound uint64) error {
 	query := ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(lowerBound),
 		ToBlock:   new(big.Int).SetUint64(higherBound),
 		Addresses: []common.Address{s.inboxAddr},
-		Topics:    [][]common.Hash{{batchDeliveredID}},
+		Topics:    [][]common.Hash{{BatchDeliveredID}},
 	}
 	logs, err := s.l1Reader.Client().FilterLogs(ctx, query)
 	if err != nil {

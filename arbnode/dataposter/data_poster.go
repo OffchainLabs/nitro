@@ -43,11 +43,12 @@ type QueueStorage[Item any] interface {
 }
 
 type DataPosterConfig struct {
-	RedisSigner       signature.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes  string                     `koanf:"replacement-times"`
-	L1LookBehind      uint64                     `koanf:"l1-look-behind" reload:"hot"`
-	MaxFeeCapGwei     float64                    `koanf:"max-fee-cap-gwei" reload:"hot"`
-	MaxFeeCapDoubling time.Duration              `koanf:"max-fee-cap-doubling" reload:"hot"`
+	RedisSigner           signature.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes      string                     `koanf:"replacement-times"`
+	L1LookBehind          uint64                     `koanf:"l1-look-behind" reload:"hot"`
+	MaxFeeCapGwei         float64                    `koanf:"max-fee-cap-gwei" reload:"hot"`
+	MaxFeeCapDoubling     time.Duration              `koanf:"max-fee-cap-doubling" reload:"hot"`
+	MaxQueuedTransactions uint64                     `koanf:"max-queued-transactions" reload:"hot"`
 }
 
 type DataPosterConfigFetcher func() *DataPosterConfig
@@ -57,22 +58,25 @@ func DataPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".l1-look-behind", DefaultDataPosterConfig.L1LookBehind, "look at state this many blocks behind the latest (fixes L1 node inconsistencies)")
 	f.Float64(prefix+".max-fee-cap-gwei", DefaultDataPosterConfig.MaxFeeCapGwei, "the maximum fee cap to use, doubled every max-fee-cap-doubling")
 	f.Duration(prefix+".max-fee-cap-doubling", DefaultDataPosterConfig.MaxFeeCapDoubling, "after this duration, double the fee cap (repeats)")
+	f.Uint64(prefix+".max-queued-transactions", DefaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:  "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
-	L1LookBehind:      2,
-	MaxFeeCapGwei:     100.,
-	MaxFeeCapDoubling: 2 * time.Hour,
+	ReplacementTimes:      "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
+	L1LookBehind:          2,
+	MaxFeeCapGwei:         105.,
+	MaxFeeCapDoubling:     2 * time.Hour,
+	MaxQueuedTransactions: 64,
 }
 
 var TestDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:  "1s,2s,5s,10s,20s,30s,1m,5m",
-	RedisSigner:       signature.TestSimpleHmacConfig,
-	L1LookBehind:      0,
-	MaxFeeCapGwei:     100.,
-	MaxFeeCapDoubling: 5 * time.Second,
+	ReplacementTimes:      "1s,2s,5s,10s,20s,30s,1m,5m",
+	RedisSigner:           signature.TestSimpleHmacConfig,
+	L1LookBehind:          0,
+	MaxFeeCapGwei:         105.,
+	MaxFeeCapDoubling:     5 * time.Second,
+	MaxQueuedTransactions: 64,
 }
 
 // DataPoster must be RLP serializable and deserializable
@@ -158,7 +162,12 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 		return 0, emptyMeta, err
 	}
 	if lastQueueItem != nil {
-		return lastQueueItem.Data.Nonce + 1, lastQueueItem.Meta, nil
+		maxQueueItems := p.config().MaxQueuedTransactions
+		nextNonce := lastQueueItem.Data.Nonce + 1
+		if maxQueueItems > 0 && nextNonce >= p.nonce+maxQueueItems {
+			return 0, emptyMeta, fmt.Errorf("attempting to post a transaction with nonce %v while current nonce is %v would exceed max data poster queue length of %v", nextNonce, p.nonce, maxQueueItems)
+		}
+		return nextNonce, lastQueueItem.Meta, nil
 	}
 	meta, err := p.metadataRetriever(ctx, p.lastBlock)
 	return p.nonce, meta, err
@@ -370,7 +379,6 @@ func (p *DataPoster[Meta]) maybeLogError(err error, tx *queuedTransaction[Meta],
 }
 
 const minWait = time.Second * 10
-const maxTxsToRbf = 256
 
 func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 	p.StopWaiter.Start(ctxIn, p)
@@ -387,6 +395,10 @@ func (p *DataPoster[Meta]) Start(ctxIn context.Context) {
 		}
 		now := time.Now()
 		nextCheck := now.Add(p.replacementTimes[0])
+		maxTxsToRbf := p.config().MaxQueuedTransactions
+		if maxTxsToRbf == 0 {
+			maxTxsToRbf = 512
+		}
 		queueContents, err := p.queue.GetContents(ctx, p.nonce, maxTxsToRbf)
 		if err != nil {
 			log.Warn("failed to get tx queue contents", "err", err)

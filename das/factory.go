@@ -18,6 +18,8 @@ import (
 func CreatePersistentStorageService(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
+	syncFromStorageServices *[]*IterableStorageService,
+	syncToStorageServices *[]StorageService,
 ) (StorageService, *LifecycleManager, error) {
 	storageServices := make([]StorageService, 0, 10)
 	var lifecycleManager LifecycleManager
@@ -25,6 +27,14 @@ func CreatePersistentStorageService(
 		s, err := NewDBStorageService(ctx, config.LocalDBStorageConfig.DataDir, config.LocalDBStorageConfig.DiscardAfterTimeout)
 		if err != nil {
 			return nil, nil, err
+		}
+		if config.LocalDBStorageConfig.SyncFromStorageServices {
+			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
+			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
+			s = iterableStorageService
+		}
+		if config.LocalDBStorageConfig.SyncToStorageServices {
+			*syncToStorageServices = append(*syncToStorageServices, s)
 		}
 		lifecycleManager.Register(s)
 		storageServices = append(storageServices, s)
@@ -34,6 +44,14 @@ func CreatePersistentStorageService(
 		s, err := NewLocalFileStorageService(config.LocalFileStorageConfig.DataDir)
 		if err != nil {
 			return nil, nil, err
+		}
+		if config.LocalFileStorageConfig.SyncFromStorageServices {
+			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
+			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
+			s = iterableStorageService
+		}
+		if config.LocalFileStorageConfig.SyncToStorageServices {
+			*syncToStorageServices = append(*syncToStorageServices, s)
 		}
 		lifecycleManager.Register(s)
 		storageServices = append(storageServices, s)
@@ -45,6 +63,14 @@ func CreatePersistentStorageService(
 			return nil, nil, err
 		}
 		lifecycleManager.Register(s)
+		if config.S3StorageServiceConfig.SyncFromStorageServices {
+			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
+			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
+			s = iterableStorageService
+		}
+		if config.S3StorageServiceConfig.SyncToStorageServices {
+			*syncToStorageServices = append(*syncToStorageServices, s)
+		}
 		storageServices = append(storageServices, s)
 	}
 

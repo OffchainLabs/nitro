@@ -3,6 +3,7 @@ package ipfshelper
 import (
 	"bytes"
 	"context"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,7 +30,9 @@ func TestIpfsHelper(t *testing.T) {
 	ipfsA, err := createIpfsHelperImpl(ctx, t.TempDir(), false, []string{}, "test")
 	testhelpers.RequireImpl(t, err)
 	// add a test file to node A
-	testData := []byte("here be dragons")
+	testData := make([]byte, 1024*1024)
+	_, err = rand.Read(testData)
+	testhelpers.RequireImpl(t, err)
 	testFile := getTempFileWithData(t, testData)
 	ipfsTestFilePath, err := ipfsA.AddFile(ctx, testFile, false)
 	testhelpers.RequireImpl(t, err)

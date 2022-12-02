@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"sync/atomic"
 
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -45,6 +44,7 @@ type L1PricingState struct {
 	lastSurplus          storage.StorageBackedBigInt  // introduced in ArbOS version 2
 	perBatchGasCost      storage.StorageBackedInt64   // introduced in ArbOS version 3
 	amortizedCostCapBips storage.StorageBackedUint64  // in basis points; introduced in ArbOS version 3
+	l1FeesAvailable      storage.StorageBackedBigUint
 }
 
 var (
@@ -68,6 +68,7 @@ const (
 	lastSurplusOffset
 	perBatchGasCostOffset
 	amortizedCostCapBipsOffset
+	l1FeesAvailableOffset
 )
 
 const (
@@ -129,6 +130,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedBigInt(lastSurplusOffset),
 		sto.OpenStorageBackedInt64(perBatchGasCostOffset),
 		sto.OpenStorageBackedUint64(amortizedCostCapBipsOffset),
+		sto.OpenStorageBackedBigUint(l1FeesAvailableOffset),
 	}
 }
 
@@ -236,6 +238,50 @@ func (ps *L1PricingState) SetAmortizedCostCapBips(cap uint64) error {
 	return ps.amortizedCostCapBips.Set(cap)
 }
 
+func (ps *L1PricingState) L1FeesAvailable() (*big.Int, error) {
+	return ps.l1FeesAvailable.Get()
+}
+
+func (ps *L1PricingState) SetL1FeesAvailable(val *big.Int) error {
+	return ps.l1FeesAvailable.SetChecked(val)
+}
+
+func (ps *L1PricingState) AddToL1FeesAvailable(delta *big.Int) (*big.Int, error) {
+	old, err := ps.L1FeesAvailable()
+	if err != nil {
+		return nil, err
+	}
+	new := new(big.Int).Add(old, delta)
+	if err := ps.SetL1FeesAvailable(new); err != nil {
+		return nil, err
+	}
+	return new, nil
+}
+
+func (ps *L1PricingState) TransferFromL1FeesAvailable(
+	recipient common.Address,
+	amount *big.Int,
+	evm *vm.EVM,
+	scenario util.TracingScenario,
+	purpose string,
+) (*big.Int, error) {
+	if err := util.TransferBalance(&L1PricerFundsPoolAddress, &recipient, amount, evm, scenario, purpose); err != nil {
+		return nil, err
+	}
+	old, err := ps.L1FeesAvailable()
+	if err != nil {
+		return nil, err
+	}
+	updated := new(big.Int).Sub(old, amount)
+	if updated.Sign() < 0 {
+		return nil, core.ErrInsufficientFunds
+	}
+	if err := ps.SetL1FeesAvailable(updated); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
 // UpdateForBatchPosterSpending updates the pricing model based on a payment by a batch poster
 func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	statedb vm.StateDB,
@@ -247,8 +293,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	l1Basefee *big.Int,
 	scenario util.TracingScenario,
 ) error {
-	if arbosVersion < 2 {
-		return ps._preVersion2_UpdateForBatchPosterSpending(statedb, evm, updateTime, currentTime, batchPoster, weiSpent, scenario)
+	if arbosVersion < 10 {
+		return ps._preversion10_UpdateForBatchPosterSpending(statedb, evm, arbosVersion, updateTime, currentTime, batchPoster, weiSpent, l1Basefee, scenario)
 	}
 
 	batchPosterTable := ps.BatchPosterTable()
@@ -258,6 +304,11 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	}
 
 	fundsDueForRewards, err := ps.FundsDueForRewards()
+	if err != nil {
+		return err
+	}
+
+	l1FeesAvailable, err := ps.L1FeesAvailable()
 	if err != nil {
 		return err
 	}
@@ -329,9 +380,8 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 
 	// pay rewards, as much as possible
 	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
-	availableFunds := statedb.GetBalance(L1PricerFundsPoolAddress)
-	if am.BigLessThan(availableFunds, paymentForRewards) {
-		paymentForRewards = availableFunds
+	if am.BigLessThan(l1FeesAvailable, paymentForRewards) {
+		paymentForRewards = l1FeesAvailable
 	}
 	fundsDueForRewards = am.BigSub(fundsDueForRewards, paymentForRewards)
 	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
@@ -341,13 +391,12 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
+	l1FeesAvailable, err = ps.TransferFromL1FeesAvailable(
+		payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
 	)
 	if err != nil {
 		return err
 	}
-	availableFunds = statedb.GetBalance(L1PricerFundsPoolAddress)
 
 	// settle up payments owed to the batch poster, as much as possible
 	balanceDueToPoster, err := posterState.FundsDue()
@@ -355,16 +404,16 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		return err
 	}
 	balanceToTransfer := balanceDueToPoster
-	if am.BigLessThan(availableFunds, balanceToTransfer) {
-		balanceToTransfer = availableFunds
+	if am.BigLessThan(l1FeesAvailable, balanceToTransfer) {
+		balanceToTransfer = l1FeesAvailable
 	}
 	if balanceToTransfer.Sign() > 0 {
 		addrToPay, err := posterState.PayTo()
 		if err != nil {
 			return err
 		}
-		err = util.TransferBalance(
-			&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
+		l1FeesAvailable, err = ps.TransferFromL1FeesAvailable(
+			addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
 		)
 		if err != nil {
 			return err
@@ -391,7 +440,7 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := am.BigSub(l1FeesAvailable, am.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {
@@ -421,191 +470,6 @@ func (ps *L1PricingState) UpdateForBatchPosterSpending(
 		if err := ps.SetLastSurplus(surplus, arbosVersion); err != nil {
 			return err
 		}
-		newPrice := am.BigAdd(price, priceChange)
-		if newPrice.Sign() < 0 {
-			newPrice = common.Big0
-		}
-		if err := ps.SetPricePerUnit(newPrice); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
-	statedb vm.StateDB,
-	evm *vm.EVM,
-	updateTime, currentTime uint64,
-	batchPoster common.Address,
-	weiSpent *big.Int,
-	scenario util.TracingScenario,
-) error {
-	batchPosterTable := ps.BatchPosterTable()
-	posterState, err := batchPosterTable.OpenPoster(batchPoster, true)
-	if err != nil {
-		return err
-	}
-
-	// compute previous shortfall
-	totalFundsDue, err := batchPosterTable.TotalFundsDue()
-	if err != nil {
-		return err
-	}
-	fundsDueForRewards, err := ps.FundsDueForRewards()
-	if err != nil {
-		return err
-	}
-	oldSurplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
-
-	// compute allocation fraction -- will allocate updateTimeDelta/timeDelta fraction of units and funds to this update
-	lastUpdateTime, err := ps.LastUpdateTime()
-	if err != nil {
-		return err
-	}
-	if lastUpdateTime == 0 && currentTime > 0 { // it's the first update, so there isn't a last update time
-		lastUpdateTime = updateTime - 1
-	}
-	if updateTime >= currentTime || updateTime < lastUpdateTime {
-		return nil // historically this returned an error
-	}
-	allocationNumerator := updateTime - lastUpdateTime
-	allocationDenominator := currentTime - lastUpdateTime
-	if allocationDenominator == 0 {
-		allocationNumerator = 1
-		allocationDenominator = 1
-	}
-
-	// allocate units to this update
-	unitsSinceUpdate, err := ps.UnitsSinceUpdate()
-	if err != nil {
-		return err
-	}
-	unitsAllocated := unitsSinceUpdate * allocationNumerator / allocationDenominator
-	unitsSinceUpdate -= unitsAllocated
-	if err := ps.SetUnitsSinceUpdate(unitsSinceUpdate); err != nil {
-		return err
-	}
-
-	dueToPoster, err := posterState.FundsDue()
-	if err != nil {
-		return err
-	}
-	err = posterState.SetFundsDue(am.BigAdd(dueToPoster, weiSpent))
-	if err != nil {
-		return err
-	}
-	perUnitReward, err := ps.PerUnitReward()
-	if err != nil {
-		return err
-	}
-	fundsDueForRewards = am.BigAdd(fundsDueForRewards, am.BigMulByUint(am.UintToBig(unitsAllocated), perUnitReward))
-	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
-		return err
-	}
-
-	// allocate funds to this update
-	collectedSinceUpdate := statedb.GetBalance(L1PricerFundsPoolAddress)
-	availableFunds := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate, allocationNumerator), allocationDenominator)
-
-	// pay rewards, as much as possible
-	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
-	if am.BigLessThan(availableFunds, paymentForRewards) {
-		paymentForRewards = availableFunds
-	}
-	fundsDueForRewards = am.BigSub(fundsDueForRewards, paymentForRewards)
-	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
-		return err
-	}
-	payRewardsTo, err := ps.PayRewardsTo()
-	if err != nil {
-		return err
-	}
-	err = util.TransferBalance(
-		&L1PricerFundsPoolAddress, &payRewardsTo, paymentForRewards, evm, scenario, "batchPosterReward",
-	)
-	if err != nil {
-		return err
-	}
-	availableFunds = am.BigSub(availableFunds, paymentForRewards)
-
-	// settle up our batch poster payments owed, as much as possible
-	allPosterAddrs, err := batchPosterTable.AllPosters(math.MaxUint64)
-	if err != nil {
-		return err
-	}
-	for _, posterAddr := range allPosterAddrs {
-		poster, err := batchPosterTable.OpenPoster(posterAddr, false)
-		if err != nil {
-			return err
-		}
-		balanceDueToPoster, err := poster.FundsDue()
-		if err != nil {
-			return err
-		}
-		balanceToTransfer := balanceDueToPoster
-		if am.BigLessThan(availableFunds, balanceToTransfer) {
-			balanceToTransfer = availableFunds
-		}
-		if balanceToTransfer.Sign() > 0 {
-			addrToPay, err := poster.PayTo()
-			if err != nil {
-				return err
-			}
-			err = util.TransferBalance(
-				&L1PricerFundsPoolAddress, &addrToPay, balanceToTransfer, evm, scenario, "batchPosterRefund",
-			)
-			if err != nil {
-				return err
-			}
-			availableFunds = am.BigSub(availableFunds, balanceToTransfer)
-			balanceDueToPoster = am.BigSub(balanceDueToPoster, balanceToTransfer)
-			err = poster.SetFundsDue(balanceDueToPoster)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// update time
-	if err := ps.SetLastUpdateTime(updateTime); err != nil {
-		return err
-	}
-
-	// adjust the price
-	if unitsAllocated > 0 {
-		totalFundsDue, err = batchPosterTable.TotalFundsDue()
-		if err != nil {
-			return err
-		}
-		fundsDueForRewards, err = ps.FundsDueForRewards()
-		if err != nil {
-			return err
-		}
-		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
-
-		inertia, err := ps.Inertia()
-		if err != nil {
-			return err
-		}
-		equilUnits, err := ps.EquilibrationUnits()
-		if err != nil {
-			return err
-		}
-		inertiaUnits := am.BigDivByUint(equilUnits, inertia)
-		price, err := ps.PricePerUnit()
-		if err != nil {
-			return err
-		}
-
-		allocPlusInert := am.BigAddByUint(inertiaUnits, unitsAllocated)
-		priceChange := am.BigDiv(
-			am.BigSub(
-				am.BigMul(surplus, am.BigSub(equilUnits, common.Big1)),
-				am.BigMul(oldSurplus, equilUnits),
-			),
-			am.BigMul(equilUnits, allocPlusInert),
-		)
-
 		newPrice := am.BigAdd(price, priceChange)
 		if newPrice.Sign() < 0 {
 			newPrice = common.Big0

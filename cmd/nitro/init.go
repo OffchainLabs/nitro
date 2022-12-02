@@ -81,16 +81,20 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 		return initConfig.Url[5:], nil
 	}
 	if ipfshelper.CanBeIpfsPath(initConfig.Url) {
-		ipfsNode, err := ipfshelper.CreateIpfsHelper(ctx, initConfig.DownloadPath, false, "nitro")
+		ipfsNode, err := ipfshelper.CreateIpfsHelper(ctx, initConfig.DownloadPath, false, ipfshelper.DefaultIpfsProfiles)
 		if err != nil {
 			return "", err
 		}
 		log.Info("Downloading initial database via IPFS", "url", initConfig.Url)
-		initFile, err := ipfsNode.DownloadFile(ctx, initConfig.Url, initConfig.DownloadPath)
-		if err != nil {
-			return "", err
+		initFile, downloadErr := ipfsNode.DownloadFile(ctx, initConfig.Url, initConfig.DownloadPath)
+		closeErr := ipfsNode.Close()
+		if downloadErr != nil {
+			if closeErr != nil {
+				log.Error("Failed to close IPFS node after download error", "err", closeErr)
+			}
+			return "", fmt.Errorf("Failed to download file from IPFS: %w", downloadErr)
 		}
-		if err = ipfsNode.Close(); err != nil {
+		if closeErr != nil {
 			return "", fmt.Errorf("Failed to close IPFS node: %w", err)
 		}
 		return initFile, nil
