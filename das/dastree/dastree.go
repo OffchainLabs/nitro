@@ -208,7 +208,7 @@ func Content(root bytes32, oracle func(bytes32) ([]byte, error)) ([]byte, error)
 	}
 
 	preimage := []byte{}
-	for i, leaf := range leaves {
+	for i, leaf := range leaves { // TODO We can parallelize leaf fetching in future.
 		bin, err := oracle(leaf.hash)
 		if err != nil {
 			return nil, err
