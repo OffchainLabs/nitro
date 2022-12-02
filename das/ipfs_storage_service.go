@@ -100,11 +100,10 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 	if s.config.PinAfterGet {
 		if s.config.PinPercentage == 100.0 {
 			doPin = true
-		} else {
-			if (rand.Float64() * 100.0) <= s.config.PinPercentage {
-				doPin = true
-			}
+		} else if (rand.Float64() * 100.0) <= s.config.PinPercentage {
+			doPin = true
 		}
+
 	}
 
 	oracle := func(h common.Hash) ([]byte, error) {
@@ -116,7 +115,14 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 		ipfsPath := path.IpfsPath(thisCid)
 		log.Trace("Retrieving IPFS path", "path", ipfsPath.String())
 
-		timeoutCtx, cancel := context.WithTimeout(ctx, s.config.ReadTimeout)
+		parentCtx := ctx
+		if doPin {
+			// If we want to pin this batch, then detach from the parent context so
+			// we are not canceled before s.config.ReadTimeout.
+			parentCtx = context.Background()
+		}
+
+		timeoutCtx, cancel := context.WithTimeout(parentCtx, s.config.ReadTimeout)
 		defer cancel()
 		rdr, err := s.ipfsApi.Block().Get(timeoutCtx, ipfsPath)
 		if err != nil {
@@ -126,16 +132,27 @@ func (s *IpfsStorageService) GetByHash(ctx context.Context, hash common.Hash) ([
 			return nil, err
 		}
 
-		if doPin {
-			s.ipfsApi.Pin().Add(ctx, ipfsPath)
-			// Recursive pinning not needed, each dastree preimage fits in a single
-			// IPFS block.
-		}
-
 		data, err := io.ReadAll(rdr)
 		if err != nil {
 			return nil, err
 		}
+
+		if doPin {
+			go func() {
+				pinCtx, pinCancel := context.WithTimeout(context.Background(), s.config.ReadTimeout)
+				defer pinCancel()
+				err := s.ipfsApi.Pin().Add(pinCtx, ipfsPath)
+				// Recursive pinning not needed, each dastree preimage fits in a single
+				// IPFS block.
+				if err != nil {
+					// Pinning is best-effort.
+					log.Warn("Failed to pin in IPFS", "hash", pretty.PrettyHash(hash), "path", ipfsPath.String())
+				} else {
+					log.Trace("Pin in IPFS successful", "hash", pretty.PrettyHash(hash), "path", ipfsPath.String())
+				}
+			}()
+		}
+
 		return data, nil
 	}
 
