@@ -10,7 +10,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
 };
-use wasmparser::{TableType, Type};
+use wasmer::wasmparser::{TableType, Type};
 
 /// cbindgen:field-names=[bytes]
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -166,6 +166,11 @@ enum RemoteType {
     V128,
     FuncRef,
     ExternRef,
+
+    // types removed in wasmer 3.0
+    ExnRef,
+    Func,
+    EmptyBlockType,
 }
 
 #[derive(Serialize, Deserialize)]

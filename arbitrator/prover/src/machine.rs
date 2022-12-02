@@ -2,10 +2,13 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
-    host::get_host_impl,
+    binary::{
+        parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
+    },
+    host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
+    programs::ModuleMod,
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -33,7 +36,8 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
+use wasmer::wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
+use wasmer_types::FunctionIndex;
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -252,6 +256,12 @@ struct AvailableImport {
     func: u32,
 }
 
+impl AvailableImport {
+    pub fn new(ty: FunctionType, module: u32, func: u32) -> Self {
+        Self { ty, module, func }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Module {
     globals: Vec<Value>,
@@ -268,7 +278,12 @@ struct Module {
     host_call_hooks: Arc<Vec<Option<(String, String)>>>,
     start_function: Option<u32>,
     func_types: Arc<Vec<FunctionType>>,
-    exports: Arc<HashMap<String, u32>>,
+    /// Old modules use this format.
+    /// TODO: remove this after the jump to polyglot.
+    #[serde(alias = "exports")]
+    func_exports: Arc<HashMap<String, u32>>,
+    #[serde(default)]
+    all_exports: Arc<ExportMap>,
 }
 
 impl Module {
@@ -281,49 +296,46 @@ impl Module {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
         let mut memory = Memory::default();
-        let mut exports = HashMap::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
         for import in &bin.imports {
-            if let TypeRef::Func(ty) = import.ty {
-                let mut qualified_name = format!("{}__{}", import.module, import.name);
-                qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
-                let have_ty = &bin.types[ty as usize];
-                let func;
-                if let Some(import) = available_imports.get(&qualified_name) {
-                    ensure!(
-                        &import.ty == have_ty,
-                        "Import has different function signature than host function. Expected {:?} but got {:?}",
-                        import.ty, have_ty,
-                    );
-                    let wavm = vec![
-                        Instruction::simple(Opcode::InitFrame),
-                        Instruction::with_data(
-                            Opcode::CrossModuleCall,
-                            pack_cross_module_call(import.module, import.func),
-                        ),
-                        Instruction::simple(Opcode::Return),
-                    ];
-                    func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
-                } else {
-                    func = get_host_impl(import.module, import.name)?;
-                    ensure!(
-                        &func.ty == have_ty,
-                        "Import has different function signature than host function. Expected {:?} but got {:?}",
-                        func.ty, have_ty,
-                    );
-                    ensure!(
-                        allow_hostapi,
-                        "Calling hostapi directly is not allowed. Function {}",
-                        import.name,
-                    );
-                }
-                func_type_idxs.push(ty);
-                code.push(func);
-                host_call_hooks.push(Some((import.module.into(), import.name.into())));
+            let module = import.module;
+            let have_ty = &bin.types[import.offset as usize];
+            let Some(import_name) = import.name else {
+                bail!("Missing name for import in {}", module.red());
+            };
+
+            let mut qualified_name = format!("{module}__{import_name}");
+            qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
+
+            let func = if let Some(import) = available_imports.get(&qualified_name) {
+                let call = Opcode::CrossModuleCall;
+                let wavm = vec![
+                    Instruction::simple(Opcode::InitFrame),
+                    Instruction::with_data(
+                        call,
+                        pack_cross_module_call(import.module, import.func),
+                    ),
+                    Instruction::simple(Opcode::Return),
+                ];
+                Function::new_from_wavm(wavm, import.ty.clone(), vec![])
             } else {
-                bail!("Unsupport import kind {:?}", import);
-            }
+                ensure!(
+                    allow_hostapi,
+                    "Calling hostapi directly is not allowed. Func {}",
+                    import_name.red()
+                );
+                host::get_host_impl(import.module, import_name)?
+            };
+            ensure!(
+                &func.ty == have_ty,
+                "Import has different function signature than host function. Expected {} but got {}",
+                func.ty.red(), have_ty.red(),
+            );
+
+            func_type_idxs.push(import.offset);
+            code.push(func);
+            host_call_hooks.push(Some((import.module.into(), import_name.into())));
         }
         func_type_idxs.extend(bin.functions.iter());
         let types = &bin.types;
@@ -374,23 +386,6 @@ impl Module {
             let size = initial * page_size;
 
             memory = Memory::new(size as usize, max_size);
-        }
-
-        let mut globals = vec![];
-        for global in &bin.globals {
-            let mut init = global.init_expr.get_operators_reader();
-
-            let value = match (init.read()?, init.read()?, init.eof()) {
-                (op, Operator::End, true) => crate::binary::op_as_const(op)?,
-                _ => bail!("Non-constant global initializer"),
-            };
-            globals.push(value);
-        }
-
-        for export in &bin.exports {
-            if let ExternalKind::Func = export.kind {
-                exports.insert(export.name.to_owned(), export.index);
-            }
         }
 
         for data in &bin.datas {
@@ -528,10 +523,17 @@ impl Module {
         ));
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
+        let func_exports = bin
+            .exports
+            .iter()
+            .filter_map(|((name, kind), offset)| {
+                (kind == &ExportKind::Func).then(|| (name.to_owned(), *offset))
+            })
+            .collect();
 
         Ok(Module {
             memory,
-            globals,
+            globals: bin.globals.clone(),
             tables_merkle: Merkle::new(MerkleType::Table, tables_hashes?),
             tables,
             funcs_merkle: Arc::new(Merkle::new(
@@ -545,7 +547,8 @@ impl Module {
             host_call_hooks: Arc::new(host_call_hooks),
             start_function: bin.start,
             func_types: Arc::new(func_types),
-            exports: Arc::new(exports),
+            func_exports: Arc::new(func_exports),
+            all_exports: Arc::new(bin.exports.clone()),
         })
     }
 
@@ -940,31 +943,41 @@ impl Machine {
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
+        let main_module_index = u32::try_from(modules.len() + libraries.len())?;
 
-        for export in &bin.exports {
-            if let ExternalKind::Func = export.kind {
-                if let Some(ty_idx) = usize::try_from(export.index)
-                    .unwrap()
-                    .checked_sub(bin.imports.len())
-                {
-                    let ty = bin.functions[ty_idx];
-                    let ty = &bin.types[usize::try_from(ty).unwrap()];
-                    let module = u32::try_from(modules.len() + libraries.len()).unwrap();
+        // make the main module's exports available to libraries
+        for ((name, kind), &export) in &bin.exports {
+            if *kind == ExportKind::Func {
+                let index: usize = export.try_into()?;
+                if let Some(index) = index.checked_sub(bin.imports.len()) {
+                    let ty: usize = bin.functions[index].try_into()?;
+                    let ty = bin.types[ty].clone();
                     available_imports.insert(
-                        format!("env__wavm_guest_call__{}", export.name),
-                        AvailableImport {
-                            ty: ty.clone(),
-                            module,
-                            func: export.index,
-                        },
+                        format!("env__wavm_guest_call__{name}"),
+                        AvailableImport::new(ty, main_module_index, export),
                     );
+                }
+            }
+        }
+
+        // collect all the library exports in advance so they can use each other's
+        for (index, lib) in libraries.into_iter().enumerate() {
+            let module = 1 + index as u32; // off by one due to the entry point
+            for ((name, kind), &export) in &lib.exports {
+                if *kind == ExportKind::Func {
+                    let ty = match lib.get_function(FunctionIndex::from_u32(export)) {
+                        Ok(ty) => ty,
+                        Err(error) => bail!("failed to read export {}: {}", name, error),
+                    };
+                    let import = AvailableImport::new(ty, module, export);
+                    available_imports.insert(name.to_owned(), import);
                 }
             }
         }
 
         for lib in libraries {
             let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
-            for (name, &func) in &*module.exports {
+            for (name, &func) in &*module.func_exports {
                 let ty = module.func_types[func as usize].clone();
                 available_imports.insert(
                     name.clone(),
@@ -986,10 +999,10 @@ impl Machine {
                     }
                     ensure!(
                         ty == sig,
-                        "Wrong type for floating point impl {:?} expecting {:?} but got {:?}",
-                        name,
-                        sig,
-                        ty
+                        "Wrong type for floating point impl {} expecting {} but got {}",
+                        name.red(),
+                        sig.red(),
+                        ty.red()
                     );
                     floating_point_impls.insert(op, (modules.len() as u32, func));
                 }
@@ -1036,9 +1049,10 @@ impl Machine {
         }
         let main_module_idx = modules.len() - 1;
         let main_module = &modules[main_module_idx];
+        let main_exports = &main_module.func_exports;
 
         // Rust support
-        if let Some(&f) = main_module.exports.get("main").filter(|_| runtime_support) {
+        if let Some(&f) = main_exports.get("main").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
@@ -1055,7 +1069,7 @@ impl Machine {
         }
 
         // Go support
-        if let Some(&f) = main_module.exports.get("run").filter(|_| runtime_support) {
+        if let Some(&f) = main_exports.get("run").filter(|_| runtime_support) {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ArbValueType::I32); // argc
             expected_type.inputs.push(ArbValueType::I32); // argv
@@ -1142,7 +1156,8 @@ impl Machine {
             host_call_hooks: Arc::new(vec![None]),
             start_function: None,
             func_types: Arc::new(vec![FunctionType::default()]),
-            exports: Arc::new(HashMap::default()),
+            func_exports: Arc::new(HashMap::default()),
+            all_exports: Arc::new(HashMap::default()),
         };
         modules[0] = entrypoint;
 
@@ -1348,7 +1363,7 @@ impl Machine {
         self.value_stack = args;
 
         let module = self.modules.last().expect("no module");
-        let export = module.exports.iter().find(|x| x.0 == func);
+        let export = module.func_exports.iter().find(|x| x.0 == func);
         let export = export
             .unwrap_or_else(|| panic!("func {} not found", func))
             .1;
