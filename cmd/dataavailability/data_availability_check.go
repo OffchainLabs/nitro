@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/metricsutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
 	flag "github.com/spf13/pflag"
@@ -250,12 +251,13 @@ func (d *DataAvailabilityCheck) checkDataAvailability(ctx context.Context, deliv
 	var dataNotFound []string
 	for url, reader := range d.urlToReaderMap {
 		_, err = reader.GetByHash(ctx, cert.DataHash)
+		canonicalUrl := metricsutil.CanonicalizeMetricName(url)
 		if err != nil {
-			metrics.GetOrRegisterCounter(metricBase+"/"+url+"/failure", nil).Inc(1)
+			metrics.GetOrRegisterCounter(metricBase+"/"+canonicalUrl+"/failure", nil).Inc(1)
 			dataNotFound = append(dataNotFound, url)
 			log.Error(fmt.Sprintf("Data with hash: %s not found for: %s\n", common.Hash(cert.DataHash).String(), url))
 		} else {
-			metrics.GetOrRegisterCounter(metricBase+"/"+url+"/success", nil).Inc(1)
+			metrics.GetOrRegisterCounter(metricBase+"/"+canonicalUrl+"/success", nil).Inc(1)
 		}
 	}
 	if len(dataNotFound) > 0 {
