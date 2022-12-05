@@ -11,8 +11,9 @@ import "../bridge/IBridge.sol";
 
 contract BridgeStub is IBridge {
     struct InOutInfo {
-        uint256 index;
+        uint8 version;
         bool allowed;
+        uint240 index;
     }
 
     mapping(address => InOutInfo) private allowedDelayedInboxesMap;
@@ -143,7 +144,11 @@ contract BridgeStub is IBridge {
             return;
         }
         if (enabled) {
-            allowedDelayedInboxesMap[inbox] = InOutInfo(allowedDelayedInboxList.length, true);
+            allowedDelayedInboxesMap[inbox] = InOutInfo({
+                version: 1,
+                allowed: true,
+                index: uint240(allowedDelayedInboxList.length)
+            });
             allowedDelayedInboxList.push(inbox);
         } else {
             allowedDelayedInboxList[info.index] = allowedDelayedInboxList[

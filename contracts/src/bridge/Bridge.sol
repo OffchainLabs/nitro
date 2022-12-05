@@ -33,8 +33,9 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
     using AddressUpgradeable for address;
 
     struct InOutInfo {
-        uint256 index;
-        bool allowed;
+        uint8 version;
+        bool allowed; // Never call this directly, always use isAllowed() to support multiple versions
+        uint240 index; // Leave this at the bottom to support further upgrades
     }
 
     mapping(address => InOutInfo) private allowedDelayedInboxesMap;
@@ -85,11 +86,11 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
     }
 
     function allowedDelayedInboxes(address inbox) external view returns (bool) {
-        return allowedDelayedInboxesMap[inbox].allowed;
+        return isAllowed(allowedDelayedInboxesMap[inbox]);
     }
 
     function allowedOutboxes(address outbox) external view returns (bool) {
-        return allowedOutboxesMap[outbox].allowed;
+        return isAllowed(allowedOutboxesMap[outbox]);
     }
 
     modifier onlySequencerInbox() {
@@ -154,7 +155,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         address sender,
         bytes32 messageDataHash
     ) external payable returns (uint256) {
-        if (!allowedDelayedInboxesMap[msg.sender].allowed) revert NotDelayedInbox(msg.sender);
+        if (!isAllowed(allowedDelayedInboxesMap[msg.sender])) revert NotDelayedInbox(msg.sender);
         return
             addMessageToDelayedAccumulator(
                 kind,
@@ -207,7 +208,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         uint256 value,
         bytes calldata data
     ) external returns (bool success, bytes memory returnData) {
-        if (!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
+        if (!isAllowed(allowedOutboxesMap[msg.sender])) revert NotOutbox(msg.sender);
         if (data.length > 0 && !to.isContract()) revert NotContract(to);
         address prevOutbox = _activeOutbox;
         _activeOutbox = msg.sender;
@@ -228,13 +229,17 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
 
     function setDelayedInbox(address inbox, bool enabled) external onlyRollupOrOwner {
         InOutInfo storage info = allowedDelayedInboxesMap[inbox];
-        bool alreadyEnabled = info.allowed;
+        bool alreadyEnabled = isAllowed(info);
         emit InboxToggle(inbox, enabled);
         if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
             return;
         }
         if (enabled) {
-            allowedDelayedInboxesMap[inbox] = InOutInfo(allowedDelayedInboxList.length, true);
+            allowedDelayedInboxesMap[inbox] = InOutInfo({
+                version: 1,
+                allowed: true,
+                index: uint240(allowedDelayedInboxList.length)
+            });
             allowedDelayedInboxList.push(inbox);
         } else {
             allowedDelayedInboxList[info.index] = allowedDelayedInboxList[
@@ -250,13 +255,17 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         if (outbox == EMPTY_ACTIVEOUTBOX) revert InvalidOutboxSet(outbox);
 
         InOutInfo storage info = allowedOutboxesMap[outbox];
-        bool alreadyEnabled = info.allowed;
+        bool alreadyEnabled = isAllowed(info);
         emit OutboxToggle(outbox, enabled);
         if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
             return;
         }
         if (enabled) {
-            allowedOutboxesMap[outbox] = InOutInfo(allowedOutboxList.length, true);
+            allowedOutboxesMap[outbox] = InOutInfo({
+                version: 1,
+                allowed: true,
+                index: uint240(allowedOutboxList.length)
+            });
             allowedOutboxList.push(outbox);
         } else {
             allowedOutboxList[info.index] = allowedOutboxList[allowedOutboxList.length - 1];
@@ -276,6 +285,22 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
 
     function sequencerMessageCount() external view returns (uint256) {
         return sequencerInboxAccs.length;
+    }
+
+    // version will be 0 for all old InOutInfos
+    function isAllowed(InOutInfo storage inOutFlag) private view returns (bool allowed) {
+        if (inOutFlag.version > 0) {
+            allowed = inOutFlag.allowed;
+        } else {
+            assembly {
+                // Version 0 used 2 storage slots like so:
+                // struct InOutInfo {
+                //    uint256 index;
+                //    bool allowed;
+                // }
+                allowed := sload(add(inOutFlag.slot, 1))
+            }
+        }
     }
 
     /// @dev For the classic -> nitro migration. TODO: remove post-migration.
