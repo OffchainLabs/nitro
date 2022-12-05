@@ -1569,7 +1569,8 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 	}
 
 	return &core.CacheConfig{
-		TrieCleanLimit:      baseConf.TrieCleanCache,
+		TrieCleanLimit: baseConf.TrieCleanCache,
+		// Note: if this option ever becomes configurable `pruneChainDb` in `cmd/nitro/init.go` needs updated
 		TrieCleanJournal:    stack.ResolvePath(baseConf.TrieCleanCacheJournal),
 		TrieCleanRejournal:  baseConf.TrieCleanCacheRejournal,
 		TrieCleanNoPrefetch: baseConf.NoPrefetch,
