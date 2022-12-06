@@ -81,7 +81,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 		return initConfig.Url[5:], nil
 	}
 	if ipfshelper.CanBeIpfsPath(initConfig.Url) {
-		ipfsNode, err := ipfshelper.CreateIpfsHelper(ctx, initConfig.DownloadPath, false, ipfshelper.DefaultIpfsProfiles)
+		ipfsNode, err := ipfshelper.CreateIpfsHelper(ctx, initConfig.DownloadPath, false, []string{}, ipfshelper.DefaultIpfsProfiles)
 		if err != nil {
 			return "", err
 		}

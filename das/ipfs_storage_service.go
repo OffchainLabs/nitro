@@ -34,6 +34,7 @@ type IpfsStorageServiceConfig struct {
 	RepoDir     string        `koanf:"repo-dir"`
 	ReadTimeout time.Duration `koanf:"read-timeout"`
 	Profiles    string        `koanf:"profiles"`
+	Peers       []string      `koanf:"peers"`
 
 	// Pinning options
 	PinAfterGet   bool    `koanf:"pin-after-get"`
@@ -45,6 +46,7 @@ var DefaultIpfsStorageServiceConfig = IpfsStorageServiceConfig{
 	RepoDir:     "",
 	ReadTimeout: time.Minute,
 	Profiles:    "test", // Default to test, see profiles here https://github.com/ipfs/kubo/blob/e550d9e4761ea394357c413c02ade142c0dea88c/config/profile.go,
+	Peers:       []string{},
 
 	PinAfterGet:   true,
 	PinPercentage: 100.0,
@@ -55,6 +57,7 @@ func IpfsStorageServiceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".repo-dir", DefaultIpfsStorageServiceConfig.RepoDir, "directory to use to store the local IPFS repo")
 	f.Duration(prefix+".read-timeout", DefaultIpfsStorageServiceConfig.ReadTimeout, "timeout for IPFS reads, since by default it will wait forever. Treat timeout as not found")
 	f.String(prefix+".profiles", DefaultIpfsStorageServiceConfig.Profiles, "comma separated list of IPFS profiles to use")
+	f.StringSlice(prefix+".peers", DefaultIpfsStorageServiceConfig.Peers, "list of IPFS peers to connect to, eg /ip4/1.2.3.4/tcp/12345/p2p/abc...xyz")
 	f.Bool(prefix+".pin-after-get", DefaultIpfsStorageServiceConfig.PinAfterGet, "pin sequencer batch data in IPFS")
 	f.Float64(prefix+".pin-percentage", DefaultIpfsStorageServiceConfig.PinPercentage, "percent of sequencer batch data to pin, as a floating point number in the range 0.0 to 100.0")
 }
@@ -66,10 +69,13 @@ type IpfsStorageService struct {
 }
 
 func NewIpfsStorageService(ctx context.Context, config IpfsStorageServiceConfig) (*IpfsStorageService, error) {
-	ipfsHelper, err := ipfshelper.CreateIpfsHelper(ctx, config.RepoDir, false, config.Profiles)
+	ipfsHelper, err := ipfshelper.CreateIpfsHelper(ctx, config.RepoDir, false, config.Peers, config.Profiles)
 	if err != nil {
 		return nil, err
 	}
+	addrs, err := ipfsHelper.GetPeerHostAddresses()
+	log.Info("IPFS node started up", "hostAddresses", addrs)
+
 	return &IpfsStorageService{
 		config:     config,
 		ipfsHelper: ipfsHelper,
