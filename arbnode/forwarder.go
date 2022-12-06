@@ -11,11 +11,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -149,6 +152,7 @@ func (f *TxForwarder) Initialize(inctx context.Context) error {
 // Disable is not thread-safe vs. Initialize
 func (f *TxForwarder) Disable() {
 	atomic.StoreInt32(&f.enabled, 0)
+	// TODO should we close ethClient / rpcClient here or in StopAndWait?
 }
 
 func (f *TxForwarder) Start(ctx context.Context) error {
@@ -185,4 +189,114 @@ func (f *TxDropper) StopAndWait() {}
 
 func (f *TxDropper) Started() bool {
 	return true
+}
+
+type RedisTxForwarder struct {
+	stopwaiter.StopWaiterSafe
+
+	forwarderConfig *ForwarderConfig
+	redisUrl        string
+	updateInterval  time.Duration
+	retryInterval   time.Duration
+	redisErrors     int
+
+	forwarder atomic.Pointer[TxForwarder]
+	// not thread safe fields used in .Initialize and/or .update methods
+	redisCoordinator *redisutil.RedisCoordinator
+	currentTarget    string
+}
+
+func NewRedisTxForwarder(redisUrl string, updateInterval time.Duration, retryInterval time.Duration, config *ForwarderConfig) *RedisTxForwarder {
+	return &RedisTxForwarder{
+		forwarderConfig: config,
+		redisUrl:        redisUrl,
+		updateInterval:  updateInterval,
+		retryInterval:   retryInterval,
+	}
+}
+
+func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	forwarder := f.forwarder.Load()
+	if forwarder == nil {
+		return ErrNoSequencer
+	}
+	return forwarder.PublishTransaction(ctx, tx)
+}
+
+func (f *RedisTxForwarder) CheckHealth(ctx context.Context) error {
+	forwarder := f.forwarder.Load()
+	if forwarder == nil {
+		return ErrNoSequencer
+	}
+	return forwarder.CheckHealth(ctx)
+}
+
+// not thread safe vs update and itself
+func (f *RedisTxForwarder) Initialize(ctx context.Context) error {
+	var err error
+	f.redisCoordinator, err = redisutil.NewRedisCoordinator(f.redisUrl)
+	if err != nil {
+		return errors.Wrap(err, "unable to create redis coordinator")
+	}
+	return nil
+}
+
+func (f *RedisTxForwarder) retryAfterRedisError() time.Duration {
+	f.redisErrors++
+	retryIn := f.retryInterval * time.Duration(f.redisErrors)
+	if retryIn > f.updateInterval {
+		retryIn = f.updateInterval
+	}
+	return retryIn
+}
+
+func (f *RedisTxForwarder) noRedisError() time.Duration {
+	f.redisErrors = 0
+	return f.updateInterval
+}
+
+// not thread safe vs initialize and itself
+func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
+	newSequencerUrl, err := f.redisCoordinator.RecommendLiveSequencer(ctx)
+	if err != nil {
+		log.Warn("coordinator failed to find live sequencer", "err", err)
+		return f.retryAfterRedisError()
+	}
+	if newSequencerUrl == f.currentTarget {
+		return f.noRedisError()
+	}
+	newForwarder := NewForwarder(newSequencerUrl, f.forwarderConfig)
+	err = newForwarder.Initialize(ctx)
+	if err != nil {
+		log.Error("failed to initialize forward agent", "err", err)
+		return f.noRedisError()
+	}
+	f.forwarder.Load().Disable()
+	// TODO should we stop the old forwarder to close old rpc connection?
+	// oldForwarder.StopAndWait()
+	f.currentTarget = newSequencerUrl
+	f.forwarder.Store(newForwarder)
+	return f.noRedisError()
+}
+
+func (f *RedisTxForwarder) Start(ctx context.Context) error {
+	if err := f.StopWaiterSafe.Start(ctx, f); err != nil {
+		return err
+	}
+	if err := f.CallIteratively(f.update); err != nil {
+		return errors.Wrap(err, "failed to start forwarder update thread")
+	}
+	return nil
+}
+
+func (f *RedisTxForwarder) StopAndWait() {
+	err := f.StopWaiterSafe.StopAndWait()
+	if err != nil {
+		log.Error("Failed to stop forwarder", "err", err)
+	}
+	// oldForwarder.StopAndWait() // TODO should we stop the forwarder?
+}
+
+func (f *RedisTxForwarder) Started() bool {
+	return f.StopWaiterSafe.Started()
 }
