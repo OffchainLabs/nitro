@@ -225,8 +225,11 @@ type Sequencer struct {
 	l1BlockNumber       uint64
 	l1Timestamp         uint64
 
+	// activeMutex manages pauseChan (pauses execution) and forwarder
+	// at most one of these is non-nil at any given time
+	// both are nil for the active sequencer
 	activeMutex sync.Mutex
-	seqActive   bool
+	pauseChan   chan struct{}
 	forwarder   *TxForwarder
 }
 
@@ -252,7 +255,7 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Reader *headerreader.Header
 		nonceCache:      newNonceCache(config.NonceCacheSize),
 		l1BlockNumber:   0,
 		l1Timestamp:     0,
-		seqActive:       true,
+		pauseChan:       nil,
 	}
 	txStreamer.SetReorgSequencingPolicy(s.makeSequencingHooks)
 	return s, nil
@@ -272,7 +275,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	sequencerBacklogGauge.Inc(1)
 	defer sequencerBacklogGauge.Dec(1)
 
-	_, forwarder := s.GetActiveAndForwarder()
+	_, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
 		err := forwarder.PublishTransaction(parentCtx, tx)
 		if !errors.Is(err, ErrNoSequencer) {
@@ -341,14 +344,11 @@ func (s *Sequencer) postTxFilter(header *types.Header, _ *arbosState.ArbosState,
 }
 
 func (s *Sequencer) CheckHealth(ctx context.Context) error {
-	s.activeMutex.Lock()
-	forwarder := s.forwarder
-	active := s.seqActive
-	s.activeMutex.Unlock()
+	pauseChan, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
 		return forwarder.CheckHealth(ctx)
 	}
-	if !active {
+	if pauseChan != nil {
 		return nil
 	}
 	if s.txStreamer.coordinator != nil && !s.txStreamer.coordinator.CurrentlyChosen() {
@@ -369,7 +369,6 @@ func (s *Sequencer) ForwardTarget() string {
 func (s *Sequencer) ForwardTo(url string) error {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
-	s.seqActive = false
 	if s.forwarder != nil {
 		if s.forwarder.target == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
@@ -383,47 +382,70 @@ func (s *Sequencer) ForwardTo(url string) error {
 		log.Error("failed to set forward agent", "err", err)
 		s.forwarder = nil
 	}
+	if s.pauseChan != nil {
+		close(s.pauseChan)
+		s.pauseChan = nil
+	}
 	return err
 }
 
-func (s *Sequencer) DontForward(active bool) {
+func (s *Sequencer) Activate() {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
-	s.seqActive = active
 	if s.forwarder != nil {
 		s.forwarder.Disable()
+		s.forwarder = nil
 	}
-	s.forwarder = nil
+	if s.pauseChan != nil {
+		close(s.pauseChan)
+		s.pauseChan = nil
+	}
+}
+
+func (s *Sequencer) Pause() {
+	s.activeMutex.Lock()
+	defer s.activeMutex.Unlock()
+	if s.forwarder != nil {
+		s.forwarder.Disable()
+		s.forwarder = nil
+	}
+	if s.pauseChan == nil {
+		s.pauseChan = make(chan struct{})
+	}
 }
 
 var ErrNoSequencer = errors.New("sequencer temporarily not available")
 
-func (s *Sequencer) requeueOrFail(queueItem txQueueItem, err error) {
-	select {
-	case s.txQueue <- queueItem:
-	default:
-		queueItem.returnResult(err)
-	}
-}
-
-func (s *Sequencer) GetActiveAndForwarder() (bool, *TxForwarder) {
+func (s *Sequencer) GetPauseAndForwarder() (chan struct{}, *TxForwarder) {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
-	return s.seqActive, s.forwarder
+	return s.pauseChan, s.forwarder
 }
 
-func (s *Sequencer) handleInactive(queueItems []txQueueItem) bool {
-	active, forwarder := s.GetActiveAndForwarder()
-	if active {
-		return false
-	}
-	if forwarder == nil {
-		return true
+// only called from createBlock, may be paused
+func (s *Sequencer) handleInactive(ctx context.Context, queueItems []txQueueItem) bool {
+	var forwarder *TxForwarder
+	for {
+		var pause chan struct{}
+		pause, forwarder = s.GetPauseAndForwarder()
+		if pause == nil {
+			if forwarder == nil {
+				return false
+			}
+			// if forwarding: jump to next loop
+			break
+		}
+		// if paused: wait till unpaused
+		select {
+		case <-ctx.Done():
+			return true
+		case <-pause:
+		}
 	}
 	for _, item := range queueItems {
 		res := forwarder.PublishTransaction(item.ctx, item.tx)
 		if errors.Is(res, ErrNoSequencer) {
-			s.requeueOrFail(item, ErrNoSequencer)
+			s.txRetryQueue.Push(item)
 		} else {
 			item.returnResult(res)
 		}
@@ -510,7 +532,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		queueItems = append(queueItems, queueItem)
 	}
 
-	if s.handleInactive(queueItems) {
+	if s.handleInactive(ctx, queueItems) {
 		return false
 	}
 
@@ -551,12 +573,12 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	if errors.Is(err, ErrRetrySequencer) {
 		// we changed roles
 		// forward if we have where to
-		if s.handleInactive(queueItems) {
+		if s.handleInactive(ctx, queueItems) {
 			return false
 		}
 		// try to add back to queue otherwise
 		for _, item := range queueItems {
-			s.requeueOrFail(item, ErrNoSequencer)
+			s.txRetryQueue.Push(item)
 		}
 		return false
 	}
@@ -564,7 +586,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		if errors.Is(err, context.Canceled) {
 			// thread closed. We'll later try to forward these messages.
 			for _, item := range queueItems {
-				s.requeueOrFail(item, err)
+				s.txRetryQueue.Push(item)
 			}
 			return true // don't return failure to avoid retrying immediately
 		}
@@ -674,7 +696,7 @@ func (s *Sequencer) StopAndWait() {
 	}
 	// this usually means that coordinator's safe-shutdown-delay is too low
 	log.Warn("sequencer has queued items while shutting down", "txQueue", len(s.txQueue), "retryQueue", s.txRetryQueue.Len())
-	_, forwarder := s.GetActiveAndForwarder()
+	_, forwarder := s.GetPauseAndForwarder()
 	if forwarder != nil {
 	emptyqueues:
 		for {

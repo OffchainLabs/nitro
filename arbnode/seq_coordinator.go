@@ -138,7 +138,7 @@ func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contrac
 		config:           config,
 		signer:           signer,
 	}
-	sequencer.DontForward(false)
+	sequencer.Pause()
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
 }
@@ -571,7 +571,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
-		c.sequencer.DontForward(false)
+		c.sequencer.Pause()
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
@@ -590,7 +590,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 				log.Warn("failed sequencing delayed messages after catching lock", "err", err)
 			}
 		}
-		c.sequencer.DontForward(true)
+		c.sequencer.Activate()
 		c.prevChosenSequencer = c.config.MyUrl()
 		return c.noRedisError()
 	}
