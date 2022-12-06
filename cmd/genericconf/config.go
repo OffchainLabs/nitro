@@ -84,7 +84,7 @@ type FileLoggingConfig struct {
 
 var DefaultFileLoggingConfig = FileLoggingConfig{
 	Enable:     true,
-	File:       "nitro-log",
+	File:       "nitro.log",
 	MaxSize:    5,     // 5Mb
 	MaxAge:     0,     // don't remove old files based on age
 	MaxBackups: 20,    // keep 20 files
