@@ -74,6 +74,9 @@ func NewIpfsStorageService(ctx context.Context, config IpfsStorageServiceConfig)
 		return nil, err
 	}
 	addrs, err := ipfsHelper.GetPeerHostAddresses()
+	if err != nil {
+		return nil, err
+	}
 	log.Info("IPFS node started up", "hostAddresses", addrs)
 
 	return &IpfsStorageService{
