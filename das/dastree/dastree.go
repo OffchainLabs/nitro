@@ -131,7 +131,7 @@ func ValidHash(hash bytes32, preimage []byte) bool {
 //  2. For any canonical dastree, there exists a degenerate single-leaf equivalent that we accept.
 //  3. We also accept old-style flat hashes
 //  4. Only the committee can produce trees unwrapped by this function
-//  5. When the replay binary calls this, the oracle function must be infallable.
+//  5. When the replay binary calls this, the oracle function must be infallible.
 func Content(root bytes32, oracle func(bytes32) ([]byte, error)) ([]byte, error) {
 
 	unpeal := func(hash bytes32) (byte, []byte, error) {
