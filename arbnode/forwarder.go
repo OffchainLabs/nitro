@@ -26,24 +26,36 @@ type ForwarderConfig struct {
 	ConnectionTimeout     time.Duration `koanf:"connection-timeout"`
 	IdleConnectionTimeout time.Duration `koanf:"idle-connection-timeout"`
 	MaxIdleConnections    int           `koanf:"max-idle-connections"`
+	RedisUrl              string        `koanf:"redis-url"`
+	UpdateInterval        time.Duration `koanf:"update-interval"`
+	RetryInterval         time.Duration `koanf:"retry-interval"`
 }
 
 var DefaultTestForwarderConfig = ForwarderConfig{
 	ConnectionTimeout:     2 * time.Second,
 	IdleConnectionTimeout: 2 * time.Second,
 	MaxIdleConnections:    1,
+	RedisUrl:              redisutil.DefaultTestRedisURL,
+	UpdateInterval:        time.Millisecond * 10,
+	RetryInterval:         time.Millisecond * 3,
 }
 
 var DefaultNodeForwarderConfig = ForwarderConfig{
 	ConnectionTimeout:     30 * time.Second,
 	IdleConnectionTimeout: 15 * time.Second,
 	MaxIdleConnections:    1,
+	RedisUrl:              "",
+	UpdateInterval:        time.Duration(5) * time.Second,
+	RetryInterval:         time.Second,
 }
 
 var DefaultSequencerForwarderConfig = ForwarderConfig{
 	ConnectionTimeout:     30 * time.Second,
 	IdleConnectionTimeout: 60 * time.Second,
 	MaxIdleConnections:    100,
+	RedisUrl:              "",
+	UpdateInterval:        time.Duration(5) * time.Second,
+	RetryInterval:         time.Second,
 }
 
 func AddOptionsForNodeForwarderConfig(prefix string, f *flag.FlagSet) {
@@ -58,6 +70,9 @@ func AddOptionsForForwarderConfigImpl(prefix string, defaultConfig *ForwarderCon
 	f.Duration(prefix+".connection-timeout", defaultConfig.ConnectionTimeout, "total time to wait before cancelling connection")
 	f.Duration(prefix+".idle-connection-timeout", defaultConfig.IdleConnectionTimeout, "time until idle connections are closed")
 	f.Int(prefix+".max-idle-connections", defaultConfig.MaxIdleConnections, "maximum number of idle connections to keep open")
+	f.String(prefix+".redis-url", defaultConfig.RedisUrl, "the Redis URL to recomend target via")
+	f.Duration(prefix+".update-interval", defaultConfig.UpdateInterval, "")
+	f.Duration(prefix+".retry-interval", defaultConfig.RetryInterval, "")
 }
 
 type TxForwarder struct {
@@ -194,29 +209,25 @@ func (f *TxDropper) Started() bool {
 type RedisTxForwarder struct {
 	stopwaiter.StopWaiterSafe
 
-	forwarderConfig *ForwarderConfig
-	redisUrl        string
-	updateInterval  time.Duration
-	retryInterval   time.Duration
-	redisErrors     int
+	config      *ForwarderConfig
+	redisErrors int
 
-	forwarder atomic.Pointer[TxForwarder]
-	// not thread safe fields used in .Initialize and/or .update methods
+	mtx              sync.RWMutex
+	forwarder        *TxForwarder
 	redisCoordinator *redisutil.RedisCoordinator
 	currentTarget    string
+	fallbackTarget   string
 }
 
-func NewRedisTxForwarder(redisUrl string, updateInterval time.Duration, retryInterval time.Duration, config *ForwarderConfig) *RedisTxForwarder {
+func NewRedisTxForwarder(fallbackTarget string, config *ForwarderConfig) *RedisTxForwarder {
 	return &RedisTxForwarder{
-		forwarderConfig: config,
-		redisUrl:        redisUrl,
-		updateInterval:  updateInterval,
-		retryInterval:   retryInterval,
+		config:         config,
+		fallbackTarget: fallbackTarget,
 	}
 }
 
 func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
-	forwarder := f.forwarder.Load()
+	forwarder := f.getForwarder()
 	if forwarder == nil {
 		return ErrNoSequencer
 	}
@@ -224,7 +235,7 @@ func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Tra
 }
 
 func (f *RedisTxForwarder) CheckHealth(ctx context.Context) error {
-	forwarder := f.forwarder.Load()
+	forwarder := f.getForwarder()
 	if forwarder == nil {
 		return ErrNoSequencer
 	}
@@ -234,7 +245,7 @@ func (f *RedisTxForwarder) CheckHealth(ctx context.Context) error {
 // not thread safe vs update and itself
 func (f *RedisTxForwarder) Initialize(ctx context.Context) error {
 	var err error
-	f.redisCoordinator, err = redisutil.NewRedisCoordinator(f.redisUrl)
+	f.redisCoordinator, err = redisutil.NewRedisCoordinator(f.config.RedisUrl)
 	if err != nil {
 		return errors.Wrap(err, "unable to create redis coordinator")
 	}
@@ -243,40 +254,65 @@ func (f *RedisTxForwarder) Initialize(ctx context.Context) error {
 
 func (f *RedisTxForwarder) retryAfterRedisError() time.Duration {
 	f.redisErrors++
-	retryIn := f.retryInterval * time.Duration(f.redisErrors)
-	if retryIn > f.updateInterval {
-		retryIn = f.updateInterval
+	retryIn := f.config.RetryInterval * time.Duration(f.RedisErrors)
+	if retryIn > f.config.UpdateInterval {
+		retryIn = f.config.UpdateInterval
 	}
 	return retryIn
 }
 
 func (f *RedisTxForwarder) noRedisError() time.Duration {
 	f.redisErrors = 0
-	return f.updateInterval
+	return f.config.UpdateInterval
+}
+
+func (f *RedisTxForwarder) getForwarder() *TxForwarder {
+	f.mtx.RLock()
+	defer f.mtx.RUnlock()
+	return f.forwarder
+}
+
+func (f *RedisTxForwarder) setForwarder(forwarder *TxForwarder) {
+	f.mtx.Lock()
+	defer f.mtx.Unlock()
+	f.forwarder = forwarder
 }
 
 // not thread safe vs initialize and itself
 func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
-	newSequencerUrl, err := f.redisCoordinator.RecommendLiveSequencer(ctx)
-	if err != nil {
-		log.Warn("coordinator failed to find live sequencer", "err", err)
-		return f.retryAfterRedisError()
+	newSequencerUrl, redisErr := f.redisCoordinator.RecommendLiveSequencer(ctx)
+	if redisErr != nil {
+		if f.currentTarget == f.fallbackTarget {
+			log.Warn("coordinator failed to find live sequencer", "err", redisErr)
+			return f.retryAfterRedisError()
+		} else {
+			log.Warn("coordinator failed to find live sequencer, falling back to static url", "err", redisErr, "falback", f.fallbackTarget)
+			newSequencerUrl = f.fallbackTarget
+		}
 	}
 	if newSequencerUrl == f.currentTarget {
 		return f.noRedisError()
 	}
-	newForwarder := NewForwarder(newSequencerUrl, f.forwarderConfig)
-	err = newForwarder.Initialize(ctx)
+	newForwarder := NewForwarder(newSequencerUrl, f.config)
+	err := newForwarder.Initialize(ctx)
 	if err != nil {
 		log.Error("failed to initialize forward agent", "err", err)
-		return f.noRedisError()
+		if redisErr != nil {
+			return f.retryAfterRedisError()
+		} else {
+			return f.noRedisError()
+		}
 	}
-	f.forwarder.Load().Disable()
+	f.getForwarder().Disable()
 	// TODO should we stop the old forwarder to close old rpc connection?
 	// oldForwarder.StopAndWait()
 	f.currentTarget = newSequencerUrl
-	f.forwarder.Store(newForwarder)
-	return f.noRedisError()
+	f.setForwarder(newForwarder)
+	if redisErr != nil {
+		return f.retryAfterRedisError()
+	} else {
+		return f.noRedisError()
+	}
 }
 
 func (f *RedisTxForwarder) Start(ctx context.Context) error {

@@ -840,8 +840,9 @@ func createNodeImpl(
 		if config.DelayedSequencer.Enable {
 			return nil, errors.New("cannot have delayed sequencer without sequencer")
 		}
-		if config.SeqCoordinator.RedisUrl != "" {
-			txPublisher = NewRedisTxForwarder(config.SeqCoordinator.RedisUrl, config.SeqCoordinator.UpdateInterval, config.SeqCoordinator.RetryInterval, &config.Forwarder)
+		if config.Forwarder.RedisUrl != "" {
+			// TODO add config options for redis forwarder seprate from SeqCoordinator
+			txPublisher = NewRedisTxForwarder(config.ForwardingTarget(), &config.Forwarder)
 		} else {
 			if config.ForwardingTarget() == "" {
 				txPublisher = NewTxDropper()
