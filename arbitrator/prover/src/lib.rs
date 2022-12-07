@@ -16,6 +16,9 @@ pub mod utils;
 pub mod value;
 pub mod wavm;
 
+#[cfg(test)]
+mod test;
+
 use crate::machine::{argument_data_to_inbox, Machine};
 use eyre::Result;
 use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
@@ -56,7 +59,7 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     match arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size) {
         Ok(mach) => mach,
         Err(err) => {
-            eprintln!("Error loading binary: {}", err);
+            eprintln!("Error loading binary: {:?}", err);
             std::ptr::null_mut()
         }
     }
