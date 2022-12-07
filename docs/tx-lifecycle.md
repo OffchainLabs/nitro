@@ -1,6 +1,6 @@
 # Overview: The Lifecycle of an Arbitrum Transaction
 
-As an introduction to the various components that compromise the Arbitrum protocol, we'll go step-by-step over the phases an Arbitrum transaction goes through, starting with a client creating a signed transaction, to it ultimately being confirmed back on layer 1.
+As an introduction to the various components that compose the Arbitrum protocol, we'll go step-by-step over the phases an Arbitrum transaction goes through, starting with a client creating a signed transaction, to it ultimately being confirmed back on layer 1.
 
 We'll also intersperse it with "finality checks," explaining what guarantees the client has over their transaction's finality (i.e., assurances that their transaction's result is guaranteed and won't later be altered) over the course of a transaction's various stages.
 
@@ -44,15 +44,25 @@ Upon receiving a transaction, the Sequencer will:
 
 At this phase, the client's acceptance of finality relies on trusting the Sequencer. I.e., a malicious/faulty Sequencer could deviate between what it promised in the transaction receipt and what is ultimately published in a batch (see phase 3).
 
-Note that even a malicious/faulty Sequencer can only, at worst, reorder or temporarily delay transactions; it cannot, e.g., forge a client's transaction or propose an invalid state update. Given the degree of trust in the Sequencer at phase 2, we sometimes refer to the "instant" receipt that the Sequencer provides as a "soft confirmation."
+:::note
 
-#### 3. Sequencer posts transaction in a batch (on-chain)
+Even a malicious/faulty Sequencer can only, at worst, reorder or temporarily delay transactions; it cannot, e.g., forge a client's transaction or propose an invalid state update. Given the degree of trust in the Sequencer at phase 2, we sometimes refer to the "instant" receipt that the Sequencer provides as a "soft confirmation."
+
+:::
+
+### 3. Sequencer posts transaction in a batch (on-chain)
 
 The Sequencer will eventually post a batch of L2 transactions which includes our client's transaction onto the underlying L1 (as calldata); under normal conditions, the Sequencer will post batches [every few minutes](https://arbiscan.io/batches).
 
 ##### 3a. What if the Sequencer never includes our transaction?
 
-Even if the Sequencer never includes our transaction in a batch, the client can include it in the L2 by posting in the delayed inbox and the "force including" it after some delay period (currently ~24 hours on Arbitrum One). (Note that the Sequencer is forced to include messages from the delayed Inbox in the queued order that they appear on chain. Thus, it can't selectively delay particular messages while including others; i.e., delaying the message at the front of the queue means delaying all messages behind it as well.)
+Even if the Sequencer never includes our transaction in a batch, the client can include it in the L2 by posting in the delayed inbox and then "force including" it after some delay period (currently ~24 hours on Arbitrum One).
+
+:::note
+
+The Sequencer is forced to include messages from the delayed Inbox in the queued order that they appear on chain, i.e. it processes messages using the "first in, first out" method. Thus, it can't selectively delay particular messages while including others; i.e., delaying the message at the front of the queue means delaying all messages behind it as well.
+
+:::
 
 **See:**
 
@@ -79,7 +89,11 @@ A staked, active validator will then run the Arbitrum VM over the inputs in the 
 - [Geth](./arbos/geth.md)
 - [L1 pricing](./arbos/l1-pricing.md) / [L2 Gas](./arbos/gas.md)
 
-Note that RBlock assertions include claims about the state of the Outbox; if our transaction triggered any L2 to L1 messages, a RBlock will include an update to the Outbox to reflect its inclusion.
+:::note
+
+RBlock assertions include claims about the state of the Outbox; if our transaction triggered any L2 to L1 messages, a RBlock will include an update to the Outbox to reflect its inclusion.
+
+:::
 
 **See**:
 
@@ -93,7 +107,7 @@ In the happy / common case, the validator asserted a valid RBlock, and over the 
 
 If two validators assert different RBlocks, only (at most) one of them can be valid, so they are put into a dispute.
 
-A dispute consists of two staked validators dissecting their disagreement down to a single L2 block, and then dissecting the sequence of VM instructions within this block down to a single OPCODE, then finally, executing this single operation. The underlying VM the Arbitrum uses is Wasm, or, more precisely, "WAVM." This is all refereed by contracts on L1.
+A dispute consists of two staked validators dissecting their disagreement down to a single L2 block, and then dissecting the sequence of VM instructions within this block down to a single OPCODE, then finally, executing this single operation. The underlying VM the Arbitrum uses is [WebAssembly (Wasm)](https://webassembly.org), or, more precisely, "WAVM." This is all refereed by contracts on L1.
 
 **See:**
 
@@ -114,6 +128,12 @@ Remember in phase 3 when said that once the L1 has committed to inputs, we can g
 
 Once any and all disputes have been resolved and sufficient time has passed, our RBlock can be confirmed on L1 (any Ethereum account on L1 can confirm it). Upon confirmation, the Outbox root on L1 gets updated.
 
-#### ~ ~ ~ FINALITY CHECK: L2 to L1 Messages Executable on L1 ~ ~ ~
+#### ~ ~ ~ FINALITY CHECK: L2-to-L1 Messages Executable on L1 ~ ~ ~
 
-If our client's transaction didn't include any L2 to L1 messages (e.g., withdrawals), phase 5 has no material affect on their transaction. If it did include an L2 to L1 transaction, it is only after confirmation that the message can be executed in the Outbox. Note that even before phase 5, the client has L1 finality on the _result_ of their L2 to L1 message, they just can't execute it yet; i.e., they're have a guarantee that they'll eventually be able to, e.g., finalize their withdrawal, they just can't actually claim their funds on L1 until the RBlock is confirmed.
+If our client's transaction didn't include any L2-to-L1 messages (e.g., withdrawals), phase 5 has no material effect on their transaction. If it did include an L2-to-L1 transaction, it is only after confirmation that the message can be executed in the Outbox on L1.
+
+:::note
+
+Even before phase 5, the client has L1 finality on the _result_ of their L2-to-L1 message, they just can't execute it yet; i.e., they have a guarantee that they'll eventually be able to, e.g., finalize their withdrawal, they just can't claim their funds on L1 until the RBlock is confirmed.
+
+:::
