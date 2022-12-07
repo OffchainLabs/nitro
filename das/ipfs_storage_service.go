@@ -45,7 +45,7 @@ var DefaultIpfsStorageServiceConfig = IpfsStorageServiceConfig{
 	Enable:      false,
 	RepoDir:     "",
 	ReadTimeout: time.Minute,
-	Profiles:    "test", // Default to test, see profiles here https://github.com/ipfs/kubo/blob/e550d9e4761ea394357c413c02ade142c0dea88c/config/profile.go,
+	Profiles:    "",
 	Peers:       []string{},
 
 	PinAfterGet:   true,
@@ -56,7 +56,7 @@ func IpfsStorageServiceConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultIpfsStorageServiceConfig.Enable, "enable storage/retrieval of sequencer batch data from IPFS")
 	f.String(prefix+".repo-dir", DefaultIpfsStorageServiceConfig.RepoDir, "directory to use to store the local IPFS repo")
 	f.Duration(prefix+".read-timeout", DefaultIpfsStorageServiceConfig.ReadTimeout, "timeout for IPFS reads, since by default it will wait forever. Treat timeout as not found")
-	f.String(prefix+".profiles", DefaultIpfsStorageServiceConfig.Profiles, "comma separated list of IPFS profiles to use")
+	f.String(prefix+".profiles", DefaultIpfsStorageServiceConfig.Profiles, "comma separated list of IPFS profiles to use, see https://docs.ipfs.tech/how-to/default-profile")
 	f.StringSlice(prefix+".peers", DefaultIpfsStorageServiceConfig.Peers, "list of IPFS peers to connect to, eg /ip4/1.2.3.4/tcp/12345/p2p/abc...xyz")
 	f.Bool(prefix+".pin-after-get", DefaultIpfsStorageServiceConfig.PinAfterGet, "pin sequencer batch data in IPFS")
 	f.Float64(prefix+".pin-percentage", DefaultIpfsStorageServiceConfig.PinPercentage, "percent of sequencer batch data to pin, as a floating point number in the range 0.0 to 100.0")
