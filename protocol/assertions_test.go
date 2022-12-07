@@ -27,7 +27,7 @@ func TestAssertionChain(t *testing.T) {
 
 	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
 	require.Equal(t, 1, len(assertionsChain.assertions))
-	require.Equal(t, uint64(0), assertionsChain.confirmedLatest)
+	require.Equal(t, SequenceNum(0), assertionsChain.confirmedLatest)
 	var eventChan chan AssertionChainEvent
 	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
 		chain := p.(*AssertionChain)
@@ -66,7 +66,7 @@ func TestAssertionChain(t *testing.T) {
 
 		require.Equal(t, newAssertion, chain.LatestConfirmed(tx))
 		require.Equal(t, ConfirmedAssertionState, int(newAssertion.status))
-		verifyConfirmEventInFeed(t, eventChan, 1)
+		verifyConfirmEventInFeed(t, eventChan, SequenceNum(1))
 
 		// try to create a duplicate assertion
 		_, err = chain.CreateLeaf(tx, genesis, StateCommitment{1, correctBlockHashes[99]}, staker1)
@@ -156,12 +156,12 @@ func TestAssertionChain_LeafCreationsInsufficientStakes(t *testing.T) {
 	}))
 }
 
-func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum, prevSeqNum uint64, staker common.Address, comm StateCommitment) {
+func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum, prevSeqNum SequenceNum, staker common.Address, comm StateCommitment) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
 	case *CreateLeafEvent:
-		if e.SeqNum != seqNum || e.PrevSeqNum != prevSeqNum || e.Staker != staker || e.StateCommitment != comm {
+		if e.SeqNum != seqNum || e.PrevSeqNum != prevSeqNum || e.Validator != staker || e.StateCommitment != comm {
 			t.Fatal(e)
 		}
 	default:
@@ -169,7 +169,7 @@ func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seq
 	}
 }
 
-func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum uint64) {
+func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum SequenceNum) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
@@ -180,7 +180,7 @@ func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum
 	}
 }
 
-func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum uint64) {
+func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum SequenceNum) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
@@ -191,7 +191,7 @@ func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum 
 	}
 }
 
-func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent, parentSeqNum uint64) {
+func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent, parentSeqNum SequenceNum) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {

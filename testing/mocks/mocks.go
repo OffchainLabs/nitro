@@ -74,12 +74,12 @@ func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- proto
 func (m *MockProtocol) SubscribeChallengeEvents(ctx context.Context, ch chan<- protocol.ChallengeEvent) {
 }
 
-func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum uint64) (*protocol.Assertion, error) {
+func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum protocol.SequenceNum) (*protocol.Assertion, error) {
 	args := m.Called(tx, seqNum)
 	return args.Get(0).(*protocol.Assertion), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengeVertexBySequenceNum(tx *protocol.ActiveTx, commitHash protocol.AssertionStateCommitHash, seqNum uint64) (*protocol.ChallengeVertex, error) {
+func (m *MockProtocol) ChallengeVertexBySequenceNum(tx *protocol.ActiveTx, commitHash protocol.AssertionStateCommitHash, seqNum protocol.SequenceNum) (*protocol.ChallengeVertex, error) {
 	args := m.Called(tx, commitHash, seqNum)
 	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
 }
