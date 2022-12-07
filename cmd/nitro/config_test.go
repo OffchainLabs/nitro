@@ -104,7 +104,7 @@ func TestLiveNodeConfig(t *testing.T) {
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := NewLiveNodeConfig(args, config)
+	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })
 
 	// check updating the config
 	update := config.ShallowClone()
@@ -182,7 +182,7 @@ func TestPeriodicReloadOfLiveNodeConfig(t *testing.T) {
 	config, _, _, _, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 
-	liveConfig := NewLiveNodeConfig(args, config)
+	liveConfig := NewLiveNodeConfig(args, config, func(path string) string { return path })
 	liveConfig.Start(ctx)
 
 	// test if periodic reload works

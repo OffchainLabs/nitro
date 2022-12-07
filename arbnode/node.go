@@ -25,7 +25,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
@@ -416,6 +418,7 @@ type Config struct {
 	Caching                CachingConfig                  `koanf:"caching"`
 	Archive                bool                           `koanf:"archive"`
 	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
+	TransactionStreamer    TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -477,6 +480,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
+	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 
 	archiveMsg := fmt.Sprintf("retain past block state (deprecated, please use %v.caching.archive)", prefix)
 	f.Bool(prefix+".archive", ConfigDefault.Archive, archiveMsg)
@@ -500,8 +504,9 @@ var ConfigDefault = Config{
 	SyncMonitor:            DefaultSyncMonitorConfig,
 	Dangerous:              DefaultDangerousConfig,
 	Archive:                false,
-	TxLookupLimit:          40_000_000,
+	TxLookupLimit:          126_230_400, // 1 year at 4 blocks per second
 	Caching:                DefaultCachingConfig,
+	TransactionStreamer:    DefaultTransactionStreamerConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -651,8 +656,11 @@ var DefaultCachingConfig = CachingConfig{
 }
 
 type Node struct {
+	ChainDB                 ethdb.Database
+	ArbDB                   ethdb.Database
 	Stack                   *node.Node
 	Backend                 *arbitrum.Backend
+	FilterSystem            *filters.FilterSystem
 	ArbInterface            *ArbInterface
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
@@ -698,9 +706,10 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	for version != currentDbSchemaVersion {
 		batch := arbDb.NewBatch()
 		switch version {
-		case ^uint64(0):
-			// TODO: write db format upgrade code
-			// This code path is here to avoid a bunch of linter errors
+		case 0:
+			// No database updates are necessary for database format version 0->1.
+			// This version adds a new format for delayed messages in the inbox tracker,
+			// but it can still read the old format for old messages.
 		default:
 			return fmt.Errorf("unsupported database format version %v", version)
 		}
@@ -789,7 +798,8 @@ func createNodeImpl(
 		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &config.Get().L1Reader })
 	}
 
-	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan)
+	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &config.Get().TransactionStreamer }
+	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -848,7 +858,11 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, syncMonitor)
+	filterConfig := filters.Config{
+		LogCacheSize: config.RPC.FilterLogCacheSize,
+		Timeout:      config.RPC.FilterTimeout,
+	}
+	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface, syncMonitor, filterConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -865,6 +879,7 @@ func createNodeImpl(
 			l2ChainId,
 			currentMessageCount,
 			txStreamer,
+			nil,
 			fatalErrChan,
 			bpVerifier,
 		)
@@ -874,8 +889,11 @@ func createNodeImpl(
 	}
 	if !config.L1Reader.Enable {
 		return &Node{
+			chainDb,
+			arbDb,
 			stack,
 			backend,
+			filterSystem,
 			arbInterface,
 			nil,
 			txStreamer,
@@ -964,38 +982,40 @@ func createNodeImpl(
 	var blockValidator *validator.BlockValidator
 	var statelessBlockValidator *validator.StatelessBlockValidator
 
-	if !foundMachines && blockValidatorConf.Enable {
-		return nil, fmt.Errorf("failed to find machines %v", machinesPath)
-	} else if !foundMachines {
-		log.Warn("Failed to find machines", "path", machinesPath)
-	} else {
+	if foundMachines {
 		statelessBlockValidator, err = validator.NewStatelessBlockValidator(
 			nitroMachineLoader,
 			inboxReader,
 			inboxTracker,
 			txStreamer,
 			l2BlockChain,
+			chainDb,
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
 			&config.Get().BlockValidator,
-			fatalErrChan,
 		)
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		if blockValidatorConf.Enable || config.Validator.Enable {
+			return nil, fmt.Errorf("failed to find machines %v", machinesPath)
+		}
+		log.Warn("Failed to find machines", "path", machinesPath)
+	}
 
-		if blockValidatorConf.Enable {
-			blockValidator, err = validator.NewBlockValidator(
-				statelessBlockValidator,
-				inboxTracker,
-				txStreamer,
-				nitroMachineLoader,
-				reorgingToBlock,
-				func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
-			)
-			if err != nil {
-				return nil, err
-			}
+	if blockValidatorConf.Enable {
+		blockValidator, err = validator.NewBlockValidator(
+			statelessBlockValidator,
+			inboxTracker,
+			txStreamer,
+			nitroMachineLoader,
+			reorgingToBlock,
+			func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
+			fatalErrChan,
+		)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -1025,7 +1045,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, daReader, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -1064,8 +1084,11 @@ func createNodeImpl(
 	}
 
 	return &Node{
+		chainDb,
+		arbDb,
 		stack,
 		backend,
+		filterSystem,
 		arbInterface,
 		l1Reader,
 		txStreamer,
@@ -1143,7 +1166,8 @@ func SetUpDataAvailability(
 	if !config.Enable {
 		return nil, nil, nil
 	}
-
+	var syncFromStorageServices []*das.IterableStorageService
+	var syncToStorageServices []das.StorageService
 	var seqInbox *bridgegen.SequencerInbox
 	var err error
 	var seqInboxCaller *bridgegen.SequencerInboxCaller
@@ -1189,7 +1213,7 @@ func SetUpDataAvailability(
 
 		          → : X--delegates to-->Y
 	*/
-	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config)
+	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1274,6 +1298,14 @@ func SetUpDataAvailability(
 		if err != nil {
 			return nil, nil, err
 		}
+		if config.RedisCacheConfig.SyncFromStorageServices {
+			iterableStorageService := das.NewIterableStorageService(das.ConvertStorageServiceToIterationCompatibleStorageService(cache))
+			syncFromStorageServices = append(syncFromStorageServices, iterableStorageService)
+			cache = iterableStorageService
+		}
+		if config.RedisCacheConfig.SyncToStorageServices {
+			syncToStorageServices = append(syncToStorageServices, cache)
+		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
 	}
 	if config.LocalCacheConfig.Enable {
@@ -1283,6 +1315,11 @@ func SetUpDataAvailability(
 			return nil, nil, err
 		}
 		topLevelDas = das.NewCacheStorageToDASAdapter(topLevelDas, cache)
+	}
+
+	if config.RegularSyncStorageConfig.Enable && len(syncFromStorageServices) != 0 && len(syncToStorageServices) != 0 {
+		regularlySyncStorage := das.NewRegularlySyncStorage(syncFromStorageServices, syncToStorageServices, config.RegularSyncStorageConfig)
+		regularlySyncStorage.Start(ctx)
 	}
 
 	if topLevelDas != nil && seqInbox != nil {
@@ -1362,6 +1399,11 @@ func CreateNode(
 			fallbackClientTimeout: config.RPC.ClassicRedirectTimeout,
 		},
 		Public: false,
+	})
+	apis = append(apis, rpc.API{
+		Namespace: "debug",
+		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDb)),
+		Public:    false,
 	})
 	stack.RegisterAPIs(apis)
 
@@ -1444,7 +1486,16 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.BroadcastClients != nil {
-		n.BroadcastClients.Start(ctx)
+		go func() {
+			if n.InboxReader != nil {
+				select {
+				case <-n.InboxReader.CaughtUp():
+				case <-ctx.Done():
+					return
+				}
+			}
+			n.BroadcastClients.Start(ctx)
+		}()
 	}
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
@@ -1467,6 +1518,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.BlockValidator != nil && n.BlockValidator.Started() {
 		n.BlockValidator.StopAndWait()
+	}
+	if n.StatelessBlockValidator != nil {
+		n.StatelessBlockValidator.Stop()
 	}
 	if n.BatchPoster != nil && n.BatchPoster.Started() {
 		n.BatchPoster.StopAndWait()

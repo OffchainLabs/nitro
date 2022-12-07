@@ -16,6 +16,11 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+const (
+	// Do not send cache if requested seqnum is older than last cached minus maxRequestedSeqNumOffset
+	maxRequestedSeqNumOffset = arbutil.MessageIndex(10_000)
+)
+
 var (
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
 )
@@ -30,7 +35,7 @@ func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
 }
 
 func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.MessageIndex) *BroadcastMessage {
-	if b.messageCount == 0 {
+	if len(b.messages) == 0 {
 		return nil
 	}
 	var startingIndex int32
@@ -43,10 +48,17 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 			return nil
 		}
 		startingIndex = int32(requestedSeqNum - firstCachedSeqNum)
-		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
-			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "seqNumZero", b.messages[0].SequenceNumber, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
+		if startingIndex >= int32(len(b.messages)) {
+			log.Error("unexpected startingIndex", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "lastCachedSeqNum", lastCachedSeqNum, "cacheLength", len(b.messages))
 			return nil
 		}
+		if b.messages[startingIndex].SequenceNumber != requestedSeqNum {
+			log.Error("requestedSeqNum not found where expected", "requestedSeqNum", requestedSeqNum, "firstCachedSeqNum", firstCachedSeqNum, "startingIndex", startingIndex, "foundSeqNum", b.messages[startingIndex].SequenceNumber)
+			return nil
+		}
+	} else if firstCachedSeqNum > maxRequestedSeqNumOffset && requestedSeqNum < (firstCachedSeqNum-maxRequestedSeqNumOffset) {
+		// Requested seqnum is too old, don't send any cache
+		return nil
 	}
 
 	messagesToSend := b.messages[startingIndex:]

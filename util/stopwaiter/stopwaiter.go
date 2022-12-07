@@ -94,12 +94,20 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 }
 
 func (s *StopWaiterSafe) StopOnly() {
+	_ = s.stopOnly()
+}
+
+// returns true if stop function was called
+func (s *StopWaiterSafe) stopOnly() bool {
+	stopWasCalled := false
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if s.started && !s.stopped {
 		s.stopFunc()
+		stopWasCalled = true
 	}
 	s.stopped = true
+	return stopWasCalled
 }
 
 // StopAndWait may be called multiple times, even before start.
@@ -116,12 +124,14 @@ func getAllStackTraces() string {
 }
 
 func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
-	s.StopOnly()
-	timer := time.NewTimer(warningTimeout)
+	if !s.stopOnly() {
+		return nil
+	}
 	waitChan, err := s.GetWaitChannel()
 	if err != nil {
 		return err
 	}
+	timer := time.NewTimer(warningTimeout)
 
 	select {
 	case <-timer.C:
@@ -129,6 +139,7 @@ func (s *StopWaiterSafe) stopAndWaitImpl(warningTimeout time.Duration) error {
 		log.Warn("taking too long to stop", "name", s.name, "delay[s]", warningTimeout.Seconds())
 		log.Warn(traces)
 	case <-waitChan:
+		timer.Stop()
 		return nil
 	}
 	<-waitChan

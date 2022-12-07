@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -30,7 +32,13 @@ func getJitPath() (string, error) {
 	var jitBinary string
 	executable, err := os.Executable()
 	if err == nil {
-		jitBinary = filepath.Join(filepath.Dir(executable), "jit")
+		if strings.Contains(filepath.Base(executable), "test") {
+			_, thisfile, _, _ := runtime.Caller(0)
+			projectDir := filepath.Dir(filepath.Dir(thisfile))
+			jitBinary = filepath.Join(projectDir, "target", "bin", "jit")
+		} else {
+			jitBinary = filepath.Join(filepath.Dir(executable), "jit")
+		}
 		_, err = os.Stat(jitBinary)
 	}
 	if err != nil {
@@ -62,7 +70,7 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 	process.Stderr = os.Stderr
 	go func() {
 		if err := process.Run(); err != nil {
-			fatalErrChan <- fmt.Errorf("Lost jit block validator process: %w", err)
+			fatalErrChan <- fmt.Errorf("lost jit block validator process: %w", err)
 		}
 	}()
 
@@ -74,8 +82,15 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 	return machine, nil
 }
 
+func (machine *JitMachine) close() {
+	_, err := machine.stdin.Write([]byte("\n"))
+	if err != nil {
+		log.Error("error closing jit machine", "error", err)
+	}
+}
+
 func (machine *JitMachine) prove(
-	ctxIn context.Context, entry *validationEntry, resolver GoPreimageResolver, delayed []byte,
+	ctxIn context.Context, entry *validationEntry, resolver GoPreimageResolver,
 ) (GoGlobalState, error) {
 	ctx, cancel := context.WithCancel(ctxIn)
 	defer cancel() // ensure our cleanup functions run when we're done
@@ -125,7 +140,10 @@ func (machine *JitMachine) prove(
 	}
 
 	// Tell the new process about the global state
-	gsStart := entry.start()
+	gsStart, err := entry.start()
+	if err != nil {
+		return state, err
+	}
 
 	writeExact := func(data []byte) error {
 		_, err := conn.Write(data)
@@ -166,7 +184,7 @@ func (machine *JitMachine) prove(
 
 	success := []byte{successByte}
 	another := []byte{anotherByte}
-	ready := []byte{successByte, readyByte}
+	ready := []byte{readyByte}
 
 	// send inbox
 	for _, batch := range entry.BatchInfo {
@@ -192,10 +210,29 @@ func (machine *JitMachine) prove(
 		if err := writeUint64(entry.DelayedMsgNr); err != nil {
 			return state, err
 		}
-		if err := writeBytes(delayed); err != nil {
+		if err := writeBytes(entry.DelayedMsg); err != nil {
 			return state, err
 		}
 	}
+	if err := writeExact(success); err != nil {
+		return state, err
+	}
+
+	// send known preimages
+	knownPreimages := entry.Preimages
+	if err := writeUint64(uint64(len(knownPreimages))); err != nil {
+		return state, err
+	}
+	for hash, preimage := range knownPreimages {
+		if err := writeExact(hash[:]); err != nil {
+			return state, err
+		}
+		if err := writeBytes(preimage); err != nil {
+			return state, err
+		}
+	}
+
+	// signal that we are done sending global state
 	if err := writeExact(ready); err != nil {
 		return state, err
 	}

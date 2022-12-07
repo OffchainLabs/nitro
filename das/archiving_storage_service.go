@@ -16,7 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
-var ErrArchiveTimeout = errors.New("Archiver timed out")
+var ErrArchiveTimeout = errors.New("archiver timed out")
 
 type ArchivingStorageService struct {
 	inner                  StorageService
@@ -54,7 +54,7 @@ func NewArchivingStorageService(
 			select {
 			case data, stillOpen := <-archiveChan:
 				if !stillOpen {
-					// we successfully archived everything, and our input chan is closed, so shut down cleanly
+					// we successfully archived everything, and our input chan is closed, so shut down cleanly.
 					return
 				}
 				expiration := arbmath.SaturatingUAdd(uint64(time.Now().Unix()), archiveExpirationSeconds)
