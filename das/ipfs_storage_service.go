@@ -146,7 +146,7 @@ func (s *IpfsStorageService) Put(ctx context.Context, data []byte, timeout uint6
 				options.Block.Hash(multihash.KECCAK_256, -1), // Use keccak256 to calculate the hash to put in the block's
 				// CID, since it is the same algo used by dastree.
 				options.Block.Pin(true)) // Keep the data in the local IPFS repo, don't GC it.
-			if err != nil {
+			if err == nil {
 				log.Trace("Wrote IPFS path", "path", blockStat.Path().String())
 			}
 			resultChan <- err
