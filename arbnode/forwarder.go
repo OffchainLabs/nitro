@@ -254,7 +254,7 @@ func (f *RedisTxForwarder) Initialize(ctx context.Context) error {
 
 func (f *RedisTxForwarder) retryAfterRedisError() time.Duration {
 	f.redisErrors++
-	retryIn := f.config.RetryInterval * time.Duration(f.RedisErrors)
+	retryIn := f.config.RetryInterval * time.Duration(f.redisErrors)
 	if retryIn > f.config.UpdateInterval {
 		retryIn = f.config.UpdateInterval
 	}
@@ -282,12 +282,12 @@ func (f *RedisTxForwarder) setForwarder(forwarder *TxForwarder) {
 func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 	newSequencerUrl, redisErr := f.redisCoordinator.RecommendLiveSequencer(ctx)
 	if redisErr != nil {
-		if f.currentTarget == f.fallbackTarget {
-			log.Warn("coordinator failed to find live sequencer", "err", redisErr)
-			return f.retryAfterRedisError()
-		} else {
+		if f.currentTarget != f.fallbackTarget && f.fallbackTarget != "" {
 			log.Warn("coordinator failed to find live sequencer, falling back to static url", "err", redisErr, "falback", f.fallbackTarget)
 			newSequencerUrl = f.fallbackTarget
+		} else {
+			log.Warn("coordinator failed to find live sequencer", "err", redisErr)
+			return f.retryAfterRedisError()
 		}
 	}
 	if newSequencerUrl == f.currentTarget {
