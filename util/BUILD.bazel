@@ -14,8 +14,8 @@ go_library(
     importpath = "github.com/OffchainLabs/new-rollup-exploration/util",
     visibility = ["//visibility:public"],
     deps = [
-        "@com_github_ethereum_go_ethereum//common:go_default_library",
-        "@com_github_ethereum_go_ethereum//crypto:go_default_library",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
     ],
 )
 
@@ -29,8 +29,8 @@ go_test(
     ],
     embed = [":util"],
     deps = [
-        "@com_github_ethereum_go_ethereum//common:go_default_library",
-        "@com_github_ethereum_go_ethereum//crypto:go_default_library",
-        "@com_github_stretchr_testify//require:go_default_library",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_stretchr_testify//require",
     ],
 )
