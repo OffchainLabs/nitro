@@ -396,7 +396,9 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
                 for export in flatten!(Export, exports) {
                     let name = export.field.to_owned();
                     if let Function = export.kind {
-                        binary.names.functions.entry(export.index).or_insert_with(|| name.clone());
+                        let index = export.index;
+                        let name = || name.clone();
+                        binary.names.functions.entry(index).or_insert_with(name);
                     }
 
                     // TODO: we'll only support the types also in wasmer 3.0

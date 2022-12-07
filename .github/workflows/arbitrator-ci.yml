@@ -142,7 +142,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all --manifest-path arbitrator/Cargo.toml
+          args: --all --manifest-path arbitrator/prover/Cargo.toml
 
       - name: Rustfmt
         uses: actions-rs/cargo@v1
