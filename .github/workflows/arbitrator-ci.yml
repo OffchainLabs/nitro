@@ -46,7 +46,7 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-          components: 'llvm-tools-preview, rustfmt, clippy'
+          components: 'llvm-tools-preview, rustfmt'
 
       - name: Install grcov
         uses: actions-rs/install@v0.1
@@ -137,12 +137,6 @@ jobs:
           echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
           echo RUSTFLAGS="-Cinstrument-coverage" >> $GITHUB_ENV
           echo RUSTDOCFLAGS="-Cpanic=abort" >> $GITHUB_ENV
-
-      - name: Clippy check
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all --manifest-path arbitrator/Cargo.toml -- -D warnings
 
       - name: Run rust tests
         uses: actions-rs/cargo@v1
