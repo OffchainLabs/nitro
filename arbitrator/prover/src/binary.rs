@@ -2,8 +2,9 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::value::{ArbValueType, FunctionType, IntegerValType, Value};
+use arbutil::Color;
 use eyre::{bail, ensure, Result};
-use fnv::FnvHashMap as HashMap;
+use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -11,7 +12,7 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::TryInto, hash::Hash, str::FromStr};
+use std::{convert::TryInto, fmt::Debug, hash::Hash, path::Path, str::FromStr};
 use wasmer::wasmparser::{
     Data, Element, Export, ExternalKind, Global, Import, ImportSectionEntryType, MemoryType, Name,
     NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeDef, Validator,
@@ -282,7 +283,7 @@ pub struct WasmBinary<'a> {
     pub names: NameCustomSection,
 }
 
-pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
+pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>> {
     let features = WasmFeatures {
         mutable_global: true,
         saturating_float_to_int: true,
@@ -393,10 +394,16 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             ExportSection(exports) => {
                 use ExternalKind::*;
                 for export in flatten!(Export, exports) {
-                    // we'll only support the types also in wasmer 3.0
+                    let name = export.field.to_owned();
+                    if let Function = export.kind {
+                        let index = export.index;
+                        let name = || name.clone();
+                        binary.names.functions.entry(index).or_insert_with(name);
+                    }
+
+                    // TODO: we'll only support the types also in wasmer 3.0
                     if matches!(export.kind, Function | Table | Memory | Global | Tag) {
                         let kind = export.kind.try_into()?;
-                        let name = export.field.to_owned();
                         binary.exports.insert((name, kind), export.index);
                     } else {
                         bail!("unsupported export kind {:?}", export)
@@ -442,5 +449,46 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             x => bail!("unsupported section type {:?}", x),
         }
     }
+
+    // reject the module if it re-exports an import with the same name
+    let mut exports = HashSet::default();
+    for (export, _) in binary.exports.keys() {
+        let export = export.rsplit("__").take(1);
+        exports.extend(export);
+    }
+    for import in &binary.imports {
+        if let Some(name) = import.name {
+            if exports.contains(name) {
+                bail!("binary exports an import with the same name {}", name.red());
+            }
+        }
+    }
+
+    // if no module name was given, make a best-effort guess with the file path
+    if binary.names.module.is_empty() {
+        binary.names.module = match path.file_name() {
+            Some(os_str) => os_str.to_string_lossy().into(),
+            None => path.to_string_lossy().into(),
+        };
+    }
     Ok(binary)
+}
+
+impl<'a> Debug for WasmBinary<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WasmBinary")
+            .field("types", &self.types)
+            .field("imports", &self.imports)
+            .field("functions", &self.functions)
+            .field("tables", &self.tables)
+            .field("memories", &self.memories)
+            .field("globals", &self.globals)
+            .field("exports", &self.exports)
+            .field("start", &self.start)
+            .field("elements", &format!("<{} elements>", self.elements.len()))
+            .field("codes", &self.codes)
+            .field("datas", &self.datas)
+            .field("names", &self.names)
+            .finish()
+    }
 }

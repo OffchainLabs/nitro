@@ -14,21 +14,21 @@ pub trait ModuleMod {
 impl<'a> ModuleMod for WasmBinary<'a> {
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType, String> {
         let index = sig.as_u32() as usize;
-        let error = || format!("missing signature {}", index.red());
-        let ty = self.types.get(index).ok_or_else(error)?;
-        ty.clone().try_into().map_err(|_| error())
+        self.types
+            .get(index)
+            .cloned()
+            .ok_or(format!("missing signature {}", index.red()))
     }
 
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String> {
         let mut index = func.as_u32() as usize;
-        let sig;
 
-        if index < self.imports.len() {
-            sig = self.imports.get(index).map(|x| &x.offset);
+        let sig = if index < self.imports.len() {
+            self.imports.get(index).map(|x| &x.offset)
         } else {
             index -= self.imports.len();
-            sig = self.functions.get(index);
-        }
+            self.functions.get(index)
+        };
 
         let func = func.as_u32();
         match sig {

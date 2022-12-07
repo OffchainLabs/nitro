@@ -1,7 +1,6 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use arbutil::Color;
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
@@ -358,10 +357,7 @@ fn main() -> Result<()> {
     println!("End machine hash: {}", mach.hash());
     println!("End machine stack: {:?}", mach.get_data_stack());
     println!("End machine backtrace:");
-    for (module, func, pc) in mach.get_backtrace() {
-        let func = rustc_demangle::demangle(&func);
-        println!("  {} {} @ {}", module, func.mint(), pc.blue());
-    }
+    mach.print_backtrace(false);
 
     if let Some(out) = opts.output {
         let out = File::create(out)?;

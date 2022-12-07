@@ -905,16 +905,16 @@ impl Machine {
         preimage_resolver: PreimageResolver,
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
-        let bin = parse(&bin_source)
+        let bin = parse(&bin_source, binary_path)
             .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
         let mut libraries = vec![];
         let mut lib_sources = vec![];
         for path in library_paths {
             let error_message = format!("failed to validate WASM binary at {:?}", path);
-            lib_sources.push((file_bytes(path)?, error_message));
+            lib_sources.push((file_bytes(path)?, path, error_message));
         }
-        for (source, error_message) in &lib_sources {
-            let library = parse(source).wrap_err_with(|| error_message.clone())?;
+        for (source, path, error_message) in &lib_sources {
+            let library = parse(source, path).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
         }
         Self::from_binaries(
@@ -961,7 +961,7 @@ impl Machine {
         }
 
         // collect all the library exports in advance so they can use each other's
-        for (index, lib) in libraries.into_iter().enumerate() {
+        for (index, lib) in libraries.iter().enumerate() {
             let module = 1 + index as u32; // off by one due to the entry point
             for ((name, kind), &export) in &lib.exports {
                 if *kind == ExportKind::Func {
@@ -1920,7 +1920,7 @@ impl Machine {
                                 "Missing requested preimage".red(),
                                 hash.red(),
                             );
-                            self.eprint_backtrace();
+                            self.print_backtrace(true);
                             bail!("missing requested preimage for hash {}", hash);
                         }
                     } else {
@@ -1950,7 +1950,7 @@ impl Machine {
                         let delayed = inbox_identifier == InboxIdentifier::Delayed;
                         if msg_num < self.first_too_far || delayed {
                             eprintln!("{} {msg_num}", "Missing inbox message".red());
-                            self.eprint_backtrace();
+                            self.print_backtrace(true);
                             bail!(
                                 "missing inbox message {msg_num} of {}",
                                 self.first_too_far - 1
@@ -2379,35 +2379,42 @@ impl Machine {
         self.modules.get(module).map(|m| &*m.names)
     }
 
-    pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {
-        let mut res = Vec::new();
-        let mut push_pc = |pc: ProgramCounter| {
+    pub fn print_backtrace(&self, stderr: bool) {
+        let print = |line: String| match stderr {
+            true => println!("{}", line),
+            false => eprintln!("{}", line),
+        };
+
+        let print_pc = |pc: ProgramCounter| {
             let names = &self.modules[pc.module].names;
             let func = names
                 .functions
                 .get(&(pc.func as u32))
                 .cloned()
-                .unwrap_or_else(|| format!("{}", pc.func));
-            let mut module = names.module.clone();
-            if module.is_empty() {
-                module = format!("{}", pc.module);
-            }
-            res.push((module, func, pc.inst));
+                .unwrap_or_else(|| pc.func.to_string());
+            let func = rustc_demangle::demangle(&func);
+            let module = match names.module.is_empty() {
+                true => pc.module.to_string(),
+                false => names.module.clone(),
+            };
+            let inst = format!("#{}", pc.inst);
+            print(format!(
+                "  {} {} {} {}",
+                module.grey(),
+                func.mint(),
+                "inst".grey(),
+                inst.blue(),
+            ));
         };
-        push_pc(self.pc);
-        for frame in self.frame_stack.iter().rev() {
+
+        print_pc(self.pc);
+        for frame in self.frame_stack.iter().rev().take(25) {
             if let Value::InternalRef(pc) = frame.return_ref {
-                push_pc(pc);
+                print_pc(pc);
             }
         }
-        res
-    }
-
-    pub fn eprint_backtrace(&self) {
-        eprintln!("Backtrace:");
-        for (module, func, pc) in self.get_backtrace() {
-            let func = rustc_demangle::demangle(&func);
-            eprintln!("  {} {} @ {}", module, func.mint(), pc.blue());
+        if self.frame_stack.len() > 25 {
+            print(format!("  ... and {} more", self.frame_stack.len() - 25).grey());
         }
     }
 }

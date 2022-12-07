@@ -167,7 +167,7 @@ enum RemoteType {
     FuncRef,
     ExternRef,
 
-    // types removed in wasmer 3.0
+    // TODO: types removed in wasmer 3.0
     ExnRef,
     Func,
     EmptyBlockType,
