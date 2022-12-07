@@ -298,7 +298,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				}
 				err = pruneChainDb(ctx, chainDb, stack, config, cacheConfig, l1Client, rollupAddrs)
 				if err != nil {
-					return chainDb, nil, err
+					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 				}
 				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 				if err != nil {
@@ -434,7 +434,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	err = pruneChainDb(ctx, chainDb, stack, config, cacheConfig, l1Client, rollupAddrs)
 	if err != nil {
-		return chainDb, nil, err
+		return chainDb, nil, fmt.Errorf("error pruning: %w", err)
 	}
 
 	err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
