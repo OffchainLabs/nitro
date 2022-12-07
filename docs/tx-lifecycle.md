@@ -50,7 +50,7 @@ Even a malicious/faulty Sequencer can only, at worst, reorder or temporarily del
 
 :::
 
-#### 3. Sequencer posts transaction in a batch (on-chain)
+### 3. Sequencer posts transaction in a batch (on-chain)
 
 The Sequencer will eventually post a batch of L2 transactions which includes our client's transaction onto the underlying L1 (as calldata); under normal conditions, the Sequencer will post batches [every few minutes](https://arbiscan.io/batches).
 
