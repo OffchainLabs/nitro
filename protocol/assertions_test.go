@@ -28,7 +28,7 @@ func TestAssertionChain(t *testing.T) {
 	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
 	require.Equal(t, 1, len(assertionsChain.assertions))
 	require.Equal(t, SequenceNum(0), assertionsChain.confirmedLatest)
-	var eventChan chan AssertionChainEvent
+	eventChan := make(chan AssertionChainEvent)
 	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
 		chain := p.(*AssertionChain)
 		genesis := p.LatestConfirmed(tx)
@@ -41,7 +41,6 @@ func TestAssertionChain(t *testing.T) {
 		chain.SetBalance(tx, staker1, bigBalance)
 		chain.SetBalance(tx, staker2, bigBalance)
 
-		eventChan := make(chan AssertionChainEvent)
 		chain.feed.SubscribeWithFilter(ctx, eventChan, func(ev AssertionChainEvent) bool {
 			switch ev.(type) {
 			case *SetBalanceEvent:
