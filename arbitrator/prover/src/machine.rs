@@ -961,7 +961,7 @@ impl Machine {
         }
 
         // collect all the library exports in advance so they can use each other's
-        for (index, lib) in libraries.into_iter().enumerate() {
+        for (index, lib) in libraries.iter().enumerate() {
             let module = 1 + index as u32; // off by one due to the entry point
             for ((name, kind), &export) in &lib.exports {
                 if *kind == ExportKind::Func {

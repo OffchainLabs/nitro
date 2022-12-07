@@ -396,9 +396,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
                 for export in flatten!(Export, exports) {
                     let name = export.field.to_owned();
                     if let Function = export.kind {
-                        if !binary.names.functions.contains_key(&export.index) {
-                            binary.names.functions.insert(export.index, name.clone());
-                        }
+                        binary.names.functions.entry(export.index).or_insert_with(|| name.clone());
                     }
 
                     // TODO: we'll only support the types also in wasmer 3.0
@@ -452,7 +450,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
 
     // reject the module if it re-exports an import with the same name
     let mut exports = HashSet::default();
-    for ((export, _), _) in &binary.exports {
+    for (export, _) in binary.exports.keys() {
         let export = export.rsplit("__").take(1);
         exports.extend(export);
     }
