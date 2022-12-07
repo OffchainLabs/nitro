@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -1398,6 +1399,11 @@ func CreateNode(
 			fallbackClientTimeout: config.RPC.ClassicRedirectTimeout,
 		},
 		Public: false,
+	})
+	apis = append(apis, rpc.API{
+		Namespace: "debug",
+		Service:   eth.NewDebugAPI(eth.NewArbEthereum(l2BlockChain, chainDb)),
+		Public:    false,
 	})
 	stack.RegisterAPIs(apis)
 
