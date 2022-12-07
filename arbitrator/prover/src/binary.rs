@@ -1,9 +1,10 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::value::{ArbValueType, FunctionType, IntegerValType, Value as LirValue};
+use crate::value::{ArbValueType, FunctionType, IntegerValType, Value};
+use arbutil::Color;
 use eyre::{bail, ensure, Result};
-use fnv::FnvHashMap as HashMap;
+use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -11,10 +12,11 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::TryInto, hash::Hash, str::FromStr};
-use wasmparser::{
-    Data, Element, Export, Global, Import, MemoryType, Name, NameSectionReader, Naming, Operator,
-    Parser, Payload, TableType, TypeDef,
+use std::{convert::TryInto, fmt::Debug, hash::Hash, path::Path, str::FromStr};
+use wasmer::wasmparser::{
+    Data, Element, Export, ExternalKind, Global, Import, ImportSectionEntryType, MemoryType, Name,
+    NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeDef, Validator,
+    WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -202,13 +204,46 @@ impl FromStr for FloatInstruction {
     }
 }
 
-pub fn op_as_const(op: Operator) -> Result<LirValue> {
+pub fn op_as_const(op: Operator) -> Result<Value> {
     match op {
-        Operator::I32Const { value } => Ok(LirValue::I32(value as u32)),
-        Operator::I64Const { value } => Ok(LirValue::I64(value as u64)),
-        Operator::F32Const { value } => Ok(LirValue::F32(f32::from_bits(value.bits()))),
-        Operator::F64Const { value } => Ok(LirValue::F64(f64::from_bits(value.bits()))),
+        Operator::I32Const { value } => Ok(Value::I32(value as u32)),
+        Operator::I64Const { value } => Ok(Value::I64(value as u64)),
+        Operator::F32Const { value } => Ok(Value::F32(f32::from_bits(value.bits()))),
+        Operator::F64Const { value } => Ok(Value::F64(f64::from_bits(value.bits()))),
         _ => bail!("Opcode is not a constant"),
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FuncImport<'a> {
+    pub offset: u32,
+    pub module: &'a str,
+    pub name: Option<&'a str>, // in wasmer 3.0 this won't be optional
+}
+
+/// This enum primarily exists because wasmer's ExternalKind doesn't impl these derived functions
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExportKind {
+    Func,
+    Table,
+    Memory,
+    Global,
+    Tag,
+}
+
+impl TryFrom<ExternalKind> for ExportKind {
+    type Error = eyre::Error;
+
+    fn try_from(kind: ExternalKind) -> Result<Self> {
+        use ExternalKind::*;
+        match kind {
+            Function => Ok(Self::Func),
+            Table => Ok(Self::Table),
+            Memory => Ok(Self::Memory),
+            Global => Ok(Self::Global),
+            Tag => Ok(Self::Tag),
+            kind => bail!("unsupported kind {:?}", kind),
+        }
     }
 }
 
@@ -230,15 +265,17 @@ pub struct NameCustomSection {
     pub functions: HashMap<u32, String>,
 }
 
+pub type ExportMap = HashMap<(String, ExportKind), u32>;
+
 #[derive(Clone, Default)]
 pub struct WasmBinary<'a> {
     pub types: Vec<FunctionType>,
-    pub imports: Vec<Import<'a>>,
+    pub imports: Vec<FuncImport<'a>>,
     pub functions: Vec<u32>,
     pub tables: Vec<TableType>,
     pub memories: Vec<MemoryType>,
-    pub globals: Vec<Global<'a>>,
-    pub exports: Vec<Export<'a>>,
+    pub globals: Vec<Value>,
+    pub exports: ExportMap,
     pub start: Option<u32>,
     pub elements: Vec<Element<'a>>,
     pub codes: Vec<Code<'a>>,
@@ -246,14 +283,15 @@ pub struct WasmBinary<'a> {
     pub names: NameCustomSection,
 }
 
-pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
-    let features = wasmparser::WasmFeatures {
+pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>> {
+    let features = WasmFeatures {
         mutable_global: true,
         saturating_float_to_int: true,
         sign_extension: true,
         reference_types: false,
         multi_value: true,
         bulk_memory: false,
+        module_linking: false,
         simd: false,
         relaxed_simd: false,
         threads: false,
@@ -263,9 +301,10 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         exceptions: false,
         memory64: false,
         extended_const: false,
-        component_model: false,
     };
-    wasmparser::Validator::new_with_features(features).validate_all(input)?;
+    let mut validator = Validator::new();
+    validator.wasm_features(features);
+    validator.validate_all(input)?;
 
     let sections: Vec<_> = Parser::new(0)
         .parse_all(input)
@@ -285,11 +324,24 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                 }
             }};
         }
+        macro_rules! flatten {
+            ($ty:tt, $source:expr) => {{
+                let mut values: Vec<$ty> = Vec::new();
+                for _ in 0..$source.get_count() {
+                    let item = $source.read()?;
+                    values.push(item.into())
+                }
+                values
+            }};
+        }
 
         match &mut section {
             TypeSection(type_section) => {
                 for _ in 0..type_section.get_count() {
-                    let TypeDef::Func(ty) = type_section.read()?;
+                    let ty = match type_section.read()? {
+                        TypeDef::Func(ty) => ty,
+                        x => bail!("Unsupported type section {:?}", x),
+                    };
                     binary.types.push(ty.try_into()?);
                 }
             }
@@ -297,7 +349,6 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                 let mut code = Code::default();
                 let mut locals = codes.get_locals_reader()?;
                 let mut ops = codes.get_operators_reader()?;
-
                 let mut index = 0;
 
                 for _ in 0..locals.get_count() {
@@ -316,12 +367,52 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
 
                 binary.codes.push(code);
             }
-            ImportSection(imports) => process!(binary.imports, imports),
+            GlobalSection(globals) => {
+                for global in flatten!(Global, globals) {
+                    let mut init = global.init_expr.get_operators_reader();
+
+                    let value = match (init.read()?, init.read()?, init.eof()) {
+                        (op, Operator::End, true) => op_as_const(op)?,
+                        _ => bail!("Non-constant global initializer"),
+                    };
+                    binary.globals.push(value);
+                }
+            }
+            ImportSection(imports) => {
+                for import in flatten!(Import, imports) {
+                    let ImportSectionEntryType::Function(offset) = import.ty else {
+                        bail!("unsupported import kind {:?}", import)
+                    };
+                    let import = FuncImport {
+                        offset,
+                        module: import.module,
+                        name: import.field,
+                    };
+                    binary.imports.push(import);
+                }
+            }
+            ExportSection(exports) => {
+                use ExternalKind::*;
+                for export in flatten!(Export, exports) {
+                    let name = export.field.to_owned();
+                    if let Function = export.kind {
+                        let index = export.index;
+                        let name = || name.clone();
+                        binary.names.functions.entry(index).or_insert_with(name);
+                    }
+
+                    // TODO: we'll only support the types also in wasmer 3.0
+                    if matches!(export.kind, Function | Table | Memory | Global | Tag) {
+                        let kind = export.kind.try_into()?;
+                        binary.exports.insert((name, kind), export.index);
+                    } else {
+                        bail!("unsupported export kind {:?}", export)
+                    }
+                }
+            }
             FunctionSection(functions) => process!(binary.functions, functions),
             TableSection(tables) => process!(binary.tables, tables),
             MemorySection(memories) => process!(binary.memories, memories),
-            GlobalSection(globals) => process!(binary.globals, globals),
-            ExportSection(exports) => process!(binary.exports, exports),
             StartSection { func, .. } => binary.start = Some(*func),
             ElementSection(elements) => process!(binary.elements, elements),
             DataSection(datas) => process!(binary.datas, datas),
@@ -354,10 +445,50 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             }
             Version { num, .. } => ensure!(*num == 1, "wasm format version not supported {}", num),
             UnknownSection { id, .. } => bail!("unsupported unknown section type {}", id),
-            End(_offset) => {}
+            End => {}
             x => bail!("unsupported section type {:?}", x),
         }
     }
 
+    // reject the module if it re-exports an import with the same name
+    let mut exports = HashSet::default();
+    for (export, _) in binary.exports.keys() {
+        let export = export.rsplit("__").take(1);
+        exports.extend(export);
+    }
+    for import in &binary.imports {
+        if let Some(name) = import.name {
+            if exports.contains(name) {
+                bail!("binary exports an import with the same name {}", name.red());
+            }
+        }
+    }
+
+    // if no module name was given, make a best-effort guess with the file path
+    if binary.names.module.is_empty() {
+        binary.names.module = match path.file_name() {
+            Some(os_str) => os_str.to_string_lossy().into(),
+            None => path.to_string_lossy().into(),
+        };
+    }
     Ok(binary)
+}
+
+impl<'a> Debug for WasmBinary<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WasmBinary")
+            .field("types", &self.types)
+            .field("imports", &self.imports)
+            .field("functions", &self.functions)
+            .field("tables", &self.tables)
+            .field("memories", &self.memories)
+            .field("globals", &self.globals)
+            .field("exports", &self.exports)
+            .field("start", &self.start)
+            .field("elements", &format!("<{} elements>", self.elements.len()))
+            .field("codes", &self.codes)
+            .field("datas", &self.datas)
+            .field("names", &self.names)
+            .finish()
+    }
 }

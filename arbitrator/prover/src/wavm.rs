@@ -12,7 +12,7 @@ use fnv::FnvHashMap as HashMap;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
-use wasmparser::{BlockType, Operator};
+use wasmer::wasmparser::{Operator, Type, TypeOrFuncType as BlockType};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {
@@ -604,7 +604,7 @@ pub fn wasm_to_wavm<'a>(
 
     let block_type_params = |ty: BlockType| -> usize {
         match ty {
-            BlockType::Empty => 0,
+            BlockType::Type(Type::EmptyBlockType) => 0,
             BlockType::Type(_) => 0,
             BlockType::FuncType(idx) => all_types[idx as usize].inputs.len(),
         }
@@ -612,7 +612,7 @@ pub fn wasm_to_wavm<'a>(
 
     let block_type_results = |ty: BlockType| -> usize {
         match ty {
-            BlockType::Empty => 0,
+            BlockType::Type(Type::EmptyBlockType) => 0,
             BlockType::Type(_) => 1,
             BlockType::FuncType(idx) => all_types[idx as usize].outputs.len(),
         }

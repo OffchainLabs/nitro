@@ -12,7 +12,7 @@ use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use wasmparser::{FuncType, Type};
+use wasmer::wasmparser::{FuncType, Type};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -45,6 +45,11 @@ impl TryFrom<Type> for ArbValueType {
             FuncRef => Self::FuncRef,
             ExternRef => Self::FuncRef,
             V128 => bail!("128-bit types are not supported"),
+
+            // TODO: removed in wasmer 3.0
+            ExnRef => bail!("Type not used in newer versions of wasmparser"),
+            Func => bail!("Type not used in newer versions of wasmparser"),
+            EmptyBlockType => bail!("Type not used in newer versions of wasmparser"),
         })
     }
 }
@@ -338,5 +343,51 @@ impl TryFrom<FuncType> for FunctionType {
         }
 
         Ok(Self { inputs, outputs })
+    }
+}
+
+impl Display for FunctionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut signature = "λ(".to_string();
+        if !self.inputs.is_empty() {
+            for arg in &self.inputs {
+                signature += &format!("{}, ", arg);
+            }
+            signature.pop();
+            signature.pop();
+        }
+        signature += ")";
+
+        let output_tuple = self.outputs.len() > 2;
+        if !self.outputs.is_empty() {
+            signature += " -> ";
+            if output_tuple {
+                signature += "(";
+            }
+            for out in &self.outputs {
+                signature += &format!("{}, ", out);
+            }
+            signature.pop();
+            signature.pop();
+            if output_tuple {
+                signature += ")";
+            }
+        }
+        write!(f, "{}", signature)
+    }
+}
+
+impl Display for ArbValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ArbValueType::*;
+        match self {
+            I32 => write!(f, "i32"),
+            I64 => write!(f, "i64"),
+            F32 => write!(f, "f32"),
+            F64 => write!(f, "f64"),
+            RefNull => write!(f, "null"),
+            FuncRef => write!(f, "func"),
+            InternalRef => write!(f, "internal"),
+        }
     }
 }

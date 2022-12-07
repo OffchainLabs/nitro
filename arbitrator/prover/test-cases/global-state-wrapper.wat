@@ -6,7 +6,7 @@
 (import "env" "wavm_read_inbox_message" (func $readinbox (param i64) (param i32) (param i32) (result i32)))
 (import "env" "wavm_halt_and_set_finished" (func $halt))
 
-(export "env__wavm_set_globalstate_u64" (func $set))
-(export "env__wavm_get_globalstate_u64" (func $get))
-(export "env__wavm_read_inbox_message" (func $readinbox))
-(export "env__wavm_halt_and_set_finished" (func $halt))
+(export "wrapper__set_globalstate_u64" (func $set))
+(export "wrapper__get_globalstate_u64" (func $get))
+(export "wrapper__read_inbox_message" (func $readinbox))
+(export "wrapper__halt_and_set_finished" (func $halt))
