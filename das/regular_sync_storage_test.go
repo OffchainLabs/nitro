@@ -18,8 +18,8 @@ func TestRegularSyncStorage(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 	syncFromStorageService := []*IterableStorageService{
-		NewIterableStorageService(convertStorageServiceToIterationCompatibleStorageService(NewMemoryBackedStorageService(ctx))),
-		NewIterableStorageService(convertStorageServiceToIterationCompatibleStorageService(NewMemoryBackedStorageService(ctx))),
+		NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(NewMemoryBackedStorageService(ctx))),
+		NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(NewMemoryBackedStorageService(ctx))),
 	}
 	syncToStorageService := []StorageService{
 		NewMemoryBackedStorageService(ctx),
