@@ -93,16 +93,9 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 		return nil
 	}
 
-	currentHeader, err := d.l1Reader.LastHeader(ctx)
-	if err != nil {
-		return err
-	}
-	if currentHeader == nil {
-		return nil
-	}
-
 	var finalized uint64
-	if config.UseMergeFinality && currentHeader.Difficulty.Sign() == 0 {
+	if config.UseMergeFinality && lastBlockHeader.Difficulty.Sign() == 0 {
+		var err error
 		if config.RequireFullFinality {
 			finalized, err = d.l1Reader.LatestFinalizedBlockNr(ctx)
 		} else {
@@ -112,7 +105,7 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 			return err
 		}
 	} else {
-		currentNum := currentHeader.Number.Int64()
+		currentNum := lastBlockHeader.Number.Int64()
 		if currentNum < config.FinalizeDistance {
 			return nil
 		}

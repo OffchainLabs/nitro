@@ -177,13 +177,13 @@ func (r *InboxReader) recentL1BlockToMsg(ctx context.Context, l1block uint64) (a
 		if err != nil {
 			return 0, err
 		}
-		if meta.L1Block < l1block {
+		if meta.L1Block <= l1block {
 			return meta.MessageCount, nil
 		}
 	}
 }
 
-func (r *InboxReader) GetSafeMsg(ctx context.Context) (arbutil.MessageIndex, error) {
+func (r *InboxReader) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	l1block, err := r.l1Reader.LatestSafeBlockNr(ctx)
 	if err != nil {
 		return 0, err
@@ -191,7 +191,7 @@ func (r *InboxReader) GetSafeMsg(ctx context.Context) (arbutil.MessageIndex, err
 	return r.recentL1BlockToMsg(ctx, l1block)
 }
 
-func (r *InboxReader) GetFinalizedMsg(ctx context.Context) (arbutil.MessageIndex, error) {
+func (r *InboxReader) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
 	l1block, err := r.l1Reader.LatestFinalizedBlockNr(ctx)
 	if err != nil {
 		return 0, err

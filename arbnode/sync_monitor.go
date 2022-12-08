@@ -133,7 +133,7 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	if s.inboxReader == nil || !s.initialized {
 		return 0, errors.New("not set up for safeblock")
 	}
-	msg, err := s.inboxReader.GetSafeMsg(ctx)
+	msg, err := s.inboxReader.GetSafeMsgCount(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -145,7 +145,7 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	if s.inboxReader == nil || !s.initialized {
 		return 0, errors.New("not set up for safeblock")
 	}
-	msg, err := s.inboxReader.GetFinalizedMsg(ctx)
+	msg, err := s.inboxReader.GetFinalizedMsgCount(ctx)
 	if err != nil {
 		return 0, err
 	}
