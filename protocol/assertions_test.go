@@ -27,8 +27,8 @@ func TestAssertionChain(t *testing.T) {
 
 	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
 	require.Equal(t, 1, len(assertionsChain.assertions))
-	require.Equal(t, uint64(0), assertionsChain.confirmedLatest)
-	var eventChan chan AssertionChainEvent
+	require.Equal(t, SequenceNum(0), assertionsChain.confirmedLatest)
+	eventChan := make(chan AssertionChainEvent)
 	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
 		chain := p.(*AssertionChain)
 		genesis := p.LatestConfirmed(tx)
@@ -41,7 +41,6 @@ func TestAssertionChain(t *testing.T) {
 		chain.SetBalance(tx, staker1, bigBalance)
 		chain.SetBalance(tx, staker2, bigBalance)
 
-		eventChan = make(chan AssertionChainEvent)
 		chain.feed.SubscribeWithFilter(ctx, eventChan, func(ev AssertionChainEvent) bool {
 			switch ev.(type) {
 			case *SetBalanceEvent:
@@ -66,7 +65,7 @@ func TestAssertionChain(t *testing.T) {
 
 		require.Equal(t, newAssertion, chain.LatestConfirmed(tx))
 		require.Equal(t, ConfirmedAssertionState, int(newAssertion.status))
-		verifyConfirmEventInFeed(t, eventChan, 1)
+		verifyConfirmEventInFeed(t, eventChan, SequenceNum(1))
 
 		// try to create a duplicate assertion
 		_, err = chain.CreateLeaf(tx, genesis, StateCommitment{1, correctBlockHashes[99]}, staker1)
@@ -82,12 +81,12 @@ func TestAssertionChain(t *testing.T) {
 		branch2, err := chain.CreateLeaf(tx, newAssertion, comm, staker2)
 		require.NoError(t, err)
 		verifyCreateLeafEventInFeed(t, eventChan, 3, 1, staker2, comm)
-		challenge, err := newAssertion.CreateChallenge(tx, ctx)
+		challenge, err := newAssertion.CreateChallenge(tx, ctx, staker2)
 		require.NoError(t, err)
 		verifyStartChallengeEventInFeed(t, eventChan, newAssertion.SequenceNum)
-		chal1, err := challenge.AddLeaf(tx, branch1, util.HistoryCommitment{Height: 100, Merkle: util.ExpansionFromLeaves(correctBlockHashes[99:200]).Root()})
+		chal1, err := challenge.AddLeaf(tx, branch1, util.HistoryCommitment{Height: 100, Merkle: util.ExpansionFromLeaves(correctBlockHashes[99:200]).Root()}, staker1)
 		require.NoError(t, err)
-		_, err = challenge.AddLeaf(tx, branch2, util.HistoryCommitment{Height: 100, Merkle: util.ExpansionFromLeaves(wrongBlockHashes[99:200]).Root()})
+		_, err = challenge.AddLeaf(tx, branch2, util.HistoryCommitment{Height: 100, Merkle: util.ExpansionFromLeaves(wrongBlockHashes[99:200]).Root()}, staker2)
 		require.NoError(t, err)
 		err = chal1.ConfirmForPsTimer(tx)
 		require.ErrorIs(t, err, ErrNotYet)
@@ -156,12 +155,12 @@ func TestAssertionChain_LeafCreationsInsufficientStakes(t *testing.T) {
 	}))
 }
 
-func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum, prevSeqNum uint64, staker common.Address, comm StateCommitment) {
+func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum, prevSeqNum SequenceNum, staker common.Address, comm StateCommitment) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
 	case *CreateLeafEvent:
-		if e.SeqNum != seqNum || e.PrevSeqNum != prevSeqNum || e.Staker != staker || e.StateCommitment != comm {
+		if e.SeqNum != seqNum || e.PrevSeqNum != prevSeqNum || e.Validator != staker || e.StateCommitment != comm {
 			t.Fatal(e)
 		}
 	default:
@@ -169,7 +168,7 @@ func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seq
 	}
 }
 
-func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum uint64) {
+func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum SequenceNum) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
@@ -180,7 +179,7 @@ func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum
 	}
 }
 
-func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum uint64) {
+func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum SequenceNum) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
@@ -191,7 +190,7 @@ func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum 
 	}
 }
 
-func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent, parentSeqNum uint64) {
+func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent, parentSeqNum SequenceNum) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
@@ -227,7 +226,7 @@ func TestBisectionChallengeGame(t *testing.T) {
 		wrongBranch, err := chain.CreateLeaf(tx, genesis, StateCommitment{7, wrongBlockHashes[7]}, staker2)
 		require.NoError(t, err)
 
-		challenge, err := genesis.CreateChallenge(tx, ctx)
+		challenge, err := genesis.CreateChallenge(tx, ctx, staker2)
 		require.NoError(t, err)
 
 		// Add some leaves to the mix...
@@ -244,6 +243,7 @@ func TestBisectionChallengeGame(t *testing.T) {
 				Height: 6,
 				Merkle: util.ExpansionFromLeaves(correctBlockHashes[:7]).Root(),
 			},
+			staker1,
 		)
 		require.NoError(t, err)
 		cl2, err := challenge.AddLeaf(
@@ -253,12 +253,13 @@ func TestBisectionChallengeGame(t *testing.T) {
 				Height: 7,
 				Merkle: hiExp.Root(),
 			},
+			staker2,
 		)
 		require.NoError(t, err)
 
 		// Ensure the lower height challenge vertex is the ps.
-		require.Equal(t, true, cl1.isPresumptiveSuccessor())
-		require.Equal(t, false, cl2.isPresumptiveSuccessor())
+		require.Equal(t, true, cl1.IsPresumptiveSuccessor())
+		require.Equal(t, false, cl2.IsPresumptiveSuccessor())
 
 		// Next, only the vertex that is not the presumptive successor can start a bisection move.
 		bisectionHeight, err := cl2.requiredBisectionHeight()
@@ -273,6 +274,7 @@ func TestBisectionChallengeGame(t *testing.T) {
 				Merkle: loExp.Root(),
 			},
 			proof,
+			staker1,
 		)
 		require.ErrorIs(t, err, ErrWrongState)
 
@@ -286,13 +288,17 @@ func TestBisectionChallengeGame(t *testing.T) {
 				Merkle: loExp.Root(),
 			},
 			proof,
+			staker2,
 		)
 		require.NoError(t, err)
 
+		// Ensure the prev value of cl2 is set to the vertex we just bisected to.
+		require.Equal(t, bisection, cl2.Prev)
+
 		// The parent of the bisectoin should be the root of this challenge and the bisection
 		// should be the new presumptive successor.
-		require.Equal(t, challenge.root.commitment.Merkle, bisection.prev.commitment.Merkle)
-		require.Equal(t, true, bisection.prev.isPresumptiveSuccessor())
+		require.Equal(t, challenge.root.Commitment.Merkle, bisection.Prev.Commitment.Merkle)
+		require.Equal(t, true, bisection.Prev.IsPresumptiveSuccessor())
 		return nil
 	})
 

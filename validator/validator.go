@@ -25,14 +25,13 @@ type Validator struct {
 	chain                                  protocol.ChainReadWriter
 	stateManager                           statemanager.Manager
 	assertionEvents                        chan protocol.AssertionChainEvent
-	l2StateUpdateEvents                    chan *statemanager.L2StateEvent
 	address                                common.Address
 	name                                   string
 	knownValidatorNames                    map[common.Address]string
 	createdLeaves                          map[common.Hash]*protocol.Assertion
 	assertionsLock                         sync.RWMutex
-	sequenceNumbersByParentStateCommitment map[common.Hash][]uint64
-	assertions                             map[uint64]*protocol.CreateLeafEvent
+	sequenceNumbersByParentStateCommitment map[common.Hash][]protocol.SequenceNum
+	assertions                             map[protocol.SequenceNum]*protocol.CreateLeafEvent
 	leavesLock                             sync.RWMutex
 	createLeafInterval                     time.Duration
 	chaosMonkeyProbability                 float64
@@ -89,16 +88,14 @@ func New(
 		address:                                common.Address{},
 		createLeafInterval:                     defaultCreateLeafInterval,
 		assertionEvents:                        make(chan protocol.AssertionChainEvent, 1),
-		l2StateUpdateEvents:                    make(chan *statemanager.L2StateEvent, 1),
 		createdLeaves:                          make(map[common.Hash]*protocol.Assertion),
-		sequenceNumbersByParentStateCommitment: make(map[common.Hash][]uint64),
-		assertions:                             make(map[uint64]*protocol.CreateLeafEvent),
+		sequenceNumbersByParentStateCommitment: make(map[common.Hash][]protocol.SequenceNum),
+		assertions:                             make(map[protocol.SequenceNum]*protocol.CreateLeafEvent),
 	}
 	for _, o := range opts {
 		o(v)
 	}
 	v.chain.SubscribeChainEvents(ctx, v.assertionEvents)
-	v.stateManager.SubscribeStateEvents(ctx, v.l2StateUpdateEvents)
 	return v, nil
 }
 
@@ -183,7 +180,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 	}
 	stateCommit := protocol.StateCommitment{
 		Height:    currentCommit.Height,
-		StateRoot: currentCommit.Merkle,
+		StateRoot: currentCommit.StateRoot,
 	}
 	var leaf *protocol.Assertion
 	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
@@ -206,7 +203,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 		"latestValidParentHeight":    fmt.Sprintf("%+v", parentAssertion.StateCommitment.Height),
 		"latestValidParentStateRoot": fmt.Sprintf("%#x", parentAssertion.StateCommitment.StateRoot),
 		"leafHeight":                 currentCommit.Height,
-		"leafCommitmentMerkle":       fmt.Sprintf("%#x", currentCommit.Merkle),
+		"leafCommitmentMerkle":       fmt.Sprintf("%#x", currentCommit.StateRoot),
 	}
 	log.WithFields(logFields).Info("Submitted leaf creation")
 	return leaf, nil
@@ -215,9 +212,9 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 // Finds the latest valid assertion sequence num a validator should build their new leaves upon. This walks
 // down from the number of assertions in the protocol down until it finds
 // an assertion that we have a state commitment for.
-func (v *Validator) findLatestValidAssertion(ctx context.Context) uint64 {
+func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.SequenceNum {
 	var numAssertions uint64
-	var latestConfirmed uint64
+	var latestConfirmed protocol.SequenceNum
 	_ = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		numAssertions = p.NumAssertions(tx)
 		latestConfirmed = p.LatestConfirmed(tx).SequenceNum
@@ -225,7 +222,7 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) uint64 {
 	})
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
-	for s := numAssertions; s > latestConfirmed; s-- {
+	for s := protocol.SequenceNum(numAssertions); s > latestConfirmed; s-- {
 		a, ok := v.assertions[s]
 		if !ok {
 			continue
@@ -266,7 +263,7 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 	if ev == nil {
 		return nil
 	}
-	if v.isFromSelf(ev.Staker) {
+	if v.isFromSelf(ev.Validator) {
 		return nil
 	}
 	seqNum := ev.SeqNum
@@ -310,7 +307,7 @@ func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.Star
 	if ev == nil {
 		return nil
 	}
-	if v.isFromSelf(ev.Challenger) {
+	if v.isFromSelf(ev.Validator) {
 		return nil
 	}
 	// Checks if the challenge has to do with a vertex we created.

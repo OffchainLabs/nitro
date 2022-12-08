@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
-	statemanager "github.com/OffchainLabs/new-rollup-exploration/state-manager"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -15,9 +14,25 @@ type MockStateManager struct {
 	mock.Mock
 }
 
-func (m *MockStateManager) LatestHistoryCommitment(ctx context.Context) util.HistoryCommitment {
+func (m *MockStateManager) LatestHistoryCommitment(ctx context.Context) (util.HistoryCommitment, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(util.HistoryCommitment)
+	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+}
+
+func (m *MockStateManager) HasHistoryCommitment(ctx context.Context, commit util.HistoryCommitment) bool {
+	args := m.Called(ctx, commit)
+	return args.Bool(0)
+}
+
+func (m *MockStateManager) HistoryCommitmentUpTo(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
+
+	args := m.Called(ctx, height)
+	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+}
+
+func (m *MockStateManager) PrefixProof(ctx context.Context, from, to uint64) ([]common.Hash, error) {
+	args := m.Called(ctx, from, to)
+	return args.Get(0).([]common.Hash), args.Error(1)
 }
 
 func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit protocol.StateCommitment) bool {
@@ -25,17 +40,14 @@ func (m *MockStateManager) HasStateCommitment(ctx context.Context, commit protoc
 	return args.Bool(0)
 }
 
-func (m *MockStateManager) StateCommitmentAtHeight(ctx context.Context, height uint64) (util.HistoryCommitment, error) {
+func (m *MockStateManager) StateCommitmentAtHeight(ctx context.Context, height uint64) (protocol.StateCommitment, error) {
 	args := m.Called(ctx, height)
-	return args.Get(0).(util.HistoryCommitment), args.Error(1)
+	return args.Get(0).(protocol.StateCommitment), args.Error(1)
 }
 
-func (m *MockStateManager) LatestStateCommitment(ctx context.Context) (util.HistoryCommitment, error) {
+func (m *MockStateManager) LatestStateCommitment(ctx context.Context) (protocol.StateCommitment, error) {
 	args := m.Called(ctx)
-	return args.Get(0).(util.HistoryCommitment), args.Error(1)
-}
-
-func (m *MockStateManager) SubscribeStateEvents(ctx context.Context, ch chan<- *statemanager.L2StateEvent) {
+	return args.Get(0).(protocol.StateCommitment), args.Error(1)
 }
 
 type MockProtocol struct {
@@ -48,15 +60,33 @@ func (m *MockProtocol) Inbox() *protocol.Inbox {
 }
 
 func (m *MockProtocol) Tx(clo func(tx *protocol.ActiveTx, pro protocol.OnChainProtocol) error) error {
+	ch := protocol.AssertionChain{}
+	return ch.Tx(clo)
+}
+
+func (m *MockProtocol) Call(clo func(*protocol.ActiveTx, protocol.OnChainProtocol) error) error {
 	return clo(&protocol.ActiveTx{}, m)
 }
 
 func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- protocol.AssertionChainEvent) {
 }
 
-func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum uint64) (*protocol.Assertion, error) {
+func (m *MockProtocol) SubscribeChallengeEvents(ctx context.Context, ch chan<- protocol.ChallengeEvent) {
+}
+
+func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum protocol.SequenceNum) (*protocol.Assertion, error) {
 	args := m.Called(tx, seqNum)
 	return args.Get(0).(*protocol.Assertion), args.Error(1)
+}
+
+func (m *MockProtocol) ChallengeVertexBySequenceNum(tx *protocol.ActiveTx, commitHash protocol.AssertionStateCommitHash, seqNum protocol.SequenceNum) (*protocol.ChallengeVertex, error) {
+	args := m.Called(tx, commitHash, seqNum)
+	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
+}
+
+func (m *MockProtocol) ChallengeByAssertionStateCommit(tx *protocol.ActiveTx, commitHash protocol.AssertionStateCommitHash) (*protocol.Challenge, error) {
+	args := m.Called(tx, commitHash)
+	return args.Get(0).(*protocol.Challenge), args.Error(1)
 }
 
 func (m *MockProtocol) LatestConfirmed(tx *protocol.ActiveTx) *protocol.Assertion {
@@ -77,8 +107,4 @@ func (m *MockProtocol) ChallengePeriodLength(tx *protocol.ActiveTx) time.Duratio
 func (m *MockProtocol) NumAssertions(tx *protocol.ActiveTx) uint64 {
 	args := m.Called(tx)
 	return args.Get(0).(uint64)
-}
-
-func (m *MockProtocol) Call(clo func(*protocol.ActiveTx, protocol.OnChainProtocol) error) error {
-	return clo(&protocol.ActiveTx{}, m)
 }

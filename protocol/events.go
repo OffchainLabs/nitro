@@ -17,29 +17,29 @@ func (ev *genericAssertionChainEvent) IsAssertionChainEvent() bool { return true
 
 type CreateLeafEvent struct {
 	genericAssertionChainEvent
-	PrevSeqNum          uint64
+	PrevSeqNum          SequenceNum
 	PrevStateCommitment StateCommitment
-	SeqNum              uint64
+	SeqNum              SequenceNum
 	StateCommitment     StateCommitment
-	Staker              common.Address
+	Validator           common.Address
 }
 
 type ConfirmEvent struct {
 	genericAssertionChainEvent
-	SeqNum uint64
+	SeqNum SequenceNum
 }
 
 type RejectEvent struct {
 	genericAssertionChainEvent
-	SeqNum uint64
+	SeqNum SequenceNum
 }
 
 type StartChallengeEvent struct {
 	genericAssertionChainEvent
-	ParentSeqNum          uint64
+	ParentSeqNum          SequenceNum
 	ParentStateCommitment StateCommitment
 	ParentStaker          common.Address
-	Challenger            common.Address
+	Validator             common.Address
 }
 
 type SetBalanceEvent struct {
@@ -51,6 +51,8 @@ type SetBalanceEvent struct {
 
 type ChallengeEvent interface {
 	IsChallengeEvent() bool // this method is just a marker that the type intends to be a ChallengeEvent
+	ParentStateCommitmentHash() common.Hash
+	ValidatorAddress() common.Address
 }
 
 type genericChallengeEvent struct{}
@@ -59,23 +61,55 @@ func (ev *genericChallengeEvent) IsChallengeEvent() bool { return true }
 
 type ChallengeLeafEvent struct {
 	genericChallengeEvent
-	SequenceNum       uint64
-	WinnerIfConfirmed uint64
+	ParentSeqNum      SequenceNum
+	SequenceNum       SequenceNum
+	WinnerIfConfirmed SequenceNum
+	ParentStateCommit StateCommitment
 	History           util.HistoryCommitment
 	BecomesPS         bool
+	Validator         common.Address
 }
 
 type ChallengeBisectEvent struct {
 	genericChallengeEvent
-	FromSequenceNum uint64 // previously existing vertex
-	SequenceNum     uint64 // newly created vertex
-	History         util.HistoryCommitment
-	BecomesPS       bool
+	FromSequenceNum   SequenceNum // previously existing vertex
+	SequenceNum       SequenceNum // newly created vertex
+	ParentStateCommit StateCommitment
+	History           util.HistoryCommitment
+	BecomesPS         bool
+	Validator         common.Address
 }
 
 type ChallengeMergeEvent struct {
 	genericChallengeEvent
-	DeeperSequenceNum    uint64
-	ShallowerSequenceNum uint64
+	History              util.HistoryCommitment
+	ParentStateCommit    StateCommitment
+	DeeperSequenceNum    SequenceNum
+	ShallowerSequenceNum SequenceNum
 	BecomesPS            bool
+	Validator            common.Address
+}
+
+func (c *ChallengeLeafEvent) ParentStateCommitmentHash() common.Hash {
+	return c.ParentStateCommit.Hash()
+}
+
+func (c *ChallengeBisectEvent) ParentStateCommitmentHash() common.Hash {
+	return c.ParentStateCommit.Hash()
+}
+
+func (c *ChallengeMergeEvent) ParentStateCommitmentHash() common.Hash {
+	return c.ParentStateCommit.Hash()
+}
+
+func (c *ChallengeLeafEvent) ValidatorAddress() common.Address {
+	return c.Validator
+}
+
+func (c *ChallengeBisectEvent) ValidatorAddress() common.Address {
+	return c.Validator
+}
+
+func (c *ChallengeMergeEvent) ValidatorAddress() common.Address {
+	return c.Validator
 }
