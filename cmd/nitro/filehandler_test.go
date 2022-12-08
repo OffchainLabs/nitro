@@ -36,7 +36,7 @@ Retry:
 			return msgs, nil
 		}
 	}
-	return msgs, nil
+	return msgs, err
 }
 
 func readLogMessagesFromJSONFile(t *testing.T, path string) ([]string, error) {
