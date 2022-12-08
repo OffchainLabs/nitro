@@ -3,12 +3,15 @@ package validator
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
+	statemanager "github.com/OffchainLabs/new-rollup-exploration/state-manager"
 	"github.com/OffchainLabs/new-rollup-exploration/testing/mocks"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
@@ -45,71 +48,104 @@ func Test_processLeafCreation(t *testing.T) {
 			StateCommitment:     newlyCreatedAssertion.StateCommitment,
 			Validator:           newlyCreatedAssertion.Staker.Unwrap(),
 		}
-		s.On("HasStateCommitment", ctx, ev.StateCommitment).Return(false)
 
-		err := v.processLeafCreation(ctx, ev)
+		s.On("HasStateCommitment", ctx, protocol.StateCommitment{}).Return(false)
+
+		err := v.onLeafCreated(ctx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "No fork detected in assertion tree")
 	})
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		v, _, s := setupValidator(t)
+		chain := protocol.NewAssertionChain(
+			ctx,
+			util.NewArtificialTimeReference(),
+			time.Second,
+		)
+		staker1 := common.BytesToAddress([]byte("foo"))
+		staker2 := common.BytesToAddress([]byte("bar"))
+		staker3 := common.BytesToAddress([]byte("nyan"))
+		stateManager := &mocks.MockStateManager{}
+		v := setupValidatorWithChain(t, chain, stateManager, staker3)
 
-		parentSeqNum := protocol.SequenceNum(1)
-		prevRoot := common.BytesToHash([]byte("foo"))
-		parentAssertion := &protocol.Assertion{
-			StateCommitment: protocol.StateCommitment{
-				StateRoot: prevRoot,
-				Height:    uint64(parentSeqNum),
-			},
-			Staker: util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
+		// Add balances to the stakers.
+		bal := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
+		err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			chain.AddToBalance(tx, staker1, bal)
+			chain.AddToBalance(tx, staker2, bal)
+			chain.AddToBalance(tx, staker3, bal)
+			return nil
+		})
+		require.NoError(t, err)
+
+		// Create some commitments.
+		commit := protocol.StateCommitment{
+			StateRoot: common.BytesToHash([]byte("baz")),
+			Height:    1,
 		}
-		seqNum := parentSeqNum + 1
-		newlyCreatedAssertion := &protocol.Assertion{
-			Prev:        util.Some[*protocol.Assertion](parentAssertion),
-			SequenceNum: seqNum,
-			StateCommitment: protocol.StateCommitment{
-				StateRoot: common.BytesToHash([]byte("foo")),
-				Height:    2,
-			},
-			Staker: util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
+		forkedCommit := protocol.StateCommitment{
+			StateRoot: common.BytesToHash([]byte("woop")),
+			Height:    2,
 		}
-		forkSeqNum := seqNum + 1
-		forkedAssertion := &protocol.Assertion{
-			Prev:        util.Some[*protocol.Assertion](parentAssertion),
-			SequenceNum: forkSeqNum,
-			StateCommitment: protocol.StateCommitment{
-				StateRoot: common.BytesToHash([]byte("bar")),
-				Height:    2,
-			},
-			Staker: util.Some[common.Address](common.BytesToAddress([]byte("foo"))),
-		}
+
+		stateManager.On("HasStateCommitment", ctx, commit).Return(false)
+		stateManager.On("HasStateCommitment", ctx, forkedCommit).Return(false)
+		stateManager.On("LatestHistoryCommitment", ctx).Return(util.HistoryCommitment{}, nil)
+
+		var genesis *protocol.Assertion
+		var assertion *protocol.Assertion
+		var forkedAssertion *protocol.Assertion
+		err = chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			genesis = chain.LatestConfirmed(tx)
+			return nil
+		})
+		require.NoError(t, err)
+
+		err = chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			assertion, err = chain.CreateLeaf(
+				tx,
+				genesis,
+				commit,
+				staker1,
+			)
+			if err != nil {
+				return err
+			}
+			forkedAssertion, err = chain.CreateLeaf(
+				tx,
+				genesis,
+				forkedCommit,
+				staker2,
+			)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.NoError(t, err)
 
 		ev := &protocol.CreateLeafEvent{
-			PrevSeqNum:          parentAssertion.SequenceNum,
-			PrevStateCommitment: parentAssertion.StateCommitment,
-			SeqNum:              newlyCreatedAssertion.SequenceNum,
-			StateCommitment:     newlyCreatedAssertion.StateCommitment,
-			Validator:           newlyCreatedAssertion.Staker.Unwrap(),
+			PrevSeqNum:          genesis.SequenceNum,
+			PrevStateCommitment: genesis.StateCommitment,
+			SeqNum:              assertion.SequenceNum,
+			StateCommitment:     assertion.StateCommitment,
+			Validator:           staker1,
 		}
-		s.On("HasStateCommitment", ctx, ev.StateCommitment).Return(false)
-
-		err := v.processLeafCreation(ctx, ev)
+		err = v.onLeafCreated(ctx, ev)
 		require.NoError(t, err)
 		ev = &protocol.CreateLeafEvent{
-			PrevSeqNum:          parentAssertion.SequenceNum,
-			PrevStateCommitment: parentAssertion.StateCommitment,
+			PrevSeqNum:          genesis.SequenceNum,
+			PrevStateCommitment: genesis.StateCommitment,
 			SeqNum:              forkedAssertion.SequenceNum,
 			StateCommitment:     forkedAssertion.StateCommitment,
-			Validator:           forkedAssertion.Staker.Unwrap(),
+			Validator:           staker2,
 		}
-		s.On("HasStateCommitment", ctx, ev.StateCommitment).Return(false)
-
-		err = v.processLeafCreation(ctx, ev)
+		err = v.onLeafCreated(ctx, ev)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "Initiating challenge")
+		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 	})
 }
 
@@ -121,7 +157,7 @@ func Test_processChallengeStart(t *testing.T) {
 		logsHook := test.NewGlobal()
 		v, _, _ := setupValidator(t)
 
-		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
+		err := v.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum: seq,
 			ParentStateCommitment: protocol.StateCommitment{
 				Height:    0,
@@ -131,28 +167,6 @@ func Test_processChallengeStart(t *testing.T) {
 		})
 		require.NoError(t, err)
 		AssertLogsDoNotContain(t, logsHook, "Received challenge")
-	})
-	t.Run("challenge concerns us, we should act", func(t *testing.T) {
-		logsHook := test.NewGlobal()
-		v, _, _ := setupValidator(t)
-
-		commitment := protocol.StateCommitment{
-			Height:    0,
-			StateRoot: common.BytesToHash([]byte("foo")),
-		}
-		leaf := &protocol.Assertion{
-			StateCommitment: commitment,
-			Staker:          util.None[common.Address](),
-		}
-		v.createdLeaves[commitment.StateRoot] = leaf
-
-		err := v.processChallengeStart(ctx, &protocol.StartChallengeEvent{
-			ParentSeqNum:          leaf.SequenceNum,
-			ParentStateCommitment: leaf.StateCommitment,
-			Validator:             common.BytesToAddress([]byte("foo")),
-		})
-		require.NoError(t, err)
-		AssertLogsContain(t, logsHook, "Received challenge")
 	})
 }
 
@@ -238,6 +252,14 @@ func setupAssertions(num int) []*protocol.Assertion {
 		})
 	}
 	return assertions
+}
+
+func setupValidatorWithChain(
+	t testing.TB, chain protocol.ChainReadWriter, manager statemanager.Manager, staker common.Address,
+) *Validator {
+	v, err := New(context.Background(), chain, manager, WithAddress(staker))
+	require.NoError(t, err)
+	return v
 }
 
 func setupValidator(t testing.TB) (*Validator, *mocks.MockProtocol, *mocks.MockStateManager) {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
-	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -78,8 +77,8 @@ func (v *Validator) onChallengeStarted(ctx context.Context, ev *protocol.StartCh
 		return errors.Wrapf(err, "could not create challenge on leaf with sequence number: %d", ev.ParentSeqNum)
 	}
 
-	// Start tracking the challenge and created vertex.
-	v.spawnChallenge(ctx, challenge, challengeVertex)
+	// TODO: Start tracking the challenge.
+	_ = challengeVertex
 
 	return nil
 }
@@ -162,8 +161,8 @@ func (v *Validator) challengeLeaf(ctx context.Context, ev *protocol.CreateLeafEv
 		return errors.Wrap(err, "could not add leaf to challenge")
 	}
 
-	// Start tracking the challenge and created vertex.
-	v.spawnChallenge(ctx, challenge, challengeVertex)
+	// TODO: Start tracking the challenge.
+	_ = challengeVertex
 
 	logFields = logrus.Fields{}
 	logFields["name"] = v.name
@@ -173,43 +172,4 @@ func (v *Validator) challengeLeaf(ctx context.Context, ev *protocol.CreateLeafEv
 	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
 
 	return nil
-}
-
-// Spawns a challenge worker in the background to manage the lifecycle of a specified challenge.
-// This will worker will subscribe to events relevant to the challenge and perform the required actions
-// as a participant in the protocol until the challenge is resolved in the background.
-func (v *Validator) spawnChallenge(
-	ctx context.Context,
-	challenge *protocol.Challenge,
-	vertex *protocol.ChallengeVertex,
-) {
-	v.challengesLock.Lock()
-	ch := make(chan protocol.ChallengeEvent, v.challengeEventsBufSize)
-	v.chain.SubscribeChallengeEvents(ctx, ch)
-	id := challenge.ParentStateCommitment().Hash()
-	if _, ok := v.challenges[protocol.AssertionStateCommitHash(id)]; ok {
-		v.challengesLock.Unlock()
-		log.WithFields(logrus.Fields{
-			"challengeParentAssertionStateCommit": fmt.Sprintf("%#x", id),
-			"name":                                v.name,
-		}).Error("Attempted to spawn challenge that is already in progress")
-		return
-	}
-	vertices := util.NewThreadSafeSlice[*protocol.ChallengeVertex]()
-	vertices.Append(vertex)
-	worker := &challengeWorker{
-		challenge:          challenge,
-		createdVertices:    vertices,
-		validatorAddress:   v.address,
-		reachedOneStepFork: make(chan struct{}),
-		validatorName:      v.name,
-		events:             ch,
-	}
-	v.challenges[protocol.AssertionStateCommitHash(id)] = worker
-	v.challengesLock.Unlock()
-	log.WithFields(logrus.Fields{
-		"challengeID": fmt.Sprintf("%#x", id),
-		"name":        v.name,
-	}).Info("Spawning challenge lifecycle manager")
-	go worker.runChallengeLifecycle(ctx, v, ch)
 }
