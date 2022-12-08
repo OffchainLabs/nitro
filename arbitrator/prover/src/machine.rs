@@ -266,7 +266,7 @@ struct Module {
     types: Arc<Vec<FunctionType>>,
     internals_offset: u32,
     names: Arc<NameCustomSection>,
-    host_call_hooks: Arc<Vec<(String, String)>>,
+    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
     start_function: Option<u32>,
     func_types: Arc<Vec<FunctionType>>,
     exports: Arc<HashMap<String, u32>>,
@@ -321,7 +321,7 @@ impl Module {
                 }
                 func_type_idxs.push(ty);
                 code.push(func);
-                host_call_hooks.push((import.module.into(), import.name.into()));
+                host_call_hooks.push(Some((import.module.into(), import.name.into())));
             } else {
                 bail!("Unsupport import kind {:?}", import);
             }
@@ -1445,7 +1445,11 @@ impl Machine {
                         caller_module,
                         caller_module_internals,
                     });
-                    if let Some(hook) = module.host_call_hooks.get(self.pc.func()) {
+                    if let Some(hook) = module
+                        .host_call_hooks
+                        .get(self.pc.func())
+                        .and_then(|h| h.as_ref())
+                    {
                         if let Err(err) = Self::host_call_hook(
                             &self.value_stack,
                             module,
