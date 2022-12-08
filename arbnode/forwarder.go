@@ -209,8 +209,8 @@ func (f *TxDropper) Started() bool {
 type RedisTxForwarder struct {
 	stopwaiter.StopWaiterSafe
 
-	config      *ForwarderConfig
-	redisErrors int
+	config *ForwarderConfig
+	errors int
 
 	mtx              sync.RWMutex
 	forwarder        *TxForwarder
@@ -252,17 +252,23 @@ func (f *RedisTxForwarder) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func (f *RedisTxForwarder) retryAfterRedisError() time.Duration {
-	f.redisErrors++
-	retryIn := f.config.RetryInterval * time.Duration(f.redisErrors)
+func (f *RedisTxForwarder) retryAfterError() time.Duration {
+	f.errors++
+	retryIn := f.config.RetryInterval * time.Duration(f.errors)
 	if retryIn > f.config.UpdateInterval {
 		retryIn = f.config.UpdateInterval
 	}
 	return retryIn
 }
 
-func (f *RedisTxForwarder) noRedisError() time.Duration {
-	f.redisErrors = 0
+// return true when retry interval is saturated and there is a fallback url available
+func (f *RedisTxForwarder) shouldFallbackToStatic() bool {
+	return f.config.RetryInterval*time.Duration(f.errors+1) >= f.config.UpdateInterval &&
+		f.fallbackTarget != "" && f.fallbackTarget != f.currentTarget
+}
+
+func (f *RedisTxForwarder) noError() time.Duration {
+	f.errors = 0
 	return f.config.UpdateInterval
 }
 
@@ -280,39 +286,40 @@ func (f *RedisTxForwarder) setForwarder(forwarder *TxForwarder) {
 
 // not thread safe vs initialize and itself
 func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
+	nextUpdateIn := f.noError
 	newSequencerUrl, redisErr := f.redisCoordinator.RecommendLiveSequencer(ctx)
 	if redisErr != nil {
-		if f.currentTarget != f.fallbackTarget && f.fallbackTarget != "" {
+		if f.shouldFallbackToStatic() {
 			log.Warn("coordinator failed to find live sequencer, falling back to static url", "err", redisErr, "falback", f.fallbackTarget)
 			newSequencerUrl = f.fallbackTarget
+			nextUpdateIn = f.retryAfterError
 		} else {
 			log.Warn("coordinator failed to find live sequencer", "err", redisErr)
-			return f.retryAfterRedisError()
+			return f.retryAfterError()
 		}
 	}
 	if newSequencerUrl == f.currentTarget {
-		return f.noRedisError()
+		return nextUpdateIn()
 	}
-	newForwarder := NewForwarder(newSequencerUrl, f.config)
-	err := newForwarder.Initialize(ctx)
-	if err != nil {
-		log.Error("failed to initialize forward agent", "err", err)
-		if redisErr != nil {
-			return f.retryAfterRedisError()
+	var newForwarder *TxForwarder
+	for {
+		newForwarder = NewForwarder(newSequencerUrl, f.config)
+		err := newForwarder.Initialize(ctx)
+		if err == nil {
+			break
+		}
+		if f.shouldFallbackToStatic() {
+			log.Error("failed to initialize forward agent, falling back to static url", "err", err, "fallback", f.fallbackTarget)
+			newSequencerUrl = f.fallbackTarget
 		} else {
-			return f.noRedisError()
+			log.Error("failed to initialize forward agent", "err", err)
+			return f.retryAfterError()
 		}
 	}
 	f.getForwarder().Disable()
-	// TODO should we stop the old forwarder to close old rpc connection?
-	// oldForwarder.StopAndWait()
 	f.currentTarget = newSequencerUrl
 	f.setForwarder(newForwarder)
-	if redisErr != nil {
-		return f.retryAfterRedisError()
-	} else {
-		return f.noRedisError()
-	}
+	return nextUpdateIn()
 }
 
 func (f *RedisTxForwarder) Start(ctx context.Context) error {
