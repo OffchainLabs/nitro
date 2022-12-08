@@ -183,12 +183,16 @@ fi
 
 if $dev_build; then
   docker tag nitro-node-dev:latest nitro-node-dev-testnode
-  docker tag blockscout:latest blockscout-testnode
+  if $blockscout; then
+    docker tag blockscout:latest blockscout-testnode
+  fi
 else
   docker pull $NITRO_NODE_VERSION
-  docker pull $BLOCKSCOUT_VERSION
   docker tag $NITRO_NODE_VERSION nitro-node-dev-testnode
-  docker tag $BLOCKSCOUT_VERSION blockscout-testnode
+  if $blockscout; then
+    docker pull $BLOCKSCOUT_VERSION
+    docker tag $BLOCKSCOUT_VERSION blockscout-testnode
+  fi
 fi
 
 if $force_build; then
