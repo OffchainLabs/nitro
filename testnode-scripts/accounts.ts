@@ -5,15 +5,11 @@ import * as crypto from "crypto";
 import { runStress } from "./stress";
 const path = require("path");
 
-const accountsToCreate = 3;
-let knownaccounts: ethers.Wallet[];
+const specialAccounts = 3;
 
-async function createAccounts() {
-  for (let i = 0; i < accountsToCreate; i++) {
-    const wallet = ethers.Wallet.fromMnemonic(
-      consts.l1mnemonic,
-      "m/44'/60'/0'/0/" + i
-    );
+async function writeAccounts() {
+  for (let i = 0; i < specialAccounts; i++) {
+    const wallet = specialAccount(i)
     let walletJSON = await wallet.encrypt(consts.l1passphrase);
     fs.writeFileSync(
       path.join(consts.l1keystore, wallet.address + ".key"),
@@ -22,19 +18,11 @@ async function createAccounts() {
   }
 }
 
-function possiblyInitKnownAccounts() {
-  if (knownaccounts != undefined && knownaccounts.length > 0) {
-    return;
-  }
-  let keyFilenames = fs.readdirSync(consts.l1keystore);
-  keyFilenames.sort();
-
-  knownaccounts = keyFilenames.map((filename) => {
-    const walletStr = fs
-      .readFileSync(path.join(consts.l1keystore, filename))
-      .toString();
-    return ethers.Wallet.fromEncryptedJsonSync(walletStr, consts.l1passphrase);
-  });
+function specialAccount(index: number): ethers.Wallet {
+  return ethers.Wallet.fromMnemonic(
+    consts.l1mnemonic,
+    "m/44'/60'/0'/0/" + index
+  );
 }
 
 export function namedAccount(
@@ -42,16 +30,13 @@ export function namedAccount(
   threadId?: number | undefined
 ): ethers.Wallet {
   if (name == "funnel") {
-    possiblyInitKnownAccounts();
-    return knownaccounts[0];
+    return specialAccount(0);
   }
   if (name == "sequencer") {
-    possiblyInitKnownAccounts();
-    return knownaccounts[1];
+    return specialAccount(1);
   }
   if (name == "validator") {
-    possiblyInitKnownAccounts();
-    return knownaccounts[2];
+    return specialAccount(2);
   }
   if (name.startsWith("user_")) {
     return new ethers.Wallet(
@@ -91,7 +76,7 @@ export function namedAddress(
 
 export const namedAccountHelpString =
   "Valid account names:\n" +
-  "funnel | sequencer | validator - read from keystore (first 3 keys)\n" +
+  "funnel | sequencer | validator - known keys\n" +
   "user_[Alphanumeric]            - key will be generated from username\n" +
   "threaduser_[Alphanumeric]      - same as user_[Alphanumeric]_thread_[thread-id]\n" +
   "key_0x[full private key]       - user with specified private key";
@@ -123,6 +108,6 @@ export const writeAccountsCommand = {
   command: "write-accounts",
   describe: "writes wallet files",
   handler: async (argv: any) => {
-    await createAccounts();
+    await writeAccounts();
   },
 };
