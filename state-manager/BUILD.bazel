@@ -5,5 +5,9 @@ go_library(
     srcs = ["manager.go"],
     importpath = "github.com/OffchainLabs/new-rollup-exploration/state-manager",
     visibility = ["//visibility:public"],
-    deps = ["//protocol"],
+    deps = [
+        "//protocol",
+        "//util",
+        "@com_github_ethereum_go_ethereum//common",
+    ],
 )
