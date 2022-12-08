@@ -210,7 +210,7 @@ if $force_init; then
 
     echo == Generating l1 keys
     docker-compose run testnode-scripts write-accounts
-    docker-compose run --entrypoint sh geth -c "echo passphrase > /root/.ethereum/passphrase"
+    docker-compose run --entrypoint sh geth -c "echo passphrase > /datadir/passphrase"
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /keystore"
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /config"
 

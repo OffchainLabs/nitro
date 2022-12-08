@@ -54,10 +54,10 @@ services:
       - "127.0.0.1:8546:8546"
       - "127.0.0.1:30303:30303"
     volumes:
-      - "l1data:/root/.ethereum"
+      - "l1data:/datadir"
       - "l1keystore:/keystore"
       - "config:/config"
-    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --http.corsdomain * --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /root/.ethereum/passphrase --gcmode archive
+    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --http.corsdomain * --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /datadir/passphrase --gcmode archive --datadir /datadir
 
   sequencer:
     pid: host # allow debugging
