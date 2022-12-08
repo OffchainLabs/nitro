@@ -790,15 +790,15 @@ func createNodeImpl(
 			}
 			maybeDataSigner = dataSigner
 		}
-		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner)
+		broadcastServer = broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &configFetcher.Get().Feed.Output }, l2ChainId, fatalErrChan, maybeDataSigner)
 	}
 
 	var l1Reader *headerreader.HeaderReader
 	if config.L1Reader.Enable {
-		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &config.Get().L1Reader })
+		l1Reader = headerreader.New(l1client, func() *headerreader.Config { return &configFetcher.Get().L1Reader })
 	}
 
-	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &config.Get().TransactionStreamer }
+	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
 	txStreamer, err := NewTransactionStreamer(arbDb, l2BlockChain, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
@@ -961,7 +961,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &config.Get().InboxReader })
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}
@@ -992,7 +992,7 @@ func createNodeImpl(
 			chainDb,
 			rawdb.NewTable(arbDb, blockValidatorPrefix),
 			daReader,
-			&config.Get().BlockValidator,
+			&configFetcher.Get().BlockValidator,
 		)
 		if err != nil {
 			return nil, err
@@ -1011,7 +1011,7 @@ func createNodeImpl(
 			txStreamer,
 			nitroMachineLoader,
 			reorgingToBlock,
-			func() *validator.BlockValidatorConfig { return &config.Get().BlockValidator },
+			func() *validator.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
 		)
 		if err != nil {
