@@ -485,11 +485,6 @@ func (parent *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, chal
 	if parent.secondChildCreationTime.IsNone() {
 		return nil, ErrInvalid
 	}
-	if !parent.Staker.IsNone() {
-		if parent.Staker.Unwrap() == challenger {
-			return nil, ErrCannotChallengeOwnLeaf
-		}
-	}
 	root := &ChallengeVertex{
 		challenge:   nil,
 		SequenceNum: 0,
