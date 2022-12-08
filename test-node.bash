@@ -105,12 +105,15 @@ while [[ $# -gt 0 ]]; do
             echo        $0 script [SCRIPT-ARGS]
             echo
             echo OPTIONS:
-            echo --build:           rebuild docker image
+            echo --build:           rebuild docker images
+            echo --dev:             build nitro and blockscout dockers from source \(otherwise - pull docker\)
             echo --init:            remove all data, rebuild, deploy new rollup
             echo --validate:        heavy computation, validating all blocks in WASM
             echo --batchposters:    batch posters [0-3]
             echo --redundantsequencers redundant sequencers [0-3]
             echo --detach:          detach from nodes after running them
+            echo --no-blockscout:   don\'t build or launch blockscout
+            echo --no-tokenbridge:  don\'t build or launch tokenbridge
             echo --no-run:          does not launch nodes \(usefull with build or init\)
             echo
             echo script rus inside a separate docker. For SCRIPT-ARGS, run $0 script --help
