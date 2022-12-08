@@ -276,3 +276,8 @@ func CanBeIpfsPath(pathString string) bool {
 		strings.HasPrefix(pathString, "ipfs://") ||
 		strings.HasPrefix(pathString, "ipns://")
 }
+
+// TODO break abstraction for now til we figure out what fns are needed
+func (h *IpfsHelper) GetAPI() icore.CoreAPI {
+	return h.api
+}
