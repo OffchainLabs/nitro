@@ -12,7 +12,9 @@ import (
 // Processes new challenge creation events from the protocol that were not initiated by other validators.
 // This will fetch the challenge, its parent assertion, and create a challenge leaf that is
 // relevant towards resolving the challenge. We then spawn a challenge tracker in the background.
-func (v *Validator) onChallengeStarted(ctx context.Context, ev *protocol.StartChallengeEvent) error {
+func (v *Validator) onChallengeStarted(
+	ctx context.Context, ev *protocol.StartChallengeEvent,
+) error {
 	if ev == nil {
 		return nil
 	}
@@ -47,8 +49,6 @@ func (v *Validator) onChallengeStarted(ctx context.Context, ev *protocol.StartCh
 		"challengingHeight":    leaf.StateCommitment.Height,
 	}).Warn("Received challenge for a created leaf")
 
-	// TODO: Instead of producing a history commitment at our highest height, we should do it at the height
-	// of the forked assertion we care about in the challenge game.
 	historyCommit, err := v.stateManager.LatestHistoryCommitment(ctx)
 	if err != nil {
 		return err
@@ -62,19 +62,34 @@ func (v *Validator) onChallengeStarted(ctx context.Context, ev *protocol.StartCh
 		if fetchErr != nil {
 			return err
 		}
-		challenge, err = p.ChallengeByAssertionStateCommit(tx, protocol.AssertionStateCommitHash(parentAssertion.StateCommitment.Hash()))
+		challenge, err = p.ChallengeByAssertionStateCommit(
+			tx,
+			protocol.AssertionStateCommitHash(parentAssertion.StateCommitment.Hash()),
+		)
 		if err != nil {
 			return err
 		}
-		// TODO: Match on error ErrDuplicateLeaf to add nicer logs to the user.
-		// TODO: Ideally, check if the leaf already exists before making the tx.
+		// TODO: Ideally, check if the leaf already exists before making the tx at all.
 		challengeVertex, err = challenge.AddLeaf(tx, parentAssertion, historyCommit, v.address)
 		if err != nil {
 			return err
 		}
 		return nil
 	}); err != nil {
-		return errors.Wrapf(err, "could not create challenge on leaf with sequence number: %d", ev.ParentSeqNum)
+		if errors.Is(err, protocol.ErrVertexAlreadyExists) {
+			log.Info(
+				"Attempted to add a challenge leaf with history: height=%d, merkle=%#x but "+
+					"it has already been created",
+				historyCommit.Height,
+				historyCommit.Merkle,
+			)
+			return nil
+		}
+		return errors.Wrapf(
+			err,
+			"could add challenge vertex to challenge with parent sequence number: %d",
+			ev.ParentSeqNum,
+		)
 	}
 
 	// TODO: Start tracking the challenge.
@@ -103,14 +118,50 @@ func (v *Validator) challengeLeaf(ctx context.Context, ev *protocol.CreateLeafEv
 	}); err != nil {
 		return err
 	}
+	challenge, err := v.submitOrFetchProtocolChallenge(ctx, parentAssertion)
+	if err != nil {
+		return err
+	}
+
+	// We produce a historical commiment to add a leaf to the initiated challenge
+	// by retrieving it from our local state manager.
+	historyCommit, err := v.stateManager.LatestHistoryCommitment(ctx)
+	if err != nil {
+		return err
+	}
+
+	var challengeVertex *protocol.ChallengeVertex
+	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		challengeVertex, err = challenge.AddLeaf(tx, currentAssertion, historyCommit, v.address)
+		if err != nil {
+			return errors.Wrap(err, "cannot add leaf")
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "could not add leaf to challenge")
+	}
+
+	// TODO: Start tracking the challenge.
+	_ = challengeVertex
+
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
-	logFields["disagreedHeight"] = ev.StateCommitment.Height
-	logFields["disagreedLeaf"] = fmt.Sprintf("%#x", ev.StateCommitment.StateRoot)
-	log.WithFields(logFields).Info("Initiating challenge on parent of leaf validator disagrees with")
+	logFields["parentAssertionSeqNum"] = parentAssertion.SequenceNum
+	logFields["parentAssertionStateRoot"] = fmt.Sprintf("%#x", parentAssertion.StateCommitment.StateRoot)
+	logFields["challengeID"] = fmt.Sprintf("%#x", parentAssertion.StateCommitment.Hash())
+	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
 
+	return nil
+}
+
+// Tries to submit a challenge to the protocol or retrieve it if it already exists.
+// based on the parent assertion's state commitment hash.
+func (v *Validator) submitOrFetchProtocolChallenge(
+	ctx context.Context,
+	parentAssertion *protocol.Assertion,
+) (*protocol.Challenge, error) {
 	var challenge *protocol.Challenge
-	var challengeVertex *protocol.ChallengeVertex
+	var err error
 	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		challenge, err = parentAssertion.CreateChallenge(tx, ctx, v.address)
 		if err != nil {
@@ -128,48 +179,18 @@ func (v *Validator) challengeLeaf(ctx context.Context, ev *protocol.CreateLeafEv
 			}
 			return nil
 		}); err != nil {
-			return errors.Wrap(err, "could not get challenge by ID")
+			return nil, errors.Wrap(err, "could not get challenge by ID")
 		}
 	case err != nil:
-		return errors.Wrapf(
+		return nil, errors.Wrapf(
 			err,
 			"could not initiate challenge on assertion with seq num %d",
 			parentAssertion.SequenceNum,
 		)
 	default:
 	}
-
 	if challenge == nil {
-		return errors.New("got nil challenge from protocol")
+		return nil, errors.New("got nil challenge from protocol")
 	}
-
-	// We produce a historical commiment to add a leaf to the initiated challenge
-	// by retrieving it from our local state manager.
-	// TODO: Do we produce a historial commitment at the height == our latest height?
-	historyCommit, err := v.stateManager.LatestHistoryCommitment(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		challengeVertex, err = challenge.AddLeaf(tx, currentAssertion, historyCommit, v.address)
-		if err != nil {
-			return errors.Wrap(err, "cannot add leaf")
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "could not add leaf to challenge")
-	}
-
-	// TODO: Start tracking the challenge.
-	_ = challengeVertex
-
-	logFields = logrus.Fields{}
-	logFields["name"] = v.name
-	logFields["parentAssertionSeqNum"] = parentAssertion.SequenceNum
-	logFields["parentAssertionStateRoot"] = fmt.Sprintf("%#x", parentAssertion.StateCommitment.StateRoot)
-	logFields["challengeID"] = fmt.Sprintf("%#x", parentAssertion.StateCommitment.Hash())
-	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
-
-	return nil
+	return challenge, nil
 }
