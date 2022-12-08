@@ -11,6 +11,3 @@ uint64 constant NO_CHAL_INDEX = 0;
 
 // Expected seconds per block in Ethereum PoS
 uint256 constant ETH_POS_BLOCK_TIME = 12;
-
-// Legacy unsafe createRetryableTicket caller before call value check is implemented
-address constant UNSAFE_CREATERETRYABLETICKET_CALLER = 0x4dC25eA85FAD2F578685A4d8E404C12164eA405B;
