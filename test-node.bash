@@ -118,20 +118,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if $force_init; then
+  force_build=true
+fi
+
 if $dev_build; then
-  if $force_init; then
-    force_build=true
-  fi
   if [[ "$(docker images -q nitro-node-dev:latest 2> /dev/null)" == "" ]]; then
     force_build=true
   fi
   if [[ "$(docker images -q blockscout:latest 2> /dev/null)" == "" ]]; then
     force_build=true
-  fi
-else
-  if $force_build; then
-    echo "Can only build in dev mode with --dev"
-    exit 1
   fi
 fi
 
@@ -168,10 +164,18 @@ if $blockscout; then
 fi
 
 if $force_build; then
-    echo == Building..
+  echo == Building..
+  if $dev_build; then
     docker build . -t nitro-node-dev --target nitro-node-dev
-    docker build blockscout -t blockscout -f blockscout/docker/Dockerfile
-    docker-compose build --no-rm $NODES testnode-scripts
+    if $blockscout; then
+      docker build blockscout -t blockscout -f blockscout/docker/Dockerfile
+    fi
+  fi
+  LOCAL_BUILD_NODES=testnode-scripts
+  if $tokenbridge; then
+    LOCAL_BUILD_NODES="$LOCAL_BUILD_NODES testnode-tokenbridge"
+  fi
+  docker-compose build --no-rm $LOCAL_BUILD_NODES
 fi
 
 if $dev_build; then
