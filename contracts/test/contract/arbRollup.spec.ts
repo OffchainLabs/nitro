@@ -15,16 +15,20 @@
  */
 
 /* eslint-env node, mocha */
-import { ethers, run } from "hardhat";
+import { ethers, run, network } from "hardhat";
 import { Signer } from "@ethersproject/abstract-signer";
 import { BigNumberish, BigNumber } from "@ethersproject/bignumber";
 import { BytesLike, hexConcat, zeroPad } from "@ethersproject/bytes";
 import { ContractTransaction } from "@ethersproject/contracts";
 import { assert, expect } from "chai";
 import {
+  Bridge,
   BridgeCreator__factory,
+  Bridge__factory,
   ChallengeManager,
   ChallengeManager__factory,
+  Inbox,
+  Inbox__factory,
   OneStepProofEntry__factory,
   OneStepProver0__factory,
   OneStepProverHostIo__factory,
@@ -70,6 +74,8 @@ let sequencerInbox: SequencerInbox;
 let admin: Signer;
 let sequencer: Signer;
 let challengeManager: ChallengeManager;
+let delayedInbox: Inbox;
+let bridge: Bridge;
 
 async function getDefaultConfig(
   _confirmPeriodBlocks = confirmationPeriodBlocks
@@ -202,6 +208,14 @@ const setup = async () => {
     "ChallengeManager"
   )) as ChallengeManager__factory).attach(await rollupUser.challengeManager());
 
+  delayedInbox = ((await ethers.getContractFactory(
+    "Inbox"
+  )) as Inbox__factory).attach(rollupCreatedEvent.inboxAddress);
+
+  bridge = ((await ethers.getContractFactory(
+    "Bridge"
+  )) as Bridge__factory).attach(rollupCreatedEvent.bridge);
+
   return {
     admin,
     user,
@@ -218,6 +232,8 @@ const setup = async () => {
     outbox: await rollupAdmin.outbox(),
     sequencerInbox: rollupCreatedEvent.sequencerInbox,
     delayedBridge: rollupCreatedEvent.bridge,
+    delayedInbox: rollupCreatedEvent.inboxAddress,
+    bridge: rollupCreatedEvent.bridge
   };
 };
 
@@ -1075,5 +1091,58 @@ describe("ArbRollup", () => {
 
   it("should fail to call removeWhitelistAfterValidatorAfk", async function () {
     await expect(rollupUser.removeWhitelistAfterValidatorAfk()).to.revertedWith("VALIDATOR_NOT_AFK");
+  });
+
+  it("should fail to call uniswapCreateRetryableTicket with random signer", async function () {
+    const maxSubmissionCost = 10000;
+    await expect(delayedInbox.uniswapCreateRetryableTicket(
+      ethers.constants.AddressZero,
+      0,
+      maxSubmissionCost,
+      ethers.constants.AddressZero,
+      ethers.constants.AddressZero,
+      0,
+      0,
+      "0x",
+      {value: maxSubmissionCost}
+    )).to.revertedWith("NOT_UNISWAP_L1_TIMELOCK");
+  });
+
+  it("should allow uniswap to call uniswapCreateRetryableTicket without aliasing", async function () {
+    const uniswap_l1_timelock = "0x1a9C8182C09F50C8318d769245beA52c32BE35BC";
+    await network.provider.request({
+      method: "hardhat_impersonateAccount",
+      params: [uniswap_l1_timelock],
+    });
+    await network.provider.send("hardhat_setBalance", [
+      uniswap_l1_timelock,
+      "0x10000000000000000000",
+    ]);
+    const uniswap_signer = await ethers.getSigner(uniswap_l1_timelock)
+    const anyValue = () => true
+    const maxSubmissionCost = 10000;
+    await expect(delayedInbox.connect(uniswap_signer).uniswapCreateRetryableTicket(
+      ethers.constants.AddressZero,
+      0,
+      maxSubmissionCost,
+      ethers.constants.AddressZero,
+      ethers.constants.AddressZero,
+      0,
+      0,
+      "0x",
+      {value: maxSubmissionCost}
+    )).emit(bridge, 'MessageDelivered').withArgs(
+      anyValue,
+      anyValue,
+      anyValue,
+      anyValue,
+      uniswap_l1_timelock,
+      anyValue,
+      anyValue,
+      anyValue);
+    await network.provider.request({
+      method: "hardhat_stopImpersonatingAccount",
+      params: [uniswap_l1_timelock],
+    });
   });
 });
