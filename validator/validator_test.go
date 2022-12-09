@@ -161,7 +161,7 @@ func Test_submitOrFetchProtocolChallenge(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
-	wantedChallenge, err := validator.submitProtocolChallenge(ctx, genesis.SequenceNum, genesis.StateCommitment)
+	wantedChallenge, err := validator.submitProtocolChallenge(ctx, genesis.SequenceNum)
 	require.NoError(t, err)
 	gotChallenge, err := validator.fetchProtocolChallenge(ctx, genesis.SequenceNum, genesis.StateCommitment)
 	require.NoError(t, err)

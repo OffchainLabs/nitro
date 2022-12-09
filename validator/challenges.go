@@ -71,7 +71,7 @@ func (v *Validator) onChallengeStarted(
 func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateLeafEvent) error {
 	var challenge *protocol.Challenge
 	var err error
-	challenge, err = v.submitProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
+	challenge, err = v.submitProtocolChallenge(ctx, ev.PrevSeqNum)
 	if err != nil {
 		if errors.Is(err, protocol.ErrChallengeAlreadyExists) {
 			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
@@ -129,7 +129,6 @@ func (v *Validator) addChallengeVertex(
 	}); err != nil {
 		return nil, err
 	}
-	fmt.Printf("%d and %+v\n", latestValidAssertionSeq, assertion)
 
 	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertion.StateCommitment.Height)
 	if err != nil {
@@ -157,7 +156,6 @@ func (v *Validator) addChallengeVertex(
 func (v *Validator) submitProtocolChallenge(
 	ctx context.Context,
 	parentAssertionSeqNum protocol.SequenceNum,
-	parentAssertionCommit protocol.StateCommitment,
 ) (*protocol.Challenge, error) {
 	var challenge *protocol.Challenge
 	var err error
