@@ -261,7 +261,7 @@ func (f *RedisTxForwarder) retryAfterError() time.Duration {
 	return retryIn
 }
 
-// return true when retry interval is saturated and there is a fallback url available
+// returns true when retry interval is saturated and there is a fallback url available
 func (f *RedisTxForwarder) shouldFallbackToStatic() bool {
 	return f.config.RetryInterval*time.Duration(f.errors+1) >= f.config.UpdateInterval &&
 		f.fallbackTarget != "" && f.fallbackTarget != f.currentTarget
@@ -308,9 +308,10 @@ func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 		if err == nil {
 			break
 		}
-		if f.shouldFallbackToStatic() {
+		if f.shouldFallbackToStatic() && newSequencerUrl != f.fallbackTarget {
 			log.Error("failed to initialize forward agent, falling back to static url", "err", err, "fallback", f.fallbackTarget)
 			newSequencerUrl = f.fallbackTarget
+			nextUpdateIn = f.retryAfterError
 		} else {
 			log.Error("failed to initialize forward agent", "err", err)
 			return f.retryAfterError()
