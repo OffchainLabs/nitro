@@ -588,6 +588,7 @@ func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.
 		Validator:         challenger,
 	})
 	parentStateCommitHash := AssertionStateCommitHash(chal.parent.StateCommitment.Hash())
+	chal.includedHistories[history.Hash()] = true
 	chal.parent.chain.challengesByAssertionStateHash[parentStateCommitHash] = chal
 	chal.parent.chain.challengeVerticesByAssertionStateHash[parentStateCommitHash][leaf.SequenceNum] = leaf
 	return leaf, nil

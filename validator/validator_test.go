@@ -108,13 +108,14 @@ func Test_onChallengeStarted(t *testing.T) {
 		err := validator.onLeafCreated(ctx, leaf1)
 		require.NoError(t, err)
 
-		validator.stateManager.(*mocks.MockStateManager).On(
-			"LatestHistoryCommitment",
-			ctx,
-		).Return(util.HistoryCommitment{
+		manager = &mocks.MockStateManager{}
+		manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
+		manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(false)
+		manager.On("LatestHistoryCommitment", ctx).Return(util.HistoryCommitment{
 			Height: 1,
 			Merkle: common.BytesToHash([]byte{1}),
 		}, nil)
+		validator.stateManager = manager
 
 		err = validator.onLeafCreated(ctx, leaf2)
 		require.NoError(t, err)
@@ -135,12 +136,11 @@ func Test_onChallengeStarted(t *testing.T) {
 		require.NotNil(t, challenge)
 
 		manager = &mocks.MockStateManager{}
-		manager.On(
-			"LatestHistoryCommitment",
-			ctx,
-		).Return(util.HistoryCommitment{
-			Height: 1,
-			Merkle: common.BytesToHash([]byte{1}),
+		manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
+		manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(false)
+		manager.On("LatestHistoryCommitment", ctx).Return(util.HistoryCommitment{
+			Height: 2,
+			Merkle: common.BytesToHash([]byte{2}),
 		}, nil)
 		validator.stateManager = manager
 
@@ -151,7 +151,7 @@ func Test_onChallengeStarted(t *testing.T) {
 			Validator:             common.BytesToAddress([]byte("other validator")),
 		})
 		require.NoError(t, err)
-		//AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
+		AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
 
 		err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum:          0,
@@ -160,7 +160,7 @@ func Test_onChallengeStarted(t *testing.T) {
 			Validator:             common.BytesToAddress([]byte("other validator")),
 		})
 		require.NoError(t, err)
-		//AssertLogsContain(t, logsHook, "Attempted to add a challenge leaf that already exists")
+		AssertLogsContain(t, logsHook, "Attempted to add a challenge leaf that already exists")
 	})
 }
 
