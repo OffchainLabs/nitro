@@ -23,9 +23,10 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
+use smallvec::SmallVec;
 use std::{
     borrow::Cow,
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     fmt,
     fs::File,
     io::{BufReader, BufWriter, Write},
@@ -145,7 +146,7 @@ impl Function {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct StackFrame {
     return_ref: Value,
-    locals: Vec<Value>,
+    locals: SmallVec<[Value; 16]>,
     caller_module: u32,
     caller_module_internals: u32,
 }
@@ -349,7 +350,6 @@ impl Module {
                 func_ty.clone(),
                 types,
             )?);
-            host_call_hooks.push(None);
         }
         ensure!(
             bin.memories.len() <= 1,
@@ -1132,7 +1132,7 @@ impl Machine {
             types: Arc::new(entrypoint_types),
             names: Arc::new(entrypoint_names),
             internals_offset: 0,
-            host_call_hooks: Arc::new(vec![None]),
+            host_call_hooks: Arc::new(Vec::new()),
             start_function: None,
             func_types: Arc::new(vec![FunctionType::default()]),
             exports: Arc::new(HashMap::default()),
@@ -1350,8 +1350,8 @@ impl Machine {
         self.internal_stack.clear();
 
         self.pc = ProgramCounter {
-            module: self.modules.len() - 1,
-            func: *export as usize,
+            module: (self.modules.len() - 1).try_into().unwrap(),
+            func: *export,
             inst: 0,
         };
         self.status = MachineStatus::Running;
@@ -1372,9 +1372,9 @@ impl Machine {
         if self.is_halted() {
             return None;
         }
-        self.modules[self.pc.module].funcs[self.pc.func]
+        self.modules[self.pc.module()].funcs[self.pc.func()]
             .code
-            .get(self.pc.inst)
+            .get(self.pc.inst())
             .cloned()
     }
 
@@ -1392,7 +1392,7 @@ impl Machine {
     }
 
     fn test_next_instruction(func: &Function, pc: &ProgramCounter) {
-        debug_assert!(func.code.len() > pc.inst);
+        debug_assert!(func.code.len() > pc.inst.try_into().unwrap());
     }
 
     pub fn get_steps(&self) -> u64 {
@@ -1403,13 +1403,13 @@ impl Machine {
         if self.is_halted() {
             return Ok(());
         }
-        let mut module = &mut self.modules[self.pc.module];
-        let mut func = &module.funcs[self.pc.func];
+        let mut module = &mut self.modules[self.pc.module()];
+        let mut func = &module.funcs[self.pc.func()];
 
         macro_rules! flush_module {
             () => {
                 if let Some(merkle) = self.modules_merkle.as_mut() {
-                    merkle.set(self.pc.module, module.hash());
+                    merkle.set(self.pc.module(), module.hash());
                 }
             };
         }
@@ -1425,28 +1425,7 @@ impl Machine {
             if self.steps == Self::MAX_STEPS {
                 error!();
             }
-            let inst = func.code[self.pc.inst];
-            if self.pc.inst == 1 {
-                if let Some(hook) = module
-                    .host_call_hooks
-                    .get(self.pc.func)
-                    .cloned()
-                    .and_then(|x| x)
-                {
-                    if let Err(err) = Self::host_call_hook(
-                        &self.value_stack,
-                        module,
-                        &mut self.stdio_output,
-                        &hook.0,
-                        &hook.1,
-                    ) {
-                        eprintln!(
-                            "Failed to process host call hook for host call {:?} {:?}: {}",
-                            hook.0, hook.1, err,
-                        );
-                    }
-                }
-            }
+            let inst = func.code[self.pc.inst()];
             self.pc.inst += 1;
             match inst.opcode {
                 Opcode::Unreachable => error!(),
@@ -1466,15 +1445,33 @@ impl Machine {
                         caller_module,
                         caller_module_internals,
                     });
+                    if let Some(hook) = module
+                        .host_call_hooks
+                        .get(self.pc.func())
+                        .and_then(|h| h.as_ref())
+                    {
+                        if let Err(err) = Self::host_call_hook(
+                            &self.value_stack,
+                            module,
+                            &mut self.stdio_output,
+                            &hook.0,
+                            &hook.1,
+                        ) {
+                            eprintln!(
+                                "Failed to process host call hook for host call {:?} {:?}: {}",
+                                hook.0, hook.1, err,
+                            );
+                        }
+                    }
                 }
                 Opcode::ArbitraryJump => {
-                    self.pc.inst = inst.argument_data as usize;
+                    self.pc.inst = inst.argument_data as u32;
                     Machine::test_next_instruction(func, &self.pc);
                 }
                 Opcode::ArbitraryJumpIf => {
                     let x = self.value_stack.pop().unwrap();
                     if !x.is_i32_zero() {
-                        self.pc.inst = inst.argument_data as usize;
+                        self.pc.inst = inst.argument_data as u32;
                         Machine::test_next_instruction(func, &self.pc);
                     }
                 }
@@ -1489,9 +1486,9 @@ impl Machine {
                             }
                             self.pc = pc;
                             if changing_module {
-                                module = &mut self.modules[self.pc.module];
+                                module = &mut self.modules[self.pc.module()];
                             }
-                            func = &module.funcs[self.pc.func];
+                            func = &module.funcs[self.pc.func()];
                         }
                         v => bail!("attempted to return into an invalid reference: {:?}", v),
                     }
@@ -1503,22 +1500,21 @@ impl Machine {
                         .push(Value::I32(current_frame.caller_module));
                     self.value_stack
                         .push(Value::I32(current_frame.caller_module_internals));
-                    self.pc.func = inst.argument_data as usize;
+                    self.pc.func = inst.argument_data as u32;
                     self.pc.inst = 0;
-                    func = &module.funcs[self.pc.func];
+                    func = &module.funcs[self.pc.func()];
                 }
                 Opcode::CrossModuleCall => {
                     flush_module!();
                     self.value_stack.push(Value::InternalRef(self.pc));
                     self.value_stack.push(Value::I32(self.pc.module as u32));
                     self.value_stack.push(Value::I32(module.internals_offset));
-                    let (call_module, call_func) =
-                        unpack_cross_module_call(inst.argument_data as u64);
-                    self.pc.module = call_module as usize;
-                    self.pc.func = call_func as usize;
+                    let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
+                    self.pc.module = call_module;
+                    self.pc.func = call_func;
                     self.pc.inst = 0;
-                    module = &mut self.modules[self.pc.module];
-                    func = &module.funcs[self.pc.func];
+                    module = &mut self.modules[self.pc.module()];
+                    func = &module.funcs[self.pc.func()];
                 }
                 Opcode::CallerModuleInternalCall => {
                     self.value_stack.push(Value::InternalRef(self.pc));
@@ -1532,11 +1528,11 @@ impl Machine {
                             .and_then(|o| current_frame.caller_module_internals.checked_add(o))
                             .expect("Internal call function index overflow");
                         flush_module!();
-                        self.pc.module = current_frame.caller_module as usize;
-                        self.pc.func = func_idx as usize;
+                        self.pc.module = current_frame.caller_module;
+                        self.pc.func = func_idx;
                         self.pc.inst = 0;
-                        module = &mut self.modules[self.pc.module];
-                        func = &module.funcs[self.pc.func];
+                        module = &mut self.modules[self.pc.module()];
+                        func = &module.funcs[self.pc.func()];
                     } else {
                         // The caller module has no internals
                         error!();
@@ -1562,9 +1558,9 @@ impl Machine {
                                     .push(Value::I32(current_frame.caller_module));
                                 self.value_stack
                                     .push(Value::I32(current_frame.caller_module_internals));
-                                self.pc.func = call_func as usize;
+                                self.pc.func = call_func;
                                 self.pc.inst = 0;
-                                func = &module.funcs[self.pc.func];
+                                func = &module.funcs[self.pc.func()];
                             }
                             Value::RefNull => error!(),
                             v => bail!("invalid table element value {:?}", v),
@@ -2083,9 +2079,9 @@ impl Machine {
                 h.update(hash_value_stack(&self.internal_stack));
                 h.update(hash_stack_frame_stack(&self.frame_stack));
                 h.update(self.global_state.hash());
-                h.update(u32::try_from(self.pc.module).unwrap().to_be_bytes());
-                h.update(u32::try_from(self.pc.func).unwrap().to_be_bytes());
-                h.update(u32::try_from(self.pc.inst).unwrap().to_be_bytes());
+                h.update(self.pc.module.to_be_bytes());
+                h.update(self.pc.func.to_be_bytes());
+                h.update(self.pc.inst.to_be_bytes());
                 h.update(self.get_modules_root());
             }
             MachineStatus::Finished => {
@@ -2138,7 +2134,7 @@ impl Machine {
 
         // End machine serialization, serialize module
 
-        let module = &self.modules[self.pc.module];
+        let module = &self.modules[self.pc.module()];
         let mem_merkle = module.memory.merkelize();
         data.extend(module.serialize_for_proof(&mem_merkle));
 
@@ -2146,7 +2142,7 @@ impl Machine {
 
         data.extend(
             mod_merkle
-                .prove(self.pc.module)
+                .prove(self.pc.module())
                 .expect("Failed to prove module"),
         );
 
@@ -2156,23 +2152,23 @@ impl Machine {
 
         // Begin next instruction proof
 
-        let func = &module.funcs[self.pc.func];
-        data.extend(func.code[self.pc.inst].serialize_for_proof());
+        let func = &module.funcs[self.pc.func()];
+        data.extend(func.code[self.pc.inst()].serialize_for_proof());
         data.extend(
             func.code_merkle
-                .prove(self.pc.inst)
+                .prove(self.pc.inst())
                 .expect("Failed to prove against code merkle"),
         );
         data.extend(
             module
                 .funcs_merkle
-                .prove(self.pc.func)
+                .prove(self.pc.func())
                 .expect("Failed to prove against function merkle"),
         );
 
         // End next instruction proof, begin instruction specific serialization
 
-        if let Some(next_inst) = func.code.get(self.pc.inst) {
+        if let Some(next_inst) = func.code.get(self.pc.inst()) {
             if matches!(
                 next_inst.opcode,
                 Opcode::GetGlobalStateBytes32
@@ -2242,7 +2238,10 @@ impl Machine {
                         let mut copy = self.clone();
                         copy.step_n(1)
                             .expect("Failed to step machine forward for proof");
-                        copy.modules[self.pc.module].memory.merkelize().into_owned()
+                        copy.modules[self.pc.module()]
+                            .memory
+                            .merkelize()
+                            .into_owned()
                     } else {
                         mem_merkle.into_owned()
                     };
@@ -2376,7 +2375,7 @@ impl Machine {
     pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {
         let mut res = Vec::new();
         let mut push_pc = |pc: ProgramCounter| {
-            let names = &self.modules[pc.module].names;
+            let names = &self.modules[pc.module()].names;
             let func = names
                 .functions
                 .get(&(pc.func as u32))
@@ -2386,7 +2385,7 @@ impl Machine {
             if module.is_empty() {
                 module = format!("{}", pc.module);
             }
-            res.push((module, func, pc.inst));
+            res.push((module, func, pc.inst()));
         };
         push_pc(self.pc);
         for frame in self.frame_stack.iter().rev() {

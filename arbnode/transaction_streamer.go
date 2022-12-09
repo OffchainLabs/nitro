@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -42,11 +44,11 @@ import (
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
-	db            ethdb.Database
-	bc            *core.BlockChain
-	chainId       uint64
-	fatalErrChan  chan<- error
-	configFetcher TransactionStreamerConfigFetcher
+	db           ethdb.Database
+	bc           *core.BlockChain
+	chainId      uint64
+	fatalErrChan chan<- error
+	config       TransactionStreamerConfigFetcher
 
 	insertionMutex            sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
 	createBlocksMutex         sync.Mutex // cannot be acquired while reorgMutex is held
@@ -66,6 +68,7 @@ type TransactionStreamer struct {
 	latestBlock                *types.Block
 	latestMessage              *arbos.L1IncomingMessage
 	newBlockNotifier           chan struct{}
+	reorgSequencing            func() *arbos.SequencingHooks
 
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
@@ -74,17 +77,20 @@ type TransactionStreamer struct {
 }
 
 type TransactionStreamerConfig struct {
-	MaxBroadcastQueueSize int `koanf:"max-broadcaster-queue-size"`
+	MaxBroadcastQueueSize   int   `koanf:"max-broadcaster-queue-size"`
+	MaxReorgResequenceDepth int64 `koanf:"max-reorg-resequence-depth" reload:"hot"`
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcastQueueSize: 10_000,
+	MaxBroadcastQueueSize:   10_000,
+	MaxReorgResequenceDepth: 128 * 1024,
 }
 
 func TransactionStreamerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-broadcaster-queue-size", DefaultTransactionStreamerConfig.MaxBroadcastQueueSize, "maximum cache of pending broadcaster messages")
+	f.Int64(prefix+".max-reorg-resequence-depth", DefaultTransactionStreamerConfig.MaxReorgResequenceDepth, "maximum number of messages to attempt to resequence on reorg (0 = never resequence, -1 = always resequence)")
 }
 
 func NewTransactionStreamer(
@@ -92,7 +98,7 @@ func NewTransactionStreamer(
 	bc *core.BlockChain,
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
-	configFetcher TransactionStreamerConfigFetcher,
+	config TransactionStreamerConfigFetcher,
 ) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 db,
@@ -102,7 +108,7 @@ func NewTransactionStreamer(
 		broadcastServer:    broadcastServer,
 		chainId:            bc.Config().ChainID.Uint64(),
 		fatalErrChan:       fatalErrChan,
-		configFetcher:      configFetcher,
+		config:             config,
 	}
 	err := inbox.cleanupInconsistentState()
 	if err != nil {
@@ -150,6 +156,16 @@ func (s *TransactionStreamer) SetInboxReader(inboxReader *InboxReader) {
 	s.inboxReader = inboxReader
 }
 
+func (s *TransactionStreamer) SetReorgSequencingPolicy(reorgSequencing func() *arbos.SequencingHooks) {
+	if s.Started() {
+		panic("trying to set reorg sequencing policy after start")
+	}
+	if s.reorgSequencing != nil {
+		panic("trying to set reorg sequencing policy when already set")
+	}
+	s.reorgSequencing = reorgSequencing
+}
+
 func (s *TransactionStreamer) cleanupInconsistentState() error {
 	// If it doesn't exist yet, set the message count to 0
 	hasMessageCount, err := s.db.Has(messageCountKey)
@@ -173,11 +189,20 @@ func (s *TransactionStreamer) ReorgTo(count arbutil.MessageIndex) error {
 func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	err := s.reorgToInternal(batch, count)
+	oldMessages, err := s.reorgToInternal(batch, count)
 	if err != nil {
 		return err
 	}
-	return batch.Write()
+	err = batch.Write()
+	if err != nil {
+		return err
+	}
+	lastDelayedRead, err := s.getPrevPrevDelayedRead(count)
+	if err != nil {
+		return err
+	}
+	s.resequenceReorgedMessages(oldMessages, lastDelayedRead)
+	return nil
 }
 
 func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
@@ -192,9 +217,37 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 	return iter.Error()
 }
 
-func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.MessageIndex) error {
+// The insertion mutex must be held. This acquires the reorg mutex.
+// Note: oldMessages will be empty if reorgHook is nil
+func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.MessageIndex) ([]*arbstate.MessageWithMetadata, error) {
 	if count == 0 {
-		return errors.New("cannot reorg out init message")
+		return nil, errors.New("cannot reorg out init message")
+	}
+	var oldMessages []*arbstate.MessageWithMetadata
+	if s.reorgSequencing != nil {
+		targetMsgCount, err := s.GetMessageCount()
+		if err != nil {
+			return nil, err
+		}
+		config := s.config()
+		maxResequenceMsgCount := count + arbutil.MessageIndex(config.MaxReorgResequenceDepth)
+		if config.MaxReorgResequenceDepth >= 0 && maxResequenceMsgCount < targetMsgCount {
+			log.Error(
+				"unable to re-sequence all old messages because there are too many",
+				"reorgingToCount", count,
+				"removingMessages", targetMsgCount-count,
+				"maxReorgResequenceDepth", config.MaxReorgResequenceDepth,
+			)
+			targetMsgCount = maxResequenceMsgCount
+		}
+		for i := count; i < targetMsgCount; i++ {
+			oldMessage, err := s.GetMessage(i)
+			if err != nil {
+				log.Error("unable to lookup old message for re-sequencing", "position", i, "err", err)
+				break
+			}
+			oldMessages = append(oldMessages, oldMessage)
+		}
 	}
 	atomic.AddUint32(&s.reorgPending, 1)
 	s.reorgMutex.Lock()
@@ -202,7 +255,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
 	blockNum, err := s.MessageCountToBlockNumber(count)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// We can safely cast blockNum to a uint64 as we checked count == 0 above
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
@@ -210,13 +263,13 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 		if s.validator != nil {
 			err = s.validator.ReorgToBlock(targetBlock.NumberU64(), targetBlock.Hash())
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 
 		err = s.bc.ReorgToOldBlock(targetBlock)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		log.Warn("reorg target block not found", "block", blockNum)
@@ -224,10 +277,10 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return setMessageCount(batch, count)
+	return oldMessages, setMessageCount(batch, count)
 }
 
 func setMessageCount(batch ethdb.KeyValueWriter, count arbutil.MessageIndex) error {
@@ -347,7 +400,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.B
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		} else if broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
 			// Feed messages can be added directly to end of cache
-			maxQueueSize := s.configFetcher().MaxBroadcastQueueSize
+			maxQueueSize := s.config().MaxBroadcastQueueSize
 			if maxQueueSize == 0 || len(s.broadcasterQueuedMessages) <= maxQueueSize {
 				s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 			}
@@ -407,6 +460,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	}})
 }
 
+// Used in redis tests
 func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
@@ -559,7 +613,14 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
 	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
 
-	prevDelayedRead, err := s.getPrevPrevDelayedRead(messageStartPos)
+	startBlockNum, err := s.MessageCountToBlockNumber(messageStartPos)
+	if err != nil {
+		return err
+	}
+	config := s.config()
+	shouldResequence := config.MaxReorgResequenceDepth < 0 || s.bc.CurrentBlock().Header().Number.Int64()+config.MaxReorgResequenceDepth >= startBlockNum
+
+	lastDelayedRead, err := s.getPrevPrevDelayedRead(messageStartPos)
 	if err != nil {
 		return err
 	}
@@ -584,8 +645,8 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	var feedReorg bool
 	var confirmedReorg bool
 	// Skip any duplicate messages already in the database
-	feedReorg, confirmedReorg, prevDelayedRead, messageStartPos, messages, err = s.skipDuplicateMessages(
-		prevDelayedRead,
+	feedReorg, confirmedReorg, lastDelayedRead, messageStartPos, messages, err = s.skipDuplicateMessages(
+		lastDelayedRead,
 		messageStartPos,
 		messages,
 		confirmedMessageCount,
@@ -603,11 +664,11 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	// Validate delayed message counts of remaining messages
 	for i, msg := range messages {
 		msgPos := messageStartPos + arbutil.MessageIndex(i)
-		diff := msg.DelayedMessagesRead - prevDelayedRead
+		diff := msg.DelayedMessagesRead - lastDelayedRead
 		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, msgPos)
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", lastDelayedRead, msg.DelayedMessagesRead, msgPos)
 		}
-		prevDelayedRead = msg.DelayedMessagesRead
+		lastDelayedRead = msg.DelayedMessagesRead
 		if msg.Message == nil {
 			return fmt.Errorf("attempted to insert nil message at position %v", msgPos)
 		}
@@ -615,9 +676,30 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 
 	if confirmedReorg {
 		reorgBatch := s.db.NewBatch()
-		err = s.reorgToInternal(reorgBatch, messageStartPos)
+		oldMessages, err := s.reorgToInternal(reorgBatch, messageStartPos)
 		if err != nil {
 			return err
+		}
+		err = reorgBatch.Write()
+		if err != nil {
+			return err
+		}
+		if len(oldMessages) > 0 {
+			if shouldResequence {
+				// Run this code after we've written the new messages at the end of this function
+				defer func() {
+					// The context is only necessary for batch fetching,
+					// which will no longer be necessary with the batch posting report refactor.
+					err := s.createBlocks(context.TODO())
+					if err != nil {
+						log.Error("unable to create block after reorg", "err", err)
+						return
+					}
+					s.resequenceReorgedMessages(oldMessages, lastDelayedRead)
+				}()
+			} else {
+				log.Error("unable to re-sequence old messages because block production was not caught up")
+			}
 		}
 		err = reorgBatch.Write()
 		if err != nil {
@@ -684,9 +766,85 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 	}, nil
 }
 
+// The caller must hold the insertionMutex
+func (s *TransactionStreamer) resequenceReorgedMessages(messages []*arbstate.MessageWithMetadata, lastDelayedSeqNum uint64) {
+	for _, msg := range messages {
+		// Check if the message is non-nil just to be safe
+		if msg == nil || msg.Message == nil || msg.Message.Header == nil {
+			continue
+		}
+		header := msg.Message.Header
+		if header.RequestId != nil {
+			// This is a delayed message
+			delayedSeqNum := header.RequestId.Big().Uint64()
+			if delayedSeqNum+1 != msg.DelayedMessagesRead {
+				log.Error("delayed message header RequestId doesn't match database DelayedMessagesRead", "header", msg.Message.Header, "delayedMessagesRead", msg.DelayedMessagesRead)
+				continue
+			}
+			if delayedSeqNum != lastDelayedSeqNum {
+				// This is the wrong position for the delayed message
+				continue
+			}
+			lastDelayedSeqNum++
+			if s.inboxReader != nil {
+				// Verify that the delayed message we're re-sequencing matches what we have after the reorg
+				haveDelayedMessage, err := s.inboxReader.tracker.GetDelayedMessage(delayedSeqNum)
+				if err != nil {
+					if !strings.Contains(err.Error(), "not found") {
+						log.Error("failed to lookup delayed message to re-sequence", "id", header.RequestId, "err", err)
+					}
+					continue
+				}
+				haveDelayedMessageBytes, err := haveDelayedMessage.Serialize()
+				if err != nil {
+					log.Error("failed to serialize new delayed message from database", "err", err)
+					continue
+				}
+				oldDelayedMessageBytes, err := msg.Message.Serialize()
+				if err != nil {
+					log.Error("failed to serialize old delayed message from database", "err", err)
+					continue
+				}
+				if !bytes.Equal(haveDelayedMessageBytes, oldDelayedMessageBytes) {
+					// This delayed message is different, so we'll save re-sequencing it for the real delayed sequencer later
+					continue
+				}
+			}
+			// The context is only necessary for batch fetching,
+			// which will no longer be necessary with the batch posting report refactor.
+			err := s.sequenceDelayedMessagesWithInsertionMutex(context.TODO(), []*arbos.L1IncomingMessage{msg.Message}, delayedSeqNum)
+			if err != nil {
+				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
+				continue
+			}
+			continue
+		}
+		if header.Kind != arbos.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
+			// This shouldn't exist?
+			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
+			continue
+		}
+		// We don't need a batch fetcher as this is an L2 message
+		txes, err := msg.Message.ParseL2Transactions(s.bc.Config().ChainID, nil)
+		if err != nil {
+			log.Warn("failed to parse sequencer message found from reorg", "err", err)
+			continue
+		}
+		_, err = s.sequenceTransactionsWithInsertionMutex(msg.Message.Header, txes, s.reorgSequencing())
+		if err != nil {
+			log.Error("failed to re-sequence old user message removed by reorg", "err", err)
+			return
+		}
+	}
+}
+
 func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
+	return s.sequenceTransactionsWithInsertionMutex(header, txes, hooks)
+}
+
+func (s *TransactionStreamer) sequenceTransactionsWithInsertionMutex(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
 	s.reorgMutex.RLock()
@@ -805,7 +963,10 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
+	return s.sequenceDelayedMessagesWithInsertionMutex(ctx, messages, firstDelayedSeqNum)
+}
 
+func (s *TransactionStreamer) sequenceDelayedMessagesWithInsertionMutex(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
 	pos, err := s.GetMessageCount()
 	if err != nil {
 		return err
