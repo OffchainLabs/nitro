@@ -114,9 +114,9 @@ func (v *Validator) addChallengeVertex(
 	var challengeVertex *protocol.ChallengeVertex
 	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		numAssertions := p.NumAssertions(tx)
-		currentAssertion, err := p.AssertionBySequenceNum(tx, protocol.SequenceNum(numAssertions-1))
-		if err != nil {
-			return err
+		currentAssertion, readErr := p.AssertionBySequenceNum(tx, protocol.SequenceNum(numAssertions-1))
+		if readErr != nil {
+			return readErr
 		}
 		challengeVertex, err = challenge.AddLeaf(tx, currentAssertion, historyCommit, v.address)
 		if err != nil {
@@ -152,9 +152,9 @@ func (v *Validator) submitOrFetchProtocolChallenge(
 	var challenge *protocol.Challenge
 	var err error
 	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		parentAssertion, err := p.AssertionBySequenceNum(tx, parentAssertionSeqNum)
-		if err != nil {
-			return err
+		parentAssertion, readErr := p.AssertionBySequenceNum(tx, parentAssertionSeqNum)
+		if readErr != nil {
+			return readErr
 		}
 		challenge, err = parentAssertion.CreateChallenge(tx, ctx, v.address)
 		if err != nil {
