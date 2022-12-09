@@ -159,7 +159,6 @@ func Test_onChallengeStarted(t *testing.T) {
 }
 
 func Test_submitOrFetchProtocolChallenge(t *testing.T) {
-	logsHook := test.NewGlobal()
 	ctx := context.Background()
 	_, _, validator := createTwoValidatorFork(t, ctx)
 	var genesis *protocol.Assertion
@@ -169,12 +168,11 @@ func Test_submitOrFetchProtocolChallenge(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
-	wantedChallenge, err := validator.submitOrFetchProtocolChallenge(ctx, genesis.SequenceNum, genesis.StateCommitment)
+	wantedChallenge, err := validator.submitProtocolChallenge(ctx, genesis.SequenceNum, genesis.StateCommitment)
 	require.NoError(t, err)
-	gotChallenge, err := validator.submitOrFetchProtocolChallenge(ctx, genesis.SequenceNum, genesis.StateCommitment)
+	gotChallenge, err := validator.fetchProtocolChallenge(ctx, genesis.SequenceNum, genesis.StateCommitment)
 	require.NoError(t, err)
 	require.Equal(t, wantedChallenge, gotChallenge)
-	AssertLogsContain(t, logsHook, "Challenge on leaf already exists, reading existing challenge")
 }
 
 func createTwoValidatorFork(t *testing.T, ctx context.Context) (

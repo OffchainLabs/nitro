@@ -23,7 +23,7 @@ func (v *Validator) onChallengeStarted(
 		return nil
 	}
 
-	challenge, err := v.submitOrFetchProtocolChallenge(
+	challenge, err := v.fetchProtocolChallenge(
 		ctx,
 		ev.ParentSeqNum,
 		ev.ParentStateCommitment,
@@ -69,8 +69,16 @@ func (v *Validator) onChallengeStarted(
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateLeafEvent) error {
-	challenge, err := v.submitOrFetchProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
+	var challenge *protocol.Challenge
+	var err error
+	challenge, err = v.submitProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
 	if err != nil {
+		if errors.Is(err, protocol.ErrChallengeAlreadyExists) {
+			challenge, err = v.fetchProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
+			if err != nil {
+				return err
+			}
+		}
 		return err
 	}
 
@@ -133,49 +141,49 @@ func (v *Validator) addChallengeVertex(
 	return challengeVertex, nil
 }
 
-// Tries to submit a challenge to the protocol or retrieve it if it already exists.
-// based on the parent assertion's state commitment hash.
-func (v *Validator) submitOrFetchProtocolChallenge(
+func (v *Validator) submitProtocolChallenge(
 	ctx context.Context,
 	parentAssertionSeqNum protocol.SequenceNum,
 	parentAssertionCommit protocol.StateCommitment,
 ) (*protocol.Challenge, error) {
 	var challenge *protocol.Challenge
 	var err error
-	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		parentAssertion, readErr := p.AssertionBySequenceNum(tx, parentAssertionSeqNum)
 		if readErr != nil {
 			return readErr
 		}
 		challenge, err = parentAssertion.CreateChallenge(tx, ctx, v.address)
 		if err != nil {
-			return errors.Wrap(err, "cannot make challenge")
+			return errors.Wrap(err, "could not submit challenge")
 		}
 		return nil
-	})
-	switch {
-	case errors.Is(err, protocol.ErrChallengeAlreadyExists):
-		log.Info("Challenge on leaf already exists, reading existing challenge from protocol")
-		if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			challenge, err = p.ChallengeByAssertionStateCommit(
-				tx,
-				protocol.AssertionStateCommitHash(parentAssertionCommit.Hash()),
-			)
-			if err != nil {
-				return errors.Wrap(err, "cannot make challenge")
-			}
-			return nil
-		}); err != nil {
-			return nil, errors.Wrap(err, "could not get challenge by ID")
-		}
-	case err != nil:
-		return nil, errors.Wrapf(
-			err,
-			"could not initiate challenge on assertion with state commit: height=%d and stateRoot=%#x",
-			parentAssertionCommit.Height,
-			parentAssertionCommit.StateRoot,
+	}); err != nil {
+		return nil, err
+	}
+	return challenge, nil
+}
+
+// Tries to retrieve a challenge from the protocol on-chain
+// based on the parent assertion's state commitment hash.
+func (v *Validator) fetchProtocolChallenge(
+	ctx context.Context,
+	parentAssertionSeqNum protocol.SequenceNum,
+	parentAssertionCommit protocol.StateCommitment,
+) (*protocol.Challenge, error) {
+	var err error
+	var challenge *protocol.Challenge
+	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		challenge, err = p.ChallengeByAssertionStateCommit(
+			tx,
+			protocol.AssertionStateCommitHash(parentAssertionCommit.Hash()),
 		)
-	default:
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, errors.Wrap(err, "could not get challenge from protocol")
 	}
 	if challenge == nil {
 		return nil, errors.New("got nil challenge from protocol")
