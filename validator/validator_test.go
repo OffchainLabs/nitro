@@ -59,6 +59,19 @@ func Test_onLeafCreation(t *testing.T) {
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background())
+
+		manager := &mocks.MockStateManager{}
+		manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
+		manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(false)
+		manager.On(
+			"LatestHistoryCommitment",
+			ctx,
+		).Return(util.HistoryCommitment{
+			Height: 1,
+			Merkle: common.BytesToHash([]byte{1}),
+		}, nil)
+		validator.stateManager = manager
+
 		err := validator.onLeafCreated(ctx, leaf1)
 		require.NoError(t, err)
 		err = validator.onLeafCreated(ctx, leaf2)
@@ -162,6 +175,25 @@ func Test_onChallengeStarted(t *testing.T) {
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Attempted to add a challenge leaf that already exists")
 	})
+}
+
+func Test_submitOrFetchProtocolChallenge(t *testing.T) {
+	logsHook := test.NewGlobal()
+	ctx := context.Background()
+	_, _, validator := createTwoValidatorFork(t, ctx)
+	var genesis *protocol.Assertion
+	var err error
+	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		genesis = p.LatestConfirmed(tx)
+		return nil
+	})
+	require.NoError(t, err)
+	wantedChallenge, err := validator.submitOrFetchProtocolChallenge(ctx, genesis)
+	require.NoError(t, err)
+	gotChallenge, err := validator.submitOrFetchProtocolChallenge(ctx, genesis)
+	require.NoError(t, err)
+	require.Equal(t, wantedChallenge, gotChallenge)
+	AssertLogsContain(t, logsHook, "Challenge on leaf already exists, reading existing challenge")
 }
 
 func createTwoValidatorFork(t *testing.T, ctx context.Context) (
