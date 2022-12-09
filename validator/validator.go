@@ -268,10 +268,6 @@ func (v *Validator) onLeafCreated(ctx context.Context, ev *protocol.CreateLeafEv
 	}
 	seqNum := ev.SeqNum
 	stateCommit := ev.StateCommitment
-	// If there exists a statement for new leaf, it means it has already been seen.
-	if v.stateManager.HasStateCommitment(ctx, stateCommit) {
-		return nil
-	}
 
 	log.WithFields(logrus.Fields{
 		"name":      v.name,

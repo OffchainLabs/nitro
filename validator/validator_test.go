@@ -62,13 +62,14 @@ func Test_onLeafCreation(t *testing.T) {
 
 		manager := &mocks.MockStateManager{}
 		manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
-		manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(false)
+		manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(true)
 		manager.On(
-			"LatestHistoryCommitment",
+			"HistoryCommitmentUpTo",
 			ctx,
+			uint64(2),
 		).Return(util.HistoryCommitment{
-			Height: 1,
-			Merkle: common.BytesToHash([]byte{1}),
+			Height: leaf2.StateCommitment.Height,
+			Merkle: common.BytesToHash([]byte{2}),
 		}, nil)
 		validator.stateManager = manager
 
@@ -89,15 +90,7 @@ func Test_onChallengeStarted(t *testing.T) {
 	manager := &mocks.MockStateManager{}
 
 	manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
-	manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(false)
-	manager.On(
-		"LatestHistoryCommitment",
-		ctx,
-	).Return(util.HistoryCommitment{
-		Height: 1,
-		Merkle: common.BytesToHash([]byte{1}),
-	}, nil)
-
+	manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(true)
 	validator.stateManager = manager
 
 	err := validator.onLeafCreated(ctx, leaf1)
@@ -105,10 +98,10 @@ func Test_onChallengeStarted(t *testing.T) {
 
 	manager = &mocks.MockStateManager{}
 	manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
-	manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(false)
-	manager.On("LatestHistoryCommitment", ctx).Return(util.HistoryCommitment{
-		Height: 1,
-		Merkle: common.BytesToHash([]byte{1}),
+	manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(true)
+	manager.On("HistoryCommitmentUpTo", ctx, uint64(2)).Return(util.HistoryCommitment{
+		Height: leaf2.StateCommitment.Height,
+		Merkle: common.BytesToHash([]byte{2}),
 	}, nil)
 	validator.stateManager = manager
 
@@ -132,10 +125,10 @@ func Test_onChallengeStarted(t *testing.T) {
 
 	manager = &mocks.MockStateManager{}
 	manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
-	manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(false)
-	manager.On("LatestHistoryCommitment", ctx).Return(util.HistoryCommitment{
+	manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(true)
+	manager.On("HistoryCommitmentUpTo", ctx, uint64(2)).Return(util.HistoryCommitment{
 		Height: 2,
-		Merkle: common.BytesToHash([]byte{2}),
+		Merkle: common.BytesToHash([]byte("forked commitment")),
 	}, nil)
 	validator.stateManager = manager
 

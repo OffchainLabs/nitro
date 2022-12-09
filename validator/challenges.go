@@ -114,18 +114,29 @@ func (v *Validator) addChallengeVertex(
 	ctx context.Context,
 	challenge *protocol.Challenge,
 ) (*protocol.ChallengeVertex, error) {
-	historyCommit, err := v.stateManager.LatestHistoryCommitment(ctx)
+	latestValidAssertionSeq := v.findLatestValidAssertion(ctx)
+
+	var assertion *protocol.Assertion
+	var err error
+	if err := v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		assertion, err = p.AssertionBySequenceNum(tx, latestValidAssertionSeq)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	fmt.Printf("%d and %+v\n", latestValidAssertionSeq, assertion)
+
+	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, assertion.StateCommitment.Height)
 	if err != nil {
 		return nil, err
 	}
+
 	var challengeVertex *protocol.ChallengeVertex
 	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		numAssertions := p.NumAssertions(tx)
-		currentAssertion, readErr := p.AssertionBySequenceNum(tx, protocol.SequenceNum(numAssertions-1))
-		if readErr != nil {
-			return readErr
-		}
-		challengeVertex, err = challenge.AddLeaf(tx, currentAssertion, historyCommit, v.address)
+		challengeVertex, err = challenge.AddLeaf(tx, assertion, historyCommit, v.address)
 		if err != nil {
 			return err
 		}
