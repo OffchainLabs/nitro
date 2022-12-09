@@ -555,6 +555,9 @@ func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.
 	if !chal.root.eligibleForNewSuccessor() {
 		return nil, ErrPastDeadline
 	}
+	if chal.includedHistories[history.Hash()] {
+		return nil, ErrVertexAlreadyExists
+	}
 
 	timer := util.NewCountUpTimer(chain.timeReference)
 	if assertion.isFirstChild {

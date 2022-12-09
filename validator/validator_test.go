@@ -90,8 +90,32 @@ func Test_onChallengeStarted(t *testing.T) {
 	t.Run("challenge concerns us", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background())
+
+		manager := &mocks.MockStateManager{}
+
+		manager.On("HasStateCommitment", ctx, leaf1.StateCommitment).Return(false)
+		manager.On("HasStateCommitment", ctx, leaf2.StateCommitment).Return(false)
+		manager.On(
+			"LatestHistoryCommitment",
+			ctx,
+		).Return(util.HistoryCommitment{
+			Height: 1,
+			Merkle: common.BytesToHash([]byte{1}),
+		}, nil)
+
+		validator.stateManager = manager
+
 		err := validator.onLeafCreated(ctx, leaf1)
 		require.NoError(t, err)
+
+		validator.stateManager.(*mocks.MockStateManager).On(
+			"LatestHistoryCommitment",
+			ctx,
+		).Return(util.HistoryCommitment{
+			Height: 1,
+			Merkle: common.BytesToHash([]byte{1}),
+		}, nil)
+
 		err = validator.onLeafCreated(ctx, leaf2)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
@@ -110,6 +134,16 @@ func Test_onChallengeStarted(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, challenge)
 
+		manager = &mocks.MockStateManager{}
+		manager.On(
+			"LatestHistoryCommitment",
+			ctx,
+		).Return(util.HistoryCommitment{
+			Height: 1,
+			Merkle: common.BytesToHash([]byte{1}),
+		}, nil)
+		validator.stateManager = manager
+
 		err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
 			ParentSeqNum:          0,
 			ParentStateCommitment: challenge.ParentStateCommitment(),
@@ -117,6 +151,16 @@ func Test_onChallengeStarted(t *testing.T) {
 			Validator:             common.BytesToAddress([]byte("other validator")),
 		})
 		require.NoError(t, err)
+		//AssertLogsContain(t, logsHook, "Received challenge for a created leaf, added own leaf")
+
+		err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
+			ParentSeqNum:          0,
+			ParentStateCommitment: challenge.ParentStateCommitment(),
+			ParentStaker:          common.Address{},
+			Validator:             common.BytesToAddress([]byte("other validator")),
+		})
+		require.NoError(t, err)
+		//AssertLogsContain(t, logsHook, "Attempted to add a challenge leaf that already exists")
 	})
 }
 
@@ -155,10 +199,6 @@ func createTwoValidatorFork(t *testing.T, ctx context.Context) (
 		StateRoot: common.BytesToHash([]byte("woop")),
 		Height:    2,
 	}
-
-	stateManager.On("HasStateCommitment", ctx, commit).Return(false)
-	stateManager.On("HasStateCommitment", ctx, forkedCommit).Return(false)
-	stateManager.On("LatestHistoryCommitment", ctx).Return(util.HistoryCommitment{}, nil)
 
 	var genesis *protocol.Assertion
 	var assertion *protocol.Assertion
