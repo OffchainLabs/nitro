@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
@@ -52,6 +53,14 @@ func (v *Validator) bisect(
 		return nil
 	})
 	if err != nil {
+		if errors.Is(protocol.ErrVertexAlreadyExists, err) {
+			log.Infof(
+				"Bisected vertex with height %d and commit %#x already exists",
+				historyCommit.Height,
+				historyCommit.Merkle,
+			)
+			return nil, nil
+		}
 		return nil, errors.Wrapf(
 			err,
 			"could not bisect vertex with sequence %d and validator %#x to height %d with history %d and %#x",
@@ -64,11 +73,9 @@ func (v *Validator) bisect(
 	}
 	log.WithFields(logrus.Fields{
 		"name":                   v.name,
-		"IsPresumptiveSuccessor": bisectedVertex.IsPresumptiveSuccessor(),
-	}).Infof(
-		"Successfully bisected to vertex with height %d and commit %#x",
-		bisectedVertex.Commitment.Height,
-		bisectedVertex.Commitment.Merkle,
-	)
+		"isPresumptiveSuccessor": bisectedVertex.IsPresumptiveSuccessor(),
+		"historyCommitHeight":    bisectedVertex.Commitment.Height,
+		"historyCommitMerkle":    fmt.Sprintf("%#x", bisectedVertex.Commitment.Height),
+	}).Info("Successfully bisected to vertex")
 	return bisectedVertex, nil
 }
