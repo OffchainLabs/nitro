@@ -69,15 +69,14 @@ func (v *Validator) onChallengeStarted(
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateLeafEvent) error {
-	var challenge *protocol.Challenge
-	var err error
-	challenge, err = v.submitProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
+	challenge, err := v.submitProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
 	if err != nil {
 		if errors.Is(err, protocol.ErrChallengeAlreadyExists) {
-			challenge, err = v.fetchProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
-			if err != nil {
-				return err
+			existingChallenge, fetchErr := v.fetchProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
+			if fetchErr != nil {
+				return fetchErr
 			}
+			challenge = existingChallenge
 		}
 		return err
 	}
