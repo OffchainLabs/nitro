@@ -40,26 +40,12 @@ func (v *Validator) onChallengeStarted(
 	}
 	v.leavesLock.RUnlock()
 
-	// We then add a leaf to the challenge using a historical commitment at our latest height.
-	var challenge *protocol.Challenge
-	var err error
-	if err := v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		parentAssertion, fetchErr := p.AssertionBySequenceNum(tx, ev.ParentSeqNum)
-		if fetchErr != nil {
-			return err
-		}
-		challenge, err = p.ChallengeByAssertionStateCommit(
-			tx,
-			protocol.AssertionStateCommitHash(parentAssertion.StateCommitment.Hash()),
-		)
-		if err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
+	challenge, err := v.submitOrFetchProtocolChallenge(ctx, ev.ParentSeqNum, ev.ParentStateCommitment)
+	if err != nil {
 		return err
 	}
 
+	// We then add a challenge vertex to the challenge.
 	challengeVertex, err := v.addChallengeVertex(ctx, challenge)
 	if err != nil {
 		return err
@@ -90,22 +76,12 @@ func (v *Validator) onChallengeStarted(
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateLeafEvent) error {
-	var parentAssertion *protocol.Assertion
-	var err error
-	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		parentAssertion, err = p.AssertionBySequenceNum(tx, ev.PrevSeqNum)
-		if err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	challenge, err := v.submitOrFetchProtocolChallenge(ctx, parentAssertion)
+	challenge, err := v.submitOrFetchProtocolChallenge(ctx, ev.PrevSeqNum, ev.PrevStateCommitment)
 	if err != nil {
 		return err
 	}
 
+	// We then add a challenge vertex to the challenge.
 	challengeVertex, err := v.addChallengeVertex(ctx, challenge)
 	if err != nil {
 		return err
@@ -119,9 +95,9 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
-	logFields["parentAssertionSeqNum"] = parentAssertion.SequenceNum
-	logFields["parentAssertionStateRoot"] = fmt.Sprintf("%#x", parentAssertion.StateCommitment.StateRoot)
-	logFields["challengeID"] = fmt.Sprintf("%#x", parentAssertion.StateCommitment.Hash())
+	logFields["parentAssertionSeqNum"] = ev.PrevSeqNum
+	logFields["parentAssertionStateRoot"] = fmt.Sprintf("%#x", ev.PrevStateCommitment.StateRoot)
+	logFields["challengeID"] = fmt.Sprintf("%#x", ev.PrevStateCommitment.Hash())
 	log.WithFields(logFields).Info("Successfully created challenge and added leaf, now tracking events")
 
 	return nil
@@ -170,11 +146,16 @@ func (v *Validator) addChallengeVertex(
 // based on the parent assertion's state commitment hash.
 func (v *Validator) submitOrFetchProtocolChallenge(
 	ctx context.Context,
-	parentAssertion *protocol.Assertion,
+	parentAssertionSeqNum protocol.SequenceNum,
+	parentAssertionCommit protocol.StateCommitment,
 ) (*protocol.Challenge, error) {
 	var challenge *protocol.Challenge
 	var err error
 	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		parentAssertion, err := p.AssertionBySequenceNum(tx, parentAssertionSeqNum)
+		if err != nil {
+			return err
+		}
 		challenge, err = parentAssertion.CreateChallenge(tx, ctx, v.address)
 		if err != nil {
 			return errors.Wrap(err, "cannot make challenge")
@@ -185,7 +166,10 @@ func (v *Validator) submitOrFetchProtocolChallenge(
 	case errors.Is(err, protocol.ErrChallengeAlreadyExists):
 		log.Info("Challenge on leaf already exists, reading existing challenge from protocol")
 		if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			challenge, err = p.ChallengeByAssertionStateCommit(tx, protocol.AssertionStateCommitHash(parentAssertion.StateCommitment.Hash()))
+			challenge, err = p.ChallengeByAssertionStateCommit(
+				tx,
+				protocol.AssertionStateCommitHash(parentAssertionCommit.Hash()),
+			)
 			if err != nil {
 				return errors.Wrap(err, "cannot make challenge")
 			}
@@ -196,8 +180,9 @@ func (v *Validator) submitOrFetchProtocolChallenge(
 	case err != nil:
 		return nil, errors.Wrapf(
 			err,
-			"could not initiate challenge on assertion with seq num %d",
-			parentAssertion.SequenceNum,
+			"could not initiate challenge on assertion with state commit: height=%d and stateRoot=%#x",
+			parentAssertionCommit.Height,
+			parentAssertionCommit.StateRoot,
 		)
 	default:
 	}

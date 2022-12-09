@@ -188,9 +188,9 @@ func Test_submitOrFetchProtocolChallenge(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
-	wantedChallenge, err := validator.submitOrFetchProtocolChallenge(ctx, genesis)
+	wantedChallenge, err := validator.submitOrFetchProtocolChallenge(ctx, genesis.SequenceNum, genesis.StateCommitment)
 	require.NoError(t, err)
-	gotChallenge, err := validator.submitOrFetchProtocolChallenge(ctx, genesis)
+	gotChallenge, err := validator.submitOrFetchProtocolChallenge(ctx, genesis.SequenceNum, genesis.StateCommitment)
 	require.NoError(t, err)
 	require.Equal(t, wantedChallenge, gotChallenge)
 	AssertLogsContain(t, logsHook, "Challenge on leaf already exists, reading existing challenge")
