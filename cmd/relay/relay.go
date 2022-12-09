@@ -42,9 +42,7 @@ func startup() error {
 
 	relayConfig, err := relay.ParseRelay(ctx, os.Args[1:])
 	if err != nil || len(relayConfig.Node.Feed.Input.URLs) == 0 || relayConfig.Node.Feed.Input.URLs[0] == "" || relayConfig.L2.ChainId == 0 {
-		confighelpers.HandleError(err, printSampleUsage)
-
-		return nil
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 
 	logFormat, err := genericconf.ParseLogType(relayConfig.LogType)
@@ -66,7 +64,10 @@ func startup() error {
 
 	// Start up an arbitrum sequencer relay
 	feedErrChan := make(chan error, 10)
-	newRelay := relay.NewRelay(relayConfig, feedErrChan)
+	newRelay, err := relay.NewRelay(relayConfig, feedErrChan)
+	if err != nil {
+		return err
+	}
 	err = newRelay.Start(ctx)
 	if err != nil {
 		return err

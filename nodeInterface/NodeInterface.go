@@ -244,7 +244,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 		}
 
 		if lo == hi {
-			all, err := n.backend.GetLogs(n.context, block.Hash())
+			all, err := n.backend.GetLogs(n.context, block.Hash(), block.NumberU64())
 			if err != nil {
 				searchErr = err
 				return

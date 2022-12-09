@@ -5,6 +5,7 @@ package signature
 
 import (
 	"crypto/ecdsa"
+
 	"github.com/ethereum/go-ethereum/crypto"
 )
 

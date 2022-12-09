@@ -20,9 +20,11 @@ import (
 )
 
 type LocalDBStorageConfig struct {
-	Enable              bool   `koanf:"enable"`
-	DataDir             string `koanf:"data-dir"`
-	DiscardAfterTimeout bool   `koanf:"discard-after-timeout"`
+	Enable                  bool   `koanf:"enable"`
+	DataDir                 string `koanf:"data-dir"`
+	DiscardAfterTimeout     bool   `koanf:"discard-after-timeout"`
+	SyncFromStorageServices bool   `koanf:"sync-from-storage-service"`
+	SyncToStorageServices   bool   `koanf:"sync-to-storage-service"`
 }
 
 var DefaultLocalDBStorageConfig = LocalDBStorageConfig{}
@@ -31,6 +33,8 @@ func LocalDBStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultLocalDBStorageConfig.Enable, "enable storage/retrieval of sequencer batch data from a database on the local filesystem")
 	f.String(prefix+".data-dir", DefaultLocalDBStorageConfig.DataDir, "directory in which to store the database")
 	f.Bool(prefix+".discard-after-timeout", DefaultLocalDBStorageConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
+	f.Bool(prefix+".sync-from-storage-service", DefaultLocalDBStorageConfig.SyncFromStorageServices, "enable db storage to be used as a source for regular sync storage")
+	f.Bool(prefix+".sync-to-storage-service", DefaultLocalDBStorageConfig.SyncToStorageServices, "enable db storage to be used as a sink for regular sync storage")
 }
 
 type DBStorageService struct {
@@ -112,6 +116,13 @@ func (dbs *DBStorageService) Put(ctx context.Context, data []byte, timeout uint6
 		if dbs.discardAfterTimeout {
 			e = e.WithTTL(time.Until(time.Unix(int64(timeout), 0)))
 		}
+		return txn.SetEntry(e)
+	})
+}
+
+func (dbs *DBStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
+	return dbs.db.Update(func(txn *badger.Txn) error {
+		e := badger.NewEntry(key.Bytes(), value)
 		return txn.SetEntry(e)
 	})
 }

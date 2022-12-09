@@ -53,6 +53,16 @@ func (m *MemoryBackedStorageService) Put(ctx context.Context, data []byte, expir
 	return nil
 }
 
+func (m *MemoryBackedStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
+	m.rwmutex.Lock()
+	defer m.rwmutex.Unlock()
+	if m.closed {
+		return ErrClosed
+	}
+	m.contents[key] = append([]byte{}, value...)
+	return nil
+}
+
 func (m *MemoryBackedStorageService) Sync(ctx context.Context) error {
 	m.rwmutex.RLock()
 	defer m.rwmutex.RUnlock()

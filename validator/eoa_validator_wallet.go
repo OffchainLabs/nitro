@@ -54,6 +54,10 @@ func (w *EoaValidatorWallet) AddressOrZero() common.Address {
 	return w.auth.From
 }
 
+func (w *EoaValidatorWallet) TxSenderAddress() *common.Address {
+	return &w.auth.From
+}
+
 func (w *EoaValidatorWallet) L1Client() arbutil.L1Interface {
 	return w.client
 }
@@ -93,6 +97,6 @@ func (w *EoaValidatorWallet) CanBatchTxs() bool {
 	return false
 }
 
-func (v *EoaValidatorWallet) AuthIfEoa() *bind.TransactOpts {
-	return v.auth
+func (w *EoaValidatorWallet) AuthIfEoa() *bind.TransactOpts {
+	return w.auth
 }

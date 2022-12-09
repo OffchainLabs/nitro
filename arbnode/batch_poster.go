@@ -196,18 +196,19 @@ func (b *BatchPoster) getBatchPosterPosition(ctx context.Context, blockNum *big.
 var errBatchAlreadyClosed = errors.New("batch segments already closed")
 
 type batchSegments struct {
-	compressedBuffer    *bytes.Buffer
-	compressedWriter    *brotli.Writer
-	rawSegments         [][]byte
-	timestamp           uint64
-	blockNum            uint64
-	delayedMsg          uint64
-	sizeLimit           int
-	compressionLevel    int
-	newUncompressedSize int
-	lastCompressedSize  int
-	trailingHeaders     int // how many trailing segments are headers
-	isDone              bool
+	compressedBuffer      *bytes.Buffer
+	compressedWriter      *brotli.Writer
+	rawSegments           [][]byte
+	timestamp             uint64
+	blockNum              uint64
+	delayedMsg            uint64
+	sizeLimit             int
+	compressionLevel      int
+	newUncompressedSize   int
+	totalUncompressedSize int
+	lastCompressedSize    int
+	trailingHeaders       int // how many trailing segments are headers
+	isDone                bool
 }
 
 type buildingBatch struct {
@@ -235,22 +236,37 @@ func (s *batchSegments) recompressAll() error {
 	s.compressedBuffer = bytes.NewBuffer(make([]byte, 0, s.sizeLimit*2))
 	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.compressionLevel)
 	s.newUncompressedSize = 0
+	s.totalUncompressedSize = 0
 	for _, segment := range s.rawSegments {
 		err := s.addSegmentToCompressed(segment)
 		if err != nil {
 			return err
 		}
 	}
+	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
+		return fmt.Errorf("batch size %v exceeds maximum decompressed length %v", s.totalUncompressedSize, arbstate.MaxDecompressedLen)
+	}
+	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+		return fmt.Errorf("number of raw segments %v excees maximum number %v", len(s.rawSegments), arbstate.MaxSegmentsPerSequencerMessage)
+	}
 	return nil
 }
 
 func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
+	// we've reached the max decompressed size
+	if s.totalUncompressedSize > arbstate.MaxDecompressedLen {
+		return true, nil
+	}
+	// we've reached the max number of segments
+	if len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+		return true, nil
+	}
 	// there is room, no need to flush
 	if (s.lastCompressedSize + s.newUncompressedSize) < s.sizeLimit {
 		return false, nil
 	}
-	// don't want to flush for headers
-	if isHeader {
+	// don't want to flush for headers or the first message
+	if isHeader || len(s.rawSegments) == s.trailingHeaders {
 		return false, nil
 	}
 	err := s.compressedWriter.Flush()
@@ -283,6 +299,7 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 	}
 	lenWritten, err := s.compressedWriter.Write(encoded)
 	s.newUncompressedSize += lenWritten
+	s.totalUncompressedSize += lenWritten
 	return err
 }
 
@@ -295,11 +312,12 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+	// Force include headers because we don't want to re-compress and we can just trim them later if necessary
 	overflow, err := s.testForOverflow(isHeader)
 	if err != nil {
 		return false, err
 	}
-	if overflow || len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
+	if overflow {
 		return false, s.close()
 	}
 	s.rawSegments = append(s.rawSegments, segment)
@@ -378,10 +396,7 @@ func (s *batchSegments) IsDone() bool {
 	return s.isDone
 }
 
-func (s *batchSegments) IsEmpty() bool {
-	return len(s.rawSegments) == 0
-}
-
+// Returns nil (as opposed to []byte{}) if there's no segments to put in the batch
 func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	if !s.isDone {
 		err := s.close()
@@ -455,10 +470,10 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	return gas + b.config().ExtraBatchGas, nil
 }
 
-func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
+func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
 	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
@@ -470,15 +485,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	}
 	msgCount, err := b.streamer.GetMessageCount()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if msgCount <= batchPosition.MessageCount {
 		// There's nothing after the newest batch, therefore batch posting was not required
-		return nil
+		return false, nil
 	}
 	firstMsg, err := b.streamer.GetMessage(batchPosition.MessageCount)
 	if err != nil {
-		return err
+		return false, err
 	}
 	nextMessageTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
@@ -492,13 +507,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 			log.Error("error getting message from streamer", "error", err)
 			break
 		}
-		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
-			haveUsefulMessage = true
-		}
 		success, err := b.building.segments.AddMessage(msg)
 		if err != nil {
-			log.Error("error adding message to batch", "error", err)
-			break
+			// Clear our cache
+			b.building = nil
+			return false, fmt.Errorf("error adding message to batch: %w", err)
 		}
 		if !success {
 			// this batch is full
@@ -506,26 +519,25 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 			haveUsefulMessage = true
 			break
 		}
+		if msg.Message.Header.Kind != arbos.L1MessageType_BatchPostingReport {
+			haveUsefulMessage = true
+		}
 		b.building.msgCount++
 	}
 
-	if b.building.segments.IsEmpty() {
-		// we don't need to post a batch for the time being
-		return nil
-	}
 	if !forcePostBatch || !haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
-		return nil
+		return false, nil
 	}
 	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if sequencerMsg == nil {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", batchPosition.NextSeqNum, "from", batchPosition.MessageCount, "prev delayed", batchPosition.DelayedMessageCount)
 		b.building = nil // a closed batchSegments can't be reused
-		return nil
+		return false, nil
 	}
 
 	if b.daWriter != nil {
@@ -533,7 +545,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
 			if config.DisableDasFallbackStoreDataOnChain {
-				return errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
+				return false, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
 			}
 		} else {
 			sequencerMsg = das.Serialize(cert)
@@ -542,11 +554,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 
 	gasLimit, err := b.estimateGas(ctx, sequencerMsg, b.building.segments.delayedMsg)
 	if err != nil {
-		return err
+		return false, err
 	}
 	data, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg)
 	if err != nil {
-		return err
+		return false, err
 	}
 	newMeta := batchPosterPosition{
 		MessageCount:        b.building.msgCount,
@@ -555,7 +567,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	}
 	err = b.dataPoster.PostTransaction(ctx, nextMessageTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
 	if err != nil {
-		return err
+		return false, err
 	}
 	log.Info(
 		"BatchPoster: batch sent",
@@ -567,7 +579,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 		"total segments", len(b.building.segments.rawSegments),
 	)
 	b.building = nil
-	return nil
+	return true, nil
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
@@ -579,7 +591,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			b.building = nil
 			return b.config().BatchPollDelay
 		}
-		err := b.maybePostSequencerBatch(ctx)
+		posted, err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
@@ -597,8 +609,11 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			}
 			logLevel("error posting batch", "err", err)
 			return b.config().PostingErrorDelay
+		} else if posted {
+			return 0
+		} else {
+			return b.config().BatchPollDelay
 		}
-		return b.config().BatchPollDelay
 	})
 }
 

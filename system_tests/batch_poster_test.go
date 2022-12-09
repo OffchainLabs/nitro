@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"crypto/rand"
 	"math/big"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestBatchPosterParallel(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer nodeA.StopAndWait()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, nil)
+	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nil)
 	defer nodeB.StopAndWait()
 
 	l2info.GenerateAccount("User2")
@@ -118,5 +119,36 @@ func TestBatchPosterParallel(t *testing.T) {
 
 	if l2balance.Sign() == 0 {
 		Fail(t, "Unexpected zero balance")
+	}
+}
+
+func TestBatchPosterLargeTx(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	conf := arbnode.ConfigDefaultL1Test()
+	conf.Sequencer.MaxTxDataSize = 110000
+	l2info, nodeA, l2clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
+	defer requireClose(t, l1stack)
+	defer nodeA.StopAndWait()
+
+	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nil)
+	defer nodeB.StopAndWait()
+
+	data := make([]byte, 100000)
+	_, err := rand.Read(data)
+	Require(t, err)
+	faucetAddr := l2info.GetAddress("Faucet")
+	gas := l2info.TransferGas + 20000*uint64(len(data))
+	tx := l2info.PrepareTxTo("Faucet", &faucetAddr, gas, common.Big0, data)
+	err = l2clientA.SendTransaction(ctx, tx)
+	Require(t, err)
+	receiptA, err := EnsureTxSucceeded(ctx, l2clientA, tx)
+	Require(t, err)
+	receiptB, err := EnsureTxSucceededWithTimeout(ctx, l2clientB, tx, time.Second*30)
+	Require(t, err)
+	if receiptA.BlockHash != receiptB.BlockHash {
+		Fail(t, "receipt A block hash", receiptA.BlockHash, "does not equal receipt B block hash", receiptB.BlockHash)
 	}
 }

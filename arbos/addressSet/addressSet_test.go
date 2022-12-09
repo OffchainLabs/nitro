@@ -4,8 +4,9 @@
 package addressSet
 
 import (
-	"github.com/ethereum/go-ethereum/common/math"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common/math"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
