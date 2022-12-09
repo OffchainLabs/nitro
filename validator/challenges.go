@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -23,24 +22,12 @@ func (v *Validator) onChallengeStarted(
 	if isFromSelf(v.address, ev.Validator) {
 		return nil
 	}
-	// Checks if the challenge has to do with a vertex we created.
-	v.leavesLock.RLock()
-	_, ok := v.createdLeaves[ev.ParentStateCommitment.StateRoot]
 
-	// TODO: Act on the honest vertices even if this challenge does not have to do with us by
-	// keeping track of associated challenge vertices' clocks and acting if the associated
-	// staker we agree with is not performing their responsibilities on time. As an honest
-	// validator, we should participate in confirming valid assertions.
-	if !ok {
-		isGenesis := ev.ParentStateCommitment.StateRoot == common.Hash{}
-		if !isGenesis {
-			v.leavesLock.RUnlock()
-			return nil
-		}
-	}
-	v.leavesLock.RUnlock()
-
-	challenge, err := v.submitOrFetchProtocolChallenge(ctx, ev.ParentSeqNum, ev.ParentStateCommitment)
+	challenge, err := v.submitOrFetchProtocolChallenge(
+		ctx,
+		ev.ParentSeqNum,
+		ev.ParentStateCommitment,
+	)
 	if err != nil {
 		return err
 	}
@@ -48,10 +35,16 @@ func (v *Validator) onChallengeStarted(
 	// We then add a challenge vertex to the challenge.
 	challengeVertex, err := v.addChallengeVertex(ctx, challenge)
 	if err != nil {
+		if errors.Is(err, protocol.ErrVertexAlreadyExists) {
+			log.Infof(
+				"Attempted to add a challenge leaf that already exists to challenge with "+
+					"parent state commit: height=%d, stateRoot=%#x",
+				challenge.ParentStateCommitment().Height,
+				challenge.ParentStateCommitment().StateRoot,
+			)
+			return nil
+		}
 		return err
-	}
-	if challengeVertex == nil {
-		return nil
 	}
 
 	challengerName := "unknown-name"
@@ -86,7 +79,13 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	if err != nil {
 		return err
 	}
-	if challengeVertex == nil {
+	if errors.Is(err, protocol.ErrVertexAlreadyExists) {
+		log.Infof(
+			"Attempted to add a challenge leaf that already exists to challenge with "+
+				"parent state commit: height=%d, stateRoot=%#x",
+			challenge.ParentStateCommitment().Height,
+			challenge.ParentStateCommitment().StateRoot,
+		)
 		return nil
 	}
 
@@ -124,14 +123,6 @@ func (v *Validator) addChallengeVertex(
 		}
 		return nil
 	}); err != nil {
-		if errors.Is(err, protocol.ErrVertexAlreadyExists) {
-			log.Infof(
-				"Attempted to add a challenge leaf that already exists with history: height=%d, merkle=%#x",
-				historyCommit.Height,
-				historyCommit.Merkle,
-			)
-			return nil, nil
-		}
 		return nil, errors.Wrapf(
 			err,
 			"could add challenge vertex to challenge with parent state commitment: height=%d, stateRoot=%#x",
