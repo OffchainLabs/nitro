@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "validator",
-    srcs = ["validator.go"],
+    srcs = [
+        "challenges.go",
+        "validator.go",
+    ],
     importpath = "github.com/OffchainLabs/new-rollup-exploration/validator",
     visibility = ["//visibility:public"],
     deps = [
@@ -20,6 +23,7 @@ go_test(
     embed = [":validator"],
     deps = [
         "//protocol",
+        "//state-manager",
         "//testing/mocks",
         "//util",
         "@com_github_ethereum_go_ethereum//common",

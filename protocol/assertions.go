@@ -535,6 +535,10 @@ func (chal *Challenge) ParentStateCommitment() StateCommitment {
 	return chal.parent.StateCommitment
 }
 
+func (chal *Challenge) ParentSeqNum() SequenceNum {
+	return chal.parent.SequenceNum
+}
+
 func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, challenger common.Address) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
 	if assertion.Prev.IsNone() {
@@ -550,6 +554,9 @@ func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.
 	chain := assertion.chain
 	if !chal.root.eligibleForNewSuccessor() {
 		return nil, ErrPastDeadline
+	}
+	if chal.includedHistories[history.Hash()] {
+		return nil, ErrVertexAlreadyExists
 	}
 
 	timer := util.NewCountUpTimer(chain.timeReference)
@@ -581,6 +588,7 @@ func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.
 		Validator:         challenger,
 	})
 	parentStateCommitHash := AssertionStateCommitHash(chal.parent.StateCommitment.Hash())
+	chal.includedHistories[history.Hash()] = true
 	chal.parent.chain.challengesByAssertionStateHash[parentStateCommitHash] = chal
 	chal.parent.chain.challengeVerticesByAssertionStateHash[parentStateCommitHash][leaf.SequenceNum] = leaf
 	return leaf, nil

@@ -132,13 +132,13 @@ func (v *Validator) listenForAssertionEvents(ctx context.Context) {
 			switch ev := genericEvent.(type) {
 			case *protocol.CreateLeafEvent:
 				go func() {
-					if err := v.processLeafCreation(ctx, ev); err != nil {
+					if err := v.onLeafCreated(ctx, ev); err != nil {
 						log.WithError(err).Error("Could not process leaf creation event")
 					}
 				}()
 			case *protocol.StartChallengeEvent:
 				go func() {
-					if err := v.processChallengeStart(ctx, ev); err != nil {
+					if err := v.onChallengeStarted(ctx, ev); err != nil {
 						log.WithError(err).Error("Could not process challenge start event")
 					}
 				}()
@@ -259,19 +259,15 @@ func (v *Validator) confirmLeafAfterChallengePeriod(leaf *protocol.Assertion) {
 }
 
 // Processes new leaf creation events from the protocol that were not initiated by self.
-func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.CreateLeafEvent) error {
+func (v *Validator) onLeafCreated(ctx context.Context, ev *protocol.CreateLeafEvent) error {
 	if ev == nil {
 		return nil
 	}
-	if v.isFromSelf(ev.Validator) {
+	if isFromSelf(v.address, ev.Validator) {
 		return nil
 	}
 	seqNum := ev.SeqNum
 	stateCommit := ev.StateCommitment
-	// If there exists a statement for new leaf, it means it has already been seen.
-	if v.stateManager.HasStateCommitment(ctx, stateCommit) {
-		return nil
-	}
 
 	log.WithFields(logrus.Fields{
 		"name":      v.name,
@@ -299,55 +295,9 @@ func (v *Validator) processLeafCreation(ctx context.Context, ev *protocol.Create
 		return nil
 	}
 
-	return v.challengeLeaf(ctx, ev)
+	return v.challengeAssertion(ctx, ev)
 }
 
-// Process new challenge creation events from the protocol that were not initiated by self.
-func (v *Validator) processChallengeStart(ctx context.Context, ev *protocol.StartChallengeEvent) error {
-	if ev == nil {
-		return nil
-	}
-	if v.isFromSelf(ev.Validator) {
-		return nil
-	}
-	// Checks if the challenge has to do with a vertex we created.
-	v.leavesLock.RLock()
-	defer v.leavesLock.RUnlock()
-	leaf, ok := v.createdLeaves[ev.ParentStateCommitment.StateRoot]
-	if !ok {
-		// TODO: Act on the honest vertices even if this challenge does not have to do with us by
-		// keeping track of associated challenge vertices' clocks and acting if the associated
-		// staker we agree with is not performing their responsibilities on time. As an honest
-		// validator, we should participate in confirming valid assertions.
-		return nil
-	}
-	challengerName := "unknown-name"
-	if !leaf.Staker.IsNone() {
-		if name, ok := v.knownValidatorNames[leaf.Staker.Unwrap()]; ok {
-			challengerName = name
-		} else {
-			challengerName = leaf.Staker.Unwrap().Hex()
-		}
-	}
-	log.WithFields(logrus.Fields{
-		"name":                 v.name,
-		"challenger":           challengerName,
-		"challengingStateRoot": fmt.Sprintf("%#x", leaf.StateCommitment.StateRoot),
-		"challengingHeight":    leaf.StateCommitment.Height,
-	}).Warn("Received challenge for a created leaf!")
-	return nil
-}
-
-// Initiates a challenge on a created leaf.
-func (v *Validator) challengeLeaf(ctx context.Context, ev *protocol.CreateLeafEvent) error {
-	logFields := logrus.Fields{}
-	logFields["name"] = v.name
-	logFields["height"] = ev.StateCommitment.Height
-	logFields["stateRoot"] = fmt.Sprintf("%#x", ev.StateCommitment.StateRoot)
-	log.WithFields(logFields).Info("Initiating challenge on leaf validator disagrees with")
-	return nil
-}
-
-func (v *Validator) isFromSelf(staker common.Address) bool {
-	return v.address == staker
+func isFromSelf(self, staker common.Address) bool {
+	return self == staker
 }
