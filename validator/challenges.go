@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -24,30 +25,20 @@ func (v *Validator) onChallengeStarted(
 	}
 	// Checks if the challenge has to do with a vertex we created.
 	v.leavesLock.RLock()
-	leaf, ok := v.createdLeaves[ev.ParentStateCommitment.StateRoot]
+	_, ok := v.createdLeaves[ev.ParentStateCommitment.StateRoot]
+
+	// TODO: Act on the honest vertices even if this challenge does not have to do with us by
+	// keeping track of associated challenge vertices' clocks and acting if the associated
+	// staker we agree with is not performing their responsibilities on time. As an honest
+	// validator, we should participate in confirming valid assertions.
 	if !ok {
-		v.leavesLock.RUnlock()
-		// TODO: Act on the honest vertices even if this challenge does not have to do with us by
-		// keeping track of associated challenge vertices' clocks and acting if the associated
-		// staker we agree with is not performing their responsibilities on time. As an honest
-		// validator, we should participate in confirming valid assertions.
-		return nil
-	}
-	v.leavesLock.RUnlock()
-	challengerName := "unknown-name"
-	if !leaf.Staker.IsNone() {
-		if name, ok := v.knownValidatorNames[leaf.Staker.Unwrap()]; ok {
-			challengerName = name
-		} else {
-			challengerName = leaf.Staker.Unwrap().Hex()
+		isGenesis := ev.ParentStateCommitment.StateRoot == common.Hash{}
+		if !isGenesis {
+			v.leavesLock.RUnlock()
+			return nil
 		}
 	}
-	log.WithFields(logrus.Fields{
-		"name":                 v.name,
-		"challenger":           challengerName,
-		"challengingStateRoot": fmt.Sprintf("%#x", leaf.StateCommitment.StateRoot),
-		"challengingHeight":    leaf.StateCommitment.Height,
-	}).Warn("Received challenge for a created leaf")
+	v.leavesLock.RUnlock()
 
 	historyCommit, err := v.stateManager.LatestHistoryCommitment(ctx)
 	if err != nil {
@@ -69,17 +60,19 @@ func (v *Validator) onChallengeStarted(
 		if err != nil {
 			return err
 		}
-		// TODO: Ideally, check if the leaf already exists before making the tx at all.
-		challengeVertex, err = challenge.AddLeaf(tx, parentAssertion, historyCommit, v.address)
+		currentAssertion, err := p.AssertionBySequenceNum(tx, ev.ParentSeqNum+1)
+		if err != nil {
+			return err
+		}
+		challengeVertex, err = challenge.AddLeaf(tx, currentAssertion, historyCommit, v.address)
 		if err != nil {
 			return err
 		}
 		return nil
 	}); err != nil {
 		if errors.Is(err, protocol.ErrVertexAlreadyExists) {
-			log.Info(
-				"Attempted to add a challenge leaf with history: height=%d, merkle=%#x but "+
-					"it has already been created",
+			log.Infof(
+				"Attempted to add a challenge leaf that already exists with history: height=%d, merkle=%#x",
 				historyCommit.Height,
 				historyCommit.Merkle,
 			)
@@ -91,6 +84,18 @@ func (v *Validator) onChallengeStarted(
 			ev.ParentSeqNum,
 		)
 	}
+
+	challengerName := "unknown-name"
+	staker := challengeVertex.Challenger
+	if name, ok := v.knownValidatorNames[staker]; ok {
+		challengerName = name
+	}
+	log.WithFields(logrus.Fields{
+		"name":                 v.name,
+		"challenger":           challengerName,
+		"challengingStateRoot": fmt.Sprintf("%#x", challenge.ParentStateCommitment().StateRoot),
+		"challengingHeight":    challenge.ParentStateCommitment().Height,
+	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
 	// TODO: Start tracking the challenge.
 	_ = challengeVertex
@@ -107,10 +112,6 @@ func (v *Validator) challengeLeaf(ctx context.Context, ev *protocol.CreateLeafEv
 	var err error
 	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		parentAssertion, err = p.AssertionBySequenceNum(tx, ev.PrevSeqNum)
-		if err != nil {
-			return err
-		}
-		currentAssertion, err = p.AssertionBySequenceNum(tx, ev.SeqNum)
 		if err != nil {
 			return err
 		}
@@ -132,6 +133,10 @@ func (v *Validator) challengeLeaf(ctx context.Context, ev *protocol.CreateLeafEv
 
 	var challengeVertex *protocol.ChallengeVertex
 	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		currentAssertion, err = p.AssertionBySequenceNum(tx, ev.SeqNum)
+		if err != nil {
+			return err
+		}
 		challengeVertex, err = challenge.AddLeaf(tx, currentAssertion, historyCommit, v.address)
 		if err != nil {
 			return errors.Wrap(err, "cannot add leaf")

@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_processLeafCreation(t *testing.T) {
+func Test_onLeafCreation(t *testing.T) {
 	ctx := context.Background()
 	_ = ctx
 	t.Run("no fork detected", func(t *testing.T) {
@@ -58,98 +58,17 @@ func Test_processLeafCreation(t *testing.T) {
 	})
 	t.Run("fork leads validator to challenge leaf", func(t *testing.T) {
 		logsHook := test.NewGlobal()
-		chain := protocol.NewAssertionChain(
-			ctx,
-			util.NewArtificialTimeReference(),
-			time.Second,
-		)
-		staker1 := common.BytesToAddress([]byte("foo"))
-		staker2 := common.BytesToAddress([]byte("bar"))
-		staker3 := common.BytesToAddress([]byte("nyan"))
-		stateManager := &mocks.MockStateManager{}
-		v := setupValidatorWithChain(t, chain, stateManager, staker3)
-
-		// Add balances to the stakers.
-		bal := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
-		err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			chain.AddToBalance(tx, staker1, bal)
-			chain.AddToBalance(tx, staker2, bal)
-			chain.AddToBalance(tx, staker3, bal)
-			return nil
-		})
+		leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background())
+		err := validator.onLeafCreated(ctx, leaf1)
 		require.NoError(t, err)
-
-		// Create some commitments.
-		commit := protocol.StateCommitment{
-			StateRoot: common.BytesToHash([]byte("baz")),
-			Height:    1,
-		}
-		forkedCommit := protocol.StateCommitment{
-			StateRoot: common.BytesToHash([]byte("woop")),
-			Height:    2,
-		}
-
-		stateManager.On("HasStateCommitment", ctx, commit).Return(false)
-		stateManager.On("HasStateCommitment", ctx, forkedCommit).Return(false)
-		stateManager.On("LatestHistoryCommitment", ctx).Return(util.HistoryCommitment{}, nil)
-
-		var genesis *protocol.Assertion
-		var assertion *protocol.Assertion
-		var forkedAssertion *protocol.Assertion
-		err = chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			genesis = chain.LatestConfirmed(tx)
-			return nil
-		})
-		require.NoError(t, err)
-
-		err = chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			assertion, err = chain.CreateLeaf(
-				tx,
-				genesis,
-				commit,
-				staker1,
-			)
-			if err != nil {
-				return err
-			}
-			forkedAssertion, err = chain.CreateLeaf(
-				tx,
-				genesis,
-				forkedCommit,
-				staker2,
-			)
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-		require.NoError(t, err)
-
-		ev := &protocol.CreateLeafEvent{
-			PrevSeqNum:          genesis.SequenceNum,
-			PrevStateCommitment: genesis.StateCommitment,
-			SeqNum:              assertion.SequenceNum,
-			StateCommitment:     assertion.StateCommitment,
-			Validator:           staker1,
-		}
-		err = v.onLeafCreated(ctx, ev)
-		require.NoError(t, err)
-		ev = &protocol.CreateLeafEvent{
-			PrevSeqNum:          genesis.SequenceNum,
-			PrevStateCommitment: genesis.StateCommitment,
-			SeqNum:              forkedAssertion.SequenceNum,
-			StateCommitment:     forkedAssertion.StateCommitment,
-			Validator:           staker2,
-		}
-		err = v.onLeafCreated(ctx, ev)
+		err = validator.onLeafCreated(ctx, leaf2)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "New leaf appended")
-		AssertLogsContain(t, logsHook, "Initiating challenge")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 	})
 }
 
-func Test_processChallengeStart(t *testing.T) {
+func Test_onChallengeStarted(t *testing.T) {
 	ctx := context.Background()
 	seq := protocol.SequenceNum(1)
 
@@ -168,6 +87,126 @@ func Test_processChallengeStart(t *testing.T) {
 		require.NoError(t, err)
 		AssertLogsDoNotContain(t, logsHook, "Received challenge")
 	})
+	t.Run("challenge concerns us", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background())
+		err := validator.onLeafCreated(ctx, leaf1)
+		require.NoError(t, err)
+		err = validator.onLeafCreated(ctx, leaf2)
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+
+		var challenge *protocol.Challenge
+		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			commit := protocol.StateCommitment{}
+			id := protocol.AssertionStateCommitHash(commit.Hash())
+			challenge, err = p.ChallengeByAssertionStateCommit(tx, id)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.NotNil(t, challenge)
+
+		err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
+			ParentSeqNum:          0,
+			ParentStateCommitment: challenge.ParentStateCommitment(),
+			ParentStaker:          common.Address{},
+			Validator:             common.BytesToAddress([]byte("other validator")),
+		})
+		require.NoError(t, err)
+	})
+}
+
+func createTwoValidatorFork(t *testing.T, ctx context.Context) (
+	*protocol.CreateLeafEvent,
+	*protocol.CreateLeafEvent,
+	*Validator,
+) {
+	chain := protocol.NewAssertionChain(
+		ctx,
+		util.NewArtificialTimeReference(),
+		time.Second,
+	)
+	staker1 := common.BytesToAddress([]byte("foo"))
+	staker2 := common.BytesToAddress([]byte("bar"))
+	staker3 := common.BytesToAddress([]byte("nyan"))
+	stateManager := &mocks.MockStateManager{}
+	v := setupValidatorWithChain(t, chain, stateManager, staker3)
+
+	// Add balances to the stakers.
+	bal := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
+	err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		chain.AddToBalance(tx, staker1, bal)
+		chain.AddToBalance(tx, staker2, bal)
+		chain.AddToBalance(tx, staker3, bal)
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Create some commitments.
+	commit := protocol.StateCommitment{
+		StateRoot: common.BytesToHash([]byte("baz")),
+		Height:    1,
+	}
+	forkedCommit := protocol.StateCommitment{
+		StateRoot: common.BytesToHash([]byte("woop")),
+		Height:    2,
+	}
+
+	stateManager.On("HasStateCommitment", ctx, commit).Return(false)
+	stateManager.On("HasStateCommitment", ctx, forkedCommit).Return(false)
+	stateManager.On("LatestHistoryCommitment", ctx).Return(util.HistoryCommitment{}, nil)
+
+	var genesis *protocol.Assertion
+	var assertion *protocol.Assertion
+	var forkedAssertion *protocol.Assertion
+	err = chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		genesis = chain.LatestConfirmed(tx)
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		assertion, err = chain.CreateLeaf(
+			tx,
+			genesis,
+			commit,
+			staker1,
+		)
+		if err != nil {
+			return err
+		}
+		forkedAssertion, err = chain.CreateLeaf(
+			tx,
+			genesis,
+			forkedCommit,
+			staker2,
+		)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	ev1 := &protocol.CreateLeafEvent{
+		PrevSeqNum:          genesis.SequenceNum,
+		PrevStateCommitment: genesis.StateCommitment,
+		SeqNum:              assertion.SequenceNum,
+		StateCommitment:     assertion.StateCommitment,
+		Validator:           staker1,
+	}
+	ev2 := &protocol.CreateLeafEvent{
+		PrevSeqNum:          genesis.SequenceNum,
+		PrevStateCommitment: genesis.StateCommitment,
+		SeqNum:              forkedAssertion.SequenceNum,
+		StateCommitment:     forkedAssertion.StateCommitment,
+		Validator:           staker2,
+	}
+	return ev1, ev2, v
 }
 
 func Test_findLatestValidAssertion(t *testing.T) {
