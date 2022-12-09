@@ -118,7 +118,7 @@ func (v *Validator) addChallengeVertex(
 
 	var assertion *protocol.Assertion
 	var err error
-	if err := v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		assertion, err = p.AssertionBySequenceNum(tx, latestValidAssertionSeq)
 		if err != nil {
 			return err
