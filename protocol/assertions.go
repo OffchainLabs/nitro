@@ -535,6 +535,10 @@ func (chal *Challenge) ParentStateCommitment() StateCommitment {
 	return chal.parent.StateCommitment
 }
 
+func (chal *Challenge) ParentSeqNum() SequenceNum {
+	return chal.parent.SequenceNum
+}
+
 func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, challenger common.Address) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
 	if assertion.Prev.IsNone() {

@@ -299,7 +299,7 @@ func (v *Validator) onLeafCreated(ctx context.Context, ev *protocol.CreateLeafEv
 		return nil
 	}
 
-	return v.challengeLeaf(ctx, ev)
+	return v.challengeAssertion(ctx, ev)
 }
 
 func isFromSelf(self, staker common.Address) bool {
