@@ -10,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Processes new challenge creation events from the protocol that were not initiated by other validators.
+// Processes new challenge creation events from the protocol that were not created by self.
 // This will fetch the challenge, its parent assertion, and create a challenge leaf that is
 // relevant towards resolving the challenge. We then spawn a challenge tracker in the background.
 func (v *Validator) onChallengeStarted(
