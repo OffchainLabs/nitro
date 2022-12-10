@@ -13,15 +13,20 @@ import (
 func Test_bisect(t *testing.T) {
 	ctx := context.Background()
 	_, _, validator := createTwoValidatorFork(t, ctx)
-	vertex := &protocol.ChallengeVertex{
-		Prev: &protocol.ChallengeVertex{
+	t.Run("bad bisection points", func(t *testing.T) {
+		vertex := &protocol.ChallengeVertex{
 			Commitment: util.HistoryCommitment{
 				Height: 0,
-				Merkle: common.BytesToHash([]byte{0}),
+				Merkle: common.BytesToHash([]byte{1}),
 			},
-		},
-	}
-	bisectedVertex, err := validator.bisect(ctx, vertex)
-	require.NoError(t, err)
-	_ = bisectedVertex
+			Prev: &protocol.ChallengeVertex{
+				Commitment: util.HistoryCommitment{
+					Height: 3,
+					Merkle: common.BytesToHash([]byte{0}),
+				},
+			},
+		}
+		_, err := validator.bisect(ctx, vertex)
+		require.ErrorContains(t, err, "determining bisection point failed")
+	})
 }
