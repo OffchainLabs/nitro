@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	HTTPHeaderCloudflareConnectingIP  = "cf-connecting-ip"
+	HTTPHeaderCloudflareConnectingIP  = "CF-Connecting-IP"
 	HTTPHeaderFeedServerVersion       = "Arbitrum-Feed-Server-Version"
 	HTTPHeaderFeedClientVersion       = "Arbitrum-Feed-Client-Version"
 	HTTPHeaderRequestedSequenceNumber = "Arbitrum-Requested-Sequence-Number"
