@@ -221,8 +221,14 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 
 		// Zero-copy upgrade to WebSocket connection.
 		_, err := upgrader.Upgrade(safeConn)
+		if len(connectingIP) == 0 {
+			parts := strings.Split(conn.RemoteAddr().String(), ":")
+			if len(parts) > 0 {
+				connectingIP = parts[0]
+			}
+		}
 		if err != nil {
-			log.Warn("websocket upgrade error", "connection_name", nameConn(safeConn), "err", err)
+			log.Warn("websocket upgrade error", "connecting_ip", connectingIP, "err", err)
 			_ = safeConn.Close()
 			return
 		}
@@ -245,13 +251,13 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			if ev&(netpoll.EventReadHup|netpoll.EventHup) != 0 {
 				// ReadHup or Hup received, means the client has close the connection
 				// remove it from the clientManager registry.
-				log.Info("Hup received", "connection_name", nameConn(safeConn))
+				log.Info("Hup received", "connecting_ip", connectingIP)
 				s.clientManager.Remove(client)
 				return
 			}
 
 			if ev > 1 {
-				log.Info("event greater than 1 received", "connection_name", nameConn(safeConn), "event", int(ev))
+				log.Info("event greater than 1 received", "client", client.Name, "event", int(ev))
 			}
 
 			// receive client messages, close on error
@@ -259,7 +265,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				// Ignore any messages sent from client
 				if _, _, err := client.Receive(ctx, s.config().ClientTimeout); err != nil {
 					if errors.Is(err, wsutil.ClosedError{}) {
-						log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
+						log.Warn("receive error", "client", client.Name, "err", err)
 					}
 					s.clientManager.Remove(client)
 					return
