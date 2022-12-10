@@ -20,13 +20,13 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
 type BlockValidatorAPI struct {
-	val *validator.BlockValidator
+	val *staker.BlockValidator
 }
 
 func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (hexutil.Uint64, error) {
@@ -40,7 +40,7 @@ func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (commo
 }
 
 type BlockValidatorDebugAPI struct {
-	val        *validator.StatelessBlockValidator
+	val        *staker.StatelessBlockValidator
 	blockchain *core.BlockChain
 }
 

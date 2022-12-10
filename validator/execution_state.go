@@ -1,18 +1,44 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
-
 package validator
 
 import (
+	"encoding/binary"
 	"fmt"
-	"math/big"
+	"math"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 )
+
+type GoGlobalState struct {
+	BlockHash  common.Hash
+	SendRoot   common.Hash
+	Batch      uint64
+	PosInBatch uint64
+}
+
+func u64ToBe(x uint64) []byte {
+	data := make([]byte, 8)
+	binary.BigEndian.PutUint64(data, x)
+	return data
+}
+
+func (s GoGlobalState) Hash() common.Hash {
+	data := []byte("Global state:")
+	data = append(data, s.BlockHash.Bytes()...)
+	data = append(data, s.SendRoot.Bytes()...)
+	data = append(data, u64ToBe(s.Batch)...)
+	data = append(data, u64ToBe(s.PosInBatch)...)
+	return crypto.Keccak256Hash(data)
+}
+
+func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
+	return challengegen.GlobalState{
+		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
+		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
+	}
+}
 
 type MachineStatus uint8
 
@@ -28,18 +54,19 @@ type ExecutionState struct {
 	MachineStatus MachineStatus
 }
 
-func newExecutionStateFromSolidity(eth rollupgen.RollupLibExecutionState) *ExecutionState {
+func NewExecutionStateFromSolidity(eth rollupgen.RollupLibExecutionState) *ExecutionState {
 	return &ExecutionState{
 		GlobalState:   GoGlobalStateFromSolidity(challengegen.GlobalState(eth.GlobalState)),
 		MachineStatus: MachineStatus(eth.MachineStatus),
 	}
 }
 
-func NewAssertionFromSolidity(assertion rollupgen.RollupLibAssertion) *Assertion {
-	return &Assertion{
-		BeforeState: newExecutionStateFromSolidity(assertion.BeforeState),
-		AfterState:  newExecutionStateFromSolidity(assertion.AfterState),
-		NumBlocks:   assertion.NumBlocks,
+func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
+	return GoGlobalState{
+		BlockHash:  gs.Bytes32Vals[0],
+		SendRoot:   gs.Bytes32Vals[1],
+		Batch:      gs.U64Vals[0],
+		PosInBatch: gs.U64Vals[1],
 	}
 }
 
@@ -78,73 +105,4 @@ func (s *ExecutionState) RequiredBatches() uint64 {
 		count++
 	}
 	return count
-}
-
-func (a *Assertion) AsSolidityStruct() rollupgen.RollupLibAssertion {
-	return rollupgen.RollupLibAssertion{
-		BeforeState: a.BeforeState.AsSolidityStruct(),
-		AfterState:  a.AfterState.AsSolidityStruct(),
-		NumBlocks:   a.NumBlocks,
-	}
-}
-
-func HashChallengeState(
-	segmentStart uint64,
-	segmentLength uint64,
-	hashes []common.Hash,
-) common.Hash {
-	var hashesBytes []byte
-	for _, h := range hashes {
-		hashesBytes = append(hashesBytes, h[:]...)
-	}
-	return crypto.Keccak256Hash(
-		math.U256Bytes(new(big.Int).SetUint64(segmentStart)),
-		math.U256Bytes(new(big.Int).SetUint64(segmentLength)),
-		hashesBytes,
-	)
-}
-
-func (a *Assertion) ExecutionHash() common.Hash {
-	return HashChallengeState(
-		0,
-		a.NumBlocks,
-		[]common.Hash{
-			a.BeforeState.BlockStateHash(),
-			a.AfterState.BlockStateHash(),
-		},
-	)
-}
-
-type Assertion struct {
-	BeforeState *ExecutionState
-	AfterState  *ExecutionState
-	NumBlocks   uint64
-}
-
-type NodeInfo struct {
-	NodeNum            uint64
-	BlockProposed      uint64
-	Assertion          *Assertion
-	InboxMaxCount      *big.Int
-	AfterInboxBatchAcc common.Hash
-	NodeHash           common.Hash
-	WasmModuleRoot     common.Hash
-}
-
-func (n *NodeInfo) AfterState() *ExecutionState {
-	return n.Assertion.AfterState
-}
-
-func (n *NodeInfo) MachineStatuses() [2]uint8 {
-	return [2]uint8{
-		uint8(n.Assertion.BeforeState.MachineStatus),
-		uint8(n.Assertion.AfterState.MachineStatus),
-	}
-}
-
-func (n *NodeInfo) GlobalStates() [2]rollupgen.GlobalState {
-	return [2]rollupgen.GlobalState{
-		rollupgen.GlobalState(n.Assertion.BeforeState.GlobalState.AsSolidityStruct()),
-		rollupgen.GlobalState(n.Assertion.AfterState.GlobalState.AsSolidityStruct()),
-	}
 }
