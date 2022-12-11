@@ -3,8 +3,9 @@ package protocol
 import (
 	"bytes"
 	"context"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestInbox(t *testing.T) {
@@ -34,7 +35,7 @@ func TestInbox(t *testing.T) {
 		}
 		select {
 		case <-msgChan:
-			c <- ErrInvalid
+			c <- ErrInvalidOp
 		default:
 			c <- nil
 		}
@@ -67,7 +68,7 @@ func TestInbox(t *testing.T) {
 		}
 		select {
 		case <-msgChan:
-			c2 <- ErrInvalid
+			c2 <- ErrInvalidOp
 		default:
 			c2 <- nil
 		}

@@ -17,26 +17,26 @@ func (ev *genericAssertionChainEvent) IsAssertionChainEvent() bool { return true
 
 type CreateLeafEvent struct {
 	genericAssertionChainEvent
-	PrevSeqNum          SequenceNum
+	PrevSeqNum          AssertionSequenceNumber
 	PrevStateCommitment StateCommitment
-	SeqNum              SequenceNum
+	SeqNum              AssertionSequenceNumber
 	StateCommitment     StateCommitment
 	Validator           common.Address
 }
 
 type ConfirmEvent struct {
 	genericAssertionChainEvent
-	SeqNum SequenceNum
+	SeqNum AssertionSequenceNumber
 }
 
 type RejectEvent struct {
 	genericAssertionChainEvent
-	SeqNum SequenceNum
+	SeqNum AssertionSequenceNumber
 }
 
 type StartChallengeEvent struct {
 	genericAssertionChainEvent
-	ParentSeqNum          SequenceNum
+	ParentSeqNum          AssertionSequenceNumber
 	ParentStateCommitment StateCommitment
 	ParentStaker          common.Address
 	Validator             common.Address
@@ -61,9 +61,9 @@ func (ev *genericChallengeEvent) IsChallengeEvent() bool { return true }
 
 type ChallengeLeafEvent struct {
 	genericChallengeEvent
-	ParentSeqNum      SequenceNum
-	SequenceNum       SequenceNum
-	WinnerIfConfirmed SequenceNum
+	ParentSeqNum      VertexSequenceNumber
+	SequenceNum       VertexSequenceNumber
+	WinnerIfConfirmed AssertionSequenceNumber
 	ParentStateCommit StateCommitment
 	History           util.HistoryCommitment
 	BecomesPS         bool
@@ -72,8 +72,8 @@ type ChallengeLeafEvent struct {
 
 type ChallengeBisectEvent struct {
 	genericChallengeEvent
-	FromSequenceNum   SequenceNum // previously existing vertex
-	SequenceNum       SequenceNum // newly created vertex
+	FromSequenceNum   VertexSequenceNumber // previously existing vertex
+	SequenceNum       VertexSequenceNumber // newly created vertex
 	ParentStateCommit StateCommitment
 	History           util.HistoryCommitment
 	BecomesPS         bool
@@ -84,8 +84,8 @@ type ChallengeMergeEvent struct {
 	genericChallengeEvent
 	History              util.HistoryCommitment
 	ParentStateCommit    StateCommitment
-	DeeperSequenceNum    SequenceNum
-	ShallowerSequenceNum SequenceNum
+	DeeperSequenceNum    VertexSequenceNumber
+	ShallowerSequenceNum VertexSequenceNumber
 	BecomesPS            bool
 	Validator            common.Address
 }

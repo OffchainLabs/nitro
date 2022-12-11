@@ -38,7 +38,7 @@ func (inbox *Inbox) NumMessages(tx *ActiveTx) uint64 {
 func (inbox *Inbox) GetMessage(tx *ActiveTx, num uint64) ([]byte, error) {
 	tx.verifyRead()
 	if num >= uint64(len(inbox.messages)) {
-		return nil, ErrInvalid
+		return nil, ErrInvalidOp
 	}
 	return inbox.messages[num], nil
 }
