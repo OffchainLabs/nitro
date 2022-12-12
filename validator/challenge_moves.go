@@ -15,14 +15,14 @@ import (
 func (v *Validator) merge(
 	ctx context.Context,
 	challenge *protocol.Challenge,
-	validatorChallengeVertex *protocol.ChallengeVertex,
-	newPrevSeqNum protocol.SequenceNum,
+	vertexToMerge *protocol.ChallengeVertex,
+	mergingToSeqNum protocol.VertexSequenceNumber,
 ) error {
 	var mergingTo *protocol.ChallengeVertex
 	var err error
 	err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		id := protocol.AssertionStateCommitHash(challenge.ParentStateCommitment().Hash())
-		mergingTo, err = p.ChallengeVertexBySequenceNum(tx, id, newPrevSeqNum)
+		id := protocol.CommitHash(challenge.ParentStateCommitment().Hash())
+		mergingTo, err = p.ChallengeVertexBySequenceNum(tx, id, mergingToSeqNum)
 		if err != nil {
 			return err
 		}
@@ -36,7 +36,7 @@ func (v *Validator) merge(
 	if err != nil {
 		return err
 	}
-	currentCommit := validatorChallengeVertex.Commitment
+	currentCommit := vertexToMerge.Commitment
 	proof, err := v.stateManager.PrefixProof(ctx, mergingToHeight, currentCommit.Height)
 	if err != nil {
 		return err
@@ -45,7 +45,7 @@ func (v *Validator) merge(
 		return err
 	}
 	if err := v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		return validatorChallengeVertex.Merge(tx, mergingTo, proof, v.address)
+		return vertexToMerge.Merge(tx, mergingTo, proof, v.address)
 	}); err != nil {
 		return errors.Wrapf(
 			err,
