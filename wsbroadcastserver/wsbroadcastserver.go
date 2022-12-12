@@ -15,7 +15,6 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
-	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -187,7 +186,10 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				if headerName == HTTPHeaderFeedClientVersion {
 					feedClientVersion, err := strconv.ParseUint(string(value), 0, 64)
 					if err != nil {
-						return err
+						return ws.RejectConnectionError(
+							ws.RejectionStatus(http.StatusBadRequest),
+							ws.RejectionReason(fmt.Sprintf("Malformed HTTP header %s", HTTPHeaderFeedClientVersion)),
+						)
 					}
 					if feedClientVersion < FeedClientVersion {
 						return ws.RejectConnectionError(
@@ -199,7 +201,10 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				} else if headerName == HTTPHeaderRequestedSequenceNumber {
 					num, err := strconv.ParseUint(string(value), 0, 64)
 					if err != nil {
-						return fmt.Errorf("unable to parse HTTP header key: %s, value: %s", headerName, string(value))
+						return ws.RejectConnectionError(
+							ws.RejectionStatus(http.StatusBadRequest),
+							ws.RejectionReason(fmt.Sprintf("Malformed HTTP header %s", HTTPHeaderRequestedSequenceNumber)),
+						)
 					}
 					requestedSeqNum = arbutil.MessageIndex(num)
 				} else if headerName == HTTPHeaderCloudflareConnectingIP {
@@ -212,7 +217,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				if s.config().RequireVersion && !feedClientVersionSeen {
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusBadRequest),
-						ws.RejectionReason(HTTPHeaderFeedClientVersion+" HTTP header missing"),
+						ws.RejectionReason(fmt.Sprintf("Missing HTTP header %s", HTTPHeaderFeedClientVersion)),
 					)
 				}
 				return header, nil
@@ -228,17 +233,19 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			}
 		}
 		if err != nil {
-			log.Warn("websocket upgrade error", "connecting_ip", connectingIP, "err", err)
+			if err.Error() != "" {
+				// Only log if liveness probe was not called
+				log.Warn("websocket upgrade error", "connectingIP", connectingIP, "err", err)
+				clientsTotalFailedUpgradeCounter.Inc(1)
+			}
 			_ = safeConn.Close()
 			return
 		}
 
-		log.Info("established websocket connection", "remoteAddr", safeConn.RemoteAddr())
-
 		// Create netpoll event descriptor to handle only read events.
 		desc, err := netpoll.HandleRead(conn)
 		if err != nil {
-			log.Warn("error in HandleRead", "connection-name", nameConn(safeConn), "err", err)
+			log.Warn("error in HandleRead", "connectingIP", connectingIP, "err", err)
 			_ = conn.Close()
 			return
 		}
@@ -251,7 +258,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			if ev&(netpoll.EventReadHup|netpoll.EventHup) != 0 {
 				// ReadHup or Hup received, means the client has close the connection
 				// remove it from the clientManager registry.
-				log.Info("Hup received", "connecting_ip", connectingIP)
+				log.Info("Hup received", "age", client.Age(), "client", client.Name)
 				s.clientManager.Remove(client)
 				return
 			}
@@ -262,11 +269,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 
 			// receive client messages, close on error
 			s.clientManager.pool.Schedule(func() {
-				// Ignore any messages sent from client
+				// Ignore any messages sent from client, close on any error
 				if _, _, err := client.Receive(ctx, s.config().ClientTimeout); err != nil {
-					if errors.Is(err, wsutil.ClosedError{}) {
-						log.Warn("receive error", "client", client.Name, "err", err)
-					}
 					s.clientManager.Remove(client)
 					return
 				}
@@ -328,11 +332,14 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 		if err != nil {
 			if errors.Is(err, gopool.ErrScheduleTimeout) {
+				log.Warn("broadcast poller timed out waiting for available worker", "err", err)
+				clientsTotalFailedWorkerCounter.Inc(1)
+			} else if errors.Is(err, netpoll.ErrNotRegistered) {
+				log.Error("broadcast poller unable to register file descriptor", "err", err)
+			} else {
 				var netError net.Error
 				isNetError := errors.As(err, &netError)
-				if strings.Contains(err.Error(), "file descriptor was not registered") {
-					log.Error("broadcast poller unable to register file descriptor", "err", err)
-				} else if !isNetError || !netError.Timeout() {
+				if !isNetError || !netError.Timeout() {
 					log.Error("broadcast poller error", "err", err)
 				}
 			}
