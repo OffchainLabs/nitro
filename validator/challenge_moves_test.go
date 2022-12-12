@@ -55,7 +55,14 @@ func Test_bisect(t *testing.T) {
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
 	t.Run("OK", func(t *testing.T) {
-		runBisectionTest(t, ctx)
+		logsHook := test.NewGlobal()
+		stateRoots := generateStateRoots(10)
+		manager := statemanager.New(stateRoots)
+		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+		bisectedVertex := runBisectionTest(t, logsHook, ctx, validator, stateRoots, leaf1, leaf2)
+
+		// Expect to bisect to 4.
+		require.Equal(t, uint64(4), bisectedVertex.Commitment.Height)
 	})
 }
 
@@ -100,20 +107,52 @@ func Test_merge(t *testing.T) {
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
 	t.Run("OK", func(t *testing.T) {
-		bisectedVertex := runBisectionTest(t, ctx)
+		logsHook := test.NewGlobal()
 		stateRoots := generateStateRoots(10)
 		manager := statemanager.New(stateRoots)
-		_, _, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
-		validator.merge(ctx, nil, nil, bisectedVertex.SequenceNum)
+		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+
+		// Bisect and obtain the result.
+		bisectedVertex := runBisectionTest(t, logsHook, ctx, validator, stateRoots, leaf1, leaf2)
+
+		// Expect to bisect to 4.
+		require.Equal(t, uint64(4), bisectedVertex.Commitment.Height)
+
+		genesisCommit := protocol.StateCommitment{
+			Height:    0,
+			StateRoot: common.Hash{},
+		}
+		id := protocol.CommitHash(genesisCommit.Hash())
+
+		// Get the vertex we want to merge from.
+		var vertexToMergeFrom *protocol.ChallengeVertex
+		var err error
+		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			vertexToMergeFrom, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(2))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.NotNil(t, vertexToMergeFrom)
+
+		// Perform a merge move to the bisected vertex from an origin.
+		err = validator.merge(ctx, id, vertexToMergeFrom, bisectedVertex.SequenceNum)
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "Successfully merged to vertex with height 4")
 	})
 }
 
-func runBisectionTest(t *testing.T, ctx context.Context) *protocol.ChallengeVertex {
-	logsHook := test.NewGlobal()
-	stateRoots := generateStateRoots(10)
-	manager := statemanager.New(stateRoots)
-	leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
-
+func runBisectionTest(
+	t *testing.T,
+	logsHook *test.Hook,
+	ctx context.Context,
+	validator *Validator,
+	stateRoots []common.Hash,
+	leaf1,
+	leaf2 *protocol.CreateLeafEvent,
+) *protocol.ChallengeVertex {
 	err := validator.onLeafCreated(ctx, leaf1)
 	require.NoError(t, err)
 	err = validator.onLeafCreated(ctx, leaf2)
