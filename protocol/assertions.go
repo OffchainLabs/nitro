@@ -19,7 +19,7 @@ var (
 	AssertionStakeWei = Gwei
 
 	ErrWrongChain             = errors.New("wrong chain")
-	ErrInvalid                = errors.New("invalid operation")
+	ErrInvalidOp              = errors.New("invalid operation")
 	ErrChallengeAlreadyExists = errors.New("challenge already exists on leaf")
 	ErrCannotChallengeOwnLeaf = errors.New("cannot challenge own leaf")
 	ErrInvalidHeight          = errors.New("invalid block height")
@@ -27,19 +27,23 @@ var (
 	ErrWrongState             = errors.New("vertex state does not allow this operation")
 	ErrWrongPredecessorState  = errors.New("predecessor state does not allow this operation")
 	ErrNotYet                 = errors.New("deadline has not yet passed")
-	ErrNoWinnerYet            = errors.New("challenges does not yet have a winner")
+	ErrNoWinnerYet            = errors.New("challenges does not yet have a winnerAssertion")
 	ErrPastDeadline           = errors.New("deadline has passed")
 	ErrInsufficientBalance    = errors.New("insufficient balance")
 	ErrNotImplemented         = errors.New("not yet implemented")
 )
 
-// AssertionStateCommitHash uses the hash of an assertion's state commitment
+// CommitHash uses the hash of an assertion's state commitment
 // as a type used throughout the protocol.
-type AssertionStateCommitHash common.Hash
+type CommitHash common.Hash
 
-// SequenceNum is a monotonically increasing index, starting from 0, for the creation
-// of in a collection such as assertions, challenges, or challenge vertices.
-type SequenceNum uint64
+// AssertionSequenceNumber is a monotonically increasing index, starting from 0, for the creation
+// of in a collection such as assertions.
+type AssertionSequenceNumber uint64
+
+// VertexSequenceNumber is a monotonically increasing index, starting from 0, for the creation
+// of in a collection such as challenge vertexes.
+type VertexSequenceNumber uint64
 
 // OnChainProtocol defines an interface for interacting with the smart contract implementation
 // of the assertion protocol, with methods to issue mutating transactions, make eth calls, create
@@ -77,27 +81,27 @@ type EventProvider interface {
 type AssertionManager interface {
 	Inbox() *Inbox
 	NumAssertions(tx *ActiveTx) uint64
-	AssertionBySequenceNum(tx *ActiveTx, seqNum SequenceNum) (*Assertion, error)
-	ChallengeByAssertionStateCommit(tx *ActiveTx, commitHash AssertionStateCommitHash) (*Challenge, error)
-	ChallengeVertexBySequenceNum(tx *ActiveTx, commitHash AssertionStateCommitHash, seqNum SequenceNum) (*ChallengeVertex, error)
+	AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error)
+	ChallengeByCommitHash(tx *ActiveTx, commitHash CommitHash) (*Challenge, error)
+	ChallengeVertexBySequenceNum(tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber) (*ChallengeVertex, error)
 	ChallengePeriodLength(tx *ActiveTx) time.Duration
 	LatestConfirmed(*ActiveTx) *Assertion
 	CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
 }
 
 type AssertionChain struct {
-	mutex                                 sync.RWMutex
-	timeReference                         util.TimeReference
-	challengePeriod                       time.Duration
-	confirmedLatest                       SequenceNum
-	assertions                            []*Assertion
-	challengeVerticesByAssertionStateHash map[AssertionStateCommitHash]map[SequenceNum]*ChallengeVertex
-	challengesByAssertionStateHash        map[AssertionStateCommitHash]*Challenge
-	dedupe                                map[common.Hash]bool
-	balances                              *util.MapWithDefault[common.Address, *big.Int]
-	feed                                  *EventFeed[AssertionChainEvent]
-	challengesFeed                        *EventFeed[ChallengeEvent]
-	inbox                                 *Inbox
+	mutex                               sync.RWMutex
+	timeReference                       util.TimeReference
+	challengePeriod                     time.Duration
+	latestConfirmed                     AssertionSequenceNumber
+	assertions                          []*Assertion
+	hasSeenAssertions                   map[common.Hash]bool
+	challengeVerticesByCommitHashSeqNum map[CommitHash]map[VertexSequenceNumber]*ChallengeVertex
+	challengesByCommitHash              map[CommitHash]*Challenge
+	balances                            *util.MapWithDefault[common.Address, *big.Int]
+	feed                                *EventFeed[AssertionChainEvent]
+	challengesFeed                      *EventFeed[ChallengeEvent]
+	inbox                               *Inbox
 }
 
 const (
@@ -106,22 +110,26 @@ const (
 	readWriteTxStatus
 )
 
+// ActiveTx is a transaction that is currently being processed.
 type ActiveTx struct {
 	txStatus int
 }
 
+// verifyRead is a helper function to verify that the transaction is read-only.
 func (tx *ActiveTx) verifyRead() {
 	if tx.txStatus == deadTxStatus {
 		panic("tried to read chain after call ended")
 	}
 }
 
+// verifyReadWrite is a helper function to verify that the transaction is read-write.
 func (tx *ActiveTx) verifyReadWrite() {
 	if tx.txStatus != readWriteTxStatus {
 		panic("tried to modify chain in read-only call")
 	}
 }
 
+// Tx enables a mutating call to the on-chain protocol.
 func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.Lock()
 	defer chain.mutex.Unlock()
@@ -131,6 +139,7 @@ func (chain *AssertionChain) Tx(clo func(tx *ActiveTx, p OnChainProtocol) error)
 	return err
 }
 
+// Call enables a non-mutating call to the on-chain protocol.
 func (chain *AssertionChain) Call(clo func(tx *ActiveTx, p OnChainProtocol) error) error {
 	chain.mutex.RLock()
 	defer chain.mutex.RUnlock()
@@ -146,10 +155,12 @@ const (
 	RejectedAssertionState
 )
 
+// AssertionState is a type used to represent the state of an assertion.
 type AssertionState int
 
+// Assertion represents an assertion in the protocol.
 type Assertion struct {
-	SequenceNum             SequenceNum
+	SequenceNum             AssertionSequenceNumber
 	StateCommitment         StateCommitment
 	Staker                  util.Option[common.Address]
 	Prev                    util.Option[*Assertion]
@@ -161,15 +172,18 @@ type Assertion struct {
 	challenge               util.Option[*Challenge]
 }
 
+// StateCommitment is a type used to represent the state commitment of an assertion.
 type StateCommitment struct {
 	Height    uint64
 	StateRoot common.Hash
 }
 
+// Hash returns the hash of the state commitment.
 func (comm StateCommitment) Hash() common.Hash {
 	return crypto.Keccak256Hash(binary.BigEndian.AppendUint64([]byte{}, comm.Height), comm.StateRoot.Bytes())
 }
 
+// NewAssertionChain creates a new AssertionChain.
 func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challengePeriod time.Duration) *AssertionChain {
 	genesis := &Assertion{
 		chain:       nil,
@@ -187,36 +201,40 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		Staker:                  util.None[common.Address](),
 	}
 	chain := &AssertionChain{
-		mutex:                                 sync.RWMutex{},
-		timeReference:                         timeRef,
-		challengePeriod:                       challengePeriod,
-		challengeVerticesByAssertionStateHash: make(map[AssertionStateCommitHash]map[SequenceNum]*ChallengeVertex),
-		challengesByAssertionStateHash:        make(map[AssertionStateCommitHash]*Challenge),
-		confirmedLatest:                       0,
-		assertions:                            []*Assertion{genesis},
-		dedupe:                                make(map[common.Hash]bool), // no need to insert genesis assertion here
-		balances:                              util.NewMapWithDefaultAdvanced[common.Address, *big.Int](common.Big0, func(x *big.Int) bool { return x.Sign() == 0 }),
-		feed:                                  NewEventFeed[AssertionChainEvent](ctx),
-		challengesFeed:                        NewEventFeed[ChallengeEvent](ctx),
-		inbox:                                 NewInbox(ctx),
+		mutex:                               sync.RWMutex{},
+		timeReference:                       timeRef,
+		challengePeriod:                     challengePeriod,
+		challengesByCommitHash:              make(map[CommitHash]*Challenge),
+		challengeVerticesByCommitHashSeqNum: make(map[CommitHash]map[VertexSequenceNumber]*ChallengeVertex),
+		latestConfirmed:                     0,
+		assertions:                          []*Assertion{genesis},
+		balances:                            util.NewMapWithDefaultAdvanced[common.Address, *big.Int](common.Big0, func(x *big.Int) bool { return x.Sign() == 0 }),
+		feed:                                NewEventFeed[AssertionChainEvent](ctx),
+		challengesFeed:                      NewEventFeed[ChallengeEvent](ctx),
+		inbox:                               NewInbox(ctx),
+		hasSeenAssertions:                   make(map[common.Hash]bool),
 	}
 	genesis.chain = chain
 	return chain
 }
 
+// TimeReference returns the time reference used by the chain.
 func (chain *AssertionChain) TimeReference() util.TimeReference {
 	return chain.timeReference
 }
 
+// Inbox returns the inbox used by the chain.
 func (chain *AssertionChain) Inbox() *Inbox {
 	return chain.inbox
 }
 
+// GetBalance returns the balance of the given address.
 func (chain *AssertionChain) GetBalance(tx *ActiveTx, addr common.Address) *big.Int {
 	tx.verifyRead()
 	return chain.balances.Get(addr)
 }
 
+// SetBalance sets the balance of the given address.
 func (chain *AssertionChain) SetBalance(tx *ActiveTx, addr common.Address, balance *big.Int) {
 	tx.verifyReadWrite()
 	oldBalance := chain.balances.Get(addr)
@@ -224,11 +242,13 @@ func (chain *AssertionChain) SetBalance(tx *ActiveTx, addr common.Address, balan
 	chain.feed.Append(&SetBalanceEvent{Addr: addr, OldBalance: oldBalance, NewBalance: balance})
 }
 
+// AddToBalance adds the given amount to the balance of the given address.
 func (chain *AssertionChain) AddToBalance(tx *ActiveTx, addr common.Address, amount *big.Int) {
 	tx.verifyReadWrite()
 	chain.SetBalance(tx, addr, new(big.Int).Add(chain.GetBalance(tx, addr), amount))
 }
 
+// DeductFromBalance deducts the given amount from the balance of the given address.
 func (chain *AssertionChain) DeductFromBalance(tx *ActiveTx, addr common.Address, amount *big.Int) error {
 	tx.verifyReadWrite()
 	balance := chain.GetBalance(tx, addr)
@@ -239,38 +259,43 @@ func (chain *AssertionChain) DeductFromBalance(tx *ActiveTx, addr common.Address
 	return nil
 }
 
+// ChallengePeriodLength returns the length of the challenge period.
 func (chain *AssertionChain) ChallengePeriodLength(tx *ActiveTx) time.Duration {
 	tx.verifyRead()
 	return chain.challengePeriod
 }
 
+// LatestConfirmed returns the latest confirmed assertion.
 func (chain *AssertionChain) LatestConfirmed(tx *ActiveTx) *Assertion {
 	tx.verifyRead()
-	return chain.assertions[chain.confirmedLatest]
+	return chain.assertions[chain.latestConfirmed]
 }
 
+// NumAssertions returns the number of assertions in the chain.
 func (chain *AssertionChain) NumAssertions(tx *ActiveTx) uint64 {
 	tx.verifyRead()
 	return uint64(len(chain.assertions))
 }
 
-func (chain *AssertionChain) AssertionBySequenceNum(tx *ActiveTx, seqNum SequenceNum) (*Assertion, error) {
+// AssertionBySequenceNum returns the assertion with the given sequence number.
+func (chain *AssertionChain) AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error) {
 	tx.verifyRead()
-	if seqNum >= SequenceNum(len(chain.assertions)) {
+	if seqNum >= AssertionSequenceNumber(len(chain.assertions)) {
 		return nil, fmt.Errorf("assertion sequence out of range %d >= %d", seqNum, len(chain.assertions))
 	}
 	return chain.assertions[seqNum], nil
 }
 
+// ChallengeVertexBySequenceNum returns the challenge vertex with the given sequence number.
 func (chain *AssertionChain) ChallengeVertexBySequenceNum(
-	tx *ActiveTx, commitHash AssertionStateCommitHash, seqNum SequenceNum,
+	tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber,
 ) (*ChallengeVertex, error) {
 	tx.verifyRead()
-	vertices, ok := chain.challengeVerticesByAssertionStateHash[commitHash]
+	vertices, ok := chain.challengeVerticesByCommitHashSeqNum[commitHash]
 	if !ok {
 		return nil, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", commitHash)
 	}
-	if seqNum >= SequenceNum(len(vertices)) {
+	if seqNum >= VertexSequenceNumber(len(vertices)) {
 		return nil, fmt.Errorf("challenge vertex sequence out of range %d >= %d", seqNum, len(vertices))
 	}
 	vertex, ok := vertices[seqNum]
@@ -280,33 +305,37 @@ func (chain *AssertionChain) ChallengeVertexBySequenceNum(
 	return vertex, nil
 }
 
-func (chain *AssertionChain) ChallengeByAssertionStateCommit(tx *ActiveTx, commitHash AssertionStateCommitHash) (*Challenge, error) {
+// ChallengeByCommitHash returns the challenge with the given commit hash.
+func (chain *AssertionChain) ChallengeByCommitHash(tx *ActiveTx, commitHash CommitHash) (*Challenge, error) {
 	tx.verifyRead()
-	chal, ok := chain.challengesByAssertionStateHash[commitHash]
+	chal, ok := chain.challengesByCommitHash[commitHash]
 	if !ok {
 		return nil, fmt.Errorf("challenge not found for assertion with state commit hash %#x", commitHash)
 	}
 	return chal, nil
 }
 
+// SubscribeChainEvents subscribes to chain events.
 func (chain *AssertionChain) SubscribeChainEvents(ctx context.Context, ch chan<- AssertionChainEvent) {
 	chain.feed.Subscribe(ctx, ch)
 }
 
+// SubscribeChallengeEvents subscribes to challenge events.
 func (chain *AssertionChain) SubscribeChallengeEvents(ctx context.Context, ch chan<- ChallengeEvent) {
 	chain.challengesFeed.Subscribe(ctx, ch)
 }
 
+// CreateLeaf creates a new leaf assertion.
 func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error) {
 	tx.verifyReadWrite()
 	if prev.chain != chain {
 		return nil, ErrWrongChain
 	}
 	if prev.StateCommitment.Height >= commitment.Height {
-		return nil, ErrInvalid
+		return nil, ErrInvalidOp
 	}
-	dedupeCode := crypto.Keccak256Hash(binary.BigEndian.AppendUint64(commitment.Hash().Bytes(), uint64(prev.SequenceNum)))
-	if chain.dedupe[dedupeCode] {
+	seenKey := crypto.Keccak256Hash(binary.BigEndian.AppendUint64(commitment.Hash().Bytes(), uint64(prev.SequenceNum)))
+	if chain.hasSeenAssertions[seenKey] {
 		return nil, ErrVertexAlreadyExists
 	}
 
@@ -334,7 +363,7 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 	leaf := &Assertion{
 		chain:                   chain,
 		status:                  PendingAssertionState,
-		SequenceNum:             SequenceNum(len(chain.assertions)),
+		SequenceNum:             AssertionSequenceNumber(len(chain.assertions)),
 		StateCommitment:         commitment,
 		Prev:                    util.Some[*Assertion](prev),
 		isFirstChild:            prev.firstChildCreationTime.IsNone(),
@@ -349,7 +378,7 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 		prev.secondChildCreationTime = util.Some[time.Time](chain.timeReference.Get())
 	}
 	chain.assertions = append(chain.assertions, leaf)
-	chain.dedupe[dedupeCode] = true
+	chain.hasSeenAssertions[seenKey] = true
 	chain.feed.Append(&CreateLeafEvent{
 		PrevStateCommitment: prev.StateCommitment,
 		PrevSeqNum:          prev.SequenceNum,
@@ -360,13 +389,14 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 	return leaf, nil
 }
 
+// RejectForPrev rejects the assertion and emits the information through feed. It moves assertion to `RejectedAssertionState` state.
 func (a *Assertion) RejectForPrev(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
 	if a.Prev.IsNone() {
-		return ErrInvalid
+		return ErrInvalidOp
 	}
 	if a.Prev.Unwrap().status != RejectedAssertionState {
 		return ErrWrongPredecessorState
@@ -378,13 +408,14 @@ func (a *Assertion) RejectForPrev(tx *ActiveTx) error {
 	return nil
 }
 
+// RejectForLoss rejects the assertion and emits the information through feed. It moves assertion to `RejectedAssertionState` state.
 func (a *Assertion) RejectForLoss(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
 	if a.Prev.IsNone() {
-		return ErrInvalid
+		return ErrInvalidOp
 	}
 	chal := a.Prev.Unwrap().challenge
 	if chal.IsNone() {
@@ -395,7 +426,7 @@ func (a *Assertion) RejectForLoss(tx *ActiveTx) error {
 		return err
 	}
 	if winner == a {
-		return ErrInvalid
+		return ErrInvalidOp
 	}
 	a.status = RejectedAssertionState
 	a.chain.feed.Append(&RejectEvent{
@@ -404,26 +435,27 @@ func (a *Assertion) RejectForLoss(tx *ActiveTx) error {
 	return nil
 }
 
+// ConfirmNoRival confirms that there is no rival for the assertion and moves the assertion to `ConfirmedAssertionState` state.
 func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
 	if a.Prev.IsNone() {
-		return ErrInvalid
+		return ErrInvalidOp
 	}
 	prev := a.Prev.Unwrap()
 	if prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
 	if !prev.secondChildCreationTime.IsNone() {
-		return ErrInvalid
+		return ErrInvalidOp
 	}
 	if !a.chain.timeReference.Get().After(prev.firstChildCreationTime.Unwrap().Add(a.chain.challengePeriod)) {
 		return ErrNotYet
 	}
 	a.status = ConfirmedAssertionState
-	a.chain.confirmedLatest = a.SequenceNum
+	a.chain.latestConfirmed = a.SequenceNum
 	a.chain.feed.Append(&ConfirmEvent{
 		SeqNum: a.SequenceNum,
 	})
@@ -434,13 +466,14 @@ func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 	return nil
 }
 
+// ConfirmForWin confirms that the assertion is the winnerAssertion of the challenge and moves the assertion to `ConfirmedAssertionState` state.
 func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
 		return ErrWrongState
 	}
 	if a.Prev.IsNone() {
-		return ErrInvalid
+		return ErrInvalidOp
 	}
 	prev := a.Prev.Unwrap()
 	if prev.status != ConfirmedAssertionState {
@@ -454,40 +487,43 @@ func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 		return err
 	}
 	if winner != a {
-		return ErrInvalid
+		return ErrInvalidOp
 	}
 	a.status = ConfirmedAssertionState
-	a.chain.confirmedLatest = a.SequenceNum
+	a.chain.latestConfirmed = a.SequenceNum
 	a.chain.feed.Append(&ConfirmEvent{
 		SeqNum: a.SequenceNum,
 	})
 	return nil
 }
 
+// Challenge created by an assertion.
 type Challenge struct {
-	parent            *Assertion
-	winner            *Assertion
-	root              *ChallengeVertex
-	latestConfirmed   *ChallengeVertex
-	creationTime      time.Time
-	includedHistories map[common.Hash]bool
-	nextSequenceNum   SequenceNum
+	rootAssertion         *Assertion
+	winnerAssertion       *Assertion
+	rootVertex            *ChallengeVertex
+	latestConfirmedVertex *ChallengeVertex
+	creationTime          time.Time
+	includedHistories     map[common.Hash]bool
+	nextSequenceNum       VertexSequenceNumber
 }
 
-func (parent *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, challenger common.Address) (*Challenge, error) {
+// CreateChallenge creates a challenge for the assertion and moves the assertion to `ChallengedAssertionState` state.
+func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, challenger common.Address) (*Challenge, error) {
 	tx.verifyReadWrite()
-	if parent.status != PendingAssertionState && parent.chain.LatestConfirmed(tx) != parent {
+	if a.status != PendingAssertionState && a.chain.LatestConfirmed(tx) != a {
 		return nil, ErrWrongState
 	}
-	if !parent.challenge.IsNone() {
+	if !a.challenge.IsNone() {
 		return nil, ErrChallengeAlreadyExists
 	}
-	if parent.secondChildCreationTime.IsNone() {
-		return nil, ErrInvalid
+	if a.secondChildCreationTime.IsNone() {
+		return nil, ErrInvalidOp
 	}
-	root := &ChallengeVertex{
+	currSeqNumber := VertexSequenceNumber(0)
+	rootVertex := &ChallengeVertex{
 		challenge:   nil,
-		SequenceNum: 0,
+		SequenceNum: currSeqNumber,
 		isLeaf:      false,
 		status:      ConfirmedAssertionState,
 		Commitment: util.HistoryCommitment{
@@ -496,66 +532,67 @@ func (parent *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, chal
 		},
 		Prev:                 nil,
 		presumptiveSuccessor: nil,
-		psTimer:              util.NewCountUpTimer(parent.chain.timeReference),
+		psTimer:              util.NewCountUpTimer(a.chain.timeReference),
 		subChallenge:         nil,
 	}
-	ret := &Challenge{
-		parent:            parent,
-		winner:            nil,
-		root:              root,
-		latestConfirmed:   root,
-		creationTime:      parent.chain.timeReference.Get(),
-		includedHistories: make(map[common.Hash]bool),
-		nextSequenceNum:   1,
+	chal := &Challenge{
+		rootAssertion:         a,
+		winnerAssertion:       nil,
+		rootVertex:            rootVertex,
+		latestConfirmedVertex: rootVertex,
+		creationTime:          a.chain.timeReference.Get(),
+		includedHistories:     make(map[common.Hash]bool),
+		nextSequenceNum:       currSeqNumber + 1,
 	}
-	root.challenge = ret
-	ret.includedHistories[root.Commitment.Hash()] = true
-	parent.challenge = util.Some[*Challenge](ret)
+	rootVertex.challenge = chal
+	chal.includedHistories[rootVertex.Commitment.Hash()] = true
+	a.challenge = util.Some[*Challenge](chal)
 	parentStaker := common.Address{}
-	if !parent.Staker.IsNone() {
-		parentStaker = parent.Staker.Unwrap()
+	if !a.Staker.IsNone() {
+		parentStaker = a.Staker.Unwrap()
 	}
-	parent.chain.feed.Append(&StartChallengeEvent{
-		ParentSeqNum:          parent.SequenceNum,
-		ParentStateCommitment: parent.StateCommitment,
+	a.chain.feed.Append(&StartChallengeEvent{
+		ParentSeqNum:          a.SequenceNum,
+		ParentStateCommitment: a.StateCommitment,
 		ParentStaker:          parentStaker,
 		Validator:             challenger,
 	})
 
-	challengeID := AssertionStateCommitHash(parent.StateCommitment.Hash())
-	parent.chain.challengesByAssertionStateHash[challengeID] = ret
-	seqNum := SequenceNum(0)
-	parent.chain.challengeVerticesByAssertionStateHash[challengeID] = make(map[SequenceNum]*ChallengeVertex)
-	parent.chain.challengeVerticesByAssertionStateHash[challengeID][seqNum] = root
+	challengeID := CommitHash(a.StateCommitment.Hash())
+	a.chain.challengesByCommitHash[challengeID] = chal
+	a.chain.challengeVerticesByCommitHashSeqNum[challengeID] = map[VertexSequenceNumber]*ChallengeVertex{currSeqNumber: rootVertex}
 
-	return ret, nil
+	return chal, nil
 }
 
-func (chal *Challenge) ParentStateCommitment() StateCommitment {
-	return chal.parent.StateCommitment
+// ParentStateCommitment returns the state commitment of the parent assertion.
+func (c *Challenge) ParentStateCommitment() StateCommitment {
+	return c.rootAssertion.StateCommitment
 }
 
-func (chal *Challenge) ParentSeqNum() SequenceNum {
-	return chal.parent.SequenceNum
+// AssertionSeqNumber returns the sequence number of the assertion that created the challenge.
+func (c *Challenge) AssertionSeqNumber() AssertionSequenceNumber {
+	return c.rootAssertion.SequenceNum
 }
 
-func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, challenger common.Address) (*ChallengeVertex, error) {
+// AddLeaf adds a new leaf to the challenge.
+func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, challenger common.Address) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
 	if assertion.Prev.IsNone() {
-		return nil, ErrInvalid
+		return nil, ErrInvalidOp
 	}
 	prev := assertion.Prev.Unwrap()
-	if prev != chal.parent {
-		return nil, ErrInvalid
+	if prev != c.rootAssertion {
+		return nil, ErrInvalidOp
 	}
-	if chal.Completed(tx) {
+	if c.Completed(tx) {
 		return nil, ErrWrongState
 	}
 	chain := assertion.chain
-	if !chal.root.eligibleForNewSuccessor() {
+	if !c.rootVertex.eligibleForNewSuccessor() {
 		return nil, ErrPastDeadline
 	}
-	if chal.includedHistories[history.Hash()] {
+	if c.includedHistories[history.Hash()] {
 		return nil, ErrVertexAlreadyExists
 	}
 
@@ -565,21 +602,21 @@ func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.
 		timer.Set(delta)
 	}
 	leaf := &ChallengeVertex{
-		challenge:            chal,
-		SequenceNum:          chal.nextSequenceNum,
+		challenge:            c,
+		SequenceNum:          c.nextSequenceNum,
 		Challenger:           challenger,
 		isLeaf:               true,
 		status:               PendingAssertionState,
 		Commitment:           history,
-		Prev:                 chal.root,
+		Prev:                 c.rootVertex,
 		presumptiveSuccessor: nil,
 		psTimer:              timer,
 		subChallenge:         nil,
 		winnerIfConfirmed:    assertion,
 	}
-	chal.nextSequenceNum++
-	chal.root.maybeNewPresumptiveSuccessor(leaf)
-	chal.parent.chain.challengesFeed.Append(&ChallengeLeafEvent{
+	c.nextSequenceNum++
+	c.rootVertex.maybeNewPresumptiveSuccessor(leaf)
+	c.rootAssertion.chain.challengesFeed.Append(&ChallengeLeafEvent{
 		ParentSeqNum:      leaf.Prev.SequenceNum,
 		SequenceNum:       leaf.SequenceNum,
 		WinnerIfConfirmed: assertion.SequenceNum,
@@ -587,30 +624,32 @@ func (chal *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.
 		BecomesPS:         leaf.Prev.presumptiveSuccessor == leaf,
 		Validator:         challenger,
 	})
-	parentStateCommitHash := AssertionStateCommitHash(chal.parent.StateCommitment.Hash())
-	chal.includedHistories[history.Hash()] = true
-	chal.parent.chain.challengesByAssertionStateHash[parentStateCommitHash] = chal
-	chal.parent.chain.challengeVerticesByAssertionStateHash[parentStateCommitHash][leaf.SequenceNum] = leaf
+	c.includedHistories[history.Hash()] = true
+	h := CommitHash(c.rootAssertion.StateCommitment.Hash())
+	c.rootAssertion.chain.challengesByCommitHash[h] = c
+	c.rootAssertion.chain.challengeVerticesByCommitHashSeqNum[h][leaf.SequenceNum] = leaf
 	return leaf, nil
 }
 
-func (chal *Challenge) Completed(tx *ActiveTx) bool {
+// Completed returns true if the challenge is completed.
+func (c *Challenge) Completed(tx *ActiveTx) bool {
 	tx.verifyRead()
-	return chal.winner != nil
+	return c.winnerAssertion != nil
 }
 
-func (chal *Challenge) Winner(tx *ActiveTx) (*Assertion, error) {
+// Winner returns the winning assertion if the challenge is completed.
+func (c *Challenge) Winner(tx *ActiveTx) (*Assertion, error) {
 	tx.verifyRead()
-	if chal.winner == nil {
+	if c.winnerAssertion == nil {
 		return nil, ErrNoWinnerYet
 	}
-	return chal.winner, nil
+	return c.winnerAssertion, nil
 }
 
 type ChallengeVertex struct {
 	Commitment           util.HistoryCommitment
 	challenge            *Challenge
-	SequenceNum          SequenceNum // unique within the challenge
+	SequenceNum          VertexSequenceNumber // unique within the challenge
 	Challenger           common.Address
 	isLeaf               bool
 	status               AssertionState
@@ -621,174 +660,185 @@ type ChallengeVertex struct {
 	winnerIfConfirmed    *Assertion
 }
 
-func (vertex *ChallengeVertex) eligibleForNewSuccessor() bool {
-	return vertex.presumptiveSuccessor == nil || vertex.presumptiveSuccessor.psTimer.Get() <= vertex.challenge.parent.chain.challengePeriod
+// eligibleForNewSuccessor returns true if the vertex is eligible to have a new successor.
+func (v *ChallengeVertex) eligibleForNewSuccessor() bool {
+	return v.presumptiveSuccessor == nil || v.presumptiveSuccessor.psTimer.Get() <= v.challenge.rootAssertion.chain.challengePeriod
 }
 
-func (vertex *ChallengeVertex) maybeNewPresumptiveSuccessor(succ *ChallengeVertex) {
-	if vertex.presumptiveSuccessor != nil && succ.Commitment.Height < vertex.presumptiveSuccessor.Commitment.Height {
-		vertex.presumptiveSuccessor.psTimer.Stop()
-		vertex.presumptiveSuccessor = nil
+// maybeNewPresumptiveSuccessor updates the presumptive successor if the given vertex is eligible.
+func (v *ChallengeVertex) maybeNewPresumptiveSuccessor(succ *ChallengeVertex) {
+	if v.presumptiveSuccessor != nil && succ.Commitment.Height < v.presumptiveSuccessor.Commitment.Height {
+		v.presumptiveSuccessor.psTimer.Stop()
+		v.presumptiveSuccessor = nil
 	}
-	if vertex.presumptiveSuccessor == nil {
-		vertex.presumptiveSuccessor = succ
+	if v.presumptiveSuccessor == nil {
+		v.presumptiveSuccessor = succ
 		succ.psTimer.Start()
 	}
 }
 
-func (vertex *ChallengeVertex) IsPresumptiveSuccessor() bool {
-	return vertex.Prev == nil || vertex.Prev.presumptiveSuccessor == vertex
+// IsPresumptiveSuccessor returns true if the vertex is the presumptive successor of its parent.
+func (v *ChallengeVertex) IsPresumptiveSuccessor() bool {
+	return v.Prev == nil || v.Prev.presumptiveSuccessor == v
 }
 
-func (vertex *ChallengeVertex) requiredBisectionHeight() (uint64, error) {
-	return util.BisectionPoint(vertex.Prev.Commitment.Height, vertex.Commitment.Height)
+// requiredBisectionHeight returns the height of the history commitment that must be bisectioned to prove the vertex.
+func (v *ChallengeVertex) requiredBisectionHeight() (uint64, error) {
+	return util.BisectionPoint(v.Prev.Commitment.Height, v.Commitment.Height)
 }
 
-func (vertex *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash, challenger common.Address) (*ChallengeVertex, error) {
+// Bisect returns the bisection proof for the vertex.
+func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash, challenger common.Address) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
-	if vertex.IsPresumptiveSuccessor() {
+	if v.IsPresumptiveSuccessor() {
 		return nil, ErrWrongState
 	}
-	if !vertex.Prev.eligibleForNewSuccessor() {
+	if !v.Prev.eligibleForNewSuccessor() {
 		return nil, ErrPastDeadline
 	}
-	if vertex.challenge.includedHistories[history.Hash()] {
+	if v.challenge.includedHistories[history.Hash()] {
 		return nil, ErrVertexAlreadyExists
 	}
-	bisectionHeight, err := vertex.requiredBisectionHeight()
+	bisectionHeight, err := v.requiredBisectionHeight()
 	if err != nil {
 		return nil, err
 	}
 	if bisectionHeight != history.Height {
 		return nil, ErrInvalidHeight
 	}
-	if err := util.VerifyPrefixProof(history, vertex.Commitment, proof); err != nil {
+	if err := util.VerifyPrefixProof(history, v.Commitment, proof); err != nil {
 		return nil, err
 	}
 
-	vertex.psTimer.Stop()
+	v.psTimer.Stop()
 	newVertex := &ChallengeVertex{
-		challenge:            vertex.challenge,
-		SequenceNum:          vertex.challenge.nextSequenceNum,
+		challenge:            v.challenge,
+		SequenceNum:          v.challenge.nextSequenceNum,
 		Challenger:           challenger,
 		isLeaf:               false,
 		Commitment:           history,
-		Prev:                 vertex.Prev,
+		Prev:                 v.Prev,
 		presumptiveSuccessor: nil,
-		psTimer:              vertex.psTimer.Clone(),
+		psTimer:              v.psTimer.Clone(),
 	}
 	newVertex.challenge.nextSequenceNum++
-	newVertex.maybeNewPresumptiveSuccessor(vertex)
+	newVertex.maybeNewPresumptiveSuccessor(v)
 	newVertex.Prev.maybeNewPresumptiveSuccessor(newVertex)
 	newVertex.challenge.includedHistories[history.Hash()] = true
 
-	vertex.Prev = newVertex
+	v.Prev = newVertex
 
-	newVertex.challenge.parent.chain.challengesFeed.Append(&ChallengeBisectEvent{
-		FromSequenceNum: vertex.SequenceNum,
+	newVertex.challenge.rootAssertion.chain.challengesFeed.Append(&ChallengeBisectEvent{
+		FromSequenceNum: v.SequenceNum,
 		SequenceNum:     newVertex.SequenceNum,
 		History:         newVertex.Commitment,
 		BecomesPS:       newVertex.Prev.presumptiveSuccessor == newVertex,
 		Validator:       challenger,
 	})
-	commitHash := AssertionStateCommitHash(newVertex.challenge.parent.StateCommitment.Hash())
-	newVertex.challenge.parent.chain.challengeVerticesByAssertionStateHash[commitHash][newVertex.SequenceNum] = newVertex
+	commitHash := CommitHash(newVertex.challenge.rootAssertion.StateCommitment.Hash())
+	newVertex.challenge.rootAssertion.chain.challengeVerticesByCommitHashSeqNum[commitHash][newVertex.SequenceNum] = newVertex
+
 	return newVertex, nil
 }
 
-func (vertex *ChallengeVertex) Merge(tx *ActiveTx, newPrev *ChallengeVertex, proof []common.Hash, challenger common.Address) error {
+// Merge merges the vertex with its presumptive successor.
+func (v *ChallengeVertex) Merge(tx *ActiveTx, newPrev *ChallengeVertex, proof []common.Hash, challenger common.Address) error {
 	tx.verifyReadWrite()
 	if !newPrev.eligibleForNewSuccessor() {
 		return ErrPastDeadline
 	}
-	if vertex.Prev != newPrev.Prev {
-		return ErrInvalid
+	if v.Prev != newPrev.Prev {
+		return ErrInvalidOp
 	}
-	if vertex.Commitment.Height <= newPrev.Commitment.Height {
+	if v.Commitment.Height <= newPrev.Commitment.Height {
 		return ErrInvalidHeight
 	}
-	if err := util.VerifyPrefixProof(newPrev.Commitment, vertex.Commitment, proof); err != nil {
+	if err := util.VerifyPrefixProof(newPrev.Commitment, v.Commitment, proof); err != nil {
 		return err
 	}
 
-	vertex.Prev = newPrev
-	newPrev.psTimer.Add(vertex.psTimer.Get())
-	newPrev.maybeNewPresumptiveSuccessor(vertex)
-	vertex.challenge.parent.chain.challengesFeed.Append(&ChallengeMergeEvent{
-		DeeperSequenceNum:    vertex.SequenceNum,
+	v.Prev = newPrev
+	newPrev.psTimer.Add(v.psTimer.Get())
+	newPrev.maybeNewPresumptiveSuccessor(v)
+	v.challenge.rootAssertion.chain.challengesFeed.Append(&ChallengeMergeEvent{
+		DeeperSequenceNum:    v.SequenceNum,
 		ShallowerSequenceNum: newPrev.SequenceNum,
-		BecomesPS:            newPrev.presumptiveSuccessor == vertex,
+		BecomesPS:            newPrev.presumptiveSuccessor == v,
 		History:              newPrev.Commitment,
 		Validator:            challenger,
 	})
 	return nil
 }
 
-func (vertex *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
+// ConfirmForSubChallengeWin confirms the vertex as the winner of a sub-challenge.
+func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 	tx.verifyReadWrite()
-	if vertex.status != PendingAssertionState {
+	if v.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if vertex.Prev.status != ConfirmedAssertionState {
+	if v.Prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
-	subChal := vertex.Prev.subChallenge
-	if subChal == nil || subChal.winner != vertex {
-		return ErrInvalid
+	subChal := v.Prev.subChallenge
+	if subChal == nil || subChal.winner != v {
+		return ErrInvalidOp
 	}
-	vertex._confirm()
+	v._confirm()
 	return nil
 }
 
-func (vertex *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
+// ConfirmForPsTimer confirms the vertex as the winner of a psTimer.
+func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 	tx.verifyReadWrite()
-	if vertex.status != PendingAssertionState {
+	if v.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if vertex.Prev.status != ConfirmedAssertionState {
+	if v.Prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
-	if vertex.psTimer.Get() <= vertex.challenge.parent.chain.challengePeriod {
+	if v.psTimer.Get() <= v.challenge.rootAssertion.chain.challengePeriod {
 		return ErrNotYet
 	}
-	vertex._confirm()
+	v._confirm()
 	return nil
 }
 
-func (vertex *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
+// ConfirmForChallengeDeadline confirms the vertex as the winner of a challenge deadline.
+func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 	tx.verifyReadWrite()
-	if vertex.status != PendingAssertionState {
+	if v.status != PendingAssertionState {
 		return ErrWrongState
 	}
-	if vertex.Prev.status != ConfirmedAssertionState {
+	if v.Prev.status != ConfirmedAssertionState {
 		return ErrWrongPredecessorState
 	}
-	chain := vertex.challenge.parent.chain
+	chain := v.challenge.rootAssertion.chain
 	chalPeriod := chain.challengePeriod
-	if !chain.timeReference.Get().After(vertex.challenge.creationTime.Add(2 * chalPeriod)) {
+	if !chain.timeReference.Get().After(v.challenge.creationTime.Add(2 * chalPeriod)) {
 		return ErrNotYet
 	}
-	vertex._confirm()
+	v._confirm()
 	return nil
 }
 
-func (vertex *ChallengeVertex) _confirm() {
-	vertex.status = ConfirmedAssertionState
-	if vertex.isLeaf {
-		vertex.challenge.winner = vertex.winnerIfConfirmed
+func (v *ChallengeVertex) _confirm() {
+	v.status = ConfirmedAssertionState
+	if v.isLeaf {
+		v.challenge.winnerAssertion = v.winnerIfConfirmed
 	}
 }
 
-func (vertex *ChallengeVertex) CreateSubChallenge(tx *ActiveTx) error {
+// CreateSubChallenge creates a sub-challenge for the vertex.
+func (v *ChallengeVertex) CreateSubChallenge(tx *ActiveTx) error {
 	tx.verifyReadWrite()
-	if vertex.subChallenge != nil {
+	if v.subChallenge != nil {
 		return ErrVertexAlreadyExists
 	}
-	if vertex.status == ConfirmedAssertionState {
+	if v.status == ConfirmedAssertionState {
 		return ErrWrongState
 	}
-	vertex.subChallenge = &SubChallenge{
-		parent: vertex,
+	v.subChallenge = &SubChallenge{
+		parent: v,
 		winner: nil,
 	}
 	return nil
@@ -799,13 +849,14 @@ type SubChallenge struct {
 	winner *ChallengeVertex
 }
 
+// SetWinner sets the winner of the sub-challenge.
 func (sc *SubChallenge) SetWinner(tx *ActiveTx, winner *ChallengeVertex) error {
 	tx.verifyReadWrite()
 	if sc.winner != nil {
-		return ErrInvalid
+		return ErrInvalidOp
 	}
 	if winner.Prev != sc.parent {
-		return ErrInvalid
+		return ErrInvalidOp
 	}
 	sc.winner = winner
 	return nil

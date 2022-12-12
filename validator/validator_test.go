@@ -26,7 +26,7 @@ func Test_onLeafCreation(t *testing.T) {
 		logsHook := test.NewGlobal()
 		v, _, s := setupValidator(t)
 
-		parentSeqNum := protocol.SequenceNum(1)
+		parentSeqNum := protocol.AssertionSequenceNumber(1)
 		prevRoot := common.BytesToHash([]byte("foo"))
 		parentAssertion := &protocol.Assertion{
 			StateCommitment: protocol.StateCommitment{
@@ -113,8 +113,8 @@ func Test_onChallengeStarted(t *testing.T) {
 	var challenge *protocol.Challenge
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		commit := protocol.StateCommitment{}
-		id := protocol.AssertionStateCommitHash(commit.Hash())
-		challenge, err = p.ChallengeByAssertionStateCommit(tx, id)
+		id := protocol.CommitHash(commit.Hash())
+		challenge, err = p.ChallengeByCommitHash(tx, id)
 		if err != nil {
 			return err
 		}
@@ -325,7 +325,7 @@ func setupAssertions(num int) []*protocol.Assertion {
 	assertions := []*protocol.Assertion{genesis}
 	for i := 1; i < num; i++ {
 		assertions = append(assertions, &protocol.Assertion{
-			SequenceNum: protocol.SequenceNum(i),
+			SequenceNum: protocol.AssertionSequenceNumber(i),
 			StateCommitment: protocol.StateCommitment{
 				Height:    uint64(i),
 				StateRoot: common.BytesToHash([]byte(fmt.Sprintf("%d", i))),
