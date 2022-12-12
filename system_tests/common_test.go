@@ -488,7 +488,7 @@ func Create2ndNode(
 	} else {
 		nodeConf.DataAvailability = *dasConfig
 	}
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConf)
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConf, nil)
 }
 
 func Create2ndNodeWithConfig(
@@ -499,6 +499,7 @@ func Create2ndNodeWithConfig(
 	l1info *BlockchainTestInfo,
 	l2InitData *statetransfer.ArbosInitializationInfo,
 	nodeConfig *arbnode.Config,
+	stackConfig *node.Config,
 ) (*ethclient.Client, *arbnode.Node) {
 	feedErrChan := make(chan error, 10)
 	l1rpcClient, err := l1stack.Attach()
@@ -506,7 +507,11 @@ func Create2ndNodeWithConfig(
 		Fail(t, err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
-	l2stack, err := arbnode.CreateDefaultStackForTest("")
+
+	if stackConfig == nil {
+		stackConfig = getTestStackConfig(t)
+	}
+	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
 	l2chainDb, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
