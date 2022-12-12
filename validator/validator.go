@@ -30,8 +30,8 @@ type Validator struct {
 	knownValidatorNames                    map[common.Address]string
 	createdLeaves                          map[common.Hash]*protocol.Assertion
 	assertionsLock                         sync.RWMutex
-	sequenceNumbersByParentStateCommitment map[common.Hash][]protocol.SequenceNum
-	assertions                             map[protocol.SequenceNum]*protocol.CreateLeafEvent
+	sequenceNumbersByParentStateCommitment map[common.Hash][]protocol.AssertionSequenceNumber
+	assertions                             map[protocol.AssertionSequenceNumber]*protocol.CreateLeafEvent
 	leavesLock                             sync.RWMutex
 	createLeafInterval                     time.Duration
 	chaosMonkeyProbability                 float64
@@ -89,8 +89,8 @@ func New(
 		createLeafInterval:                     defaultCreateLeafInterval,
 		assertionEvents:                        make(chan protocol.AssertionChainEvent, 1),
 		createdLeaves:                          make(map[common.Hash]*protocol.Assertion),
-		sequenceNumbersByParentStateCommitment: make(map[common.Hash][]protocol.SequenceNum),
-		assertions:                             make(map[protocol.SequenceNum]*protocol.CreateLeafEvent),
+		sequenceNumbersByParentStateCommitment: make(map[common.Hash][]protocol.AssertionSequenceNumber),
+		assertions:                             make(map[protocol.AssertionSequenceNumber]*protocol.CreateLeafEvent),
 	}
 	for _, o := range opts {
 		o(v)
@@ -193,7 +193,7 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 	switch {
 	case errors.Is(err, protocol.ErrVertexAlreadyExists):
 		return nil, errors.Wrap(err, "vertex already exists, unable to create new leaf")
-	case errors.Is(err, protocol.ErrInvalid):
+	case errors.Is(err, protocol.ErrInvalidOp):
 		return nil, errors.Wrap(err, "not allowed to create new leaf")
 	case err != nil:
 		return nil, err
@@ -212,9 +212,9 @@ func (v *Validator) submitLeafCreation(ctx context.Context) (*protocol.Assertion
 // Finds the latest valid assertion sequence num a validator should build their new leaves upon. This walks
 // down from the number of assertions in the protocol down until it finds
 // an assertion that we have a state commitment for.
-func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.SequenceNum {
+func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.AssertionSequenceNumber {
 	var numAssertions uint64
-	var latestConfirmed protocol.SequenceNum
+	var latestConfirmed protocol.AssertionSequenceNumber
 	_ = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		numAssertions = p.NumAssertions(tx)
 		latestConfirmed = p.LatestConfirmed(tx).SequenceNum
@@ -222,7 +222,7 @@ func (v *Validator) findLatestValidAssertion(ctx context.Context) protocol.Seque
 	})
 	v.assertionsLock.RLock()
 	defer v.assertionsLock.RUnlock()
-	for s := protocol.SequenceNum(numAssertions); s > latestConfirmed; s-- {
+	for s := protocol.AssertionSequenceNumber(numAssertions); s > latestConfirmed; s-- {
 		a, ok := v.assertions[s]
 		if !ok {
 			continue

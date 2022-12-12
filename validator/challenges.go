@@ -155,7 +155,7 @@ func (v *Validator) addChallengeVertex(
 
 func (v *Validator) submitProtocolChallenge(
 	ctx context.Context,
-	parentAssertionSeqNum protocol.SequenceNum,
+	parentAssertionSeqNum protocol.AssertionSequenceNumber,
 ) (*protocol.Challenge, error) {
 	var challenge *protocol.Challenge
 	var err error
@@ -179,15 +179,15 @@ func (v *Validator) submitProtocolChallenge(
 // based on the parent assertion's state commitment hash.
 func (v *Validator) fetchProtocolChallenge(
 	ctx context.Context,
-	parentAssertionSeqNum protocol.SequenceNum,
+	parentAssertionSeqNum protocol.AssertionSequenceNumber,
 	parentAssertionCommit protocol.StateCommitment,
 ) (*protocol.Challenge, error) {
 	var err error
 	var challenge *protocol.Challenge
 	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		challenge, err = p.ChallengeByAssertionStateCommit(
+		challenge, err = p.ChallengeByCommitHash(
 			tx,
-			protocol.AssertionStateCommitHash(parentAssertionCommit.Hash()),
+			protocol.CommitHash(parentAssertionCommit.Hash()),
 		)
 		if err != nil {
 			return err
