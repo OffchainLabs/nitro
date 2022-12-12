@@ -90,17 +90,18 @@ type AssertionManager interface {
 }
 
 type AssertionChain struct {
-	mutex                  sync.RWMutex
-	timeReference          util.TimeReference
-	challengePeriod        time.Duration
-	latestConfirmed        AssertionSequenceNumber
-	assertions             []*Assertion
-	hasSeenAssertions      map[common.Hash]bool
-	challengesByCommitHash map[CommitHash]*Challenge
-	balances               *util.MapWithDefault[common.Address, *big.Int]
-	feed                   *EventFeed[AssertionChainEvent]
-	challengesFeed         *EventFeed[ChallengeEvent]
-	inbox                  *Inbox
+	mutex                               sync.RWMutex
+	timeReference                       util.TimeReference
+	challengePeriod                     time.Duration
+	latestConfirmed                     AssertionSequenceNumber
+	assertions                          []*Assertion
+	hasSeenAssertions                   map[common.Hash]bool
+	challengeVerticesByCommitHashSeqNum map[CommitHash]map[VertexSequenceNumber]*ChallengeVertex
+	challengesByCommitHash              map[CommitHash]*Challenge
+	balances                            *util.MapWithDefault[common.Address, *big.Int]
+	feed                                *EventFeed[AssertionChainEvent]
+	challengesFeed                      *EventFeed[ChallengeEvent]
+	inbox                               *Inbox
 }
 
 const (
@@ -200,17 +201,18 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		Staker:                  util.None[common.Address](),
 	}
 	chain := &AssertionChain{
-		mutex:                  sync.RWMutex{},
-		timeReference:          timeRef,
-		challengePeriod:        challengePeriod,
-		challengesByCommitHash: make(map[CommitHash]*Challenge),
-		latestConfirmed:        0,
-		assertions:             []*Assertion{genesis},
-		balances:               util.NewMapWithDefaultAdvanced[common.Address, *big.Int](common.Big0, func(x *big.Int) bool { return x.Sign() == 0 }),
-		feed:                   NewEventFeed[AssertionChainEvent](ctx),
-		challengesFeed:         NewEventFeed[ChallengeEvent](ctx),
-		inbox:                  NewInbox(ctx),
-		hasSeenAssertions:      make(map[common.Hash]bool),
+		mutex:                               sync.RWMutex{},
+		timeReference:                       timeRef,
+		challengePeriod:                     challengePeriod,
+		challengesByCommitHash:              make(map[CommitHash]*Challenge),
+		challengeVerticesByCommitHashSeqNum: make(map[CommitHash]map[VertexSequenceNumber]*ChallengeVertex),
+		latestConfirmed:                     0,
+		assertions:                          []*Assertion{genesis},
+		balances:                            util.NewMapWithDefaultAdvanced[common.Address, *big.Int](common.Big0, func(x *big.Int) bool { return x.Sign() == 0 }),
+		feed:                                NewEventFeed[AssertionChainEvent](ctx),
+		challengesFeed:                      NewEventFeed[ChallengeEvent](ctx),
+		inbox:                               NewInbox(ctx),
+		hasSeenAssertions:                   make(map[common.Hash]bool),
 	}
 	genesis.chain = chain
 	return chain
@@ -289,11 +291,14 @@ func (chain *AssertionChain) ChallengeVertexBySequenceNum(
 	tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber,
 ) (*ChallengeVertex, error) {
 	tx.verifyRead()
-	challenge, ok := chain.challengesByCommitHash[commitHash]
+	vertices, ok := chain.challengeVerticesByCommitHashSeqNum[commitHash]
 	if !ok {
-		return nil, fmt.Errorf("no challenge with commit hash %v", commitHash)
+		return nil, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", commitHash)
 	}
-	vertex, ok := challenge.vertices[seqNum]
+	if seqNum >= VertexSequenceNumber(len(vertices)) {
+		return nil, fmt.Errorf("challenge vertex sequence out of range %d >= %d", seqNum, len(vertices))
+	}
+	vertex, ok := vertices[seqNum]
 	if !ok {
 		return nil, fmt.Errorf("challenge vertex with sequence number not found %d", seqNum)
 	}
@@ -501,7 +506,6 @@ type Challenge struct {
 	creationTime          time.Time
 	includedHistories     map[common.Hash]bool
 	nextSequenceNum       VertexSequenceNumber
-	vertices              map[VertexSequenceNumber]*ChallengeVertex
 }
 
 // CreateChallenge creates a challenge for the assertion and moves the assertion to `ChallengedAssertionState` state.
@@ -539,7 +543,6 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, challenge
 		creationTime:          a.chain.timeReference.Get(),
 		includedHistories:     make(map[common.Hash]bool),
 		nextSequenceNum:       currSeqNumber + 1,
-		vertices:              map[VertexSequenceNumber]*ChallengeVertex{},
 	}
 	rootVertex.challenge = chal
 	chal.includedHistories[rootVertex.Commitment.Hash()] = true
@@ -556,8 +559,8 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, challenge
 	})
 
 	challengeID := CommitHash(a.StateCommitment.Hash())
-	chal.vertices[0] = rootVertex
 	a.chain.challengesByCommitHash[challengeID] = chal
+	a.chain.challengeVerticesByCommitHashSeqNum[challengeID] = map[VertexSequenceNumber]*ChallengeVertex{currSeqNumber: rootVertex}
 
 	return chal, nil
 }
@@ -623,8 +626,8 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	})
 	c.includedHistories[history.Hash()] = true
 	h := CommitHash(c.rootAssertion.StateCommitment.Hash())
-	c.vertices[leaf.SequenceNum] = leaf
 	c.rootAssertion.chain.challengesByCommitHash[h] = c
+	c.rootAssertion.chain.challengeVerticesByCommitHashSeqNum[h][leaf.SequenceNum] = leaf
 	return leaf, nil
 }
 
@@ -733,7 +736,8 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		Validator:       challenger,
 	})
 	commitHash := CommitHash(newVertex.challenge.rootAssertion.StateCommitment.Hash())
-	newVertex.challenge.rootAssertion.chain.challengesByCommitHash[commitHash].vertices[newVertex.SequenceNum] = newVertex
+	newVertex.challenge.rootAssertion.chain.challengeVerticesByCommitHashSeqNum[commitHash][newVertex.SequenceNum] = newVertex
+
 	return newVertex, nil
 }
 
