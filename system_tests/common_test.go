@@ -291,11 +291,25 @@ func DeployOnTestL1(
 func createL2BlockChain(
 	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
+	return createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, nil)
+}
+
+func createL2BlockChainWithStackConfig(
+	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, stackConfig *node.Config,
+) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	stack, err := arbnode.CreateDefaultStackForTest(dataDir)
-	Require(t, err)
+	var stack *node.Node
+	var err error
+	if stackConfig == nil {
+		stack, err = arbnode.CreateDefaultStackForTest(dataDir)
+		Require(t, err)
+	} else {
+		stack, err = node.New(stackConfig)
+		Require(t, err)
+	}
+
 	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 	Require(t, err)
 	arbDb, err := stack.OpenDatabase("arbdb", 0, 0, "", false)
@@ -359,11 +373,11 @@ func createTestNodeOnL1WithConfigImpl(
 		chainConfig = params.ArbitrumDevTestChainConfig()
 	}
 	fatalErrChan := make(chan error, 10)
-	l1info, l1client, l1backend, l1stack = createTestL1BlockChainWithConfig(t, nil, stackConfig)
+	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
 	var l2arbDb ethdb.Database
 	var l2blockchain *core.BlockChain
-	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChain(t, nil, "", chainConfig)
+	l2info, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, nil, "", chainConfig, stackConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
