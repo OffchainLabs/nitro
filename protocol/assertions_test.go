@@ -27,7 +27,7 @@ func TestAssertionChain(t *testing.T) {
 
 	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
 	require.Equal(t, 1, len(assertionsChain.assertions))
-	require.Equal(t, SequenceNum(0), assertionsChain.confirmedLatest)
+	require.Equal(t, AssertionSequenceNumber(0), assertionsChain.latestConfirmed)
 	eventChan := make(chan AssertionChainEvent)
 	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
 		chain := p.(*AssertionChain)
@@ -65,7 +65,7 @@ func TestAssertionChain(t *testing.T) {
 
 		require.Equal(t, newAssertion, chain.LatestConfirmed(tx))
 		require.Equal(t, ConfirmedAssertionState, int(newAssertion.status))
-		verifyConfirmEventInFeed(t, eventChan, SequenceNum(1))
+		verifyConfirmEventInFeed(t, eventChan, AssertionSequenceNumber(1))
 
 		// try to create a duplicate assertion
 		_, err = chain.CreateLeaf(tx, genesis, StateCommitment{1, correctBlockHashes[99]}, staker1)
@@ -155,7 +155,7 @@ func TestAssertionChain_LeafCreationsInsufficientStakes(t *testing.T) {
 	}))
 }
 
-func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum, prevSeqNum SequenceNum, staker common.Address, comm StateCommitment) {
+func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum, prevSeqNum AssertionSequenceNumber, staker common.Address, comm StateCommitment) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
@@ -168,7 +168,7 @@ func verifyCreateLeafEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seq
 	}
 }
 
-func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum SequenceNum) {
+func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum AssertionSequenceNumber) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
@@ -179,7 +179,7 @@ func verifyConfirmEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum
 	}
 }
 
-func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum SequenceNum) {
+func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum AssertionSequenceNumber) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
@@ -190,7 +190,7 @@ func verifyRejectEventInFeed(t *testing.T, c <-chan AssertionChainEvent, seqNum 
 	}
 }
 
-func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent, parentSeqNum SequenceNum) {
+func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent, parentSeqNum AssertionSequenceNumber) {
 	t.Helper()
 	ev := <-c
 	switch e := ev.(type) {
@@ -215,7 +215,7 @@ func TestBisectionChallengeGame(t *testing.T) {
 
 	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
 		chain := p.(*AssertionChain)
-		// We create a fork with genesis as the parent, where one branch is a higher depth than the other.
+		// We create a fork with genesis as the rootAssertion, where one branch is a higher depth than the other.
 		genesis := chain.LatestConfirmed(tx)
 		bigBalance := new(big.Int).Mul(AssertionStakeWei, big.NewInt(1000))
 		chain.SetBalance(tx, staker1, bigBalance)
@@ -295,9 +295,9 @@ func TestBisectionChallengeGame(t *testing.T) {
 		// Ensure the prev value of cl2 is set to the vertex we just bisected to.
 		require.Equal(t, bisection, cl2.Prev)
 
-		// The parent of the bisectoin should be the root of this challenge and the bisection
+		// The rootAssertion of the bisectoin should be the rootVertex of this challenge and the bisection
 		// should be the new presumptive successor.
-		require.Equal(t, challenge.root.Commitment.Merkle, bisection.Prev.Commitment.Merkle)
+		require.Equal(t, challenge.rootVertex.Commitment.Merkle, bisection.Prev.Commitment.Merkle)
 		require.Equal(t, true, bisection.Prev.IsPresumptiveSuccessor())
 		return nil
 	})
@@ -374,7 +374,7 @@ func TestAssertionChain_LeafCreationErrors(t *testing.T) {
 	_, err := badChain.CreateLeaf(tx, lc, StateCommitment{}, common.BytesToAddress([]byte{}))
 	require.ErrorIs(t, err, ErrWrongChain)
 	_, err = chain.CreateLeaf(tx, lc, StateCommitment{}, common.BytesToAddress([]byte{}))
-	require.ErrorIs(t, err, ErrInvalid)
+	require.ErrorIs(t, err, ErrInvalidOp)
 }
 
 func TestAssertion_ErrWrongState(t *testing.T) {
@@ -422,8 +422,8 @@ func TestAssertion_ErrInvalid(t *testing.T) {
 	newA, err := chain.CreateLeaf(tx, chain.LatestConfirmed(tx), StateCommitment{Height: 1}, staker)
 	require.NoError(t, err)
 	newA.Prev = util.None[*Assertion]()
-	require.ErrorIs(t, newA.RejectForPrev(tx), ErrInvalid)
-	require.ErrorIs(t, newA.RejectForLoss(tx), ErrInvalid)
-	require.ErrorIs(t, newA.ConfirmNoRival(tx), ErrInvalid)
-	require.ErrorIs(t, newA.ConfirmForWin(tx), ErrInvalid)
+	require.ErrorIs(t, newA.RejectForPrev(tx), ErrInvalidOp)
+	require.ErrorIs(t, newA.RejectForLoss(tx), ErrInvalidOp)
+	require.ErrorIs(t, newA.ConfirmNoRival(tx), ErrInvalidOp)
+	require.ErrorIs(t, newA.ConfirmForWin(tx), ErrInvalidOp)
 }
