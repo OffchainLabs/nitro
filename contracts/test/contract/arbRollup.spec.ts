@@ -1132,9 +1132,9 @@ describe("ArbRollup", () => {
       "0x",
       {value: maxSubmissionCost}
     )).to.revertedWith("NOT_TO_UNISWAP_L2_FACTORY");
-    const uniswal_l2_factory = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
+    const uniswap_l2_factory = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
     await expect(delayedInbox.connect(uniswap_signer).uniswapCreateRetryableTicket(
-      uniswal_l2_factory,
+      uniswap_l2_factory,
       0,
       maxSubmissionCost,
       ethers.constants.AddressZero,
