@@ -78,13 +78,13 @@ func Test_bisect(t *testing.T) {
 
 		id := protocol.CommitHash(genesisCommit.Hash())
 		err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			assertion, err := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
-			if err != nil {
-				return err
+			assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
+			if fetchErr != nil {
+				return fetchErr
 			}
-			challenge, err := p.ChallengeByCommitHash(tx, id)
-			if err != nil {
-				return err
+			challenge, challErr := p.ChallengeByCommitHash(tx, id)
+			if challErr != nil {
+				return challErr
 			}
 			if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
 				return err
