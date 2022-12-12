@@ -76,13 +76,13 @@ func Test_bisect(t *testing.T) {
 			StateRoot: common.Hash{},
 		}
 
-		id := protocol.AssertionStateCommitHash(genesisCommit.Hash())
+		id := protocol.CommitHash(genesisCommit.Hash())
 		err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			assertion, err := p.AssertionBySequenceNum(tx, protocol.SequenceNum(1))
+			assertion, err := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
 			if err != nil {
 				return err
 			}
-			challenge, err := p.ChallengeByAssertionStateCommit(tx, id)
+			challenge, err := p.ChallengeByCommitHash(tx, id)
 			if err != nil {
 				return err
 			}
@@ -96,7 +96,7 @@ func Test_bisect(t *testing.T) {
 		// Get the challenge from the chain itself.
 		var vertexToBisect *protocol.ChallengeVertex
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertexToBisect, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.SequenceNum(1))
+			vertexToBisect, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(1))
 			if err != nil {
 				return err
 			}
