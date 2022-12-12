@@ -14,15 +14,14 @@ import (
 // also need to fetch vertex we are are merging to by reading it from the protocol.
 func (v *Validator) merge(
 	ctx context.Context,
-	challenge *protocol.Challenge,
+	challengeCommitHash protocol.CommitHash,
 	vertexToMerge *protocol.ChallengeVertex,
 	mergingToSeqNum protocol.VertexSequenceNumber,
 ) error {
 	var mergingTo *protocol.ChallengeVertex
 	var err error
 	err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		id := protocol.CommitHash(challenge.ParentStateCommitment().Hash())
-		mergingTo, err = p.ChallengeVertexBySequenceNum(tx, id, mergingToSeqNum)
+		mergingTo, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, mergingToSeqNum)
 		if err != nil {
 			return err
 		}
