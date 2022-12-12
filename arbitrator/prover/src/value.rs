@@ -46,7 +46,7 @@ impl TryFrom<Type> for ArbValueType {
             ExternRef => Self::FuncRef,
             V128 => bail!("128-bit types are not supported"),
 
-            // TODO: removed in wasmer 3.0
+            // TODO: removed in wasmparser 0.95+
             ExnRef => bail!("Type not used in newer versions of wasmparser"),
             Func => bail!("Type not used in newer versions of wasmparser"),
             EmptyBlockType => bail!("Type not used in newer versions of wasmparser"),

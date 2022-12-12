@@ -71,6 +71,9 @@ rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/*.
 prover_src = arbitrator/prover/src
 rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files)
 
+jit_dir = arbitrator/jit
+jit_files = $(wildcard $(jit_dir)/*.toml $(jit_dir)/*.rs $(jit_dir)/src/*.rs) $(rust_arbutil_files)
+
 arbitrator_wasm_wasistub_files = $(wildcard arbitrator/wasm-libraries/wasi-stub/src/*/*)
 arbitrator_wasm_gostub_files = $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
 arbitrator_wasm_hostio_files = $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
@@ -194,7 +197,7 @@ $(arbitrator_prover_lib): $(DEP_PREDICATE) $(rust_prover_files)
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p prover ${CARGOFLAGS}
 	install arbitrator/target/release/libprover.a $@
 
-$(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib arbitrator/jit/src/*.rs arbitrator/jit/*.rs arbitrator/jit/Cargo.toml
+$(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin jit ${CARGOFLAGS}
 	install arbitrator/target/release/jit $@

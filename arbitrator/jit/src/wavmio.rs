@@ -1,6 +1,13 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::{
+    gostack::GoStack,
+    machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
+    socket,
+};
+
+use arbutil::Color;
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind, Write},
@@ -8,18 +15,11 @@ use std::{
     time::Instant,
 };
 
-use crate::{
-    color,
-    gostack::GoStack,
-    machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvArc},
-    socket,
-};
-
 pub type Bytes32 = [u8; 32];
 
-pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut env)?;
+pub fn get_global_state_bytes32(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     let out_ptr = sp.read_u64(1);
@@ -38,9 +38,9 @@ pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut env)?;
+pub fn set_global_state_bytes32(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     let src_ptr = sp.read_u64(1);
@@ -61,9 +61,9 @@ pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut env)?;
+pub fn get_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get(global) {
@@ -73,9 +73,9 @@ pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut env)?;
+pub fn set_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get_mut(global) {
@@ -85,17 +85,17 @@ pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn read_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut env)?;
+pub fn read_inbox_message<'a>(mut env: WasmEnvMut<'a>, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let inbox = &env.sequencer_messages;
     inbox_message_impl(&sp, inbox, "wavmio.readInboxMessage")
 }
 
-pub fn read_delayed_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut env)?;
+pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let inbox = &env.delayed_messages;
     inbox_message_impl(&sp, inbox, "wavmio.readDelayedInboxMessage")
@@ -141,9 +141,8 @@ fn inbox_message_impl(sp: &GoStack, inbox: &Inbox, name: &str) -> MaybeEscape {
     Ok(())
 }
 
-pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    let env = &mut *env;
+pub fn resolve_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
 
     let name = "wavmio.resolvePreImage";
 
@@ -221,7 +220,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     if !env.process.reached_wavmio {
         if debug {
             let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
-            println!("Created the machine in {}.", color::pink(time));
+            println!("Created the machine in {}.", time.pink());
         }
         env.process.timestamp = Instant::now();
         env.process.reached_wavmio = true;

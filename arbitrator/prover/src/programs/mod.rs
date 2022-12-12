@@ -6,6 +6,8 @@ use crate::{binary::WasmBinary, value::FunctionType as ArbFunctionType};
 use arbutil::Color;
 use wasmer_types::{FunctionIndex, SignatureIndex};
 
+pub mod config;
+
 pub trait ModuleMod {
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType, String>;
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType, String>;

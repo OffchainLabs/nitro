@@ -1,0 +1,6 @@
+error: Found argument '2' which wasn't expected, or isn't valid in this context
+
+USAGE:
+    cargo check [OPTIONS]
+
+For more information try --help
