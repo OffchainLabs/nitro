@@ -41,7 +41,7 @@ var DefaultAggregatorConfig = AggregatorConfig{
 	DumpKeyset:    false,
 }
 
-var BatchToDasFailed = errors.New("unable to batch to DAS, falling back to storing data on chain")
+var BatchToDasFailed = errors.New("unable to batch to DAS")
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage/retrieval of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")

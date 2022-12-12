@@ -543,10 +543,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if b.daWriter != nil {
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
 		if errors.Is(err, das.BatchToDasFailed) {
-			log.Warn("err", err)
 			if config.DisableDasFallbackStoreDataOnChain {
 				return false, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
 			}
+			log.Warn("Falling back to storing data on chain", "err", err)
 		} else if err != nil {
 			return false, err
 		} else {
