@@ -2,6 +2,9 @@
 
 set -e
 
+NITRO_NODE_VERSION=offchainlabs/nitro-node:v2.0.8-5b9fe9c-dev
+BLOCKSCOUT_VERSION=offchainlabs/blockscout:v1.0.0-c8db5b1
+
 mydir=`dirname $0`
 cd "$mydir"
 
@@ -33,8 +36,9 @@ detach=false
 blockscout=true
 tokenbridge=true
 redundantsequencers=0
+dev_build=false
 batchposters=1
-devprivkey=e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2
+devprivkey=b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -48,6 +52,10 @@ while [[ $# -gt 0 ]]; do
                     exit 0
                 fi
             fi
+            shift
+            ;;
+        --dev)
+            dev_build=true
             shift
             ;;
         --build)
@@ -97,12 +105,15 @@ while [[ $# -gt 0 ]]; do
             echo        $0 script [SCRIPT-ARGS]
             echo
             echo OPTIONS:
-            echo --build:           rebuild docker image
+            echo --build:           rebuild docker images
+            echo --dev:             build nitro and blockscout dockers from source \(otherwise - pull docker\)
             echo --init:            remove all data, rebuild, deploy new rollup
             echo --validate:        heavy computation, validating all blocks in WASM
             echo --batchposters:    batch posters [0-3]
             echo --redundantsequencers redundant sequencers [0-3]
             echo --detach:          detach from nodes after running them
+            echo --no-blockscout:   don\'t build or launch blockscout
+            echo --no-tokenbridge:  don\'t build or launch tokenbridge
             echo --no-run:          does not launch nodes \(usefull with build or init\)
             echo
             echo script rus inside a separate docker. For SCRIPT-ARGS, run $0 script --help
@@ -111,7 +122,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 if $force_init; then
+  force_build=true
+fi
+
+if $dev_build; then
+  if [[ "$(docker images -q nitro-node-dev:latest 2> /dev/null)" == "" ]]; then
     force_build=true
+  fi
+  if [[ "$(docker images -q blockscout:latest 2> /dev/null)" == "" ]]; then
+    force_build=true
+  fi
 fi
 
 NODES="sequencer"
@@ -147,7 +167,35 @@ if $blockscout; then
 fi
 
 if $force_build; then
-    echo == Building..
+  echo == Building..
+  if $dev_build; then
+    docker build . -t nitro-node-dev --target nitro-node-dev
+    if $blockscout; then
+      docker build blockscout -t blockscout -f blockscout/docker/Dockerfile
+    fi
+  fi
+  LOCAL_BUILD_NODES=testnode-scripts
+  if $tokenbridge; then
+    LOCAL_BUILD_NODES="$LOCAL_BUILD_NODES testnode-tokenbridge"
+  fi
+  docker-compose build --no-rm $LOCAL_BUILD_NODES
+fi
+
+if $dev_build; then
+  docker tag nitro-node-dev:latest nitro-node-dev-testnode
+  if $blockscout; then
+    docker tag blockscout:latest blockscout-testnode
+  fi
+else
+  docker pull $NITRO_NODE_VERSION
+  docker tag $NITRO_NODE_VERSION nitro-node-dev-testnode
+  if $blockscout; then
+    docker pull $BLOCKSCOUT_VERSION
+    docker tag $BLOCKSCOUT_VERSION blockscout-testnode
+  fi
+fi
+
+if $force_build; then
     docker-compose build --no-rm $NODES testnode-scripts
 fi
 
@@ -161,12 +209,8 @@ if $force_init; then
     docker volume prune -f --filter label=com.docker.compose.project=nitro
 
     echo == Generating l1 keys
-    docker-compose run --entrypoint sh geth -c "echo passphrase > /root/.ethereum/passphrase"
-    docker-compose run --entrypoint sh geth -c "echo $devprivkey > /root/.ethereum/tmp-funnelkey"
-    docker-compose run geth account import --password /root/.ethereum/passphrase --keystore /keystore /root/.ethereum/tmp-funnelkey
-    docker-compose run --entrypoint sh geth -c "rm /root/.ethereum/tmp-funnelkey"
-    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
-    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
+    docker-compose run testnode-scripts write-accounts
+    docker-compose run --entrypoint sh geth -c "echo passphrase > /datadir/passphrase"
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /keystore"
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /config"
 

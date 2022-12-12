@@ -135,7 +135,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 				}
 			case <-resp.Done:
 				if err := resp.Err(); err != nil {
-					fmt.Printf("\033[2K\r  attempt %d failed: %v", attempt, err)
+					fmt.Printf("\n  attempt %d failed: %v\n", attempt, err)
 					break updateLoop
 				}
 				fmt.Printf("\n")
