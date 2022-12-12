@@ -42,8 +42,6 @@ func (v *Validator) bisect(
 			validatorChallengeVertex.Commitment,
 		)
 	}
-	// Otherwise, we must bisect to our own historical commitment and produce
-	// a proof of the vertex we want to bisect to.
 	var bisectedVertex *protocol.ChallengeVertex
 	err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		bisectedVertex, err = validatorChallengeVertex.Bisect(tx, historyCommit, proof, v.address)
