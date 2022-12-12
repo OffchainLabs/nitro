@@ -87,9 +87,19 @@ func Test_merge(t *testing.T) {
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
-		mergingTo := protocol.VertexSequenceNumber(1)
 
-		vertex := &protocol.ChallengeVertex{
+		var mergingTo *protocol.ChallengeVertex
+		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			mergingTo, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, protocol.VertexSequenceNumber(1))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.NotNil(t, mergingTo)
+
+		mergingFrom := &protocol.ChallengeVertex{
 			Prev: &protocol.ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 0,
@@ -102,7 +112,7 @@ func Test_merge(t *testing.T) {
 			},
 		}
 		err = validator.merge(
-			ctx, challengeCommitHash, vertex, mergingTo,
+			ctx, mergingTo, mergingFrom,
 		)
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
@@ -118,17 +128,11 @@ func Test_merge(t *testing.T) {
 		// Expect to bisect to 4.
 		require.Equal(t, uint64(4), bisectedVertex.Commitment.Height)
 
-		genesisCommit := protocol.StateCommitment{
-			Height:    0,
-			StateRoot: common.Hash{},
-		}
-		id := protocol.CommitHash(genesisCommit.Hash())
-
 		// Get the vertex we want to merge from.
 		var vertexToMergeFrom *protocol.ChallengeVertex
 		var err error
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertexToMergeFrom, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(2))
+			vertexToMergeFrom, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, protocol.VertexSequenceNumber(2))
 			if err != nil {
 				return err
 			}
@@ -138,7 +142,7 @@ func Test_merge(t *testing.T) {
 		require.NotNil(t, vertexToMergeFrom)
 
 		// Perform a merge move to the bisected vertex from an origin.
-		err = validator.merge(ctx, id, vertexToMergeFrom, bisectedVertex.SequenceNum)
+		err = validator.merge(ctx, bisectedVertex, vertexToMergeFrom)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Successfully merged to vertex with height 4")
 	})

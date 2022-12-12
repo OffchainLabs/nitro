@@ -83,25 +83,15 @@ func (v *Validator) bisect(
 // also need to fetch vertex we are are merging to by reading it from the protocol.
 func (v *Validator) merge(
 	ctx context.Context,
-	challengeCommitHash protocol.CommitHash,
-	vertexToMerge *protocol.ChallengeVertex,
-	mergingToSeqNum protocol.VertexSequenceNumber,
+	mergingTo *protocol.ChallengeVertex,
+	mergingFrom *protocol.ChallengeVertex,
 ) error {
-	var mergingTo *protocol.ChallengeVertex
-	var err error
-	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		mergingTo, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, mergingToSeqNum)
-		return errors.Wrap(err, "could not read challenge vertex from protocol")
-	}); err != nil {
-		return err
-	}
-
 	mergingToHeight := mergingTo.Commitment.Height
 	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, mergingToHeight)
 	if err != nil {
 		return err
 	}
-	currentCommit := vertexToMerge.Commitment
+	currentCommit := mergingFrom.Commitment
 	proof, err := v.stateManager.PrefixProof(ctx, mergingToHeight, currentCommit.Height)
 	if err != nil {
 		return err
@@ -110,7 +100,7 @@ func (v *Validator) merge(
 		return err
 	}
 	if err := v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		return vertexToMerge.Merge(tx, mergingTo, proof, v.address)
+		return mergingFrom.Merge(tx, mergingTo, proof, v.address)
 	}); err != nil {
 		return errors.Wrapf(
 			err,
