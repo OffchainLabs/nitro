@@ -49,7 +49,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
                 compiler.canonicalize_nans(true);
                 compiler.opt_level(wasmer_compiler_llvm::LLVMOptLevel::Aggressive);
                 compiler.enable_verifier();
-                Store(compiler)
+                Store::new(compiler)
             }
         }
     };
