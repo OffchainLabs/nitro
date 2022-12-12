@@ -12,27 +12,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_merge(t *testing.T) {
+func Test_bisect(t *testing.T) {
 	ctx := context.Background()
-	genesisCommit := protocol.StateCommitment{
-		Height:    0,
-		StateRoot: common.Hash{},
-	}
-	challengeCommitHash := protocol.CommitHash(genesisCommit.Hash())
-
-	t.Run("fails to verify prefix proof", func(t *testing.T) {
-		logsHook := test.NewGlobal()
+	t.Run("bad bisection points", func(t *testing.T) {
 		stateRoots := generateStateRoots(10)
 		manager := statemanager.New(stateRoots)
-		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+		_, _, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
 
-		err := validator.onLeafCreated(ctx, leaf1)
-		require.NoError(t, err)
-		err = validator.onLeafCreated(ctx, leaf2)
-		require.NoError(t, err)
-		AssertLogsContain(t, logsHook, "New leaf appended")
-		AssertLogsContain(t, logsHook, "New leaf appended")
-		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+		vertex := &protocol.ChallengeVertex{
+			Prev: &protocol.ChallengeVertex{
+				Commitment: util.HistoryCommitment{
+					Height: 3,
+					Merkle: common.BytesToHash([]byte{0}),
+				},
+			},
+			Commitment: util.HistoryCommitment{
+				Height: 0,
+				Merkle: common.BytesToHash([]byte{1}),
+			},
+		}
+		_, err := validator.bisect(ctx, vertex)
+		require.ErrorContains(t, err, "determining bisection point failed")
+	})
+	t.Run("fails to verify prefix proof", func(t *testing.T) {
+		stateRoots := generateStateRoots(10)
+		manager := statemanager.New(stateRoots)
+		_, _, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
 
 		vertex := &protocol.ChallengeVertex{
 			Prev: &protocol.ChallengeVertex{
@@ -46,14 +51,10 @@ func Test_merge(t *testing.T) {
 				Merkle: common.BytesToHash([]byte("SOME JUNK DATA")),
 			},
 		}
-		mergingTo := protocol.VertexSequenceNumber(1)
-		err = validator.merge(
-			ctx, challengeCommitHash, vertex, mergingTo,
-		)
+		_, err := validator.bisect(ctx, vertex)
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
 	t.Run("good prefix proof", func(t *testing.T) {
-		t.Skip()
 		logsHook := test.NewGlobal()
 		stateRoots := generateStateRoots(10)
 		manager := statemanager.New(stateRoots)
@@ -85,7 +86,6 @@ func Test_merge(t *testing.T) {
 			if challErr != nil {
 				return challErr
 			}
-			// We add a leaf at height 5.
 			if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
 				return err
 			}
@@ -94,21 +94,74 @@ func Test_merge(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get the challenge from the chain itself.
-		var vertexToMerge *protocol.ChallengeVertex
+		var vertexToBisect *protocol.ChallengeVertex
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertexToMerge, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(1))
+			vertexToBisect, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(1))
 			if err != nil {
 				return err
 			}
 			return nil
 		})
 		require.NoError(t, err)
-		require.NotNil(t, vertexToMerge)
+		require.NotNil(t, vertexToBisect)
 
-		err = validator.merge(ctx, challengeCommitHash, vertexToMerge, protocol.VertexSequenceNumber(1))
+		bisectedVertex, err := validator.bisect(ctx, vertexToBisect)
 		require.NoError(t, err)
 
-		AssertLogsContain(t, logsHook, "Successfully merged vertex")
+		bisectionHeight := uint64(4)
+		loExp := util.ExpansionFromLeaves(stateRoots[:bisectionHeight])
+		bisectionCommit := util.HistoryCommitment{
+			Height: bisectionHeight,
+			Merkle: loExp.Root(),
+		}
+		require.Equal(t, bisectedVertex.Commitment, bisectionCommit)
+
+		AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
+	})
+}
+
+func Test_merge(t *testing.T) {
+	ctx := context.Background()
+	genesisCommit := protocol.StateCommitment{
+		Height:    0,
+		StateRoot: common.Hash{},
+	}
+	challengeCommitHash := protocol.CommitHash(genesisCommit.Hash())
+
+	t.Run("fails to verify prefix proof", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		stateRoots := generateStateRoots(10)
+		manager := statemanager.New(stateRoots)
+		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+
+		err := validator.onLeafCreated(ctx, leaf1)
+		require.NoError(t, err)
+		err = validator.onLeafCreated(ctx, leaf2)
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "New leaf appended")
+		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+		mergingTo := protocol.VertexSequenceNumber(1)
+
+		vertex := &protocol.ChallengeVertex{
+			Prev: &protocol.ChallengeVertex{
+				Commitment: util.HistoryCommitment{
+					Height: 0,
+					Merkle: common.BytesToHash([]byte{0}),
+				},
+			},
+			Commitment: util.HistoryCommitment{
+				Height: 7,
+				Merkle: common.BytesToHash([]byte("SOME JUNK DATA")),
+			},
+		}
+		err = validator.merge(
+			ctx, challengeCommitHash, vertex, mergingTo,
+		)
+		require.ErrorIs(t, err, util.ErrIncorrectProof)
+	})
+	t.Run("good prefix proof", func(t *testing.T) {
+		t.Skip()
 	})
 }
 

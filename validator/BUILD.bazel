@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "validator",
     srcs = [
+        "challenge_moves.go",
         "challenges.go",
         "validator.go",
     ],
@@ -11,6 +12,7 @@ go_library(
     deps = [
         "//protocol",
         "//state-manager",
+        "//util",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_pkg_errors//:errors",
         "@com_github_sirupsen_logrus//:logrus",
@@ -19,7 +21,10 @@ go_library(
 
 go_test(
     name = "validator_test",
-    srcs = ["validator_test.go"],
+    srcs = [
+        "challenge_moves_test.go",
+        "validator_test.go",
+    ],
     embed = [":validator"],
     deps = [
         "//protocol",
