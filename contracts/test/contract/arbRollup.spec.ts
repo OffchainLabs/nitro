@@ -1108,7 +1108,7 @@ describe("ArbRollup", () => {
     )).to.revertedWith("NOT_UNISWAP_L1_TIMELOCK");
   });
 
-  it("should allow uniswap to call uniswapCreateRetryableTicket without aliasing", async function () {
+  it("should allow uniswap to call uniswapCreateRetryableTicket without aliasing to l2 factory only", async function () {
     const uniswap_l1_timelock = "0x1a9C8182C09F50C8318d769245beA52c32BE35BC";
     await network.provider.request({
       method: "hardhat_impersonateAccount",
@@ -1123,6 +1123,18 @@ describe("ArbRollup", () => {
     const maxSubmissionCost = 10000;
     await expect(delayedInbox.connect(uniswap_signer).uniswapCreateRetryableTicket(
       ethers.constants.AddressZero,
+      0,
+      maxSubmissionCost,
+      ethers.constants.AddressZero,
+      ethers.constants.AddressZero,
+      0,
+      0,
+      "0x",
+      {value: maxSubmissionCost}
+    )).to.revertedWith("NOT_TO_UNISWAP_L2_FACTORY");
+    const uniswal_l2_factory = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
+    await expect(delayedInbox.connect(uniswap_signer).uniswapCreateRetryableTicket(
+      uniswal_l2_factory,
       0,
       maxSubmissionCost,
       ethers.constants.AddressZero,

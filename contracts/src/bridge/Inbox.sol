@@ -34,7 +34,7 @@ import {
     L2MessageType_unsignedEOATx,
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
-import {MAX_DATA_SIZE, UNISWAP_L1_TIMELOCK} from "../libraries/Constants.sol";
+import {MAX_DATA_SIZE, UNISWAP_L1_TIMELOCK, UNISWAP_L2_FACTORY} from "../libraries/Constants.sol";
 import "../precompiles/ArbSys.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
@@ -508,6 +508,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
         // this can only be called by UNISWAP_L1_TIMELOCK
         require(msg.sender == UNISWAP_L1_TIMELOCK, "NOT_UNISWAP_L1_TIMELOCK");
+        // the retryable can only call UNISWAP_L2_FACTORY
+        require(to == UNISWAP_L2_FACTORY, "NOT_TO_UNISWAP_L2_FACTORY");  
 
         // ensure the user's deposit alone will make submission succeed
         if (msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
