@@ -434,7 +434,3 @@ func (d deadliner) Read(p []byte) (int, error) {
 	}
 	return d.Conn.Read(p)
 }
-
-func nameConn(conn net.Conn) string {
-	return conn.LocalAddr().String() + " > " + conn.RemoteAddr().String()
-}
