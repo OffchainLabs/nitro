@@ -77,3 +77,46 @@ func (v *Validator) bisect(
 	}).Info("Successfully bisected to vertex")
 	return bisectedVertex, nil
 }
+
+// Performs a merge move during a BlockChallenge in the assertion protocol given
+// a challenge vertex and the sequence number we should be merging into. To do this, we
+// also need to fetch vertex we are are merging to by reading it from the protocol.
+func (v *Validator) merge(
+	ctx context.Context,
+	mergingTo *protocol.ChallengeVertex,
+	mergingFrom *protocol.ChallengeVertex,
+) error {
+	mergingToHeight := mergingTo.Commitment.Height
+	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, mergingToHeight)
+	if err != nil {
+		return err
+	}
+	currentCommit := mergingFrom.Commitment
+	proof, err := v.stateManager.PrefixProof(ctx, mergingToHeight, currentCommit.Height)
+	if err != nil {
+		return err
+	}
+	if err := util.VerifyPrefixProof(historyCommit, currentCommit, proof); err != nil {
+		return err
+	}
+	if err := v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		return mergingFrom.Merge(tx, mergingTo, proof, v.address)
+	}); err != nil {
+		return errors.Wrapf(
+			err,
+			"could not merge vertex with height %d and commit %#x to height %x and commit %#x",
+			currentCommit.Height,
+			currentCommit.Merkle,
+			mergingToHeight,
+			mergingTo.Commitment.Merkle,
+		)
+	}
+	log.WithFields(logrus.Fields{
+		"name": v.name,
+	}).Infof(
+		"Successfully merged to vertex with height %d and commit %#x",
+		mergingTo.Commitment.Height,
+		mergingTo.Commitment.Merkle,
+	)
+	return nil
+}

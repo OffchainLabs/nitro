@@ -54,7 +54,27 @@ func Test_bisect(t *testing.T) {
 		_, err := validator.bisect(ctx, vertex)
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
-	t.Run("good prefix proof", func(t *testing.T) {
+	t.Run("OK", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		stateRoots := generateStateRoots(10)
+		manager := statemanager.New(stateRoots)
+		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+		bisectedVertex := runBisectionTest(t, logsHook, ctx, validator, stateRoots, leaf1, leaf2)
+
+		// Expect to bisect to 4.
+		require.Equal(t, uint64(4), bisectedVertex.Commitment.Height)
+	})
+}
+
+func Test_merge(t *testing.T) {
+	ctx := context.Background()
+	genesisCommit := protocol.StateCommitment{
+		Height:    0,
+		StateRoot: common.Hash{},
+	}
+	challengeCommitHash := protocol.CommitHash(genesisCommit.Hash())
+
+	t.Run("fails to verify prefix proof", func(t *testing.T) {
 		logsHook := test.NewGlobal()
 		stateRoots := generateStateRoots(10)
 		manager := statemanager.New(stateRoots)
@@ -68,56 +88,133 @@ func Test_bisect(t *testing.T) {
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
-		historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
-		require.NoError(t, err)
-
-		genesisCommit := protocol.StateCommitment{
-			Height:    0,
-			StateRoot: common.Hash{},
-		}
-
-		id := protocol.CommitHash(genesisCommit.Hash())
-		err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
-			if fetchErr != nil {
-				return fetchErr
-			}
-			challenge, challErr := p.ChallengeByCommitHash(tx, id)
-			if challErr != nil {
-				return challErr
-			}
-			if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
-				return err
-			}
-			return nil
-		})
-		require.NoError(t, err)
-
-		// Get the challenge from the chain itself.
-		var vertexToBisect *protocol.ChallengeVertex
+		var mergingTo *protocol.ChallengeVertex
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertexToBisect, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(1))
+			mergingTo, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, protocol.VertexSequenceNumber(1))
 			if err != nil {
 				return err
 			}
 			return nil
 		})
 		require.NoError(t, err)
-		require.NotNil(t, vertexToBisect)
+		require.NotNil(t, mergingTo)
 
-		bisectedVertex, err := validator.bisect(ctx, vertexToBisect)
-		require.NoError(t, err)
-
-		bisectionHeight := uint64(4)
-		loExp := util.ExpansionFromLeaves(stateRoots[:bisectionHeight])
-		bisectionCommit := util.HistoryCommitment{
-			Height: bisectionHeight,
-			Merkle: loExp.Root(),
+		mergingFrom := &protocol.ChallengeVertex{
+			Prev: &protocol.ChallengeVertex{
+				Commitment: util.HistoryCommitment{
+					Height: 0,
+					Merkle: common.BytesToHash([]byte{0}),
+				},
+			},
+			Commitment: util.HistoryCommitment{
+				Height: 7,
+				Merkle: common.BytesToHash([]byte("SOME JUNK DATA")),
+			},
 		}
-		require.Equal(t, bisectedVertex.Commitment, bisectionCommit)
-
-		AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
+		err = validator.merge(
+			ctx, mergingTo, mergingFrom,
+		)
+		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
+	t.Run("OK", func(t *testing.T) {
+		logsHook := test.NewGlobal()
+		stateRoots := generateStateRoots(10)
+		manager := statemanager.New(stateRoots)
+		leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+
+		// Bisect and obtain the result.
+		bisectedVertex := runBisectionTest(t, logsHook, ctx, validator, stateRoots, leaf1, leaf2)
+
+		// Expect to bisect to 4.
+		require.Equal(t, uint64(4), bisectedVertex.Commitment.Height)
+
+		// Get the vertex we want to merge from.
+		var vertexToMergeFrom *protocol.ChallengeVertex
+		var err error
+		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			vertexToMergeFrom, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, protocol.VertexSequenceNumber(2))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.NotNil(t, vertexToMergeFrom)
+
+		// Perform a merge move to the bisected vertex from an origin.
+		err = validator.merge(ctx, bisectedVertex, vertexToMergeFrom)
+		require.NoError(t, err)
+		AssertLogsContain(t, logsHook, "Successfully merged to vertex with height 4")
+	})
+}
+
+func runBisectionTest(
+	t *testing.T,
+	logsHook *test.Hook,
+	ctx context.Context,
+	validator *Validator,
+	stateRoots []common.Hash,
+	leaf1,
+	leaf2 *protocol.CreateLeafEvent,
+) *protocol.ChallengeVertex {
+	err := validator.onLeafCreated(ctx, leaf1)
+	require.NoError(t, err)
+	err = validator.onLeafCreated(ctx, leaf2)
+	require.NoError(t, err)
+	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "New leaf appended")
+	AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
+
+	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
+	require.NoError(t, err)
+
+	genesisCommit := protocol.StateCommitment{
+		Height:    0,
+		StateRoot: common.Hash{},
+	}
+
+	id := protocol.CommitHash(genesisCommit.Hash())
+	err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
+		if fetchErr != nil {
+			return fetchErr
+		}
+		challenge, challErr := p.ChallengeByCommitHash(tx, id)
+		if challErr != nil {
+			return challErr
+		}
+		if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
+			return err
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Get the challenge from the chain itself.
+	var vertexToBisect *protocol.ChallengeVertex
+	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		vertexToBisect, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(1))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotNil(t, vertexToBisect)
+
+	bisectedVertex, err := validator.bisect(ctx, vertexToBisect)
+	require.NoError(t, err)
+
+	bisectionHeight := uint64(4)
+	loExp := util.ExpansionFromLeaves(stateRoots[:bisectionHeight])
+	bisectionCommit := util.HistoryCommitment{
+		Height: bisectionHeight,
+		Merkle: loExp.Root(),
+	}
+	require.Equal(t, bisectedVertex.Commitment, bisectionCommit)
+
+	AssertLogsContain(t, logsHook, "Successfully bisected to vertex")
+	return bisectedVertex
 }
 
 func generateStateRoots(numBlocks uint64) []common.Hash {
