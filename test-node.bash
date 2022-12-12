@@ -35,10 +35,12 @@ validate=false
 detach=false
 blockscout=true
 tokenbridge=true
+consensusclient=false
 redundantsequencers=0
 dev_build=false
 batchposters=1
 devprivkey=b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659
+l1chainid=1337
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -89,6 +91,11 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             shift
+            shift
+            ;;
+        --consensusclient)
+            consensusclient=true
+            l1chainid=32382
             shift
             ;;
         --redundantsequencers)
@@ -165,7 +172,6 @@ fi
 if $blockscout; then
     NODES="$NODES blockscout"
 fi
-
 if $force_build; then
   echo == Building..
   if $dev_build; then
@@ -214,13 +220,37 @@ if $force_init; then
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /keystore"
     docker-compose run --entrypoint sh geth -c "chown -R 1000:1000 /config"
 
+    if $consensusclient; then
+      echo == Writing configs
+      docker-compose run testnode-scripts write-geth-genesis-config
+
+      echo == Writing configs
+      docker-compose run testnode-scripts write-prysm-config
+
+      echo == Initializing go-ethereum genesis configuration
+      docker-compose run geth init --datadir /root/.ethereum /config/geth_genesis.json
+
+      echo == Starting geth
+      docker-compose up -d geth
+
+      echo == Creating prysm genesis
+      docker-compose up create_beacon_chain_genesis
+
+      echo == Running prysm
+      docker-compose up -d prysm_beacon_chain
+      docker-compose up -d prysm_validator
+    else
+      docker-compose up -d geth
+    fi
+
     echo == Funding validator and sequencer
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer
 
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
-    docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines
+
+    docker-compose run --entrypoint /usr/local/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /home/user/l1keystore --sequencerAddress $sequenceraddress --ownerAddress $sequenceraddress --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10 --wasmrootpath /home/user/target/machines --l1chainid=$l1chainid
 
     echo == Writing configs
     docker-compose run testnode-scripts write-config
@@ -234,7 +264,7 @@ if $force_init; then
         echo == Deploying token bridge
         docker-compose run -e ARB_KEY=$devprivkey -e ETH_KEY=$devprivkey testnode-tokenbridge gen:network
         docker-compose run --entrypoint sh testnode-tokenbridge -c "cat localNetwork.json"
-        echo 
+        echo
     fi
 fi
 
