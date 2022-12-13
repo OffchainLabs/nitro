@@ -978,13 +978,12 @@ func createNodeImpl(
 	machinesPath, foundMachines := config.Wasm.FindMachineDir()
 	nitroMachineConfig.RootPath = machinesPath
 	nitroMachineConfig.JitCranelift = blockValidatorConf.JitValidatorCranelift
-	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig, fatalErrChan)
 
 	var blockValidator *staker.BlockValidator
 	var statelessBlockValidator *staker.StatelessBlockValidator
 
 	if foundMachines {
-		spawner, err := validator.NewValidationSpawner(nitroMachineLoader)
+		spawner, err := validator.NewValidationSpawner(nitroMachineConfig, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}

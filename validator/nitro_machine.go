@@ -159,7 +159,7 @@ type NitroMachineLoader struct {
 	stopped      bool
 }
 
-func NewNitroMachineLoader(config NitroMachineConfig, fatalErrChan chan error) *NitroMachineLoader {
+func newNitroMachineLoader(config NitroMachineConfig, fatalErrChan chan error) *NitroMachineLoader {
 	return &NitroMachineLoader{
 		config:       config,
 		machines:     make(map[nitroMachineRequest]*loaderMachineStatus),

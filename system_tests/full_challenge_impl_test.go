@@ -325,8 +325,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	)
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
-	machineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig, fatalErrChan)
-	spawner, err := validator.NewValidationSpawner(machineLoader)
+	spawner, err := validator.NewValidationSpawner(validator.DefaultNitroMachineConfig, fatalErrChan)
 	Require(t, err)
 	asserterValidator, err := staker.NewStatelessBlockValidator(spawner, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
 	if err != nil {

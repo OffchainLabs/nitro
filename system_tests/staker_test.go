@@ -127,8 +127,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	} else {
 		valConfig.Strategy = "MakeNodes"
 	}
-	nitroMachineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig, nil)
-	spawner, err := validator.NewValidationSpawner(nitroMachineLoader)
+	spawner, err := validator.NewValidationSpawner(validator.DefaultNitroMachineConfig, nil)
 	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		spawner,

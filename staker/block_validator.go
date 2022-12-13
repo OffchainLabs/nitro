@@ -1006,18 +1006,6 @@ func (v *BlockValidator) Initialize() error {
 			return errors.New("current-module-root config value illegal")
 		}
 	}
-	// TODO:
-	// if config.ArbitratorValidator {
-	// 	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, false); err != nil {
-	// 		return err
-	// 	}
-	// }
-	// if config.JitValidator {
-	// 	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true, true); err != nil {
-	// 		return err
-	// 	}
-	// }
-
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
 	return nil
 }

@@ -17,7 +17,7 @@ type ValidationSpawner struct {
 	machineLoader *NitroMachineLoader
 }
 
-func NewValidationSpawner(machineLoader *NitroMachineLoader) (*ValidationSpawner, error) {
+func NewValidationSpawner(config NitroMachineConfig, fatalErrChan chan error) (*ValidationSpawner, error) {
 	// TODO
 	// // the machine will be lazily created if need be later otherwise
 	// if config.ArbitratorValidator {
@@ -30,6 +30,7 @@ func NewValidationSpawner(machineLoader *NitroMachineLoader) (*ValidationSpawner
 	// 		return nil, err
 	// 	}
 	// }
+	machineLoader := newNitroMachineLoader(config, fatalErrChan)
 	return &ValidationSpawner{
 		machineLoader: machineLoader,
 	}, nil
