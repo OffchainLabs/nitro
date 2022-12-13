@@ -50,13 +50,16 @@ type ValidateBlockResult struct {
 }
 
 func (a *BlockValidatorDebugAPI) ValidateBlock(
-	ctx context.Context, blockNum rpc.BlockNumberOrHash, full bool, moduleRootOptional *common.Hash,
+	ctx context.Context, blockNum rpc.BlockNumber, full bool, moduleRootOptional *common.Hash,
 ) (ValidateBlockResult, error) {
 	result := ValidateBlockResult{}
 
-	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
-	if err != nil {
-		return result, err
+	if blockNum < 0 {
+		return result, errors.New("this method only accepts absolute block numbers")
+	}
+	header := a.blockchain.GetHeaderByNumber(uint64(blockNum))
+	if header == nil {
+		return result, errors.New("block not found")
 	}
 	if !a.blockchain.Config().IsArbitrumNitro(header.Number) {
 		return result, types.ErrUseFallback
