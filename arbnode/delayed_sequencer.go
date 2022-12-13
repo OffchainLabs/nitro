@@ -16,7 +16,6 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -28,7 +27,7 @@ type DelayedSequencer struct {
 	inbox                    *InboxTracker
 	txStreamer               *TransactionStreamer
 	coordinator              *SeqCoordinator
-	waitingForFinalizedBlock *big.Int
+	waitingForFinalizedBlock uint64
 	mutex                    sync.Mutex
 	config                   DelayedSequencerConfigFetcher
 }
@@ -107,33 +106,32 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		return nil
 	}
 
-	finalized := arbmath.BigSub(lastBlockHeader.Number, big.NewInt(config.FinalizeDistance))
-	if finalized.Sign() < 0 {
-		finalized.SetInt64(0)
-	}
-
-	// Once the merge is live, we can directly query for the latest finalized block number
-	if lastBlockHeader.Difficulty.Sign() == 0 && config.UseMergeFinality {
-		var header *types.Header
+	var finalized uint64
+	if config.UseMergeFinality && lastBlockHeader.Difficulty.Sign() == 0 {
 		var err error
 		if config.RequireFullFinality {
-			header, err = d.l1Reader.LatestFinalizedHeader()
+			finalized, err = d.l1Reader.LatestFinalizedBlockNr(ctx)
 		} else {
-			header, err = d.l1Reader.LatestSafeHeader()
+			finalized, err = d.l1Reader.LatestSafeBlockNr(ctx)
 		}
 		if err != nil {
-			return fmt.Errorf("failed to get latest header: %w", err)
+			return err
 		}
-		finalized = header.Number
+	} else {
+		currentNum := lastBlockHeader.Number.Int64()
+		if currentNum < config.FinalizeDistance {
+			return nil
+		}
+		finalized = uint64(currentNum - config.FinalizeDistance)
 	}
 
-	if d.waitingForFinalizedBlock != nil && arbmath.BigLessThan(finalized, d.waitingForFinalizedBlock) {
+	if d.waitingForFinalizedBlock > finalized {
 		return nil
 	}
 
 	// Unless we find an unfinalized message (which sets waitingForBlock),
 	// we won't find a new finalized message until FinalizeDistance blocks in the future.
-	d.waitingForFinalizedBlock = arbmath.BigAddByUint(lastBlockHeader.Number, 1)
+	d.waitingForFinalizedBlock = lastBlockHeader.Number.Uint64() + 1
 
 	dbDelayedCount, err := d.inbox.GetDelayedCount()
 	if err != nil {
@@ -153,10 +151,9 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 		if err != nil {
 			return err
 		}
-		blockNumber := arbmath.UintToBig(msg.Header.BlockNumber)
-		if blockNumber.Cmp(finalized) > 0 {
+		if msg.Header.BlockNumber > finalized {
 			// Message isn't finalized yet; stop here
-			d.waitingForFinalizedBlock = blockNumber
+			d.waitingForFinalizedBlock = msg.Header.BlockNumber
 			break
 		}
 		if lastDelayedAcc != (common.Hash{}) {
@@ -176,7 +173,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
-		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, finalized)
+		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized))
 		if err != nil {
 			return err
 		}
