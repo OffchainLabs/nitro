@@ -1,6 +1,7 @@
 [workspace]
 members = [
         "prover",
+        "polyglot",
         "jit",
         "arbutil",
 ]

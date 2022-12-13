@@ -26,6 +26,7 @@ serde_with = "1.12.1"
 arbutil = { path = "../arbutil/" }
 wasmer = { path = "../wasm-upstream/wasmer/lib/api/", optional = true }
 wasmer-types = { path = "../wasm-upstream/wasmer/lib/types" }
+wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass" }
 
 [lib]
 name = "prover"

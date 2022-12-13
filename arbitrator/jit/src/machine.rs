@@ -55,7 +55,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
     };
     let module = match Module::new(&store, &wasm) {
         Ok(module) => module,
-        Err(err) => panic!("{}", err),
+        Err(err) => panic!("{err}"),
     };
 
     let func_env = FunctionEnv::new(&mut store, env);
