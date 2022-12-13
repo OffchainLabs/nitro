@@ -545,7 +545,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         // this can only be called by UNISWAP_L1_TIMELOCK
         require(msg.sender == UNISWAP_L1_TIMELOCK, "NOT_UNISWAP_L1_TIMELOCK");
         // the retryable can only call UNISWAP_L2_FACTORY
-        require(to == UNISWAP_L2_FACTORY, "NOT_TO_UNISWAP_L2_FACTORY");  
+        require(to == UNISWAP_L2_FACTORY, "NOT_TO_UNISWAP_L2_FACTORY");
 
         // ensure the user's deposit alone will make submission succeed
         if (msg.value < (maxSubmissionCost + l2CallValue + gasLimit * maxFeePerGas)) {
