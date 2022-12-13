@@ -12,7 +12,6 @@ use wasmer::{AsStoreRef, Memory, MemoryView, StoreRef, WasmPtr};
 
 use std::{
     collections::{BTreeSet, BinaryHeap},
-    ops::Deref,
 };
 
 #[self_referencing]
@@ -140,7 +139,7 @@ impl GoStack {
     pub fn read_slice(&self, ptr: u64, len: u64) -> Vec<u8> {
         u32::try_from(ptr).expect("Go pointer not a u32") as usize; // kept for consistency
         let len = u32::try_from(len).expect("length isn't a u32") as usize;
-        let data = vec![0; len];
+        let mut data = vec![0; len];
         self.view().read(ptr, &mut data).expect("failed to read");
         data
     }
