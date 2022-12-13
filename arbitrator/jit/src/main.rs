@@ -1,15 +1,15 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::machine::{Escape, WasmEnvArc};
+use crate::machine::{Escape, WasmEnv};
 
+use arbutil::{color, Color};
 use structopt::StructOpt;
 use wasmer::Value;
 
 use std::path::PathBuf;
 
 mod arbcompress;
-mod color;
 mod gostack;
 mod machine;
 mod runtime;
@@ -50,15 +50,15 @@ pub struct Opts {
 fn main() {
     let opts = Opts::from_args();
 
-    let env = match WasmEnvArc::cli(&opts) {
+    let env = match WasmEnv::cli(&opts) {
         Ok(env) => env,
         Err(err) => panic!("{}", err),
     };
 
-    let (instance, env) = machine::create(&opts, env);
+    let (instance, env, mut store) = machine::create(&opts, env);
 
     let main = instance.exports.get_function("run").unwrap();
-    let outcome = main.call(&[Value::I32(0), Value::I32(0)]);
+    let outcome = main.call(&mut store, &[Value::I32(0), Value::I32(0)]);
     let escape = match outcome {
         Ok(outcome) => {
             println!("Go returned values {:?}", outcome);
@@ -72,16 +72,17 @@ fn main() {
             for frame in trace {
                 let module = frame.module_name();
                 let name = frame.function_name().unwrap_or("??");
-                println!("  in {} of {}", color::red(name), color::red(module));
+                println!("  in {} of {}", name.red(), module.red());
             }
             Some(Escape::from(outcome))
         }
     };
 
-    let user = env.lock().process.socket.is_none();
-    let time = format!("{}ms", env.lock().process.timestamp.elapsed().as_millis());
+    let env = env.as_mut(&mut store);
+    let user = env.process.socket.is_none();
+    let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
     let time = color::when(user, time, color::PINK);
-    let hash = color::when(user, hex::encode(env.lock().large_globals[0]), color::PINK);
+    let hash = color::when(user, hex::encode(env.large_globals[0]), color::PINK);
     let (success, message) = match escape {
         Some(Escape::Exit(0)) => (true, format!("Completed in {time} with hash {hash}.")),
         Some(Escape::Exit(x)) => (false, format!("Failed in {time} with exit code {x}.")),
