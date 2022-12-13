@@ -35,6 +35,7 @@ type Validator struct {
 	leavesLock                             sync.RWMutex
 	createLeafInterval                     time.Duration
 	chaosMonkeyProbability                 float64
+	disableLeafCreation                    bool
 }
 
 // WithChaosMonkeyProbability adds a probability a validator will take
@@ -74,6 +75,12 @@ func WithCreateLeafEvery(d time.Duration) Opt {
 	}
 }
 
+func WithDisableLeafCreation() Opt {
+	return func(val *Validator) {
+		val.disableLeafCreation = true
+	}
+}
+
 // New sets up a validator client instances provided a protocol, state manager,
 // and additional options.
 func New(
@@ -101,7 +108,9 @@ func New(
 
 func (v *Validator) Start(ctx context.Context) {
 	go v.listenForAssertionEvents(ctx)
-	go v.prepareLeafCreationPeriodically(ctx)
+	if !v.disableLeafCreation {
+		go v.prepareLeafCreationPeriodically(ctx)
+	}
 }
 
 func (v *Validator) prepareLeafCreationPeriodically(ctx context.Context) {
