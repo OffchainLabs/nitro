@@ -17,6 +17,10 @@ async function sendTransaction(argv: any, threadId: number) {
                 nonce: startNonce + index,
             })
         console.log(response)
+        if (argv.wait) {
+          const receipt = await response.wait()
+          console.log(receipt)
+        }
         if (argv.delay > 0) {
             await new Promise(f => setTimeout(f, argv.delay));
         }
@@ -76,6 +80,11 @@ export const sendL1Command = {
       describe: "address (see general help)",
       default: "funnel",
     },
+    wait: {
+      boolean: true,
+      describe: "wait for transaction to complete",
+      default: false,
+    },
     data: { string: true, describe: "data" },
   },
   handler: async (argv: any) => {
@@ -105,6 +114,11 @@ export const sendL2Command = {
       string: true,
       describe: "address (see general help)",
       default: "funnel",
+    },
+    wait: {
+      boolean: true,
+      describe: "wait for transaction to complete",
+      default: false,
     },
     data: { string: true, describe: "data" },
   },
