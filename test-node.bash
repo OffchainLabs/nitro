@@ -228,7 +228,7 @@ if $force_init; then
       docker-compose run testnode-scripts write-prysm-config
 
       echo == Initializing go-ethereum genesis configuration
-      docker-compose run geth init --datadir /root/.ethereum /config/geth_genesis.json
+      docker-compose run geth init --datadir /datadir/ /config/geth_genesis.json
 
       echo == Starting geth
       docker-compose up -d geth
