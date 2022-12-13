@@ -248,6 +248,10 @@ if $force_init; then
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator --wait
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer --wait
 
+    echo == create l1 traffic
+    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to user_l1user --wait
+    docker-compose run testnode-scripts send-l1 --ethamount 0.0001 --from user_l1user --to user_l1user_b --wait --delay 500 --times 500 > /dev/null
+
 
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
