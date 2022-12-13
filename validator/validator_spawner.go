@@ -40,7 +40,7 @@ func (s *ValidationSpawner) LatestWasmModuleRoot() (common.Hash, error) {
 	return s.machineLoader.GetConfig().ReadLatestWasmModuleRoot()
 }
 
-func (v *ValidationSpawner) LoadEntryToMachine(ctx context.Context, entry *ValidationInput, mach *ArbitratorMachine) error {
+func (v *ValidationSpawner) loadEntryToMachine(ctx context.Context, entry *ValidationInput, mach *ArbitratorMachine) error {
 	resolver := func(hash common.Hash) ([]byte, error) {
 		// Check if it's a known preimage
 		if preimage, ok := entry.Preimages[hash]; ok {
@@ -88,7 +88,7 @@ func (v *ValidationSpawner) ExecuteArbitrator(
 	}
 
 	mach := basemachine.Clone()
-	err = v.LoadEntryToMachine(ctx, entry, mach)
+	err = v.loadEntryToMachine(ctx, entry, mach)
 	if err != nil {
 		return GoGlobalState{}, err
 	}
@@ -241,7 +241,7 @@ func (v *ValidationSpawner) CreateExecutionBackend(ctx context.Context, wasmModu
 		return nil, err
 	}
 	machine := initialFrozenMachine.Clone()
-	err = v.LoadEntryToMachine(ctx, input, machine)
+	err = v.loadEntryToMachine(ctx, input, machine)
 	if err != nil {
 		return nil, err
 	}
