@@ -385,7 +385,7 @@ func (s *HeaderReader) LatestSafeBlockNr(ctx context.Context) (uint64, error) {
 }
 
 func (s *HeaderReader) LatestFinalizedBlockNr(ctx context.Context) (uint64, error) {
-	blockNum, err := s.getCached(ctx, &s.safe)
+	blockNum, err := s.getCached(ctx, &s.finalized)
 	if errors.Is(err, ErrBlockNumberNotSupported) {
 		err = errors.New("finalized block not found")
 	}
