@@ -26,8 +26,12 @@ import (
 )
 
 var (
-	clientsConnectedGauge = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
-	clientsTotalCounter   = metrics.NewRegisteredCounter("arb/feed/clients/total", nil)
+	clientsConnectedGauge             = metrics.NewRegisteredGauge("arb/feed/clients/connected", nil)
+	clientsTotalSuccessCounter        = metrics.NewRegisteredCounter("arb/feed/clients/success", nil)
+	clientsTotalFailedRegisterCounter = metrics.NewRegisteredCounter("arb/feed/clients/failed/register", nil)
+	clientsTotalFailedUpgradeCounter  = metrics.NewRegisteredCounter("arb/feed/clients/failed/upgrade", nil)
+	clientsTotalFailedWorkerCounter   = metrics.NewRegisteredCounter("arb/feed/clients/failed/worker", nil)
+	clientsDurationHistogram          = metrics.NewRegisteredHistogram("arb/feed/clients/duration", nil, metrics.NewBoundedHistogramSample())
 )
 
 // CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
@@ -75,15 +79,17 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 			log.Error("Recovered in registerClient", "recover", r)
 		}
 	}()
+
+	clientsConnectedGauge.Inc(1)
+	atomic.AddInt32(&cm.clientCount, 1)
 	if err := cm.catchupBuffer.OnRegisterClient(ctx, clientConnection); err != nil {
+		clientsTotalFailedRegisterCounter.Inc(1)
 		return err
 	}
 
 	clientConnection.Start(ctx)
 	cm.clientPtrMap[clientConnection] = true
-	clientsConnectedGauge.Inc(1)
-	clientsTotalCounter.Inc(1)
-	atomic.AddInt32(&cm.clientCount, 1)
+	clientsTotalSuccessCounter.Inc(1)
 
 	return nil
 }
@@ -126,6 +132,8 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 		log.Warn("Failed to close client connection", "err", err)
 	}
 
+	log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
+	clientsDurationHistogram.Update(clientConnection.Age().Nanoseconds())
 	clientsConnectedGauge.Dec(1)
 	atomic.AddInt32(&cm.clientCount, -1)
 }
