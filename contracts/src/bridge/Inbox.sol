@@ -17,7 +17,8 @@ import {
     RetryableData,
     NotRollupOrOwner,
     L1Forked,
-    NotForked
+    NotForked,
+    GasLimitTooLarge
 } from "../libraries/Error.sol";
 import "./IInbox.sol";
 import "./ISequencerInbox.sol";
@@ -160,6 +161,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         bytes calldata data
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -182,6 +187,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         bytes calldata data
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -205,6 +214,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 value,
         bytes calldata data
     ) external whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L2_MSG,
@@ -228,6 +241,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 value,
         bytes calldata data
     ) external whenNotPaused onlyAllowed returns (uint256) {
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L2_MSG,
@@ -254,6 +271,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (!_chainIdChanged()) revert NotForked();
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -283,6 +304,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (!_chainIdChanged()) revert NotForked();
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L2_MSG,
@@ -311,6 +336,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         if (!_chainIdChanged()) revert NotForked();
         // solhint-disable-next-line avoid-tx-origin
         if (msg.sender != tx.origin) revert NotOrigin();
+        // arbos will discard unsigned tx with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
         return
             _deliverMessage(
                 L2_MSG,
@@ -385,6 +414,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) external payable whenNotPaused onlyAllowed returns (uint256) {
+        // gas limit is validated to be within uint64 in unsafeCreateRetryableTicket
         return
             unsafeCreateRetryableTicket(
                 to,
@@ -428,6 +458,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
         }
 
+        // gas limit is validated to be within uint64 in unsafeCreateRetryableTicket
         return
             unsafeCreateRetryableTicket(
                 to,
@@ -467,6 +498,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 maxFeePerGas,
                 data
             );
+
+        // arbos will discard retryable with gas limit too large
+        if (gasLimit > type(uint64).max) {
+            revert GasLimitTooLarge();
+        }
 
         uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
         if (maxSubmissionCost < submissionFee)
