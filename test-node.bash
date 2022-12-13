@@ -244,8 +244,9 @@ if $force_init; then
     fi
 
     echo == Funding validator and sequencer
-    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
-    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer
+    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator --wait
+    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer --wait
+
 
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
