@@ -554,8 +554,8 @@ pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
                     let len = std::cmp::min(src_len, dest_len) as usize;
 
                     // Slightly inefficient as this allocates a new temporary buffer
-                    let slice = sp.read_slice(src_ptr, len as u64);
-                    buf[..len].copy_from_slice(&slice);
+                    let data = sp.read_slice(src_ptr, len as u64);
+                    buf[..len].copy_from_slice(&data);
                     sp.write_u64(4, GoValue::Number(len as f64).encode());
                     sp.write_u8(5, 1);
                     return;

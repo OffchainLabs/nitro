@@ -10,7 +10,10 @@ use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
 use wasmer::{AsStoreRef, Memory, MemoryView, StoreRef, WasmPtr};
 
-use std::collections::{BTreeSet, BinaryHeap};
+use std::{
+    collections::{BTreeSet, BinaryHeap},
+    ops::Deref,
+};
 
 #[self_referencing]
 struct MemoryViewContainer {
@@ -94,17 +97,17 @@ impl GoStack {
 
     pub fn read_u8_ptr(&self, ptr: u32) -> u8 {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).read().unwrap()
+        ptr.deref(self.view()).read().unwrap()
     }
 
     pub fn read_u32_ptr(&self, ptr: u32) -> u32 {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).read().unwrap()
+        ptr.deref(self.view()).read().unwrap()
     }
 
     pub fn read_u64_ptr(&self, ptr: u32) -> u64 {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).read().unwrap()
+        ptr.deref(self.view()).read().unwrap()
     }
 
     pub fn write_u8(&self, arg: u32, x: u8) {
@@ -121,23 +124,25 @@ impl GoStack {
 
     pub fn write_u8_ptr(&self, ptr: u32, x: u8) {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).write(x).unwrap();
+        ptr.deref(self.view()).write(x).unwrap();
     }
 
     pub fn write_u32_ptr(&self, ptr: u32, x: u32) {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).write(x).unwrap();
+        ptr.deref(self.view()).write(x).unwrap();
     }
 
     pub fn write_u64_ptr(&self, ptr: u32, x: u64) {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
-        ptr.deref(&self.view()).write(x).unwrap();
+        ptr.deref(self.view()).write(x).unwrap();
     }
 
     pub fn read_slice(&self, ptr: u64, len: u64) -> Vec<u8> {
-        let ptr = u32::try_from(ptr).expect("Go pointer not a u32") as usize;
+        u32::try_from(ptr).expect("Go pointer not a u32") as usize; // kept for consistency
         let len = u32::try_from(len).expect("length isn't a u32") as usize;
-        unsafe { self.view().data_unchecked()[ptr..][..len].to_vec() }
+        let data = vec![0; len];
+        self.view().read(ptr, &mut data).expect("failed to read");
+        data
     }
 
     pub fn write_slice(&self, ptr: u64, src: &[u8]) {
