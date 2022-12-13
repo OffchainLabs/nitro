@@ -159,6 +159,46 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	return nil
 }
 
+// assumes l1block is recent so we could do a simple-search from the end
+func (r *InboxReader) recentL1BlockToMsg(ctx context.Context, l1block uint64) (arbutil.MessageIndex, error) {
+	batch, err := r.tracker.GetBatchCount()
+	if err != nil {
+		return 0, err
+	}
+	for {
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
+		if batch == 0 {
+			return 0, nil
+		}
+		batch -= 1
+		meta, err := r.tracker.GetBatchMetadata(batch)
+		if err != nil {
+			return 0, err
+		}
+		if meta.L1Block <= l1block {
+			return meta.MessageCount, nil
+		}
+	}
+}
+
+func (r *InboxReader) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	l1block, err := r.l1Reader.LatestSafeBlockNr(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return r.recentL1BlockToMsg(ctx, l1block)
+}
+
+func (r *InboxReader) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	l1block, err := r.l1Reader.LatestFinalizedBlockNr(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return r.recentL1BlockToMsg(ctx, l1block)
+}
+
 func (r *InboxReader) Tracker() *InboxTracker {
 	return r.tracker
 }

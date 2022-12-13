@@ -41,6 +41,8 @@ var DefaultAggregatorConfig = AggregatorConfig{
 	DumpKeyset:    false,
 }
 
+var BatchToDasFailed = errors.New("unable to batch to DAS")
+
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage/retrieval of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
@@ -320,7 +322,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 					returned = true
 				} else if storeFailures > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
-					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest)", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest)
+					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, BatchToDasFailed)
 					certDetailsChan <- cd
 					returned = true
 				}
@@ -346,10 +348,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 
 	verified, err := blsSignatures.VerifySignature(aggCert.Sig, aggCert.SerializeSignableFields(), aggPubKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s. %w", err.Error(), BatchToDasFailed)
 	}
 	if !verified {
-		return nil, errors.New("failed aggregate signature check")
+		return nil, fmt.Errorf("failed aggregate signature check. %w", BatchToDasFailed)
 	}
 	return &aggCert, nil
 }
