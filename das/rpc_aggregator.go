@@ -71,7 +71,7 @@ func setUpServices(config DataAvailabilityConfig) ([]ServiceDetails, error) {
 			return nil, err
 		}
 
-		d, err := NewServiceDetails(service, *pubKey, uint64(b.SignerMask), metricName)
+		d, err := NewServiceDetails(service, *pubKey, b.SignerMask, metricName)
 		if err != nil {
 			return nil, err
 		}

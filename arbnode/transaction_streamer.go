@@ -300,7 +300,7 @@ func setMessageCount(batch ethdb.KeyValueWriter, count arbutil.MessageIndex) err
 func dbKey(prefix []byte, pos uint64) []byte {
 	var key []byte
 	key = append(key, prefix...)
-	key = append(key, uint64ToKey(uint64(pos))...)
+	key = append(key, uint64ToKey(pos)...)
 	return key
 }
 

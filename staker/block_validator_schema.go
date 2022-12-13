@@ -12,5 +12,5 @@ type lastBlockValidatedDbInfo struct {
 }
 
 var (
-	lastBlockValidatedInfoKey []byte = []byte("_lastBlockValidatedInfo") // contains a rlp encoded lastBlockValidatedDbInfo
+	lastBlockValidatedInfoKey = []byte("_lastBlockValidatedInfo") // contains a rlp encoded lastBlockValidatedDbInfo
 )
