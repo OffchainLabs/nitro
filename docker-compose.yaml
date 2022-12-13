@@ -73,7 +73,7 @@ services:
       - --ws.addr=0.0.0.0
       - --ws.api=personal,eth,net,web3,debug,txpool
       - --allow-insecure-unlock
-      - --unlock=0x683642c22feDE752415D4793832Ab75EFdF6223c
+      - --unlock=0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
       - --password=/datadir/passphrase
       - --authrpc.jwtsecret=/config/jwt.hex
       - --nodiscover
@@ -81,7 +81,7 @@ services:
       - --dev
       - --dev.period=1
       - --mine
-      - --miner.etherbase=0x683642c22feDE752415D4793832Ab75EFdF6223c
+      - --miner.etherbase=0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
       - --gcmode=archive
 
   # Creates a genesis state for the beacon chain using a YAML configuration file and
