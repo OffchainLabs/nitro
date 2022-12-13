@@ -10,9 +10,7 @@ use ouroboros::self_referencing;
 use rand_pcg::Pcg32;
 use wasmer::{AsStoreRef, Memory, MemoryView, StoreRef, WasmPtr};
 
-use std::{
-    collections::{BTreeSet, BinaryHeap},
-};
+use std::collections::{BTreeSet, BinaryHeap};
 
 #[self_referencing]
 struct MemoryViewContainer {
@@ -137,7 +135,7 @@ impl GoStack {
     }
 
     pub fn read_slice(&self, ptr: u64, len: u64) -> Vec<u8> {
-        u32::try_from(ptr).expect("Go pointer not a u32") as usize; // kept for consistency
+        u32::try_from(ptr).expect("Go pointer not a u32"); // kept for consistency
         let len = u32::try_from(len).expect("length isn't a u32") as usize;
         let mut data = vec![0; len];
         self.view().read(ptr, &mut data).expect("failed to read");
