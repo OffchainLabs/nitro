@@ -107,6 +107,7 @@ services:
     image: "gcr.io/prysmaticlabs/prysm/beacon-chain:stable"
     command:
       - --datadir=/consensus/beacondata
+      - --rpc-port=5000
       - --min-sync-peers=0
       - --interop-genesis-state=/consensus/genesis.ssz
       - --interop-eth1data-votes
@@ -124,10 +125,9 @@ services:
       create_beacon_chain_genesis:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:4000:4000"
+      - "127.0.0.1:5000:5000"
       - "127.0.0.1:3500:3500"
     volumes:
-      # TODO: Add JWT from geth
       - "consensus:/consensus"
       - "config:/config"
 
@@ -136,7 +136,7 @@ services:
   prysm_validator:
     image: "gcr.io/prysmaticlabs/prysm/validator:stable"
     command:
-      - --beacon-rpc-provider=prysm_beacon_chain:4000
+      - --beacon-rpc-provider=prysm_beacon_chain:5000
       - --datadir=/consensus/validatordata
       - --accept-terms-of-use
       - --interop-num-validators=64
