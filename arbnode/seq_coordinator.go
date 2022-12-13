@@ -571,6 +571,8 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
+		// we're here because we don't currently hold the lock
+		// sequencer is already either paused or forwarding
 		c.sequencer.Pause()
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
