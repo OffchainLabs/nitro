@@ -418,7 +418,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 	hashes32 := make([]bytes32, len(hashes))
 	for i, hash := range hashes {
-		hashes32[i] = bytes32(hash)
+		hashes32[i] = hash
 	}
 	return send, root, hashes32, nil
 }
