@@ -102,11 +102,11 @@ func (v *Validator) merge(
 	if err != nil {
 		return nil, err
 	}
-	if err := util.VerifyPrefixProof(historyCommit, currentCommit, proof); err != nil {
+	if err = util.VerifyPrefixProof(historyCommit, currentCommit, proof); err != nil {
 		return nil, err
 	}
-	if err := v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		if err := mergingFrom.Merge(tx, mergingTo, proof, v.address); err != nil {
+	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		if err = mergingFrom.Merge(tx, mergingTo, proof, v.address); err != nil {
 			return err
 		}
 		mergingTo, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, mergingTo.SequenceNum)

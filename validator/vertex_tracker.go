@@ -82,9 +82,9 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	// and the parent has been confirmed.
 	if v.vertex.Commitment.Height == v.vertex.Prev.Commitment.Height+1 {
 		// Check if in a one-step fork.
-		atOneStepFork, err := v.isAtOneStepFork()
-		if err != nil {
-			return err
+		atOneStepFork, fetchErr := v.isAtOneStepFork()
+		if fetchErr != nil {
+			return fetchErr
 		}
 		if atOneStepFork {
 			log.WithField("name", v.validator.name).Infof(
@@ -115,22 +115,22 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		if errors.Is(err, protocol.ErrVertexAlreadyExists) {
 			parentHeight := v.vertex.Prev.Commitment.Height
 			toHeight := v.vertex.Commitment.Height
-			mergingToHistory, err := v.validator.determineBisectionPointWithHistory(
+			mergingToHistory, err2 := v.validator.determineBisectionPointWithHistory(
 				ctx,
 				parentHeight,
 				toHeight,
 			)
-			if err != nil {
-				return err
+			if err2 != nil {
+				return err2
 			}
-			mergingInto, err := v.vertexToMergeInto(v.validator, v.challengeCommitHash, mergingToHistory)
-			if err != nil {
-				return err
+			mergingInto, err3 := v.vertexToMergeInto(v.validator, v.challengeCommitHash, mergingToHistory)
+			if err3 != nil {
+				return err3
 			}
 			mergingFrom := v.vertex
-			mergedVertex, err := v.validator.merge(ctx, v.challengeCommitHash, mergingInto, mergingFrom)
-			if err != nil {
-				return err
+			mergedVertex, err4 := v.validator.merge(ctx, v.challengeCommitHash, mergingInto, mergingFrom)
+			if err4 != nil {
+				return err4
 			}
 			// Yield tracking of the vertex we merged to in a new goroutine.
 			go newVertexTracker(

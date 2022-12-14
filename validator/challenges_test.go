@@ -124,7 +124,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	for i := 0; i < len(validators); i++ {
 		manager := statemanager.New(validatorStateRoots[i])
 		addr := cfg.validatorAddrs[i]
-		v, err := New(
+		v, err2 := New(
 			ctx,
 			chain,
 			manager,
@@ -133,7 +133,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			WithDisableLeafCreation(),
 			WithTimeReference(ref),
 		)
-		require.NoError(t, err)
+		require.NoError(t, err2)
 		validators[i] = v
 	}
 
