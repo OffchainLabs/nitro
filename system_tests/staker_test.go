@@ -65,7 +65,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	defer l2nodeA.StopAndWait()
 
 	if faultyStaker {
-		l2info.GenerateGenesysAccount("FaultyAddr", common.Big1)
+		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
 	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test())
 	defer l2nodeB.StopAndWait()
@@ -127,18 +127,25 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig.Strategy = "MakeNodes"
 	}
 	nitroMachineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig, nil)
+	statelessA, err := validator.NewStatelessBlockValidator(
+		nitroMachineLoader,
+		l2nodeA.InboxReader,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		l2nodeA.ArbInterface.BlockChain(),
+		l2nodeA.ChainDB,
+		l2nodeA.ArbDB,
+		nil,
+		&validator.DefaultBlockValidatorConfig,
+	)
+	Require(t, err)
 	stakerA, err := validator.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletA,
 		bind.CallOpts{},
 		valConfig,
-		l2nodeA.ArbInterface.BlockChain(),
 		nil,
-		l2nodeA.InboxReader,
-		l2nodeA.InboxTracker,
-		l2nodeA.TxStreamer,
-		l2nodeA.BlockValidator,
-		nitroMachineLoader,
+		statelessA,
 		l2nodeA.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)
@@ -148,18 +155,25 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	valWalletB, err := validator.NewEoaValidatorWallet(l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB)
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
+	statelessB, err := validator.NewStatelessBlockValidator(
+		nitroMachineLoader,
+		l2nodeB.InboxReader,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.ArbInterface.BlockChain(),
+		l2nodeB.ChainDB,
+		l2nodeB.ArbDB,
+		nil,
+		&validator.DefaultBlockValidatorConfig,
+	)
+	Require(t, err)
 	stakerB, err := validator.NewStaker(
 		l2nodeB.L1Reader,
 		valWalletB,
 		bind.CallOpts{},
 		valConfig,
-		l2nodeB.ArbInterface.BlockChain(),
 		nil,
-		l2nodeB.InboxReader,
-		l2nodeB.InboxTracker,
-		l2nodeB.TxStreamer,
-		l2nodeB.BlockValidator,
-		nitroMachineLoader,
+		statelessB,
 		l2nodeB.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)
@@ -174,13 +188,8 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valWalletC,
 		bind.CallOpts{},
 		valConfig,
-		l2nodeA.ArbInterface.BlockChain(),
 		nil,
-		l2nodeA.InboxReader,
-		l2nodeA.InboxTracker,
-		l2nodeA.TxStreamer,
-		l2nodeA.BlockValidator,
-		nitroMachineLoader,
+		statelessA,
 		l2nodeA.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)

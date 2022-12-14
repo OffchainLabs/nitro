@@ -470,10 +470,10 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 	return gas + b.config().ExtraBatchGas, nil
 }
 
-func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
+func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
 	nonce, batchPosition, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if b.building == nil || b.building.startMsgCount != batchPosition.MessageCount {
@@ -485,15 +485,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	}
 	msgCount, err := b.streamer.GetMessageCount()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if msgCount <= batchPosition.MessageCount {
 		// There's nothing after the newest batch, therefore batch posting was not required
-		return nil
+		return false, nil
 	}
 	firstMsg, err := b.streamer.GetMessage(batchPosition.MessageCount)
 	if err != nil {
-		return err
+		return false, err
 	}
 	nextMessageTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
@@ -511,7 +511,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 		if err != nil {
 			// Clear our cache
 			b.building = nil
-			return fmt.Errorf("error adding message to batch: %w", err)
+			return false, fmt.Errorf("error adding message to batch: %w", err)
 		}
 		if !success {
 			// this batch is full
@@ -528,25 +528,27 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	if !forcePostBatch || !haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
-		return nil
+		return false, nil
 	}
 	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if sequencerMsg == nil {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", batchPosition.NextSeqNum, "from", batchPosition.MessageCount, "prev delayed", batchPosition.DelayedMessageCount)
 		b.building = nil // a closed batchSegments can't be reused
-		return nil
+		return false, nil
 	}
 
 	if b.daWriter != nil {
 		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
-		if err != nil {
-			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
+		if errors.Is(err, das.BatchToDasFailed) {
 			if config.DisableDasFallbackStoreDataOnChain {
-				return errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
+				return false, errors.New("Unable to batch to DAS and fallback storing data on chain is disabled")
 			}
+			log.Warn("Falling back to storing data on chain", "err", err)
+		} else if err != nil {
+			return false, err
 		} else {
 			sequencerMsg = das.Serialize(cert)
 		}
@@ -554,11 +556,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 
 	gasLimit, err := b.estimateGas(ctx, sequencerMsg, b.building.segments.delayedMsg)
 	if err != nil {
-		return err
+		return false, err
 	}
 	data, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg)
 	if err != nil {
-		return err
+		return false, err
 	}
 	newMeta := batchPosterPosition{
 		MessageCount:        b.building.msgCount,
@@ -567,7 +569,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 	}
 	err = b.dataPoster.PostTransaction(ctx, nextMessageTime, nonce, newMeta, b.seqInboxAddr, data, gasLimit)
 	if err != nil {
-		return err
+		return false, err
 	}
 	log.Info(
 		"BatchPoster: batch sent",
@@ -579,7 +581,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) error {
 		"total segments", len(b.building.segments.rawSegments),
 	)
 	b.building = nil
-	return nil
+	return true, nil
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
@@ -591,7 +593,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			b.building = nil
 			return b.config().BatchPollDelay
 		}
-		err := b.maybePostSequencerBatch(ctx)
+		posted, err := b.maybePostSequencerBatch(ctx)
 		if err != nil {
 			b.building = nil
 			logLevel := log.Error
@@ -609,8 +611,11 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			}
 			logLevel("error posting batch", "err", err)
 			return b.config().PostingErrorDelay
+		} else if posted {
+			return 0
+		} else {
+			return b.config().BatchPollDelay
 		}
-		return b.config().BatchPollDelay
 	})
 }
 

@@ -13,7 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
-var ErrNoReadersResponded = errors.New("No DAS readers responded successfully.")
+var ErrNoReadersResponded = errors.New("no DAS readers responded successfully")
 
 type aggregatorStrategy interface {
 	newInstance() aggregatorStrategyInstance

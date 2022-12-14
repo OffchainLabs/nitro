@@ -53,14 +53,14 @@ func NewBlockChainTestInfo(t *testing.T, signer types.Signer, gasPrice *big.Int,
 }
 
 func NewArbTestInfo(t *testing.T, chainId *big.Int) *BlockchainTestInfo {
-	var transferGas uint64 = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
+	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	arbinfo := NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(chainId)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
-	arbinfo.GenerateGenesysAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
-	arbinfo.GenerateGenesysAccount("Faucet", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
+	arbinfo.GenerateGenesisAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
+	arbinfo.GenerateGenesisAccount("Faucet", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
 	return arbinfo
 }
 
@@ -106,7 +106,7 @@ func (b *BlockchainTestInfo) HasAccount(name string) bool {
 	return b.Accounts[name] != nil
 }
 
-func (b *BlockchainTestInfo) GenerateGenesysAccount(name string, balance *big.Int) {
+func (b *BlockchainTestInfo) GenerateGenesisAccount(name string, balance *big.Int) {
 	b.GenerateAccount(name)
 	b.ArbInitData.Accounts = append(b.ArbInitData.Accounts, statetransfer.AccountInitializationInfo{
 		Addr:       b.Accounts[name].Address,
@@ -114,7 +114,7 @@ func (b *BlockchainTestInfo) GenerateGenesysAccount(name string, balance *big.In
 	})
 }
 
-func (b *BlockchainTestInfo) GetGenesysAlloc() core.GenesisAlloc {
+func (b *BlockchainTestInfo) GetGenesisAlloc() core.GenesisAlloc {
 	alloc := make(core.GenesisAlloc)
 	for _, info := range b.ArbInitData.Accounts {
 		var contractCode []byte

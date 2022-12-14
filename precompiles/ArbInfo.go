@@ -8,12 +8,12 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// Provides the ability to lookup basic info about accounts and contracts.
+// ArbInfo povides the ability to lookup basic info about accounts and contracts.
 type ArbInfo struct {
 	Address addr // 0x65
 }
 
-// Retrieves an account's balance
+// GetBalance retrieves an account's balance
 func (con ArbInfo) GetBalance(c ctx, evm mech, account addr) (huge, error) {
 	if err := c.Burn(params.BalanceGasEIP1884); err != nil {
 		return nil, err
@@ -21,7 +21,7 @@ func (con ArbInfo) GetBalance(c ctx, evm mech, account addr) (huge, error) {
 	return evm.StateDB.GetBalance(account), nil
 }
 
-// Retrieves a contract's deployed code
+// GetCode retrieves a contract's deployed code
 func (con ArbInfo) GetCode(c ctx, evm mech, account addr) ([]byte, error) {
 	if err := c.Burn(params.ColdSloadCostEIP2929); err != nil {
 		return nil, err

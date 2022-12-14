@@ -8,6 +8,7 @@ package wavmio
 
 import (
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -133,12 +134,12 @@ func AdvanceInboxMessage() {
 	seqAdvanced++
 }
 
-func ResolvePreImage(hash common.Hash) []byte {
+func ResolvePreImage(hash common.Hash) ([]byte, error) {
 	val, ok := preimages[hash]
 	if !ok {
-		panic("preimage not found")
+		return []byte{}, errors.New("preimage not found")
 	}
-	return val
+	return val, nil
 }
 
 func SetLastBlockHash(hash [32]byte) {

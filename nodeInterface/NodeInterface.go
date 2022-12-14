@@ -244,7 +244,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 		}
 
 		if lo == hi {
-			all, err := n.backend.GetLogs(n.context, block.Hash())
+			all, err := n.backend.GetLogs(n.context, block.Hash(), block.NumberU64())
 			if err != nil {
 				searchErr = err
 				return
@@ -418,7 +418,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 	hashes32 := make([]bytes32, len(hashes))
 	for i, hash := range hashes {
-		hashes32[i] = bytes32(hash)
+		hashes32[i] = hash
 	}
 	return send, root, hashes32, nil
 }

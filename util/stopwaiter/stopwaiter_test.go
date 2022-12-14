@@ -47,3 +47,28 @@ func TestStopWaiterStopAndWaitTimeoutShouldNotWarn(t *testing.T) {
 		testhelpers.FailImpl(t, "Incorrectly logged about waiting long on StopAndWait")
 	}
 }
+
+func TestStopWaiterStopAndWaitBeforeStart(t *testing.T) {
+	sw := StopWaiter{}
+	sw.StopAndWait()
+}
+
+func TestStopWaiterStopAndWaitAfterStop(t *testing.T) {
+	sw := StopWaiter{}
+	sw.Start(context.Background(), &TestStruct{})
+	ctx := sw.GetContext()
+	sw.StopOnly()
+	<-ctx.Done()
+	sw.StopAndWait()
+}
+
+func TestStopWaiterStopAndWaitMultipleTimes(t *testing.T) {
+	sw := StopWaiter{}
+	sw.StopAndWait()
+	sw.StopAndWait()
+	sw.StopAndWait()
+	sw.Start(context.Background(), &TestStruct{})
+	sw.StopAndWait()
+	sw.StopAndWait()
+	sw.StopAndWait()
+}
