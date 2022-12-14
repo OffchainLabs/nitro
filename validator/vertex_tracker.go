@@ -13,6 +13,7 @@ import (
 )
 
 type vertexTracker struct {
+	actEveryNSeconds    time.Duration
 	timeRef             util.TimeReference
 	challengeCommitHash protocol.CommitHash
 	challenge           *protocol.Challenge
@@ -23,6 +24,7 @@ type vertexTracker struct {
 
 func newVertexTracker(
 	timeRef util.TimeReference,
+	actEveryNSeconds time.Duration,
 	challenge *protocol.Challenge,
 	vertex *protocol.ChallengeVertex,
 	validator *Validator,
@@ -30,6 +32,7 @@ func newVertexTracker(
 	commitHash := protocol.CommitHash(challenge.ParentStateCommitment().Hash())
 	return &vertexTracker{
 		timeRef:             timeRef,
+		actEveryNSeconds:    actEveryNSeconds,
 		challengeCommitHash: commitHash,
 		challenge:           challenge,
 		vertex:              vertex,
@@ -43,11 +46,11 @@ func (v *vertexTracker) track(ctx context.Context) {
 		"merkle":    fmt.Sprintf("%#x", v.vertex.Commitment.Merkle),
 		"validator": v.vertex.Validator,
 	}).Info("Tracking challenge vertex")
-	t := time.NewTicker(time.Millisecond * 200)
+	t := v.timeRef.NewTicker(v.actEveryNSeconds)
 	defer t.Stop()
 	for {
 		select {
-		case <-t.C:
+		case <-t.C():
 			if err := v.actOnBlockChallenge(ctx); err != nil {
 				log.Error(err)
 			}
@@ -104,9 +107,10 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return nil
 	}
 
-	log.WithField("name", v.validator.name).Infof(
-		"Time to act: height %d, commit %#x", v.vertex.Commitment.Height, v.vertex.Commitment.Merkle,
-	)
+	log.WithFields(logrus.Fields{
+		"height": v.vertex.Commitment.Height,
+		"merkle": fmt.Sprintf("%#x", v.vertex.Commitment.Merkle),
+	}).Debugf("Challenge vertex goroutine acting")
 
 	// Determine if we should bisect or merge (how do we determine if we should merge?)
 	// Naive idea: if we get vertex already exists during a bisection, then we should attempt a merge move.
