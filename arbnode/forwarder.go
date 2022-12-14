@@ -287,14 +287,27 @@ func (f *RedisTxForwarder) setForwarder(forwarder *TxForwarder) {
 // not thread safe vs initialize and itself
 func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 	nextUpdateIn := f.noError
-	newSequencerUrl, redisErr := f.redisCoordinator.RecommendLiveSequencer(ctx)
-	if redisErr != nil {
-		if f.shouldFallbackToStatic() {
-			log.Warn("coordinator failed to find live sequencer, falling back to static url", "err", redisErr, "falback", f.fallbackTarget)
+	var newSequencerUrl string
+	var redisErr error
+	if f.redisCoordinator != nil {
+		newSequencerUrl, redisErr = f.redisCoordinator.CurrentChosenSequencer(ctx)
+		if redisErr != nil || newSequencerUrl == "" {
+			if f.shouldFallbackToStatic() && f.fallbackTarget != "" {
+				log.Warn("coordinator failed to find live sequencer, falling back to static url", "err", redisErr, "fallback", f.fallbackTarget)
+				newSequencerUrl = f.fallbackTarget
+				nextUpdateIn = f.retryAfterError
+			} else {
+				//log.Warn("coordinator failed to find live sequencer", "err", redisErr)
+				return f.retryAfterError()
+			}
+		}
+	} else {
+		if f.fallbackTarget != "" {
+			log.Warn("redis coordinator not initialized, falling back to static url", "fallback", f.fallbackTarget)
 			newSequencerUrl = f.fallbackTarget
-			nextUpdateIn = f.retryAfterError
 		} else {
-			log.Warn("coordinator failed to find live sequencer", "err", redisErr)
+			// TODO panic? - there is no way to recover from this point
+			log.Error("redis coordinator not initilized, no fallback available")
 			return f.retryAfterError()
 		}
 	}
@@ -317,7 +330,10 @@ func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 			return f.retryAfterError()
 		}
 	}
-	f.getForwarder().Disable()
+	oldForwarder := f.getForwarder()
+	if oldForwarder != nil {
+		oldForwarder.Disable()
+	}
 	f.currentTarget = newSequencerUrl
 	f.setForwarder(newForwarder)
 	return nextUpdateIn()
@@ -338,7 +354,10 @@ func (f *RedisTxForwarder) StopAndWait() {
 	if err != nil {
 		log.Error("Failed to stop forwarder", "err", err)
 	}
-	// oldForwarder.StopAndWait() // TODO should we stop the forwarder?
+	oldForwarder := f.getForwarder()
+	if oldForwarder != nil {
+		oldForwarder.Disable()
+	}
 }
 
 func (f *RedisTxForwarder) Started() bool {
