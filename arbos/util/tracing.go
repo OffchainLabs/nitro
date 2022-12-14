@@ -124,7 +124,7 @@ func HashToUint256(hash common.Hash) uint256.Int {
 	return value
 }
 
-// Creates an EVM Memory consisting of the bytes provided
+// TracingMemoryFromBytes creates an EVM Memory consisting of the bytes provided
 func TracingMemoryFromBytes(input []byte) *vm.Memory {
 	memory := vm.NewMemory()
 	inputLen := uint64(len(input))
@@ -133,7 +133,7 @@ func TracingMemoryFromBytes(input []byte) *vm.Memory {
 	return memory
 }
 
-// Creates an EVM Stack with the given arguments in canonical order
+// TracingStackFromArgs creates an EVM Stack with the given arguments in canonical order
 func TracingStackFromArgs(args ...uint256.Int) *vm.Stack {
 	stack := &vm.Stack{}
 	for flip := 0; flip < len(args)/2; flip++ { // reverse the order

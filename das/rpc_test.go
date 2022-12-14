@@ -46,7 +46,9 @@ func TestRPC(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 
-	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
+	var syncFromStorageServices []*IterableStorageService
+	var syncToStorageServices []StorageService
+	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config, &syncFromStorageServices, &syncToStorageServices)
 	testhelpers.RequireImpl(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	privKey, err := config.KeyConfig.BLSPrivKey()

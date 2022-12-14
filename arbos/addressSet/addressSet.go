@@ -9,7 +9,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
-// Represents a set of addresses
+// AddressSet represents a set of addresses
 // size is stored at position 0
 // members of the set are stored sequentially from 1 onward
 type AddressSet struct {

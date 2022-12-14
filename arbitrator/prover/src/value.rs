@@ -1,18 +1,19 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::{binary::FloatType, utils::Bytes32};
+use arbutil::Color;
+use wasmer::wasmparser::{FuncType, Type};
+
+use digest::Digest;
+use eyre::{bail, Result};
+use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, TryFromInto};
+use sha3::Keccak256;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Display,
 };
-
-use crate::{binary::FloatType, utils::Bytes32};
-use arbutil::Color;
-use digest::Digest;
-use eyre::{bail, Result};
-use serde::{Deserialize, Serialize};
-use sha3::Keccak256;
-use wasmer::wasmparser::{FuncType, Type};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -78,12 +79,23 @@ impl From<IntegerValType> for ArbValueType {
     }
 }
 
+#[serde_as]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProgramCounter {
-    pub module: usize,
-    pub func: usize,
-    pub inst: usize,
+    #[serde_as(as = "TryFromInto<usize>")]
+    pub module: u32,
+    #[serde_as(as = "TryFromInto<usize>")]
+    pub func: u32,
+    #[serde_as(as = "TryFromInto<usize>")]
+    pub inst: u32,
 }
+
+#[cfg(not(any(
+    target_pointer_width = "32",
+    target_pointer_width = "64",
+    target_pointer_width = "128"
+)))]
+compile_error!("Architectures with less than a 32 bit pointer width are not supported");
 
 impl ProgramCounter {
     pub fn serialize(self) -> Bytes32 {
@@ -92,6 +104,20 @@ impl ProgramCounter {
         b[24..28].copy_from_slice(&(self.func as u32).to_be_bytes());
         b[20..24].copy_from_slice(&(self.module as u32).to_be_bytes());
         Bytes32(b)
+    }
+
+    // These casts are safe because we checked above that a usize is at least as big as a u32
+
+    pub fn module(self) -> usize {
+        self.module as usize
+    }
+
+    pub fn func(self) -> usize {
+        self.func as usize
+    }
+
+    pub fn inst(self) -> usize {
+        self.inst as usize
     }
 }
 

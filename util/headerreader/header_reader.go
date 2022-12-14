@@ -35,6 +35,16 @@ type HeaderReader struct {
 	lastBroadcastErr           error
 	lastPendingCallBlockNr     uint64
 	requiresPendingCallUpdates int
+
+	safe      cachedBlockNumber
+	finalized cachedBlockNumber
+}
+
+type cachedBlockNumber struct {
+	mutex          sync.Mutex
+	rpcBlockNum    *big.Int
+	headWhenCached *types.Header
+	blockNumber    uint64
 }
 
 type Config struct {
@@ -43,6 +53,8 @@ type Config struct {
 	PollInterval         time.Duration `koanf:"poll-interval" reload:"hot"`
 	SubscribeErrInterval time.Duration `koanf:"subscribe-err-interval" reload:"hot"`
 	TxTimeout            time.Duration `koanf:"tx-timeout" reload:"hot"`
+	OldHeaderTimeout     time.Duration `koanf:"old-header-timeout" reload:"hot"`
+	UseFinalityData      bool          `koanf:"use-finality-data" reload:"hot"`
 }
 
 type ConfigFetcher func() *Config
@@ -53,6 +65,8 @@ var DefaultConfig = Config{
 	PollInterval:         15 * time.Second,
 	SubscribeErrInterval: 5 * time.Minute,
 	TxTimeout:            5 * time.Minute,
+	OldHeaderTimeout:     5 * time.Minute,
+	UseFinalityData:      true,
 }
 
 func AddOptions(prefix string, f *flag.FlagSet) {
@@ -60,13 +74,16 @@ func AddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".poll-only", DefaultConfig.PollOnly, "do not attempt to subscribe to header events")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval when polling endpoint")
 	f.Duration(prefix+".tx-timeout", DefaultConfig.TxTimeout, "timeout when waiting for a transaction")
+	f.Duration(prefix+".old-header-timeout", DefaultConfig.OldHeaderTimeout, "warns if the latest l1 block is at least this old")
 }
 
 var TestConfig = Config{
-	Enable:       true,
-	PollOnly:     false,
-	PollInterval: time.Millisecond * 10,
-	TxTimeout:    time.Second * 5,
+	Enable:           true,
+	PollOnly:         false,
+	PollInterval:     time.Millisecond * 10,
+	TxTimeout:        time.Second * 5,
+	OldHeaderTimeout: 5 * time.Minute,
+	UseFinalityData:  false,
 }
 
 func New(client arbutil.L1Interface, config ConfigFetcher) *HeaderReader {
@@ -75,9 +92,12 @@ func New(client arbutil.L1Interface, config ConfigFetcher) *HeaderReader {
 		config:            config,
 		outChannels:       make(map[chan<- *types.Header]struct{}),
 		outChannelsBehind: make(map[chan<- *types.Header]struct{}),
+		safe:              cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
+		finalized:         cachedBlockNumber{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
 	}
 }
 
+// Subscribe to block header updates.
 // Subscribers are notified when there is a change.
 // Channel could be missing headers and have duplicates.
 // Listening to the channel will make sure listenere is notified when header changes.
@@ -260,10 +280,14 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	if storedHeader == nil {
 		return
 	}
-	headerTime := time.Unix(int64(storedHeader.Time), 0)
-	if time.Since(headerTime) >= 5*time.Minute {
-		s.setError(errors.New("latest header is at least 5 minutes old"))
-		log.Warn("latest L1 block is at least 5 minutes old", "l1Block", storedHeader.Number, "l1Timestamp", headerTime)
+	l1Timetamp := time.Unix(int64(storedHeader.Time), 0)
+	headerTime := time.Since(l1Timetamp)
+	if headerTime >= s.config().OldHeaderTimeout {
+		s.setError(errors.Errorf("latest header is at least %v old", headerTime))
+		log.Warn(
+			"latest L1 block is old", "l1Block", storedHeader.Number,
+			"l1Timestamp", l1Timetamp, "age", headerTime,
+		)
 	}
 }
 
@@ -321,22 +345,51 @@ func (s *HeaderReader) UpdatingPendingCallBlockNr() bool {
 	return s.requiresPendingCallUpdates > 0
 }
 
-// blocknumber used by pending calls.
-// only updated if UpdatingPendingCallBlockNr returns true
+// LastPendingCallBlockNr returns the blockNumber currently used by pending calls.
+// Note: This value is only updated if UpdatingPendingCallBlockNr returns true.
 func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 	s.chanMutex.RLock()
 	defer s.chanMutex.RUnlock()
 	return s.lastPendingCallBlockNr
 }
 
-func (s *HeaderReader) LatestSafeHeader() (*types.Header, error) {
-	// note, this is not cached
-	return s.client.HeaderByNumber(s.GetContext(), big.NewInt(rpc.SafeBlockNumber.Int64()))
+var ErrBlockNumberNotSupported = errors.New("block number not supported")
+
+func (s *HeaderReader) getCached(ctx context.Context, c *cachedBlockNumber) (uint64, error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	currentHead, err := s.LastHeader(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if currentHead == c.headWhenCached {
+		return c.blockNumber, nil
+	}
+	if !s.config().UseFinalityData || currentHead.Difficulty.Sign() != 0 {
+		return 0, ErrBlockNumberNotSupported
+	}
+	header, err := s.client.HeaderByNumber(ctx, c.rpcBlockNum)
+	if err != nil {
+		return 0, err
+	}
+	c.blockNumber = header.Number.Uint64()
+	return c.blockNumber, nil
 }
 
-func (s *HeaderReader) LatestFinalizedHeader() (*types.Header, error) {
-	// note, this is not cached
-	return s.client.HeaderByNumber(s.GetContext(), big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+func (s *HeaderReader) LatestSafeBlockNr(ctx context.Context) (uint64, error) {
+	blockNum, err := s.getCached(ctx, &s.safe)
+	if errors.Is(err, ErrBlockNumberNotSupported) {
+		err = errors.New("safe block not found")
+	}
+	return blockNum, err
+}
+
+func (s *HeaderReader) LatestFinalizedBlockNr(ctx context.Context) (uint64, error) {
+	blockNum, err := s.getCached(ctx, &s.finalized)
+	if errors.Is(err, ErrBlockNumberNotSupported) {
+		err = errors.New("finalized block not found")
+	}
+	return blockNum, err
 }
 
 func (s *HeaderReader) Client() arbutil.L1Interface {

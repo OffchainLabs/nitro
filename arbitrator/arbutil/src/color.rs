@@ -3,6 +3,8 @@
 
 #![allow(dead_code)]
 
+use std::fmt::Display;
+
 pub const BLUE: &str = "\x1b[34;1m";
 pub const DIM: &str = "\x1b[2m";
 pub const GREY: &str = "\x1b[0;0m\x1b[90m";
@@ -28,7 +30,7 @@ pub trait Color {
 }
 
 #[rustfmt::skip]
-impl<T> Color for T where T: std::fmt::Display {
+impl<T> Color for T where T: Display {
 
     fn color(&self, color: &str) -> String {
         format!("{}{}{}", color, self, CLEAR)
@@ -43,4 +45,11 @@ impl<T> Color for T where T: std::fmt::Display {
     fn red(&self)    -> String { self.color(RED)    }
     fn white(&self)  -> String { self.color(WHITE)  }
     fn yellow(&self) -> String { self.color(YELLOW) }
+}
+
+pub fn when<T: Display>(cond: bool, text: T, when_color: &str) -> String {
+    match cond {
+        true => text.color(when_color),
+        false => format!("{text}"),
+    }
 }

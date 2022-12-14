@@ -97,6 +97,6 @@ func (w *EoaValidatorWallet) CanBatchTxs() bool {
 	return false
 }
 
-func (v *EoaValidatorWallet) AuthIfEoa() *bind.TransactOpts {
-	return v.auth
+func (w *EoaValidatorWallet) AuthIfEoa() *bind.TransactOpts {
+	return w.auth
 }
