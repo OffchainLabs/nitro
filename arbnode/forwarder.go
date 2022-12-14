@@ -297,7 +297,7 @@ func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 				newSequencerUrl = f.fallbackTarget
 				nextUpdateIn = f.retryAfterError
 			} else {
-				// log.Warn("coordinator failed to find live sequencer", "err", redisErr)
+				log.Warn("coordinator failed to find live sequencer", "err", redisErr)
 				return f.retryAfterError()
 			}
 		}

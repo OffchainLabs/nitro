@@ -89,7 +89,6 @@ func createFallbackSequencer(
 	ipcConfig.Path = ipcPath
 	ipcConfig.Apply(stackConfig)
 	nodeConfig := arbnode.ConfigDefaultL1Test()
-	// nodeConfig.BatchPoster.Enable = false
 	nodeConfig.SeqCoordinator.Enable = false
 	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
 	nodeConfig.SeqCoordinator.MyUrlImpl = ipcPath
@@ -137,11 +136,9 @@ func createSequencer(
 	ipcConfig.Apply(stackConfig)
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	nodeConfig.BatchPoster.Enable = true
-	nodeConfig.BatchPoster.MaxBatchPostInterval = arbnode.TestBatchPosterConfig.BatchPollDelay * 2
 	nodeConfig.SeqCoordinator.Enable = true
 	nodeConfig.SeqCoordinator.RedisUrl = redisUrl
 	nodeConfig.SeqCoordinator.MyUrlImpl = ipcPath
-	//	nodeConfig.Feed.Output.Enable = false
 
 	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l1info, l2InitData, nodeConfig, stackConfig)
 }
@@ -191,27 +188,38 @@ func TestRedisForwarder(t *testing.T) {
 	}()
 
 	for i := range clients {
-		user := fmt.Sprintf("User%d", i)
-		l2info.GenerateAccount(user)
-		tx := l2info.PrepareTx("Owner", user, l2info.TransferGas, big.NewInt(1e12), nil)
+		userA := fmt.Sprintf("UserA%d", i)
+		l2info.GenerateAccount(userA)
+		tx := l2info.PrepareTx("Owner", userA, l2info.TransferGas, big.NewInt(1e12+int64(l2info.TransferGas)*l2info.GasPrice.Int64()), nil)
+		err := fallbackClient.SendTransaction(ctx, tx)
+		testhelpers.RequireImpl(t, err)
+		_, err = EnsureTxSucceeded(ctx, fallbackClient, tx)
+		testhelpers.RequireImpl(t, err)
+	}
+
+	for i := range clients {
+		userA := fmt.Sprintf("UserA%d", i)
+		userB := fmt.Sprintf("UserB%d", i)
+		l2info.GenerateAccount(userB)
+		tx := l2info.PrepareTx(userA, userB, l2info.TransferGas, big.NewInt(1e12), nil)
 		var err error
-		for j := 0; j < 10; j++ {
+		for j := 0; j < 20; j++ {
 			err = forwardingClient.SendTransaction(ctx, tx)
 			if err == nil {
 				break
 			}
-			time.Sleep(arbnode.DefaultTestForwarderConfig.UpdateInterval)
+			time.Sleep(arbnode.DefaultTestForwarderConfig.UpdateInterval / 2)
 		}
 		testhelpers.RequireImpl(t, err)
 		_, err = EnsureTxSucceeded(ctx, clients[i], tx)
 		testhelpers.RequireImpl(t, err)
-		l2balance, err := clients[i].BalanceAt(ctx, l2info.GetAddress(user), nil)
+		l2balance, err := clients[i].BalanceAt(ctx, l2info.GetAddress(userB), nil)
 		testhelpers.RequireImpl(t, err)
 		if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 			testhelpers.FailImpl(t, "Unexpected balance:", l2balance)
 		}
 		if i < len(nodes)-1 {
-			time.Sleep(arbnode.TestBatchPosterConfig.BatchPollDelay * 10)
+			time.Sleep(100 * time.Millisecond)
 			nodes[i].StopAndWait()
 			nodes[i] = nil
 		}
