@@ -344,7 +344,7 @@ func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
 			continue
 		}
 		entry := rawdb.ReadTxLookupEntry(chainDb, transactions[len(transactions)-1].Hash())
-		return (entry != nil)
+		return entry != nil
 	}
 }
 

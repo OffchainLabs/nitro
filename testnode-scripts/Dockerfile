@@ -1,4 +1,4 @@
-FROM node:17
+FROM node:16
 WORKDIR /workspace
 COPY ./package.json ./yarn.lock ./
 RUN yarn

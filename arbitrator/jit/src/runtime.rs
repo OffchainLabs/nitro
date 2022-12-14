@@ -3,7 +3,7 @@
 
 use crate::{
     gostack::{GoStack, TimeoutInfo},
-    machine::{Escape, MaybeEscape, WasmEnvArc},
+    machine::{Escape, MaybeEscape, WasmEnvMut},
 };
 
 use rand::RngCore;
@@ -16,13 +16,13 @@ pub fn go_debug(x: u32) {
 
 pub fn reset_memory_data_view(_: u32) {}
 
-pub fn wasm_exit(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, _) = GoStack::new(sp, env);
+pub fn wasm_exit(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, _) = GoStack::new(sp, &mut env);
     Escape::exit(sp.read_u32(0))
 }
 
-pub fn wasm_write(env: &WasmEnvArc, sp: u32) {
-    let (sp, _) = GoStack::new(sp, env);
+pub fn wasm_write(mut env: WasmEnvMut, sp: u32) {
+    let (sp, _) = GoStack::new(sp, &mut env);
     let fd = sp.read_u64(0);
     let ptr = sp.read_u64(1);
     let len = sp.read_u32(2);
@@ -38,28 +38,28 @@ pub fn wasm_write(env: &WasmEnvArc, sp: u32) {
     }
 }
 
-pub fn nanotime1(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn nanotime1(mut env: WasmEnvMut, sp: u32) {
+    let (sp, mut env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
     sp.write_u64(0, env.go_state.time);
 }
 
-pub fn walltime(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn walltime(mut env: WasmEnvMut, sp: u32) {
+    let (sp, mut env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
     sp.write_u64(0, env.go_state.time / 1_000_000_000);
     sp.write_u32(1, (env.go_state.time % 1_000_000_000) as u32);
 }
 
-pub fn walltime1(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn walltime1(mut env: WasmEnvMut, sp: u32) {
+    let (sp, mut env) = GoStack::new(sp, &mut env);
     env.go_state.time += env.go_state.time_interval;
     sp.write_u64(0, env.go_state.time / 1_000_000_000);
     sp.write_u64(1, env.go_state.time % 1_000_000_000);
 }
 
-pub fn schedule_timeout_event(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn schedule_timeout_event(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
     let mut time = sp.read_u64(0);
     time = time.saturating_mul(1_000_000); // milliseconds to nanoseconds
     time = time.saturating_add(env.go_state.time); // add the current time to the delay
@@ -73,8 +73,8 @@ pub fn schedule_timeout_event(env: &WasmEnvArc, sp: u32) {
     sp.write_u32(1, id);
 }
 
-pub fn clear_timeout_event(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn clear_timeout_event(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
 
     let id = sp.read_u32(0);
     if !env.go_state.timeouts.pending_ids.remove(&id) {
@@ -82,13 +82,14 @@ pub fn clear_timeout_event(env: &WasmEnvArc, sp: u32) {
     }
 }
 
-pub fn get_random_data(env: &WasmEnvArc, sp: u32) {
-    let (sp, mut env) = GoStack::new(sp, env);
+pub fn get_random_data(mut env: WasmEnvMut, sp: u32) {
+    let (sp, env) = GoStack::new(sp, &mut env);
 
     let mut ptr = u32::try_from(sp.read_u64(0)).expect("Go getRandomData pointer not a u32");
     let mut len = sp.read_u64(1);
     while len >= 4 {
-        sp.write_u32_ptr(ptr, env.go_state.rng.next_u32());
+        let next = env.go_state.rng.next_u32();
+        sp.write_u32_ptr(ptr, next);
         ptr += 4;
         len -= 4;
     }
