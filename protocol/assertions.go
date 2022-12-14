@@ -82,7 +82,12 @@ type AssertionManager interface {
 	Inbox() *Inbox
 	NumAssertions(tx *ActiveTx) uint64
 	AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error)
-	IsAtOneStepFork(tx *ActiveTx, vertex *ChallengeVertex) (bool, error)
+	IsAtOneStepFork(
+		tx *ActiveTx,
+		challengeCommitHash CommitHash,
+		vertexCommit util.HistoryCommitment,
+		vertexParentCommit util.HistoryCommitment,
+	) (bool, error)
 	ChallengeByCommitHash(tx *ActiveTx, commitHash CommitHash) (*Challenge, error)
 	ChallengeVertexBySequenceNum(tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber) (*ChallengeVertex, error)
 	ChallengeVertexByHistoryCommit(tx *ActiveTx, commitHash CommitHash, hist util.HistoryCommitment) (*ChallengeVertex, error)
@@ -288,16 +293,24 @@ func (chain *AssertionChain) AssertionBySequenceNum(tx *ActiveTx, seqNum Asserti
 	return chain.assertions[seqNum], nil
 }
 
-func (chain *AssertionChain) IsAtOneStepFork(tx *ActiveTx, vertex *ChallengeVertex) (bool, error) {
-	if vertex.Commitment.Height != vertex.Prev.Commitment.Height+1 {
+// IsAtOneStepFork when given a challenge vertex's history commitment
+// along with its parent's, will check other challenge vertices in that challenge
+// to verify there are > 1 vertices that are one height away from their parent.
+func (chain *AssertionChain) IsAtOneStepFork(
+	tx *ActiveTx,
+	challengeCommitHash CommitHash,
+	vertexCommit util.HistoryCommitment,
+	vertexParentCommit util.HistoryCommitment,
+) (bool, error) {
+	tx.verifyRead()
+	if vertexCommit.Height != vertexParentCommit.Height+1 {
 		return false, nil
 	}
-	commitHash := CommitHash(vertex.challenge.ParentStateCommitment().Hash())
-	vertices, ok := chain.challengeVerticesByCommitHashSeqNum[commitHash]
+	vertices, ok := chain.challengeVerticesByCommitHashSeqNum[challengeCommitHash]
 	if !ok {
-		return false, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", commitHash)
+		return false, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", challengeCommitHash)
 	}
-	parentCommitHash := vertex.Prev.Commitment.Hash()
+	parentCommitHash := vertexParentCommit.Hash()
 
 	// TODO: Inefficient, find alternative.
 	numOneStepAway := 0
@@ -305,7 +318,8 @@ func (chain *AssertionChain) IsAtOneStepFork(tx *ActiveTx, vertex *ChallengeVert
 		// TODO: Use option.
 		if v.Prev != nil {
 			vParentHash := v.Prev.Commitment.Hash()
-			// If there is another vertex in the list with the same parent and height + 1 of its parent, then yes.
+			// If there is another vertex in the list with the same parent and
+			// height + 1 of its parent, then we have a one-step-fork.
 			if vParentHash == parentCommitHash && (v.Commitment.Height == v.Prev.Commitment.Height+1) {
 				numOneStepAway++
 				if numOneStepAway > 1 {

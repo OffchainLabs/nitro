@@ -74,8 +74,13 @@ func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- proto
 func (m *MockProtocol) SubscribeChallengeEvents(ctx context.Context, ch chan<- protocol.ChallengeEvent) {
 }
 
-func (m *MockProtocol) IsAtOneStepFork(tx *protocol.ActiveTx, vertex *protocol.ChallengeVertex) (bool, error) {
-	args := m.Called(tx, vertex)
+func (m *MockProtocol) IsAtOneStepFork(
+	tx *protocol.ActiveTx,
+	challengeCommitHash protocol.CommitHash,
+	vertexCommit util.HistoryCommitment,
+	vertexParentCommit util.HistoryCommitment,
+) (bool, error) {
+	args := m.Called(tx, challengeCommitHash, vertexCommit, vertexParentCommit)
 	return args.Get(0).(bool), args.Error(1)
 }
 

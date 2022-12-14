@@ -127,7 +127,11 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 			if err2 != nil {
 				return err2
 			}
-			mergingInto, err3 := v.vertexToMergeInto(v.validator, v.challengeCommitHash, mergingToHistory)
+			mergingInto, err3 := v.fetchVertexByHistoryCommit(
+				v.validator,
+				v.challengeCommitHash,
+				mergingToHistory,
+			)
 			if err3 != nil {
 				return err3
 			}
@@ -139,6 +143,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 			// Yield tracking of the vertex we merged to in a new goroutine.
 			go newVertexTracker(
 				v.timeRef,
+				v.actEveryNSeconds,
 				v.challenge,
 				mergedVertex,
 				v.validator,
@@ -151,6 +156,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	// Yield tracking of the bisected vertex to a new goroutine.
 	go newVertexTracker(
 		v.timeRef,
+		v.actEveryNSeconds,
 		v.challenge,
 		bisectedVertex,
 		v.validator,
@@ -180,7 +186,12 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 	var atOneStepFork bool
 	var err error
 	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		atOneStepFork, err = p.IsAtOneStepFork(tx, v.vertex)
+		atOneStepFork, err = p.IsAtOneStepFork(
+			tx,
+			v.challengeCommitHash,
+			v.vertex.Commitment,
+			v.vertex.Prev.Commitment,
+		)
 		if err != nil {
 			return err
 		}
@@ -191,9 +202,9 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 	return atOneStepFork, nil
 }
 
-// Obtains a challenge vertex we should perform a merge move into given its corresponding challenge ID
-// and the history commitment of the vertex itself.
-func (v *vertexTracker) vertexToMergeInto(
+// Obtains a challenge vertex we should perform move into given its corresponding challenge ID
+// and the history commitment of the vertex itself from the chain.
+func (v *vertexTracker) fetchVertexByHistoryCommit(
 	validator *Validator,
 	vertexChallengeID protocol.CommitHash,
 	historyCommit util.HistoryCommitment,

@@ -48,7 +48,7 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	challengerName := "unknown-name"
-	staker := challengeVertex.Challenger
+	staker := challengeVertex.Validator
 	if name, ok := v.knownValidatorNames[staker]; ok {
 		challengerName = name
 	}
