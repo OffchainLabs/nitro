@@ -82,6 +82,7 @@ type AssertionManager interface {
 	Inbox() *Inbox
 	NumAssertions(tx *ActiveTx) uint64
 	AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error)
+	IsAtOneStepFork(tx *ActiveTx, vertex *ChallengeVertex) (bool, error)
 	ChallengeByCommitHash(tx *ActiveTx, commitHash CommitHash) (*Challenge, error)
 	ChallengeVertexBySequenceNum(tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber) (*ChallengeVertex, error)
 	ChallengeVertexByHistoryCommit(tx *ActiveTx, commitHash CommitHash, hist util.HistoryCommitment) (*ChallengeVertex, error)
@@ -285,6 +286,35 @@ func (chain *AssertionChain) AssertionBySequenceNum(tx *ActiveTx, seqNum Asserti
 		return nil, fmt.Errorf("assertion sequence out of range %d >= %d", seqNum, len(chain.assertions))
 	}
 	return chain.assertions[seqNum], nil
+}
+
+func (chain *AssertionChain) IsAtOneStepFork(tx *ActiveTx, vertex *ChallengeVertex) (bool, error) {
+	if vertex.Commitment.Height != vertex.Prev.Commitment.Height+1 {
+		return false, nil
+	}
+	commitHash := CommitHash(vertex.challenge.ParentStateCommitment().Hash())
+	vertices, ok := chain.challengeVerticesByCommitHashSeqNum[commitHash]
+	if !ok {
+		return false, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", commitHash)
+	}
+	parentCommitHash := vertex.Prev.Commitment.Hash()
+
+	// TODO: Inefficient, find alternative.
+	numOneStepAway := 0
+	for _, v := range vertices {
+		// TODO: Use option.
+		if v.Prev != nil {
+			vParentHash := v.Prev.Commitment.Hash()
+			// If there is another vertex in the list with the same parent and height + 1 of its parent, then yes.
+			if vParentHash == parentCommitHash && (v.Commitment.Height == v.Prev.Commitment.Height+1) {
+				numOneStepAway++
+				if numOneStepAway > 1 {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
 }
 
 // ChallengeVertexBySequenceNum returns the challenge vertex with the given sequence number.

@@ -18,6 +18,7 @@ type vertexTracker struct {
 	challenge           *protocol.Challenge
 	vertex              *protocol.ChallengeVertex
 	validator           *Validator
+	awaitingOneStepFork bool
 }
 
 func newVertexTracker(
@@ -42,6 +43,9 @@ func newVertexTracker(
 // TODO: Add a condition that determines when the vertex is at a one step fork is resolved (can check some data from parent)
 // TODO: Add a condition that checks if we should take a confirmation action.
 func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
+	if v.awaitingOneStepFork {
+		return nil
+	}
 	vertex, err := v.refreshVertex()
 	if err != nil {
 		return err
@@ -63,6 +67,8 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 				"Reached one-step-fork at %d %#x, now tracking subchallenge resolution",
 				v.vertex.Prev.Commitment.Height, v.vertex.Prev.Commitment.Merkle,
 			)
+			v.awaitingOneStepFork = true
+			return nil
 			// TODO: Add subchallenge resolution.
 		}
 		return nil
