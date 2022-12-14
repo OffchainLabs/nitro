@@ -48,7 +48,7 @@ func (v *Validator) onChallengeStarted(
 	}
 
 	challengerName := "unknown-name"
-	staker := challengeVertex.Validator
+	staker := challengeVertex.Challenger
 	if name, ok := v.knownValidatorNames[staker]; ok {
 		challengerName = name
 	}
@@ -59,8 +59,8 @@ func (v *Validator) onChallengeStarted(
 		"challengingHeight":    challenge.ParentStateCommitment().Height,
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
-	// Start tracking the challenge vertex.
-	go newVertexTracker(v.timeRef, challenge, challengeVertex, v).track(ctx)
+	// TODO: Start tracking the challenge.
+	_ = challengeVertex
 
 	return nil
 }
@@ -99,8 +99,8 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 		return nil
 	}
 
-	// Start tracking the challenge vertex.
-	go newVertexTracker(v.timeRef, challenge, challengeVertex, v).track(ctx)
+	// TODO: Start tracking the challenge.
+	_ = challengeVertex
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
