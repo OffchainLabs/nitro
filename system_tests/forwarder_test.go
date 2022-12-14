@@ -62,7 +62,7 @@ func TestStaticForwarder(t *testing.T) {
 	}
 }
 
-func initRedisForTest(t *testing.T, ctx context.Context, nodeNames []string) (*miniredis.Miniredis, string) {
+func initMiniRedisForTest(t *testing.T, ctx context.Context, nodeNames []string) (*miniredis.Miniredis, string) {
 	var priorities string
 	redisServer, err := miniredis.Run()
 	testhelpers.RequireImpl(t, err)
@@ -152,7 +152,7 @@ func TestRedisForwarder(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		nodePaths = append(nodePaths, filepath.Join(t.TempDir(), fmt.Sprintf("%d.ipc", i)))
 	}
-	redisServer, redisUrl := initRedisForTest(t, ctx, nodePaths)
+	redisServer, redisUrl := initMiniRedisForTest(t, ctx, nodePaths)
 	defer redisServer.Close()
 
 	l2info, fallbackNode, fallbackClient, l1info, _, _, l1stack := createFallbackSequencer(t, ctx, fallbackIpcPath, redisUrl)
@@ -235,7 +235,7 @@ func TestRedisForwarderFallbackNoRedis(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		nodePaths = append(nodePaths, filepath.Join(t.TempDir(), fmt.Sprintf("%d.ipc", i)))
 	}
-	redisServer, redisUrl := initRedisForTest(t, ctx, nodePaths)
+	redisServer, redisUrl := initMiniRedisForTest(t, ctx, nodePaths)
 	redisServer.Close()
 
 	l2info, fallbackNode, fallbackClient, l1info, _, _, l1stack := createFallbackSequencer(t, ctx, fallbackIpcPath, redisUrl)
