@@ -297,7 +297,7 @@ func (f *RedisTxForwarder) update(ctx context.Context) time.Duration {
 				newSequencerUrl = f.fallbackTarget
 				nextUpdateIn = f.retryAfterError
 			} else {
-				//log.Warn("coordinator failed to find live sequencer", "err", redisErr)
+				// log.Warn("coordinator failed to find live sequencer", "err", redisErr)
 				return f.retryAfterError()
 			}
 		}
@@ -354,6 +354,7 @@ func (f *RedisTxForwarder) StopAndWait() {
 	if err != nil {
 		log.Error("Failed to stop forwarder", "err", err)
 	}
+	// TODO is disabling of old forwarder required?
 	oldForwarder := f.getForwarder()
 	if oldForwarder != nil {
 		oldForwarder.Disable()

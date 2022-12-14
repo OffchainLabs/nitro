@@ -528,6 +528,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SeqCoordinator.Enable = false
 	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
 	config.BlockValidator = validator.TestBlockValidatorConfig
+	config.Forwarder = DefaultTestForwarderConfig
 
 	return &config
 }
