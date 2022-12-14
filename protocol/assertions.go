@@ -317,14 +317,15 @@ func (chain *AssertionChain) IsAtOneStepFork(
 	for _, v := range vertices {
 		// TODO: Use option.
 		if v.Prev != nil {
-			vParentHash := v.Prev.Commitment.Hash()
-			// If there is another vertex in the list with the same parent and
-			// height + 1 of its parent, then we have a one-step-fork.
-			if vParentHash == parentCommitHash && (v.Commitment.Height == v.Prev.Commitment.Height+1) {
-				numOneStepAway++
-				if numOneStepAway > 1 {
-					return true, nil
-				}
+			continue
+		}
+		vParentHash := v.Prev.Commitment.Hash()
+		// If there is another vertex in the list with the same parent and
+		// height + 1 of its parent, then we have a one-step-fork.
+		if vParentHash == parentCommitHash && (v.Commitment.Height == v.Prev.Commitment.Height+1) {
+			numOneStepAway++
+			if numOneStepAway > 1 {
+				return true, nil
 			}
 		}
 	}
