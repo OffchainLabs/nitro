@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
-// Implements DataAvailabilityReader
+// RestfulDasClient implements DataAvailabilityReader
 type RestfulDasClient struct {
 	url string
 }
@@ -31,7 +31,7 @@ func NewRestfulDasClient(protocol string, host string, port int) *RestfulDasClie
 
 func NewRestfulDasClientFromURL(url string) (*RestfulDasClient, error) {
 	if !(strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")) {
-		return nil, fmt.Errorf("Protocol prefix 'http://' or 'https://' must be specified for RestfulDasClient; got '%s'", url)
+		return nil, fmt.Errorf("protocol prefix 'http://' or 'https://' must be specified for RestfulDasClient; got '%s'", url)
 
 	}
 	return &RestfulDasClient{

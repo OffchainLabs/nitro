@@ -53,9 +53,10 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             }
         }
     };
+
     let module = match Module::new(&store, &wasm) {
         Ok(module) => module,
-        Err(err) => panic!("{err}"),
+        Err(err) => panic!("{}", err),
     };
 
     let func_env = FunctionEnv::new(&mut store, env);
@@ -203,14 +204,6 @@ pub struct WasmEnv {
     pub exports: WasmEnvFuncs,
 }
 
-#[derive(Default)]
-pub struct WasmEnvFuncs {
-    /// Calls `resume` from the go runtime
-    pub resume: Option<TypedFunction<(), ()>>,
-    /// Calls `getsp` from the go runtime
-    pub get_stack_pointer: Option<TypedFunction<(), i32>>,
-}
-
 impl WasmEnv {
     pub fn cli(opts: &Opts) -> Result<Self> {
         let mut env = WasmEnv::default();
@@ -337,4 +330,12 @@ impl Default for ProcessEnv {
             reached_wavmio: false,
         }
     }
+}
+
+#[derive(Default)]
+pub struct WasmEnvFuncs {
+    /// Calls `resume` from the go runtime
+    pub resume: Option<TypedFunction<(), ()>>,
+    /// Calls `getsp` from the go runtime
+    pub get_stack_pointer: Option<TypedFunction<(), i32>>,
 }

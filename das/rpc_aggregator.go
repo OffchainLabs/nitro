@@ -7,9 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
-	"regexp"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/metricsutil"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -59,9 +59,7 @@ func setUpServices(config DataAvailabilityConfig) ([]ServiceDetails, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Prometheus metric names must contain only chars [a-zA-Z0-9:_]
-		invalidPromCharRegex := regexp.MustCompile(`[^a-zA-Z0-9:_]+`)
-		metricName := invalidPromCharRegex.ReplaceAllString(url.Hostname(), "_")
+		metricName := metricsutil.CanonicalizeMetricName(url.Hostname())
 
 		service, err := NewDASRPCClient(b.URL)
 		if err != nil {
@@ -73,7 +71,7 @@ func setUpServices(config DataAvailabilityConfig) ([]ServiceDetails, error) {
 			return nil, err
 		}
 
-		d, err := NewServiceDetails(service, *pubKey, uint64(b.SignerMask), metricName)
+		d, err := NewServiceDetails(service, *pubKey, b.SignerMask, metricName)
 		if err != nil {
 			return nil, err
 		}

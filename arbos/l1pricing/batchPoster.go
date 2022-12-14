@@ -24,7 +24,7 @@ var (
 	ErrNotExist      = errors.New("tried to open a batch poster that does not exist")
 )
 
-// layout of storage in the table
+// BatchPostersTable is the layout of storage in the table
 type BatchPostersTable struct {
 	posterAddrs   *addressSet.AddressSet
 	posterInfo    *storage.Storage

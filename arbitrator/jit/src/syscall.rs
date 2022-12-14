@@ -216,12 +216,12 @@ fn get_field(env: &mut WasmEnv, source: u32, field: &[u8]) -> GoValue {
 
 pub fn js_finalize_ref(mut env: WasmEnvMut, sp: u32) {
     let (sp, env) = GoStack::new(sp, &mut env);
+    let pool = &mut env.js_state.pool;
 
     let val = JsValue::new(sp.read_u64(0));
     match val {
         JsValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
         JsValue::Ref(x) => {
-            let pool = &mut env.js_state.pool;
             if pool.remove(x).is_none() {
                 eprintln!("Go trying to finalize unknown ref {}", x);
             }
@@ -311,7 +311,6 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
     let Some(get_stack_pointer) = env.data().exports.get_stack_pointer.clone() else {
         return Escape::failure(format!("wasmer failed to bind {}", "getsp".red()))
     };
-    //let mut store = env.as_store_mut();
     let sp = GoStack::simple(sp, &env);
     let data = env.data_mut();
     let rng = &mut data.go_state.rng;
@@ -402,7 +401,6 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
                     // recursively call into wasmer
                     let mut store = env.as_store_mut();
-                    //std::mem::drop(env_lock);
                     resume.call(&mut store)?;
 
                     // the stack pointer has changed, so we'll need to write our return results elsewhere
@@ -556,8 +554,8 @@ pub fn js_copy_bytes_to_js(mut env: WasmEnvMut, sp: u32) {
                     let len = std::cmp::min(src_len, dest_len) as usize;
 
                     // Slightly inefficient as this allocates a new temporary buffer
-                    let slice = sp.read_slice(src_ptr, len as u64);
-                    buf[..len].copy_from_slice(&slice);
+                    let data = sp.read_slice(src_ptr, len as u64);
+                    buf[..len].copy_from_slice(&data);
                     sp.write_u64(4, GoValue::Number(len as f64).encode());
                     sp.write_u8(5, 1);
                     return;

@@ -27,10 +27,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -216,13 +218,13 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesys := core.DeveloperGenesisBlock(0, 15_000_000, l1info.GetAddress("Faucet"))
-	infoGenesys := l1info.GetGenesysAlloc()
-	for acct, info := range infoGenesys {
-		l1Genesys.Alloc[acct] = info
+	l1Genesis := core.DeveloperGenesisBlock(0, 15_000_000, l1info.GetAddress("Faucet"))
+	infoGenesis := l1info.GetGenesisAlloc()
+	for acct, info := range infoGenesis {
+		l1Genesis.Alloc[acct] = info
 	}
-	l1Genesys.BaseFee = big.NewInt(50 * params.GWei)
-	nodeConf.Genesis = l1Genesys
+	l1Genesis.BaseFee = big.NewInt(50 * params.GWei)
+	nodeConf.Genesis = l1Genesis
 	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
 
 	l1backend, err := eth.New(stack, &nodeConf)
@@ -237,6 +239,11 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 	stack.RegisterLifecycle(&lifecycle{stop: func() error {
 		l1backend.StopMining()
 		return nil
+	}})
+
+	stack.RegisterAPIs([]rpc.API{{
+		Namespace: "eth",
+		Service:   filters.NewFilterAPI(filters.NewFilterSystem(l1backend.APIBackend, filters.Config{}), false),
 	}})
 
 	Require(t, stack.Start())

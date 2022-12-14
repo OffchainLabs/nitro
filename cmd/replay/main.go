@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -23,14 +24,18 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/wavmio"
+	"github.com/pkg/errors"
 )
 
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
-	enc := wavmio.ResolvePreImage(hash)
-	header := &types.Header{}
-	err := rlp.DecodeBytes(enc, &header)
+	enc, err := wavmio.ResolvePreImage(hash)
 	if err != nil {
-		panic(fmt.Sprintf("Error parsing resolved block header: %v", err))
+		panic(errors.Wrap(err, "Error resolving preimage"))
+	}
+	header := &types.Header{}
+	err = rlp.DecodeBytes(enc, &header)
+	if err != nil {
+		panic(errors.Wrap(err, "Error parsing resolved block header"))
 	}
 	return header
 }
@@ -80,9 +85,12 @@ func (i WavmInbox) SetPositionWithinMessage(pos uint64) {
 	wavmio.SetPositionWithinMessage(pos)
 }
 
-func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+func (i WavmInbox) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
 	log.Info("ReadDelayedMsg", "seqNum", seqNum)
-	return wavmio.ReadDelayedInboxMessage(seqNum), nil
+	data := wavmio.ReadDelayedInboxMessage(seqNum)
+	return arbos.ParseIncomingL1Message(bytes.NewReader(data), func(batchNum uint64) ([]byte, error) {
+		return wavmio.ReadInboxMessage(batchNum), nil
+	})
 }
 
 type PreimageDASReader struct {

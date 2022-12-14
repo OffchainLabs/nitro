@@ -146,7 +146,7 @@ func (f *TxForwarder) Initialize(inctx context.Context) error {
 	return nil
 }
 
-// Not thread-safe vs. Initialize
+// Disable is not thread-safe vs. Initialize
 func (f *TxForwarder) Disable() {
 	atomic.StoreInt32(&f.enabled, 0)
 }
