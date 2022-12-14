@@ -19,12 +19,13 @@ import (
 func pollLogMessagesFromJSONFile(t *testing.T, path string, expected []string) ([]string, error) {
 	t.Helper()
 	var msgs []string
+	var err error
 Retry:
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 30; i++ {
 		time.Sleep(20 * time.Millisecond)
-		msgs, err := readLogMessagesFromJSONFile(t, path)
+		msgs, err = readLogMessagesFromJSONFile(t, path)
 		if err != nil {
-			return []string{}, err
+			continue
 		}
 		if len(msgs) == len(expected) {
 			for i, m := range msgs {
@@ -35,7 +36,7 @@ Retry:
 			return msgs, nil
 		}
 	}
-	return msgs, nil
+	return msgs, err
 }
 
 func readLogMessagesFromJSONFile(t *testing.T, path string) ([]string, error) {
@@ -107,7 +108,7 @@ func testFileHandler(t *testing.T, testCompressed bool) {
 	}
 	var gzFiles int
 	var entries []os.DirEntry
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 60; i++ {
 		time.Sleep(20 * time.Millisecond)
 		gzFiles = 0
 		var err error

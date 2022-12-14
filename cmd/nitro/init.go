@@ -135,7 +135,7 @@ func downloadInit(ctx context.Context, initConfig *InitConfig) (string, error) {
 				}
 			case <-resp.Done:
 				if err := resp.Err(); err != nil {
-					fmt.Printf("\033[2K\r  attempt %d failed: %v", attempt, err)
+					fmt.Printf("\n  attempt %d failed: %v\n", attempt, err)
 					break updateLoop
 				}
 				fmt.Printf("\n")
@@ -344,7 +344,7 @@ func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
 			continue
 		}
 		entry := rawdb.ReadTxLookupEntry(chainDb, transactions[len(transactions)-1].Hash())
-		return (entry != nil)
+		return entry != nil
 	}
 }
 
