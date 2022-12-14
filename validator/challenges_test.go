@@ -61,7 +61,10 @@ func TestBlockChallenge(t *testing.T) {
 			&protocol.ChallengeBisectEvent{}: 4,
 			&protocol.ChallengeMergeEvent{}:  2,
 		}
-		runTempChallengeTest(t, cfg)
+		hook := test.NewGlobal()
+		runBlockChallengeTest(t, hook, cfg)
+		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
 }
 
@@ -80,9 +83,7 @@ type blockChallengeTestConfig struct {
 	eventsToAssert map[protocol.ChallengeEvent]uint
 }
 
-func runTempChallengeTest(t testing.TB, cfg *blockChallengeTestConfig) {
-	hook := test.NewGlobal()
-
+func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTestConfig) {
 	ctx := context.Background()
 	ref := util.NewArtificialTimeReference()
 	chain := protocol.NewAssertionChain(ctx, ref, time.Second)
@@ -136,7 +137,7 @@ func runTempChallengeTest(t testing.TB, cfg *blockChallengeTestConfig) {
 		validators[i] = v
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 
 	harnessObserver := make(chan protocol.ChallengeEvent, 100)
@@ -155,84 +156,7 @@ func runTempChallengeTest(t testing.TB, cfg *blockChallengeTestConfig) {
 	}
 
 	// Sleep before reading events for cleaner logs below.
-	time.Sleep(time.Second * 5)
-	AssertLogsContain(t, hook, "Started challenge")
-}
-
-func runBlockChallengeTest(t testing.TB, cfg *blockChallengeTestConfig) {
-	hook := test.NewGlobal()
-
-	ctx := context.Background()
-	chain := protocol.NewAssertionChain(ctx, util.NewArtificialTimeReference(), time.Second)
-
-	// Increase the balance for each validator in the test.
-	bal := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
-	err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		for addr := range cfg.validatorNamesByAddress {
-			chain.AddToBalance(tx, addr, bal)
-		}
-		return nil
-	})
-	require.NoError(t, err)
-
-	// Initialize each validator associated state roots which diverge
-	// at specified points in the test config.
-	validatorStateRoots := make([][]common.Hash, cfg.numValidators)
-	for i := uint16(0); i < cfg.numValidators; i++ {
-		addr := cfg.validatorAddrs[i]
-		numRoots := cfg.latestStateHeightByAddress[addr] + 1
-		divergenceHeight := cfg.divergenceHeightsByAddress[addr]
-		stateRoots := make([]common.Hash, numRoots)
-		for i := uint64(0); i < numRoots; i++ {
-			if divergenceHeight == 0 || i < divergenceHeight {
-				stateRoots[i] = util.HashForUint(i)
-			} else {
-				divergingRoot := make([]byte, 32)
-				_, err = rand.Read(divergingRoot)
-				require.NoError(t, err)
-				stateRoots[i] = common.BytesToHash(divergingRoot)
-			}
-		}
-		validatorStateRoots[i] = stateRoots
-	}
-
-	// Initialize each validator.
-	validators := make([]*Validator, cfg.numValidators)
-	for i := 0; i < len(validators); i++ {
-		manager := statemanager.New(validatorStateRoots[i])
-		addr := cfg.validatorAddrs[i]
-		v, err := New(
-			ctx,
-			chain,
-			manager,
-			WithName(cfg.validatorNamesByAddress[addr]),
-			WithAddress(addr),
-			WithDisableLeafCreation(),
-		)
-		require.NoError(t, err)
-		validators[i] = v
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	harnessObserver := make(chan protocol.ChallengeEvent, 100)
-	chain.SubscribeChallengeEvents(ctx, harnessObserver)
-
-	// Submit leaf creation manually for each validator.
-	for _, val := range validators {
-		_, err = val.submitLeafCreation(ctx)
-		require.NoError(t, err)
-		AssertLogsContain(t, hook, "Submitted leaf creation")
-	}
-
-	// We fire off each validator's background routines.
-	for _, val := range validators {
-		go val.Start(ctx)
-	}
-
-	// Sleep before reading events for cleaner logs below.
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Second)
 
 	totalEventsWanted := uint16(0)
 	for _, count := range cfg.eventsToAssert {
@@ -296,8 +220,5 @@ func runBlockChallengeTest(t testing.TB, cfg *blockChallengeTestConfig) {
 			seenCount,
 			fmt.Sprintf("Did not see the expected number of %+T events", ev),
 		)
-	}
-	for i := 0; i < int(cfg.numValidators); i++ {
-		AssertLogsContain(t, hook, "Reached a one-step-fork")
 	}
 }

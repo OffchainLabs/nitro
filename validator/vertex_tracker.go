@@ -37,6 +37,30 @@ func newVertexTracker(
 	}
 }
 
+func (v *vertexTracker) track(ctx context.Context) {
+	log.WithFields(logrus.Fields{
+		"height":    v.vertex.Commitment.Height,
+		"merkle":    fmt.Sprintf("%#x", v.vertex.Commitment.Merkle),
+		"validator": v.vertex.Validator,
+	}).Info("Tracking challenge vertex")
+	t := time.NewTicker(time.Millisecond * 200)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			if err := v.actOnBlockChallenge(ctx); err != nil {
+				log.Error(err)
+			}
+		case <-ctx.Done():
+			log.WithFields(logrus.Fields{
+				"height": v.vertex.Commitment.Height,
+				"merkle": fmt.Sprintf("%#x", v.vertex.Commitment.Merkle),
+			}).Debug("Challenge goroutine exiting")
+			return
+		}
+	}
+}
+
 // TODO: Add a condition that exits the whole vertex tracker (close the goroutine) once the vertex:
 // (a) is confirmed, or
 // (b) another vertex with a height >= ours is confirmed in the protocol.
@@ -131,55 +155,6 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	return nil
 }
 
-// Obtains a challenge vertex we should perform a merge move into given its corresponding challenge ID
-// and the history commitment of the vertex itself.
-func (v *vertexTracker) vertexToMergeInto(
-	validator *Validator,
-	vertexChallengeID protocol.CommitHash,
-	historyCommit util.HistoryCommitment,
-) (*protocol.ChallengeVertex, error) {
-	var mergingTo *protocol.ChallengeVertex
-	var err error
-	if err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		mergingTo, err = p.ChallengeVertexByHistoryCommit(tx, vertexChallengeID, historyCommit)
-		if err != nil {
-			return err
-		}
-		return nil
-
-	}); err != nil {
-		return nil, err
-	}
-	if mergingTo == nil {
-		return nil, errors.New("fetched nil challenge vertex from protocol")
-	}
-	return mergingTo, nil
-}
-
-func (v *vertexTracker) track(ctx context.Context) {
-	log.WithFields(logrus.Fields{
-		"height":    v.vertex.Commitment.Height,
-		"merkle":    fmt.Sprintf("%#x", v.vertex.Commitment.Merkle),
-		"validator": v.vertex.Validator,
-	}).Info("Tracking challenge vertex")
-	t := time.NewTicker(time.Millisecond * 200)
-	defer t.Stop()
-	for {
-		select {
-		case <-t.C:
-			if err := v.actOnBlockChallenge(ctx); err != nil {
-				log.Error(err)
-			}
-		case <-ctx.Done():
-			log.WithFields(logrus.Fields{
-				"height": v.vertex.Commitment.Height,
-				"merkle": fmt.Sprintf("%#x", v.vertex.Commitment.Merkle),
-			}).Debug("Challenge goroutine exiting")
-			return
-		}
-	}
-}
-
 // Retrieves the latest vertex from the protocol to refresh its status.
 func (v *vertexTracker) refreshVertex() (*protocol.ChallengeVertex, error) {
 	var vertex *protocol.ChallengeVertex
@@ -210,4 +185,29 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 		return atOneStepFork, err
 	}
 	return atOneStepFork, nil
+}
+
+// Obtains a challenge vertex we should perform a merge move into given its corresponding challenge ID
+// and the history commitment of the vertex itself.
+func (v *vertexTracker) vertexToMergeInto(
+	validator *Validator,
+	vertexChallengeID protocol.CommitHash,
+	historyCommit util.HistoryCommitment,
+) (*protocol.ChallengeVertex, error) {
+	var mergingTo *protocol.ChallengeVertex
+	var err error
+	if err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		mergingTo, err = p.ChallengeVertexByHistoryCommit(tx, vertexChallengeID, historyCommit)
+		if err != nil {
+			return err
+		}
+		return nil
+
+	}); err != nil {
+		return nil, err
+	}
+	if mergingTo == nil {
+		return nil, errors.New("fetched nil challenge vertex from protocol")
+	}
+	return mergingTo, nil
 }
