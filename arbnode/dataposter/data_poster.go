@@ -173,7 +173,7 @@ func (p *DataPoster[Meta]) GetNextNonceAndMeta(ctx context.Context) (uint64, Met
 	return p.nonce, meta, err
 }
 
-const minRbfIncrease arbmath.Bips = arbmath.OneInBips * 11 / 10
+const minRbfIncrease = arbmath.OneInBips * 11 / 10
 
 func (p *DataPoster[Meta]) getFeeAndTipCaps(ctx context.Context, lastTipCap *big.Int, dataCreatedAt time.Time) (*big.Int, *big.Int, error) {
 	latestHeader, err := p.headerReader.LastHeader(ctx)

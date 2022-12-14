@@ -135,7 +135,7 @@ func openKeystore(ks *keystore.KeyStore, description string, walletConfig *gener
 }
 
 func readPass() (string, error) {
-	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+	bytePassword, err := term.ReadPassword(syscall.Stdin)
 	if err != nil {
 		return "", err
 	}
