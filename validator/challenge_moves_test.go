@@ -111,8 +111,8 @@ func Test_merge(t *testing.T) {
 				Merkle: common.BytesToHash([]byte("SOME JUNK DATA")),
 			},
 		}
-		err = validator.merge(
-			ctx, mergingTo, mergingFrom,
+		_, err = validator.merge(
+			ctx, challengeCommitHash, mergingTo, mergingFrom,
 		)
 		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
@@ -142,7 +142,7 @@ func Test_merge(t *testing.T) {
 		require.NotNil(t, vertexToMergeFrom)
 
 		// Perform a merge move to the bisected vertex from an origin.
-		err = validator.merge(ctx, bisectedVertex, vertexToMergeFrom)
+		_, err = validator.merge(ctx, challengeCommitHash, bisectedVertex, vertexToMergeFrom)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Successfully merged to vertex with height 4")
 	})

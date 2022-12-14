@@ -84,6 +84,7 @@ type AssertionManager interface {
 	AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error)
 	ChallengeByCommitHash(tx *ActiveTx, commitHash CommitHash) (*Challenge, error)
 	ChallengeVertexBySequenceNum(tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber) (*ChallengeVertex, error)
+	ChallengeVertexByHistoryCommit(tx *ActiveTx, commitHash CommitHash, hist util.HistoryCommitment) (*ChallengeVertex, error)
 	ChallengePeriodLength(tx *ActiveTx) time.Duration
 	LatestConfirmed(*ActiveTx) *Assertion
 	CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
@@ -295,14 +296,33 @@ func (chain *AssertionChain) ChallengeVertexBySequenceNum(
 	if !ok {
 		return nil, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", commitHash)
 	}
-	if seqNum >= VertexSequenceNumber(len(vertices)) {
-		return nil, fmt.Errorf("challenge vertex sequence out of range %d >= %d", seqNum, len(vertices))
-	}
 	vertex, ok := vertices[seqNum]
 	if !ok {
 		return nil, fmt.Errorf("challenge vertex with sequence number not found %d", seqNum)
 	}
 	return vertex, nil
+}
+
+// ChallengeVertexByHistoryCommit returns the challenge vertex with the given history commitment.
+func (chain *AssertionChain) ChallengeVertexByHistoryCommit(
+	tx *ActiveTx, challengeCommitHash CommitHash, hist util.HistoryCommitment,
+) (*ChallengeVertex, error) {
+	tx.verifyRead()
+	vertices, ok := chain.challengeVerticesByCommitHashSeqNum[challengeCommitHash]
+	if !ok {
+		return nil, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", challengeCommitHash)
+	}
+	// TODO: Inefficient lookup, explore different storage.
+	for _, v := range vertices {
+		if v.Commitment.Hash() == hist.Hash() {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf(
+		"challenge vertex with commit %d and %#x not found",
+		hist.Height,
+		hist.Merkle,
+	)
 }
 
 // ChallengeByCommitHash returns the challenge with the given commit hash.
@@ -509,7 +529,7 @@ type Challenge struct {
 }
 
 // CreateChallenge creates a challenge for the assertion and moves the assertion to `ChallengedAssertionState` state.
-func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, challenger common.Address) (*Challenge, error) {
+func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator common.Address) (*Challenge, error) {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState && a.chain.LatestConfirmed(tx) != a {
 		return nil, ErrWrongState
@@ -555,7 +575,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, challenge
 		ParentSeqNum:          a.SequenceNum,
 		ParentStateCommitment: a.StateCommitment,
 		ParentStaker:          parentStaker,
-		Validator:             challenger,
+		Validator:             validator,
 	})
 
 	challengeID := CommitHash(a.StateCommitment.Hash())
@@ -576,7 +596,7 @@ func (c *Challenge) AssertionSeqNumber() AssertionSequenceNumber {
 }
 
 // AddLeaf adds a new leaf to the challenge.
-func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, challenger common.Address) (*ChallengeVertex, error) {
+func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.HistoryCommitment, validator common.Address) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
 	if assertion.Prev.IsNone() {
 		return nil, ErrInvalidOp
@@ -604,7 +624,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	leaf := &ChallengeVertex{
 		challenge:            c,
 		SequenceNum:          c.nextSequenceNum,
-		Challenger:           challenger,
+		Validator:            validator,
 		isLeaf:               true,
 		status:               PendingAssertionState,
 		Commitment:           history,
@@ -622,7 +642,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		WinnerIfConfirmed: assertion.SequenceNum,
 		History:           history,
 		BecomesPS:         leaf.Prev.presumptiveSuccessor == leaf,
-		Validator:         challenger,
+		Validator:         validator,
 	})
 	c.includedHistories[history.Hash()] = true
 	h := CommitHash(c.rootAssertion.StateCommitment.Hash())
@@ -650,7 +670,7 @@ type ChallengeVertex struct {
 	Commitment           util.HistoryCommitment
 	challenge            *Challenge
 	SequenceNum          VertexSequenceNumber // unique within the challenge
-	Challenger           common.Address
+	Validator            common.Address
 	isLeaf               bool
 	status               AssertionState
 	Prev                 *ChallengeVertex
@@ -688,7 +708,7 @@ func (v *ChallengeVertex) requiredBisectionHeight() (uint64, error) {
 }
 
 // Bisect returns the bisection proof for the vertex.
-func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash, challenger common.Address) (*ChallengeVertex, error) {
+func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, proof []common.Hash, validator common.Address) (*ChallengeVertex, error) {
 	tx.verifyReadWrite()
 	if v.IsPresumptiveSuccessor() {
 		return nil, ErrWrongState
@@ -714,7 +734,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 	newVertex := &ChallengeVertex{
 		challenge:            v.challenge,
 		SequenceNum:          v.challenge.nextSequenceNum,
-		Challenger:           challenger,
+		Validator:            validator,
 		isLeaf:               false,
 		Commitment:           history,
 		Prev:                 v.Prev,
@@ -733,7 +753,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		SequenceNum:     newVertex.SequenceNum,
 		History:         newVertex.Commitment,
 		BecomesPS:       newVertex.Prev.presumptiveSuccessor == newVertex,
-		Validator:       challenger,
+		Validator:       validator,
 	})
 	commitHash := CommitHash(newVertex.challenge.rootAssertion.StateCommitment.Hash())
 	newVertex.challenge.rootAssertion.chain.challengeVerticesByCommitHashSeqNum[commitHash][newVertex.SequenceNum] = newVertex
@@ -742,7 +762,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 }
 
 // Merge merges the vertex with its presumptive successor.
-func (v *ChallengeVertex) Merge(tx *ActiveTx, newPrev *ChallengeVertex, proof []common.Hash, challenger common.Address) error {
+func (v *ChallengeVertex) Merge(tx *ActiveTx, newPrev *ChallengeVertex, proof []common.Hash, validator common.Address) error {
 	tx.verifyReadWrite()
 	if !newPrev.eligibleForNewSuccessor() {
 		return ErrPastDeadline
@@ -765,7 +785,7 @@ func (v *ChallengeVertex) Merge(tx *ActiveTx, newPrev *ChallengeVertex, proof []
 		ShallowerSequenceNum: newPrev.SequenceNum,
 		BecomesPS:            newPrev.presumptiveSuccessor == v,
 		History:              newPrev.Commitment,
-		Validator:            challenger,
+		Validator:            validator,
 	})
 	return nil
 }

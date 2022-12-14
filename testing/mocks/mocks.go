@@ -84,6 +84,13 @@ func (m *MockProtocol) ChallengeVertexBySequenceNum(tx *protocol.ActiveTx, commi
 	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
 }
 
+func (m *MockProtocol) ChallengeVertexByHistoryCommit(
+	tx *protocol.ActiveTx, challengeCommitHash protocol.CommitHash, hist util.HistoryCommitment,
+) (*protocol.ChallengeVertex, error) {
+	args := m.Called(tx, challengeCommitHash, hist)
+	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
+}
+
 func (m *MockProtocol) ChallengeByCommitHash(tx *protocol.ActiveTx, commitHash protocol.CommitHash) (*protocol.Challenge, error) {
 	args := m.Called(tx, commitHash)
 	return args.Get(0).(*protocol.Challenge), args.Error(1)
