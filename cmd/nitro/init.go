@@ -245,7 +245,9 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 		return nil, err
 	}
 	defer bc.Stop()
-	var roots importantRoots
+	roots := importantRoots{
+		bc: bc,
+	}
 	if initConfig.Prune == "validator" {
 		if l1Client == nil {
 			return nil, errors.New("an L1 connection is required for validator pruning")
@@ -274,7 +276,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 				return nil, err
 			}
 
-			arbDb, err := stack.OpenDatabaseWithFreezer("arbitrumdata", 0, 0, "", "", true)
+			arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", true)
 			if err != nil {
 				return nil, err
 			}
@@ -318,7 +320,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			log.Warn("missing latest cached block")
 			break
 		}
-		meetsHeight := latestHeader.Number.Uint64()+nodeConfig.Node.Caching.BlockCount >= chainHeight
+		meetsHeight := latestHeader.Number.Uint64()+nodeConfig.Node.Caching.BlockCount <= chainHeight
 		meetsAge := time.Since(time.Unix(int64(latestHeader.Time), 0)) >= nodeConfig.Node.Caching.BlockAge
 		if meetsHeight && meetsAge {
 			err = roots.addHeader(latestHeader, true)
