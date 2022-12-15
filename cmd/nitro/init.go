@@ -298,7 +298,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			log.Warn("missing latest confirmed block", "hash", confirmedHash)
 		}
 	} else if initConfig.Prune == "full" {
-		if nodeConfig.Node.Validator.Enable {
+		if nodeConfig.Node.Validator.Enable || nodeConfig.Node.BlockValidator.Enable {
 			return nil, errors.New("refusing to prune to full-node level when validator is enabled (you should prune in validator mode)")
 		}
 	} else if hashListRegex.MatchString(initConfig.Prune) {
