@@ -1507,11 +1507,12 @@ func (n *Node) StopAndWait() {
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
 	}
-	if n.BroadcastClients != nil {
-		n.BroadcastClients.StopAndWait()
-	}
+	n.Stack.StopRPC() // does nothing if not running
 	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
 		n.BroadcastServer.StopAndWait()
+	}
+	if n.BroadcastClients != nil {
+		n.BroadcastClients.StopAndWait()
 	}
 	if n.L1Reader != nil && n.L1Reader.Started() {
 		n.L1Reader.StopAndWait()
