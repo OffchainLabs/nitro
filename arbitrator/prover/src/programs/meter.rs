@@ -5,22 +5,25 @@ use super::{FuncMiddleware, GlobalMod, Middleware, ModuleMod};
 
 use eyre::Result;
 use parking_lot::Mutex;
+use std::fmt::Debug;
 use wasmer::{
     wasmparser::{Operator, Type as WpType, TypeOrFuncType},
     GlobalInit, Instance, Store, Type,
 };
 use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 
-use std::fmt::Debug;
+pub trait OpcodePricer: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 
-pub struct Meter<F: Fn(&Operator) -> u64 + Send + Sync + Clone> {
+impl<T> OpcodePricer for T where T: Fn(&Operator) -> u64 + Send + Sync + Clone {}
+
+pub struct Meter<F: OpcodePricer> {
     gas_global: Mutex<Option<GlobalIndex>>,
     status_global: Mutex<Option<GlobalIndex>>,
     costs: F,
     start_gas: u64,
 }
 
-impl<F: Fn(&Operator) -> u64 + Send + Sync + Clone> Meter<F> {
+impl<F: OpcodePricer> Meter<F> {
     pub fn new(costs: F, start_gas: u64) -> Self {
         Self {
             gas_global: Mutex::new(None),
@@ -34,7 +37,7 @@ impl<F: Fn(&Operator) -> u64 + Send + Sync + Clone> Meter<F> {
 impl<M, F> Middleware<M> for Meter<F>
 where
     M: ModuleMod,
-    F: Fn(&Operator) -> u64 + Send + Sync + Clone + 'static,
+    F: OpcodePricer + 'static,
 {
     type FM<'a> = FunctionMeter<'a, F>;
 
@@ -59,7 +62,7 @@ where
     }
 }
 
-pub struct FunctionMeter<'a, F: Fn(&Operator) -> u64 + Send + Sync + Clone> {
+pub struct FunctionMeter<'a, F: OpcodePricer> {
     /// Represents the amount of gas left for consumption
     gas_global: GlobalIndex,
     /// Represents whether the machine is out of gas
@@ -72,10 +75,7 @@ pub struct FunctionMeter<'a, F: Fn(&Operator) -> u64 + Send + Sync + Clone> {
     costs: F,
 }
 
-impl<'a, F> FunctionMeter<'a, F>
-where
-    F: Fn(&Operator) -> u64 + Send + Sync + Clone,
-{
+impl<'a, F: OpcodePricer> FunctionMeter<'a, F> {
     fn new(gas_global: GlobalIndex, status_global: GlobalIndex, costs: F) -> Self {
         Self {
             gas_global,
@@ -87,10 +87,7 @@ where
     }
 }
 
-impl<'a, F> FuncMiddleware<'a> for FunctionMeter<'a, F>
-where
-    F: Fn(&Operator) -> u64 + Send + Sync + Clone,
-{
+impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FunctionMeter<'a, F> {
     fn feed<O>(&mut self, op: Operator<'a>, out: &mut O) -> Result<()>
     where
         O: Extend<Operator<'a>>,
@@ -157,7 +154,7 @@ where
     }
 }
 
-impl<F: Fn(&Operator) -> u64 + Send + Sync + Clone> Debug for Meter<F> {
+impl<F: OpcodePricer> Debug for Meter<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Meter")
             .field("gas_global", &self.gas_global)
@@ -168,7 +165,7 @@ impl<F: Fn(&Operator) -> u64 + Send + Sync + Clone> Debug for Meter<F> {
     }
 }
 
-impl<F: Fn(&Operator) -> u64 + Send + Sync + Clone> Debug for FunctionMeter<'_, F> {
+impl<F: OpcodePricer> Debug for FunctionMeter<'_, F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FunctionMeter")
             .field("gas_global", &self.gas_global)

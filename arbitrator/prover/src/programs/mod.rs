@@ -107,6 +107,9 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     }
 }
 
+/// This wrapper exists to impl wasmer's `ModuleMiddleware` generically.
+/// We can't use `T` directly since we don't define `ModuleMiddleware`,
+/// and we need `M` to be part of the type.
 #[derive(Debug)]
 pub struct MiddlewareWrapper<T, M>(pub T, PhantomData<M>)
 where
@@ -141,6 +144,9 @@ where
     }
 }
 
+/// This wrapper exists to impl wasmer's `FunctionMiddleware` generically.
+/// The logic is analogous to that of `ModuleMiddleware`, except this time
+/// we need a phantom marker to parameterize by `T`'s reference's lifetime.
 #[derive(Debug)]
 pub struct FuncMiddlewareWrapper<'a, T: 'a>(T, PhantomData<&'a T>)
 where
@@ -212,7 +218,9 @@ impl GlobalMod for Instance {
     {
         let error = format!("global {} does not exist", name.red());
         let global = self.exports.get_global(name).expect(&error);
-        global.get(store).try_into().expect("wrong type")
+        let ty = global.get(store);
+        let error = format!("wrong type: {:?}", ty);
+        ty.try_into().expect(&error)
     }
 
     fn set_global<T>(&mut self, store: &mut Store, name: &str, value: T)
