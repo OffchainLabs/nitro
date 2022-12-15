@@ -85,6 +85,7 @@ COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/jit arbitrator/jit
+COPY arbitrator/polyglot arbitrator/polyglot
 COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
@@ -104,6 +105,7 @@ COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
+COPY arbitrator/polyglot/Cargo.toml arbitrator/polyglot/
 COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
 RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
     echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
@@ -113,6 +115,7 @@ RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/jit arbitrator/jit
+COPY arbitrator/polyglot arbitrator/polyglot
 COPY --from=brotli-library-export / target/
 RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
