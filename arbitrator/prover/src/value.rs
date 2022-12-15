@@ -68,7 +68,7 @@ pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::Type {
 }
 
 pub fn parser_func_type(ty: wasmer::FunctionType) -> FuncType {
-    let convert = |t: &[wasmer::Type]| -> Vec<Type> { t.into_iter().map(parser_type).collect() };
+    let convert = |t: &[wasmer::Type]| -> Vec<Type> { t.iter().map(parser_type).collect() };
     let params = convert(ty.params()).into_boxed_slice();
     let returns = convert(ty.results()).into_boxed_slice();
     FuncType { params, returns }

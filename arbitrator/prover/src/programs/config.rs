@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{MiddlewareWrapper, meter::Meter};
+use super::{meter::Meter, MiddlewareWrapper};
 
 use wasmer::{wasmparser::Operator, CompilerConfig, Store};
 use wasmer_compiler_singlepass::Singlepass;

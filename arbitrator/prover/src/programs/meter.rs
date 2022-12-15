@@ -5,7 +5,10 @@ use super::{FuncMiddleware, GlobalMod, Middleware, ModuleMod};
 
 use eyre::Result;
 use parking_lot::Mutex;
-use wasmer::{wasmparser::{Operator, TypeOrFuncType, Type as WpType}, GlobalInit, Instance, Store, Type};
+use wasmer::{
+    wasmparser::{Operator, Type as WpType, TypeOrFuncType},
+    GlobalInit, Instance, Store, Type,
+};
 use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 
 use std::fmt::Debug;
@@ -177,7 +180,7 @@ impl<F: Fn(&Operator) -> u64 + Send + Sync + Clone> Debug for FunctionMeter<'_, 
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum MachineMeter {
     Ready(u64),
     Exhausted,
