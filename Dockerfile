@@ -107,7 +107,7 @@ COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/polyglot/Cargo.toml arbitrator/polyglot/
 COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
-RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
+RUN mkdir arbitrator/prover/src arbitrator/jit/src arbitrator/polyglot/src && \
     echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
     echo "fn test() {}" > arbitrator/polyglot/src/lib.rs && \
