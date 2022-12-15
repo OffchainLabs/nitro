@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -185,75 +186,25 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 	return nil
 }
 
-func isHexHash(s string) bool {
-	if len(s) != 64 {
-		return false
-	}
-	for _, c := range s {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
-			return false
-		}
-	}
-	return true
+type importantRoots struct {
+	bc      *core.BlockChain
+	roots   []common.Hash
+	heights []uint64
 }
 
-func pruningRetainRoot(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) (common.Hash, error) {
-	initConfig := &nodeConfig.Init
-	var targetBlockHash common.Hash
-	if initConfig.Prune == "validator" {
-		if l1Client == nil {
-			return common.Hash{}, errors.New("an L1 connection is required for validator pruning")
-		}
-		callOpts := bind.CallOpts{
-			Context:     ctx,
-			BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
-		}
-		rollup, err := validator.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
-		if err != nil {
-			return common.Hash{}, err
-		}
-		latestConfirmedNum, err := rollup.LatestConfirmed(&callOpts)
-		if err != nil {
-			return common.Hash{}, err
-		}
-		latestConfirmedNode, err := rollup.LookupNode(ctx, latestConfirmedNum)
-		if err != nil {
-			return common.Hash{}, err
-		}
-		targetBlockHash = latestConfirmedNode.Assertion.AfterState.GlobalState.BlockHash
-	} else if initConfig.Prune == "full" {
-		if nodeConfig.Node.Validator.Enable {
-			return common.Hash{}, errors.New("refusing to prune to full-node level when validator is enabled (you should prune in validator mode)")
-		}
-	} else if isHexHash(initConfig.Prune) {
-		return common.HexToHash(initConfig.Prune), nil
-	} else {
-		return common.Hash{}, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
-	}
-	chainConfig := arbnode.TryReadStoredChainConfig(chainDb)
-	if chainConfig == nil {
-		return common.Hash{}, errors.New("database doesn't have a chain config (was this node initialized?)")
-	}
-	bc, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &nodeConfig.Node)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	defer bc.Stop()
-	var header *types.Header
-	if targetBlockHash == (common.Hash{}) {
-		panic("TODO: find the last block the full node would care about")
-	} else {
-		header = bc.GetHeaderByHash(targetBlockHash)
-	}
-	var targetBlockNum uint64
-	if header != nil {
-		targetBlockNum = header.Number.Uint64()
-	}
+// The minimum block distance between two important roots
+const minRootDistance = 2000
+
+// Marks a header as important, and records its root and height.
+// If overwrite is true, it'll remove any future roots and replace them with this header.
+// If overwrite is false, it'll ignore this header if it has future roots.
+func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
+	targetBlockNum := header.Number.Uint64()
 	for {
 		if header == nil || header.Root == (common.Hash{}) {
-			return common.Hash{}, fmt.Errorf("missing state of pruning target block %v", targetBlockHash)
+			return fmt.Errorf("missing state of pruning target block %v", targetBlockNum)
 		}
-		if bc.HasState(header.Root) {
+		if r.bc.HasState(header.Root) {
 			break
 		}
 		num := header.Number.Uint64()
@@ -261,10 +212,126 @@ func pruningRetainRoot(ctx context.Context, chainDb ethdb.Database, stack *node.
 			log.Info("looking for old block with state to keep", "current", num, "target", targetBlockNum)
 		}
 		// An underflow is fine here because it'll just return nil due to not found
-		header = bc.GetHeader(header.ParentHash, num-1)
+		header = r.bc.GetHeader(header.ParentHash, num-1)
 	}
-	log.Info("found pruning target block", "number", header.Number, "hash", header.Hash(), "root", header.Root)
-	return header.Root, nil
+	height := header.Number.Uint64()
+	for len(r.heights) > 0 && r.heights[len(r.heights)-1] > height {
+		if overwrite {
+			r.roots = r.roots[:len(r.roots)-1]
+			r.heights = r.heights[:len(r.heights)-1]
+		} else {
+			return nil
+		}
+	}
+	if len(r.heights) > 0 && r.heights[len(r.heights)-1]+minRootDistance > height {
+		return nil
+	}
+	r.roots = append(r.roots, header.Root)
+	r.heights = append(r.heights, height)
+	return nil
+}
+
+var hashListRegex = regexp.MustCompile("^(0x)?[0-9a-fA-F]{64}(,(0x)?[0-9a-fA-F]{64})*$")
+
+// Finds important roots to retain while proving
+func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) ([]common.Hash, error) {
+	initConfig := &nodeConfig.Init
+	chainConfig := arbnode.TryReadStoredChainConfig(chainDb)
+	if chainConfig == nil {
+		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
+	}
+	bc, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &nodeConfig.Node)
+	if err != nil {
+		return nil, err
+	}
+	defer bc.Stop()
+	var roots importantRoots
+	if initConfig.Prune == "validator" {
+		if l1Client == nil {
+			return nil, errors.New("an L1 connection is required for validator pruning")
+		}
+		callOpts := bind.CallOpts{
+			Context:     ctx,
+			BlockNumber: big.NewInt(int64(rpc.FinalizedBlockNumber)),
+		}
+		rollup, err := validator.NewRollupWatcher(rollupAddrs.Rollup, l1Client, callOpts)
+		if err != nil {
+			return nil, err
+		}
+		latestConfirmedNum, err := rollup.LatestConfirmed(&callOpts)
+		if err != nil {
+			return nil, err
+		}
+		latestConfirmedNode, err := rollup.LookupNode(ctx, latestConfirmedNum)
+		if err != nil {
+			return nil, err
+		}
+		confirmedHash := latestConfirmedNode.Assertion.AfterState.GlobalState.BlockHash
+		confirmedHeader := bc.GetHeaderByHash(confirmedHash)
+		if confirmedHeader != nil {
+			err = roots.addHeader(confirmedHeader, false)
+			if err != nil {
+				return nil, err
+			}
+
+			arbDb, err := stack.OpenDatabaseWithFreezer("arbitrumdata", 0, 0, "", "", true)
+			if err != nil {
+				return nil, err
+			}
+			validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
+			lastValidated, err := validator.ReadLastValidatedFromDb(validatorDb)
+			if err != nil {
+				return nil, err
+			}
+			if lastValidated != nil {
+				lastValidatedHeader := bc.GetHeaderByHash(lastValidated.BlockHash)
+				if lastValidatedHeader != nil {
+					err = roots.addHeader(lastValidatedHeader, false)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					log.Warn("missing latest validated block", "number", lastValidated.BlockNumber, "hash", lastValidated.BlockHash)
+				}
+			}
+		} else {
+			log.Warn("missing latest confirmed block", "hash", confirmedHash)
+		}
+	} else if initConfig.Prune == "full" {
+		if nodeConfig.Node.Validator.Enable {
+			return nil, errors.New("refusing to prune to full-node level when validator is enabled (you should prune in validator mode)")
+		}
+	} else if hashListRegex.MatchString(initConfig.Prune) {
+		parts := strings.Split(initConfig.Prune, ",")
+		var roots []common.Hash
+		for _, part := range parts {
+			roots = append(roots, common.HexToHash(part))
+		}
+		return roots, nil
+	} else {
+		return nil, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
+	}
+	latestHeader := bc.CurrentBlock().Header()
+	chainHeight := latestHeader.Number.Uint64()
+	for {
+		if latestHeader == nil {
+			log.Warn("missing latest cached block")
+			break
+		}
+		meetsHeight := latestHeader.Number.Uint64()+nodeConfig.Node.Caching.BlockCount >= chainHeight
+		meetsAge := time.Since(time.Unix(int64(latestHeader.Time), 0)) >= nodeConfig.Node.Caching.BlockAge
+		if meetsHeight && meetsAge {
+			err = roots.addHeader(latestHeader, true)
+			if err != nil {
+				return nil, err
+			}
+			break
+		}
+		// An underflow is fine here because it'll just return nil due to not found
+		latestHeader = bc.GetHeader(latestHeader.ParentHash, latestHeader.Number.Uint64()-1)
+	}
+	log.Info("found pruning target blocks", "heights", roots.heights, "roots", roots.roots)
+	return roots.roots, nil
 }
 
 func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) error {
@@ -272,7 +339,7 @@ func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node,
 	if config.Prune == "" {
 		return nil
 	}
-	root, err := pruningRetainRoot(ctx, chainDb, stack, nodeConfig, cacheConfig, l1Client, rollupAddrs)
+	root, err := findImportantRoots(ctx, chainDb, stack, nodeConfig, cacheConfig, l1Client, rollupAddrs)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
