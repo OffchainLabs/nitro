@@ -164,12 +164,12 @@ where
 impl ModuleMod for ModuleInfo {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex> {
         let global_type = GlobalType::new(ty, Mutability::Var);
-        if self.exports.contains_key(name) {
+        let name = name.to_owned();
+        if self.exports.contains_key(&name) {
             bail!("wasm already contains {}", name.red())
         }
         let index = self.globals.push(global_type);
-        self.exports
-            .insert(name.to_owned(), ExportIndex::Global(index));
+        self.exports.insert(name, ExportIndex::Global(index));
         self.global_initializers.push(init);
         Ok(index)
     }

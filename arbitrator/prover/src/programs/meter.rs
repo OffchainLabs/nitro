@@ -186,6 +186,8 @@ pub enum MachineMeter {
     Exhausted,
 }
 
+/// We don't implement `From` since it's unclear what 0 would map to
+#[allow(clippy::from_over_into)]
 impl Into<u64> for MachineMeter {
     fn into(self) -> u64 {
         match self {
