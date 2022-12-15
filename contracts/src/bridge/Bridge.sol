@@ -230,7 +230,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         InOutInfo storage info = allowedDelayedInboxesMap[inbox];
         bool alreadyEnabled = info.allowed;
         emit InboxToggle(inbox, enabled);
-        if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
+        if (alreadyEnabled == enabled) {
             return;
         }
         if (enabled) {
@@ -252,7 +252,7 @@ contract Bridge is Initializable, DelegateCallAware, IBridge {
         InOutInfo storage info = allowedOutboxesMap[outbox];
         bool alreadyEnabled = info.allowed;
         emit OutboxToggle(outbox, enabled);
-        if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
+        if (alreadyEnabled == enabled) {
             return;
         }
         if (enabled) {
