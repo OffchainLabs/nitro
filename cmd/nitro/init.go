@@ -280,6 +280,12 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			if err != nil {
 				return nil, err
 			}
+			defer func() {
+				err := arbDb.Close()
+				if err != nil {
+					log.Warn("failed to close arbitrum database after finding pruning targets", "err", err)
+				}
+			}()
 			validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
 			lastValidated, err := validator.ReadLastValidatedFromDb(validatorDb)
 			if err != nil {
