@@ -1,0 +1,9 @@
+[package]
+name = "polyglot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eyre = "0.6.5"
+prover = { path = "../prover/" }
+wasmer = { path = "../wasm-upstream/wasmer/lib/api/" }
