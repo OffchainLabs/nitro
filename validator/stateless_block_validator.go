@@ -585,6 +585,7 @@ func (v *StatelessBlockValidator) executeBlock(
 	}
 
 	mach := basemachine.Clone()
+	defer mach.Destroy()
 	err = v.LoadEntryToMachine(ctx, entry, mach)
 	if err != nil {
 		return GoGlobalState{}, err
