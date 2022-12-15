@@ -110,6 +110,7 @@ COPY arbitrator/wasm-upstream arbitrator/wasm-upstream
 RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
     echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/polyglot/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
     rm arbitrator/jit/src/lib.rs
 COPY ./Makefile ./
