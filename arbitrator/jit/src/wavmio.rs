@@ -134,7 +134,7 @@ fn inbox_message_impl(sp: &GoStack, inbox: &Inbox, name: &str) -> MaybeEscape {
         Err(_) => error!("bad offset {offset} in {name}"),
     };
 
-    let len = std::cmp::min(32, message.len().saturating_sub(offset)) as usize;
+    let len = std::cmp::min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
     sp.write_slice(out_ptr, read);
     sp.write_u64(5, read.len() as u64);
@@ -207,7 +207,7 @@ pub fn resolve_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
         Err(_) => error!("bad offset {offset} in {name}"),
     };
 
-    let len = std::cmp::min(32, preimage.len().saturating_sub(offset)) as usize;
+    let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
     sp.write_slice(out_ptr, read);
     sp.write_u64(7, read.len() as u64);
