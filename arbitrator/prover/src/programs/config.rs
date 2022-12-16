@@ -38,7 +38,7 @@ impl PolyglotConfig {
         compiler.enable_verifier();
 
         let meter = MiddlewareWrapper::new(Meter::new(self.costs, self.start_gas));
-        let start = MiddlewareWrapper::new(StartMover::new("polyglot_start"));
+        let start = MiddlewareWrapper::new(StartMover::default());
 
         // add the instrumentation in the order of application
         compiler.push_middleware(Arc::new(meter));

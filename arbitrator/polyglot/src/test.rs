@@ -7,6 +7,7 @@ use eyre::Result;
 use prover::programs::{
     config::PolyglotConfig,
     meter::{MachineMeter, MeteredMachine},
+    start::StartlessMachine,
     GlobalMod,
 };
 use wasmer::{imports, wasmparser::Operator, CompilerConfig, Imports, Instance, Module, Store};
@@ -98,7 +99,7 @@ fn test_start() -> Result<()> {
 
     let exports = &instance.exports;
     let move_me = exports.get_typed_function::<(), ()>(&store, "move_me")?;
-    let starter = exports.get_typed_function::<(), ()>(&store, "polyglot_start")?;
+    let starter = instance.get_start(&store)?;
 
     move_me.call(&mut store)?;
     starter.call(&mut store)?;
