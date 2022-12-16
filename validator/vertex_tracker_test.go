@@ -24,6 +24,27 @@ func init() {
 	logrus.SetOutput(io.Discard)
 }
 
+func Test_track(t *testing.T) {
+	hook := test.NewGlobal()
+	tkr := newVertexTracker(
+		util.NewArtificialTimeReference(),
+		time.Millisecond,
+		protocol.CommitHash(common.Hash{}),
+		&protocol.Challenge{},
+		&protocol.ChallengeVertex{
+			Commitment: util.HistoryCommitment{},
+			Validator:  common.Address{},
+		},
+		&Validator{},
+	)
+	tkr.awaitingOneStepFork = true
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*5)
+	defer cancel()
+	tkr.track(ctx)
+	AssertLogsContain(t, hook, "Tracking challenge vertex")
+	AssertLogsContain(t, hook, "Challenge goroutine exiting")
+}
+
 func Test_actOnBlockChallenge(t *testing.T) {
 	challengeCommit := protocol.StateCommitment{
 		Height:    0,
@@ -187,6 +208,32 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		require.NoError(t, err)
 		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
 		AssertLogsContain(t, hook, "Successfully bisected to vertex")
+	})
+	t.Run("merges", func(t *testing.T) {
+		hook := test.NewGlobal()
+		trk := setupNonPSTracker(t, ctx)
+		err := trk.actOnBlockChallenge(ctx)
+		require.NoError(t, err)
+
+		// Get the challenge vertex from the other validator. It should share a history
+		// with the vertex we just bisected to, so it should try to merge instead.
+		var vertex *protocol.ChallengeVertex
+		err = trk.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			vertex, err = p.ChallengeVertexBySequenceNum(tx, trk.challengeCommitHash, protocol.VertexSequenceNumber(2))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.NotNil(t, vertex)
+		trk.vertex = vertex
+
+		err = trk.actOnBlockChallenge(ctx)
+		require.NoError(t, err)
+		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
+		AssertLogsContain(t, hook, "Successfully bisected to vertex")
+		AssertLogsContain(t, hook, "Successfully merged to vertex with height 4")
 	})
 }
 
@@ -373,6 +420,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	return newVertexTracker(
 		util.NewArtificialTimeReference(),
 		time.Second,
+		id,
 		challenge,
 		vertex,
 		validator,

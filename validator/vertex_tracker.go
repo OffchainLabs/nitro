@@ -25,15 +25,15 @@ type vertexTracker struct {
 func newVertexTracker(
 	timeRef util.TimeReference,
 	actEveryNSeconds time.Duration,
+	challengeCommitHash protocol.CommitHash,
 	challenge *protocol.Challenge,
 	vertex *protocol.ChallengeVertex,
 	validator *Validator,
 ) *vertexTracker {
-	commitHash := protocol.CommitHash(challenge.ParentStateCommitment().Hash())
 	return &vertexTracker{
 		timeRef:             timeRef,
 		actEveryNSeconds:    actEveryNSeconds,
-		challengeCommitHash: commitHash,
+		challengeCommitHash: challengeCommitHash,
 		challenge:           challenge,
 		vertex:              vertex,
 		validator:           validator,
@@ -145,6 +145,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 			go newVertexTracker(
 				v.timeRef,
 				v.actEveryNSeconds,
+				v.challengeCommitHash,
 				v.challenge,
 				mergedVertex,
 				v.validator,
@@ -158,6 +159,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	go newVertexTracker(
 		v.timeRef,
 		v.actEveryNSeconds,
+		v.challengeCommitHash,
 		v.challenge,
 		bisectedVertex,
 		v.validator,
