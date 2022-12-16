@@ -62,8 +62,9 @@ func TestBlockChallenge(t *testing.T) {
 			&protocol.ChallengeMergeEvent{}:  2,
 		}
 		hook := test.NewGlobal()
-		runTempChallengeTest(t, hook, cfg)
-		AssertLogsContain(t, hook, "Reached one-step-fork")
+		runBlockChallengeTest(t, hook, cfg)
+		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
 	})
 }
 
@@ -82,7 +83,7 @@ type blockChallengeTestConfig struct {
 	eventsToAssert map[protocol.ChallengeEvent]uint
 }
 
-func runTempChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTestConfig) {
+func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTestConfig) {
 	ctx := context.Background()
 	ref := util.NewRealTimeReference()
 	chain := protocol.NewAssertionChain(ctx, ref, time.Minute)
