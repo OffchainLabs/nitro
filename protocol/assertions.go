@@ -316,7 +316,7 @@ func (chain *AssertionChain) IsAtOneStepFork(
 	numOneStepAway := 0
 	for _, v := range vertices {
 		// TODO: Use option.
-		if v.Prev != nil {
+		if v.Prev == nil {
 			continue
 		}
 		vParentHash := v.Prev.Commitment.Hash()

@@ -201,6 +201,140 @@ func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent,
 	}
 }
 
+func TestIsAtOneStepFork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timeRef := util.NewArtificialTimeReference()
+	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+
+	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
+
+		genesisCommitHash := CommitHash((StateCommitment{}).Hash())
+		t.Run("inputs do not have a height difference of one", func(t *testing.T) {
+			vertexCommit := util.HistoryCommitment{
+				Height: 2,
+			}
+			parentCommit := util.HistoryCommitment{
+				Height: 0,
+			}
+			ok, err := chain.IsAtOneStepFork(
+				tx,
+				genesisCommitHash,
+				vertexCommit,
+				parentCommit,
+			)
+			require.NoError(t, err)
+			require.False(t, ok)
+		})
+		t.Run("vertices not found for challenge", func(t *testing.T) {
+			vertexCommit := util.HistoryCommitment{
+				Height: 1,
+			}
+			parentCommit := util.HistoryCommitment{
+				Height: 0,
+			}
+			_, err := chain.IsAtOneStepFork(
+				tx,
+				genesisCommitHash,
+				vertexCommit,
+				parentCommit,
+			)
+			require.ErrorContains(t, err, "challenge vertices not found")
+		})
+		t.Run("empty list of vertices", func(t *testing.T) {
+			vertexCommit := util.HistoryCommitment{
+				Height: 1,
+			}
+			parentCommit := util.HistoryCommitment{
+				Height: 0,
+			}
+			vertices := map[VertexSequenceNumber]*ChallengeVertex{}
+			chain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = vertices
+			ok, err := chain.IsAtOneStepFork(
+				tx,
+				genesisCommitHash,
+				vertexCommit,
+				parentCommit,
+			)
+			require.NoError(t, err)
+			require.False(t, ok)
+		})
+		t.Run("only one vertex with a height diff of one from its parent", func(t *testing.T) {
+			vertexCommit := util.HistoryCommitment{
+				Height: 1,
+			}
+			parentCommit := util.HistoryCommitment{
+				Height: 0,
+			}
+			vertices := map[VertexSequenceNumber]*ChallengeVertex{
+				1: {
+					Prev: &ChallengeVertex{
+						Commitment: util.HistoryCommitment{},
+					},
+					Commitment: util.HistoryCommitment{
+						Height: 1,
+						Merkle: common.BytesToHash([]byte{1}),
+					},
+				},
+			}
+			chain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = vertices
+			ok, err := chain.IsAtOneStepFork(
+				tx,
+				genesisCommitHash,
+				vertexCommit,
+				parentCommit,
+			)
+			require.NoError(t, err)
+			require.False(t, ok)
+		})
+		t.Run("more than one vertex with a height diff of one from its parent", func(t *testing.T) {
+			vertexCommit := util.HistoryCommitment{
+				Height: 1,
+			}
+			parentCommit := util.HistoryCommitment{
+				Height: 0,
+			}
+			vertices := map[VertexSequenceNumber]*ChallengeVertex{
+				1: {
+					Prev: &ChallengeVertex{
+						Commitment: util.HistoryCommitment{},
+					},
+					Commitment: util.HistoryCommitment{
+						Height: 1,
+						Merkle: common.BytesToHash([]byte{1}),
+					},
+				},
+				2: {
+					Prev: &ChallengeVertex{
+						Commitment: util.HistoryCommitment{},
+					},
+					Commitment: util.HistoryCommitment{
+						Height: 1,
+						Merkle: common.BytesToHash([]byte{2}),
+					},
+				},
+			}
+			chain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = vertices
+			ok, err := chain.IsAtOneStepFork(
+				tx,
+				genesisCommitHash,
+				vertexCommit,
+				parentCommit,
+			)
+			require.NoError(t, err)
+			require.True(t, ok)
+		})
+
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestChallengeVertexByHistoryCommit(t *testing.T) {
+}
+
 func TestBisectionChallengeGame(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
