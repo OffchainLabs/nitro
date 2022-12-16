@@ -138,7 +138,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		validators[i] = v
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
 	defer cancel()
 
 	harnessObserver := make(chan protocol.ChallengeEvent, 100)
@@ -156,7 +156,6 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		go val.Start(ctx)
 	}
 
-	// Sleep before reading events for cleaner logs below.
 	totalEventsWanted := uint16(0)
 	for _, count := range cfg.eventsToAssert {
 		totalEventsWanted += uint16(count)
