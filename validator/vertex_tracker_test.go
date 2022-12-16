@@ -1,18 +1,28 @@
 package validator
 
 import (
+	"io"
 	"testing"
 
 	"context"
 	"errors"
 
+	"time"
+
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
+	"github.com/OffchainLabs/new-rollup-exploration/state-manager"
 	"github.com/OffchainLabs/new-rollup-exploration/testing/mocks"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetOutput(io.Discard)
+}
 
 func Test_actOnBlockChallenge(t *testing.T) {
 	challengeCommit := protocol.StateCommitment{
@@ -170,6 +180,14 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		err := tkr.actOnBlockChallenge(ctx)
 		require.NoError(t, err)
 	})
+	t.Run("bisects", func(t *testing.T) {
+		hook := test.NewGlobal()
+		trk := setupNonPSTracker(t, ctx)
+		err := trk.actOnBlockChallenge(ctx)
+		require.NoError(t, err)
+		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
+		AssertLogsContain(t, hook, "Successfully bisected to vertex")
+	})
 }
 
 func Test_isAtOneStepFork(t *testing.T) {
@@ -303,4 +321,60 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
+}
+
+func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
+	stateRoots := generateStateRoots(10)
+	manager := statemanager.New(stateRoots)
+	leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+	err := validator.onLeafCreated(ctx, leaf1)
+	require.NoError(t, err)
+	err = validator.onLeafCreated(ctx, leaf2)
+	require.NoError(t, err)
+
+	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
+	require.NoError(t, err)
+
+	genesisCommit := protocol.StateCommitment{
+		Height:    0,
+		StateRoot: common.Hash{},
+	}
+
+	id := protocol.CommitHash(genesisCommit.Hash())
+	var challenge *protocol.Challenge
+	err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
+		if fetchErr != nil {
+			return fetchErr
+		}
+		challenge, err = p.ChallengeByCommitHash(tx, id)
+		if err != nil {
+			return err
+		}
+		if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
+			return err
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Get the challenge vertex.
+	var vertex *protocol.ChallengeVertex
+	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		vertex, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(1))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotNil(t, vertex)
+
+	return newVertexTracker(
+		util.NewArtificialTimeReference(),
+		time.Second,
+		challenge,
+		vertex,
+		validator,
+	)
 }
