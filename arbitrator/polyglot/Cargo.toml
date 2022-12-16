@@ -7,3 +7,4 @@ edition = "2021"
 eyre = "0.6.5"
 prover = { path = "../prover/" }
 wasmer = { path = "../wasm-upstream/wasmer/lib/api/" }
+wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass" }

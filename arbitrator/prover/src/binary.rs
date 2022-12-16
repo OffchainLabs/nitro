@@ -222,7 +222,7 @@ pub struct FuncImport<'a> {
 }
 
 /// This enum primarily exists because wasmer's ExternalKind doesn't impl these derived functions
-#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExportKind {
     Func,
     Table,
@@ -265,7 +265,7 @@ pub struct NameCustomSection {
     pub functions: HashMap<u32, String>,
 }
 
-pub type ExportMap = HashMap<(String, ExportKind), u32>;
+pub type ExportMap = HashMap<String, (u32, ExportKind)>;
 
 #[derive(Clone, Default)]
 pub struct WasmBinary<'a> {
@@ -404,7 +404,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
                     // TODO: we'll only support the types also in wasmparser 0.95+
                     if matches!(export.kind, Function | Table | Memory | Global | Tag) {
                         let kind = export.kind.try_into()?;
-                        binary.exports.insert((name, kind), export.index);
+                        binary.exports.insert(name, (export.index, kind));
                     } else {
                         bail!("unsupported export kind {:?}", export)
                     }
@@ -452,7 +452,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
 
     // reject the module if it re-exports an import with the same name
     let mut exports = HashSet::default();
-    for (export, _) in binary.exports.keys() {
+    for export in binary.exports.keys() {
         let export = export.rsplit("__").take(1);
         exports.extend(export);
     }
@@ -462,6 +462,15 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
                 bail!("binary exports an import with the same name {}", name.red());
             }
         }
+    }
+
+    // reject the module if it imports or exports reserved symbols
+    let reserved = |x: &&str| x.starts_with("polyglot");
+    if let Some(name) = exports.into_iter().find(reserved) {
+        bail!("binary exports reserved symbol {}", name.red())
+    }
+    if let Some(name) = binary.imports.iter().filter_map(|x| x.name).find(reserved) {
+        bail!("binary imports reserved symbol {}", name.red())
     }
 
     // if no module name was given, make a best-effort guess with the file path

@@ -1134,6 +1134,7 @@ dependencies = [
  "eyre",
  "prover",
  "wasmer",
+ "wasmer-compiler-singlepass",
 ]
 
 [[package]]
