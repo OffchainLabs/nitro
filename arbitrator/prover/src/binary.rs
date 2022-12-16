@@ -218,7 +218,7 @@ pub fn op_as_const(op: Operator) -> Result<Value> {
 pub struct FuncImport<'a> {
     pub offset: u32,
     pub module: &'a str,
-    pub name: Option<&'a str>, // in wasmer 3.0 this won't be optional
+    pub name: Option<&'a str>, // in wasmparser 0.95+ this won't be optional
 }
 
 /// This enum primarily exists because wasmer's ExternalKind doesn't impl these derived functions
@@ -401,7 +401,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
                         binary.names.functions.entry(index).or_insert_with(name);
                     }
 
-                    // TODO: we'll only support the types also in wasmer 3.0
+                    // TODO: we'll only support the types also in wasmparser 0.95+
                     if matches!(export.kind, Function | Table | Memory | Global | Tag) {
                         let kind = export.kind.try_into()?;
                         binary.exports.insert((name, kind), export.index);

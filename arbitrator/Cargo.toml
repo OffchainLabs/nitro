@@ -2,8 +2,8 @@
 members = [
         "arbutil",
         "prover",
+        "polyglot",
         "jit",
-        "arbutil",
 ]
 
 [profile.release]

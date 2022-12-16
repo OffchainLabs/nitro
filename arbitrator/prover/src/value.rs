@@ -47,12 +47,31 @@ impl TryFrom<Type> for ArbValueType {
             ExternRef => Self::FuncRef,
             V128 => bail!("128-bit types are not supported"),
 
-            // TODO: removed in wasmer 3.0
+            // TODO: removed in wasmparser 0.95+
             ExnRef => bail!("Type not used in newer versions of wasmparser"),
             Func => bail!("Type not used in newer versions of wasmparser"),
             EmptyBlockType => bail!("Type not used in newer versions of wasmparser"),
         })
     }
+}
+
+pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::Type {
+    match ty {
+        wasmer::Type::I32 => wasmer::wasmparser::Type::I32,
+        wasmer::Type::I64 => wasmer::wasmparser::Type::I64,
+        wasmer::Type::F32 => wasmer::wasmparser::Type::F32,
+        wasmer::Type::F64 => wasmer::wasmparser::Type::F64,
+        wasmer::Type::V128 => wasmer::wasmparser::Type::V128,
+        wasmer::Type::ExternRef => wasmer::wasmparser::Type::ExternRef,
+        wasmer::Type::FuncRef => wasmer::wasmparser::Type::FuncRef,
+    }
+}
+
+pub fn parser_func_type(ty: wasmer::FunctionType) -> FuncType {
+    let convert = |t: &[wasmer::Type]| -> Vec<Type> { t.iter().map(parser_type).collect() };
+    let params = convert(ty.params()).into_boxed_slice();
+    let returns = convert(ty.results()).into_boxed_slice();
+    FuncType { params, returns }
 }
 
 impl From<FloatType> for ArbValueType {
@@ -367,7 +386,6 @@ impl TryFrom<FuncType> for FunctionType {
         for output in func.returns.iter() {
             outputs.push(ArbValueType::try_from(*output)?)
         }
-
         Ok(Self { inputs, outputs })
     }
 }

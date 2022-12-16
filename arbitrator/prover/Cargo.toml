@@ -23,10 +23,12 @@ sha3 = "0.9.1"
 static_assertions = "1.1.0"
 structopt = "0.3.23"
 serde_with = "1.12.1"
+parking_lot = "0.12.1"
 smallvec = { version = "1.10.0", features = ["serde"] }
 arbutil = { path = "../arbutil/" }
 wasmer = { path = "../wasm-upstream/wasmer/lib/api/", optional = true }
 wasmer-types = { path = "../wasm-upstream/wasmer/lib/types" }
+wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass" }
 
 [lib]
 name = "prover"
