@@ -109,6 +109,8 @@ func (v *Validator) merge(
 		if err = mergingFrom.Merge(tx, mergingTo, proof, v.address); err != nil {
 			return err
 		}
+		// Refresh the mergingTo vertex by reading it from the protocol, as some of its fields may have
+		// changed after we made the merge transaction above.
 		mergingTo, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, mergingTo.SequenceNum)
 		if err != nil {
 			return err

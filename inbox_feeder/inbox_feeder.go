@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"time"
 
+	"fmt"
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/ethereum/go-ethereum/crypto"
 )
