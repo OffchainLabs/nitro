@@ -92,6 +92,7 @@ func (m *ArbitratorMachine) Freeze() {
 
 // Even if origin is frozen - clone is not
 func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	newMach := machineFromPointer(C.arbitrator_clone_machine(m.ptr))
@@ -104,6 +105,7 @@ func (m *ArbitratorMachine) CloneMachineInterface() MachineInterface {
 }
 
 func (m *ArbitratorMachine) SetGlobalState(globalState GoGlobalState) error {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	if m.frozen {
@@ -115,6 +117,7 @@ func (m *ArbitratorMachine) SetGlobalState(globalState GoGlobalState) error {
 }
 
 func (m *ArbitratorMachine) GetGlobalState() GoGlobalState {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	cGlobalState := C.arbitrator_global_state(m.ptr)
@@ -122,24 +125,28 @@ func (m *ArbitratorMachine) GetGlobalState() GoGlobalState {
 }
 
 func (m *ArbitratorMachine) GetStepCount() uint64 {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	return uint64(C.arbitrator_get_num_steps(m.ptr))
 }
 
 func (m *ArbitratorMachine) IsRunning() bool {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_RUNNING
 }
 
 func (m *ArbitratorMachine) IsErrored() bool {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_ERRORED
 }
 
 func (m *ArbitratorMachine) Status() uint8 {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	return uint8(C.arbitrator_get_status(m.ptr))
@@ -181,6 +188,7 @@ func manageConditionByte(ctx context.Context) (*C.uint8_t, func()) {
 }
 
 func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -201,6 +209,7 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 }
 
 func (m *ArbitratorMachine) StepUntilHostIo(ctx context.Context) error {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	if m.frozen {
@@ -216,6 +225,7 @@ func (m *ArbitratorMachine) StepUntilHostIo(ctx context.Context) error {
 }
 
 func (m *ArbitratorMachine) Hash() (hash common.Hash) {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	bytes := C.arbitrator_hash(m.ptr)
@@ -226,6 +236,7 @@ func (m *ArbitratorMachine) Hash() (hash common.Hash) {
 }
 
 func (m *ArbitratorMachine) GetModuleRoot() (hash common.Hash) {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	bytes := C.arbitrator_module_root(m.ptr)
@@ -235,6 +246,7 @@ func (m *ArbitratorMachine) GetModuleRoot() (hash common.Hash) {
 	return
 }
 func (m *ArbitratorMachine) ProveNextStep() []byte {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -246,6 +258,7 @@ func (m *ArbitratorMachine) ProveNextStep() []byte {
 }
 
 func (m *ArbitratorMachine) SerializeState(path string) error {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -261,6 +274,7 @@ func (m *ArbitratorMachine) SerializeState(path string) error {
 }
 
 func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -280,6 +294,7 @@ func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
 }
 
 func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data []byte) error {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -297,6 +312,7 @@ func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data []byte) 
 }
 
 func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) error {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -348,6 +364,7 @@ func preimageResolver(context C.size_t, ptr unsafe.Pointer) C.ResolvedPreimage {
 }
 
 func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) error {
+	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	if m.frozen {
