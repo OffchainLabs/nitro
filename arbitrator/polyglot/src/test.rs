@@ -167,7 +167,7 @@ fn test_module_mod() -> Result<()> {
         let wasmer_ty = module.get_function(*func)?;
         let binary_ty = binary.get_function(*func)?;
         assert_eq!(wasmer_ty, binary_ty);
-        println!("{}", binary_ty.blue());
+        println!("{} {}", func.as_u32(), binary_ty.blue());
         Ok(())
     };
 
