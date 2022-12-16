@@ -108,22 +108,27 @@ fn test_start() -> Result<()> {
 
 #[test]
 fn test_import_export_safety() -> Result<()> {
-    // in bad-export.wat
-    //    there's a global named `polyglot_gas_left`
+    // test wasms
+    //     bad-export.wat   there's a global named `polyglot_gas_left`
+    //     bad-export2.wat  there's a func named `polyglot_global_with_random_name`
+    //     bad-import.wat   there's an import named `polyglot_global_with_random_name`
 
-    fn check(path: &str) -> Result<()> {
-        let config = PolyglotConfig::default();
-        assert!(new_test_instance(path, config).is_err());
+    fn check(path: &str, both: bool) -> Result<()> {
+        if both {
+            let config = PolyglotConfig::default();
+            assert!(new_test_instance(path, config).is_err());
+        }
 
         let path = &Path::new(path);
         let wat = std::fs::read(path)?;
         let wasm = wasmer::wat2wasm(&wat)?;
         assert!(prover::binary::parse(&wasm, path).is_err());
-        prover::binary::parse(&wasm, path)?;
         Ok(())
     }
 
-    check("tests/bad-export.wat")?;
-    check("tests/bad-export2.wat")?;
+    // TODO: perform all the same checks in instances
+    check("tests/bad-export.wat", true)?;
+    check("tests/bad-export2.wat", false)?;
+    check("tests/bad-import.wat", false)?;
     Ok(())
 }

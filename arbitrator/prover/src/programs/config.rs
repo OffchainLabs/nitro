@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub type Pricing = fn(&Operator) -> u64;
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct PolyglotConfig {
     pub costs: Pricing,
     pub start_gas: u64,
