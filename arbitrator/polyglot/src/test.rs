@@ -3,14 +3,21 @@
 
 use std::path::Path;
 
-use eyre::Result;
-use prover::programs::{
-    config::PolyglotConfig,
-    meter::{MachineMeter, MeteredMachine},
-    start::StartlessMachine,
-    GlobalMod,
+use arbutil::Color;
+use eyre::{bail, Result};
+use prover::{
+    binary,
+    programs::{
+        config::PolyglotConfig,
+        meter::{MachineMeter, MeteredMachine},
+        start::StartlessMachine,
+        GlobalMod, ModuleMod,
+    },
 };
-use wasmer::{imports, wasmparser::Operator, CompilerConfig, Imports, Instance, Module, Store};
+use wasmer::{
+    imports, wasmparser::Operator, CompilerConfig, ExportIndex, Function, Imports, Instance,
+    Module, Store,
+};
 use wasmer_compiler_singlepass::Singlepass;
 
 fn expensive_add(op: &Operator) -> u64 {
@@ -24,7 +31,11 @@ fn new_test_instance(path: &str, config: PolyglotConfig) -> Result<(Instance, St
     let mut store = config.store();
     let wat = std::fs::read(path)?;
     let module = Module::new(&store, &wat)?;
-    let imports = imports! {}; // TODO: add polyhost imports in a future PR
+    let imports = imports! {
+        "test" => {
+            "noop" => Function::new_typed(&mut store, || {}),
+        }
+    }; // TODO: add polyhost imports in a future PR
     let instance = Instance::new(&mut store, &module, &imports)?;
     Ok((instance, store))
 }
@@ -119,11 +130,10 @@ fn test_import_export_safety() -> Result<()> {
             let config = PolyglotConfig::default();
             assert!(new_test_instance(path, config).is_err());
         }
-
         let path = &Path::new(path);
         let wat = std::fs::read(path)?;
         let wasm = wasmer::wat2wasm(&wat)?;
-        assert!(prover::binary::parse(&wasm, path).is_err());
+        assert!(binary::parse(&wasm, path).is_err());
         Ok(())
     }
 
@@ -132,4 +142,35 @@ fn test_import_export_safety() -> Result<()> {
     check("tests/bad-export2.wat", false)?;
     check("tests/bad-import.wat", false)?;
     Ok(())
+}
+
+#[test]
+fn test_module_mod() -> Result<()> {
+    // in module-mod.wat
+    //     the func `void` has the signature λ()
+    //     the func `more` has the signature λ(i32, i64) -> f32
+    //     the func `noop` is imported
+
+    let file = "tests/module-mod.wat";
+    let wat = std::fs::read(file)?;
+    let wasm = wasmer::wat2wasm(&wat)?;
+    let binary = binary::parse(&wasm, &Path::new(file))?;
+
+    let config = PolyglotConfig::default();
+    let (instance, _) = new_test_instance(file, config)?;
+    let module = instance.module().info();
+
+    let check = |name: &str| {
+        let Some(ExportIndex::Function(func)) = module.exports.get(name) else {
+            bail!("no func named {}", name.red())
+        };
+        let wasmer_ty = module.get_function(*func)?;
+        let binary_ty = binary.get_function(*func)?;
+        assert_eq!(wasmer_ty, binary_ty);
+        println!("{}", binary_ty.blue());
+        Ok(())
+    };
+
+    check("void")?;
+    check("more")
 }
