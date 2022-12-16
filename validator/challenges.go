@@ -59,8 +59,15 @@ func (v *Validator) onChallengeStarted(
 		"challengingHeight":    challenge.ParentStateCommitment().Height,
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
-	// TODO: Start tracking the challenge.
-	_ = challengeVertex
+	// Start tracking the challenge.
+	go newVertexTracker(
+		v.timeRef,
+		v.challengeVertexWakeInterval,
+		protocol.CommitHash(challenge.ParentStateCommitment().Hash()),
+		challenge,
+		challengeVertex,
+		v,
+	).track(ctx)
 
 	return nil
 }
@@ -99,8 +106,16 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 		return nil
 	}
 
-	// TODO: Start tracking the challenge.
-	_ = challengeVertex
+	// Start tracking the challenge.
+	// Start tracking the challenge.
+	go newVertexTracker(
+		v.timeRef,
+		v.challengeVertexWakeInterval,
+		protocol.CommitHash(challenge.ParentStateCommitment().Hash()),
+		challenge,
+		challengeVertex,
+		v,
+	).track(ctx)
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
