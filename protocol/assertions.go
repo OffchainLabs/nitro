@@ -12,9 +12,11 @@ import (
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/sirupsen/logrus"
 )
 
 var (
+	log               = logrus.WithField("prefix", "protocol")
 	Gwei              = big.NewInt(1000000000)
 	AssertionStakeWei = Gwei
 
@@ -813,6 +815,7 @@ func (v *ChallengeVertex) Merge(tx *ActiveTx, newPrev *ChallengeVertex, proof []
 		return ErrPastDeadline
 	}
 	if v.Prev != newPrev.Prev {
+		log.Infof("trying to merge %d %#x failed: v.prev %d != newprev.prev %d\n", v.Commitment.Height, v.Commitment.Merkle, v.Prev.Commitment.Height, newPrev.Prev.Commitment.Height)
 		return ErrInvalidOp
 	}
 	if v.Commitment.Height <= newPrev.Commitment.Height {
