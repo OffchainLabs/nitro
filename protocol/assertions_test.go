@@ -333,6 +333,62 @@ func TestIsAtOneStepFork(t *testing.T) {
 }
 
 func TestChallengeVertexByHistoryCommit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	timeRef := util.NewArtificialTimeReference()
+	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
+
+	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
+		chain := p.(*AssertionChain)
+
+		genesisCommitHash := CommitHash((StateCommitment{}).Hash())
+		t.Run("vertices not found for challenge", func(t *testing.T) {
+			vertexCommit := util.HistoryCommitment{
+				Height: 1,
+			}
+			_, err := chain.ChallengeVertexByHistoryCommit(
+				tx,
+				genesisCommitHash,
+				vertexCommit,
+			)
+			require.ErrorContains(t, err, "challenge vertices not found")
+		})
+		t.Run("vertex with commit not found", func(t *testing.T) {
+			vertexCommit := util.HistoryCommitment{
+				Height: 1,
+			}
+			vertices := map[VertexSequenceNumber]*ChallengeVertex{}
+			chain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = vertices
+			_, err := chain.ChallengeVertexByHistoryCommit(
+				tx,
+				genesisCommitHash,
+				vertexCommit,
+			)
+			require.ErrorContains(t, err, "not found")
+		})
+		t.Run("vertex found", func(t *testing.T) {
+			vertexCommit := util.HistoryCommitment{
+				Height: 1,
+			}
+			want := &ChallengeVertex{
+				Commitment: vertexCommit,
+			}
+			vertices := map[VertexSequenceNumber]*ChallengeVertex{
+				10: want,
+			}
+			chain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = vertices
+			got, err := chain.ChallengeVertexByHistoryCommit(
+				tx,
+				genesisCommitHash,
+				vertexCommit,
+			)
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		})
+		return nil
+	})
+	require.NoError(t, err)
 }
 
 func TestBisectionChallengeGame(t *testing.T) {
