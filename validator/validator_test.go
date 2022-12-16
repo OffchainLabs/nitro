@@ -112,6 +112,14 @@ func Test_onChallengeStarted(t *testing.T) {
 		Height: 6,
 		Merkle: common.BytesToHash([]byte{6}),
 	}, nil)
+	manager.On(
+		"HistoryCommitmentUpTo",
+		ctx,
+		uint64(4),
+	).Return(util.HistoryCommitment{
+		Height: 4,
+		Merkle: common.BytesToHash([]byte{4}),
+	}, nil)
 	leaf1, leaf2, validator := createTwoValidatorFork(t, context.Background(), manager, stateRoots)
 
 	err := validator.onLeafCreated(ctx, leaf1)
@@ -142,6 +150,10 @@ func Test_onChallengeStarted(t *testing.T) {
 		Height: 6,
 		Merkle: common.BytesToHash([]byte("forked commitment")),
 	}, nil)
+	manager.On("HistoryCommitmentUpTo", ctx, uint64(4)).Return(util.HistoryCommitment{
+		Height: 4,
+		Merkle: common.BytesToHash([]byte("forked commitment")),
+	}, nil)
 	validator.stateManager = manager
 
 	err = validator.onChallengeStarted(ctx, &protocol.StartChallengeEvent{
@@ -163,7 +175,7 @@ func Test_onChallengeStarted(t *testing.T) {
 	AssertLogsContain(t, logsHook, "Attempted to add a challenge leaf that already exists")
 }
 
-func Test_submitOrFetchProtocolChallenge(t *testing.T) {
+func Test_submitAndFetchProtocolChallenge(t *testing.T) {
 	ctx := context.Background()
 	stateRoots := generateStateRoots(10)
 	_, _, validator := createTwoValidatorFork(t, ctx, &mocks.MockStateManager{}, stateRoots)

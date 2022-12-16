@@ -242,7 +242,7 @@ func TestBlockChallenge(t *testing.T) {
 
 		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
 			&protocol.ChallengeLeafEvent{}:   3,
-			&protocol.ChallengeBisectEvent{}: 5,
+			&protocol.ChallengeBisectEvent{}: 6,
 			&protocol.ChallengeMergeEvent{}:  3,
 		}
 		hook := test.NewGlobal()
@@ -250,9 +250,58 @@ func TestBlockChallenge(t *testing.T) {
 		for _, entry := range hook.AllEntries() {
 			t.Log(entry.Message)
 		}
-		// AssertLogsContain(t, hook, "Reached one-step-fork at 3")
-		// AssertLogsContain(t, hook, "Reached one-step-fork at 3")
-		// AssertLogsContain(t, hook, "Reached one-step-fork at 4")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
+	})
+	//
+	//                   [4]-----------------[64]-alice
+	//                  /
+	// [genesis]-[2]-[3]    -[6]-bob
+	//                  \  /
+	//                   [4]-[6]-charlie
+	//
+	t.Run("three validators opening leaves at different height different fork points", func(t *testing.T) {
+		aliceAddr := common.BytesToAddress([]byte{1})
+		bobAddr := common.BytesToAddress([]byte{2})
+		charlieAddr := common.BytesToAddress([]byte{3})
+		cfg := &blockChallengeTestConfig{
+			numValidators:  3,
+			validatorAddrs: []common.Address{aliceAddr, bobAddr, charlieAddr},
+			latestStateHeightByAddress: map[common.Address]uint64{
+				aliceAddr:   64,
+				bobAddr:     6,
+				charlieAddr: 6,
+			},
+			validatorNamesByAddress: map[common.Address]string{
+				aliceAddr:   "alice",
+				bobAddr:     "bob",
+				charlieAddr: "charlie",
+			},
+			// The heights at which the validators diverge in histories. In this test,
+			// alice and bob agree up to and including height 3.
+			divergenceHeightsByAddress: map[common.Address]uint64{
+				aliceAddr:   3,
+				bobAddr:     4,
+				charlieAddr: 4,
+			},
+		}
+
+		cfg.eventsToAssert = map[protocol.ChallengeEvent]uint{
+			&protocol.ChallengeLeafEvent{}:   3,
+			&protocol.ChallengeBisectEvent{}: 9,
+			&protocol.ChallengeMergeEvent{}:  3,
+		}
+		hook := test.NewGlobal()
+		runBlockChallengeTest(t, hook, cfg)
+		for _, entry := range hook.AllEntries() {
+			t.Log(entry.Message)
+		}
+		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 3")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
+		AssertLogsContain(t, hook, "Reached one-step-fork at 4")
 	})
 }
 
@@ -326,7 +375,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		validators[i] = v
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
 	defer cancel()
 
 	harnessObserver := make(chan protocol.ChallengeEvent, 100)
@@ -343,8 +392,6 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	for _, val := range validators {
 		go val.Start(ctx)
 	}
-
-	time.Sleep(time.Second * 5)
 
 	totalEventsWanted := uint16(0)
 	for _, count := range cfg.eventsToAssert {
@@ -403,13 +450,12 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 		if !ok {
 			t.Logf("Wanted to see %+T event, but none received", ev)
 		}
-		t.Log("hi")
 		_ = seenCount
-		//require.Equal(
-		//t,
-		//wantedCount,
-		//seenCount,
-		//fmt.Sprintf("Did not see the expected number of %+T events", ev),
-		//)
+		require.Equal(
+			t,
+			wantedCount,
+			seenCount,
+			fmt.Sprintf("Did not see the expected number of %+T events", ev),
+		)
 	}
 }

@@ -509,7 +509,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 					},
 				},
 			},
-			presumptiveSuccessor: &ChallengeVertex{
+			PresumptiveSuccessor: &ChallengeVertex{
 				psTimer: counter,
 				Commitment: util.HistoryCommitment{
 					Height: 1,

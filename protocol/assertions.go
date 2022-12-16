@@ -833,7 +833,7 @@ func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo *ChallengeVertex, proof 
 	v.challenge.rootAssertion.chain.challengesFeed.Append(&ChallengeMergeEvent{
 		DeeperSequenceNum:    v.SequenceNum,
 		ShallowerSequenceNum: mergingTo.SequenceNum,
-		BecomesPS:            mergingTo.presumptiveSuccessor == v,
+		BecomesPS:            mergingTo.PresumptiveSuccessor == v,
 		History:              mergingTo.Commitment,
 		Validator:            validator,
 	})
