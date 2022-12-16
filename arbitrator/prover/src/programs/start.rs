@@ -34,6 +34,6 @@ impl StartlessMachine for Instance {
     fn get_start(&self, store: &Store) -> Result<TypedFunction<(), ()>> {
         self.exports
             .get_typed_function(store, POLYGLOT_START)
-            .map_err(|err| ErrReport::new(err))
+            .map_err(ErrReport::new)
     }
 }
