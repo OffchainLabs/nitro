@@ -596,7 +596,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 			Merkle: common.Hash{},
 		},
 		Prev:                 nil,
-		presumptiveSuccessor: nil,
+		PresumptiveSuccessor: nil,
 		psTimer:              util.NewCountUpTimer(a.chain.timeReference),
 		subChallenge:         nil,
 	}
@@ -674,7 +674,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		status:               PendingAssertionState,
 		Commitment:           history,
 		Prev:                 c.rootVertex,
-		presumptiveSuccessor: nil,
+		PresumptiveSuccessor: nil,
 		psTimer:              timer,
 		subChallenge:         nil,
 		winnerIfConfirmed:    assertion,
@@ -686,7 +686,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		SequenceNum:       leaf.SequenceNum,
 		WinnerIfConfirmed: assertion.SequenceNum,
 		History:           history,
-		BecomesPS:         leaf.Prev.presumptiveSuccessor == leaf,
+		BecomesPS:         leaf.Prev.PresumptiveSuccessor == leaf,
 		Validator:         validator,
 	})
 	c.includedHistories[history.Hash()] = true
@@ -719,7 +719,7 @@ type ChallengeVertex struct {
 	isLeaf               bool
 	status               AssertionState
 	Prev                 *ChallengeVertex
-	presumptiveSuccessor *ChallengeVertex
+	PresumptiveSuccessor *ChallengeVertex
 	psTimer              *util.CountUpTimer
 	subChallenge         *SubChallenge
 	winnerIfConfirmed    *Assertion
@@ -727,24 +727,24 @@ type ChallengeVertex struct {
 
 // eligibleForNewSuccessor returns true if the vertex is eligible to have a new successor.
 func (v *ChallengeVertex) eligibleForNewSuccessor() bool {
-	return v.presumptiveSuccessor == nil || v.presumptiveSuccessor.psTimer.Get() <= v.challenge.rootAssertion.chain.challengePeriod
+	return v.PresumptiveSuccessor == nil || v.PresumptiveSuccessor.psTimer.Get() <= v.challenge.rootAssertion.chain.challengePeriod
 }
 
 // maybeNewPresumptiveSuccessor updates the presumptive successor if the given vertex is eligible.
 func (v *ChallengeVertex) maybeNewPresumptiveSuccessor(succ *ChallengeVertex) {
-	if v.presumptiveSuccessor != nil && succ.Commitment.Height < v.presumptiveSuccessor.Commitment.Height {
-		v.presumptiveSuccessor.psTimer.Stop()
-		v.presumptiveSuccessor = nil
+	if v.PresumptiveSuccessor != nil && succ.Commitment.Height < v.PresumptiveSuccessor.Commitment.Height {
+		v.PresumptiveSuccessor.psTimer.Stop()
+		v.PresumptiveSuccessor = nil
 	}
-	if v.presumptiveSuccessor == nil {
-		v.presumptiveSuccessor = succ
+	if v.PresumptiveSuccessor == nil {
+		v.PresumptiveSuccessor = succ
 		succ.psTimer.Start()
 	}
 }
 
 // IsPresumptiveSuccessor returns true if the vertex is the presumptive successor of its parent.
 func (v *ChallengeVertex) IsPresumptiveSuccessor() bool {
-	return v.Prev == nil || v.Prev.presumptiveSuccessor == v
+	return v.Prev == nil || v.Prev.PresumptiveSuccessor == v
 }
 
 // requiredBisectionHeight returns the height of the history commitment that must be bisectioned to prove the vertex.
@@ -783,7 +783,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		isLeaf:               false,
 		Commitment:           history,
 		Prev:                 v.Prev,
-		presumptiveSuccessor: nil,
+		PresumptiveSuccessor: nil,
 		psTimer:              v.psTimer.Clone(),
 	}
 	newVertex.challenge.nextSequenceNum++
@@ -797,7 +797,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		FromSequenceNum: v.SequenceNum,
 		SequenceNum:     newVertex.SequenceNum,
 		History:         newVertex.Commitment,
-		BecomesPS:       newVertex.Prev.presumptiveSuccessor == newVertex,
+		BecomesPS:       newVertex.Prev.PresumptiveSuccessor == newVertex,
 		Validator:       validator,
 	})
 	commitHash := CommitHash(newVertex.challenge.rootAssertion.StateCommitment.Hash())
@@ -828,7 +828,7 @@ func (v *ChallengeVertex) Merge(tx *ActiveTx, newPrev *ChallengeVertex, proof []
 	v.challenge.rootAssertion.chain.challengesFeed.Append(&ChallengeMergeEvent{
 		DeeperSequenceNum:    v.SequenceNum,
 		ShallowerSequenceNum: newPrev.SequenceNum,
-		BecomesPS:            newPrev.presumptiveSuccessor == v,
+		BecomesPS:            newPrev.PresumptiveSuccessor == v,
 		History:              newPrev.Commitment,
 		Validator:            validator,
 	})

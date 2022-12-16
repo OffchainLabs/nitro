@@ -46,6 +46,11 @@ func (v *vertexTracker) track(ctx context.Context) {
 		"merkle":    fmt.Sprintf("%#x", v.vertex.Commitment.Merkle),
 		"validator": v.vertex.Validator,
 	}).Info("Tracking challenge vertex")
+
+	if err := v.actOnBlockChallenge(ctx); err != nil {
+		log.Error(err)
+	}
+
 	t := v.timeRef.NewTicker(v.actEveryNSeconds)
 	defer t.Stop()
 	for {
@@ -76,7 +81,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	// Refresh the vertex by reading it again from the protocol as some of its fields may have changed.
 	vertex, err := v.fetchVertexByHistoryCommit(v.vertex.Commitment)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "could not refresh vertex from protocol")
 	}
 	v.vertex = vertex
 
@@ -96,7 +101,6 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 				v.vertex.Prev.Commitment.Height, v.vertex.Prev.Commitment.Merkle,
 			)
 			v.awaitingOneStepFork = true
-			return nil
 			// TODO: Add subchallenge resolution.
 		}
 		return nil
