@@ -477,7 +477,7 @@ impl Module {
         let func_exports = bin
             .exports
             .iter()
-            .filter_map(|((name, kind), offset)| {
+            .filter_map(|(name, (offset, kind))| {
                 (kind == &ExportKind::Func).then(|| (name.to_owned(), *offset))
             })
             .collect();
@@ -897,8 +897,8 @@ impl Machine {
         let main_module_index = u32::try_from(modules.len() + libraries.len())?;
 
         // make the main module's exports available to libraries
-        for ((name, kind), &export) in &bin.exports {
-            if *kind == ExportKind::Func {
+        for (name, &(export, kind)) in &bin.exports {
+            if kind == ExportKind::Func {
                 let index: usize = export.try_into()?;
                 if let Some(index) = index.checked_sub(bin.imports.len()) {
                     let ty: usize = bin.functions[index].try_into()?;
@@ -914,8 +914,8 @@ impl Machine {
         // collect all the library exports in advance so they can use each other's
         for (index, lib) in libraries.iter().enumerate() {
             let module = 1 + index as u32; // off by one due to the entry point
-            for ((name, kind), &export) in &lib.exports {
-                if *kind == ExportKind::Func {
+            for (name, &(export, kind)) in &lib.exports {
+                if kind == ExportKind::Func {
                     let ty = match lib.get_function(FunctionIndex::from_u32(export)) {
                         Ok(ty) => ty,
                         Err(error) => bail!("failed to read export {}: {}", name, error),

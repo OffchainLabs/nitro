@@ -19,11 +19,13 @@ use wasmer_types::{
 
 pub mod config;
 pub mod meter;
+pub mod start;
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType>;
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType>;
+    fn move_start_function(&mut self, name: &str) -> Result<()>;
 }
 
 pub trait Middleware<M: ModuleMod> {
@@ -45,9 +47,9 @@ pub trait FuncMiddleware<'a> {
 }
 
 #[derive(Debug)]
-pub struct DefaultFunctionMiddleware;
+pub struct DefaultFuncMiddleware;
 
-impl<'a> FuncMiddleware<'a> for DefaultFunctionMiddleware {
+impl<'a> FuncMiddleware<'a> for DefaultFuncMiddleware {
     fn feed<O>(&mut self, op: Operator<'a>, out: &mut O) -> Result<()>
     where
         O: Extend<Operator<'a>>,
@@ -58,52 +60,6 @@ impl<'a> FuncMiddleware<'a> for DefaultFunctionMiddleware {
 
     fn name(&self) -> &'static str {
         "default middleware"
-    }
-}
-
-impl<'a> ModuleMod for WasmBinary<'a> {
-    fn add_global(&mut self, name: &str, _ty: Type, init: GlobalInit) -> Result<GlobalIndex> {
-        let global = match init {
-            GlobalInit::I32Const(x) => Value::I32(x as u32),
-            GlobalInit::I64Const(x) => Value::I64(x as u64),
-            GlobalInit::F32Const(x) => Value::F32(x),
-            GlobalInit::F64Const(x) => Value::F64(x),
-            ty => bail!("cannot add global of type {:?}", ty),
-        };
-        let export = (name.to_owned(), ExportKind::Global);
-        if self.exports.contains_key(&export) {
-            bail!("wasm already contains {}", name.red())
-        }
-        let index = self.globals.len() as u32;
-        self.exports.insert(export, index);
-        self.globals.push(global);
-        Ok(GlobalIndex::from_u32(index))
-    }
-
-    fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType> {
-        let index = sig.as_u32() as usize;
-        let error = Report::msg(format!("missing signature {}", index.red()));
-        self.types.get(index).cloned().ok_or(error)
-    }
-
-    fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType> {
-        let mut index = func.as_u32() as usize;
-
-        let sig = if index < self.imports.len() {
-            self.imports.get(index).map(|x| &x.offset)
-        } else {
-            index -= self.imports.len();
-            self.functions.get(index)
-        };
-
-        let func = func.as_u32();
-        match sig {
-            Some(sig) => self.get_signature(SignatureIndex::from_u32(*sig)),
-            None => match self.names.functions.get(&func) {
-                Some(name) => bail!("missing func {} @ index {}", name.red(), func.red()),
-                None => bail!("missing func @ index {}", func.red()),
-            },
-        }
     }
 }
 
@@ -196,6 +152,78 @@ impl ModuleMod for ModuleInfo {
                 None => bail!("missing func @ index {}", index.red()),
             },
         }
+    }
+
+    fn move_start_function(&mut self, name: &str) -> Result<()> {
+        if let Some(prior) = self.exports.get(name) {
+            bail!("function {} already exists @ index {:?}", name.red(), prior)
+        }
+
+        if let Some(start) = self.start_function.take() {
+            let export = ExportIndex::Function(start);
+            self.exports.insert(name.to_owned(), export);
+            self.function_names.insert(start, name.to_owned());
+        }
+        Ok(())
+    }
+}
+
+impl<'a> ModuleMod for WasmBinary<'a> {
+    fn add_global(&mut self, name: &str, _ty: Type, init: GlobalInit) -> Result<GlobalIndex> {
+        let global = match init {
+            GlobalInit::I32Const(x) => Value::I32(x as u32),
+            GlobalInit::I64Const(x) => Value::I64(x as u64),
+            GlobalInit::F32Const(x) => Value::F32(x),
+            GlobalInit::F64Const(x) => Value::F64(x),
+            ty => bail!("cannot add global of type {:?}", ty),
+        };
+        if self.exports.contains_key(name) {
+            bail!("wasm already contains {}", name.red())
+        }
+        let name = name.to_owned();
+        let index = self.globals.len() as u32;
+        self.exports.insert(name, (index, ExportKind::Global));
+        self.globals.push(global);
+        Ok(GlobalIndex::from_u32(index))
+    }
+
+    fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType> {
+        let index = sig.as_u32() as usize;
+        let error = Report::msg(format!("missing signature {}", index.red()));
+        self.types.get(index).cloned().ok_or(error)
+    }
+
+    fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType> {
+        let mut index = func.as_u32() as usize;
+
+        let sig = if index < self.imports.len() {
+            self.imports.get(index).map(|x| &x.offset)
+        } else {
+            index -= self.imports.len();
+            self.functions.get(index)
+        };
+
+        let func = func.as_u32();
+        match sig {
+            Some(sig) => self.get_signature(SignatureIndex::from_u32(*sig)),
+            None => match self.names.functions.get(&func) {
+                Some(name) => bail!("missing func {} @ index {}", name.red(), func.red()),
+                None => bail!("missing func @ index {}", func.red()),
+            },
+        }
+    }
+
+    fn move_start_function(&mut self, name: &str) -> Result<()> {
+        if let Some(prior) = self.exports.get(name) {
+            bail!("function {} already exists @ index {:?}", name.red(), prior)
+        }
+
+        if let Some(start) = self.start.take() {
+            let name = name.to_owned();
+            self.exports.insert(name.clone(), (start, ExportKind::Func));
+            self.names.functions.insert(start, name);
+        }
+        Ok(())
     }
 }
 

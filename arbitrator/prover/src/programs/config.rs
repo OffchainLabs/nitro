@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{meter::Meter, MiddlewareWrapper};
+use super::{meter::Meter, start::StartMover, MiddlewareWrapper};
 
 use wasmer::{wasmparser::Operator, CompilerConfig, Store};
 use wasmer_compiler_singlepass::Singlepass;
@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub type Pricing = fn(&Operator) -> u64;
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct PolyglotConfig {
     pub costs: Pricing,
     pub start_gas: u64,
@@ -37,9 +38,11 @@ impl PolyglotConfig {
         compiler.enable_verifier();
 
         let meter = MiddlewareWrapper::new(Meter::new(self.costs, self.start_gas));
+        let start = MiddlewareWrapper::new(StartMover::default());
 
         // add the instrumentation in the order of application
         compiler.push_middleware(Arc::new(meter));
+        compiler.push_middleware(Arc::new(start));
 
         Store::new(compiler)
     }
