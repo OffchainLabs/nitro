@@ -201,7 +201,7 @@ func verifyStartChallengeEventInFeed(t *testing.T, c <-chan AssertionChainEvent,
 	}
 }
 
-func TestBisectionChallengeGame(t *testing.T) {
+func TestAssertionChain_Bisect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -303,6 +303,46 @@ func TestBisectionChallengeGame(t *testing.T) {
 	})
 
 	require.NoError(t, err)
+}
+
+func TestAssertionChain_Merge(t *testing.T) {
+	tx := &ActiveTx{txStatus: readWriteTxStatus}
+	t.Run("past deadline", func(t *testing.T) {
+		timeRef := util.NewArtificialTimeReference()
+		counter := util.NewCountUpTimer(timeRef)
+		counter.Add(2 * time.Minute)
+		mergingTo := &ChallengeVertex{
+			challenge: &Challenge{
+				rootAssertion: &Assertion{
+					chain: &AssertionChain{
+						challengePeriod: time.Minute,
+					},
+				},
+			},
+			presumptiveSuccessor: &ChallengeVertex{
+				psTimer: counter,
+				Commitment: util.HistoryCommitment{
+					Height: 1,
+				},
+			},
+		}
+		mergingFrom := &ChallengeVertex{}
+		err := mergingFrom.Merge(
+			tx,
+			mergingTo,
+			[]common.Hash{},
+			common.Address{},
+		)
+		require.ErrorIs(t, err, ErrPastDeadline)
+	})
+	t.Run("invalid bisection point", func(t *testing.T) {
+	})
+	t.Run("invalid height", func(t *testing.T) {
+	})
+	t.Run("invalid prefix proof", func(t *testing.T) {
+	})
+	t.Run("OK", func(t *testing.T) {
+	})
 }
 
 func correctBlockHashesForTest(numBlocks uint64) []common.Hash {
