@@ -336,12 +336,123 @@ func TestAssertionChain_Merge(t *testing.T) {
 		require.ErrorIs(t, err, ErrPastDeadline)
 	})
 	t.Run("invalid bisection point", func(t *testing.T) {
+		mergingTo := &ChallengeVertex{}
+		mergingFrom := &ChallengeVertex{
+			Prev: &ChallengeVertex{
+				Commitment: util.HistoryCommitment{
+					Height: 3,
+				},
+			},
+			Commitment: util.HistoryCommitment{
+				Height: 4,
+			},
+		}
+		err := mergingFrom.Merge(
+			tx,
+			mergingTo,
+			[]common.Hash{},
+			common.Address{},
+		)
+		require.ErrorIs(t, err, util.ErrUnableToBisect)
 	})
 	t.Run("invalid height", func(t *testing.T) {
+		mergingTo := &ChallengeVertex{
+			Commitment: util.HistoryCommitment{
+				Height: 2,
+			},
+		}
+		mergingFrom := &ChallengeVertex{
+			Prev: &ChallengeVertex{
+				Commitment: util.HistoryCommitment{
+					Height: 2,
+				},
+			},
+			Commitment: util.HistoryCommitment{
+				Height: 4,
+			},
+		}
+		err := mergingFrom.Merge(
+			tx,
+			mergingTo,
+			[]common.Hash{},
+			common.Address{},
+		)
+		require.ErrorIs(t, err, ErrInvalidHeight)
 	})
 	t.Run("invalid prefix proof", func(t *testing.T) {
+		mergingTo := &ChallengeVertex{
+			Commitment: util.HistoryCommitment{
+				Height: 3,
+			},
+		}
+		mergingFrom := &ChallengeVertex{
+			Prev: &ChallengeVertex{
+				Commitment: util.HistoryCommitment{
+					Height: 2,
+				},
+			},
+			Commitment: util.HistoryCommitment{
+				Height: 4,
+			},
+		}
+		err := mergingFrom.Merge(
+			tx,
+			mergingTo,
+			[]common.Hash{},
+			common.Address{},
+		)
+		require.ErrorIs(t, err, util.ErrIncorrectProof)
 	})
 	t.Run("OK", func(t *testing.T) {
+		ctx := context.Background()
+		timeRef := util.NewArtificialTimeReference()
+		counter := util.NewCountUpTimer(timeRef)
+		stateRoots := correctBlockHashesForTest(10)
+
+		loExp := util.ExpansionFromLeaves(stateRoots[:3])
+		proof := util.GeneratePrefixProof(
+			3,
+			loExp,
+			stateRoots[3:4],
+		)
+
+		exp := util.ExpansionFromLeaves(stateRoots[:3])
+		mergingToCommit := util.HistoryCommitment{
+			Height: 3,
+			Merkle: exp.Root(),
+		}
+		mergingTo := &ChallengeVertex{
+			psTimer:    counter,
+			Commitment: mergingToCommit,
+		}
+		exp = util.ExpansionFromLeaves(stateRoots[:4])
+		mergingFromCommit := util.HistoryCommitment{
+			Height: 4,
+			Merkle: exp.Root(),
+		}
+		mergingFrom := &ChallengeVertex{
+			psTimer: counter,
+			challenge: &Challenge{
+				rootAssertion: &Assertion{
+					chain: &AssertionChain{
+						challengesFeed: NewEventFeed[ChallengeEvent](ctx),
+					},
+				},
+			},
+			Prev: &ChallengeVertex{
+				Commitment: util.HistoryCommitment{
+					Height: 2,
+				},
+			},
+			Commitment: mergingFromCommit,
+		}
+		err := mergingFrom.Merge(
+			tx,
+			mergingTo,
+			proof,
+			common.Address{},
+		)
+		require.NoError(t, err)
 	})
 }
 
