@@ -270,7 +270,9 @@ func DeployOnTestL1(
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	config := arbnode.GenerateRollupConfig(false, common.Hash{}, l1info.GetAddress("RollupOwner"), chainId, common.Address{})
+	locator, err := validator.NewMachineLocator("")
+	Require(t, err)
+	config := arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainId, common.Address{})
 	addresses, err := arbnode.DeployOnL1(
 		ctx,
 		l1client,
@@ -278,7 +280,6 @@ func DeployOnTestL1(
 		l1info.GetAddress("Sequencer"),
 		0,
 		func() *headerreader.Config { return &headerreader.TestConfig },
-		validator.DefaultNitroMachineConfig,
 		config,
 	)
 	Require(t, err)

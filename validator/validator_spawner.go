@@ -13,34 +13,34 @@ import (
 	"github.com/pkg/errors"
 )
 
-type ValidationSpawner struct {
-	machineLoader *NitroMachineLoader
+type ValidationSpawner interface {
+	Execute(ctx context.Context, entry *ValidationInput, moduleRoot common.Hash) (GoGlobalState, error)
+	Stop()
+	Name() string
 }
 
-func NewValidationSpawner(config NitroMachineConfig, fatalErrChan chan error) (*ValidationSpawner, error) {
-	// TODO
-	// // the machine will be lazily created if need be later otherwise
-	// if config.ArbitratorValidator {
-	// 	if err := validationSpawner.CreateMachine(validator.pendingWasmModuleRoot, true, false); err != nil {
-	// 		return nil, err
-	// 	}
-	// }
-	// if config.JitValidator {
-	// 	if err := validationSpawner.CreateMachine(validator.pendingWasmModuleRoot, true, true); err != nil {
-	// 		return nil, err
-	// 	}
-	// }
-	machineLoader := newNitroMachineLoader(config, fatalErrChan)
-	return &ValidationSpawner{
-		machineLoader: machineLoader,
+type ArbitratorSpawner struct {
+	locator       *MachineLocator
+	machineLoader *ArbMachineLoader
+}
+
+func NewArbitratorSpawner(locator *MachineLocator) (*ArbitratorSpawner, error) {
+	// TODO: preload machines
+	return &ArbitratorSpawner{
+		locator:       locator,
+		machineLoader: NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
 	}, nil
 }
 
-func (s *ValidationSpawner) LatestWasmModuleRoot() (common.Hash, error) {
-	return s.machineLoader.GetConfig().ReadLatestWasmModuleRoot()
+func (s *ArbitratorSpawner) LatestWasmModuleRoot() (common.Hash, error) {
+	return s.locator.LatestWasmModuleRoot(), nil
 }
 
-func (v *ValidationSpawner) loadEntryToMachine(ctx context.Context, entry *ValidationInput, mach *ArbitratorMachine) error {
+func (s *ArbitratorSpawner) Name() string {
+	return "arbitrator"
+}
+
+func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *ValidationInput, mach *ArbitratorMachine) error {
 	resolver := func(hash common.Hash) ([]byte, error) {
 		// Check if it's a known preimage
 		if preimage, ok := entry.Preimages[hash]; ok {
@@ -79,10 +79,10 @@ func (v *ValidationSpawner) loadEntryToMachine(ctx context.Context, entry *Valid
 	return nil
 }
 
-func (v *ValidationSpawner) ExecuteArbitrator(
+func (v *ArbitratorSpawner) Execute(
 	ctx context.Context, entry *ValidationInput, moduleRoot common.Hash,
 ) (GoGlobalState, error) {
-	basemachine, err := v.machineLoader.GetMachine(ctx, moduleRoot, true)
+	basemachine, err := v.machineLoader.GetHostIoMachine(ctx, moduleRoot)
 	if err != nil {
 		return GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
@@ -111,33 +111,11 @@ func (v *ValidationSpawner) ExecuteArbitrator(
 	return mach.GetGlobalState(), nil
 }
 
-func (v *ValidationSpawner) ExecuteJit(
-	ctx context.Context, entry *ValidationInput, moduleRoot common.Hash,
-) (GoGlobalState, error) {
-	empty := GoGlobalState{}
-
-	machine, err := v.machineLoader.GetJitMachine(ctx, moduleRoot, true)
-	if err != nil {
-		return empty, fmt.Errorf("unabled to get WASM machine: %w", err)
-	}
-
-	resolver := func(hash common.Hash) ([]byte, error) {
-		// Check if it's a known preimage
-		if preimage, ok := entry.Preimages[hash]; ok {
-			return preimage, nil
-		}
-		return nil, errors.New("preimage not found")
-	}
-	state, err := machine.prove(ctx, entry, resolver)
-	return state, err
-}
-
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
-func (v *ValidationSpawner) WriteToFile(outPath string, input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash, sequencerMsg []byte) error {
-	machConf := v.machineLoader.GetConfig()
-	outDirPath := filepath.Join(machConf.RootPath, outPath, launchTime, fmt.Sprintf("block_%d", input.Id))
+func (v *ArbitratorSpawner) WriteToFile(outPath string, input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash, sequencerMsg []byte) error {
+	outDirPath := filepath.Join(v.locator.rootPath, outPath, launchTime, fmt.Sprintf("block_%d", input.Id))
 	err := os.MkdirAll(outDirPath, 0755)
 	if err != nil {
 		return err
@@ -154,7 +132,7 @@ func (v *ValidationSpawner) WriteToFile(outPath string, input *ValidationInput, 
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
 		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", expOut.Batch, expOut.PosInBatch, expOut.BlockHash) +
-		"MACHPATH=\"" + machConf.getMachinePath(moduleRoot) + "\"\n" +
+		"MACHPATH=\"" + v.locator.getMachinePath(moduleRoot) + "\"\n" +
 		rootPathAssign +
 		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-m\" ]]; then\n" +
@@ -163,12 +141,13 @@ func (v *ValidationSpawner) WriteToFile(outPath string, input *ValidationInput, 
 		"		shift\n" +
 		"	fi\n" +
 		"fi\n" +
-		"${ROOTPATH}/bin/prover ${MACHPATH}/" + machConf.ProverBinPath)
+		"${ROOTPATH}/bin/prover ${MACHPATH}/replay.wasm")
 	if err != nil {
 		return err
 	}
 
-	for _, module := range machConf.LibraryPaths {
+	libraries := []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"}
+	for _, module := range libraries {
 		_, err = cmdFile.WriteString(" -l " + "${MACHPATH}/" + module)
 		if err != nil {
 			return err
@@ -235,8 +214,8 @@ func (v *ValidationSpawner) WriteToFile(outPath string, input *ValidationInput, 
 	return nil
 }
 
-func (v *ValidationSpawner) CreateExecutionBackend(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput, targetMachineNum int) (*ExecutionChallengeBackend, error) {
-	initialFrozenMachine, err := v.machineLoader.GetMachine(ctx, wasmModuleRoot, false)
+func (v *ArbitratorSpawner) CreateExecutionBackend(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput, targetMachineNum int) (*ExecutionChallengeBackend, error) {
+	initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +228,53 @@ func (v *ValidationSpawner) CreateExecutionBackend(ctx context.Context, wasmModu
 	return NewExecutionChallengeBackend(machine, targetMachineNum, nil)
 }
 
-func (v *ValidationSpawner) Stop() {
+func (v *ArbitratorSpawner) Stop() {}
+
+type JitSpawner struct {
+	locator       *MachineLocator
+	machineLoader *JitMachineLoader
+}
+
+func NewJitSpawner(locator *MachineLocator, fatalErrChan chan error) (*JitSpawner, error) {
+	// TODO - preload machines
+	loader, err := NewJitMachineLoader(&DefaultJitMachineConfig, locator, fatalErrChan)
+	if err != nil {
+		return nil, err
+	}
+	return &JitSpawner{
+		locator:       locator,
+		machineLoader: loader,
+	}, nil
+}
+
+func (v *JitSpawner) Execute(
+	ctx context.Context, entry *ValidationInput, moduleRoot common.Hash,
+) (GoGlobalState, error) {
+	empty := GoGlobalState{}
+
+	machine, err := v.machineLoader.GetMachine(ctx, moduleRoot)
+	if err != nil {
+		return empty, fmt.Errorf("unabled to get WASM machine: %w", err)
+	}
+
+	resolver := func(hash common.Hash) ([]byte, error) {
+		// Check if it's a known preimage
+		if preimage, ok := entry.Preimages[hash]; ok {
+			return preimage, nil
+		}
+		return nil, errors.New("preimage not found")
+	}
+	state, err := machine.prove(ctx, entry, resolver)
+	return state, err
+}
+
+func (s *JitSpawner) Name() string {
+	if s.machineLoader.config.JitCranelift {
+		return "jit-cranelift"
+	}
+	return "jit"
+}
+
+func (v *JitSpawner) Stop() {
 	v.machineLoader.Stop()
 }

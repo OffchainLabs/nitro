@@ -24,7 +24,8 @@ import (
 )
 
 type StatelessBlockValidator struct {
-	validationSpawner *validator.ValidationSpawner
+	execSpawner        *validator.ArbitratorSpawner
+	validationSpawners []validator.ValidationSpawner
 
 	inboxReader       InboxReaderInterface
 	inboxTracker      InboxTrackerInterface
@@ -261,7 +262,8 @@ func newRecordedValidationEntry(
 }
 
 func NewStatelessBlockValidator(
-	validationSpawner *validator.ValidationSpawner,
+	execSpawner *validator.ArbitratorSpawner,
+	validationSpawners []validator.ValidationSpawner,
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
@@ -276,19 +278,20 @@ func NewStatelessBlockValidator(
 		return nil, err
 	}
 	validator := &StatelessBlockValidator{
-		validationSpawner: validationSpawner,
-		inboxReader:       inboxReader,
-		inboxTracker:      inbox,
-		streamer:          streamer,
-		blockchain:        blockchain,
-		db:                arbdb,
-		daService:         das,
-		genesisBlockNum:   genesisBlockNum,
-		recordingDatabase: arbitrum.NewRecordingDatabase(blockchainDb, blockchain),
+		execSpawner:        execSpawner,
+		validationSpawners: validationSpawners,
+		inboxReader:        inboxReader,
+		inboxTracker:       inbox,
+		streamer:           streamer,
+		blockchain:         blockchain,
+		db:                 arbdb,
+		daService:          das,
+		genesisBlockNum:    genesisBlockNum,
+		recordingDatabase:  arbitrum.NewRecordingDatabase(blockchainDb, blockchain),
 	}
 	if config.PendingUpgradeModuleRoot != "" {
 		if config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := validationSpawner.LatestWasmModuleRoot()
+			latest, err := execSpawner.LatestWasmModuleRoot()
 			if err != nil {
 				return nil, err
 			}
@@ -552,7 +555,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 }
 
 func (v *StatelessBlockValidator) ValidateBlock(
-	ctx context.Context, header *types.Header, full bool, moduleRoot common.Hash,
+	ctx context.Context, header *types.Header, useExec bool, moduleRoot common.Hash,
 ) (bool, error) {
 	entry, err := v.CreateReadyValidationEntry(ctx, header)
 	if err != nil {
@@ -567,15 +570,22 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if err != nil {
 		return false, err
 	}
-	if full {
-		gsEnd, err = v.validationSpawner.ExecuteArbitrator(ctx, input, moduleRoot)
+	var spawners []validator.ValidationSpawner
+	if useExec {
+		spawners = append(spawners, v.execSpawner)
 	} else {
-		gsEnd, err = v.validationSpawner.ExecuteJit(ctx, input, moduleRoot)
+		spawners = v.validationSpawners
 	}
-	if err != nil {
-		return false, err
+	if len(spawners) == 0 {
+		return false, errors.New("no validation defined")
 	}
-	return gsEnd == expEnd, nil
+	for _, spawner := range spawners {
+		gsEnd, err = spawner.Execute(ctx, input, moduleRoot)
+		if err != nil || gsEnd != expEnd {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
@@ -583,5 +593,8 @@ func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
 }
 
 func (v *StatelessBlockValidator) Stop() {
-	v.validationSpawner.Stop()
+	v.execSpawner.Stop()
+	for _, spawner := range v.validationSpawners {
+		spawner.Stop()
+	}
 }

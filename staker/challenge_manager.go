@@ -460,7 +460,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}
 	}
-	m.executionChallengeBackend, err = m.validator.validationSpawner.CreateExecutionBackend(ctx, m.wasmModuleRoot, input, m.targetNumMachines)
+	m.executionChallengeBackend, err = m.validator.execSpawner.CreateExecutionBackend(ctx, m.wasmModuleRoot, input, m.targetNumMachines)
 	if err != nil {
 		return err
 	}

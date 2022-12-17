@@ -280,9 +280,13 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	}
 	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, l1Backend)
 
-	wasmModuleRoot, err := validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
+	locator, err := validator.NewMachineLocator("")
 	if err != nil {
 		Fail(t, err)
+	}
+	wasmModuleRoot := locator.LatestWasmModuleRoot()
+	if (wasmModuleRoot == common.Hash{}) {
+		Fail(t, "latest machine not found")
 	}
 
 	asserterGenesis := asserterL2.ArbInterface.BlockChain().Genesis()
@@ -325,9 +329,9 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	)
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
-	spawner, err := validator.NewValidationSpawner(validator.DefaultNitroMachineConfig, fatalErrChan)
+	spawner, err := validator.NewArbitratorSpawner(locator)
 	Require(t, err)
-	asserterValidator, err := staker.NewStatelessBlockValidator(spawner, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
+	asserterValidator, err := staker.NewStatelessBlockValidator(spawner, []validator.ValidationSpawner{}, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2Blockchain, asserterL2ChainDb, asserterL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -335,7 +339,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	if err != nil {
 		Fail(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(spawner, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
+	challengerValidator, err := staker.NewStatelessBlockValidator(spawner, []validator.ValidationSpawner{}, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2Blockchain, challengerL2ChainDb, challengerL2ArbDb, nil, &staker.DefaultBlockValidatorConfig)
 	if err != nil {
 		Fail(t, err)
 	}

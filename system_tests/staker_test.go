@@ -127,10 +127,13 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	} else {
 		valConfig.Strategy = "MakeNodes"
 	}
-	spawner, err := validator.NewValidationSpawner(validator.DefaultNitroMachineConfig, nil)
+	locator, err := validator.NewMachineLocator("")
+	Require(t, err)
+	spawner, err := validator.NewArbitratorSpawner(locator)
 	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		spawner,
+		[]validator.ValidationSpawner{},
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
@@ -159,6 +162,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	valConfig.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
 		spawner,
+		[]validator.ValidationSpawner{},
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,

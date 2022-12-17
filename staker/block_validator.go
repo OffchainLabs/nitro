@@ -423,7 +423,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	if err != nil {
 		return err
 	}
-	return v.validationSpawner.WriteToFile(v.config().OutputPath, input, expOut, moduleRoot, sequencerMsg)
+	return v.execSpawner.WriteToFile(v.config().OutputPath, input, expOut, moduleRoot, sequencerMsg)
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -476,62 +476,40 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		"starting validation for block", "blockNr", entry.BlockNumber,
 		"blockAge", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)),
 		"blockDate", time.Unix(int64(entry.BlockHeader.Time), 0))
+	input, err := entry.ToInput()
+	if err != nil {
+		v.possiblyFatal(err)
+		return
+	}
+	gsExpected, err := entry.expectedEnd()
+	if err != nil {
+		v.possiblyFatal(err)
+		return
+	}
 	for _, moduleRoot := range validationStatus.ModuleRoots {
-
-		type replay = func(context.Context, *validator.ValidationInput, common.Hash) (validator.GoGlobalState, error)
-
-		execValidation := func(replay replay, validationType string) error {
-			input, err := entry.ToInput()
-			if err != nil {
-				return err
-			}
-			gsEnd, err := replay(ctx, input, moduleRoot)
-			if err != nil {
-				canceled := ctx.Err() != nil
-				if canceled {
-					return fmt.Errorf("%w: blockNr: %v, hash: %v, validationType: %v",
-						ErrValidationCanceled, entry.BlockNumber, entry.BlockHash, validationType)
-				}
-				return fmt.Errorf("validation of block failed. blockNr: %v, hash: %v, validationType: %v err: %w",
-					entry.BlockNumber, entry.BlockHash, validationType, err)
-			}
-
-			var gsExpected validator.GoGlobalState
-			gsExpected, err = entry.expectedEnd()
-			if err != nil || gsEnd != gsExpected {
-				return fmt.Errorf("validation of block failed. moduleRoot: %v got: %v expected: %v expectedHeader: %v, validationType: %v, gsErr: %w",
-					moduleRoot, gsEnd, gsExpected, entry.BlockHeader, validationType, err)
-			}
-
-			return nil
-		}
-
 		before := time.Now()
-
-		config := v.config()
-		var valError error
-		if config.ArbitratorValidator {
-			valError = execValidation(v.validationSpawner.ExecuteArbitrator, "arbitrator")
-		}
-		if config.JitValidator && valError == nil {
-			valError = execValidation(v.validationSpawner.ExecuteJit, "jit")
-		}
-		if valError != nil {
-			if errors.Is(valError, ErrValidationCanceled) {
-				log.Info("validation cancelled", "info", valError)
-			} else {
-				err := v.writeToFile(
-					entry, moduleRoot, seqMsg,
-				)
-				if err != nil {
-					log.Error("failed to write file", "err", err)
-				}
-				v.possiblyFatal(valError)
+		for _, spawner := range v.validationSpawners {
+			gsEnd, err := spawner.Execute(ctx, input, moduleRoot)
+			if err == nil && gsEnd != gsExpected {
+				err = fmt.Errorf("unexpected GlobalState. Got: %v", gsEnd)
 			}
-			validationStatus.setStatus(Failed)
-			return
+			if err != nil {
+				if ctx.Err() != nil {
+					log.Info("validation canceled", "blockNr", entry.BlockNumber, "hash", entry.BlockHash, "type", spawner.Name(), "err", ctx.Err())
+				} else {
+					log.Error("validation error", "blockNr", entry.BlockNumber, "hash", entry.BlockHash, "type", spawner.Name(), "err", err)
+					writeErr := v.writeToFile(
+						entry, moduleRoot, seqMsg,
+					)
+					if writeErr != nil {
+						log.Error("failed to write file", "err", err)
+					}
+					v.possiblyFatal(err)
+				}
+				validationStatus.setStatus(Failed)
+				return
+			}
 		}
-
 		log.Debug(
 			"validation succeeded", "blockNr", entry.BlockNumber,
 			"blockAge", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)),
@@ -991,7 +969,7 @@ func (v *BlockValidator) Initialize() error {
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
-		latest, err := v.validationSpawner.LatestWasmModuleRoot()
+		latest, err := v.execSpawner.LatestWasmModuleRoot()
 		if err != nil {
 			return err
 		}

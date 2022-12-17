@@ -11,9 +11,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -28,36 +25,8 @@ type JitMachine struct {
 	stdin   io.WriteCloser
 }
 
-func getJitPath() (string, error) {
-	var jitBinary string
-	executable, err := os.Executable()
-	if err == nil {
-		if strings.Contains(filepath.Base(executable), "test") {
-			_, thisfile, _, _ := runtime.Caller(0)
-			projectDir := filepath.Dir(filepath.Dir(thisfile))
-			jitBinary = filepath.Join(projectDir, "target", "bin", "jit")
-		} else {
-			jitBinary = filepath.Join(filepath.Dir(executable), "jit")
-		}
-		_, err = os.Stat(jitBinary)
-	}
-	if err != nil {
-		var lookPathErr error
-		jitBinary, lookPathErr = exec.LookPath("jit")
-		if lookPathErr == nil {
-			return jitBinary, nil
-		}
-	}
-	return jitBinary, err
-}
-
-func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
-	jitBinary, err := getJitPath()
-	if err != nil {
-		return nil, err
-	}
-	binary := filepath.Join(config.getMachinePath(moduleRoot), config.ProverBinPath)
-	invocation := []string{"--binary", binary, "--forks"}
+func createJitMachine(jitBinary string, binaryPath string, config *JitMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+	invocation := []string{"--binary", binaryPath, "--forks"}
 	if config.JitCranelift {
 		invocation = append(invocation, "--cranelift")
 	}
@@ -75,7 +44,7 @@ func createJitMachine(config NitroMachineConfig, moduleRoot common.Hash, fatalEr
 	}()
 
 	machine := &JitMachine{
-		binary:  binary,
+		binary:  binaryPath,
 		process: process,
 		stdin:   stdin,
 	}

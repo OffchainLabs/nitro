@@ -10,9 +10,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"os"
-	"path/filepath"
-	"runtime"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -315,17 +312,13 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 	}
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, machineConfig validator.NitroMachineConfig, config rollupgen.Config) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, readerConfig headerreader.ConfigFetcher, config rollupgen.Config) (*RollupAddresses, error) {
 	l1Reader := headerreader.New(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
 	if config.WasmModuleRoot == (common.Hash{}) {
-		var err error
-		config.WasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
-		if err != nil {
-			return nil, err
-		}
+		return nil, errors.New("no machine specified")
 	}
 
 	rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, l1Reader, deployAuth)
@@ -528,7 +521,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.DelayedSequencer.Enable = false
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
-	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
+	config.Wasm.RootPath = ""
 	config.BlockValidator = staker.TestBlockValidatorConfig
 
 	return &config
@@ -588,51 +581,6 @@ func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultWasmConfig = WasmConfig{
 	RootPath: "",
-}
-
-func (w *WasmConfig) FindMachineDir() (string, bool) {
-	var places []string
-
-	if w.RootPath != "" {
-		places = append(places, w.RootPath)
-	} else {
-		// Check the project dir: <project>/arbnode/node.go => ../../target/machines
-		_, thisFile, _, ok := runtime.Caller(0)
-		if !ok {
-			panic("failed to find root path")
-		}
-		projectDir := filepath.Dir(filepath.Dir(thisFile))
-		projectPath := filepath.Join(filepath.Join(projectDir, "target"), "machines")
-		places = append(places, projectPath)
-
-		// Check the working directory: ./machines and ./target/machines
-		workDir, err := os.Getwd()
-		if err != nil {
-			panic(err)
-		}
-		workPath1 := filepath.Join(workDir, "machines")
-		workPath2 := filepath.Join(filepath.Join(workDir, "target"), "machines")
-		places = append(places, workPath1)
-		places = append(places, workPath2)
-
-		// Check above the executable: <binary> => ../../machines
-		execfile, err := os.Executable()
-		if err != nil {
-			panic(err)
-		}
-		execPath := filepath.Join(filepath.Dir(filepath.Dir(execfile)), "machines")
-		places = append(places, execPath)
-
-		// Check the default
-		places = append(places, validator.DefaultNitroMachineConfig.RootPath)
-	}
-
-	for _, place := range places {
-		if _, err := os.Stat(place); err == nil {
-			return place, true
-		}
-	}
-	return "", false
 }
 
 type CachingConfig struct {
@@ -974,21 +922,29 @@ func createNodeImpl(
 		blockValidatorConf.JitValidator = true
 	}
 
-	nitroMachineConfig := validator.DefaultNitroMachineConfig
-	machinesPath, foundMachines := config.Wasm.FindMachineDir()
-	nitroMachineConfig.RootPath = machinesPath
-	nitroMachineConfig.JitCranelift = blockValidatorConf.JitValidatorCranelift
-
 	var blockValidator *staker.BlockValidator
 	var statelessBlockValidator *staker.StatelessBlockValidator
 
-	if foundMachines {
-		spawner, err := validator.NewValidationSpawner(nitroMachineConfig, fatalErrChan)
+	locator, err := validator.NewMachineLocator(config.Wasm.RootPath)
+	if err == nil {
+		execSpawner, err := validator.NewArbitratorSpawner(locator)
 		if err != nil {
 			return nil, err
 		}
+		valSpawners := []validator.ValidationSpawner{}
+		if config.BlockValidator.ArbitratorValidator {
+			valSpawners = append(valSpawners, execSpawner)
+		}
+		if config.BlockValidator.JitValidator {
+			jitSpawner, err := validator.NewJitSpawner(locator, fatalErrChan)
+			if err != nil {
+				return nil, err
+			}
+			valSpawners = append(valSpawners, jitSpawner)
+		}
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
-			spawner,
+			execSpawner,
+			valSpawners,
 			inboxReader,
 			inboxTracker,
 			txStreamer,
@@ -1003,9 +959,9 @@ func createNodeImpl(
 		}
 	} else {
 		if blockValidatorConf.Enable || config.Validator.Enable {
-			return nil, fmt.Errorf("failed to find machines %v", machinesPath)
+			return nil, fmt.Errorf("%w: failed to find machines", err)
 		}
-		log.Warn("Failed to find machines", "path", machinesPath)
+		log.Warn("Failed to find machines", "err", err)
 	}
 
 	if blockValidatorConf.Enable {
