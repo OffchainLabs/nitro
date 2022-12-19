@@ -250,7 +250,7 @@ if $force_init; then
 
     echo == create l1 traffic
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to user_l1user --wait
-    docker-compose run testnode-scripts send-l1 --ethamount 0.0001 --from user_l1user --to user_l1user_b --wait --delay 500 --times 500 > /dev/null
+    docker-compose run testnode-scripts send-l1 --ethamount 0.0001 --from user_l1user --to user_l1user_b --wait --delay 500 --times 500 > /dev/null &
 
 
     echo == Deploying L2
