@@ -82,15 +82,17 @@ type AssertionManager interface {
 	Inbox() *Inbox
 	NumAssertions(tx *ActiveTx) uint64
 	AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error)
+	ChallengeByCommitHash(tx *ActiveTx, commitHash CommitHash) (*Challenge, error)
+	ChallengeVertexBySequenceNum(tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber) (*ChallengeVertex, error)
+	ChallengeVertexByHistoryCommit(
+		tx *ActiveTx, challengeCommitHash CommitHash, hist util.HistoryCommitment,
+	) (*ChallengeVertex, error)
 	IsAtOneStepFork(
 		tx *ActiveTx,
 		challengeCommitHash CommitHash,
 		vertexCommit util.HistoryCommitment,
 		vertexParentCommit util.HistoryCommitment,
 	) (bool, error)
-	ChallengeByCommitHash(tx *ActiveTx, commitHash CommitHash) (*Challenge, error)
-	ChallengeVertexBySequenceNum(tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber) (*ChallengeVertex, error)
-	ChallengeVertexByHistoryCommit(tx *ActiveTx, commitHash CommitHash, hist util.HistoryCommitment) (*ChallengeVertex, error)
 	ChallengePeriodLength(tx *ActiveTx) time.Duration
 	LatestConfirmed(*ActiveTx) *Assertion
 	CreateLeaf(tx *ActiveTx, prev *Assertion, commitment StateCommitment, staker common.Address) (*Assertion, error)
@@ -759,7 +761,7 @@ func (v *ChallengeVertex) maybeNewPresumptiveSuccessor(succ *ChallengeVertex) {
 	}
 
 	if v.PresumptiveSuccessor.IsNone() {
-		v.PresumptiveSuccessor = util.Some[*ChallengeVertex](succ)
+		v.PresumptiveSuccessor = util.Some(succ)
 		succ.psTimer.Start()
 	}
 }
