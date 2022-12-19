@@ -270,9 +270,9 @@ func TestIsAtOneStepFork(t *testing.T) {
 			}
 			vertices := map[VertexSequenceNumber]*ChallengeVertex{
 				1: {
-					Prev: &ChallengeVertex{
+					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					},
+					}),
 					Commitment: util.HistoryCommitment{
 						Height: 1,
 						Merkle: common.BytesToHash([]byte{1}),
@@ -298,18 +298,18 @@ func TestIsAtOneStepFork(t *testing.T) {
 			}
 			vertices := map[VertexSequenceNumber]*ChallengeVertex{
 				1: {
-					Prev: &ChallengeVertex{
+					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					},
+					}),
 					Commitment: util.HistoryCommitment{
 						Height: 1,
 						Merkle: common.BytesToHash([]byte{1}),
 					},
 				},
 				2: {
-					Prev: &ChallengeVertex{
+					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
-					},
+					}),
 					Commitment: util.HistoryCommitment{
 						Height: 1,
 						Merkle: common.BytesToHash([]byte{2}),
@@ -483,12 +483,12 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		require.NoError(t, err)
 
 		// Ensure the prev value of cl2 is set to the vertex we just bisected to.
-		require.Equal(t, bisection, cl2.Prev)
+		require.Equal(t, bisection, cl2.Prev.Unwrap())
 
 		// The rootAssertion of the bisectoin should be the rootVertex of this challenge and the bisection
 		// should be the new presumptive successor.
-		require.Equal(t, challenge.rootVertex.Commitment.Merkle, bisection.Prev.Commitment.Merkle)
-		require.Equal(t, true, bisection.Prev.IsPresumptiveSuccessor())
+		require.Equal(t, challenge.rootVertex.Unwrap().Commitment.Merkle, bisection.Prev.Unwrap().Commitment.Merkle)
+		require.Equal(t, true, bisection.Prev.Unwrap().IsPresumptiveSuccessor())
 		return nil
 	})
 
@@ -502,20 +502,19 @@ func TestAssertionChain_Merge(t *testing.T) {
 		counter := util.NewCountUpTimer(timeRef)
 		counter.Add(2 * time.Minute)
 		mergingTo := &ChallengeVertex{
-			challenge: &Challenge{
-				rootAssertion: &Assertion{
+			challenge: util.Some(&Challenge{
+				rootAssertion: util.Some(&Assertion{
 					chain: &AssertionChain{
 						challengePeriod: time.Minute,
 					},
-				},
-			},
-			PresumptiveSuccessor: &ChallengeVertex{
+				}),
+			}),
+			PresumptiveSuccessor: util.Some(&ChallengeVertex{
 				psTimer: counter,
 				Commitment: util.HistoryCommitment{
 					Height: 1,
 				},
-			},
-		}
+			})}
 		mergingFrom := &ChallengeVertex{}
 		err := mergingFrom.Merge(
 			tx,
@@ -528,11 +527,11 @@ func TestAssertionChain_Merge(t *testing.T) {
 	t.Run("invalid bisection point", func(t *testing.T) {
 		mergingTo := &ChallengeVertex{}
 		mergingFrom := &ChallengeVertex{
-			Prev: &ChallengeVertex{
+			Prev: util.Some(&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 3,
 				},
-			},
+			}),
 			Commitment: util.HistoryCommitment{
 				Height: 4,
 			},
@@ -552,11 +551,11 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		}
 		mergingFrom := &ChallengeVertex{
-			Prev: &ChallengeVertex{
+			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 2,
 				},
-			},
+			}),
 			Commitment: util.HistoryCommitment{
 				Height: 4,
 			},
@@ -576,11 +575,11 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		}
 		mergingFrom := &ChallengeVertex{
-			Prev: &ChallengeVertex{
+			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 2,
 				},
-			},
+			}),
 			Commitment: util.HistoryCommitment{
 				Height: 4,
 			},
@@ -622,18 +621,18 @@ func TestAssertionChain_Merge(t *testing.T) {
 		}
 		mergingFrom := &ChallengeVertex{
 			psTimer: counter,
-			challenge: &Challenge{
-				rootAssertion: &Assertion{
+			challenge: util.Some[*Challenge](&Challenge{
+				rootAssertion: util.Some[*Assertion](&Assertion{
 					chain: &AssertionChain{
 						challengesFeed: NewEventFeed[ChallengeEvent](ctx),
 					},
-				},
-			},
-			Prev: &ChallengeVertex{
+				}),
+			}),
+			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 2,
 				},
-			},
+			}),
 			Commitment: mergingFromCommit,
 		}
 		err := mergingFrom.Merge(
@@ -665,11 +664,11 @@ func wrongBlockHashesForTest(numBlocks uint64) []common.Hash {
 func TestAssertionChain_StakerInsufficientBalance(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
-	require.Equal(t, chain.DeductFromBalance(
+	require.ErrorContains(t, chain.DeductFromBalance(
 		&ActiveTx{txStatus: readWriteTxStatus},
 		common.BytesToAddress([]byte{1}),
 		AssertionStakeWei,
-	), ErrInsufficientBalance)
+	), "0 < 1000000000: insufficient balance")
 }
 
 func TestAssertionChain_ChallengePeriodLength(t *testing.T) {

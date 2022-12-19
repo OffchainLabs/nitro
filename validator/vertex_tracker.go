@@ -85,11 +85,15 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	}
 	v.vertex = vertex
 
+	if v.vertex.Prev.IsNone() {
+		return nil
+	}
+
 	// We check if we are one-step away from the parent, in which case we then
 	// await the resolution of any one-step fork if needed, or confirm once time passes.
 	// TODO: Add a condition that confirms the vertex after a certain amount of time
 	// and the parent has been confirmed.
-	if v.vertex.Commitment.Height == v.vertex.Prev.Commitment.Height+1 {
+	if v.vertex.Commitment.Height == v.vertex.Prev.Unwrap().Commitment.Height+1 {
 		// Check if in a one-step fork.
 		atOneStepFork, fetchErr := v.isAtOneStepFork()
 		if fetchErr != nil {
@@ -98,7 +102,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		if atOneStepFork {
 			log.WithField("name", v.validator.name).Infof(
 				"Reached one-step-fork at %d %#x, now tracking subchallenge resolution",
-				v.vertex.Prev.Commitment.Height, v.vertex.Prev.Commitment.Merkle,
+				v.vertex.Prev.Unwrap().Commitment.Height, v.vertex.Prev.Unwrap().Commitment.Merkle,
 			)
 			v.awaitingOneStepFork = true
 			// TODO: Add subchallenge resolution.
@@ -122,7 +126,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	bisectedVertex, err := v.validator.bisect(ctx, vertex)
 	if err != nil {
 		if errors.Is(err, protocol.ErrVertexAlreadyExists) {
-			parentHeight := v.vertex.Prev.Commitment.Height
+			parentHeight := v.vertex.Prev.Unwrap().Commitment.Height
 			toHeight := v.vertex.Commitment.Height
 			mergingToHistory, err2 := v.validator.determineBisectionPointWithHistory(
 				ctx,
@@ -177,7 +181,7 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 			tx,
 			v.challengeCommitHash,
 			v.vertex.Commitment,
-			v.vertex.Prev.Commitment,
+			v.vertex.Prev.Unwrap().Commitment,
 		)
 		if err != nil {
 			return err
