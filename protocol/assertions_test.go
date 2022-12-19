@@ -293,12 +293,12 @@ func TestAssertionChain_Bisect(t *testing.T) {
 		require.NoError(t, err)
 
 		// Ensure the prev value of cl2 is set to the vertex we just bisected to.
-		require.Equal(t, bisection, cl2.Prev)
+		require.Equal(t, bisection, cl2.Prev.Unwrap())
 
 		// The rootAssertion of the bisectoin should be the rootVertex of this challenge and the bisection
 		// should be the new presumptive successor.
-		require.Equal(t, challenge.rootVertex.Commitment.Merkle, bisection.Prev.Commitment.Merkle)
-		require.Equal(t, true, bisection.Prev.IsPresumptiveSuccessor())
+		require.Equal(t, challenge.rootVertex.Unwrap().Commitment.Merkle, bisection.Prev.Unwrap().Commitment.Merkle)
+		require.Equal(t, true, bisection.Prev.Unwrap().IsPresumptiveSuccessor())
 		return nil
 	})
 
@@ -312,20 +312,19 @@ func TestAssertionChain_Merge(t *testing.T) {
 		counter := util.NewCountUpTimer(timeRef)
 		counter.Add(2 * time.Minute)
 		mergingTo := &ChallengeVertex{
-			challenge: &Challenge{
-				rootAssertion: &Assertion{
+			challenge: util.Some[*Challenge](&Challenge{
+				rootAssertion: util.Some[*Assertion](&Assertion{
 					chain: &AssertionChain{
 						challengePeriod: time.Minute,
 					},
-				},
-			},
-			presumptiveSuccessor: &ChallengeVertex{
+				}),
+			}),
+			presumptiveSuccessor: util.Some[*ChallengeVertex](&ChallengeVertex{
 				psTimer: counter,
 				Commitment: util.HistoryCommitment{
 					Height: 1,
 				},
-			},
-		}
+			})}
 		mergingFrom := &ChallengeVertex{}
 		err := mergingFrom.Merge(
 			tx,
@@ -338,11 +337,11 @@ func TestAssertionChain_Merge(t *testing.T) {
 	t.Run("invalid bisection point", func(t *testing.T) {
 		mergingTo := &ChallengeVertex{}
 		mergingFrom := &ChallengeVertex{
-			Prev: &ChallengeVertex{
+			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 3,
 				},
-			},
+			}),
 			Commitment: util.HistoryCommitment{
 				Height: 4,
 			},
@@ -362,11 +361,11 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		}
 		mergingFrom := &ChallengeVertex{
-			Prev: &ChallengeVertex{
+			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 2,
 				},
-			},
+			}),
 			Commitment: util.HistoryCommitment{
 				Height: 4,
 			},
@@ -386,11 +385,11 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		}
 		mergingFrom := &ChallengeVertex{
-			Prev: &ChallengeVertex{
+			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 2,
 				},
-			},
+			}),
 			Commitment: util.HistoryCommitment{
 				Height: 4,
 			},
@@ -432,18 +431,18 @@ func TestAssertionChain_Merge(t *testing.T) {
 		}
 		mergingFrom := &ChallengeVertex{
 			psTimer: counter,
-			challenge: &Challenge{
-				rootAssertion: &Assertion{
+			challenge: util.Some[*Challenge](&Challenge{
+				rootAssertion: util.Some[*Assertion](&Assertion{
 					chain: &AssertionChain{
 						challengesFeed: NewEventFeed[ChallengeEvent](ctx),
 					},
-				},
-			},
-			Prev: &ChallengeVertex{
+				}),
+			}),
+			Prev: util.Some[*ChallengeVertex](&ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 2,
 				},
-			},
+			}),
 			Commitment: mergingFromCommit,
 		}
 		err := mergingFrom.Merge(
