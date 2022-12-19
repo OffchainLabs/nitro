@@ -807,29 +807,32 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 }
 
 // Merge merges the vertex with its presumptive successor.
-func (v *ChallengeVertex) Merge(tx *ActiveTx, newPrev *ChallengeVertex, proof []common.Hash, validator common.Address) error {
+func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo *ChallengeVertex, proof []common.Hash, validator common.Address) error {
 	tx.verifyReadWrite()
-	if !newPrev.eligibleForNewSuccessor() {
+	if !mergingTo.eligibleForNewSuccessor() {
 		return ErrPastDeadline
 	}
-	if v.Prev != newPrev.Prev {
-		return ErrInvalidOp
+	// The vertex we are merging to should be the mandatory bisection point
+	// of the current vertex's height and its parent's height.
+	bisectionPoint, err := util.BisectionPoint(v.Prev.Commitment.Height, v.Commitment.Height)
+	if err != nil {
+		return err
 	}
-	if v.Commitment.Height <= newPrev.Commitment.Height {
+	if mergingTo.Commitment.Height != bisectionPoint {
 		return ErrInvalidHeight
 	}
-	if err := util.VerifyPrefixProof(newPrev.Commitment, v.Commitment, proof); err != nil {
+	if err := util.VerifyPrefixProof(mergingTo.Commitment, v.Commitment, proof); err != nil {
 		return err
 	}
 
-	v.Prev = newPrev
-	newPrev.psTimer.Add(v.psTimer.Get())
-	newPrev.maybeNewPresumptiveSuccessor(v)
+	v.Prev = mergingTo
+	mergingTo.psTimer.Add(v.psTimer.Get())
+	mergingTo.maybeNewPresumptiveSuccessor(v)
 	v.challenge.rootAssertion.chain.challengesFeed.Append(&ChallengeMergeEvent{
 		DeeperSequenceNum:    v.SequenceNum,
-		ShallowerSequenceNum: newPrev.SequenceNum,
-		BecomesPS:            newPrev.PresumptiveSuccessor == v,
-		History:              newPrev.Commitment,
+		ShallowerSequenceNum: mergingTo.SequenceNum,
+		BecomesPS:            mergingTo.PresumptiveSuccessor == v,
+		History:              mergingTo.Commitment,
 		Validator:            validator,
 	})
 	return nil

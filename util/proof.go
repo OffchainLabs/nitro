@@ -130,6 +130,9 @@ func VerifyPrefixProof(pre, post HistoryCommitment, proof []common.Hash) error {
 	if pre.Height >= post.Height {
 		return ErrInvalidHeight
 	}
+	if len(proof) == 0 {
+		return ErrIncorrectProof
+	}
 	expHeight := pre.Height
 	expansion, numRead := MerkleExpansionFromCompact(proof, expHeight)
 	proof = proof[numRead:]
