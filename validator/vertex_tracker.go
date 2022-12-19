@@ -84,7 +84,6 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return errors.Wrap(err, "could not refresh vertex from protocol")
 	}
 	v.vertex = vertex
-
 	if v.vertex.Prev.IsNone() {
 		return nil
 	}
@@ -126,24 +125,9 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	bisectedVertex, err := v.validator.bisect(ctx, vertex)
 	if err != nil {
 		if errors.Is(err, protocol.ErrVertexAlreadyExists) {
-			parentHeight := v.vertex.Prev.Unwrap().Commitment.Height
-			toHeight := v.vertex.Commitment.Height
-			mergingToHistory, err2 := v.validator.determineBisectionPointWithHistory(
-				ctx,
-				parentHeight,
-				toHeight,
-			)
-			if err2 != nil {
-				return err2
-			}
-			mergingInto, err3 := v.fetchVertexByHistoryCommit(mergingToHistory)
-			if err3 != nil {
-				return err3
-			}
-			mergingFrom := v.vertex
-			mergedVertex, err4 := v.validator.merge(ctx, v.challengeCommitHash, mergingInto, mergingFrom)
-			if err4 != nil {
-				return err4
+			mergedTo, mergeErr := v.mergeToExistingVertex(ctx)
+			if mergeErr != nil {
+				return mergeErr
 			}
 			// Yield tracking of the vertex we merged to in a new goroutine.
 			go newVertexTracker(
@@ -151,7 +135,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 				v.actEveryNSeconds,
 				v.challengeCommitHash,
 				v.challenge,
-				mergedVertex,
+				mergedTo,
 				v.validator,
 			).track(ctx)
 			return nil
@@ -188,7 +172,7 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 		}
 		return nil
 	}); err != nil {
-		return atOneStepFork, err
+		return false, err
 	}
 	return atOneStepFork, nil
 }
@@ -212,4 +196,30 @@ func (v *vertexTracker) fetchVertexByHistoryCommit(historyCommit util.HistoryCom
 		return nil, errors.New("fetched nil challenge vertex from protocol")
 	}
 	return mergingTo, nil
+}
+
+// Merges to a vertex that already exists in the protocol by fetching its history commit
+// from our state manager and then performing a merge transaction in the chain. Then,
+// this method returns the vertex it merged to.
+func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (*protocol.ChallengeVertex, error) {
+	parentHeight := v.vertex.Prev.Unwrap().Commitment.Height
+	toHeight := v.vertex.Commitment.Height
+	mergingToHistory, err := v.validator.determineBisectionPointWithHistory(
+		ctx,
+		parentHeight,
+		toHeight,
+	)
+	if err != nil {
+		return nil, err
+	}
+	mergingInto, err := v.fetchVertexByHistoryCommit(mergingToHistory)
+	if err != nil {
+		return nil, err
+	}
+	mergingFrom := v.vertex
+	mergedTo, err := v.validator.merge(ctx, v.challengeCommitHash, mergingInto, mergingFrom)
+	if err != nil {
+		return nil, err
+	}
+	return mergedTo, nil
 }

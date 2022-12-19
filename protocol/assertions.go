@@ -310,26 +310,44 @@ func (chain *AssertionChain) IsAtOneStepFork(
 	if !ok {
 		return false, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", challengeCommitHash)
 	}
-	parentCommitHash := vertexParentCommit.Hash()
+	parentCommitHash := CommitHash(vertexParentCommit.Hash())
+	return verticesContainOneStepFork(vertices, parentCommitHash), nil
+}
 
-	// TODO: Inefficient, find alternative.
-	numOneStepAway := 0
+// Check if a vertices with a matching parent commitment hash are at a one-step-fork from their parent.
+// First, we filter out vertices with the specified parent commit hash, then check that all of the
+// matching vertices are one-step away from their parent.
+func verticesContainOneStepFork(vertices map[VertexSequenceNumber]*ChallengeVertex, parentCommitHash CommitHash) bool {
+	if len(vertices) < 2 {
+		return false
+	}
+	childVertices := make([]*ChallengeVertex, 0)
 	for _, v := range vertices {
-		// TODO: Use option.
 		if v.Prev.IsNone() {
 			continue
 		}
-		vParentHash := v.Prev.Unwrap().Commitment.Hash()
-		// If there is another vertex in the list with the same parent and
-		// height + 1 of its parent, then we have a one-step-fork.
-		if vParentHash == parentCommitHash && (v.Commitment.Height == v.Prev.Unwrap().Commitment.Height+1) {
-			numOneStepAway++
-			if numOneStepAway > 1 {
-				return true, nil
-			}
+		// We only check vertices that have a matching parent commit hash.
+		vParentHash := CommitHash(v.Prev.Unwrap().Commitment.Hash())
+		if vParentHash == parentCommitHash {
+			childVertices = append(childVertices, v)
 		}
 	}
-	return false, nil
+	if len(childVertices) < 2 {
+		return false
+	}
+	for _, vertex := range childVertices {
+		if !isOneStepAwayFromParent(vertex) {
+			return false
+		}
+	}
+	return true
+}
+
+func isOneStepAwayFromParent(vertex *ChallengeVertex) bool {
+	if vertex.Prev.IsNone() {
+		return false
+	}
+	return vertex.Commitment.Height == vertex.Prev.Unwrap().Commitment.Height+1
 }
 
 // ChallengeVertexBySequenceNum returns the challenge vertex with the given sequence number.
