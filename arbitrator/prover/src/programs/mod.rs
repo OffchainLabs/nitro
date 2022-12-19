@@ -14,7 +14,7 @@ use wasmer::{
     MiddlewareError, ModuleMiddleware, Mutability, Store, Value as WasmerValue,
 };
 use wasmer_types::{
-    Bytes, FunctionIndex, GlobalIndex, LocalFunctionIndex, ModuleInfo, Pages, SignatureIndex, Type,
+    FunctionIndex, GlobalIndex, LocalFunctionIndex, ModuleInfo, Pages, SignatureIndex, Type,
 };
 
 pub mod config;
@@ -27,7 +27,6 @@ pub trait ModuleMod {
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType>;
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType>;
     fn move_start_function(&mut self, name: &str) -> Result<()>;
-    fn static_size(&self) -> Bytes;
     fn limit_heap(&mut self, limit: Pages) -> Result<()>;
 }
 
@@ -170,22 +169,6 @@ impl ModuleMod for ModuleInfo {
         Ok(())
     }
 
-    fn static_size(&self) -> Bytes {
-        let mut total: u32 = 0;
-        let mut reserve = |x| total = total.saturating_add(x);
-        let mul = |x: u32, y| x.saturating_mul(y);
-
-        for (_, table) in &self.tables {
-            // We don't support `TableGrow`, so a table will never exceed its minimum size.
-            // We also don't support the 128-bit extension, so we'll say a `type` is at most 8 bytes.
-            reserve(mul(table.minimum, 8));
-        }
-        reserve(mul(self.tables.len() as u32, 4)); // the tables themselves
-        reserve(mul(self.globals.len() as u32, 8)); // type is at most 8 bytes
-        reserve(mul(self.functions.len() as u32, 4));
-        Bytes(total as usize)
-    }
-
     fn limit_heap(&mut self, limit: Pages) -> Result<()> {
         if self.memories.len() > 1 {
             bail!("multi-memory extension not supported");
@@ -261,23 +244,6 @@ impl<'a> ModuleMod for WasmBinary<'a> {
             self.names.functions.insert(start, name);
         }
         Ok(())
-    }
-
-    fn static_size(&self) -> Bytes {
-        let mut total: u32 = 0;
-        let mut reserve = |x| total = total.saturating_add(x);
-        let mul = |x: u32, y| x.saturating_mul(y);
-
-        for table in &self.tables {
-            // We don't support `TableGrow`, so a table will never exceed its minimum size.
-            // We also don't support the 128-bit extension, so we'll say a `type` is at most 8 bytes.
-            reserve(mul(table.initial, 8));
-            reserve(8); // the table itself
-        }
-        reserve(mul(self.tables.len() as u32, 4)); // the tables themselves
-        reserve(mul(self.globals.len() as u32, 8)); // type is at most 8 bytes
-        reserve(mul(self.functions.len() as u32, 4));
-        Bytes(total as usize)
     }
 
     fn limit_heap(&mut self, limit: Pages) -> Result<()> {

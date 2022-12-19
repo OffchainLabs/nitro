@@ -17,7 +17,7 @@ pub type Pricing = fn(&Operator) -> u64;
 pub struct PolyglotConfig {
     pub costs: Pricing,
     pub start_gas: u64,
-    pub memory_limit: Bytes,
+    pub heap_bound: Bytes,
 }
 
 impl Default for PolyglotConfig {
@@ -26,7 +26,7 @@ impl Default for PolyglotConfig {
         Self {
             costs,
             start_gas: 0,
-            memory_limit: Pages(1).into(),
+            heap_bound: Bytes(0),
         }
     }
 }
@@ -37,7 +37,7 @@ impl PolyglotConfig {
         Ok(Self {
             costs,
             start_gas,
-            memory_limit,
+            heap_bound: memory_limit,
         })
     }
 
@@ -47,7 +47,7 @@ impl PolyglotConfig {
         compiler.enable_verifier();
 
         let meter = MiddlewareWrapper::new(Meter::new(self.costs, self.start_gas));
-        let bound = MiddlewareWrapper::new(HeapBound::new(self.memory_limit).unwrap()); // checked in new()
+        let bound = MiddlewareWrapper::new(HeapBound::new(self.heap_bound).unwrap()); // checked in new()
         let start = MiddlewareWrapper::new(StartMover::default());
 
         // add the instrumentation in the order of application

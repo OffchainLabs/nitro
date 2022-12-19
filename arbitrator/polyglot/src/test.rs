@@ -16,7 +16,7 @@ use prover::{
 };
 use wasmer::{
     imports, wasmparser::Operator, CompilerConfig, ExportIndex, Function, Imports, Instance,
-    Module, Store,
+    MemoryType, Module, Pages, Store,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -172,4 +172,35 @@ fn test_module_mod() -> Result<()> {
 
     check("void")?;
     check("more")
+}
+
+#[test]
+fn test_heap() -> Result<()> {
+    // test wasms
+    //     memory.wat   there's a 2-page memory with an upper limit of 4
+    //     memory2.wat  there's a 2-page memory with no upper limit
+
+    let mut config = PolyglotConfig::default();
+    config.heap_bound = Pages(1).into();
+    assert!(new_test_instance("tests/memory.wat", config.clone()).is_err());
+    assert!(new_test_instance("tests/memory2.wat", config.clone()).is_err());
+
+    let check = |start: u32, bound: u32, expected: u32, file: &str| -> Result<()> {
+        let mut config = PolyglotConfig::default();
+        config.heap_bound = Pages(bound).into();
+
+        let (instance, store) = new_test_instance(file, config.clone())?;
+
+        let ty = MemoryType::new(start, Some(expected), false);
+        let memory = instance.exports.get_memory("mem")?;
+        assert_eq!(ty, memory.ty(&store));
+        Ok(())
+    };
+
+    check(2, 2, 2, "tests/memory.wat")?;
+    check(2, 2, 2, "tests/memory2.wat")?;
+    check(2, 3, 3, "tests/memory.wat")?;
+    check(2, 3, 3, "tests/memory2.wat")?;
+    check(2, 5, 4, "tests/memory.wat")?; // the upper limit of 4 is stricter
+    check(2, 5, 5, "tests/memory2.wat")
 }
