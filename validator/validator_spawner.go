@@ -233,17 +233,20 @@ func (v *ArbitratorSpawner) Stop() {}
 type JitSpawner struct {
 	locator       *MachineLocator
 	machineLoader *JitMachineLoader
+	config        *JitMachineConfig
 }
 
 func NewJitSpawner(locator *MachineLocator, fatalErrChan chan error) (*JitSpawner, error) {
 	// TODO - preload machines
-	loader, err := NewJitMachineLoader(&DefaultJitMachineConfig, locator, fatalErrChan)
+	config := &DefaultJitMachineConfig
+	loader, err := NewJitMachineLoader(config, locator, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
 	return &JitSpawner{
 		locator:       locator,
 		machineLoader: loader,
+		config:        config,
 	}, nil
 }
 
@@ -269,7 +272,7 @@ func (v *JitSpawner) Execute(
 }
 
 func (s *JitSpawner) Name() string {
-	if s.machineLoader.config.JitCranelift {
+	if s.config.JitCranelift {
 		return "jit-cranelift"
 	}
 	return "jit"

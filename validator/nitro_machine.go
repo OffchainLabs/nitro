@@ -17,44 +17,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 )
-
-type ArbitratorMachineConfig struct {
-	WavmBinaryPath       string
-	UntilHostIoStatePath string
-}
-
-var DefaultArbitratorMachineConfig = ArbitratorMachineConfig{
-	WavmBinaryPath:       "machine.wavm.br",
-	UntilHostIoStatePath: "until-host-io-state.bin",
-}
-
-type arbMachineStatus struct {
-	zeroStep  *ArbitratorMachine
-	hostIo    *ArbitratorMachine
-	readyChan chan struct{}
-	err       error
-}
-
-type ArbMachineLoader struct {
-	mapMutex sync.Mutex
-	machines map[common.Hash]*arbMachineStatus
-	config   *ArbitratorMachineConfig
-	locator  *MachineLocator
-}
-
-func NewArbMachineLoader(config *ArbitratorMachineConfig, locator *MachineLocator) *ArbMachineLoader {
-	return &ArbMachineLoader{
-		machines: make(map[common.Hash]*arbMachineStatus),
-		config:   config,
-		locator:  locator,
-	}
-}
 
 type MachineLocator struct {
 	rootPath string
@@ -124,15 +91,8 @@ func (l MachineLocator) LatestWasmModuleRoot() common.Hash {
 	return l.latest
 }
 
-func newArbMachineStatus() *arbMachineStatus {
-	return &arbMachineStatus{
-		readyChan: make(chan struct{}),
-	}
-}
-
-func (a *ArbMachineLoader) createMachineThread(ctx context.Context, moduleRoot common.Hash, status *arbMachineStatus) {
-	defer close(status.readyChan)
-	binPath := filepath.Join(a.locator.getMachinePath(moduleRoot), a.config.WavmBinaryPath)
+func createArbMachineThread(ctx context.Context, locator *MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash, status *machineStatus[arbMachines]) {
+	binPath := filepath.Join(locator.getMachinePath(moduleRoot), config.WavmBinaryPath)
 	cBinPath := C.CString(binPath)
 	defer C.free(unsafe.Pointer(cBinPath))
 	log.Info("creating nitro machine", "binpath", binPath)
@@ -147,13 +107,15 @@ func (a *ArbMachineLoader) createMachineThread(ctx context.Context, moduleRoot c
 		status.err = fmt.Errorf("attempting to load module root %v got machine with module root %v", moduleRoot, machineModuleRoot)
 		return
 	}
-	status.zeroStep = machine
-	status.zeroStep.Freeze()
-	machine = status.zeroStep.Clone()
+	status.machine = &arbMachines{
+		zeroStep: machine,
+	}
+	status.machine.zeroStep.Freeze()
+	machine = status.machine.zeroStep.Clone()
 
 	// We try to store/load state before first host_io to a file.
 	// We will chicken out of that if something fails, but still try to calculate the machine
-	statePath := filepath.Join(a.locator.getMachinePath(moduleRoot), a.config.UntilHostIoStatePath)
+	statePath := filepath.Join(locator.getMachinePath(moduleRoot), config.UntilHostIoStatePath)
 	_, err := os.Stat(statePath)
 	if err == nil {
 		log.Info("found cached machine until host io state", "moduleRoot", moduleRoot)
@@ -163,8 +125,8 @@ func (a *ArbMachineLoader) createMachineThread(ctx context.Context, moduleRoot c
 			// Safe as if DeserializeAndReplaceState returns an error it will not have mutated the machine
 			log.Warn("failed to load machine until host io state; will reexecute", "err", err)
 		} else {
-			status.hostIo = machine
-			status.hostIo.Freeze()
+			status.machine.hostIo = machine
+			status.machine.hostIo.Freeze()
 			return
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
@@ -183,45 +145,6 @@ func (a *ArbMachineLoader) createMachineThread(ctx context.Context, moduleRoot c
 		return
 	}
 
-	status.hostIo = machine
-	status.hostIo.Freeze()
-}
-
-func (a *ArbMachineLoader) getMachineStatus(ctx context.Context, moduleRoot common.Hash) (*arbMachineStatus, error) {
-	if moduleRoot == (common.Hash{}) {
-		moduleRoot = a.locator.LatestWasmModuleRoot()
-		if (moduleRoot == common.Hash{}) {
-			return nil, ErrMachineNotFound
-		}
-	}
-	a.mapMutex.Lock()
-	status := a.machines[moduleRoot]
-	if status == nil {
-		status = newArbMachineStatus()
-		a.machines[moduleRoot] = status
-		go a.createMachineThread(context.Background(), moduleRoot, status)
-	}
-	a.mapMutex.Unlock()
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-status.readyChan:
-	}
-	return status, status.err
-}
-
-func (a *ArbMachineLoader) GetHostIoMachine(ctx context.Context, moduleRoot common.Hash) (*ArbitratorMachine, error) {
-	status, err := a.getMachineStatus(ctx, moduleRoot)
-	if err != nil {
-		return nil, err
-	}
-	return status.hostIo, status.err
-}
-
-func (a *ArbMachineLoader) GetZeroStepMachine(ctx context.Context, moduleRoot common.Hash) (*ArbitratorMachine, error) {
-	status, err := a.getMachineStatus(ctx, moduleRoot)
-	if err != nil {
-		return nil, err
-	}
-	return status.zeroStep, status.err
+	status.machine.hostIo = machine
+	status.machine.hostIo.Freeze()
 }
