@@ -18,7 +18,7 @@ func (v *Validator) bisect(
 	validatorChallengeVertex *protocol.ChallengeVertex,
 ) (*protocol.ChallengeVertex, error) {
 	toHeight := validatorChallengeVertex.Commitment.Height
-	parentHeight := validatorChallengeVertex.Prev.Commitment.Height
+	parentHeight := validatorChallengeVertex.Prev.Unwrap().Commitment.Height
 
 	bisectTo, err := util.BisectionPoint(parentHeight, toHeight)
 	if err != nil {
