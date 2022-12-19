@@ -784,7 +784,7 @@ func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
 	}
 	if v.Prev.Unwrap().status != ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.status))
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
 	}
 	subChal := v.Prev.Unwrap().subChallenge
 	if subChal.IsNone() || subChal.Unwrap().winner != v {
@@ -801,10 +801,16 @@ func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
 	}
 	if v.Prev.Unwrap().status != ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.status))
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
 	}
 	if v.psTimer.Get() <= v.challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod {
-		return errors.Wrapf(ErrNotYet, fmt.Sprintf("%d <= %d", v.psTimer.Get(), v.challenge.rootAssertion.chain.challengePeriod))
+		return errors.Wrapf(
+			ErrNotYet,
+			fmt.Sprintf(
+				"%d <= %d",
+				v.psTimer.Get(),
+				v.challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod),
+		)
 	}
 	v._confirm()
 	return nil
@@ -817,12 +823,18 @@ func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
 	}
 	if v.Prev.Unwrap().status != ConfirmedAssertionState {
-		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.status))
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
 	}
 	chain := v.challenge.Unwrap().rootAssertion.Unwrap().chain
 	chalPeriod := chain.challengePeriod
 	if !chain.timeReference.Get().After(v.challenge.Unwrap().creationTime.Add(2 * chalPeriod)) {
-		return errors.Wrapf(ErrNotYet, fmt.Sprintf("%d <= %d", chain.timeReference.Get().Unix(), v.challenge.creationTime.Add(2*chalPeriod).Unix()))
+		return errors.Wrapf(
+			ErrNotYet, fmt.Sprintf(
+				"%d <= %d",
+				chain.timeReference.Get().Unix(),
+				v.challenge.Unwrap().creationTime.Add(2*chalPeriod).Unix(),
+			),
+		)
 	}
 	v._confirm()
 	return nil
