@@ -334,6 +334,7 @@ func (chain *AssertionChain) IsAtOneStepFork(
 	vertexParentCommit util.HistoryCommitment,
 ) (bool, error) {
 	tx.verifyRead()
+	// Performs a basic sanity check before performing more expensive operations on inputs.
 	if vertexCommit.Height != vertexParentCommit.Height+1 {
 		return false, nil
 	}
@@ -349,15 +350,17 @@ func (chain *AssertionChain) IsAtOneStepFork(
 // First, we filter out vertices with the specified parent commit hash, then check that all of the
 // matching vertices are one-step away from their parent.
 func verticesContainOneStepFork(vertices map[VertexSequenceNumber]*ChallengeVertex, parentCommitHash CommitHash) bool {
+	// Basic sanity check: it is impossible to have a one-step-fork with less than 2 vertices.
 	if len(vertices) < 2 {
 		return false
 	}
+	// We filter out child vertices that match our specified parent commit hash.
 	childVertices := make([]*ChallengeVertex, 0)
 	for _, v := range vertices {
+		// Only genesis can have a previous vertex of None.
 		if v.Prev.IsNone() {
 			continue
 		}
-		// We only check vertices that have a matching parent commit hash.
 		vParentHash := CommitHash(v.Prev.Unwrap().Commitment.Hash())
 		if vParentHash == parentCommitHash {
 			childVertices = append(childVertices, v)
@@ -375,6 +378,7 @@ func verticesContainOneStepFork(vertices map[VertexSequenceNumber]*ChallengeVert
 }
 
 func isOneStepAwayFromParent(vertex *ChallengeVertex) bool {
+	// Only genesis can have a previous vertex of None.
 	if vertex.Prev.IsNone() {
 		return false
 	}
