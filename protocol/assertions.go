@@ -3,7 +3,6 @@ package protocol
 import (
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -12,6 +11,7 @@ import (
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -253,7 +253,7 @@ func (chain *AssertionChain) DeductFromBalance(tx *ActiveTx, addr common.Address
 	tx.verifyReadWrite()
 	balance := chain.GetBalance(tx, addr)
 	if balance.Cmp(amount) < 0 {
-		return ErrInsufficientBalance
+		return errors.Wrapf(ErrInsufficientBalance, "%s < %s", balance.String(), amount.String())
 	}
 	chain.SetBalance(tx, addr, new(big.Int).Sub(balance, amount))
 	return nil
@@ -310,7 +310,7 @@ func (chain *AssertionChain) ChallengeByCommitHash(tx *ActiveTx, commitHash Comm
 	tx.verifyRead()
 	chal, ok := chain.challengesByCommitHash[commitHash]
 	if !ok {
-		return nil, fmt.Errorf("challenge not found for assertion with state commit hash %#x", commitHash)
+		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", commitHash))
 	}
 	return chal, nil
 }
@@ -393,13 +393,13 @@ func (chain *AssertionChain) CreateLeaf(tx *ActiveTx, prev *Assertion, commitmen
 func (a *Assertion) RejectForPrev(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
-		return ErrWrongState
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("State: %d", a.status))
 	}
 	if a.Prev.IsNone() {
 		return ErrInvalidOp
 	}
 	if a.Prev.Unwrap().status != RejectedAssertionState {
-		return ErrWrongPredecessorState
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", a.Prev.Unwrap().status))
 	}
 	a.status = RejectedAssertionState
 	a.chain.feed.Append(&RejectEvent{
@@ -412,7 +412,7 @@ func (a *Assertion) RejectForPrev(tx *ActiveTx) error {
 func (a *Assertion) RejectForLoss(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
-		return ErrWrongState
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("State: %d", a.status))
 	}
 	if a.Prev.IsNone() {
 		return ErrInvalidOp
@@ -439,20 +439,20 @@ func (a *Assertion) RejectForLoss(tx *ActiveTx) error {
 func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
-		return ErrWrongState
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("State: %d", a.status))
 	}
 	if a.Prev.IsNone() {
 		return ErrInvalidOp
 	}
 	prev := a.Prev.Unwrap()
 	if prev.status != ConfirmedAssertionState {
-		return ErrWrongPredecessorState
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", a.Prev.Unwrap().status))
 	}
 	if !prev.secondChildCreationTime.IsNone() {
 		return ErrInvalidOp
 	}
 	if !a.chain.timeReference.Get().After(prev.firstChildCreationTime.Unwrap().Add(a.chain.challengePeriod)) {
-		return ErrNotYet
+		return errors.Wrapf(ErrNotYet, fmt.Sprintf("%d > %d", a.chain.timeReference.Get().Unix(), prev.firstChildCreationTime.Unwrap().Add(a.chain.challengePeriod).Unix()))
 	}
 	a.status = ConfirmedAssertionState
 	a.chain.latestConfirmed = a.SequenceNum
@@ -470,14 +470,14 @@ func (a *Assertion) ConfirmNoRival(tx *ActiveTx) error {
 func (a *Assertion) ConfirmForWin(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState {
-		return ErrWrongState
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("State: %d", a.status))
 	}
 	if a.Prev.IsNone() {
 		return ErrInvalidOp
 	}
 	prev := a.Prev.Unwrap()
 	if prev.status != ConfirmedAssertionState {
-		return ErrWrongPredecessorState
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", a.Prev.Unwrap().status))
 	}
 	if prev.challenge.IsNone() {
 		return ErrWrongPredecessorState
@@ -512,7 +512,7 @@ type Challenge struct {
 func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, challenger common.Address) (*Challenge, error) {
 	tx.verifyReadWrite()
 	if a.status != PendingAssertionState && a.chain.LatestConfirmed(tx) != a {
-		return nil, ErrWrongState
+		return nil, errors.Wrapf(ErrWrongState, fmt.Sprintf("State: %d, Confirmed status: %v", a.status, a.chain.LatestConfirmed(tx) != a))
 	}
 	if !a.challenge.IsNone() {
 		return nil, ErrChallengeAlreadyExists
@@ -594,7 +594,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		return nil, ErrPastDeadline
 	}
 	if c.includedHistories[history.Hash()] {
-		return nil, ErrVertexAlreadyExists
+		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", history.Hash().String()))
 	}
 
 	timer := util.NewCountUpTimer(chain.timeReference)
@@ -701,14 +701,14 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		return nil, ErrPastDeadline
 	}
 	if v.challenge.Unwrap().includedHistories[history.Hash()] {
-		return nil, ErrVertexAlreadyExists
+		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", history.Hash().String()))
 	}
 	bisectionHeight, err := v.requiredBisectionHeight()
 	if err != nil {
 		return nil, err
 	}
 	if bisectionHeight != history.Height {
-		return nil, ErrInvalidHeight
+		return nil, errors.Wrapf(ErrInvalidHeight, fmt.Sprintf("%d != %d", bisectionHeight, history))
 	}
 	if err := util.VerifyPrefixProof(history, v.Commitment, proof); err != nil {
 		return nil, err
@@ -758,7 +758,7 @@ func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo *ChallengeVertex, proof 
 		return err
 	}
 	if mergingTo.Commitment.Height != bisectionPoint {
-		return ErrInvalidHeight
+		return errors.Wrapf(ErrInvalidHeight, "%d != %d", mergingTo.Commitment.Height, bisectionPoint)
 	}
 	if err := util.VerifyPrefixProof(mergingTo.Commitment, v.Commitment, proof); err != nil {
 		return err
@@ -781,10 +781,10 @@ func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo *ChallengeVertex, proof 
 func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if v.status != PendingAssertionState {
-		return ErrWrongState
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
 	}
 	if v.Prev.Unwrap().status != ConfirmedAssertionState {
-		return ErrWrongPredecessorState
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
 	}
 	subChal := v.Prev.Unwrap().subChallenge
 	if subChal.IsNone() || subChal.Unwrap().winner != v {
@@ -798,13 +798,19 @@ func (v *ChallengeVertex) ConfirmForSubChallengeWin(tx *ActiveTx) error {
 func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if v.status != PendingAssertionState {
-		return ErrWrongState
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
 	}
 	if v.Prev.Unwrap().status != ConfirmedAssertionState {
-		return ErrWrongPredecessorState
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
 	}
 	if v.psTimer.Get() <= v.challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod {
-		return ErrNotYet
+		return errors.Wrapf(
+			ErrNotYet,
+			fmt.Sprintf(
+				"%d <= %d",
+				v.psTimer.Get(),
+				v.challenge.Unwrap().rootAssertion.Unwrap().chain.challengePeriod),
+		)
 	}
 	v._confirm()
 	return nil
@@ -814,15 +820,21 @@ func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if v.status != PendingAssertionState {
-		return ErrWrongState
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
 	}
 	if v.Prev.Unwrap().status != ConfirmedAssertionState {
-		return ErrWrongPredecessorState
+		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
 	}
 	chain := v.challenge.Unwrap().rootAssertion.Unwrap().chain
 	chalPeriod := chain.challengePeriod
 	if !chain.timeReference.Get().After(v.challenge.Unwrap().creationTime.Add(2 * chalPeriod)) {
-		return ErrNotYet
+		return errors.Wrapf(
+			ErrNotYet, fmt.Sprintf(
+				"%d <= %d",
+				chain.timeReference.Get().Unix(),
+				v.challenge.Unwrap().creationTime.Add(2*chalPeriod).Unix(),
+			),
+		)
 	}
 	v._confirm()
 	return nil
@@ -842,7 +854,7 @@ func (v *ChallengeVertex) CreateSubChallenge(tx *ActiveTx) error {
 		return ErrVertexAlreadyExists
 	}
 	if v.status == ConfirmedAssertionState {
-		return ErrWrongState
+		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
 	}
 	v.subChallenge = util.Some[*SubChallenge](&SubChallenge{
 		parent: v,

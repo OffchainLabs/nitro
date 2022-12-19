@@ -474,11 +474,11 @@ func wrongBlockHashesForTest(numBlocks uint64) []common.Hash {
 func TestAssertionChain_StakerInsufficientBalance(t *testing.T) {
 	ctx := context.Background()
 	chain := NewAssertionChain(ctx, util.NewArtificialTimeReference(), testChallengePeriod)
-	require.Equal(t, chain.DeductFromBalance(
+	require.ErrorContains(t, chain.DeductFromBalance(
 		&ActiveTx{txStatus: readWriteTxStatus},
 		common.BytesToAddress([]byte{1}),
 		AssertionStakeWei,
-	), ErrInsufficientBalance)
+	), "0 < 1000000000: insufficient balance")
 }
 
 func TestAssertionChain_ChallengePeriodLength(t *testing.T) {
