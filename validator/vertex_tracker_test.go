@@ -1,0 +1,428 @@
+package validator
+
+import (
+	"io"
+	"testing"
+
+	"context"
+	"errors"
+
+	"time"
+
+	"github.com/OffchainLabs/new-rollup-exploration/protocol"
+	"github.com/OffchainLabs/new-rollup-exploration/state-manager"
+	"github.com/OffchainLabs/new-rollup-exploration/testing/mocks"
+	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
+	"github.com/stretchr/testify/require"
+)
+
+func init() {
+	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetOutput(io.Discard)
+}
+
+func Test_track(t *testing.T) {
+	hook := test.NewGlobal()
+	tkr := newVertexTracker(
+		util.NewArtificialTimeReference(),
+		time.Millisecond,
+		protocol.CommitHash(common.Hash{}),
+		&protocol.Challenge{},
+		&protocol.ChallengeVertex{
+			Commitment: util.HistoryCommitment{},
+			Validator:  common.Address{},
+		},
+		&Validator{},
+	)
+	tkr.awaitingOneStepFork = true
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*5)
+	defer cancel()
+	tkr.track(ctx)
+	AssertLogsContain(t, hook, "Tracking challenge vertex")
+	AssertLogsContain(t, hook, "Challenge goroutine exiting")
+}
+
+func Test_actOnBlockChallenge(t *testing.T) {
+	challengeCommit := protocol.StateCommitment{
+		Height:    0,
+		StateRoot: common.Hash{},
+	}
+	challengeCommitHash := protocol.CommitHash(challengeCommit.Hash())
+	ctx := context.Background()
+	t.Run("does nothing if awaiting one step fork", func(t *testing.T) {
+		tkr := &vertexTracker{
+			awaitingOneStepFork: true,
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.NoError(t, err)
+	})
+	t.Run("fails to fetch vertex by history commit", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		p := &mocks.MockProtocol{}
+		var vertex *protocol.ChallengeVertex
+		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(
+			vertex,
+			errors.New("something went wrong"),
+		)
+		vertex = &protocol.ChallengeVertex{
+			Commitment: history,
+		}
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator:           v,
+			vertex:              vertex,
+			challengeCommitHash: challengeCommitHash,
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.ErrorContains(t, err, "could not refresh vertex")
+	})
+	t.Run("fails to check if at one-step-fork", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		parentHistory := util.HistoryCommitment{
+			Height: 0,
+		}
+		p := &mocks.MockProtocol{}
+		vertex := &protocol.ChallengeVertex{
+			Commitment: history,
+			Prev: util.Some(&protocol.ChallengeVertex{
+				Commitment: parentHistory,
+			}),
+		}
+		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(
+			vertex,
+			nil,
+		)
+		p.On(
+			"IsAtOneStepFork",
+			&protocol.ActiveTx{},
+			challengeCommitHash,
+			history,
+			parentHistory,
+		).Return(
+			false, errors.New("something went wrong"),
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator:           v,
+			vertex:              vertex,
+			challengeCommitHash: challengeCommitHash,
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.ErrorContains(t, err, "something went wrong")
+	})
+	t.Run("logs one-step-fork and returns", func(t *testing.T) {
+		hook := test.NewGlobal()
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		parentHistory := util.HistoryCommitment{
+			Height: 0,
+		}
+		p := &mocks.MockProtocol{}
+		vertex := &protocol.ChallengeVertex{
+			Commitment: history,
+			Prev: util.Some(&protocol.ChallengeVertex{
+				Commitment: parentHistory,
+			}),
+		}
+		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(
+			vertex,
+			nil,
+		)
+		p.On(
+			"IsAtOneStepFork",
+			&protocol.ActiveTx{},
+			challengeCommitHash,
+			history,
+			parentHistory,
+		).Return(
+			true, nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator:           v,
+			vertex:              vertex,
+			challengeCommitHash: challengeCommitHash,
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.NoError(t, err)
+		AssertLogsContain(t, hook, "Reached one-step-fork at 0")
+	})
+	t.Run("takes no action is presumptive", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 2,
+		}
+		parentHistory := util.HistoryCommitment{
+			Height: 0,
+		}
+		p := &mocks.MockProtocol{}
+		vertex := &protocol.ChallengeVertex{
+			Commitment: history,
+		}
+		prev := &protocol.ChallengeVertex{
+			Commitment:           parentHistory,
+			PresumptiveSuccessor: util.Some(vertex),
+		}
+		vertex.Prev = util.Some(prev)
+		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(
+			vertex,
+			nil,
+		)
+		p.On(
+			"IsAtOneStepFork",
+			&protocol.ActiveTx{},
+			challengeCommitHash,
+			history,
+			parentHistory,
+		).Return(
+			false, nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator:           v,
+			vertex:              vertex,
+			challengeCommitHash: challengeCommitHash,
+		}
+		err := tkr.actOnBlockChallenge(ctx)
+		require.NoError(t, err)
+	})
+	t.Run("bisects", func(t *testing.T) {
+		hook := test.NewGlobal()
+		trk := setupNonPSTracker(t, ctx)
+		err := trk.actOnBlockChallenge(ctx)
+		require.NoError(t, err)
+		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
+		AssertLogsContain(t, hook, "Successfully bisected to vertex")
+	})
+	t.Run("merges", func(t *testing.T) {
+		hook := test.NewGlobal()
+		trk := setupNonPSTracker(t, ctx)
+		err := trk.actOnBlockChallenge(ctx)
+		require.NoError(t, err)
+
+		// Get the challenge vertex from the other validator. It should share a history
+		// with the vertex we just bisected to, so it should try to merge instead.
+		var vertex *protocol.ChallengeVertex
+		err = trk.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			vertex, err = p.ChallengeVertexBySequenceNum(tx, trk.challengeCommitHash, protocol.VertexSequenceNumber(2))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		require.NotNil(t, vertex)
+		trk.vertex = vertex
+
+		err = trk.actOnBlockChallenge(ctx)
+		require.NoError(t, err)
+		AssertLogsContain(t, hook, "Challenge vertex goroutine acting")
+		AssertLogsContain(t, hook, "Successfully bisected to vertex")
+		AssertLogsContain(t, hook, "Successfully merged to vertex with height 4")
+	})
+}
+
+func Test_isAtOneStepFork(t *testing.T) {
+	challengeCommit := protocol.StateCommitment{
+		Height:    0,
+		StateRoot: common.Hash{},
+	}
+	challengeCommitHash := protocol.CommitHash(challengeCommit.Hash())
+	commitA := util.HistoryCommitment{
+		Height: 1,
+	}
+	commitB := util.HistoryCommitment{
+		Height: 2,
+	}
+	vertex := &protocol.ChallengeVertex{
+		Commitment: commitA,
+		Prev: util.Some(&protocol.ChallengeVertex{
+			Commitment: commitB,
+		}),
+	}
+	t.Run("fails", func(t *testing.T) {
+		p := &mocks.MockProtocol{}
+		p.On(
+			"IsAtOneStepFork",
+			&protocol.ActiveTx{},
+			challengeCommitHash,
+			commitA,
+			commitB,
+		).Return(
+			false, errors.New("something went wrong"),
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator:           v,
+			vertex:              vertex,
+			challengeCommitHash: challengeCommitHash,
+		}
+		_, err := tkr.isAtOneStepFork()
+		require.ErrorContains(t, err, "something went wrong")
+	})
+	t.Run("OK", func(t *testing.T) {
+		p := &mocks.MockProtocol{}
+		p.On(
+			"IsAtOneStepFork",
+			&protocol.ActiveTx{},
+			challengeCommitHash,
+			commitA,
+			commitB,
+		).Return(
+			true, nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator:           v,
+			vertex:              vertex,
+			challengeCommitHash: challengeCommitHash,
+		}
+		ok, err := tkr.isAtOneStepFork()
+		require.NoError(t, err)
+		require.True(t, ok)
+	})
+}
+
+func Test_fetchVertexByHistoryCommit(t *testing.T) {
+	challengeCommit := protocol.StateCommitment{
+		Height:    0,
+		StateRoot: common.Hash{},
+	}
+	challengeCommitHash := protocol.CommitHash(challengeCommit.Hash())
+
+	t.Run("nil vertex", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		p := &mocks.MockProtocol{}
+		var vertex *protocol.ChallengeVertex
+		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(
+			vertex, nil,
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator:           v,
+			challengeCommitHash: challengeCommitHash,
+		}
+		_, err := tkr.fetchVertexByHistoryCommit(history)
+		require.ErrorContains(t, err, "fetched nil challenge")
+	})
+	t.Run("fetching error", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		p := &mocks.MockProtocol{}
+		var vertex *protocol.ChallengeVertex
+		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(
+			vertex,
+			errors.New("something went wrong"),
+		)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator:           v,
+			challengeCommitHash: challengeCommitHash,
+		}
+		_, err := tkr.fetchVertexByHistoryCommit(history)
+		require.ErrorContains(t, err, "something went wrong")
+	})
+	t.Run("OK", func(t *testing.T) {
+		history := util.HistoryCommitment{
+			Height: 1,
+		}
+		p := &mocks.MockProtocol{}
+		want := &protocol.ChallengeVertex{
+			Commitment: history,
+		}
+		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(want, nil)
+		v := &Validator{
+			chain: p,
+		}
+		tkr := &vertexTracker{
+			validator:           v,
+			challengeCommitHash: challengeCommitHash,
+		}
+		got, err := tkr.fetchVertexByHistoryCommit(history)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+}
+
+func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
+	stateRoots := generateStateRoots(10)
+	manager := statemanager.New(stateRoots)
+	leaf1, leaf2, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
+	err := validator.onLeafCreated(ctx, leaf1)
+	require.NoError(t, err)
+	err = validator.onLeafCreated(ctx, leaf2)
+	require.NoError(t, err)
+
+	historyCommit, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
+	require.NoError(t, err)
+
+	genesisCommit := protocol.StateCommitment{
+		Height:    0,
+		StateRoot: common.Hash{},
+	}
+
+	id := protocol.CommitHash(genesisCommit.Hash())
+	var challenge *protocol.Challenge
+	err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
+		if fetchErr != nil {
+			return fetchErr
+		}
+		challenge, err = p.ChallengeByCommitHash(tx, id)
+		if err != nil {
+			return err
+		}
+		if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
+			return err
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	// Get the challenge vertex.
+	var vertex *protocol.ChallengeVertex
+	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		vertex, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(1))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotNil(t, vertex)
+
+	return newVertexTracker(
+		util.NewArtificialTimeReference(),
+		time.Second,
+		id,
+		challenge,
+		vertex,
+		validator,
+	)
+}

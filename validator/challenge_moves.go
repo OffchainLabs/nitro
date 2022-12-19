@@ -10,6 +10,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+func (v *Validator) determineBisectionPointWithHistory(
+	ctx context.Context,
+	parentHeight,
+	toHeight uint64,
+) (util.HistoryCommitment, error) {
+	bisectTo, err := util.BisectionPoint(parentHeight, toHeight)
+	if err != nil {
+		return util.HistoryCommitment{}, errors.Wrapf(err, "determining bisection point failed for %d and %d", parentHeight, toHeight)
+	}
+	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
+	if err != nil {
+		return util.HistoryCommitment{}, errors.Wrapf(err, "could not rertieve history commitment up to height %d", bisectTo)
+	}
+	return historyCommit, nil
+}
+
 // Performs a bisection move during a BlockChallenge in the assertion protocol given
 // a validator challenge vertex. It will create a historical commitment for the vertex
 // the validator wants to bisect to and an associated proof for submitting to the protocol.
@@ -20,14 +36,11 @@ func (v *Validator) bisect(
 	toHeight := validatorChallengeVertex.Commitment.Height
 	parentHeight := validatorChallengeVertex.Prev.Unwrap().Commitment.Height
 
-	bisectTo, err := util.BisectionPoint(parentHeight, toHeight)
+	historyCommit, err := v.determineBisectionPointWithHistory(ctx, parentHeight, toHeight)
 	if err != nil {
-		return nil, errors.Wrapf(err, "determining bisection point failed for %d and %d", parentHeight, toHeight)
+		return nil, err
 	}
-	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, bisectTo)
-	if err != nil {
-		return nil, errors.Wrapf(err, "could not rertieve history commitment up to height %d", bisectTo)
-	}
+	bisectTo := historyCommit.Height
 	proof, err := v.stateManager.PrefixProof(ctx, bisectTo, toHeight)
 	if err != nil {
 		return nil, errors.Wrapf(err, "generating prefix proof failed from height %d to %d", bisectTo, toHeight)
@@ -51,19 +64,11 @@ func (v *Validator) bisect(
 		return nil
 	})
 	if err != nil {
-		if errors.Is(protocol.ErrVertexAlreadyExists, err) {
-			log.Infof(
-				"Bisected vertex with height %d and commit %#x already exists",
-				historyCommit.Height,
-				historyCommit.Merkle,
-			)
-			return nil, nil
-		}
 		return nil, errors.Wrapf(
 			err,
 			"could not bisect vertex with sequence %d and validator %#x to height %d with history %d and %#x",
 			validatorChallengeVertex.SequenceNum,
-			validatorChallengeVertex.Challenger,
+			validatorChallengeVertex.Validator,
 			bisectTo,
 			historyCommit.Height,
 			historyCommit.Merkle,
@@ -73,7 +78,7 @@ func (v *Validator) bisect(
 		"name":                   v.name,
 		"isPresumptiveSuccessor": bisectedVertex.IsPresumptiveSuccessor(),
 		"historyCommitHeight":    bisectedVertex.Commitment.Height,
-		"historyCommitMerkle":    fmt.Sprintf("%#x", bisectedVertex.Commitment.Height),
+		"historyCommitMerkle":    fmt.Sprintf("%#x", bisectedVertex.Commitment.Merkle),
 	}).Info("Successfully bisected to vertex")
 	return bisectedVertex, nil
 }
@@ -83,26 +88,36 @@ func (v *Validator) bisect(
 // also need to fetch vertex we are are merging to by reading it from the protocol.
 func (v *Validator) merge(
 	ctx context.Context,
+	challengeCommitHash protocol.CommitHash,
 	mergingTo *protocol.ChallengeVertex,
 	mergingFrom *protocol.ChallengeVertex,
-) error {
+) (*protocol.ChallengeVertex, error) {
 	mergingToHeight := mergingTo.Commitment.Height
 	historyCommit, err := v.stateManager.HistoryCommitmentUpTo(ctx, mergingToHeight)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	currentCommit := mergingFrom.Commitment
 	proof, err := v.stateManager.PrefixProof(ctx, mergingToHeight, currentCommit.Height)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := util.VerifyPrefixProof(historyCommit, currentCommit, proof); err != nil {
-		return err
+	if err = util.VerifyPrefixProof(historyCommit, currentCommit, proof); err != nil {
+		return nil, err
 	}
-	if err := v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		return mergingFrom.Merge(tx, mergingTo, proof, v.address)
+	if err = v.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		if err = mergingFrom.Merge(tx, mergingTo, proof, v.address); err != nil {
+			return err
+		}
+		// Refresh the mergingTo vertex by reading it from the protocol, as some of its fields may have
+		// changed after we made the merge transaction above.
+		mergingTo, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, mergingTo.SequenceNum)
+		if err != nil {
+			return err
+		}
+		return nil
 	}); err != nil {
-		return errors.Wrapf(
+		return nil, errors.Wrapf(
 			err,
 			"could not merge vertex with height %d and commit %#x to height %x and commit %#x",
 			currentCommit.Height,
@@ -118,5 +133,5 @@ func (v *Validator) merge(
 		mergingTo.Commitment.Height,
 		mergingTo.Commitment.Merkle,
 	)
-	return nil
+	return mergingTo, nil
 }
