@@ -266,7 +266,7 @@ struct Module {
     types: Arc<Vec<FunctionType>>,
     internals_offset: u32,
     names: Arc<NameCustomSection>,
-    host_call_hooks: Arc<Vec<(String, String)>>,
+    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
     start_function: Option<u32>,
     func_types: Arc<Vec<FunctionType>>,
     exports: Arc<HashMap<String, u32>>,
@@ -321,7 +321,7 @@ impl Module {
                 }
                 func_type_idxs.push(ty);
                 code.push(func);
-                host_call_hooks.push((import.module.into(), import.name.into()));
+                host_call_hooks.push(Some((import.module.into(), import.name.into())));
             } else {
                 bail!("Unsupport import kind {:?}", import);
             }
@@ -412,7 +412,7 @@ impl Module {
             };
             if !matches!(
                 offset.checked_add(data.data.len()),
-                Some(x) if (x as u64) <= memory.size() as u64,
+                Some(x) if (x as u64) <= memory.size(),
             ) {
                 bail!(
                     "Out-of-bounds data memory init with offset {} and size {}",
@@ -1445,7 +1445,11 @@ impl Machine {
                         caller_module,
                         caller_module_internals,
                     });
-                    if let Some(hook) = module.host_call_hooks.get(self.pc.func()) {
+                    if let Some(hook) = module
+                        .host_call_hooks
+                        .get(self.pc.func())
+                        .and_then(|h| h.as_ref())
+                    {
                         if let Err(err) = Self::host_call_hook(
                             &self.value_stack,
                             module,
@@ -1503,7 +1507,7 @@ impl Machine {
                 Opcode::CrossModuleCall => {
                     flush_module!();
                     self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(Value::I32(self.pc.module as u32));
+                    self.value_stack.push(Value::I32(self.pc.module));
                     self.value_stack.push(Value::I32(module.internals_offset));
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
@@ -1514,7 +1518,7 @@ impl Machine {
                 }
                 Opcode::CallerModuleInternalCall => {
                     self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(Value::I32(self.pc.module as u32));
+                    self.value_stack.push(Value::I32(self.pc.module));
                     self.value_stack.push(Value::I32(module.internals_offset));
 
                     let current_frame = self.frame_stack.last().unwrap();
@@ -1690,7 +1694,7 @@ impl Machine {
                     }
                 }
                 Opcode::MemorySize => {
-                    let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE as u64)
+                    let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE)
                         .expect("Memory pages grew past a u32");
                     self.value_stack.push(Value::I32(pages));
                 }
@@ -1792,10 +1796,10 @@ impl Machine {
                     self.value_stack.push(Value::I32(x as u32));
                 }
                 Opcode::I64ExtendI32(signed) => {
-                    let x = self.value_stack.pop().unwrap().assume_u32();
+                    let x: u32 = self.value_stack.pop().unwrap().assume_u32();
                     let x64 = match signed {
                         true => x as i32 as i64 as u64,
-                        false => x as u32 as u64,
+                        false => x as u64,
                     };
                     self.value_stack.push(Value::I64(x64));
                 }
@@ -2122,9 +2126,9 @@ impl Machine {
 
         data.extend(self.global_state.hash());
 
-        data.extend((self.pc.module as u32).to_be_bytes());
-        data.extend((self.pc.func as u32).to_be_bytes());
-        data.extend((self.pc.inst as u32).to_be_bytes());
+        data.extend(self.pc.module.to_be_bytes());
+        data.extend(self.pc.func.to_be_bytes());
+        data.extend(self.pc.inst.to_be_bytes());
         let mod_merkle = self.get_modules_merkle();
         data.extend(mod_merkle.root());
 
@@ -2374,7 +2378,7 @@ impl Machine {
             let names = &self.modules[pc.module()].names;
             let func = names
                 .functions
-                .get(&(pc.func as u32))
+                .get(&pc.func)
                 .cloned()
                 .unwrap_or_else(|| format!("{}", pc.func));
             let mut module = names.module.clone();
