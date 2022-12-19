@@ -74,16 +74,6 @@ func (m *MockProtocol) SubscribeChainEvents(ctx context.Context, ch chan<- proto
 func (m *MockProtocol) SubscribeChallengeEvents(ctx context.Context, ch chan<- protocol.ChallengeEvent) {
 }
 
-func (m *MockProtocol) IsAtOneStepFork(
-	tx *protocol.ActiveTx,
-	challengeCommitHash protocol.CommitHash,
-	vertexCommit util.HistoryCommitment,
-	vertexParentCommit util.HistoryCommitment,
-) (bool, error) {
-	args := m.Called(tx, challengeCommitHash, vertexCommit, vertexParentCommit)
-	return args.Get(0).(bool), args.Error(1)
-}
-
 func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum protocol.AssertionSequenceNumber) (*protocol.Assertion, error) {
 	args := m.Called(tx, seqNum)
 	return args.Get(0).(*protocol.Assertion), args.Error(1)
@@ -99,6 +89,16 @@ func (m *MockProtocol) ChallengeVertexByHistoryCommit(
 ) (*protocol.ChallengeVertex, error) {
 	args := m.Called(tx, challengeCommitHash, hist)
 	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
+}
+
+func (m *MockProtocol) IsAtOneStepFork(
+	tx *protocol.ActiveTx,
+	challengeCommitHash protocol.CommitHash,
+	vertexCommit util.HistoryCommitment,
+	vertexParentCommit util.HistoryCommitment,
+) (bool, error) {
+	args := m.Called(tx, challengeCommitHash, vertexCommit, vertexParentCommit)
+	return args.Get(0).(bool), args.Error(1)
 }
 
 func (m *MockProtocol) ChallengeByCommitHash(tx *protocol.ActiveTx, commitHash protocol.CommitHash) (*protocol.Challenge, error) {

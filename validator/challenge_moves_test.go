@@ -20,12 +20,12 @@ func Test_bisect(t *testing.T) {
 		_, _, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
 
 		vertex := &protocol.ChallengeVertex{
-			Prev: &protocol.ChallengeVertex{
+			Prev: util.Some[*protocol.ChallengeVertex](&protocol.ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 3,
 					Merkle: common.BytesToHash([]byte{0}),
 				},
-			},
+			}),
 			Commitment: util.HistoryCommitment{
 				Height: 0,
 				Merkle: common.BytesToHash([]byte{1}),
@@ -40,12 +40,12 @@ func Test_bisect(t *testing.T) {
 		_, _, validator := createTwoValidatorFork(t, ctx, manager, stateRoots)
 
 		vertex := &protocol.ChallengeVertex{
-			Prev: &protocol.ChallengeVertex{
+			Prev: util.Some[*protocol.ChallengeVertex](&protocol.ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 0,
 					Merkle: common.BytesToHash([]byte{0}),
 				},
-			},
+			}),
 			Commitment: util.HistoryCommitment{
 				Height: 7,
 				Merkle: common.BytesToHash([]byte("SOME JUNK DATA")),
@@ -100,12 +100,12 @@ func Test_merge(t *testing.T) {
 		require.NotNil(t, mergingTo)
 
 		mergingFrom := &protocol.ChallengeVertex{
-			Prev: &protocol.ChallengeVertex{
+			Prev: util.Some(&protocol.ChallengeVertex{
 				Commitment: util.HistoryCommitment{
 					Height: 0,
 					Merkle: common.BytesToHash([]byte{0}),
 				},
-			},
+			}),
 			Commitment: util.HistoryCommitment{
 				Height: 7,
 				Merkle: common.BytesToHash([]byte("SOME JUNK DATA")),
@@ -142,9 +142,10 @@ func Test_merge(t *testing.T) {
 		require.NotNil(t, vertexToMergeFrom)
 
 		// Perform a merge move to the bisected vertex from an origin.
-		_, err = validator.merge(ctx, challengeCommitHash, bisectedVertex, vertexToMergeFrom)
+		mergingTo, err := validator.merge(ctx, challengeCommitHash, bisectedVertex, vertexToMergeFrom)
 		require.NoError(t, err)
 		AssertLogsContain(t, logsHook, "Successfully merged to vertex with height 4")
+		require.Equal(t, bisectedVertex, mergingTo)
 	})
 }
 

@@ -93,9 +93,9 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		p := &mocks.MockProtocol{}
 		vertex := &protocol.ChallengeVertex{
 			Commitment: history,
-			Prev: &protocol.ChallengeVertex{
+			Prev: util.Some(&protocol.ChallengeVertex{
 				Commitment: parentHistory,
-			},
+			}),
 		}
 		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(
 			vertex,
@@ -132,9 +132,9 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		p := &mocks.MockProtocol{}
 		vertex := &protocol.ChallengeVertex{
 			Commitment: history,
-			Prev: &protocol.ChallengeVertex{
+			Prev: util.Some(&protocol.ChallengeVertex{
 				Commitment: parentHistory,
-			},
+			}),
 		}
 		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(
 			vertex,
@@ -174,9 +174,9 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		}
 		prev := &protocol.ChallengeVertex{
 			Commitment:           parentHistory,
-			PresumptiveSuccessor: vertex,
+			PresumptiveSuccessor: util.Some(vertex),
 		}
-		vertex.Prev = prev
+		vertex.Prev = util.Some(prev)
 		p.On("ChallengeVertexByHistoryCommit", &protocol.ActiveTx{}, challengeCommitHash, history).Return(
 			vertex,
 			nil,
@@ -251,9 +251,9 @@ func Test_isAtOneStepFork(t *testing.T) {
 	}
 	vertex := &protocol.ChallengeVertex{
 		Commitment: commitA,
-		Prev: &protocol.ChallengeVertex{
+		Prev: util.Some(&protocol.ChallengeVertex{
 			Commitment: commitB,
-		},
+		}),
 	}
 	t.Run("fails", func(t *testing.T) {
 		p := &mocks.MockProtocol{}
