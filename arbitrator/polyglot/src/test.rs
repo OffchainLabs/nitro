@@ -140,8 +140,7 @@ fn test_import_export_safety() -> Result<()> {
     // TODO: perform all the same checks in instances
     check("tests/bad-export.wat", true)?;
     check("tests/bad-export2.wat", false)?;
-    check("tests/bad-import.wat", false)?;
-    Ok(())
+    check("tests/bad-import.wat", false)
 }
 
 #[test]
