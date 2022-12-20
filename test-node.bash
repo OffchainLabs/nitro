@@ -264,7 +264,7 @@ if $force_init; then
     echo == Initializing redis
     docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
 
-    docker-compose run testnode-scripts bridge-funds --ethamount 100000
+    docker-compose run testnode-scripts bridge-funds --ethamount 100000 --wait
 
     if $tokenbridge; then
         echo == Deploying token bridge

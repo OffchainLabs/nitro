@@ -41,6 +41,11 @@ export const bridgeFundsCommand = {
       describe: "account (see general help)",
       default: "funnel",
     },
+    wait: {
+      boolean: true,
+      describe: "wait till l2 has balance of ethamount",
+      default: false,
+    },
   },
   handler: async (argv: any) => {
     argv.provider = new ethers.providers.WebSocketProvider(argv.l1url);
@@ -58,6 +63,18 @@ export const bridgeFundsCommand = {
     await runStress(argv, sendTransaction);
 
     argv.provider.destroy();
+    if (argv.wait) {
+      const l2provider = new ethers.providers.WebSocketProvider(argv.l2url);
+      const account = namedAccount(argv.from, argv.threadId).connect(l2provider)
+      const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+      while (true) {
+        const balance = await account.getBalance()
+        if (balance >= ethers.utils.parseEther(argv.ethamount)) {
+          return
+        }
+        await sleep(100)
+      }
+    }
   },
 };
 
