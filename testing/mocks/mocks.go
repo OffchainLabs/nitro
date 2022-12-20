@@ -79,21 +79,14 @@ func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum prot
 	return args.Get(0).(*protocol.Assertion), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengeVertexBySequenceNum(tx *protocol.ActiveTx, commitHash protocol.CommitHash, seqNum protocol.VertexSequenceNumber) (*protocol.ChallengeVertex, error) {
-	args := m.Called(tx, commitHash, seqNum)
-	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
-}
-
-func (m *MockProtocol) ChallengeVertexByHistoryCommit(
-	tx *protocol.ActiveTx, challengeCommitHash protocol.CommitHash, hist util.HistoryCommitment,
-) (*protocol.ChallengeVertex, error) {
-	args := m.Called(tx, challengeCommitHash, hist)
+func (m *MockProtocol) ChallengeVertexByCommitHash(tx *protocol.ActiveTx, challengeHash protocol.ChallengeCommitHash, vertexHash protocol.VertexCommitHash) (*protocol.ChallengeVertex, error) {
+	args := m.Called(tx, challengeHash, vertexHash)
 	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
 }
 
 func (m *MockProtocol) IsAtOneStepFork(
 	tx *protocol.ActiveTx,
-	challengeCommitHash protocol.CommitHash,
+	challengeCommitHash protocol.ChallengeCommitHash,
 	vertexCommit util.HistoryCommitment,
 	vertexParentCommit util.HistoryCommitment,
 ) (bool, error) {
@@ -101,7 +94,7 @@ func (m *MockProtocol) IsAtOneStepFork(
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengeByCommitHash(tx *protocol.ActiveTx, commitHash protocol.CommitHash) (*protocol.Challenge, error) {
+func (m *MockProtocol) ChallengeByCommitHash(tx *protocol.ActiveTx, commitHash protocol.ChallengeCommitHash) (*protocol.Challenge, error) {
 	args := m.Called(tx, commitHash)
 	return args.Get(0).(*protocol.Challenge), args.Error(1)
 }
