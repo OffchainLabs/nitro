@@ -313,7 +313,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		}
 		p := &mocks.MockProtocol{}
 		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(common.Hash{})).Return(
 			vertex, nil,
 		)
 		v := &Validator{
@@ -332,7 +332,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		}
 		p := &mocks.MockProtocol{}
 		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(common.Hash{})).Return(
 			vertex,
 			errors.New("something went wrong"),
 		)
@@ -354,7 +354,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		want := &protocol.ChallengeVertex{
 			Commitment: history,
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(want, nil)
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(common.Hash{})).Return(want, nil)
 		v := &Validator{
 			chain: p,
 		}

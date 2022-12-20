@@ -175,7 +175,6 @@ func runBisectionTest(
 	}
 
 	id := protocol.ChallengeCommitHash(genesisCommit.Hash())
-	var vertex *protocol.ChallengeVertex
 	err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
 		if fetchErr != nil {
@@ -185,7 +184,7 @@ func runBisectionTest(
 		if challErr != nil {
 			return challErr
 		}
-		vertex, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address)
+		_, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address)
 		if err != nil {
 			return err
 		}
@@ -197,7 +196,7 @@ func runBisectionTest(
 	// Get the challenge from the chain itself.
 	var vertexToBisect *protocol.ChallengeVertex
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		vertexToBisect, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(vertex.Commitment.Hash()))
+		vertexToBisect, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(common.Hash{1}))
 		if err != nil {
 			return err
 		}
