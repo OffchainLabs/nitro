@@ -63,7 +63,7 @@ func (v *Validator) onChallengeStarted(
 	go newVertexTracker(
 		v.timeRef,
 		v.challengeVertexWakeInterval,
-		protocol.CommitHash(challenge.ParentStateCommitment().Hash()),
+		protocol.ChallengeCommitHash(challenge.ParentStateCommitment().Hash()),
 		challenge,
 		challengeVertex,
 		v,
@@ -111,7 +111,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	go newVertexTracker(
 		v.timeRef,
 		v.challengeVertexWakeInterval,
-		protocol.CommitHash(challenge.ParentStateCommitment().Hash()),
+		protocol.ChallengeCommitHash(challenge.ParentStateCommitment().Hash()),
 		challenge,
 		challengeVertex,
 		v,
