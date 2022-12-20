@@ -78,7 +78,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return nil
 	}
 	// Refresh the vertex by reading it again from the protocol as some of its fields may have changed.
-	vertex, err := v.fetchVertexByHistoryCommit(protocol.VertexCommitHash(v.vertex.Commitment.Hash()))
+	vertex, err := v.fetchVertexByHistoryCommit(protocol.VertexCommitHash(v.vertex.Commitment.Merkle))
 	if err != nil {
 		return errors.Wrap(err, "could not refresh vertex from protocol")
 	}

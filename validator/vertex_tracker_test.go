@@ -63,7 +63,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		}
 		p := &mocks.MockProtocol{}
 		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Merkle)).Return(
 			vertex,
 			errors.New("something went wrong"),
 		)
@@ -95,7 +95,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 				Commitment: parentHistory,
 			}),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Merkle)).Return(
 			vertex,
 			nil,
 		)
@@ -134,7 +134,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 				Commitment: parentHistory,
 			}),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Merkle)).Return(
 			vertex,
 			nil,
 		)
@@ -175,7 +175,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			PresumptiveSuccessor: util.Some(vertex),
 		}
 		vertex.Prev = util.Some(prev)
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Merkle)).Return(
 			vertex,
 			nil,
 		)
@@ -216,8 +216,10 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		// Get the challenge vertex from the other validator. It should share a history
 		// with the vertex we just bisected to, so it should try to merge instead.
 		var vertex *protocol.ChallengeVertex
+		v, err := trk.validator.stateManager.HistoryCommitmentUpTo(ctx, 5)
+		require.NoError(t, err)
 		err = trk.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertex, err = p.ChallengeVertexByCommitHash(tx, trk.challengeCommitHash, protocol.VertexCommitHash{2})
+			vertex, err = p.ChallengeVertexByCommitHash(tx, trk.challengeCommitHash, protocol.VertexCommitHash(v.Merkle))
 			if err != nil {
 				return err
 			}
