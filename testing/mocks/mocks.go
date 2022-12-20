@@ -79,8 +79,8 @@ func (m *MockProtocol) AssertionBySequenceNum(tx *protocol.ActiveTx, seqNum prot
 	return args.Get(0).(*protocol.Assertion), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengeVertexBySequenceNum(tx *protocol.ActiveTx, commitHash protocol.CommitHash, seqNum protocol.VertexSequenceNumber) (*protocol.ChallengeVertex, error) {
-	args := m.Called(tx, commitHash, seqNum)
+func (m *MockProtocol) ChallengeVertexByCommitHash(tx *protocol.ActiveTx, challengeHash protocol.CommitHash, vertexHash protocol.CommitHash) (*protocol.ChallengeVertex, error) {
+	args := m.Called(tx, challengeHash, vertexHash)
 	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
 }
 

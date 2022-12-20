@@ -2,9 +2,8 @@ package validator
 
 import (
 	"context"
-	"time"
-
 	"fmt"
+	"time"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
@@ -79,7 +78,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return nil
 	}
 	// Refresh the vertex by reading it again from the protocol as some of its fields may have changed.
-	vertex, err := v.fetchVertexByHistoryCommit(v.vertex.Commitment)
+	vertex, err := v.fetchVertexByHistoryCommit(protocol.CommitHash(v.vertex.Commitment.Hash()))
 	if err != nil {
 		return errors.Wrap(err, "could not refresh vertex from protocol")
 	}
@@ -179,11 +178,11 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 
 // Obtains a challenge vertex we should perform move into given its corresponding challenge ID
 // and the history commitment of the vertex itself from the chain.
-func (v *vertexTracker) fetchVertexByHistoryCommit(historyCommit util.HistoryCommitment) (*protocol.ChallengeVertex, error) {
+func (v *vertexTracker) fetchVertexByHistoryCommit(hash protocol.CommitHash) (*protocol.ChallengeVertex, error) {
 	var mergingTo *protocol.ChallengeVertex
 	var err error
 	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		mergingTo, err = p.ChallengeVertexByHistoryCommit(tx, v.challengeCommitHash, historyCommit)
+		mergingTo, err = p.ChallengeVertexByCommitHash(tx, v.challengeCommitHash, hash)
 		if err != nil {
 			return err
 		}
@@ -212,7 +211,7 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (*protocol.Ch
 	if err != nil {
 		return nil, err
 	}
-	mergingInto, err := v.fetchVertexByHistoryCommit(mergingToHistory)
+	mergingInto, err := v.fetchVertexByHistoryCommit(protocol.CommitHash(mergingToHistory.Merkle))
 	if err != nil {
 		return nil, err
 	}

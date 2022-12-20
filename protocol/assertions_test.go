@@ -365,8 +365,8 @@ func TestIsAtOneStepFork(t *testing.T) {
 				parentCommit := util.HistoryCommitment{
 					Height: tt.parentHeight,
 				}
-				assertionsChain.challengeVerticesByCommitHashSeqNum = make(map[CommitHash]map[VertexSequenceNumber]*ChallengeVertex)
-				assertionsChain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = tt.vertices
+				assertionsChain.challengeVerticesByCommitHash = make(map[CommitHash]map[VertexSequenceNumber]*ChallengeVertex)
+				assertionsChain.challengeVerticesByCommitHash[genesisCommitHash] = tt.vertices
 				ok, err := assertionsChain.IsAtOneStepFork(
 					tx,
 					genesisCommitHash,
@@ -409,7 +409,7 @@ func TestChallengeVertexByHistoryCommit(t *testing.T) {
 				Height: 1,
 			}
 			vertices := map[VertexSequenceNumber]*ChallengeVertex{}
-			chain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = vertices
+			chain.challengeVerticesByCommitHash[genesisCommitHash] = vertices
 			_, err := chain.ChallengeVertexByHistoryCommit(
 				tx,
 				genesisCommitHash,
@@ -427,7 +427,7 @@ func TestChallengeVertexByHistoryCommit(t *testing.T) {
 			vertices := map[VertexSequenceNumber]*ChallengeVertex{
 				10: want,
 			}
-			chain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = vertices
+			chain.challengeVerticesByCommitHash[genesisCommitHash] = vertices
 			got, err := chain.ChallengeVertexByHistoryCommit(
 				tx,
 				genesisCommitHash,

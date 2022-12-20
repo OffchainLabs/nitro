@@ -85,7 +85,7 @@ func (v *Validator) bisect(
 
 // Performs a merge move during a BlockChallenge in the assertion protocol given
 // a challenge vertex and the sequence number we should be merging into. To do this, we
-// also need to fetch vertex we are are merging to by reading it from the protocol.
+// also need to fetch vertex we are merging to by reading it from the protocol.
 func (v *Validator) merge(
 	ctx context.Context,
 	challengeCommitHash protocol.CommitHash,
@@ -111,7 +111,7 @@ func (v *Validator) merge(
 		}
 		// Refresh the mergingTo vertex by reading it from the protocol, as some of its fields may have
 		// changed after we made the merge transaction above.
-		mergingTo, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, mergingTo.SequenceNum)
+		mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.CommitHash(mergingTo.Commitment.Merkle))
 		if err != nil {
 			return err
 		}

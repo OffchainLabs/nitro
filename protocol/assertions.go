@@ -83,10 +83,7 @@ type AssertionManager interface {
 	NumAssertions(tx *ActiveTx) uint64
 	AssertionBySequenceNum(tx *ActiveTx, seqNum AssertionSequenceNumber) (*Assertion, error)
 	ChallengeByCommitHash(tx *ActiveTx, commitHash CommitHash) (*Challenge, error)
-	ChallengeVertexBySequenceNum(tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber) (*ChallengeVertex, error)
-	ChallengeVertexByHistoryCommit(
-		tx *ActiveTx, challengeCommitHash CommitHash, hist util.HistoryCommitment,
-	) (*ChallengeVertex, error)
+	ChallengeVertexByCommitHash(tx *ActiveTx, challenge CommitHash, vertex CommitHash) (*ChallengeVertex, error)
 	IsAtOneStepFork(
 		tx *ActiveTx,
 		challengeCommitHash CommitHash,
@@ -99,18 +96,18 @@ type AssertionManager interface {
 }
 
 type AssertionChain struct {
-	mutex                               sync.RWMutex
-	timeReference                       util.TimeReference
-	challengePeriod                     time.Duration
-	latestConfirmed                     AssertionSequenceNumber
-	assertions                          []*Assertion
-	hasSeenAssertions                   map[common.Hash]bool
-	challengeVerticesByCommitHashSeqNum map[CommitHash]map[VertexSequenceNumber]*ChallengeVertex
-	challengesByCommitHash              map[CommitHash]*Challenge
-	balances                            *util.MapWithDefault[common.Address, *big.Int]
-	feed                                *EventFeed[AssertionChainEvent]
-	challengesFeed                      *EventFeed[ChallengeEvent]
-	inbox                               *Inbox
+	mutex                         sync.RWMutex
+	timeReference                 util.TimeReference
+	challengePeriod               time.Duration
+	latestConfirmed               AssertionSequenceNumber
+	assertions                    []*Assertion
+	hasSeenAssertions             map[common.Hash]bool
+	challengeVerticesByCommitHash map[CommitHash]map[CommitHash]*ChallengeVertex
+	challengesByCommitHash        map[CommitHash]*Challenge
+	balances                      *util.MapWithDefault[common.Address, *big.Int]
+	feed                          *EventFeed[AssertionChainEvent]
+	challengesFeed                *EventFeed[ChallengeEvent]
+	inbox                         *Inbox
 }
 
 const (
@@ -210,18 +207,18 @@ func NewAssertionChain(ctx context.Context, timeRef util.TimeReference, challeng
 		Staker:                  util.None[common.Address](),
 	}
 	chain := &AssertionChain{
-		mutex:                               sync.RWMutex{},
-		timeReference:                       timeRef,
-		challengePeriod:                     challengePeriod,
-		challengesByCommitHash:              make(map[CommitHash]*Challenge),
-		challengeVerticesByCommitHashSeqNum: make(map[CommitHash]map[VertexSequenceNumber]*ChallengeVertex),
-		latestConfirmed:                     0,
-		assertions:                          []*Assertion{genesis},
-		balances:                            util.NewMapWithDefaultAdvanced[common.Address, *big.Int](common.Big0, func(x *big.Int) bool { return x.Sign() == 0 }),
-		feed:                                NewEventFeed[AssertionChainEvent](ctx),
-		challengesFeed:                      NewEventFeed[ChallengeEvent](ctx),
-		inbox:                               NewInbox(ctx),
-		hasSeenAssertions:                   make(map[common.Hash]bool),
+		mutex:                         sync.RWMutex{},
+		timeReference:                 timeRef,
+		challengePeriod:               challengePeriod,
+		challengesByCommitHash:        make(map[CommitHash]*Challenge),
+		challengeVerticesByCommitHash: make(map[CommitHash]map[CommitHash]*ChallengeVertex),
+		latestConfirmed:               0,
+		assertions:                    []*Assertion{genesis},
+		balances:                      util.NewMapWithDefaultAdvanced[common.Address, *big.Int](common.Big0, func(x *big.Int) bool { return x.Sign() == 0 }),
+		feed:                          NewEventFeed[AssertionChainEvent](ctx),
+		challengesFeed:                NewEventFeed[ChallengeEvent](ctx),
+		inbox:                         NewInbox(ctx),
+		hasSeenAssertions:             make(map[common.Hash]bool),
 	}
 	genesis.chain = chain
 	return chain
@@ -308,7 +305,7 @@ func (chain *AssertionChain) IsAtOneStepFork(
 	if vertexCommit.Height != vertexParentCommit.Height+1 {
 		return false, nil
 	}
-	vertices, ok := chain.challengeVerticesByCommitHashSeqNum[challengeCommitHash]
+	vertices, ok := chain.challengeVerticesByCommitHash[challengeCommitHash]
 	if !ok {
 		return false, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", challengeCommitHash)
 	}
@@ -319,7 +316,7 @@ func (chain *AssertionChain) IsAtOneStepFork(
 // Check if a vertices with a matching parent commitment hash are at a one-step-fork from their parent.
 // First, we filter out vertices with the specified parent commit hash, then check that all of the
 // matching vertices are one-step away from their parent.
-func verticesContainOneStepFork(vertices map[VertexSequenceNumber]*ChallengeVertex, parentCommitHash CommitHash) bool {
+func verticesContainOneStepFork(vertices map[CommitHash]*ChallengeVertex, parentCommitHash CommitHash) bool {
 	if len(vertices) < 2 {
 		return false
 	}
@@ -353,41 +350,19 @@ func isOneStepAwayFromParent(vertex *ChallengeVertex) bool {
 }
 
 // ChallengeVertexBySequenceNum returns the challenge vertex with the given sequence number.
-func (chain *AssertionChain) ChallengeVertexBySequenceNum(
-	tx *ActiveTx, commitHash CommitHash, seqNum VertexSequenceNumber,
+func (chain *AssertionChain) ChallengeVertexByCommitHash(
+	tx *ActiveTx, challengeHash CommitHash, vertexHash CommitHash,
 ) (*ChallengeVertex, error) {
 	tx.verifyRead()
-	vertices, ok := chain.challengeVerticesByCommitHashSeqNum[commitHash]
+	vertices, ok := chain.challengeVerticesByCommitHash[challengeHash]
 	if !ok {
-		return nil, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", commitHash)
+		return nil, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", challengeHash)
 	}
-	vertex, ok := vertices[seqNum]
+	vertex, ok := vertices[vertexHash]
 	if !ok {
-		return nil, fmt.Errorf("challenge vertex with sequence number not found %d", seqNum)
+		return nil, fmt.Errorf("challenge vertex with sequence number not found %#x", vertexHash)
 	}
 	return vertex, nil
-}
-
-// ChallengeVertexByHistoryCommit returns the challenge vertex with the given history commitment.
-func (chain *AssertionChain) ChallengeVertexByHistoryCommit(
-	tx *ActiveTx, challengeCommitHash CommitHash, hist util.HistoryCommitment,
-) (*ChallengeVertex, error) {
-	tx.verifyRead()
-	vertices, ok := chain.challengeVerticesByCommitHashSeqNum[challengeCommitHash]
-	if !ok {
-		return nil, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", challengeCommitHash)
-	}
-	// TODO: Inefficient lookup, explore different storage.
-	for _, v := range vertices {
-		if v.Commitment.Hash() == hist.Hash() {
-			return v, nil
-		}
-	}
-	return nil, fmt.Errorf(
-		"challenge vertex with commit %d and %#x not found",
-		hist.Height,
-		hist.Merkle,
-	)
 }
 
 // ChallengeByCommitHash returns the challenge with the given commit hash.
@@ -646,7 +621,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 
 	challengeID := CommitHash(a.StateCommitment.Hash())
 	a.chain.challengesByCommitHash[challengeID] = chal
-	a.chain.challengeVerticesByCommitHashSeqNum[challengeID] = map[VertexSequenceNumber]*ChallengeVertex{currSeqNumber: rootVertex}
+	a.chain.challengeVerticesByCommitHash[challengeID] = map[CommitHash]*ChallengeVertex{CommitHash(rootVertex.Commitment.Merkle): rootVertex}
 
 	return chal, nil
 }
@@ -713,7 +688,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	c.includedHistories[history.Hash()] = true
 	h := CommitHash(c.rootAssertion.Unwrap().StateCommitment.Hash())
 	c.rootAssertion.Unwrap().chain.challengesByCommitHash[h] = c
-	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHashSeqNum[h][leaf.SequenceNum] = leaf
+	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[h][CommitHash(leaf.Commitment.Merkle)] = leaf
 	return leaf, nil
 }
 
@@ -825,7 +800,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		Validator:       validator,
 	})
 	commitHash := CommitHash(newVertex.challenge.Unwrap().rootAssertion.Unwrap().StateCommitment.Hash())
-	newVertex.challenge.Unwrap().rootAssertion.Unwrap().chain.challengeVerticesByCommitHashSeqNum[commitHash][newVertex.SequenceNum] = newVertex
+	newVertex.challenge.Unwrap().rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[commitHash][CommitHash(newVertex.Commitment.Merkle)] = newVertex
 
 	return newVertex, nil
 }
