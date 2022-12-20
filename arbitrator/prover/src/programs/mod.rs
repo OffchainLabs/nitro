@@ -14,10 +14,11 @@ use wasmer::{
     MiddlewareError, ModuleMiddleware, Mutability, Store, Value as WasmerValue,
 };
 use wasmer_types::{
-    FunctionIndex, GlobalIndex, LocalFunctionIndex, ModuleInfo, SignatureIndex, Type,
+    FunctionIndex, GlobalIndex, LocalFunctionIndex, ModuleInfo, Pages, SignatureIndex, Type,
 };
 
 pub mod config;
+pub mod heap;
 pub mod meter;
 pub mod start;
 
@@ -26,6 +27,7 @@ pub trait ModuleMod {
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType>;
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType>;
     fn move_start_function(&mut self, name: &str) -> Result<()>;
+    fn limit_heap(&mut self, limit: Pages) -> Result<()>;
 }
 
 pub trait Middleware<M: ModuleMod> {
@@ -87,7 +89,7 @@ where
     T: Middleware<ModuleInfo> + Debug + Send + Sync + 'static,
 {
     fn transform_module_info(&self, module: &mut ModuleInfo) -> Result<(), MiddlewareError> {
-        let error = |err| MiddlewareError::new(self.0.name(), format!("{:?}", err));
+        let error = |err| MiddlewareError::new(self.0.name().red(), format!("{:?}", err));
         self.0.update_module(module).map_err(error)
     }
 
@@ -117,7 +119,7 @@ where
         op: Operator<'a>,
         out: &mut wasmer::MiddlewareReaderState<'a>,
     ) -> Result<(), MiddlewareError> {
-        let name = self.0.name();
+        let name = self.0.name().red();
         let error = |err| MiddlewareError::new(name, format!("{:?}", err));
         self.0.feed(op, out).map_err(error)
     }
@@ -163,6 +165,24 @@ impl ModuleMod for ModuleInfo {
             let export = ExportIndex::Function(start);
             self.exports.insert(name.to_owned(), export);
             self.function_names.insert(start, name.to_owned());
+        }
+        Ok(())
+    }
+
+    fn limit_heap(&mut self, limit: Pages) -> Result<()> {
+        if self.memories.len() > 1 {
+            bail!("multi-memory extension not supported");
+        }
+        for (_, memory) in &mut self.memories {
+            let bound = memory.maximum.unwrap_or(limit);
+            let bound = bound.min(limit);
+            memory.maximum = Some(bound);
+
+            if memory.minimum > bound {
+                let minimum = memory.minimum.0.red();
+                let limit = bound.0.red();
+                bail!("module memory minimum {} exceeds limit {}", minimum, limit);
+            }
         }
         Ok(())
     }
@@ -222,6 +242,24 @@ impl<'a> ModuleMod for WasmBinary<'a> {
             let name = name.to_owned();
             self.exports.insert(name.clone(), (start, ExportKind::Func));
             self.names.functions.insert(start, name);
+        }
+        Ok(())
+    }
+
+    fn limit_heap(&mut self, limit: Pages) -> Result<()> {
+        if self.memories.len() > 1 {
+            bail!("multi-memory extension not supported");
+        }
+        if let Some(memory) = self.memories.first_mut() {
+            let bound = memory.maximum.unwrap_or(limit.0.into());
+            let bound = bound.min(limit.0.into());
+            memory.maximum = Some(bound);
+
+            if memory.initial > bound {
+                let minimum = memory.initial.red();
+                let limit = bound.red();
+                bail!("module memory minimum {} exceeds limit {}", minimum, limit);
+            }
         }
         Ok(())
     }
