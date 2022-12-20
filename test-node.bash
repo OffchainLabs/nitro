@@ -143,9 +143,11 @@ if $dev_build; then
 fi
 
 NODES="sequencer"
+INITIAL_SEQ_NODES="sequencer"
 
 if [ $redundantsequencers -gt 0 ]; then
     NODES="$NODES sequencer_b"
+    INITIAL_SEQ_NODES="$INITIAL_SEQ_NODES sequencer_b"
 fi
 if [ $redundantsequencers -gt 1 ]; then
     NODES="$NODES sequencer_c"
@@ -264,6 +266,8 @@ if $force_init; then
     echo == Initializing redis
     docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
 
+    echo == Funding l2 funnel
+    docker-compose up -d $INITIAL_SEQ_NODES
     docker-compose run testnode-scripts bridge-funds --ethamount 100000 --wait
 
     if $tokenbridge; then
