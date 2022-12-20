@@ -54,23 +54,20 @@
             your experience.
             </p>
         <![endif]-->
-        <div>Default config:</div>
-        <form id="myForm">
-            <label for="height">Height:</label><br>
-            <input type="text" id="height" name="height"><br>
-            <button type="button" onclick="submitForm()">Submit Leaf</button>
-        </form>
-        <div id="graph"></div>
-        <form class="bg-white px-8 pt-6 pb-8 mb-4">
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2" for="username">
-                    Height
-                </label>
-                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username">
+        <div class="flex">
+            <div class="w-1/5 bg-gray-200">
+                <div>Trigger actions:</div>
+                <form id="myForm">
+                    <label for="height">Height:</label><br>
+                    <input type="text" id="height" name="height"><br>
+                    <button onclick="submitForm()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="button">
+                        Submit Leaf
+                    </button>
+                </form>
             </div>
-            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="button">
-                Submit Leaf
-            </button>
-        </form>
+            <div class="w-4/5 pl-8">
+                <div id="graph"></div>
+            </div>
+        </div>
     </body>
 </html>
