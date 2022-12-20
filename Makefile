@@ -78,6 +78,15 @@ arbitrator_wasm_wasistub_files = $(wildcard arbitrator/wasm-libraries/wasi-stub/
 arbitrator_wasm_gostub_files = $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
 arbitrator_wasm_hostio_files = $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
 
+wasm32_wasi = target/wasm32-wasi/release
+wasm32_unknown = target/wasm32-unknown-unknown/release
+
+polyglot_dir = arbitrator/polyglot
+polyglot_test_dir = arbitrator/polyglot/tests
+polyglot_test_keccak_wasm = $(polyglot_test_dir)/keccak/$(wasm32_unknown)/keccak.wasm
+polyglot_test_keccak_src = $(wildcard $(polyglot_test_dir)/keccak/*.toml $(polyglot_test_dir)/keccak/src/*.rs)
+polyglot_benchmarks = $(wildcard $(polyglot_dir)/*.toml $(polyglot_dir)/src/*.rs) $(polyglot_test_keccak_wasm)
+
 # user targets
 
 push: lint test-go .make/fmt
@@ -119,6 +128,10 @@ format fmt: .make/fmt
 	@printf $(done)
 
 lint: .make/lint
+	@printf $(done)
+
+polyglot-benchmarks: $(polyglot_benchmarks)
+	cargo test --manifest-path $< --release --features benchmark benchmark_ -- --nocapture
 	@printf $(done)
 
 test-go: .make/test-go
@@ -202,8 +215,8 @@ $(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin jit ${CARGOFLAGS}
 	install arbitrator/target/release/jit $@
 
-$(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs
-	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm,%, $@)
+$(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs
+	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
 
 $(arbitrator_cases)/go/main: $(arbitrator_cases)/go/main.go $(arbitrator_cases)/go/go.mod $(arbitrator_cases)/go/go.sum
 	cd $(arbitrator_cases)/go && GOOS=js GOARCH=wasm go build main.go
@@ -216,7 +229,7 @@ $(arbitrator_generated_header): $(DEP_PREDICATE) arbitrator/prover/src/lib.rs ar
 $(output_root)/machines/latest/wasi_stub.wasm: $(DEP_PREDICATE) $(arbitrator_wasm_wasistub_files)
 	mkdir -p $(output_root)/machines/latest
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
-	install arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
+	install arbitrator/wasm-libraries/$(wasm32_unknown)/wasi_stub.wasm $@
 
 arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/Makefile \
@@ -259,17 +272,17 @@ $(output_root)/machines/latest/soft-float.wasm: $(DEP_PREDICATE) \
 $(output_root)/machines/latest/go_stub.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
 	mkdir -p $(output_root)/machines/latest
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package go-stub
-	install arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/go_stub.wasm $@
 
 $(output_root)/machines/latest/host_io.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
 	mkdir -p $(output_root)/machines/latest
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
-	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/host_io.wasm $@
 
 $(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/brotli/src/*/*) .make/cbrotli-wasm
 	mkdir -p $(output_root)/machines/latest
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
-	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/brotli.wasm $@
 
 $(output_root)/machines/latest/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(arbitrator_prover_bin) $(replay_wasm) --generate-binaries $(output_root)/machines/latest -l $(output_root)/machines/latest/soft-float.wasm -l $(output_root)/machines/latest/wasi_stub.wasm -l $(output_root)/machines/latest/go_stub.wasm -l $(output_root)/machines/latest/host_io.wasm -l $(output_root)/machines/latest/brotli.wasm
@@ -277,13 +290,17 @@ $(output_root)/machines/latest/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_pr
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
 
+$(polyglot_test_keccak_wasm): $(polyglot_test_keccak_src)
+	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(arbitrator_prover_bin) $(output_root)/machines/latest/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(output_root)/machines/latest/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
 contracts/test/prover/proofs/no-stack-pollution.json: $(arbitrator_cases)/no-stack-pollution.wasm $(arbitrator_prover_bin)
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --require-success --always-merkleize
 
-contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
+contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages $(arbitrator_cases)/rust/data/preimages.bin
 
 contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
@@ -354,4 +371,4 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 
 always:              # use this to force other rules to always build
 .DELETE_ON_ERROR:    # causes a failure to delete its target
-.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint polyglot-benchmarks test-go test-gen-proofs push clean docker

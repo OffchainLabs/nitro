@@ -4,8 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eyre = "0.6.5"
 arbutil = { path = "../arbutil/" }
 prover = { path = "../prover/" }
 wasmer = { path = "../wasm-upstream/wasmer/lib/api/" }
 wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass" }
+wasmer-compiler-cranelift = { path = "../wasm-upstream/wasmer/lib/compiler-cranelift" }
+wasmer-compiler-llvm = { path = "../wasm-upstream/wasmer/lib/compiler-llvm" }
+eyre = "0.6.5"
+sha3 = "0.10.5"
+hex = "0.4.3"
+
+[features]
+benchmark = []
