@@ -159,6 +159,9 @@ fn test_module_mod() -> Result<()> {
     let (instance, _) = new_test_instance(file, config)?;
     let module = instance.module().info();
 
+    assert_eq!(module.all_functions()?, binary.all_functions()?);
+    assert_eq!(module.all_signatures()?, binary.all_signatures()?);
+
     let check = |name: &str| {
         let Some(ExportIndex::Function(func)) = module.exports.get(name) else {
             bail!("no func named {}", name.red())

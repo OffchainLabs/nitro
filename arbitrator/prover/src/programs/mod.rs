@@ -8,16 +8,19 @@ use crate::{
 
 use arbutil::Color;
 use eyre::{bail, Report, Result};
+use fnv::FnvHashMap as HashMap;
 use std::{fmt::Debug, marker::PhantomData};
 use wasmer::{
     wasmparser::Operator, ExportIndex, FunctionMiddleware, GlobalInit, GlobalType, Instance,
     MiddlewareError, ModuleMiddleware, Mutability, Store, Value as WasmerValue,
 };
 use wasmer_types::{
-    FunctionIndex, GlobalIndex, LocalFunctionIndex, ModuleInfo, Pages, SignatureIndex, Type,
+    entity::EntityRef, FunctionIndex, GlobalIndex, LocalFunctionIndex, ModuleInfo, Pages,
+    SignatureIndex, Type,
 };
 
 pub mod config;
+pub mod depth;
 pub mod heap;
 pub mod meter;
 pub mod start;
@@ -26,6 +29,8 @@ pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
     fn get_signature(&self, sig: SignatureIndex) -> Result<ArbFunctionType>;
     fn get_function(&self, func: FunctionIndex) -> Result<ArbFunctionType>;
+    fn all_functions(&self) -> Result<HashMap<FunctionIndex, ArbFunctionType>>;
+    fn all_signatures(&self) -> Result<HashMap<SignatureIndex, ArbFunctionType>>;
     fn move_start_function(&mut self, name: &str) -> Result<()>;
     fn limit_heap(&mut self, limit: Pages) -> Result<()>;
 }
@@ -156,6 +161,24 @@ impl ModuleMod for ModuleInfo {
         }
     }
 
+    fn all_functions(&self) -> Result<HashMap<FunctionIndex, ArbFunctionType>> {
+        let mut funcs = HashMap::default();
+        for (func, sig) in &self.functions {
+            let ty = self.get_signature(*sig)?;
+            funcs.insert(func, ty);
+        }
+        Ok(funcs)
+    }
+
+    fn all_signatures(&self) -> Result<HashMap<SignatureIndex, ArbFunctionType>> {
+        let mut signatures = HashMap::default();
+        for (index, _) in &self.signatures {
+            let ty = self.get_signature(index)?;
+            signatures.insert(index, ty);
+        }
+        Ok(signatures)
+    }
+
     fn move_start_function(&mut self, name: &str) -> Result<()> {
         if let Some(prior) = self.exports.get(name) {
             bail!("function {} already exists @ index {:?}", name.red(), prior)
@@ -231,6 +254,31 @@ impl<'a> ModuleMod for WasmBinary<'a> {
                 None => bail!("missing func @ index {}", func.red()),
             },
         }
+    }
+
+    fn all_functions(&self) -> Result<HashMap<FunctionIndex, ArbFunctionType>> {
+        let mut funcs = HashMap::default();
+        let mut index = 0;
+        for import in &self.imports {
+            let ty = self.get_signature(SignatureIndex::from_u32(import.offset))?;
+            funcs.insert(FunctionIndex::new(index), ty);
+            index += 1;
+        }
+        for sig in &self.functions {
+            let ty = self.get_signature(SignatureIndex::from_u32(*sig))?;
+            funcs.insert(FunctionIndex::new(index), ty);
+            index += 1;
+        }
+        Ok(funcs)
+    }
+
+    fn all_signatures(&self) -> Result<HashMap<SignatureIndex, ArbFunctionType>> {
+        let mut signatures = HashMap::default();
+        for (index, ty) in self.types.iter().enumerate() {
+            let sig = SignatureIndex::new(index);
+            signatures.insert(sig, ty.clone());
+        }
+        Ok(signatures)
     }
 
     fn move_start_function(&mut self, name: &str) -> Result<()> {
