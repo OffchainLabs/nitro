@@ -11,6 +11,7 @@
         <script src="//d3js.org/d3.v5.min.js"></script>
         <script src="https://unpkg.com/@hpcc-js/wasm@0.3.11/dist/index.min.js"></script>
         <script src="https://unpkg.com/d3-graphviz@3.0.5/build/d3-graphviz.js"></script>
+        <script src="https://cdn.tailwindcss.com"></script>
 
         <script>
             const socket = new WebSocket("ws://localhost:8000/api/ws")
@@ -28,13 +29,12 @@
             function submitForm() {
                 // Get the form data as a JSON object
                 const formData = {
-                    name: document.getElementById('name').value,
-                    age: document.getElementById('age').value
+                    height: document.getElementById('height').value,
                 };
 
                 // Print the form data to the console
                 console.log(formData);
-                fetch('/api/update-config', {
+                fetch('/api/leaf/create', {
                     method: 'POST',
                     body: JSON.stringify(formData),
                     headers: {
@@ -54,13 +54,23 @@
             your experience.
             </p>
         <![endif]-->
+        <div>Default config:</div>
         <form id="myForm">
-            <label for="name">Name:</label><br>
-            <input type="text" id="name" name="name"><br>
-            <label for="age">Age:</label><br>
-            <input type="text" id="age" name="age"><br><br>
-            <button type="button" onclick="submitForm()">Submit</button>
+            <label for="height">Height:</label><br>
+            <input type="text" id="height" name="height"><br>
+            <button type="button" onclick="submitForm()">Submit Leaf</button>
         </form>
         <div id="graph"></div>
+        <form class="bg-white px-8 pt-6 pb-8 mb-4">
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="username">
+                    Height
+                </label>
+                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username">
+            </div>
+            <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="button">
+                Submit Leaf
+            </button>
+        </form>
     </body>
 </html>

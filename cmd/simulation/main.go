@@ -80,14 +80,36 @@ func main() {
 	pth := filepath.Join(wd, "web")
 	fs := http.FileServer(http.Dir(pth))
 	fmt.Println(pth)
+
 	http.Handle("/", fs)
 	http.HandleFunc("/api/ws", wsHandler)
-	http.HandleFunc("/api/update-config", handleConfigUpdate)
+	http.HandleFunc("/api/leaf/create", handleConfigUpdate)
+
+	// Render the config.
+	s := &srv{
+		cfg: &config{
+			NumValidators: 1,
+		},
+	}
+	http.HandleFunc("/api/config", s.renderConfig)
+
 	fmt.Println("Server listening on port 8000...")
 	log.Fatal(http.ListenAndServe(":8000", nil))
 }
 
 type user struct{}
+
+type srv struct {
+	cfg *config
+}
+
+type config struct {
+	NumValidators uint64 `json:"num_validators"`
+}
+
+func (s *srv) renderConfig(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(s.cfg)
+}
 
 func handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	// Check the request method
