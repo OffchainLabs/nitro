@@ -12,7 +12,7 @@ strip = true
 lto = true
 panic = "abort"
 
-# uncoment to optimize for size
+# uncomment to optimize for size
 #   opt-level = "z"
 
 [workspace]
