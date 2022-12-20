@@ -361,7 +361,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 	for i := 0; i < len(validators); i++ {
 		manager := statemanager.New(validatorStateRoots[i])
 		addr := cfg.validatorAddrs[i]
-		v, err := New(
+		v, valErr := New(
 			ctx,
 			chain,
 			manager,
@@ -371,7 +371,7 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 			WithTimeReference(ref),
 			WithChallengeVertexWakeInterval(time.Millisecond*10),
 		)
-		require.NoError(t, err)
+		require.NoError(t, valErr)
 		validators[i] = v
 	}
 

@@ -16,7 +16,6 @@ import (
 )
 
 var (
-	log               = logrus.WithField("prefix", "protocol")
 	Gwei              = big.NewInt(1000000000)
 	AssertionStakeWei = Gwei
 
