@@ -84,13 +84,6 @@ func (m *MockProtocol) ChallengeVertexByCommitHash(tx *protocol.ActiveTx, challe
 	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
 }
 
-func (m *MockProtocol) ChallengeVertexByHistoryCommit(
-	tx *protocol.ActiveTx, challengeCommitHash protocol.ChallengeCommitHash, hist util.HistoryCommitment,
-) (*protocol.ChallengeVertex, error) {
-	args := m.Called(tx, challengeCommitHash, hist)
-	return args.Get(0).(*protocol.ChallengeVertex), args.Error(1)
-}
-
 func (m *MockProtocol) IsAtOneStepFork(
 	tx *protocol.ActiveTx,
 	challengeCommitHash protocol.ChallengeCommitHash,
