@@ -88,9 +88,12 @@ func Test_merge(t *testing.T) {
 		AssertLogsContain(t, logsHook, "New leaf appended")
 		AssertLogsContain(t, logsHook, "Successfully created challenge and added leaf")
 
+		c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf2.StateCommitment.Height)
+		require.NoError(t, err)
+
 		var mergingTo *protocol.ChallengeVertex
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash{1})
+			mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Merkle))
 			if err != nil {
 				return err
 			}
@@ -128,11 +131,13 @@ func Test_merge(t *testing.T) {
 		// Expect to bisect to 4.
 		require.Equal(t, uint64(4), bisectedVertex.Commitment.Height)
 
+		c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf1.StateCommitment.Height)
+		require.NoError(t, err)
+
 		// Get the vertex we want to merge from.
 		var vertexToMergeFrom *protocol.ChallengeVertex
-		var err error
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertexToMergeFrom, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash{2})
+			vertexToMergeFrom, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Merkle))
 			if err != nil {
 				return err
 			}
@@ -184,19 +189,20 @@ func runBisectionTest(
 		if challErr != nil {
 			return challErr
 		}
-		_, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address)
-		if err != nil {
+		if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
 			return err
 		}
-
 		return nil
 	})
+	require.NoError(t, err)
+
+	c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, leaf2.StateCommitment.Height)
 	require.NoError(t, err)
 
 	// Get the challenge from the chain itself.
 	var vertexToBisect *protocol.ChallengeVertex
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		vertexToBisect, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(common.Hash{1}))
+		vertexToBisect, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Merkle))
 		if err != nil {
 			return err
 		}

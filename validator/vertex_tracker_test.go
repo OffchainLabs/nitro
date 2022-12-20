@@ -404,9 +404,12 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	require.NoError(t, err)
 
 	// Get the challenge vertex.
+	c, err := validator.stateManager.HistoryCommitmentUpTo(ctx, 6)
+	require.NoError(t, err)
+
 	var vertex *protocol.ChallengeVertex
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		vertex, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash{1})
+		vertex, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Merkle))
 		if err != nil {
 			return err
 		}
