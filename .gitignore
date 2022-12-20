@@ -20,3 +20,6 @@
 
 # bazel stuff
 bazel-*
+
+node_modules/*
+web/node_nodules/*

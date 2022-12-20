@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/new-rollup-exploration/util"
+	"github.com/emicklei/dot"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -966,4 +968,52 @@ func (sc *SubChallenge) SetWinner(tx *ActiveTx, winner *ChallengeVertex) error {
 	}
 	sc.winner = winner
 	return nil
+}
+
+type vizNode struct {
+	parent    util.Option[*Assertion]
+	assertion *Assertion
+	dotNode   dot.Node
+}
+
+// Visualize returns a graphviz string for the current assertion chain tree.
+func (chain *AssertionChain) Visualize() string {
+	graph := dot.NewGraph(dot.Directed)
+	graph.Attr("rankdir", "RL")
+	graph.Attr("labeljust", "l")
+
+	assertions := chain.assertions
+	// Construct nodes
+	m := make(map[[32]byte]*vizNode)
+	for i := 0; i < len(assertions); i++ {
+		a := assertions[i]
+		commit := a.StateCommitment
+		// Construct label of each node.
+		rStr := hexutil.Encode(commit.Hash().Bytes())
+		staker := common.Address{}
+		label := fmt.Sprintf(
+			"height: %d\n commitment: %#x\n staker: %#x",
+			commit.Height,
+			commit.Hash(),
+			staker,
+		)
+
+		dotN := graph.Node(rStr).Box().Attr("label", label)
+		m[commit.Hash()] = &vizNode{
+			parent:    a.Prev,
+			assertion: a,
+			dotNode:   dotN,
+		}
+	}
+
+	// Construct an edge only if block's parent exist in the tree.
+	for _, n := range m {
+		if !n.parent.IsNone() {
+			parentHash := n.parent.Unwrap().StateCommitment.Hash()
+			if _, ok := m[parentHash]; ok {
+				graph.Edge(n.dotNode, m[parentHash].dotNode)
+			}
+		}
+	}
+	return graph.String()
 }
