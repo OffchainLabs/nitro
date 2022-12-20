@@ -1,12 +1,10 @@
 package validator
 
 import (
-	"io"
-	"testing"
-
 	"context"
 	"errors"
-
+	"io"
+	"testing"
 	"time"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
@@ -29,7 +27,7 @@ func Test_track(t *testing.T) {
 	tkr := newVertexTracker(
 		util.NewArtificialTimeReference(),
 		time.Millisecond,
-		protocol.CommitHash(common.Hash{}),
+		protocol.ChallengeCommitHash(common.Hash{}),
 		&protocol.Challenge{},
 		&protocol.ChallengeVertex{
 			Commitment: util.HistoryCommitment{},
@@ -50,7 +48,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
-	challengeCommitHash := protocol.CommitHash(challengeCommit.Hash())
+	challengeCommitHash := protocol.ChallengeCommitHash(challengeCommit.Hash())
 	ctx := context.Background()
 	t.Run("does nothing if awaiting one step fork", func(t *testing.T) {
 		tkr := &vertexTracker{
@@ -219,7 +217,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		// with the vertex we just bisected to, so it should try to merge instead.
 		var vertex *protocol.ChallengeVertex
 		err = trk.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertex, err = p.ChallengeVertexBySequenceNum(tx, trk.challengeCommitHash, protocol.VertexSequenceNumber(2))
+			vertex, err = p.ChallengeVertexByCommitHash(tx, trk.challengeCommitHash, protocol.VertexCommitHash{2})
 			if err != nil {
 				return err
 			}
@@ -242,7 +240,7 @@ func Test_isAtOneStepFork(t *testing.T) {
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
-	challengeCommitHash := protocol.CommitHash(challengeCommit.Hash())
+	challengeCommitHash := protocol.ChallengeCommitHash(challengeCommit.Hash())
 	commitA := util.HistoryCommitment{
 		Height: 1,
 	}
@@ -307,7 +305,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
-	challengeCommitHash := protocol.CommitHash(challengeCommit.Hash())
+	challengeCommitHash := protocol.ChallengeCommitHash(challengeCommit.Hash())
 
 	t.Run("nil vertex", func(t *testing.T) {
 		history := util.HistoryCommitment{
@@ -325,7 +323,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			validator:           v,
 			challengeCommitHash: challengeCommitHash,
 		}
-		_, err := tkr.fetchVertexByHistoryCommit(history)
+		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Merkle))
 		require.ErrorContains(t, err, "fetched nil challenge")
 	})
 	t.Run("fetching error", func(t *testing.T) {
@@ -345,7 +343,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			validator:           v,
 			challengeCommitHash: challengeCommitHash,
 		}
-		_, err := tkr.fetchVertexByHistoryCommit(history)
+		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Merkle))
 		require.ErrorContains(t, err, "something went wrong")
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -364,7 +362,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			validator:           v,
 			challengeCommitHash: challengeCommitHash,
 		}
-		got, err := tkr.fetchVertexByHistoryCommit(history)
+		got, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Merkle))
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
@@ -387,7 +385,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 		StateRoot: common.Hash{},
 	}
 
-	id := protocol.CommitHash(genesisCommit.Hash())
+	id := protocol.ChallengeCommitHash(genesisCommit.Hash())
 	var challenge *protocol.Challenge
 	err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
@@ -408,7 +406,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	// Get the challenge vertex.
 	var vertex *protocol.ChallengeVertex
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		vertex, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(1))
+		vertex, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash{1})
 		if err != nil {
 			return err
 		}

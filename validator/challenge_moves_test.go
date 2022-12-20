@@ -72,7 +72,7 @@ func Test_merge(t *testing.T) {
 		Height:    0,
 		StateRoot: common.Hash{},
 	}
-	challengeCommitHash := protocol.CommitHash(genesisCommit.Hash())
+	challengeCommitHash := protocol.ChallengeCommitHash(genesisCommit.Hash())
 
 	t.Run("fails to verify prefix proof", func(t *testing.T) {
 		logsHook := test.NewGlobal()
@@ -90,7 +90,7 @@ func Test_merge(t *testing.T) {
 
 		var mergingTo *protocol.ChallengeVertex
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			mergingTo, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, protocol.VertexSequenceNumber(1))
+			mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash{1})
 			if err != nil {
 				return err
 			}
@@ -132,7 +132,7 @@ func Test_merge(t *testing.T) {
 		var vertexToMergeFrom *protocol.ChallengeVertex
 		var err error
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertexToMergeFrom, err = p.ChallengeVertexBySequenceNum(tx, challengeCommitHash, protocol.VertexSequenceNumber(2))
+			vertexToMergeFrom, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash{2})
 			if err != nil {
 				return err
 			}
@@ -174,7 +174,8 @@ func runBisectionTest(
 		StateRoot: common.Hash{},
 	}
 
-	id := protocol.CommitHash(genesisCommit.Hash())
+	id := protocol.ChallengeCommitHash(genesisCommit.Hash())
+	var vertex *protocol.ChallengeVertex
 	err = validator.chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		assertion, fetchErr := p.AssertionBySequenceNum(tx, protocol.AssertionSequenceNumber(1))
 		if fetchErr != nil {
@@ -184,9 +185,11 @@ func runBisectionTest(
 		if challErr != nil {
 			return challErr
 		}
-		if _, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address); err != nil {
+		vertex, err = challenge.AddLeaf(tx, assertion, historyCommit, validator.address)
+		if err != nil {
 			return err
 		}
+
 		return nil
 	})
 	require.NoError(t, err)
@@ -194,7 +197,7 @@ func runBisectionTest(
 	// Get the challenge from the chain itself.
 	var vertexToBisect *protocol.ChallengeVertex
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		vertexToBisect, err = p.ChallengeVertexBySequenceNum(tx, id, protocol.VertexSequenceNumber(1))
+		vertexToBisect, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(vertex.Commitment.Hash()))
 		if err != nil {
 			return err
 		}
@@ -219,7 +222,7 @@ func runBisectionTest(
 }
 
 func generateStateRoots(numBlocks uint64) []common.Hash {
-	ret := []common.Hash{}
+	var ret []common.Hash
 	for i := uint64(0); i < numBlocks; i++ {
 		ret = append(ret, util.HashForUint(i))
 	}
