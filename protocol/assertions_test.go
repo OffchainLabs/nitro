@@ -207,13 +207,13 @@ func TestIsAtOneStepFork(t *testing.T) {
 
 	timeRef := util.NewArtificialTimeReference()
 	assertionsChain := NewAssertionChain(ctx, timeRef, testChallengePeriod)
-	genesisCommitHash := CommitHash((StateCommitment{}).Hash())
+	genesisCommitHash := ChallengeCommitHash((StateCommitment{}).Hash())
 
 	tests := []struct {
 		name         string
 		vertexHeight uint64
 		parentHeight uint64
-		vertices     map[VertexSequenceNumber]*ChallengeVertex
+		vertices     map[VertexCommitHash]*ChallengeVertex
 		want         bool
 	}{
 		{
@@ -235,8 +235,8 @@ func TestIsAtOneStepFork(t *testing.T) {
 			vertexHeight: 1,
 			parentHeight: 0,
 			want:         false,
-			vertices: map[VertexSequenceNumber]*ChallengeVertex{
-				1: {
+			vertices: map[VertexCommitHash]*ChallengeVertex{
+				VertexCommitHash{1}: {
 					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
 					}),
@@ -252,8 +252,8 @@ func TestIsAtOneStepFork(t *testing.T) {
 			vertexHeight: 1,
 			parentHeight: 0,
 			want:         false,
-			vertices: map[VertexSequenceNumber]*ChallengeVertex{
-				1: {
+			vertices: map[VertexCommitHash]*ChallengeVertex{
+				VertexCommitHash{1}: {
 					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{
 							Height: 5,
@@ -272,8 +272,8 @@ func TestIsAtOneStepFork(t *testing.T) {
 			vertexHeight: 1,
 			parentHeight: 0,
 			want:         false,
-			vertices: map[VertexSequenceNumber]*ChallengeVertex{
-				1: {
+			vertices: map[VertexCommitHash]*ChallengeVertex{
+				VertexCommitHash{1}: {
 					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
 					}),
@@ -282,7 +282,7 @@ func TestIsAtOneStepFork(t *testing.T) {
 						Merkle: common.BytesToHash([]byte{1}),
 					},
 				},
-				2: {
+				VertexCommitHash{2}: {
 					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
 					}),
@@ -298,8 +298,8 @@ func TestIsAtOneStepFork(t *testing.T) {
 			vertexHeight: 1,
 			parentHeight: 0,
 			want:         true,
-			vertices: map[VertexSequenceNumber]*ChallengeVertex{
-				1: {
+			vertices: map[VertexCommitHash]*ChallengeVertex{
+				VertexCommitHash{1}: {
 					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
 					}),
@@ -308,7 +308,7 @@ func TestIsAtOneStepFork(t *testing.T) {
 						Merkle: common.BytesToHash([]byte{1}),
 					},
 				},
-				2: {
+				VertexCommitHash{2}: {
 					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
 					}),
@@ -324,8 +324,8 @@ func TestIsAtOneStepFork(t *testing.T) {
 			vertexHeight: 1,
 			parentHeight: 0,
 			want:         false,
-			vertices: map[VertexSequenceNumber]*ChallengeVertex{
-				1: {
+			vertices: map[VertexCommitHash]*ChallengeVertex{
+				VertexCommitHash{1}: {
 					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
 					}),
@@ -334,7 +334,7 @@ func TestIsAtOneStepFork(t *testing.T) {
 						Merkle: common.BytesToHash([]byte{1}),
 					},
 				},
-				2: {
+				VertexCommitHash{2}: {
 					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
 					}),
@@ -343,7 +343,7 @@ func TestIsAtOneStepFork(t *testing.T) {
 						Merkle: common.BytesToHash([]byte{2}),
 					},
 				},
-				3: {
+				VertexCommitHash{3}: {
 					Prev: util.Some(&ChallengeVertex{
 						Commitment: util.HistoryCommitment{},
 					}),
@@ -365,8 +365,8 @@ func TestIsAtOneStepFork(t *testing.T) {
 				parentCommit := util.HistoryCommitment{
 					Height: tt.parentHeight,
 				}
-				assertionsChain.challengeVerticesByCommitHashSeqNum = make(map[CommitHash]map[VertexSequenceNumber]*ChallengeVertex)
-				assertionsChain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = tt.vertices
+				assertionsChain.challengeVerticesByCommitHash = make(map[ChallengeCommitHash]map[VertexCommitHash]*ChallengeVertex)
+				assertionsChain.challengeVerticesByCommitHash[genesisCommitHash] = tt.vertices
 				ok, err := assertionsChain.IsAtOneStepFork(
 					tx,
 					genesisCommitHash,
@@ -392,15 +392,15 @@ func TestChallengeVertexByHistoryCommit(t *testing.T) {
 	err := assertionsChain.Tx(func(tx *ActiveTx, p OnChainProtocol) error {
 		chain := p.(*AssertionChain)
 
-		genesisCommitHash := CommitHash((StateCommitment{}).Hash())
+		genesisCommitHash := ChallengeCommitHash((StateCommitment{}).Hash())
 		t.Run("vertices not found for challenge", func(t *testing.T) {
 			vertexCommit := util.HistoryCommitment{
 				Height: 1,
 			}
-			_, err := chain.ChallengeVertexByHistoryCommit(
+			_, err := chain.ChallengeVertexByCommitHash(
 				tx,
 				genesisCommitHash,
-				vertexCommit,
+				VertexCommitHash(vertexCommit.Merkle),
 			)
 			require.ErrorContains(t, err, "challenge vertices not found")
 		})
@@ -408,30 +408,31 @@ func TestChallengeVertexByHistoryCommit(t *testing.T) {
 			vertexCommit := util.HistoryCommitment{
 				Height: 1,
 			}
-			vertices := map[VertexSequenceNumber]*ChallengeVertex{}
-			chain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = vertices
-			_, err := chain.ChallengeVertexByHistoryCommit(
+			vertices := map[VertexCommitHash]*ChallengeVertex{}
+			chain.challengeVerticesByCommitHash[genesisCommitHash] = vertices
+			_, err := chain.ChallengeVertexByCommitHash(
 				tx,
 				genesisCommitHash,
-				vertexCommit,
+				VertexCommitHash(vertexCommit.Merkle),
 			)
 			require.ErrorContains(t, err, "not found")
 		})
 		t.Run("vertex found", func(t *testing.T) {
 			vertexCommit := util.HistoryCommitment{
 				Height: 1,
+				Merkle: common.Hash(VertexCommitHash{10}),
 			}
 			want := &ChallengeVertex{
 				Commitment: vertexCommit,
 			}
-			vertices := map[VertexSequenceNumber]*ChallengeVertex{
-				10: want,
+			vertices := map[VertexCommitHash]*ChallengeVertex{
+				VertexCommitHash{10}: want,
 			}
-			chain.challengeVerticesByCommitHashSeqNum[genesisCommitHash] = vertices
-			got, err := chain.ChallengeVertexByHistoryCommit(
+			chain.challengeVerticesByCommitHash[genesisCommitHash] = vertices
+			got, err := chain.ChallengeVertexByCommitHash(
 				tx,
 				genesisCommitHash,
-				vertexCommit,
+				VertexCommitHash(vertexCommit.Merkle),
 			)
 			require.NoError(t, err)
 			require.Equal(t, want, got)
@@ -699,7 +700,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 }
 
 func correctBlockHashesForTest(numBlocks uint64) []common.Hash {
-	ret := []common.Hash{}
+	var ret []common.Hash
 	for i := uint64(0); i < numBlocks; i++ {
 		ret = append(ret, util.HashForUint(i))
 	}
@@ -707,7 +708,7 @@ func correctBlockHashesForTest(numBlocks uint64) []common.Hash {
 }
 
 func wrongBlockHashesForTest(numBlocks uint64) []common.Hash {
-	ret := []common.Hash{}
+	var ret []common.Hash
 	for i := uint64(0); i < numBlocks; i++ {
 		ret = append(ret, util.HashForUint(71285937102384-i))
 	}

@@ -133,7 +133,7 @@ func Test_onChallengeStarted(t *testing.T) {
 	var challenge *protocol.Challenge
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		commit := protocol.StateCommitment{}
-		id := protocol.CommitHash(commit.Hash())
+		id := protocol.ChallengeCommitHash(commit.Hash())
 		challenge, err = p.ChallengeByCommitHash(tx, id)
 		if err != nil {
 			return err

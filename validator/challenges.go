@@ -202,7 +202,7 @@ func (v *Validator) fetchProtocolChallenge(
 	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		challenge, err = p.ChallengeByCommitHash(
 			tx,
-			protocol.CommitHash(parentAssertionCommit.Hash()),
+			protocol.ChallengeCommitHash(parentAssertionCommit.Hash()),
 		)
 		if err != nil {
 			return err
