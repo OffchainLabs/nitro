@@ -88,7 +88,7 @@ func (v *Validator) bisect(
 // also need to fetch vertex we are merging to by reading it from the protocol.
 func (v *Validator) merge(
 	ctx context.Context,
-	challengeCommitHash protocol.CommitHash,
+	challengeCommitHash protocol.ChallengeCommitHash,
 	mergingTo *protocol.ChallengeVertex,
 	mergingFrom *protocol.ChallengeVertex,
 ) (*protocol.ChallengeVertex, error) {
@@ -111,7 +111,7 @@ func (v *Validator) merge(
 		}
 		// Refresh the mergingTo vertex by reading it from the protocol, as some of its fields may have
 		// changed after we made the merge transaction above.
-		mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.CommitHash(mergingTo.Commitment.Merkle))
+		mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(mergingTo.Commitment.Merkle))
 		if err != nil {
 			return err
 		}
