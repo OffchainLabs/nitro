@@ -67,6 +67,9 @@ checksum = "216261ddc8289130e551ddcd5ce8a064710c0d064a4d2895c67151c92b5443f6"
 [[package]]
 name = "arbutil"
 version = "0.1.0"
+dependencies = [
+ "sha3 0.10.6",
+]
 
 [[package]]
 name = "arrayvec"
@@ -128,6 +131,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4152116fd6e9dadb291ae18fc1ec3575ed6d84c29642d97890f4b4a3417297e4"
 dependencies = [
  "block-padding",
+ "generic-array",
+]
+
+[[package]]
+name = "block-buffer"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69cce20737498f97b993470a6e536b8523f0af7892a4f928cceb1ac5e52ebe7e"
+dependencies = [
  "generic-array",
 ]
 
@@ -390,6 +402,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto-common"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bfb12502f3fc46cca1bb51ac28df9d618d813cdc3d2f25b9fe775a34af26bb3"
+dependencies = [
+ "generic-array",
+ "typenum",
+]
+
+[[package]]
 name = "darling"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -437,6 +459,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3dd60d1080a57a05ab032377049e0591415d2b31afd7028356dbf3cc6dcb066"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "digest"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8168378f4e5023e7218c89c891c0fd8ecdb5e5e4f18cb78f38cf245dd021e76f"
+dependencies = [
+ "block-buffer 0.10.3",
+ "crypto-common",
 ]
 
 [[package]]
@@ -753,7 +785,7 @@ dependencies = [
  "parking_lot 0.12.1",
  "rand",
  "rand_pcg",
- "sha3",
+ "sha3 0.9.1",
  "structopt",
  "thiserror",
  "wasmer",
@@ -1133,8 +1165,12 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "eyre",
+ "hex",
  "prover",
+ "sha3 0.10.6",
  "wasmer",
+ "wasmer-compiler-cranelift",
+ "wasmer-compiler-llvm",
  "wasmer-compiler-singlepass",
 ]
 
@@ -1208,7 +1244,7 @@ dependencies = [
  "arbutil",
  "bincode",
  "brotli2",
- "digest",
+ "digest 0.9.0",
  "eyre",
  "fnv",
  "hex",
@@ -1222,7 +1258,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sha3",
+ "sha3 0.9.1",
  "smallvec",
  "static_assertions",
  "structopt",
@@ -1575,10 +1611,20 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f81199417d4e5de3f04b1e871023acea7389672c4135918f05aa9cbf2f2fa809"
 dependencies = [
- "block-buffer",
- "digest",
+ "block-buffer 0.9.0",
+ "digest 0.9.0",
  "keccak",
  "opaque-debug",
+]
+
+[[package]]
+name = "sha3"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdf0c33fae925bdc080598b84bc15c55e7b9a4a43b3c704da051f977469691c9"
+dependencies = [
+ "digest 0.10.6",
+ "keccak",
 ]
 
 [[package]]

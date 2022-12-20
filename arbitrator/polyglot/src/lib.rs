@@ -3,3 +3,6 @@
 
 #[cfg(test)]
 mod test;
+
+#[cfg(all(test, feature = "benchmark"))]
+mod benchmarks;
