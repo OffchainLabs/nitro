@@ -1,0 +1,73 @@
+<!doctype html>
+<html class="no-js" lang="">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="x-ua-compatible" content="ie=edge">
+        <title>Visualization</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+        <script src="//d3js.org/d3.v5.min.js"></script>
+        <script src="https://unpkg.com/@hpcc-js/wasm@0.3.11/dist/index.min.js"></script>
+        <script src="https://unpkg.com/d3-graphviz@3.0.5/build/d3-graphviz.js"></script>
+        <script src="https://cdn.tailwindcss.com"></script>
+
+        <script>
+            const socket = new WebSocket("ws://localhost:8000/api/ws")
+            socket.onmessage = function(e) {
+                console.log(e);
+                let content = [
+                    'digraph  {',
+                    '    a -> b',
+                    '}'
+                ];
+                var g = content.join('');
+                d3.select("#graph").graphviz()
+                    .renderDot(g);
+            };
+            function createAssertion() {
+                // Get the form data as a JSON object
+                const formData = {
+                    index: parseInt(document.getElementById('index').value),
+                };
+
+                // Print the form data to the console
+                console.log(formData);
+                fetch('/api/assertions/create', {
+                    method: 'POST',
+                    body: JSON.stringify(formData),
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => console.log(data));
+            }
+        </script>
+    </head>
+    <body>
+        <!--[if lt IE 8]>
+            <p class="browserupgrade">
+            You are using an <strong>outdated</strong> browser. Please
+            <a href="http://browsehappy.com/">upgrade your browser</a> to improve
+            your experience.
+            </p>
+        <![endif]-->
+        <div class="flex">
+            <div class="w-1/5 bg-gray-200">
+                <div>Trigger actions:</div>
+                <form>
+                    <label for="index">Validator index:</label><br>
+                    <input type="text" id="index" name="index" defaultValue="0" value="0"><br>
+                    <button onclick="createAssertion()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="button">
+                        Submit Leaf
+                    </button>
+                </form>
+            </div>
+            <div class="w-4/5 pl-8">
+                <div id="graph"></div>
+            </div>
+        </div>
+    </body>
+</html>

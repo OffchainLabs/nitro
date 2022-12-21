@@ -8,8 +8,6 @@ import (
 	"io"
 	"math/big"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,6 +15,7 @@ import (
 	"github.com/OffchainLabs/new-rollup-exploration/state-manager"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/OffchainLabs/new-rollup-exploration/validator"
+	"github.com/OffchainLabs/new-rollup-exploration/web"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
@@ -203,14 +202,8 @@ func (s *server) sendChainEventsToClients(
 
 // Registers all of the server's routes for the web application.
 func (s *server) registerRoutes(e *echo.Echo) {
-	wd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-	// Handle file requests, including the index.html of the application.
-	fs := http.FileServer(http.Dir(filepath.Join(wd, "web")))
-	_ = fs
-	// e.GET("/", fs)
+	// Register the frontend website static assets including HTML.
+	web.RegisterHandlers(e)
 
 	// Handle websocket connection registration.
 	e.GET("/api/ws", s.registerWebsocketConnection)
@@ -314,10 +307,6 @@ func main() {
 		LogURI:    true,
 		LogStatus: true,
 		LogValuesFunc: func(c echo.Context, values middleware.RequestLoggerValues) error {
-			log.WithFields(logrus.Fields{
-				"URI":    values.URI,
-				"status": values.Status,
-			}).Info("Got request")
 			return nil
 		},
 	}))
