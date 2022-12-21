@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -14,19 +16,77 @@ import (
 )
 
 type ValidationSpawner interface {
-	Execute(ctx context.Context, entry *ValidationInput, moduleRoot common.Hash) (GoGlobalState, error)
+	Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRunInt
 	Stop()
 	Name() string
+	Room() int
+}
+
+type ValidationRunInt interface {
+	WasmModuleRoot() common.Hash
+	Done() bool
+	ChDone() chan struct{}
+	Result() (GoGlobalState, error)
 }
 
 type ArbitratorSpawner struct {
+	count         int32
+	ctx           context.Context
+	cancel        func()
 	locator       *MachineLocator
 	machineLoader *ArbMachineLoader
 }
 
+type ValidationRun struct {
+	err      error
+	root     common.Hash
+	chanDone chan struct{}
+	boolDone int32
+	result   GoGlobalState
+}
+
+var ErrNotDone error = errors.New("not done")
+
+func (r *ValidationRun) Done() bool {
+	return atomic.LoadInt32(&r.boolDone) != 0
+}
+
+func (r *ValidationRun) ChDone() chan struct{} {
+	return r.chanDone
+}
+
+func (r *ValidationRun) Result() (GoGlobalState, error) {
+	if !r.Done() {
+		return GoGlobalState{}, ErrNotDone
+	}
+	return r.result, r.err
+}
+
+func (r *ValidationRun) WasmModuleRoot() common.Hash {
+	return r.root
+}
+
+func NewValidationRun(root common.Hash) *ValidationRun {
+	return &ValidationRun{
+		root:     root,
+		boolDone: 0,
+		chanDone: make(chan struct{}),
+	}
+}
+
+func (r *ValidationRun) consumeResult(res GoGlobalState, err error) {
+	r.result = res
+	r.err = err
+	atomic.StoreInt32(&r.boolDone, 1)
+	close(r.chanDone)
+}
+
 func NewArbitratorSpawner(locator *MachineLocator) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
+	ctx, cancel := context.WithCancel(context.Background())
 	return &ArbitratorSpawner{
+		ctx:           ctx,
+		cancel:        cancel,
 		locator:       locator,
 		machineLoader: NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
 	}, nil
@@ -79,7 +139,7 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *Valid
 	return nil
 }
 
-func (v *ArbitratorSpawner) Execute(
+func (v *ArbitratorSpawner) execute(
 	ctx context.Context, entry *ValidationInput, moduleRoot common.Hash,
 ) (GoGlobalState, error) {
 	basemachine, err := v.machineLoader.GetHostIoMachine(ctx, moduleRoot)
@@ -111,10 +171,24 @@ func (v *ArbitratorSpawner) Execute(
 	return mach.GetGlobalState(), nil
 }
 
+func (v *ArbitratorSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRunInt {
+	atomic.AddInt32(&v.count, 1)
+	run := NewValidationRun(moduleRoot)
+	go func() {
+		run.consumeResult(v.execute(v.ctx, entry, moduleRoot))
+		atomic.AddInt32(&v.count, -1)
+	}()
+	return run
+}
+
+func (v *ArbitratorSpawner) Room() int {
+	return runtime.NumCPU() - int(atomic.LoadInt32(&v.count))
+}
+
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
-func (v *ArbitratorSpawner) WriteToFile(outPath string, input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash, sequencerMsg []byte) error {
+func (v *ArbitratorSpawner) WriteToFile(outPath string, input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) error {
 	outDirPath := filepath.Join(v.locator.rootPath, outPath, launchTime, fmt.Sprintf("block_%d", input.Id))
 	err := os.MkdirAll(outDirPath, 0755)
 	if err != nil {
@@ -158,14 +232,16 @@ func (v *ArbitratorSpawner) WriteToFile(outPath string, input *ValidationInput, 
 		return err
 	}
 
-	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", input.StartState.Batch)
-	err = os.WriteFile(filepath.Join(outDirPath, sequencerFileName), sequencerMsg, 0644)
-	if err != nil {
-		return err
-	}
-	_, err = cmdFile.WriteString(" --inbox " + sequencerFileName)
-	if err != nil {
-		return err
+	for _, msg := range input.BatchInfo {
+		sequencerFileName := fmt.Sprintf("sequencer_%d.bin", msg.Number)
+		err = os.WriteFile(filepath.Join(outDirPath, sequencerFileName), msg.Data, 0644)
+		if err != nil {
+			return err
+		}
+		_, err = cmdFile.WriteString(" --inbox " + sequencerFileName)
+		if err != nil {
+			return err
+		}
 	}
 
 	preimageFile, err := os.Create(filepath.Join(outDirPath, "preimages.bin"))
@@ -228,9 +304,14 @@ func (v *ArbitratorSpawner) CreateExecutionBackend(ctx context.Context, wasmModu
 	return NewExecutionChallengeBackend(machine, targetMachineNum, nil)
 }
 
-func (v *ArbitratorSpawner) Stop() {}
+func (v *ArbitratorSpawner) Stop() {
+	v.cancel()
+}
 
 type JitSpawner struct {
+	ctx           context.Context
+	cancel        func()
+	count         int32
 	locator       *MachineLocator
 	machineLoader *JitMachineLoader
 	config        *JitMachineConfig
@@ -243,14 +324,17 @@ func NewJitSpawner(locator *MachineLocator, fatalErrChan chan error) (*JitSpawne
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &JitSpawner{
+		ctx:           ctx,
+		cancel:        cancel,
 		locator:       locator,
 		machineLoader: loader,
 		config:        config,
 	}, nil
 }
 
-func (v *JitSpawner) Execute(
+func (v *JitSpawner) execute(
 	ctx context.Context, entry *ValidationInput, moduleRoot common.Hash,
 ) (GoGlobalState, error) {
 	empty := GoGlobalState{}
@@ -278,6 +362,21 @@ func (s *JitSpawner) Name() string {
 	return "jit"
 }
 
+func (v *JitSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRunInt {
+	atomic.AddInt32(&v.count, 1)
+	run := NewValidationRun(moduleRoot)
+	go func() {
+		run.consumeResult(v.execute(v.ctx, entry, moduleRoot))
+		atomic.AddInt32(&v.count, -1)
+	}()
+	return run
+}
+
+func (v *JitSpawner) Room() int {
+	return runtime.NumCPU() - int(atomic.LoadInt32(&v.count))
+}
+
 func (v *JitSpawner) Stop() {
+	v.cancel()
 	v.machineLoader.Stop()
 }

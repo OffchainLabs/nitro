@@ -6,7 +6,6 @@ package staker
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,11 +45,9 @@ type BlockValidator struct {
 	lastBlockValidatedUnknown bool
 	globalPosNextSend         GlobalStatePosition
 
-	config                   BlockValidatorConfigFetcher
-	atomicValidationsRunning int32
+	config BlockValidatorConfigFetcher
 
 	sendValidationsChan chan struct{}
-	checkProgressChan   chan struct{}
 	progressChan        chan uint64
 
 	lastHeaderForPrepareState *types.Header
@@ -69,7 +66,8 @@ type BlockValidatorConfig struct {
 	JitValidator             bool                          `koanf:"jit-validator"`
 	JitValidatorCranelift    bool                          `koanf:"jit-validator-cranelift"`
 	OutputPath               string                        `koanf:"output-path" reload:"hot"`
-	ConcurrentRunsLimit      int                           `koanf:"concurrent-runs-limit" reload:"hot"`
+	Deprecated_Concurrent    int                           `koanf:"concurrent-runs-limit" reload:"hot"`
+	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
 	CurrentModuleRoot        string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
@@ -90,7 +88,8 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".jit-validator", DefaultBlockValidatorConfig.JitValidator, "enable the faster, jit-accelerated block validator")
 	f.Bool(prefix+".jit-validator-cranelift", DefaultBlockValidatorConfig.JitValidatorCranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
-	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
+	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.Deprecated_Concurrent, "depracated")
+	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
@@ -109,7 +108,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	JitValidator:             true,
 	JitValidatorCranelift:    true,
 	OutputPath:               "./target/output",
-	ConcurrentRunsLimit:      0,
+	ValidationPoll:           time.Second,
 	ForwardBlocks:            1024,
 	PrerecordedBlocks:        128,
 	CurrentModuleRoot:        "current",
@@ -124,7 +123,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	JitValidator:             false,
 	JitValidatorCranelift:    true,
 	OutputPath:               "./target/output",
-	ConcurrentRunsLimit:      0,
+	ValidationPoll:           100 * time.Millisecond,
 	ForwardBlocks:            128,
 	PrerecordedBlocks:        64,
 	CurrentModuleRoot:        "latest",
@@ -144,15 +143,16 @@ const (
 	RecordSent
 	RecordFailed
 	Prepared
+	ValidationSent
 	Failed
 	Valid
 )
 
 type validationStatus struct {
-	Status      uint32           // atomic: value is one of validationStatus*
-	Cancel      func()           // non-atomic: only read/written to with reorg mutex
-	Entry       *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
-	ModuleRoots []common.Hash    // non-atomic: present from the start
+	Status uint32                       // atomic: value is one of validationStatus*
+	Cancel func()                       // non-atomic: only read/written to with reorg mutex
+	Entry  *validationEntry             // non-atomic: only read if Status >= validationStatusPrepared
+	Runs   []validator.ValidationRunInt // if status >= ValidationSent
 }
 
 func (s *validationStatus) setStatus(val valStatusField) {
@@ -179,7 +179,6 @@ func NewBlockValidator(
 	validator := &BlockValidator{
 		StatelessBlockValidator: statelessBlockValidator,
 		sendValidationsChan:     make(chan struct{}, 1),
-		checkProgressChan:       make(chan struct{}, 1),
 		progressChan:            make(chan uint64, 1),
 		config:                  config,
 		fatalErr:                fatalErr,
@@ -363,9 +362,8 @@ func (v *BlockValidator) newValidationStatus(prevHeader, header *types.Header, m
 		return nil, err
 	}
 	status := &validationStatus{
-		Status:      uint32(Unprepared),
-		Entry:       entry,
-		ModuleRoots: v.GetModuleRootsToValidate(),
+		Status: uint32(Unprepared),
+		Entry:  entry,
 	}
 	return status, nil
 }
@@ -414,7 +412,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 }
 
 //nolint:gosec
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, sequencerMsg []byte) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
 	input, err := validationEntry.ToInput()
 	if err != nil {
 		return err
@@ -423,7 +421,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	if err != nil {
 		return err
 	}
-	return v.execSpawner.WriteToFile(v.config().OutputPath, input, expOut, moduleRoot, sequencerMsg)
+	return v.execSpawner.WriteToFile(v.config().OutputPath, input, expOut, moduleRoot)
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -458,85 +456,35 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 
 var ErrValidationCanceled = errors.New("validation of block cancelled")
 
-func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
-	if currentStatus := validationStatus.getStatus(); currentStatus != Prepared {
-		log.Error("attempted to validate unprepared validation entry", "status", currentStatus)
-		return
-	}
-	entry := validationStatus.Entry
-	defer func() {
-		atomic.AddInt32(&v.atomicValidationsRunning, -1)
-		v.triggerSendValidations()
-	}()
-	entry.BatchInfo = append(entry.BatchInfo, validator.BatchInfo{
-		Number: entry.StartPosition.BatchNumber,
-		Data:   seqMsg,
-	})
-	log.Debug(
-		"starting validation for block", "blockNr", entry.BlockNumber,
-		"blockAge", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)),
-		"blockDate", time.Unix(int64(entry.BlockHeader.Time), 0))
-	input, err := entry.ToInput()
-	if err != nil {
-		v.possiblyFatal(err)
-		return
-	}
-	gsExpected, err := entry.expectedEnd()
-	if err != nil {
-		v.possiblyFatal(err)
-		return
-	}
-	for _, moduleRoot := range validationStatus.ModuleRoots {
-		before := time.Now()
-		for _, spawner := range v.validationSpawners {
-			gsEnd, err := spawner.Execute(ctx, input, moduleRoot)
-			if err == nil && gsEnd != gsExpected {
-				err = fmt.Errorf("unexpected GlobalState. Got: %v", gsEnd)
-			}
-			if err != nil {
-				if ctx.Err() != nil {
-					log.Info("validation canceled", "blockNr", entry.BlockNumber, "hash", entry.BlockHash, "type", spawner.Name(), "err", ctx.Err())
-				} else {
-					log.Error("validation error", "blockNr", entry.BlockNumber, "hash", entry.BlockHash, "type", spawner.Name(), "err", err)
-					writeErr := v.writeToFile(
-						entry, moduleRoot, seqMsg,
-					)
-					if writeErr != nil {
-						log.Error("failed to write file", "err", err)
-					}
-					v.possiblyFatal(err)
-				}
-				validationStatus.setStatus(Failed)
-				return
-			}
+func (v *BlockValidator) spawnerRoom() int {
+	room := 100 // even if there is more room then that it's fine
+	for _, spawner := range v.validationSpawners {
+		here := spawner.Room()
+		if here <= 0 {
+			return 0
 		}
-		log.Debug(
-			"validation succeeded", "blockNr", entry.BlockNumber,
-			"blockAge", common.PrettyAge(time.Unix(int64(entry.BlockHeader.Time), 0)),
-			"blockDate", time.Unix(int64(entry.BlockHeader.Time), 0),
-			"blockHash", entry.BlockHash, "moduleRoot", moduleRoot, "time", time.Since(before),
-		)
+		if here < room {
+			room = here
+		}
 	}
-
-	validationStatus.setStatus(Valid) // after that - validation entry could be deleted from map
-
-	select {
-	case v.checkProgressChan <- struct{}{}:
-	default:
-	}
+	return room
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
-	concurrentRunsLimit := (int32)(v.config().ConcurrentRunsLimit)
-	if concurrentRunsLimit == 0 {
-		concurrentRunsLimit = (int32)(runtime.NumCPU())
-	}
 	var batchCount uint64
+	wasmRoots := v.GetModuleRootsToValidate()
+	room := v.spawnerRoom() / len(wasmRoots)
+	if room <= 0 {
+		return
+	}
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
-		if atomic.LoadInt32(&v.atomicValidationsRunning) >= concurrentRunsLimit {
-			return
+		if room <= 0 {
+			room := v.spawnerRoom() / len(wasmRoots)
+			if room <= 0 {
+				return
+			}
 		}
 		if batchCount <= v.globalPosNextSend.BatchNumber {
 			var err error
@@ -605,8 +553,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("inconsistent pos mapping", "msg", nextMsg, "expected", v.globalPosNextSend, "found", startPos)
 			return
 		}
-		atomic.AddInt32(&v.atomicValidationsRunning, 1)
-
 		seqMsg, ok := seqBatchEntry.([]byte)
 		if !ok {
 			batchNum := validationStatus.Entry.StartPosition.BatchNumber
@@ -622,9 +568,23 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				log.Error("error preparing validation", "err", err)
 				return
 			}
-			v.validate(validationCtx, validationStatus, seqMsg)
+			input, err := validationStatus.Entry.ToInput()
+			if err != nil && validationCtx.Err() == nil {
+				log.Error("error preparing validation", "err", err)
+				return
+			}
+			for _, moduleRoot := range wasmRoots {
+				for _, spawner := range v.validationSpawners {
+					run := spawner.Launch(input, moduleRoot)
+					validationStatus.Runs = append(validationStatus.Runs, run)
+				}
+			}
+			replaced := validationStatus.replaceStatus(Prepared, ValidationSent)
+			if !replaced {
+				v.possiblyFatal(errors.New("failed to set status"))
+			}
 		})
-
+		room--
 		v.nextBlockToValidate++
 		v.globalPosNextSend = endPos
 	}
@@ -739,7 +699,7 @@ func (v *BlockValidator) progressValidated() {
 			log.Error("bad entry trying to advance validated counter")
 			return
 		}
-		if validationStatus.getStatus() < Valid {
+		if validationStatus.getStatus() < ValidationSent {
 			return
 		}
 		validationEntry := validationStatus.Entry
@@ -752,6 +712,32 @@ func (v *BlockValidator) progressValidated() {
 			log.Error("lastBlockValidatedHash is %v but validationEntry has prevBlockHash %v for block number %v", v.lastBlockValidatedHash, validationEntry.PrevBlockHash, v.lastBlockValidated)
 			return
 		}
+		expectedEnd, err := validationEntry.expectedEnd()
+		if err != nil {
+			v.possiblyFatal(err)
+			return
+		}
+		for _, run := range validationStatus.Runs {
+			if !run.Done() {
+				return
+			}
+			runEnd, err := run.Result()
+			if err == nil && runEnd != expectedEnd {
+				err = fmt.Errorf("validation failed: expected %v got %v", expectedEnd, runEnd)
+				writeErr := v.writeToFile(validationEntry, run.WasmModuleRoot())
+				if writeErr != nil {
+					log.Error("failed to write file", "err", err)
+				}
+				v.possiblyFatal(err)
+			}
+			if err != nil {
+				v.possiblyFatal(err)
+				validationStatus.setStatus(Failed)
+				return
+			}
+		}
+		validationStatus.replaceStatus(ValidationSent, Valid)
+		v.triggerSendValidations()
 		earliestBatchKept := atomic.LoadUint64(&v.earliestBatchKept)
 		seqMsgNr := validationEntry.StartPosition.BatchNumber
 		if earliestBatchKept < seqMsgNr {
@@ -772,7 +758,7 @@ func (v *BlockValidator) progressValidated() {
 		case v.progressChan <- checkingBlock:
 		default:
 		}
-		err := v.writeLastValidatedToDb(validationEntry.BlockNumber, validationEntry.BlockHash, validationEntry.EndPosition)
+		err = v.writeLastValidatedToDb(validationEntry.BlockNumber, validationEntry.BlockHash, validationEntry.EndPosition)
 		if err != nil {
 			log.Error("failed to write validated entry to database", "err", err)
 		}
@@ -990,28 +976,19 @@ func (v *BlockValidator) Initialize() error {
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn, v)
-	v.LaunchThread(func(ctx context.Context) {
-		// `progressValidated` and `sendValidations` should both only do `concurrentRunsLimit` iterations of work,
-		// so they won't stomp on each other and prevent the other from running.
-		v.sendRecords(ctx)
-		v.sendValidations(ctx)
-		for {
-			select {
-			case _, ok := <-v.checkProgressChan:
-				if !ok {
-					return
-				}
-				v.progressValidated()
-			case _, ok := <-v.sendValidationsChan:
-				if !ok {
-					return
-				}
-				v.sendRecords(ctx)
-				v.sendValidations(ctx)
-			case <-ctx.Done():
-				return
-			}
-		}
+	err := stopwaiter.CallIterativelyWith[struct{}](&v.StopWaiterSafe,
+		func(ctx context.Context, unused struct{}) time.Duration {
+			v.sendRecords(ctx)
+			v.sendValidations(ctx)
+			return v.config().ValidationPoll
+		},
+		v.sendValidationsChan)
+	if err != nil {
+		return err
+	}
+	v.CallIteratively(func(ctx context.Context) time.Duration {
+		v.progressValidated()
+		return v.config().ValidationPoll
 	})
 	lastValid := uint64(0)
 	v.CallIteratively(func(ctx context.Context) time.Duration {

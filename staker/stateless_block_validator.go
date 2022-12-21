@@ -565,7 +565,6 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if err != nil {
 		return false, err
 	}
-	var gsEnd validator.GoGlobalState
 	input, err := entry.ToInput()
 	if err != nil {
 		return false, err
@@ -579,9 +578,19 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if len(spawners) == 0 {
 		return false, errors.New("no validation defined")
 	}
+	var runs []validator.ValidationRunInt
 	for _, spawner := range spawners {
-		gsEnd, err = spawner.Execute(ctx, input, moduleRoot)
-		if err != nil || gsEnd != expEnd {
+		run := spawner.Launch(input, moduleRoot)
+		runs = append(runs, run)
+	}
+	for _, run := range runs {
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-run.ChDone():
+		}
+		gsEnd, err := run.Result()
+		if err != nil && gsEnd != expEnd {
 			return false, err
 		}
 	}
