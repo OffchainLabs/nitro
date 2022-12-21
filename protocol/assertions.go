@@ -311,7 +311,7 @@ func (chain *AssertionChain) IsAtOneStepFork(
 	if !ok {
 		return false, fmt.Errorf("challenge vertices not found for assertion with state commit hash %#x", challengeCommitHash)
 	}
-	parentCommitHash := VertexCommitHash(vertexParentCommit.Merkle)
+	parentCommitHash := VertexCommitHash(vertexParentCommit.Hash())
 	return verticesContainOneStepFork(vertices, parentCommitHash), nil
 }
 
@@ -328,7 +328,7 @@ func verticesContainOneStepFork(vertices map[VertexCommitHash]*ChallengeVertex, 
 			continue
 		}
 		// We only check vertices that have a matching parent commit hash.
-		vParentHash := VertexCommitHash(v.Prev.Unwrap().Commitment.Merkle)
+		vParentHash := VertexCommitHash(v.Prev.Unwrap().Commitment.Hash())
 		if vParentHash == parentCommitHash {
 			childVertices = append(childVertices, v)
 		}
@@ -608,7 +608,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 		nextSequenceNum:       currSeqNumber + 1,
 	}
 	rootVertex.challenge = util.Some[*Challenge](chal)
-	chal.includedHistories[rootVertex.Commitment.Merkle] = true
+	chal.includedHistories[rootVertex.Commitment.Hash()] = true
 	a.challenge = util.Some[*Challenge](chal)
 	parentStaker := common.Address{}
 	if !a.Staker.IsNone() {
@@ -655,8 +655,8 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	if !c.rootVertex.Unwrap().eligibleForNewSuccessor() {
 		return nil, ErrPastDeadline
 	}
-	if c.includedHistories[history.Merkle] {
-		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", history.Merkle.String()))
+	if c.includedHistories[history.Hash()] {
+		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", history.Hash().String()))
 	}
 
 	timer := util.NewCountUpTimer(chain.timeReference)
@@ -687,7 +687,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 		BecomesPS:         leaf.Prev.Unwrap().PresumptiveSuccessor.Unwrap() == leaf,
 		Validator:         validator,
 	})
-	c.includedHistories[history.Merkle] = true
+	c.includedHistories[history.Hash()] = true
 	h := ChallengeCommitHash(c.rootAssertion.Unwrap().StateCommitment.Hash())
 	c.rootAssertion.Unwrap().chain.challengesByCommitHash[h] = c
 	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[h][VertexCommitHash(leaf.Commitment.Merkle)] = leaf
@@ -762,8 +762,8 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 	if !v.Prev.Unwrap().eligibleForNewSuccessor() {
 		return nil, ErrPastDeadline
 	}
-	if v.challenge.Unwrap().includedHistories[history.Merkle] {
-		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", history.Merkle.String()))
+	if v.challenge.Unwrap().includedHistories[history.Hash()] {
+		return nil, errors.Wrapf(ErrVertexAlreadyExists, fmt.Sprintf("Hash: %s", history.Hash().String()))
 	}
 	bisectionHeight, err := v.requiredBisectionHeight()
 	if err != nil {
@@ -790,7 +790,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 	newVertex.challenge.Unwrap().nextSequenceNum++
 	newVertex.maybeNewPresumptiveSuccessor(v)
 	newVertex.Prev.Unwrap().maybeNewPresumptiveSuccessor(newVertex)
-	newVertex.challenge.Unwrap().includedHistories[history.Merkle] = true
+	newVertex.challenge.Unwrap().includedHistories[history.Hash()] = true
 
 	v.Prev = util.Some[*ChallengeVertex](newVertex)
 
