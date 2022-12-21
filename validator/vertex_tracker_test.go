@@ -63,7 +63,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		}
 		p := &mocks.MockProtocol{}
 		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Merkle)).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			errors.New("something went wrong"),
 		)
@@ -95,7 +95,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 				Commitment: parentHistory,
 			}),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Merkle)).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
@@ -134,7 +134,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 				Commitment: parentHistory,
 			}),
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Merkle)).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
@@ -175,7 +175,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			PresumptiveSuccessor: util.Some(vertex),
 		}
 		vertex.Prev = util.Some(prev)
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Merkle)).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			nil,
 		)
@@ -219,7 +219,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		v, err := trk.validator.stateManager.HistoryCommitmentUpTo(ctx, 5)
 		require.NoError(t, err)
 		err = trk.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertex, err = p.ChallengeVertexByCommitHash(tx, trk.challengeCommitHash, protocol.VertexCommitHash(v.Merkle))
+			vertex, err = p.ChallengeVertexByCommitHash(tx, trk.challengeCommitHash, protocol.VertexCommitHash(v.Hash()))
 			if err != nil {
 				return err
 			}
@@ -315,7 +315,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		}
 		p := &mocks.MockProtocol{}
 		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(common.Hash{})).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex, nil,
 		)
 		v := &Validator{
@@ -325,7 +325,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			validator:           v,
 			challengeCommitHash: challengeCommitHash,
 		}
-		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Merkle))
+		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Hash()))
 		require.ErrorContains(t, err, "fetched nil challenge")
 	})
 	t.Run("fetching error", func(t *testing.T) {
@@ -334,7 +334,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		}
 		p := &mocks.MockProtocol{}
 		var vertex *protocol.ChallengeVertex
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(common.Hash{})).Return(
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(
 			vertex,
 			errors.New("something went wrong"),
 		)
@@ -345,7 +345,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			validator:           v,
 			challengeCommitHash: challengeCommitHash,
 		}
-		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Merkle))
+		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Hash()))
 		require.ErrorContains(t, err, "something went wrong")
 	})
 	t.Run("OK", func(t *testing.T) {
@@ -356,7 +356,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 		want := &protocol.ChallengeVertex{
 			Commitment: history,
 		}
-		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(common.Hash{})).Return(want, nil)
+		p.On("ChallengeVertexByCommitHash", &protocol.ActiveTx{}, challengeCommitHash, protocol.VertexCommitHash(history.Hash())).Return(want, nil)
 		v := &Validator{
 			chain: p,
 		}
@@ -364,7 +364,7 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			validator:           v,
 			challengeCommitHash: challengeCommitHash,
 		}
-		got, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Merkle))
+		got, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Hash()))
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
@@ -411,7 +411,7 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 
 	var vertex *protocol.ChallengeVertex
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		vertex, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Merkle))
+		vertex, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Hash()))
 		if err != nil {
 			return err
 		}

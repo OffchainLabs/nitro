@@ -623,7 +623,7 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 
 	challengeID := ChallengeCommitHash(a.StateCommitment.Hash())
 	a.chain.challengesByCommitHash[challengeID] = chal
-	a.chain.challengeVerticesByCommitHash[challengeID] = map[VertexCommitHash]*ChallengeVertex{VertexCommitHash(rootVertex.Commitment.Merkle): rootVertex}
+	a.chain.challengeVerticesByCommitHash[challengeID] = map[VertexCommitHash]*ChallengeVertex{VertexCommitHash(rootVertex.Commitment.Hash()): rootVertex}
 
 	return chal, nil
 }
@@ -690,7 +690,7 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 	c.includedHistories[history.Hash()] = true
 	h := ChallengeCommitHash(c.rootAssertion.Unwrap().StateCommitment.Hash())
 	c.rootAssertion.Unwrap().chain.challengesByCommitHash[h] = c
-	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[h][VertexCommitHash(leaf.Commitment.Merkle)] = leaf
+	c.rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[h][VertexCommitHash(leaf.Commitment.Hash())] = leaf
 	return leaf, nil
 }
 
@@ -802,7 +802,7 @@ func (v *ChallengeVertex) Bisect(tx *ActiveTx, history util.HistoryCommitment, p
 		Validator:       validator,
 	})
 	commitHash := ChallengeCommitHash(newVertex.challenge.Unwrap().rootAssertion.Unwrap().StateCommitment.Hash())
-	newVertex.challenge.Unwrap().rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[commitHash][VertexCommitHash(newVertex.Commitment.Merkle)] = newVertex
+	newVertex.challenge.Unwrap().rootAssertion.Unwrap().chain.challengeVerticesByCommitHash[commitHash][VertexCommitHash(newVertex.Commitment.Hash())] = newVertex
 
 	return newVertex, nil
 }
