@@ -24,6 +24,7 @@ go_test(
     name = "validator_test",
     srcs = [
         "challenge_moves_test.go",
+        "challenges_test.go",
         "validator_test.go",
         "vertex_tracker_test.go",
     ],

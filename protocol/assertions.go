@@ -826,7 +826,7 @@ func (v *ChallengeVertex) Merge(tx *ActiveTx, mergingTo *ChallengeVertex, proof 
 		return err
 	}
 
-	v.Prev = util.Some[*ChallengeVertex](mergingTo)
+	v.Prev = util.Some(mergingTo)
 	mergingTo.psTimer.Add(v.psTimer.Get())
 	mergingTo.maybeNewPresumptiveSuccessor(v)
 	v.challenge.Unwrap().rootAssertion.Unwrap().chain.challengesFeed.Append(&ChallengeMergeEvent{

@@ -552,20 +552,23 @@ func TestAssertionChain_Merge(t *testing.T) {
 		timeRef := util.NewArtificialTimeReference()
 		counter := util.NewCountUpTimer(timeRef)
 		counter.Add(2 * time.Minute)
+		rootAssertion := util.Some(&Assertion{
+			chain: &AssertionChain{
+				challengePeriod: time.Minute,
+			},
+		})
+		ps := util.Some(&ChallengeVertex{
+			psTimer: counter,
+			Commitment: util.HistoryCommitment{
+				Height: 1,
+			},
+		})
 		mergingTo := &ChallengeVertex{
 			challenge: util.Some(&Challenge{
-				rootAssertion: util.Some(&Assertion{
-					chain: &AssertionChain{
-						challengePeriod: time.Minute,
-					},
-				}),
+				rootAssertion: rootAssertion,
 			}),
-			PresumptiveSuccessor: util.Some(&ChallengeVertex{
-				psTimer: counter,
-				Commitment: util.HistoryCommitment{
-					Height: 1,
-				},
-			})}
+			PresumptiveSuccessor: ps,
+		}
 		mergingFrom := &ChallengeVertex{}
 		err := mergingFrom.Merge(
 			tx,

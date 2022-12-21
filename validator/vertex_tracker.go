@@ -46,10 +46,6 @@ func (v *vertexTracker) track(ctx context.Context) {
 		"validator": v.vertex.Validator,
 	}).Info("Tracking challenge vertex")
 
-	if err := v.actOnBlockChallenge(ctx); err != nil {
-		log.Error(err)
-	}
-
 	t := v.timeRef.NewTicker(v.actEveryNSeconds)
 	defer t.Stop()
 	for {
