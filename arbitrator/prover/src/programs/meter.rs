@@ -12,6 +12,9 @@ use wasmer::{
 };
 use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 
+const POLYGLOT_GAS_LEFT: &str = "polyglot_gas_left";
+const POLYGLOT_GAS_STATUS: &str = "polyglot_gas_status";
+
 pub trait OpcodePricer: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 
 impl<T> OpcodePricer for T where T: Fn(&Operator) -> u64 + Send + Sync + Clone {}
@@ -39,13 +42,13 @@ where
     M: ModuleMod,
     F: OpcodePricer + 'static,
 {
-    type FM<'a> = FunctionMeter<'a, F>;
+    type FM<'a> = FuncMeter<'a, F>;
 
     fn update_module(&self, module: &mut M) -> Result<()> {
         let start_gas = GlobalInit::I64Const(self.start_gas as i64);
         let start_status = GlobalInit::I32Const(0);
-        let gas = module.add_global("polyglot_gas_left", Type::I64, start_gas)?;
-        let status = module.add_global("polyglot_gas_status", Type::I32, start_status)?;
+        let gas = module.add_global(POLYGLOT_GAS_LEFT, Type::I64, start_gas)?;
+        let status = module.add_global(POLYGLOT_GAS_STATUS, Type::I32, start_status)?;
         *self.gas_global.lock() = Some(gas);
         *self.status_global.lock() = Some(status);
         Ok(())
@@ -54,7 +57,7 @@ where
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
         let gas = self.gas_global.lock().expect("no global");
         let status = self.status_global.lock().expect("no global");
-        Ok(FunctionMeter::new(gas, status, self.costs.clone()))
+        Ok(FuncMeter::new(gas, status, self.costs.clone()))
     }
 
     fn name(&self) -> &'static str {
@@ -62,7 +65,7 @@ where
     }
 }
 
-pub struct FunctionMeter<'a, F: OpcodePricer> {
+pub struct FuncMeter<'a, F: OpcodePricer> {
     /// Represents the amount of gas left for consumption
     gas_global: GlobalIndex,
     /// Represents whether the machine is out of gas
@@ -75,7 +78,7 @@ pub struct FunctionMeter<'a, F: OpcodePricer> {
     costs: F,
 }
 
-impl<'a, F: OpcodePricer> FunctionMeter<'a, F> {
+impl<'a, F: OpcodePricer> FuncMeter<'a, F> {
     fn new(gas_global: GlobalIndex, status_global: GlobalIndex, costs: F) -> Self {
         Self {
             gas_global,
@@ -87,7 +90,7 @@ impl<'a, F: OpcodePricer> FunctionMeter<'a, F> {
     }
 }
 
-impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FunctionMeter<'a, F> {
+impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
     fn feed<O>(&mut self, op: Operator<'a>, out: &mut O) -> Result<()>
     where
         O: Extend<Operator<'a>>,
@@ -165,7 +168,7 @@ impl<F: OpcodePricer> Debug for Meter<F> {
     }
 }
 
-impl<F: OpcodePricer> Debug for FunctionMeter<'_, F> {
+impl<F: OpcodePricer> Debug for FuncMeter<'_, F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FunctionMeter")
             .field("gas_global", &self.gas_global)
@@ -201,8 +204,8 @@ pub trait MeteredMachine {
 
 impl MeteredMachine for Instance {
     fn gas_left(&self, store: &mut Store) -> MachineMeter {
-        let gas = self.get_global(store, "polyglot_gas_left");
-        let status = self.get_global(store, "polyglot_gas_status");
+        let gas = self.get_global(store, POLYGLOT_GAS_LEFT);
+        let status = self.get_global(store, POLYGLOT_GAS_STATUS);
         match status {
             0 => MachineMeter::Ready(gas),
             _ => MachineMeter::Exhausted,
@@ -210,7 +213,7 @@ impl MeteredMachine for Instance {
     }
 
     fn set_gas(&mut self, store: &mut Store, gas: u64) {
-        self.set_global(store, "polyglot_gas_left", gas);
-        self.set_global(store, "polyglot_gas_status", 0);
+        self.set_global(store, POLYGLOT_GAS_LEFT, gas);
+        self.set_global(store, POLYGLOT_GAS_STATUS, 0);
     }
 }

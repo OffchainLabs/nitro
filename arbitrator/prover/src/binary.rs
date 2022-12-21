@@ -271,6 +271,7 @@ pub type ExportMap = HashMap<String, (u32, ExportKind)>;
 pub struct WasmBinary<'a> {
     pub types: Vec<FunctionType>,
     pub imports: Vec<FuncImport<'a>>,
+    /// Maps *local* function indices to global type signatures
     pub functions: Vec<u32>,
     pub tables: Vec<TableType>,
     pub memories: Vec<MemoryType>,
