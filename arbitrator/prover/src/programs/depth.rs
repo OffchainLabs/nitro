@@ -81,10 +81,10 @@ pub struct FuncDepthChecker<'a> {
     funcs: Arc<HashMap<FunctionIndex, FunctionType>>,
     /// All the types in this function's modules
     sigs: Arc<HashMap<SignatureIndex, FunctionType>>,
-    /// The maximum size of the stack, measured in words
-    limit: u32,
     /// The number of local variables this func has
     locals: Option<usize>,
+    /// The maximum size of the stack, measured in words
+    limit: u32,
     /// The number of open scopes
     scopes: isize,
     /// The entirety of the func's original instructions
@@ -104,8 +104,8 @@ impl<'a> FuncDepthChecker<'a> {
             global,
             funcs,
             sigs,
-            limit,
             locals: None,
+            limit,
             scopes: 1, // a function starts with an open scope
             code: vec![],
             done: false,

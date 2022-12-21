@@ -95,35 +95,45 @@ fn test_depth() -> Result<()> {
     // in depth.wat
     //    the `depth` global equals the number of times `recurse` is called
     //    the `recurse` function calls itself
-    //    comments show that the max depth is 2 words
+    //    the `recurse` function has 1 parameter and 2 locals
+    //    comments show that the max depth is 3 words
 
     let mut config = PolyglotConfig::default();
-    config.max_depth = 32;
+    config.max_depth = 64;
 
     let (mut instance, mut store) = new_test_instance("tests/depth.wat", config)?;
     let exports = &instance.exports;
-    let recurse = exports.get_typed_function::<(), ()>(&store, "recurse")?;
+    let recurse = exports.get_typed_function::<i64, ()>(&store, "recurse")?;
     let store = &mut store;
 
     let program_depth: u32 = instance.get_global(store, "depth");
     assert_eq!(program_depth, 0);
-    assert_eq!(instance.stack_left(store), 32);
+    assert_eq!(instance.stack_left(store), 64);
 
     let mut check = |space: u32, expected: u32| {
         instance.set_global(store, "depth", 0);
         instance.set_stack(store, space);
         assert_eq!(instance.stack_left(store), space);
 
-        assert!(recurse.call(store).is_err());
+        assert!(recurse.call(store, 0).is_err());
         assert_eq!(instance.stack_left(store), 0);
 
         let program_depth: u32 = instance.get_global(store, "depth");
         assert_eq!(program_depth, expected);
     };
 
-    let frame_size = 2 + 4; // 2 words deep + 4 words fixed cost overhead
-    check(32, 32 / frame_size);
-    check(36, 36 / frame_size - 1); // 6 | 36 => 6 words on last call, which traps early
+    let locals = 2;
+    let depth = 3;
+    let fixed = 4;
+
+    let frame_size = locals + depth + fixed;
+
+    check(frame_size, 0); // should immediately exhaust (space left <= frame)
+    check(frame_size + 1, 1);
+    check(2 * frame_size, 1);
+    check(2 * frame_size + 1, 2);
+    check(4 * frame_size, 3);
+    check(4 * frame_size + frame_size / 2, 4);
     Ok(())
 }
 

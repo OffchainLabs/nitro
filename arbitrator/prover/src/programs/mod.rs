@@ -123,6 +123,10 @@ impl<'a, T> FunctionMiddleware<'a> for FuncMiddlewareWrapper<'a, T>
 where
     T: FuncMiddleware<'a> + Debug,
 {
+    fn locals_info(&mut self, locals: &[WpType]) {
+        self.0.locals_info(locals);
+    }
+
     fn feed(
         &mut self,
         op: Operator<'a>,
