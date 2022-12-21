@@ -107,7 +107,6 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	}
 
 	// Start tracking the challenge.
-	// Start tracking the challenge.
 	go newVertexTracker(
 		v.timeRef,
 		v.challengeVertexWakeInterval,
