@@ -630,6 +630,9 @@ func (a *Assertion) CreateChallenge(tx *ActiveTx, ctx context.Context, validator
 
 // ParentStateCommitment returns the state commitment of the parent assertion.
 func (c *Challenge) ParentStateCommitment() StateCommitment {
+	if c.rootAssertion.IsNone() {
+		return StateCommitment{}
+	}
 	return c.rootAssertion.Unwrap().StateCommitment
 }
 

@@ -14,28 +14,19 @@ import (
 type vertexTracker struct {
 	actEveryNSeconds    time.Duration
 	timeRef             util.TimeReference
-	challengeCommitHash protocol.ChallengeCommitHash
 	challenge           *protocol.Challenge
 	vertex              *protocol.ChallengeVertex
 	validator           *Validator
 	awaitingOneStepFork bool
 }
 
-func newVertexTracker(
-	timeRef util.TimeReference,
-	actEveryNSeconds time.Duration,
-	challengeCommitHash protocol.ChallengeCommitHash,
-	challenge *protocol.Challenge,
-	vertex *protocol.ChallengeVertex,
-	validator *Validator,
-) *vertexTracker {
+func newVertexTracker(timeRef util.TimeReference, actEveryNSeconds time.Duration, challenge *protocol.Challenge, vertex *protocol.ChallengeVertex, validator *Validator) *vertexTracker {
 	return &vertexTracker{
-		timeRef:             timeRef,
-		actEveryNSeconds:    actEveryNSeconds,
-		challengeCommitHash: challengeCommitHash,
-		challenge:           challenge,
-		vertex:              vertex,
-		validator:           validator,
+		timeRef:          timeRef,
+		actEveryNSeconds: actEveryNSeconds,
+		challenge:        challenge,
+		vertex:           vertex,
+		validator:        validator,
 	}
 }
 
@@ -125,28 +116,14 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 				return mergeErr
 			}
 			// Yield tracking of the vertex we merged to in a new goroutine.
-			go newVertexTracker(
-				v.timeRef,
-				v.actEveryNSeconds,
-				v.challengeCommitHash,
-				v.challenge,
-				mergedTo,
-				v.validator,
-			).track(ctx)
+			go newVertexTracker(v.timeRef, v.actEveryNSeconds, v.challenge, mergedTo, v.validator).track(ctx)
 			return nil
 		}
 		return err
 	}
 
 	// Yield tracking of the bisected vertex to a new goroutine.
-	go newVertexTracker(
-		v.timeRef,
-		v.actEveryNSeconds,
-		v.challengeCommitHash,
-		v.challenge,
-		bisectedVertex,
-		v.validator,
-	).track(ctx)
+	go newVertexTracker(v.timeRef, v.actEveryNSeconds, v.challenge, bisectedVertex, v.validator).track(ctx)
 
 	return nil
 }
@@ -158,7 +135,7 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		atOneStepFork, err = p.IsAtOneStepFork(
 			tx,
-			v.challengeCommitHash,
+			protocol.ChallengeCommitHash(v.challenge.ParentStateCommitment().Hash()),
 			v.vertex.Commitment,
 			v.vertex.Prev.Unwrap().Commitment,
 		)
@@ -178,7 +155,7 @@ func (v *vertexTracker) fetchVertexByHistoryCommit(hash protocol.VertexCommitHas
 	var mergingTo *protocol.ChallengeVertex
 	var err error
 	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		mergingTo, err = p.ChallengeVertexByCommitHash(tx, v.challengeCommitHash, hash)
+		mergingTo, err = p.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(v.challenge.ParentStateCommitment().Hash()), hash)
 		if err != nil {
 			return err
 		}
@@ -212,7 +189,7 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (*protocol.Ch
 		return nil, err
 	}
 	mergingFrom := v.vertex
-	mergedTo, err := v.validator.merge(ctx, v.challengeCommitHash, mergingInto, mergingFrom)
+	mergedTo, err := v.validator.merge(ctx, protocol.ChallengeCommitHash(v.challenge.ParentStateCommitment().Hash()), mergingInto, mergingFrom)
 	if err != nil {
 		return nil, err
 	}

@@ -24,17 +24,10 @@ func init() {
 
 func Test_track(t *testing.T) {
 	hook := test.NewGlobal()
-	tkr := newVertexTracker(
-		util.NewArtificialTimeReference(),
-		time.Millisecond,
-		protocol.ChallengeCommitHash(common.Hash{}),
-		&protocol.Challenge{},
-		&protocol.ChallengeVertex{
-			Commitment: util.HistoryCommitment{},
-			Validator:  common.Address{},
-		},
-		&Validator{},
-	)
+	tkr := newVertexTracker(util.NewArtificialTimeReference(), time.Millisecond, &protocol.Challenge{}, &protocol.ChallengeVertex{
+		Commitment: util.HistoryCommitment{},
+		Validator:  common.Address{},
+	}, &Validator{})
 	tkr.awaitingOneStepFork = true
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*5)
 	defer cancel()
@@ -74,9 +67,9 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			chain: p,
 		}
 		tkr := &vertexTracker{
-			validator:           v,
-			vertex:              vertex,
-			challengeCommitHash: challengeCommitHash,
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx)
 		require.ErrorContains(t, err, "could not refresh vertex")
@@ -112,9 +105,9 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			chain: p,
 		}
 		tkr := &vertexTracker{
-			validator:           v,
-			vertex:              vertex,
-			challengeCommitHash: challengeCommitHash,
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx)
 		require.ErrorContains(t, err, "something went wrong")
@@ -151,9 +144,9 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			chain: p,
 		}
 		tkr := &vertexTracker{
-			validator:           v,
-			vertex:              vertex,
-			challengeCommitHash: challengeCommitHash,
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx)
 		require.NoError(t, err)
@@ -192,9 +185,9 @@ func Test_actOnBlockChallenge(t *testing.T) {
 			chain: p,
 		}
 		tkr := &vertexTracker{
-			validator:           v,
-			vertex:              vertex,
-			challengeCommitHash: challengeCommitHash,
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
 		}
 		err := tkr.actOnBlockChallenge(ctx)
 		require.NoError(t, err)
@@ -219,7 +212,7 @@ func Test_actOnBlockChallenge(t *testing.T) {
 		v, err := trk.validator.stateManager.HistoryCommitmentUpTo(ctx, 5)
 		require.NoError(t, err)
 		err = trk.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertex, err = p.ChallengeVertexByCommitHash(tx, trk.challengeCommitHash, protocol.VertexCommitHash(v.Hash()))
+			vertex, err = p.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(trk.challenge.ParentStateCommitment().Hash()), protocol.VertexCommitHash(v.Hash()))
 			if err != nil {
 				return err
 			}
@@ -270,9 +263,9 @@ func Test_isAtOneStepFork(t *testing.T) {
 			chain: p,
 		}
 		tkr := &vertexTracker{
-			validator:           v,
-			vertex:              vertex,
-			challengeCommitHash: challengeCommitHash,
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
 		}
 		_, err := tkr.isAtOneStepFork()
 		require.ErrorContains(t, err, "something went wrong")
@@ -292,9 +285,9 @@ func Test_isAtOneStepFork(t *testing.T) {
 			chain: p,
 		}
 		tkr := &vertexTracker{
-			validator:           v,
-			vertex:              vertex,
-			challengeCommitHash: challengeCommitHash,
+			validator: v,
+			vertex:    vertex,
+			challenge: &protocol.Challenge{},
 		}
 		ok, err := tkr.isAtOneStepFork()
 		require.NoError(t, err)
@@ -322,8 +315,8 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			chain: p,
 		}
 		tkr := &vertexTracker{
-			validator:           v,
-			challengeCommitHash: challengeCommitHash,
+			validator: v,
+			challenge: &protocol.Challenge{},
 		}
 		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Hash()))
 		require.ErrorContains(t, err, "fetched nil challenge")
@@ -342,8 +335,8 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			chain: p,
 		}
 		tkr := &vertexTracker{
-			validator:           v,
-			challengeCommitHash: challengeCommitHash,
+			validator: v,
+			challenge: &protocol.Challenge{},
 		}
 		_, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Hash()))
 		require.ErrorContains(t, err, "something went wrong")
@@ -361,8 +354,8 @@ func Test_fetchVertexByHistoryCommit(t *testing.T) {
 			chain: p,
 		}
 		tkr := &vertexTracker{
-			validator:           v,
-			challengeCommitHash: challengeCommitHash,
+			validator: v,
+			challenge: &protocol.Challenge{},
 		}
 		got, err := tkr.fetchVertexByHistoryCommit(protocol.VertexCommitHash(history.Hash()))
 		require.NoError(t, err)
@@ -420,12 +413,5 @@ func setupNonPSTracker(t *testing.T, ctx context.Context) *vertexTracker {
 	require.NoError(t, err)
 	require.NotNil(t, vertex)
 
-	return newVertexTracker(
-		util.NewArtificialTimeReference(),
-		time.Second,
-		id,
-		challenge,
-		vertex,
-		validator,
-	)
+	return newVertexTracker(util.NewArtificialTimeReference(), time.Second, challenge, vertex, validator)
 }
