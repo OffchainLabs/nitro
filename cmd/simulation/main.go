@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +12,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
-	"crypto/rand"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/OffchainLabs/new-rollup-exploration/state-manager"
@@ -44,12 +43,15 @@ type config struct {
 func defaultConfig() *config {
 	defaultBalance := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
 	return &config{
-		NumValidators:                    1,
-		NumStates:                        10,
-		DefaultBalance:                   defaultBalance,
-		ChallengePeriod:                  time.Minute,
-		ChallengeVertexWakeInterval:      time.Second,
-		DivergenceHeightByValidatorIndex: map[uint8]uint64{},
+		NumValidators:               2,
+		NumStates:                   10,
+		DefaultBalance:              defaultBalance,
+		ChallengePeriod:             time.Minute,
+		ChallengeVertexWakeInterval: time.Second,
+		DivergenceHeightByValidatorIndex: map[uint8]uint64{
+			0: 3,
+			1: 3,
+		},
 	}
 }
 
