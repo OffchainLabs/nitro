@@ -9,6 +9,7 @@ use prover::{
     binary,
     programs::{
         config::PolyglotConfig,
+        depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
         start::StartlessMachine,
         GlobalMod, ModuleMod,
@@ -86,6 +87,43 @@ fn test_gas() -> Result<()> {
     }
     assert!(add_one.call(store, 32).is_err());
     assert_eq!(instance.gas_left(store), MachineMeter::Exhausted);
+    Ok(())
+}
+
+#[test]
+fn test_depth() -> Result<()> {
+    // in depth.wat
+    //    the `depth` global equals the number of times `recurse` is called
+    //    the `recurse` function calls itself
+    //    comments show that the max depth is 2 words
+
+    let mut config = PolyglotConfig::default();
+    config.max_depth = 32;
+
+    let (mut instance, mut store) = new_test_instance("tests/depth.wat", config)?;
+    let exports = &instance.exports;
+    let recurse = exports.get_typed_function::<(), ()>(&store, "recurse")?;
+    let store = &mut store;
+
+    let program_depth: u32 = instance.get_global(store, "depth");
+    assert_eq!(program_depth, 0);
+    assert_eq!(instance.stack_left(store), 32);
+
+    let mut check = |space: u32, expected: u32| {
+        instance.set_global(store, "depth", 0);
+        instance.set_stack(store, space);
+        assert_eq!(instance.stack_left(store), space);
+
+        assert!(recurse.call(store).is_err());
+        assert_eq!(instance.stack_left(store), 0);
+
+        let program_depth: u32 = instance.get_global(store, "depth");
+        assert_eq!(program_depth, expected);
+    };
+
+    let frame_size = 2 + 4; // 2 words deep + 4 words fixed cost overhead
+    check(32, 32 / frame_size);
+    check(36, 36 / frame_size - 1); // 6 | 36 => 6 words on last call, which traps early
     Ok(())
 }
 

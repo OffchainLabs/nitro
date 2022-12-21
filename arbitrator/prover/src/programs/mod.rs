@@ -11,8 +11,9 @@ use eyre::{bail, Report, Result};
 use fnv::FnvHashMap as HashMap;
 use std::{fmt::Debug, marker::PhantomData};
 use wasmer::{
-    wasmparser::Operator, ExportIndex, FunctionMiddleware, GlobalInit, GlobalType, Instance,
-    MiddlewareError, ModuleMiddleware, Mutability, Store, Value as WasmerValue,
+    wasmparser::{Operator, Type as WpType},
+    ExportIndex, FunctionMiddleware, GlobalInit, GlobalType, Instance, MiddlewareError,
+    ModuleMiddleware, Mutability, Store, Value as WasmerValue,
 };
 use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, LocalFunctionIndex, ModuleInfo, Pages,
@@ -44,6 +45,9 @@ pub trait Middleware<M: ModuleMod> {
 }
 
 pub trait FuncMiddleware<'a> {
+    /// Provide info on the function's locals. This is called before feed.
+    fn locals_info(&mut self, _locals: &[WpType]) {}
+
     /// Processes the given operator.
     fn feed<O>(&mut self, op: Operator<'a>, out: &mut O) -> Result<()>
     where
