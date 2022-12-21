@@ -153,10 +153,12 @@ func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
 	}
 	s.validators = validators
 	s.chain = chain
-	observer := make(chan protocol.ChallengeEvent, 100)
-	s.chain.SubscribeChallengeEvents(ctx, observer)
+	challengeObserver := make(chan protocol.ChallengeEvent, 100)
+	chainObserver := make(chan protocol.AssertionChainEvent, 100)
+	s.chain.SubscribeChallengeEvents(ctx, challengeObserver)
+	s.chain.SubscribeChainEvents(ctx, chainObserver)
 
-	go s.sendChainEventsToClients(ctx, observer)
+	go s.sendChainEventsToClients(ctx, challengeObserver, chainObserver)
 
 	for _, v := range validators {
 		go v.Start(ctx)
@@ -164,13 +166,19 @@ func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
 	log.Infof("Started application background routines successfully with config %+v", s.cfg)
 }
 
-func (s *server) sendChainEventsToClients(ctx context.Context, evs <-chan protocol.ChallengeEvent) {
+func (s *server) sendChainEventsToClients(
+	ctx context.Context,
+	chalEvs <-chan protocol.ChallengeEvent,
+	chainEvs <-chan protocol.AssertionChainEvent,
+) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
 		select {
-		case ev := <-evs:
-			log.Infof("Got event: %+T, and %+v", ev, ev)
+		case ev := <-chalEvs:
+			log.Infof("Got challenge event: %+T, and %+v", ev, ev)
+		case ev := <-chainEvs:
+			log.Infof("Got chain event: %+T, and %+v", ev, ev)
 		case <-t.C:
 			s.lock.RLock()
 			// send to every client that is currently connected
