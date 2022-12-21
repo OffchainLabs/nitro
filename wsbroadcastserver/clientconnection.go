@@ -167,7 +167,7 @@ func (cc *ClientConnection) Write(x interface{}) error {
 		return err
 	}
 	if flateWriter != nil {
-		if err := flateWriter.Flush(); err != nil {
+		if err := flateWriter.Close(); err != nil {
 			return errors.Wrap(err, "unable to flush message")
 		}
 	}

@@ -210,7 +210,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	}
 	log.Info("not compressed", "data", notCompressed.String())
 	if enableCompression && cm.flateWriter != nil {
-		if err := cm.flateWriter.Flush(); err != nil {
+		if err := cm.flateWriter.Close(); err != nil {
 			return nil, errors.Wrap(err, "unable to flush message")
 		}
 	}
