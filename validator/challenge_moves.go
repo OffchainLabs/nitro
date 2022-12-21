@@ -111,7 +111,7 @@ func (v *Validator) merge(
 		}
 		// Refresh the mergingTo vertex by reading it from the protocol, as some of its fields may have
 		// changed after we made the merge transaction above.
-		mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(mergingTo.Commitment.Merkle))
+		mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(mergingTo.Commitment.Hash()))
 		if err != nil {
 			return err
 		}

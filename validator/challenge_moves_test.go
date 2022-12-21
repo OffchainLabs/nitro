@@ -93,7 +93,7 @@ func Test_merge(t *testing.T) {
 
 		var mergingTo *protocol.ChallengeVertex
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Merkle))
+			mergingTo, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Hash()))
 			if err != nil {
 				return err
 			}
@@ -137,7 +137,7 @@ func Test_merge(t *testing.T) {
 		// Get the vertex we want to merge from.
 		var vertexToMergeFrom *protocol.ChallengeVertex
 		err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-			vertexToMergeFrom, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Merkle))
+			vertexToMergeFrom, err = p.ChallengeVertexByCommitHash(tx, challengeCommitHash, protocol.VertexCommitHash(c.Hash()))
 			if err != nil {
 				return err
 			}
@@ -202,7 +202,7 @@ func runBisectionTest(
 	// Get the challenge from the chain itself.
 	var vertexToBisect *protocol.ChallengeVertex
 	err = validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		vertexToBisect, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Merkle))
+		vertexToBisect, err = p.ChallengeVertexByCommitHash(tx, id, protocol.VertexCommitHash(c.Hash()))
 		if err != nil {
 			return err
 		}
