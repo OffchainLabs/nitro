@@ -170,8 +170,8 @@ type AssertionState int
 
 // Assertion represents an assertion in the protocol.
 type Assertion struct {
-	SequenceNum             AssertionSequenceNumber
-	StateCommitment         StateCommitment
+	SequenceNum             AssertionSequenceNumber `json:"sequence_num"`
+	StateCommitment         StateCommitment         `json:"state_commitment"`
 	Staker                  util.Option[common.Address]
 	Prev                    util.Option[*Assertion]
 	chain                   *AssertionChain
@@ -184,8 +184,8 @@ type Assertion struct {
 
 // StateCommitment is a type used to represent the state commitment of an assertion.
 type StateCommitment struct {
-	Height    uint64
-	StateRoot common.Hash
+	Height    uint64      `json:"height"`
+	StateRoot common.Hash `json"state_root"`
 }
 
 // Hash returns the hash of the state commitment.

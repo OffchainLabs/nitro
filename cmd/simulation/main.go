@@ -1,164 +1,309 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	"net/http"
-
-	"context"
+	"io"
 	"math/big"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
 	"time"
+
+	"crypto/rand"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/OffchainLabs/new-rollup-exploration/state-manager"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/OffchainLabs/new-rollup-exploration/validator"
 	"github.com/ethereum/go-ethereum/common"
-	// "github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
-	"os"
-	"path/filepath"
+	"github.com/sirupsen/logrus"
 )
 
-var clients = make(map[*websocket.Conn]bool)
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+var (
+	log      = logrus.WithField("prefix", "visualizer")
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+)
+
+type config struct {
+	NumValidators                    uint8            `json:"num_validators"`
+	NumStates                        uint64           `json:"num_states"`
+	DefaultBalance                   *big.Int         `json:"initial_balance"`
+	ChallengePeriod                  time.Duration    `json:"challenge_period"`
+	ChallengeVertexWakeInterval      time.Duration    `json:"challenge_vertex_wake_interval"`
+	DivergenceHeightByValidatorIndex map[uint8]uint64 `json:"diverge_height_by_validator_index"`
+}
+
+func defaultConfig() *config {
+	defaultBalance := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
+	return &config{
+		NumValidators:                    1,
+		NumStates:                        10,
+		DefaultBalance:                   defaultBalance,
+		ChallengePeriod:                  time.Minute,
+		ChallengeVertexWakeInterval:      time.Second,
+		DivergenceHeightByValidatorIndex: map[uint8]uint64{},
+	}
 }
 
 type server struct {
-	chain     protocol.OnChainProtocol
-	manager   statemanager.Manager
-	validator *validator.Validator
+	lock       sync.RWMutex
+	ctx        context.Context
+	cancelFn   context.CancelFunc
+	cfg        *config
+	port       uint
+	chain      protocol.OnChainProtocol
+	manager    statemanager.Manager
+	validators []*validator.Validator
+	wsClients  map[*websocket.Conn]bool
 }
 
-func main() {
-	ctx := context.Background()
-	ref := util.NewRealTimeReference()
-	chain := protocol.NewAssertionChain(ctx, ref, time.Minute)
-
-	alice := common.BytesToAddress([]byte{1})
-
-	// Increase the balance for each validator in the test.
-	bal := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
-	if err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		chain.AddToBalance(tx, alice, bal)
-		return nil
-	}); err != nil {
-		panic(err)
-	}
-	stateRoots := make([]common.Hash, 100)
-	for i := uint64(0); i < 100; i++ {
-		stateRoots[i] = util.HashForUint(i)
-	}
-
-	manager := statemanager.New(stateRoots)
-	v, err := validator.New(
-		ctx,
-		chain,
-		manager,
-		validator.WithName("alice"),
-		validator.WithAddress(alice),
-		validator.WithDisableLeafCreation(),
-		validator.WithTimeReference(ref),
-		validator.WithChallengeVertexWakeInterval(time.Second),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	harnessObserver := make(chan protocol.ChallengeEvent, 100)
-	chain.SubscribeChallengeEvents(ctx, harnessObserver)
-
-	fmt.Println("Started validator")
-	go v.Start(ctx)
-	go echo()
-
-	wd, _ := os.Getwd()
-	pth := filepath.Join(wd, "web")
-	fs := http.FileServer(http.Dir(pth))
-	fmt.Println(pth)
-
-	http.Handle("/", fs)
-	http.HandleFunc("/api/ws", wsHandler)
-	http.HandleFunc("/api/leaf/create", handleConfigUpdate)
-
-	// Render the config.
-	s := &srv{
-		cfg: &config{
-			NumValidators: 1,
-		},
-	}
-	http.HandleFunc("/api/config", s.renderConfig)
-
-	fmt.Println("Server listening on port 8000...")
-	log.Fatal(http.ListenAndServe(":8000", nil))
-}
-
-type user struct{}
-
-type srv struct {
-	cfg *config
-}
-
-type config struct {
-	NumValidators uint64 `json:"num_validators"`
-}
-
-func (s *srv) renderConfig(w http.ResponseWriter, r *http.Request) {
+func (s *server) renderConfig(w http.ResponseWriter, r *http.Request) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s.cfg)
 }
 
-func handleConfigUpdate(w http.ResponseWriter, r *http.Request) {
-	// Check the request method
-	if r.Method == http.MethodPost {
-		// Decode the request body into a User struct
-		var user user
-		err := json.NewDecoder(r.Body).Decode(&user)
-		if err != nil {
-			http.Error(w, "Error decoding request body", http.StatusBadRequest)
-			return
-		}
+func (s *server) updateConfig(w http.ResponseWriter, r *http.Request) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-		// Print the user information to the console
-		fmt.Printf("Received user: %+v\n", user)
+	log.Info("Received update config request, restarting application...")
+	// Cancel the current runtime of the application, wait a bit for cleanup,
+	// then restart the application with the updated configuration.
+	s.cancelFn()
 
-		// Send a JSON response
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(user)
-	} else {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-	}
+	time.Sleep(2 * time.Second)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancelFn = cancel
+	s.ctx = ctx
+	go s.startBackgroundRoutines(ctx, s.cfg)
+
+	log.Info("Successfully restarted background routines")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.cfg)
 }
 
-func wsHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Handling websocket")
+type assertionCreationRequest struct {
+	Index uint8 `json:"index"`
+}
+
+func (s *server) triggerAssertionCreation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	req := &assertionCreationRequest{}
+	defer r.Body.Close()
+	enc, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Could not read body", http.StatusBadRequest)
+		return
+	}
+	if err := json.Unmarshal(enc, req); err != nil {
+		http.Error(w, "Could not decode", http.StatusBadRequest)
+		return
+	}
+	log.Infof("Got create assertion request %+v", req)
+	if int(req.Index) >= len(s.validators) {
+		http.Error(w, "Validator index out of range", http.StatusBadRequest)
+		return
+	}
+	s.lock.RLock()
+	v := s.validators[req.Index]
+	s.lock.RUnlock()
+	assertion, err := v.SubmitLeafCreation(s.ctx)
+	if err != nil {
+		log.WithError(err).Error("Failed to create a new assertion leaf")
+		http.Error(w, "Assertion creation failed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(assertion)
+}
+
+func (s *server) registerWebsocketConnection(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Handled!")
-
-	// register client
-	clients[ws] = true
+	s.lock.Lock()
+	s.wsClients[ws] = true
+	s.lock.Unlock()
+	log.Info("Registered new websocket client")
 }
 
-// 3
-func echo() {
+func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
+	timeRef := util.NewRealTimeReference()
+	validators, chain, err := initializeSystem(ctx, timeRef, cfg)
+	if err != nil {
+		panic(err)
+	}
+	s.validators = validators
+	s.chain = chain
+	observer := make(chan protocol.ChallengeEvent, 100)
+	s.chain.SubscribeChallengeEvents(ctx, observer)
+
+	go s.sendChainEventsToClients(ctx, observer)
+
+	for _, v := range validators {
+		go v.Start(ctx)
+	}
+	log.Infof("Started application background routines successfully with config %+v", s.cfg)
+}
+
+func (s *server) sendChainEventsToClients(ctx context.Context, evs <-chan protocol.ChallengeEvent) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
-		<-t.C
-		// send to every client that is currently connected
-		for client := range clients {
-			err := client.WriteMessage(websocket.TextMessage, []byte("hi"))
-			if err != nil {
-				log.Printf("Websocket error: %s", err)
-				client.Close()
-				delete(clients, client)
+		select {
+		case ev := <-evs:
+			log.Infof("Got event: %+T, and %+v", ev, ev)
+		case <-t.C:
+			s.lock.RLock()
+			// send to every client that is currently connected
+			for client := range s.wsClients {
+				err := client.WriteMessage(websocket.TextMessage, []byte("hi"))
+				if err != nil {
+					log.Printf("Websocket error: %s", err)
+					client.Close()
+					delete(s.wsClients, client)
+				}
 			}
+			s.lock.RUnlock()
+		case <-ctx.Done():
+			return
+		default:
 		}
 	}
+}
+
+// Registers all of the server's routes for the web application.
+func (s *server) registerRoutes() {
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	// Handle file requests, including the index.html of the application.
+	fs := http.FileServer(http.Dir(filepath.Join(wd, "web")))
+	http.Handle("/", fs)
+
+	// Handle websocket connection registration.
+	http.HandleFunc("/api/ws", s.registerWebsocketConnection)
+
+	// Configuration related-handlers, either reading the config
+	// or updating the config and restarting the application.
+	http.HandleFunc("/api/config", s.renderConfig)
+	http.HandleFunc("/api/config/update", s.updateConfig)
+
+	// API triggers of validator actions, such as leaf creation at a validator's
+	// latest height via the web app.
+	http.HandleFunc("/api/assertions/create", s.triggerAssertionCreation)
+}
+
+func initializeSystem(
+	ctx context.Context,
+	timeRef util.TimeReference,
+	cfg *config,
+) ([]*validator.Validator, *protocol.AssertionChain, error) {
+	chain := protocol.NewAssertionChain(ctx, timeRef, cfg.ChallengePeriod)
+
+	validatorAddrs := make([]common.Address, cfg.NumValidators)
+	for i := uint8(0); i < cfg.NumValidators; i++ {
+		// Make the addrs 1-indexed so that we don't use the zero address.
+		validatorAddrs[i] = common.BytesToAddress([]byte{i + 1})
+	}
+
+	// Increase the balance for each validator in the test.
+	bal := big.NewInt(0).Mul(protocol.Gwei, big.NewInt(100))
+	err := chain.Tx(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		for _, addr := range validatorAddrs {
+			chain.AddToBalance(tx, addr, bal)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Initialize each validator associated state roots which diverge
+	// at specified points in the test config.
+	validatorStateRoots := make([][]common.Hash, cfg.NumValidators)
+	for i := uint8(0); i < cfg.NumValidators; i++ {
+		divergenceHeight := cfg.DivergenceHeightByValidatorIndex[i]
+		stateRoots := make([]common.Hash, cfg.NumStates)
+		for i := uint64(0); i < cfg.NumStates; i++ {
+			if divergenceHeight == 0 || i < divergenceHeight {
+				stateRoots[i] = util.HashForUint(i)
+			} else {
+				divergingRoot := make([]byte, 32)
+				_, err = rand.Read(divergingRoot)
+				if err != nil {
+					return nil, nil, err
+				}
+				stateRoots[i] = common.BytesToHash(divergingRoot)
+			}
+		}
+		validatorStateRoots[i] = stateRoots
+	}
+
+	// Initialize each validator.
+	validators := make([]*validator.Validator, cfg.NumValidators)
+	for i := 0; i < len(validators); i++ {
+		manager := statemanager.New(validatorStateRoots[i])
+		addr := validatorAddrs[i]
+		v, valErr := validator.New(
+			ctx,
+			chain,
+			manager,
+			validator.WithName(fmt.Sprintf("%d", i)),
+			validator.WithAddress(addr),
+			validator.WithDisableLeafCreation(),
+			validator.WithTimeReference(timeRef),
+			validator.WithChallengeVertexWakeInterval(cfg.ChallengeVertexWakeInterval),
+		)
+		if valErr != nil {
+			return nil, nil, valErr
+		}
+		validators[i] = v
+	}
+	return validators, chain, nil
+}
+
+// Initializes a server that is able to start validators, trigger
+// validator events, and provides data on their events via websocket connections.
+func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := defaultConfig()
+	s := &server{
+		ctx:       ctx,
+		cancelFn:  cancel,
+		cfg:       cfg,
+		port:      8000,
+		wsClients: map[*websocket.Conn]bool{},
+	}
+
+	// Register all the server routes for the application.
+	s.registerRoutes()
+
+	// Start the main application routines in the background.
+	go s.startBackgroundRoutines(ctx, cfg)
+
+	// Listen and serve the web application.
+	fmt.Println("Server listening on port 8000...")
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", s.port), nil))
 }
