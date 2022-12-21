@@ -16,7 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gobwas/httphead"
 	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
@@ -125,6 +127,9 @@ type BroadcastClient struct {
 	txStreamer                      TransactionStreamerInterface
 	fatalErrChan                    chan error
 	adjustCount                     func(int32)
+
+	compression bool
+	flateReader *wsflate.Reader
 }
 
 var ErrIncorrectFeedServerVersion = errors.New("incorrect feed server version")
@@ -212,6 +217,15 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	var foundFeedServerVersion bool
 	var chainId uint64
 	var feedServerVersion uint64
+
+	// TODO
+	useCompression := true
+	extensions := []httphead.Option{}
+	if useCompression {
+		params := wsflate.DefaultParameters
+		log.Warn(params.Option().String())
+		extensions = append(extensions, params.Option())
+	}
 	timeoutDialer := ws.Dialer{
 		Header: header,
 		OnHeader: func(key, value []byte) (err error) {
@@ -256,13 +270,14 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		},
+		Extensions: extensions,
 	}
 
 	if bc.isShuttingDown() {
 		return nil, nil
 	}
 
-	conn, br, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
+	conn, br, hs, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if errors.Is(err, ErrIncorrectFeedServerVersion) || errors.Is(err, ErrIncorrectChainId) {
 		return nil, err
 	}
@@ -300,7 +315,13 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	bc.conn = conn
 	bc.connMutex.Unlock()
 
-	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum)
+	negotiated := []string{}
+	for _, ext := range hs.Extensions {
+		negotiated = append(negotiated, ext.String())
+	}
+	// TODO
+	bc.compression = true
+	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum, "wsExtensions", strings.Join(negotiated, ","))
 
 	return earlyFrameData, nil
 }
@@ -317,7 +338,10 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			default:
 			}
 
-			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.config.Timeout, ws.StateClientSide)
+			var msg []byte
+			var op ws.OpCode
+			var err error
+			msg, op, bc.flateReader, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.config.Timeout, ws.StateClientSide, bc.compression, bc.flateReader)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return
@@ -372,6 +396,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				} else {
 					log.Debug("received broadcast with no messages populated", "length", len(msg))
 				}
+				log.Info("#####", "version", res.Version, "len(Messages)", len(res.Messages))
 
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
@@ -394,7 +419,9 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}
+					log.Info("res", "ConfirmedSequenceNumberMessage", res.ConfirmedSequenceNumberMessage)
 					if res.ConfirmedSequenceNumberMessage != nil && bc.confirmedSequenceNumberListener != nil {
+						log.Info("<<<<<<")
 						bc.confirmedSequenceNumberListener <- res.ConfirmedSequenceNumberMessage.SequenceNumber
 					}
 				}

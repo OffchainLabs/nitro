@@ -13,8 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gobwas/httphead"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws-examples/src/gopool"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/mailru/easygo/netpoll"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -160,6 +162,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 
 	s.clientManager.Start(ctx)
 
+	useCompression := true // TODO add config
 	// handle incoming connection requests.
 	// It upgrades TCP connection to WebSocket, registers netpoll listener on
 	// it and stores it as a Client connection in ClientManager instance.
@@ -168,7 +171,14 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	handle := func(conn net.Conn) {
 
 		safeConn := deadliner{conn, s.config().IOTimeout}
-
+		var compress *wsflate.Extension
+		var negotiate func(httphead.Option) (httphead.Option, error)
+		if useCompression {
+			compress = &wsflate.Extension{
+				Parameters: wsflate.DefaultParameters, // TODO
+			}
+			negotiate = compress.Negotiate
+		}
 		var feedClientVersionSeen bool
 		var connectingIP string
 		var requestedSeqNum arbutil.MessageIndex
@@ -222,6 +232,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				}
 				return header, nil
 			},
+			Negotiate: negotiate,
 		}
 
 		// Zero-copy upgrade to WebSocket connection.
@@ -242,6 +253,10 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			return
 		}
 
+		compressionAccepted := false
+		if compress != nil {
+			_, compressionAccepted = compress.Accepted()
+		}
 		// Create netpoll event descriptor to handle only read events.
 		desc, err := netpoll.HandleRead(conn)
 		if err != nil {
@@ -251,7 +266,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		}
 
 		// Register incoming client in clientManager.
-		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP)
+		client := s.clientManager.Register(safeConn, desc, requestedSeqNum, connectingIP, compressionAccepted)
 
 		// Subscribe to events about conn.
 		err = s.poller.Start(desc, func(ev netpoll.Event) {

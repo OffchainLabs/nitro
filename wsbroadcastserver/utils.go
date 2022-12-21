@@ -4,6 +4,7 @@
 package wsbroadcastserver
 
 import (
+	"compress/flate"
 	"context"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsflate"
 	"github.com/gobwas/ws/wsutil"
 )
 
@@ -62,15 +64,29 @@ func (cr *chainedReader) add(r io.Reader) *chainedReader {
 	return cr
 }
 
-func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State) ([]byte, ws.OpCode, error) {
+func GetCompressionLevel() int {
+	return flate.BestCompression
+}
 
+func GetStaticCompressorDictionary() []byte {
+	// TODO
+	return []byte("whatever{}")
+}
+
+func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State, compression bool, flateReader *wsflate.Reader) ([]byte, ws.OpCode, *wsflate.Reader, error) {
+	if compression {
+		// TODO
+		state |= ws.StateExtended
+	}
 	controlHandler := wsutil.ControlFrameHandler(conn, state)
+	var msg wsflate.MessageState
 	reader := wsutil.Reader{
 		Source:          (&chainedReader{}).add(earlyFrameData).add(conn),
 		State:           state,
-		CheckUTF8:       true,
+		CheckUTF8:       !compression,
 		SkipHeaderCheck: false,
 		OnIntermediate:  controlHandler,
+		Extensions:      []wsutil.RecvExtension{&msg},
 	}
 
 	// Remove timeout when leaving this function
@@ -82,13 +98,13 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, 0, nil
+			return nil, 0, flateReader, nil
 		default:
 		}
 
 		err := conn.SetReadDeadline(time.Now().Add(idleTimeout))
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, flateReader, err
 		}
 
 		// Control packet may be returned even if err set
@@ -96,30 +112,47 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 		if header.OpCode.IsControl() {
 			// Control packet may be returned even if err set
 			if err2 := controlHandler(header, &reader); err2 != nil {
-				return nil, 0, err2
+				return nil, 0, flateReader, err2
 			}
 
 			// Discard any data after control packet
 			if err2 := reader.Discard(); err2 != nil {
-				return nil, 0, err2
+				return nil, 0, nil, err2
 			}
 
-			return nil, 0, nil
+			return nil, 0, flateReader, nil
 		}
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, flateReader, err
 		}
 
 		if header.OpCode != ws.OpText &&
 			header.OpCode != ws.OpBinary {
 			if err := reader.Discard(); err != nil {
-				return nil, 0, err
+				return nil, 0, flateReader, err
 			}
 			continue
 		}
+		var data []byte
+		if msg.IsCompressed() {
+			if !compression {
+				log.Warn("Received compressed frame even though compression wasn't negotiated, discarding the frame")
+				if err := reader.Discard(); err != nil {
+					return nil, 0, nil, err
+				}
+				continue
+			}
+			if flateReader == nil {
+				flateReader = wsflate.NewReader(nil, func(r io.Reader) wsflate.Decompressor {
+					return flate.NewReaderDict(r, GetStaticCompressorDictionary())
+				})
+			}
+			flateReader.Reset(&reader)
+			data, err = io.ReadAll(flateReader)
+		} else {
+			data, err = io.ReadAll(&reader)
+		}
 
-		data, err := io.ReadAll(&reader)
-
-		return data, header.OpCode, err
+		return data, header.OpCode, flateReader, err
 	}
 }

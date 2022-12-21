@@ -19,6 +19,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -285,7 +286,8 @@ func TestServerClientDisconnect(t *testing.T) {
 }
 
 func TestBroadcastClientConfirmedMessage(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
+	_ = testhelpers.InitTestLog(t, log.LvlTrace)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
