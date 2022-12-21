@@ -19,6 +19,8 @@ import (
 	"github.com/OffchainLabs/new-rollup-exploration/validator"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 	"github.com/sirupsen/logrus"
 )
 
@@ -67,14 +69,14 @@ type server struct {
 	wsClients  map[*websocket.Conn]bool
 }
 
-func (s *server) renderConfig(w http.ResponseWriter, r *http.Request) {
+func (s *server) renderConfig(c echo.Context) error {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.cfg)
+	c.JSON(http.StatusOK, s.cfg)
+	return nil
 }
 
-func (s *server) updateConfig(w http.ResponseWriter, r *http.Request) {
+func (s *server) updateConfig(c echo.Context) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -92,35 +94,34 @@ func (s *server) updateConfig(w http.ResponseWriter, r *http.Request) {
 
 	log.Info("Successfully restarted background routines")
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.cfg)
+	c.JSON(http.StatusOK, s.cfg)
+	return nil
 }
 
 type assertionCreationRequest struct {
 	Index uint8 `json:"index"`
 }
 
-func (s *server) triggerAssertionCreation(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		return
+func (s *server) triggerAssertionCreation(c echo.Context) error {
+	if c.Request().Method != http.MethodPost {
+		// http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return nil
 	}
 
 	req := &assertionCreationRequest{}
-	defer r.Body.Close()
-	enc, err := io.ReadAll(r.Body)
+	defer c.Request().Body.Close()
+	enc, err := io.ReadAll(c.Request().Body)
 	if err != nil {
-		http.Error(w, "Could not read body", http.StatusBadRequest)
-		return
+		// http.Error(w, "Could not read body", http.StatusBadRequest)
+		return nil
 	}
 	if err := json.Unmarshal(enc, req); err != nil {
-		http.Error(w, "Could not decode", http.StatusBadRequest)
-		return
+		// http.Error(w, "Could not decode", http.StatusBadRequest)
+		return nil
 	}
-	log.Infof("Got create assertion request %+v", req)
 	if int(req.Index) >= len(s.validators) {
-		http.Error(w, "Validator index out of range", http.StatusBadRequest)
-		return
+		// http.Error(w, "Validator index out of range", http.StatusBadRequest)
+		return nil
 	}
 	s.lock.RLock()
 	v := s.validators[req.Index]
@@ -128,16 +129,15 @@ func (s *server) triggerAssertionCreation(w http.ResponseWriter, r *http.Request
 	assertion, err := v.SubmitLeafCreation(s.ctx)
 	if err != nil {
 		log.WithError(err).Error("Failed to create a new assertion leaf")
-		http.Error(w, "Assertion creation failed", http.StatusInternalServerError)
-		return
+		// http.Error(w, "Assertion creation failed", http.StatusInternalServerError)
+		return nil
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(assertion)
+	c.JSON(http.StatusOK, assertion)
+	return nil
 }
 
-func (s *server) registerWebsocketConnection(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgrader.Upgrade(w, r, nil)
+func (s *server) registerWebsocketConnection(c echo.Context) error {
+	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -145,6 +145,7 @@ func (s *server) registerWebsocketConnection(w http.ResponseWriter, r *http.Requ
 	s.wsClients[ws] = true
 	s.lock.Unlock()
 	log.Info("Registered new websocket client")
+	return nil
 }
 
 func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
@@ -201,26 +202,27 @@ func (s *server) sendChainEventsToClients(
 }
 
 // Registers all of the server's routes for the web application.
-func (s *server) registerRoutes() {
+func (s *server) registerRoutes(e *echo.Echo) {
 	wd, err := os.Getwd()
 	if err != nil {
 		panic(err)
 	}
 	// Handle file requests, including the index.html of the application.
 	fs := http.FileServer(http.Dir(filepath.Join(wd, "web")))
-	http.Handle("/", fs)
+	_ = fs
+	// e.GET("/", fs)
 
 	// Handle websocket connection registration.
-	http.HandleFunc("/api/ws", s.registerWebsocketConnection)
+	e.GET("/api/ws", s.registerWebsocketConnection)
 
 	// Configuration related-handlers, either reading the config
 	// or updating the config and restarting the application.
-	http.HandleFunc("/api/config", s.renderConfig)
-	http.HandleFunc("/api/config/update", s.updateConfig)
+	e.GET("/api/config", s.renderConfig)
+	e.POST("/api/config", s.updateConfig)
 
 	// API triggers of validator actions, such as leaf creation at a validator's
 	// latest height via the web app.
-	http.HandleFunc("/api/assertions/create", s.triggerAssertionCreation)
+	e.POST("/api/assertions/create", s.triggerAssertionCreation)
 }
 
 func initializeSystem(
@@ -307,13 +309,28 @@ func main() {
 		wsClients: map[*websocket.Conn]bool{},
 	}
 
+	e := echo.New()
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogURI:    true,
+		LogStatus: true,
+		LogValuesFunc: func(c echo.Context, values middleware.RequestLoggerValues) error {
+			log.WithFields(logrus.Fields{
+				"URI":    values.URI,
+				"status": values.Status,
+			}).Info("Got request")
+			return nil
+		},
+	}))
+
 	// Register all the server routes for the application.
-	s.registerRoutes()
+	s.registerRoutes(e)
 
 	// Start the main application routines in the background.
 	go s.startBackgroundRoutines(ctx, cfg)
 
 	// Listen and serve the web application.
-	fmt.Println("Server listening on port 8000...")
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", s.port), nil))
+	log.Infof("Server listening on port %d", s.port)
+	if err := e.Start(fmt.Sprintf(":%d", s.port)); err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }
