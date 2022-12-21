@@ -2,9 +2,8 @@ package validator
 
 import (
 	"context"
-	"time"
-
 	"fmt"
+	"time"
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
@@ -15,28 +14,19 @@ import (
 type vertexTracker struct {
 	actEveryNSeconds    time.Duration
 	timeRef             util.TimeReference
-	challengeCommitHash protocol.CommitHash
 	challenge           *protocol.Challenge
 	vertex              *protocol.ChallengeVertex
 	validator           *Validator
 	awaitingOneStepFork bool
 }
 
-func newVertexTracker(
-	timeRef util.TimeReference,
-	actEveryNSeconds time.Duration,
-	challengeCommitHash protocol.CommitHash,
-	challenge *protocol.Challenge,
-	vertex *protocol.ChallengeVertex,
-	validator *Validator,
-) *vertexTracker {
+func newVertexTracker(timeRef util.TimeReference, actEveryNSeconds time.Duration, challenge *protocol.Challenge, vertex *protocol.ChallengeVertex, validator *Validator) *vertexTracker {
 	return &vertexTracker{
-		timeRef:             timeRef,
-		actEveryNSeconds:    actEveryNSeconds,
-		challengeCommitHash: challengeCommitHash,
-		challenge:           challenge,
-		vertex:              vertex,
-		validator:           validator,
+		timeRef:          timeRef,
+		actEveryNSeconds: actEveryNSeconds,
+		challenge:        challenge,
+		vertex:           vertex,
+		validator:        validator,
 	}
 }
 
@@ -75,7 +65,7 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return nil
 	}
 	// Refresh the vertex by reading it again from the protocol as some of its fields may have changed.
-	vertex, err := v.fetchVertexByHistoryCommit(v.vertex.Commitment)
+	vertex, err := v.fetchVertexByHistoryCommit(protocol.VertexCommitHash(v.vertex.Commitment.Hash()))
 	if err != nil {
 		return errors.Wrap(err, "could not refresh vertex from protocol")
 	}
@@ -126,28 +116,14 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 				return mergeErr
 			}
 			// Yield tracking of the vertex we merged to in a new goroutine.
-			go newVertexTracker(
-				v.timeRef,
-				v.actEveryNSeconds,
-				v.challengeCommitHash,
-				v.challenge,
-				mergedTo,
-				v.validator,
-			).track(ctx)
+			go newVertexTracker(v.timeRef, v.actEveryNSeconds, v.challenge, mergedTo, v.validator).track(ctx)
 			return nil
 		}
 		return err
 	}
 
 	// Yield tracking of the bisected vertex to a new goroutine.
-	go newVertexTracker(
-		v.timeRef,
-		v.actEveryNSeconds,
-		v.challengeCommitHash,
-		v.challenge,
-		bisectedVertex,
-		v.validator,
-	).track(ctx)
+	go newVertexTracker(v.timeRef, v.actEveryNSeconds, v.challenge, bisectedVertex, v.validator).track(ctx)
 
 	return nil
 }
@@ -159,7 +135,7 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		atOneStepFork, err = p.IsAtOneStepFork(
 			tx,
-			v.challengeCommitHash,
+			protocol.ChallengeCommitHash(v.challenge.ParentStateCommitment().Hash()),
 			v.vertex.Commitment,
 			v.vertex.Prev.Unwrap().Commitment,
 		)
@@ -175,11 +151,11 @@ func (v *vertexTracker) isAtOneStepFork() (bool, error) {
 
 // Obtains a challenge vertex we should perform move into given its corresponding challenge ID
 // and the history commitment of the vertex itself from the chain.
-func (v *vertexTracker) fetchVertexByHistoryCommit(historyCommit util.HistoryCommitment) (*protocol.ChallengeVertex, error) {
+func (v *vertexTracker) fetchVertexByHistoryCommit(hash protocol.VertexCommitHash) (*protocol.ChallengeVertex, error) {
 	var mergingTo *protocol.ChallengeVertex
 	var err error
 	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
-		mergingTo, err = p.ChallengeVertexByHistoryCommit(tx, v.challengeCommitHash, historyCommit)
+		mergingTo, err = p.ChallengeVertexByCommitHash(tx, protocol.ChallengeCommitHash(v.challenge.ParentStateCommitment().Hash()), hash)
 		if err != nil {
 			return err
 		}
@@ -208,12 +184,12 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (*protocol.Ch
 	if err != nil {
 		return nil, err
 	}
-	mergingInto, err := v.fetchVertexByHistoryCommit(mergingToHistory)
+	mergingInto, err := v.fetchVertexByHistoryCommit(protocol.VertexCommitHash(mergingToHistory.Hash()))
 	if err != nil {
 		return nil, err
 	}
 	mergingFrom := v.vertex
-	mergedTo, err := v.validator.merge(ctx, v.challengeCommitHash, mergingInto, mergingFrom)
+	mergedTo, err := v.validator.merge(ctx, protocol.ChallengeCommitHash(v.challenge.ParentStateCommitment().Hash()), mergingInto, mergingFrom)
 	if err != nil {
 		return nil, err
 	}

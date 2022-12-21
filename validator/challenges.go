@@ -60,14 +60,7 @@ func (v *Validator) onChallengeStarted(
 	}).Warn("Received challenge for a created leaf, added own leaf with history commitment")
 
 	// Start tracking the challenge.
-	go newVertexTracker(
-		v.timeRef,
-		v.challengeVertexWakeInterval,
-		protocol.CommitHash(challenge.ParentStateCommitment().Hash()),
-		challenge,
-		challengeVertex,
-		v,
-	).track(ctx)
+	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v).track(ctx)
 
 	return nil
 }
@@ -107,15 +100,7 @@ func (v *Validator) challengeAssertion(ctx context.Context, ev *protocol.CreateL
 	}
 
 	// Start tracking the challenge.
-	// Start tracking the challenge.
-	go newVertexTracker(
-		v.timeRef,
-		v.challengeVertexWakeInterval,
-		protocol.CommitHash(challenge.ParentStateCommitment().Hash()),
-		challenge,
-		challengeVertex,
-		v,
-	).track(ctx)
+	go newVertexTracker(v.timeRef, v.challengeVertexWakeInterval, challenge, challengeVertex, v).track(ctx)
 
 	logFields := logrus.Fields{}
 	logFields["name"] = v.name
@@ -202,7 +187,7 @@ func (v *Validator) fetchProtocolChallenge(
 	if err = v.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
 		challenge, err = p.ChallengeByCommitHash(
 			tx,
-			protocol.CommitHash(parentAssertionCommit.Hash()),
+			protocol.ChallengeCommitHash(parentAssertionCommit.Hash()),
 		)
 		if err != nil {
 			return err
