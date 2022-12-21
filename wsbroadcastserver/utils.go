@@ -64,9 +64,7 @@ func (cr *chainedReader) add(r io.Reader) *chainedReader {
 	return cr
 }
 
-func GetCompressionLevel() int {
-	return flate.BestCompression
-}
+const DeflateCompressionLevel = flate.BestCompression
 
 func GetStaticCompressorDictionary() []byte {
 	// TODO

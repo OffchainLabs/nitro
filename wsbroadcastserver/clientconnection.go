@@ -152,7 +152,7 @@ func (cc *ClientConnection) Write(x interface{}) error {
 		msg.SetCompressed(true)
 		wsWriter.SetExtensions(&msg)
 		flateWriter = wsflate.NewWriter(wsWriter, func(w io.Writer) wsflate.Compressor {
-			f, err := flate.NewWriterDict(w, GetCompressionLevel(), GetStaticCompressorDictionary())
+			f, err := flate.NewWriterDict(w, DeflateCompressionLevel, GetStaticCompressorDictionary())
 			if err != nil {
 				log.Error("Failed to create flate writer", "err", err)
 			}

@@ -175,9 +175,9 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	// TODO make enableCompression a config
 	enableCompression := true
 
-	//                                        /-> wsutil.Writer -> notCompressed buffer
+	//                                        /-> wsutil.Writer -> not compressed msg buffer
 	// bm -> json.Encoder -> io.MultiWriter -|
-	// 										  \-> cm.flateWriter -> wsutil.Writer -> compressed buffer
+	// 										  \-> cm.flateWriter -> wsutil.Writer -> compressed msg buffer
 	var notCompressed bytes.Buffer
 	notCompressedWriter := wsutil.NewWriter(&notCompressed, ws.StateServerSide, ws.OpText)
 	writers := []io.Writer{notCompressedWriter}
@@ -187,7 +187,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	if enableCompression {
 		if cm.flateWriter == nil {
 			var err error
-			cm.flateWriter, err = flate.NewWriterDict(nil, GetCompressionLevel(), GetStaticCompressorDictionary())
+			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
 			if err != nil {
 				return nil, errors.Wrap(err, "unable to create flate writer")
 			}
@@ -208,7 +208,6 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	if err := notCompressedWriter.Flush(); err != nil {
 		return nil, errors.Wrap(err, "unable to flush message")
 	}
-	log.Info("not compressed", "data", notCompressed.String())
 	if enableCompression && cm.flateWriter != nil {
 		if err := cm.flateWriter.Close(); err != nil {
 			return nil, errors.Wrap(err, "unable to flush message")
@@ -217,7 +216,6 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	if err := compressedWriter.Flush(); err != nil {
 		return nil, errors.Wrap(err, "unable to flush message")
 	}
-	log.Info("compressed", "data", compressed.String())
 
 	clientDeleteList := make([]*ClientConnection, 0, len(cm.clientPtrMap))
 	for client := range cm.clientPtrMap {
