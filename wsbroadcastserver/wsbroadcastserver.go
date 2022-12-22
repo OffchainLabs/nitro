@@ -37,18 +37,20 @@ const (
 )
 
 type BroadcasterConfig struct {
-	Enable         bool          `koanf:"enable"`
-	Signed         bool          `koanf:"signed"`
-	Addr           string        `koanf:"addr"`                         // TODO(magic) needs tcp server restart on change
-	IOTimeout      time.Duration `koanf:"io-timeout" reload:"hot"`      // reloading will affect only new connections
-	Port           string        `koanf:"port"`                         // TODO(magic) needs tcp server restart on change
-	Ping           time.Duration `koanf:"ping" reload:"hot"`            // reloaded value will change future ping intervals
-	ClientTimeout  time.Duration `koanf:"client-timeout" reload:"hot"`  // reloaded value will affect all clients (next time the timeout is checked)
-	Queue          int           `koanf:"queue"`                        // TODO(magic) ClientManager.pool needs to be recreated on change
-	Workers        int           `koanf:"workers"`                      // TODO(magic) ClientManager.pool needs to be recreated on change
-	MaxSendQueue   int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
-	RequireVersion bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
-	DisableSigning bool          `koanf:"disable-signing"`
+	Enable             bool          `koanf:"enable"`
+	Signed             bool          `koanf:"signed"`
+	Addr               string        `koanf:"addr"`                         // TODO(magic) needs tcp server restart on change
+	IOTimeout          time.Duration `koanf:"io-timeout" reload:"hot"`      // reloading will affect only new connections
+	Port               string        `koanf:"port"`                         // TODO(magic) needs tcp server restart on change
+	Ping               time.Duration `koanf:"ping" reload:"hot"`            // reloaded value will change future ping intervals
+	ClientTimeout      time.Duration `koanf:"client-timeout" reload:"hot"`  // reloaded value will affect all clients (next time the timeout is checked)
+	Queue              int           `koanf:"queue"`                        // TODO(magic) ClientManager.pool needs to be recreated on change
+	Workers            int           `koanf:"workers"`                      // TODO(magic) ClientManager.pool needs to be recreated on change
+	MaxSendQueue       int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
+	RequireVersion     bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
+	DisableSigning     bool          `koanf:"disable-signing"`
+	EnableCompression  bool          `koanf:"enable-compression"`
+	RequireCompression bool          `koanf:"require-compression"`
 }
 
 type BroadcasterConfigFetcher func() *BroadcasterConfig
@@ -66,36 +68,42 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
 	f.Bool(prefix+".require-version", DefaultBroadcasterConfig.RequireVersion, "don't connect if client version not present")
 	f.Bool(prefix+".disable-signing", DefaultBroadcasterConfig.DisableSigning, "don't sign feed messages")
+	f.Bool(prefix+".enable-compression", DefaultBroadcasterConfig.EnableCompression, "enable per message deflate compression support")
+	f.Bool(prefix+".require-compression", DefaultBroadcasterConfig.EnableCompression, "require clients to use compression")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
-	Enable:         false,
-	Signed:         false,
-	Addr:           "",
-	IOTimeout:      5 * time.Second,
-	Port:           "9642",
-	Ping:           5 * time.Second,
-	ClientTimeout:  15 * time.Second,
-	Queue:          100,
-	Workers:        100,
-	MaxSendQueue:   4096,
-	RequireVersion: false,
-	DisableSigning: true,
+	Enable:             false,
+	Signed:             false,
+	Addr:               "",
+	IOTimeout:          5 * time.Second,
+	Port:               "9642",
+	Ping:               5 * time.Second,
+	ClientTimeout:      15 * time.Second,
+	Queue:              100,
+	Workers:            100,
+	MaxSendQueue:       4096,
+	RequireVersion:     false,
+	DisableSigning:     true,
+	EnableCompression:  true,
+	RequireCompression: false,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
-	Enable:         false,
-	Signed:         false,
-	Addr:           "0.0.0.0",
-	IOTimeout:      2 * time.Second,
-	Port:           "0",
-	Ping:           5 * time.Second,
-	ClientTimeout:  15 * time.Second,
-	Queue:          1,
-	Workers:        100,
-	MaxSendQueue:   4096,
-	RequireVersion: false,
-	DisableSigning: false,
+	Enable:             false,
+	Signed:             false,
+	Addr:               "0.0.0.0",
+	IOTimeout:          2 * time.Second,
+	Port:               "0",
+	Ping:               5 * time.Second,
+	ClientTimeout:      15 * time.Second,
+	Queue:              1,
+	Workers:            100,
+	MaxSendQueue:       4096,
+	RequireVersion:     false,
+	DisableSigning:     false,
+	EnableCompression:  true,
+	RequireCompression: false,
 }
 
 type WSBroadcastServer struct {
@@ -162,18 +170,17 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 
 	s.clientManager.Start(ctx)
 
-	useCompression := true // TODO add config
 	// handle incoming connection requests.
 	// It upgrades TCP connection to WebSocket, registers netpoll listener on
 	// it and stores it as a Client connection in ClientManager instance.
 	//
 	// Called below in accept() loop.
 	handle := func(conn net.Conn) {
-
-		safeConn := deadliner{conn, s.config().IOTimeout}
+		config := s.config()
+		safeConn := deadliner{conn, config.IOTimeout}
 		var compress *wsflate.Extension
 		var negotiate func(httphead.Option) (httphead.Option, error)
-		if useCompression {
+		if config.EnableCompression {
 			compress = &wsflate.Extension{
 				Parameters: wsflate.DefaultParameters, // TODO
 			}
@@ -224,7 +231,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				return nil
 			},
 			OnBeforeUpgrade: func() (ws.HandshakeHeader, error) {
-				if s.config().RequireVersion && !feedClientVersionSeen {
+				if config.RequireVersion && !feedClientVersionSeen {
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusBadRequest),
 						ws.RejectionReason(fmt.Sprintf("Missing HTTP header %s", HTTPHeaderFeedClientVersion)),
@@ -298,7 +305,8 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 	}
 
 	// Create tcp server for relay connections
-	ln, err := net.Listen("tcp", s.config().Addr+":"+s.config().Port)
+	config := s.config()
+	ln, err := net.Listen("tcp", config.Addr+":"+config.Port)
 	if err != nil {
 		log.Error("error calling net.Listen", "err", err)
 		return err

@@ -141,7 +141,6 @@ func (cc *ClientConnection) Write(x interface{}) error {
 	defer cc.ioMutex.Unlock()
 	state := ws.StateServerSide
 	if cc.compression {
-		// TODO
 		state |= ws.StateExtended
 	}
 	wsWriter := wsutil.NewWriter(cc.conn, state, ws.OpText)

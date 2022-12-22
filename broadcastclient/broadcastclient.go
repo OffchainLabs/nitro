@@ -65,6 +65,7 @@ type Config struct {
 	Timeout                 time.Duration            `koanf:"timeout"`
 	URLs                    []string                 `koanf:"url"`
 	Verifier                signature.VerifierConfig `koanf:"verify"`
+	EnableCompression       bool                     `koanf:"enable-compression"`
 }
 
 func (c *Config) Enable() bool {
@@ -79,6 +80,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".timeout", DefaultConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
 	f.StringSlice(prefix+".url", DefaultConfig.URLs, "URL of sequencer feed source")
 	signature.FeedVerifierConfigAddOptions(prefix+".verify", f)
+	f.Bool(prefix+".enable-compression", DefaultConfig.EnableCompression, "enable per message deflate compression support")
 }
 
 var DefaultConfig = Config{
@@ -89,6 +91,7 @@ var DefaultConfig = Config{
 	Verifier:                signature.DefultFeedVerifierConfig,
 	URLs:                    []string{""},
 	Timeout:                 20 * time.Second,
+	EnableCompression:       true,
 }
 
 var DefaultTestConfig = Config{
@@ -99,6 +102,7 @@ var DefaultTestConfig = Config{
 	Verifier:                signature.DefultFeedVerifierConfig,
 	URLs:                    []string{""},
 	Timeout:                 200 * time.Millisecond,
+	EnableCompression:       true,
 }
 
 type TransactionStreamerInterface interface {
@@ -222,9 +226,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	useCompression := true
 	extensions := []httphead.Option{}
 	if useCompression {
-		params := wsflate.DefaultParameters
-		log.Warn(params.Option().String())
-		extensions = append(extensions, params.Option())
+		extensions = append(extensions, wsflate.DefaultParameters.Option())
 	}
 	timeoutDialer := ws.Dialer{
 		Header: header,
@@ -314,14 +316,14 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	bc.connMutex.Lock()
 	bc.conn = conn
 	bc.connMutex.Unlock()
-
-	negotiated := []string{}
+	deflateExt := wsflate.DefaultParameters.Option()
 	for _, ext := range hs.Extensions {
-		negotiated = append(negotiated, ext.String())
+		if ext.Equal(deflateExt) {
+			bc.compression = true
+			break
+		}
 	}
-	// TODO
-	bc.compression = true
-	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum, "wsExtensions", strings.Join(negotiated, ","))
+	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum, "compression", bc.compression)
 
 	return earlyFrameData, nil
 }

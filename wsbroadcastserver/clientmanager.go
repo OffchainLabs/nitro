@@ -172,19 +172,20 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	if err := cm.catchupBuffer.OnDoBroadcast(bm); err != nil {
 		return nil, err
 	}
-	// TODO make enableCompression a config
-	enableCompression := true
-
+	config := cm.config()
 	//                                        /-> wsutil.Writer -> not compressed msg buffer
 	// bm -> json.Encoder -> io.MultiWriter -|
 	// 										  \-> cm.flateWriter -> wsutil.Writer -> compressed msg buffer
+	writers := []io.Writer{}
 	var notCompressed bytes.Buffer
-	notCompressedWriter := wsutil.NewWriter(&notCompressed, ws.StateServerSide, ws.OpText)
-	writers := []io.Writer{notCompressedWriter}
-
+	var notCompressedWriter *wsutil.Writer
 	var compressed bytes.Buffer
 	var compressedWriter *wsutil.Writer
-	if enableCompression {
+	if !config.RequireCompression {
+		notCompressedWriter = wsutil.NewWriter(&notCompressed, ws.StateServerSide, ws.OpText)
+		writers = append(writers, notCompressedWriter)
+	}
+	if config.EnableCompression {
 		if cm.flateWriter == nil {
 			var err error
 			cm.flateWriter, err = flate.NewWriterDict(nil, DeflateCompressionLevel, GetStaticCompressorDictionary())
@@ -205,32 +206,41 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	if err := encoder.Encode(bm); err != nil {
 		return nil, errors.Wrap(err, "unable to encode message")
 	}
-	if err := notCompressedWriter.Flush(); err != nil {
-		return nil, errors.Wrap(err, "unable to flush message")
-	}
-	if enableCompression && cm.flateWriter != nil {
-		if err := cm.flateWriter.Close(); err != nil {
+	if notCompressedWriter != nil {
+		if err := notCompressedWriter.Flush(); err != nil {
 			return nil, errors.Wrap(err, "unable to flush message")
 		}
 	}
-	if err := compressedWriter.Flush(); err != nil {
-		return nil, errors.Wrap(err, "unable to flush message")
+	if compressedWriter != nil {
+		if err := cm.flateWriter.Close(); err != nil {
+			return nil, errors.Wrap(err, "unable to close flate writer")
+		}
+		if err := compressedWriter.Flush(); err != nil {
+			return nil, errors.Wrap(err, "unable to flush message")
+		}
 	}
 
 	clientDeleteList := make([]*ClientConnection, 0, len(cm.clientPtrMap))
 	for client := range cm.clientPtrMap {
 		var data []byte
 		if client.Compression() {
-			if enableCompression {
+			if config.EnableCompression {
 				data = compressed.Bytes()
 			} else {
 				// TODO revise
-				log.Error("disconnecting because client has enabled compression, but compression support is disabled", "client", client.Name, "size")
+				log.Warn("disconnecting because client has enabled compression, but compression support is disabled", "client", client.Name)
 				clientDeleteList = append(clientDeleteList, client)
 				continue
 			}
 		} else {
-			data = notCompressed.Bytes()
+			if !config.RequireCompression {
+				data = notCompressed.Bytes()
+			} else {
+				// TODO revise
+				log.Warn("disconnecting because client has not enabled compression, but compression support is required", "client", client.Name)
+				clientDeleteList = append(clientDeleteList, client)
+				continue
+			}
 		}
 		select {
 		case client.out <- data:
