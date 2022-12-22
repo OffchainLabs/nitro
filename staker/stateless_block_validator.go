@@ -583,6 +583,11 @@ func (v *StatelessBlockValidator) ValidateBlock(
 		run := spawner.Launch(input, moduleRoot)
 		runs = append(runs, run)
 	}
+	defer func() {
+		for _, run := range runs {
+			run.Close()
+		}
+	}()
 	for _, run := range runs {
 		select {
 		case <-ctx.Done():

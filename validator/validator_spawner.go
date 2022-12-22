@@ -27,6 +27,7 @@ type ValidationRunInt interface {
 	Done() bool
 	ChDone() chan struct{}
 	Result() (GoGlobalState, error)
+	Close()
 }
 
 type ArbitratorSpawner struct {
@@ -65,6 +66,8 @@ func (r *ValidationRun) Result() (GoGlobalState, error) {
 func (r *ValidationRun) WasmModuleRoot() common.Hash {
 	return r.root
 }
+
+func (r *ValidationRun) Close() {}
 
 func NewValidationRun(root common.Hash) *ValidationRun {
 	return &ValidationRun{

@@ -736,6 +736,9 @@ func (v *BlockValidator) progressValidated() {
 				return
 			}
 		}
+		for _, run := range validationStatus.Runs {
+			run.Close()
+		}
 		validationStatus.replaceStatus(ValidationSent, Valid)
 		v.triggerSendValidations()
 		earliestBatchKept := atomic.LoadUint64(&v.earliestBatchKept)
