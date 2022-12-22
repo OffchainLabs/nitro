@@ -38,7 +38,7 @@ export const ConfigComponent: React.FC = () => {
   }
 
   return (
-    <div>
+    <div className="break-all">
         {data}
     </div>
   );
