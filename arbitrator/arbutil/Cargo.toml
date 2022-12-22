@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 sha3 = "0.10.5"
+siphasher = "0.3.10"

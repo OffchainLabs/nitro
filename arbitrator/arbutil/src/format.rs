@@ -12,9 +12,9 @@ pub fn time(span: Duration) -> String {
     let units = vec!["ns", "μs", "ms", "s", "min", "h", "d"];
     let scale = vec![1000., 1000., 1000., 1000., 60., 60., 24.];
     let colors = vec![MINT, MINT, YELLOW, RED, RED, RED];
-    while span > 100. {
+    while span > 1000. {
         span /= scale[unit];
         unit += 1;
     }
-    format!("{:6}", format!("{:.2}{}", span, units[unit])).color(colors[unit])
+    format!("{:6}", format!("{:.1}{}", span, units[unit])).color(colors[unit])
 }

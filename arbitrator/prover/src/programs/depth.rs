@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use wasmer::{
     wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType},
-    Instance, Store,
+    Instance, StoreMut,
 };
 use wasmer_types::{
     FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
@@ -60,12 +60,12 @@ impl<M: ModuleMod> Middleware<M> for DepthChecker {
         Ok(())
     }
 
-    fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
+    fn instrument<'a>(&self, func: LocalFunctionIndex) -> Result<Self::FM<'a>> {
         let global = self.global.lock().unwrap();
         let funcs = self.funcs.lock().clone();
         let sigs = self.sigs.lock().clone();
         let limit = self.limit;
-        Ok(FuncDepthChecker::new(global, funcs, sigs, limit))
+        Ok(FuncDepthChecker::new(global, funcs, sigs, limit, func))
     }
 
     fn name(&self) -> &'static str {
@@ -83,6 +83,8 @@ pub struct FuncDepthChecker<'a> {
     sigs: Arc<HashMap<SignatureIndex, FunctionType>>,
     /// The number of local variables this func has
     locals: Option<usize>,
+    /// The function being instrumented
+    func: LocalFunctionIndex,
     /// The maximum size of the stack, measured in words
     limit: u32,
     /// The number of open scopes
@@ -99,12 +101,14 @@ impl<'a> FuncDepthChecker<'a> {
         funcs: Arc<HashMap<FunctionIndex, FunctionType>>,
         sigs: Arc<HashMap<SignatureIndex, FunctionType>>,
         limit: u32,
+        func: LocalFunctionIndex,
     ) -> Self {
         Self {
             global,
             funcs,
             sigs,
             locals: None,
+            func,
             limit,
             scopes: 1, // a function starts with an open scope
             code: vec![],
@@ -460,24 +464,27 @@ impl<'a> FuncDepthChecker<'a> {
             };
         }
 
-        let Some(locals) = self.locals else {
-            bail!("missing locals info")
+        if self.locals.is_none() {
+            //bail!("missing locals info for func {}", self.func.as_u32().red())
+            println!("missing locals info for {}", self.func.as_u32().red());
         };
+
+        let locals = self.locals.unwrap_or_default();
         Ok(worst + locals as u32 + 4)
     }
 }
 
 pub trait DepthCheckedMachine {
-    fn stack_left(&self, store: &mut Store) -> u32;
-    fn set_stack(&mut self, store: &mut Store, size: u32);
+    fn stack_left(&self, store: &mut StoreMut) -> u32;
+    fn set_stack(&mut self, store: &mut StoreMut, size: u32);
 }
 
 impl DepthCheckedMachine for Instance {
-    fn stack_left(&self, store: &mut Store) -> u32 {
+    fn stack_left(&self, store: &mut StoreMut) -> u32 {
         self.get_global(store, POLYGLOT_STACK_LEFT)
     }
 
-    fn set_stack(&mut self, store: &mut Store, size: u32) {
+    fn set_stack(&mut self, store: &mut StoreMut, size: u32) {
         self.set_global(store, POLYGLOT_STACK_LEFT, size);
     }
 }

@@ -13,7 +13,7 @@ use std::{fmt::Debug, marker::PhantomData};
 use wasmer::{
     wasmparser::{Operator, Type as WpType},
     ExportIndex, FunctionMiddleware, GlobalInit, GlobalType, Instance, MiddlewareError,
-    ModuleMiddleware, Mutability, Store, Value as WasmerValue,
+    ModuleMiddleware, Mutability, StoreMut, Value as WasmerValue,
 };
 use wasmer_types::{
     entity::EntityRef, FunctionIndex, GlobalIndex, LocalFunctionIndex, ModuleInfo, Pages,
@@ -322,18 +322,18 @@ impl<'a> ModuleMod for WasmBinary<'a> {
 }
 
 pub trait GlobalMod {
-    fn get_global<T>(&self, store: &mut Store, name: &str) -> T
+    fn get_global<T>(&self, store: &mut StoreMut, name: &str) -> T
     where
         T: TryFrom<WasmerValue>,
         T::Error: Debug;
 
-    fn set_global<T>(&mut self, store: &mut Store, name: &str, value: T)
+    fn set_global<T>(&mut self, store: &mut StoreMut, name: &str, value: T)
     where
         T: Into<WasmerValue>;
 }
 
 impl GlobalMod for Instance {
-    fn get_global<T>(&self, store: &mut Store, name: &str) -> T
+    fn get_global<T>(&self, store: &mut StoreMut, name: &str) -> T
     where
         T: TryFrom<WasmerValue>,
         T::Error: Debug,
@@ -345,7 +345,7 @@ impl GlobalMod for Instance {
         ty.try_into().expect(&error)
     }
 
-    fn set_global<T>(&mut self, store: &mut Store, name: &str, value: T)
+    fn set_global<T>(&mut self, store: &mut StoreMut, name: &str, value: T)
     where
         T: Into<WasmerValue>,
     {

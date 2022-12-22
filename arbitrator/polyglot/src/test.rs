@@ -1,9 +1,8 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use std::path::Path;
-
-use arbutil::Color;
+use crate::{env::WasmEnv, poly};
+use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
     binary,
@@ -15,9 +14,10 @@ use prover::{
         GlobalMod, ModuleMod,
     },
 };
+use std::path::Path;
 use wasmer::{
-    imports, wasmparser::Operator, CompilerConfig, ExportIndex, Function, Imports, Instance,
-    MemoryType, Module, Pages, Store,
+    imports, wasmparser::Operator, AsStoreMut, CompilerConfig, ExportIndex, Function, Imports,
+    Instance, MemoryType, Module, Pages, Store,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -35,8 +35,12 @@ fn new_test_instance(path: &str, config: PolyglotConfig) -> Result<(Instance, St
     let imports = imports! {
         "test" => {
             "noop" => Function::new_typed(&mut store, || {}),
-        }
-    }; // TODO: add polyhost imports in a future PR
+        },
+        "poly_host" => {
+            "read_args" => Function::new_typed(&mut store, || {}),
+            "return_data" => Function::new_typed(&mut store, || {}),
+        },
+    };
     let instance = Instance::new(&mut store, &module, &imports)?;
     Ok((instance, store))
 }
@@ -61,7 +65,7 @@ fn test_gas() -> Result<()> {
     let (mut instance, mut store) = new_test_instance("tests/add.wat", config)?;
     let exports = &instance.exports;
     let add_one = exports.get_typed_function::<i32, i32>(&store, "add_one")?;
-    let store = &mut store;
+    let store = &mut store.as_store_mut();
 
     assert_eq!(instance.gas_left(store), MachineMeter::Ready(0));
 
@@ -104,7 +108,7 @@ fn test_depth() -> Result<()> {
     let (mut instance, mut store) = new_test_instance("tests/depth.wat", config)?;
     let exports = &instance.exports;
     let recurse = exports.get_typed_function::<i64, ()>(&store, "recurse")?;
-    let store = &mut store;
+    let store = &mut store.as_store_mut();
 
     let program_depth: u32 = instance.get_global(store, "depth");
     assert_eq!(program_depth, 0);
@@ -145,6 +149,7 @@ fn test_start() -> Result<()> {
     //     by the spec, `start` must run at initialization
 
     fn check(store: &mut Store, instance: &Instance, value: i32) {
+        let store = &mut store.as_store_mut();
         let status: i32 = instance.get_global(store, "status");
         assert_eq!(status, value);
     }
@@ -254,4 +259,63 @@ fn test_heap() -> Result<()> {
     check(2, 3, 3, "tests/memory2.wat")?;
     check(2, 5, 4, "tests/memory.wat")?; // the upper limit of 4 is stricter
     check(2, 5, 5, "tests/memory2.wat")
+}
+
+#[test]
+fn test_rust() -> Result<()> {
+    // in keccak.rs
+    //     the input is the # of hashings followed by a preimage
+    //     the output is the iterated hash of the preimage
+
+    let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
+    let preimage = preimage.as_bytes().to_vec();
+    let hash = hex::encode(crypto::keccak(&preimage));
+
+    let mut args = vec![0x01];
+    args.extend(preimage);
+    let args_len = args.len() as i32;
+
+    let config = PolyglotConfig::default();
+    let env = WasmEnv::new(config, args);
+    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
+    let (instance, env, mut store) = poly::instance(filename, env)?;
+    let exports = instance.exports;
+
+    let main = exports.get_typed_function::<i32, i32>(&mut store, "arbitrum_main")?;
+    let status = main.call(&mut store, args_len)?;
+    assert_eq!(status, 0);
+
+    let env = env.as_ref(&store);
+    assert_eq!(hex::encode(&env.outs), hash);
+    Ok(())
+}
+
+#[test]
+fn test_c() -> Result<()> {
+    // in siphash.c
+    //     the inputs are a hash, key, and plaintext
+    //     the output is whether the hash was valid
+
+    let text: Vec<u8> = (0..63).collect();
+    let key: Vec<u8> = (0..16).collect();
+    let key: [u8; 16] = key.try_into().unwrap();
+    let hash = crypto::siphash(&text, &key);
+
+    let mut args = hash.to_le_bytes().to_vec();
+    args.extend(key);
+    args.extend(text);
+    let args_len = args.len() as i32;
+
+    let config = PolyglotConfig::default();
+    let env = WasmEnv::new(config, args);
+    let (instance, env, mut store) = poly::instance("tests/siphash/siphash.wasm", env)?;
+    let exports = instance.exports;
+
+    let main = exports.get_typed_function::<i32, i32>(&mut store, "arbitrum_main")?;
+    let status = main.call(&mut store, args_len)?;
+    assert_eq!(status, 0);
+
+    let env = env.as_ref(&store);
+    assert!(env.outs.is_empty());
+    Ok(())
 }

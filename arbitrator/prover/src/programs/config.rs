@@ -21,6 +21,9 @@ pub struct PolyglotConfig {
     pub start_gas: u64,
     pub max_depth: u32,
     pub heap_bound: Bytes,
+    /// The price of wasm gas, measured in bips of an evm gas
+    pub wasm_gas_price: u64,
+    pub hostio_cost: u64,
 }
 
 impl Default for PolyglotConfig {
@@ -30,19 +33,30 @@ impl Default for PolyglotConfig {
             costs,
             start_gas: 0,
             max_depth: u32::MAX,
-            heap_bound: Bytes(0),
+            heap_bound: Bytes(u32::MAX as usize),
+            wasm_gas_price: 0,
+            hostio_cost: 0,
         }
     }
 }
 
 impl PolyglotConfig {
-    pub fn new(costs: Pricing, start_gas: u64, max_depth: u32, heap_bound: Bytes) -> Result<Self> {
+    pub fn new(
+        costs: Pricing,
+        start_gas: u64,
+        max_depth: u32,
+        heap_bound: Bytes,
+        wasm_gas_price: u64,
+        hostio_cost: u64,
+    ) -> Result<Self> {
         Pages::try_from(heap_bound)?; // ensure the limit represents a number of pages
         Ok(Self {
             costs,
             start_gas,
             max_depth,
             heap_bound,
+            wasm_gas_price,
+            hostio_cost,
         })
     }
 
