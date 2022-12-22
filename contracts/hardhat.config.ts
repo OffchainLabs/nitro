@@ -122,29 +122,29 @@ module.exports = {
   },
   etherscan: {
     apiKey: {
-      mainnet: process.env["ETHERSCAN_API_KEY"],
-      goerli: process.env["ETHERSCAN_API_KEY"],
-      rinkeby: process.env["ETHERSCAN_API_KEY"],
-      arbitrumOne: process.env["ARBISCAN_API_KEY"],
-      arbitrumTestnet: process.env["ARBISCAN_API_KEY"],
-      nova: process.env["NOVA_ARBISCAN_API_KEY"],
-      arbGoerliRollup: process.env["ARBISCAN_API_KEY"],
+      mainnet: process.env['ETHERSCAN_API_KEY'],
+      goerli: process.env['ETHERSCAN_API_KEY'],
+      rinkeby: process.env['ETHERSCAN_API_KEY'],
+      arbitrumOne: process.env['ARBISCAN_API_KEY'],
+      arbitrumTestnet: process.env['ARBISCAN_API_KEY'],
+      nova: process.env['NOVA_ARBISCAN_API_KEY'],
+      arbGoerliRollup: process.env['ARBISCAN_API_KEY'],
     },
     customChains: [
       {
         network: 'nova',
         chainId: 42170,
         urls: {
-          apiURL: "https://api-nova.arbiscan.io/api",
-          browserURL: "https://nova.arbiscan.io/",
+          apiURL: 'https://api-nova.arbiscan.io/api',
+          browserURL: 'https://nova.arbiscan.io/',
         },
       },
       {
         network: 'arbGoerliRollup',
         chainId: 421613,
         urls: {
-          apiURL: "https://api-goerli.arbiscan.io/api",
-          browserURL: "https://goerli.arbiscan.io/",
+          apiURL: 'https://api-goerli.arbiscan.io/api',
+          browserURL: 'https://goerli.arbiscan.io/',
         },
       },
     ],

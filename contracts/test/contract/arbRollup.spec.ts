@@ -15,12 +15,12 @@
  */
 
 /* eslint-env node, mocha */
-import { ethers, run, network } from "hardhat";
-import { Signer } from "@ethersproject/abstract-signer";
-import { BigNumberish, BigNumber } from "@ethersproject/bignumber";
-import { BytesLike, hexConcat, zeroPad } from "@ethersproject/bytes";
-import { ContractTransaction } from "@ethersproject/contracts";
-import { assert, expect } from "chai";
+import { ethers, run, network } from 'hardhat'
+import { Signer } from '@ethersproject/abstract-signer'
+import { BigNumberish, BigNumber } from '@ethersproject/bignumber'
+import { BytesLike, hexConcat, zeroPad } from '@ethersproject/bytes'
+import { ContractTransaction } from '@ethersproject/contracts'
+import { assert, expect } from 'chai'
 import {
   Bridge,
   BridgeCreator__factory,
@@ -74,17 +74,17 @@ const wasmModuleRoot =
   '0x9900000000000000000000000000000000000000000000000000000000000010'
 
 // let rollup: RollupContract
-let rollup: RollupContract;
-let rollupUser: RollupUserLogic;
-let rollupAdmin: RollupAdminLogic;
-let accounts: Signer[];
-let validators: Signer[];
-let sequencerInbox: SequencerInbox;
-let admin: Signer;
-let sequencer: Signer;
-let challengeManager: ChallengeManager;
-let delayedInbox: Inbox;
-let bridge: Bridge;
+let rollup: RollupContract
+let rollupUser: RollupUserLogic
+let rollupAdmin: RollupAdminLogic
+let accounts: Signer[]
+let validators: Signer[]
+let sequencerInbox: SequencerInbox
+let admin: Signer
+let sequencer: Signer
+let challengeManager: ChallengeManager
+let delayedInbox: Inbox
+let bridge: Bridge
 
 async function getDefaultConfig(
   _confirmPeriodBlocks = confirmationPeriodBlocks
@@ -226,13 +226,13 @@ const setup = async () => {
     )) as ChallengeManager__factory
   ).attach(await rollupUser.challengeManager())
 
-  delayedInbox = ((await ethers.getContractFactory(
-    "Inbox"
-  )) as Inbox__factory).attach(rollupCreatedEvent.inboxAddress);
+  delayedInbox = (
+    (await ethers.getContractFactory('Inbox')) as Inbox__factory
+  ).attach(rollupCreatedEvent.inboxAddress)
 
-  bridge = ((await ethers.getContractFactory(
-    "Bridge"
-  )) as Bridge__factory).attach(rollupCreatedEvent.bridge);
+  bridge = (
+    (await ethers.getContractFactory('Bridge')) as Bridge__factory
+  ).attach(rollupCreatedEvent.bridge)
 
   return {
     admin,
@@ -251,20 +251,20 @@ const setup = async () => {
     sequencerInbox: rollupCreatedEvent.sequencerInbox,
     delayedBridge: rollupCreatedEvent.bridge,
     delayedInbox: rollupCreatedEvent.inboxAddress,
-    bridge: rollupCreatedEvent.bridge
-  };
-};
+    bridge: rollupCreatedEvent.bridge,
+  }
+}
 
 async function tryAdvanceChain(blocks: number, time?: number): Promise<void> {
   try {
     if (time === undefined) {
-      time = blocks * 12;
+      time = blocks * 12
     }
     if (blocks <= 0) {
-      blocks = 1;
+      blocks = 1
     }
     if (time > 0) {
-      await ethers.provider.send("evm_increaseTime", [time]);
+      await ethers.provider.send('evm_increaseTime', [time])
     }
     for (let i = 0; i < blocks; i++) {
       await ethers.provider.send('evm_mine', [])
@@ -282,15 +282,18 @@ async function tryAdvanceChain(blocks: number, time?: number): Promise<void> {
   }
 }
 
-async function advancePastAssertion(blockProposed: number, confBlocks?: number): Promise<void> {
+async function advancePastAssertion(
+  blockProposed: number,
+  confBlocks?: number
+): Promise<void> {
   if (confBlocks === undefined) {
-    confBlocks = confirmationPeriodBlocks;
+    confBlocks = confirmationPeriodBlocks
   }
-  const blockProposedBlock = await ethers.provider.getBlock(blockProposed);
-  const latestBlock = await ethers.provider.getBlock("latest");
-  const passedBlocks = latestBlock.number - blockProposed;
-  const passedTime = latestBlock.timestamp - blockProposedBlock.timestamp;
-  await tryAdvanceChain(confBlocks - passedBlocks, (confBlocks * 12) - passedTime);
+  const blockProposedBlock = await ethers.provider.getBlock(blockProposed)
+  const latestBlock = await ethers.provider.getBlock('latest')
+  const passedBlocks = latestBlock.number - blockProposed
+  const passedTime = latestBlock.timestamp - blockProposedBlock.timestamp
+  await tryAdvanceChain(confBlocks - passedBlocks, confBlocks * 12 - passedTime)
 }
 
 function newRandomExecutionState() {
@@ -386,9 +389,20 @@ const _IMPLEMENTATION_PRIMARY_SLOT =
 const _IMPLEMENTATION_SECONDARY_SLOT =
   '0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d'
 
-const getDoubleLogicUUPSTarget = async (slot: "user" | "admin", provider: providers.Provider) : Promise<string> => {
-  return `0x${(await provider.getStorageAt(rollupAdmin.address, slot === "admin" ?
-                _IMPLEMENTATION_PRIMARY_SLOT : _IMPLEMENTATION_SECONDARY_SLOT)).substring(26).toLowerCase()}`
+const getDoubleLogicUUPSTarget = async (
+  slot: 'user' | 'admin',
+  provider: providers.Provider
+): Promise<string> => {
+  return `0x${(
+    await provider.getStorageAt(
+      rollupAdmin.address,
+      slot === 'admin'
+        ? _IMPLEMENTATION_PRIMARY_SLOT
+        : _IMPLEMENTATION_SECONDARY_SLOT
+    )
+  )
+    .substring(26)
+    .toLowerCase()}`
 }
 
 describe('ArbRollup', () => {
@@ -515,14 +529,16 @@ describe('ArbRollup', () => {
     challengerNode = node
   })
 
-  it("should fail to confirm first staker node", async function () {
-    await advancePastAssertion(challengerNode.proposedBlock);
-    await expect(rollup.confirmNextNode(validNode)).to.be.revertedWith("NOT_ALL_STAKED");
-  });
+  it('should fail to confirm first staker node', async function () {
+    await advancePastAssertion(challengerNode.proposedBlock)
+    await expect(rollup.confirmNextNode(validNode)).to.be.revertedWith(
+      'NOT_ALL_STAKED'
+    )
+  })
 
-  let challengeIndex: number;
-  let challengeCreatedAt: number;
-  it("should initiate a challenge", async function () {
+  let challengeIndex: number
+  let challengeCreatedAt: number
+  it('should initiate a challenge', async function () {
     const tx = rollup.createChallenge(
       await validators[0].getAddress(),
       await validators[2].getAddress(),
@@ -535,10 +551,10 @@ describe('ArbRollup', () => {
     )
     expect(ev.name).to.equal('RollupChallengeStarted')
 
-    const parsedEv = ev.args as RollupChallengeStartedEvent["args"];
-    challengeIndex = parsedEv.challengeIndex.toNumber();
-    challengeCreatedAt = receipt.blockNumber;
-  });
+    const parsedEv = ev.args as RollupChallengeStartedEvent['args']
+    challengeIndex = parsedEv.challengeIndex.toNumber()
+    challengeCreatedAt = receipt.blockNumber
+  })
 
   it('should make a new node', async function () {
     const { node } = await makeSimpleNode(
@@ -568,20 +584,29 @@ describe('ArbRollup', () => {
     challengerNode = node
   })
 
-  it("timeout should not occur early", async function () {
-    const challengeCreatedAtTime = (await ethers.provider.getBlock(challengeCreatedAt)).timestamp;
+  it('timeout should not occur early', async function () {
+    const challengeCreatedAtTime = (
+      await ethers.provider.getBlock(challengeCreatedAt)
+    ).timestamp
     // This is missing the extraChallengeTimeBlocks
-    const notQuiteChallengeDuration = (challengedNode.proposedBlock - validNode.proposedBlock) + confirmationPeriodBlocks;
-    const elapsedTime = (await ethers.provider.getBlock("latest")).timestamp - challengeCreatedAtTime;
-    await tryAdvanceChain(1, notQuiteChallengeDuration - elapsedTime);
-    const isTimedOut = await challengeManager.connect(validators[0]).isTimedOut(challengeIndex);
-    expect(isTimedOut).to.be.false;
-  });
+    const notQuiteChallengeDuration =
+      challengedNode.proposedBlock -
+      validNode.proposedBlock +
+      confirmationPeriodBlocks
+    const elapsedTime =
+      (await ethers.provider.getBlock('latest')).timestamp -
+      challengeCreatedAtTime
+    await tryAdvanceChain(1, notQuiteChallengeDuration - elapsedTime)
+    const isTimedOut = await challengeManager
+      .connect(validators[0])
+      .isTimedOut(challengeIndex)
+    expect(isTimedOut).to.be.false
+  })
 
-  it("asserter should win via timeout", async function () {
-    await tryAdvanceChain(extraChallengeTimeBlocks);
-    await challengeManager.connect(validators[0]).timeout(challengeIndex);
-  });
+  it('asserter should win via timeout', async function () {
+    await tryAdvanceChain(extraChallengeTimeBlocks)
+    await challengeManager.connect(validators[0]).timeout(challengeIndex)
+  })
 
   it('confirm first staker node', async function () {
     await rollup.confirmNextNode(validNode)
@@ -649,11 +674,14 @@ describe('ArbRollup', () => {
     )
   })
 
-  it("challenger should win via timeout", async function () {
-    const challengeDuration = confirmationPeriodBlocks + extraChallengeTimeBlocks + (challengerNode.proposedBlock - validNode.proposedBlock);
-    await advancePastAssertion(challengerNode.proposedBlock, challengeDuration);
-    await challengeManager.timeout(challengeIndex);
-  });
+  it('challenger should win via timeout', async function () {
+    const challengeDuration =
+      confirmationPeriodBlocks +
+      extraChallengeTimeBlocks +
+      (challengerNode.proposedBlock - validNode.proposedBlock)
+    await advancePastAssertion(challengerNode.proposedBlock, challengeDuration)
+    await challengeManager.timeout(challengeIndex)
+  })
 
   it('should reject out of order second node', async function () {
     await rollup.rejectNextNode(await validators[1].getAddress())
@@ -1204,72 +1232,87 @@ describe('ArbRollup', () => {
     )
   })
 
-  it("should fail to call removeWhitelistAfterValidatorAfk", async function () {
-    await expect(rollupUser.removeWhitelistAfterValidatorAfk()).to.revertedWith("VALIDATOR_NOT_AFK");
-  });
+  it('should fail to call removeWhitelistAfterValidatorAfk', async function () {
+    await expect(rollupUser.removeWhitelistAfterValidatorAfk()).to.revertedWith(
+      'VALIDATOR_NOT_AFK'
+    )
+  })
 
-  it("should fail to call uniswapCreateRetryableTicket with random signer", async function () {
-    const maxSubmissionCost = 10000;
-    await expect(delayedInbox.uniswapCreateRetryableTicket(
-      ethers.constants.AddressZero,
-      0,
-      maxSubmissionCost,
-      ethers.constants.AddressZero,
-      ethers.constants.AddressZero,
-      0,
-      0,
-      "0x",
-      {value: maxSubmissionCost}
-    )).to.revertedWith("NOT_UNISWAP_L1_TIMELOCK");
-  });
+  it('should fail to call uniswapCreateRetryableTicket with random signer', async function () {
+    const maxSubmissionCost = 10000
+    await expect(
+      delayedInbox.uniswapCreateRetryableTicket(
+        ethers.constants.AddressZero,
+        0,
+        maxSubmissionCost,
+        ethers.constants.AddressZero,
+        ethers.constants.AddressZero,
+        0,
+        0,
+        '0x',
+        { value: maxSubmissionCost }
+      )
+    ).to.revertedWith('NOT_UNISWAP_L1_TIMELOCK')
+  })
 
-  it("should allow uniswap to call uniswapCreateRetryableTicket without aliasing to l2 factory only", async function () {
-    const uniswap_l1_timelock = "0x1a9C8182C09F50C8318d769245beA52c32BE35BC";
+  it('should allow uniswap to call uniswapCreateRetryableTicket without aliasing to l2 factory only', async function () {
+    const uniswap_l1_timelock = '0x1a9C8182C09F50C8318d769245beA52c32BE35BC'
     await network.provider.request({
-      method: "hardhat_impersonateAccount",
+      method: 'hardhat_impersonateAccount',
       params: [uniswap_l1_timelock],
-    });
-    await network.provider.send("hardhat_setBalance", [
+    })
+    await network.provider.send('hardhat_setBalance', [
       uniswap_l1_timelock,
-      "0x10000000000000000000",
-    ]);
+      '0x10000000000000000000',
+    ])
     const uniswap_signer = await ethers.getSigner(uniswap_l1_timelock)
     const anyValue = () => true
-    const maxSubmissionCost = 10000;
-    await expect(delayedInbox.connect(uniswap_signer).uniswapCreateRetryableTicket(
-      ethers.constants.AddressZero,
-      0,
-      maxSubmissionCost,
-      ethers.constants.AddressZero,
-      ethers.constants.AddressZero,
-      0,
-      0,
-      "0x",
-      {value: maxSubmissionCost}
-    )).to.revertedWith("NOT_TO_UNISWAP_L2_FACTORY");
-    const uniswap_l2_factory = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
-    await expect(delayedInbox.connect(uniswap_signer).uniswapCreateRetryableTicket(
-      uniswap_l2_factory,
-      0,
-      maxSubmissionCost,
-      ethers.constants.AddressZero,
-      ethers.constants.AddressZero,
-      0,
-      0,
-      "0x",
-      {value: maxSubmissionCost}
-    )).emit(bridge, 'MessageDelivered').withArgs(
-      anyValue,
-      anyValue,
-      anyValue,
-      anyValue,
-      uniswap_l1_timelock,
-      anyValue,
-      anyValue,
-      anyValue);
+    const maxSubmissionCost = 10000
+    await expect(
+      delayedInbox
+        .connect(uniswap_signer)
+        .uniswapCreateRetryableTicket(
+          ethers.constants.AddressZero,
+          0,
+          maxSubmissionCost,
+          ethers.constants.AddressZero,
+          ethers.constants.AddressZero,
+          0,
+          0,
+          '0x',
+          { value: maxSubmissionCost }
+        )
+    ).to.revertedWith('NOT_TO_UNISWAP_L2_FACTORY')
+    const uniswap_l2_factory = '0x1F98431c8aD98523631AE4a59f267346ea31F984'
+    await expect(
+      delayedInbox
+        .connect(uniswap_signer)
+        .uniswapCreateRetryableTicket(
+          uniswap_l2_factory,
+          0,
+          maxSubmissionCost,
+          ethers.constants.AddressZero,
+          ethers.constants.AddressZero,
+          0,
+          0,
+          '0x',
+          { value: maxSubmissionCost }
+        )
+    )
+      .emit(bridge, 'MessageDelivered')
+      .withArgs(
+        anyValue,
+        anyValue,
+        anyValue,
+        anyValue,
+        uniswap_l1_timelock,
+        anyValue,
+        anyValue,
+        anyValue
+      )
     await network.provider.request({
-      method: "hardhat_stopImpersonatingAccount",
+      method: 'hardhat_stopImpersonatingAccount',
       params: [uniswap_l1_timelock],
-    });
-  });
-});
+    })
+  })
+})
