@@ -47,7 +47,7 @@ type Retryable struct {
 	numTries           storage.StorageBackedUint64
 	from               storage.StorageBackedAddress
 	to                 storage.StorageBackedAddressOrNil
-	callvalue          storage.StorageBackedBigInt
+	callvalue          storage.StorageBackedBigUint
 	beneficiary        storage.StorageBackedAddress
 	calldata           storage.StorageBackedBytes
 	timeout            storage.StorageBackedUint64
@@ -80,7 +80,7 @@ func (rs *RetryableState) CreateRetryable(
 		sto.OpenStorageBackedUint64(numTriesOffset),
 		sto.OpenStorageBackedAddress(fromOffset),
 		sto.OpenStorageBackedAddressOrNil(toOffset),
-		sto.OpenStorageBackedBigInt(callvalueOffset),
+		sto.OpenStorageBackedBigUint(callvalueOffset),
 		sto.OpenStorageBackedAddress(beneficiaryOffset),
 		sto.OpenStorageBackedBytes(calldataKey),
 		sto.OpenStorageBackedUint64(timeoutOffset),
@@ -89,7 +89,7 @@ func (rs *RetryableState) CreateRetryable(
 	_ = ret.numTries.Set(0)
 	_ = ret.from.Set(from)
 	_ = ret.to.Set(to)
-	_ = ret.callvalue.Set(callvalue)
+	_ = ret.callvalue.SetChecked(callvalue)
 	_ = ret.beneficiary.Set(beneficiary)
 	_ = ret.calldata.Set(calldata)
 	_ = ret.timeout.Set(timeout)
@@ -115,7 +115,7 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 		numTries:           sto.OpenStorageBackedUint64(numTriesOffset),
 		from:               sto.OpenStorageBackedAddress(fromOffset),
 		to:                 sto.OpenStorageBackedAddressOrNil(toOffset),
-		callvalue:          sto.OpenStorageBackedBigInt(callvalueOffset),
+		callvalue:          sto.OpenStorageBackedBigUint(callvalueOffset),
 		beneficiary:        sto.OpenStorageBackedAddress(beneficiaryOffset),
 		calldata:           sto.OpenStorageBackedBytes(calldataKey),
 		timeout:            timeoutStorage,
@@ -206,7 +206,7 @@ func (retryable *Retryable) Calldata() ([]byte, error) {
 	return retryable.calldata.Get()
 }
 
-// efficiently gets size of calldata without loading all of it
+// CalldataSize efficiently gets size of calldata without loading all of it
 func (retryable *Retryable) CalldataSize() (uint64, error) {
 	return retryable.calldata.Size()
 }

@@ -59,7 +59,7 @@ func PublicKeyFromPrivateKey(privateKey PrivateKey) (PublicKey, error) {
 	return publicKey, nil
 }
 
-// This key validity proof mechanism is sufficient to prevent rogue key attacks, if applied to all keys
+// KeyValidityProof is the key validity proof mechanism is sufficient to prevent rogue key attacks, if applied to all keys
 // that come from untrusted sources. We use the private key to sign the public key, but in the
 // signature algorithm we use a tweaked version of the hash-to-curve function so that the result cannot be
 // re-used as an ordinary signature.
@@ -107,7 +107,7 @@ func signMessage2(priv PrivateKey, message []byte, keyValidationMode bool) (Sign
 	g1 := bls12381.NewG1()
 	result := &bls12381.PointG1{}
 	g1.MulScalar(result, pointOnCurve, priv)
-	return Signature(result), nil
+	return result, nil
 }
 
 func VerifySignature(sig Signature, message []byte, publicKey PublicKey) (bool, error) {

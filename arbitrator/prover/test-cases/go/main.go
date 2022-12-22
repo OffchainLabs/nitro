@@ -15,7 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 )
 
-// Example using the Merkle tree to generate and verify proofs.
+// MerkleSample is an example using the Merkle tree to generate and verify proofs.
 func MerkleSample(data [][]byte, toproove int) (bool, error) {
 	// Create the tree
 	tree, err := merkletree.New(data)

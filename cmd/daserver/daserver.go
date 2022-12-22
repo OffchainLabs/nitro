@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,7 +22,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
 )
 
@@ -91,17 +92,17 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	das.DataAvailabilityConfigAddOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
-	k, err := util.BeginCommonParse(f, args)
+	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
 	}
 
 	var serverConfig DAServerConfig
-	if err := util.EndCommonParse(k, &serverConfig); err != nil {
+	if err := confighelpers.EndCommonParse(k, &serverConfig); err != nil {
 		return nil, err
 	}
 	if serverConfig.ConfConfig.Dump {
-		err = util.DumpConfig(k, map[string]interface{}{
+		err = confighelpers.DumpConfig(k, map[string]interface{}{
 			"data-availability.key.priv-key": "",
 		})
 		if err != nil {
@@ -126,13 +127,10 @@ func startup() error {
 
 	serverConfig, err := parseDAServer(os.Args[1:])
 	if err != nil {
-		util.HandleError(err, printSampleUsage)
-		return nil
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
 	if !(serverConfig.EnableRPC || serverConfig.EnableREST) {
-		util.HandleError(nil, printSampleUsage)
-		fmt.Printf("Please specify at least one of --enable-rest or --enable-rpc\n")
-		return nil
+		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
 	}
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
@@ -162,7 +160,7 @@ func startup() error {
 		return err
 	}
 
-	vcsRevision, vcsTime := util.GetVersion()
+	vcsRevision, vcsTime := confighelpers.GetVersion()
 	var rpcServer *http.Server
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)

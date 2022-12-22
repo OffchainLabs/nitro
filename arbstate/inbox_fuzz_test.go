@@ -4,9 +4,12 @@
 package arbstate
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/offchainlabs/nitro/arbos"
 )
 
 type multiplexerBackend struct {
@@ -39,11 +42,17 @@ func (b *multiplexerBackend) SetPositionWithinMessage(pos uint64) {
 	b.positionWithinMessage = pos
 }
 
-func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error) {
 	if seqNum != 0 {
 		return nil, errors.New("reading unknown delayed message")
 	}
-	return b.delayedMessage, nil
+	msg, err := arbos.ParseIncomingL1Message(bytes.NewReader(b.delayedMessage), nil)
+	if err != nil {
+		// The bridge won't generate an invalid L1 message,
+		// so here we substitute it with a less invalid one for fuzzing.
+		msg = &arbos.TestIncomingMessageWithRequestId
+	}
+	return msg, nil
 }
 
 func FuzzInboxMultiplexer(f *testing.F) {

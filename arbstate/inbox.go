@@ -36,7 +36,7 @@ type InboxBackend interface {
 	GetPositionWithinMessage() uint64
 	SetPositionWithinMessage(pos uint64)
 
-	ReadDelayedInbox(seqNum uint64) ([]byte, error)
+	ReadDelayedInbox(seqNum uint64) (*arbos.L1IncomingMessage, error)
 }
 
 type MessageWithMetadata struct {
@@ -48,7 +48,7 @@ var EmptyTestMessageWithMetadata = MessageWithMetadata{
 	Message: &arbos.EmptyTestIncomingMessage,
 }
 
-// Message signature is only verified if requestId defined
+// TestMessageWithMetadataAndRequestId message signature is only verified if requestId defined
 var TestMessageWithMetadataAndRequestId = MessageWithMetadata{
 	Message: &arbos.TestIncomingMessageWithRequestId,
 }
@@ -81,8 +81,8 @@ type sequencerMessage struct {
 	segments             [][]byte
 }
 
-const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
-const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
+const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
+const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
@@ -125,10 +125,10 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 	}
 
 	if len(payload) > 0 && IsBrotliMessageHeaderByte(payload[0]) {
-		decompressed, err := arbcompress.Decompress(payload[1:], maxDecompressedLen)
+		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
 		if err == nil {
 			reader := bytes.NewReader(decompressed)
-			stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
+			stream := rlp.NewStream(reader, uint64(MaxDecompressedLen))
 			for {
 				var segment []byte
 				err := stream.Decode(&segment)
@@ -302,7 +302,8 @@ const BatchSegmentKindDelayedMessages uint8 = 2
 const BatchSegmentKindAdvanceTimestamp uint8 = 3
 const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 
-// This does *not* return parse errors, those are transformed into invalid messages
+// Pop returns the message from the top of the sequencer inbox and removes it from the queue.
+// Note: this does *not* return parse errors, those are transformed into invalid messages
 func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
 		bytes, realErr := r.backend.PeekSequencerInbox()
@@ -481,16 +482,11 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 				DelayedMessagesRead: seqMsg.afterDelayedMessages,
 			}
 		} else {
-			data, realErr := r.backend.ReadDelayedInbox(r.delayedMessagesRead)
+			delayed, realErr := r.backend.ReadDelayedInbox(r.delayedMessagesRead)
 			if realErr != nil {
 				return nil, realErr
 			}
 			r.delayedMessagesRead += 1
-			delayed, parseErr := arbos.ParseIncomingL1Message(bytes.NewReader(data))
-			if parseErr != nil {
-				log.Warn("error parsing delayed message", "err", parseErr, "delayedMsg", r.delayedMessagesRead)
-				return nil, nil
-			}
 			msg = &MessageWithMetadata{
 				Message:             delayed,
 				DelayedMessagesRead: r.delayedMessagesRead,

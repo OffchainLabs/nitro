@@ -1,6 +1,13 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::{
+    gostack::GoStack,
+    machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
+    socket,
+};
+
+use arbutil::Color;
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind, Write},
@@ -8,18 +15,11 @@ use std::{
     time::Instant,
 };
 
-use crate::{
-    color,
-    gostack::GoStack,
-    machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvArc},
-    socket,
-};
-
 pub type Bytes32 = [u8; 32];
 
-pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+pub fn get_global_state_bytes32(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     let out_ptr = sp.read_u64(1);
@@ -38,9 +38,9 @@ pub fn get_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+pub fn set_global_state_bytes32(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     let src_ptr = sp.read_u64(1);
@@ -61,9 +61,9 @@ pub fn set_global_state_bytes32(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+pub fn get_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get(global) {
@@ -73,9 +73,9 @@ pub fn get_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+pub fn set_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let global = sp.read_u64(0) as u32 as usize;
     match env.small_globals.get_mut(global) {
@@ -85,17 +85,17 @@ pub fn set_global_state_u64(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
     Ok(())
 }
 
-pub fn read_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+pub fn read_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let inbox = &env.sequencer_messages;
     inbox_message_impl(&sp, inbox, "wavmio.readInboxMessage")
 }
 
-pub fn read_delayed_inbox_message(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    ready_hostio(&mut *env)?;
+pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
+    ready_hostio(env)?;
 
     let inbox = &env.delayed_messages;
     inbox_message_impl(&sp, inbox, "wavmio.readDelayedInboxMessage")
@@ -134,16 +134,15 @@ fn inbox_message_impl(sp: &GoStack, inbox: &Inbox, name: &str) -> MaybeEscape {
         Err(_) => error!("bad offset {offset} in {name}"),
     };
 
-    let len = std::cmp::min(32, message.len().saturating_sub(offset)) as usize;
+    let len = std::cmp::min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
     sp.write_slice(out_ptr, read);
     sp.write_u64(5, read.len() as u64);
     Ok(())
 }
 
-pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
-    let (sp, mut env) = GoStack::new(sp, env);
-    let env = &mut *env;
+pub fn resolve_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
+    let (sp, env) = GoStack::new(sp, &mut env);
 
     let name = "wavmio.resolvePreImage";
 
@@ -179,6 +178,11 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
         }
     }
 
+    // see if this is a known preimage
+    if preimage.is_none() {
+        preimage = env.preimages.get(hash);
+    }
+
     // see if Go has the preimage
     if preimage.is_none() {
         if let Some((writer, reader)) = &mut env.process.socket {
@@ -194,11 +198,6 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
         }
     }
 
-    // see if this is a known preimage
-    if preimage.is_none() {
-        preimage = env.preimages.get(hash);
-    }
-
     let preimage = match preimage {
         Some(preimage) => preimage,
         None => error!("Missing requested preimage for hash {hash_hex} in {name}"),
@@ -208,7 +207,7 @@ pub fn resolve_preimage(env: &WasmEnvArc, sp: u32) -> MaybeEscape {
         Err(_) => error!("bad offset {offset} in {name}"),
     };
 
-    let len = std::cmp::min(32, preimage.len().saturating_sub(offset)) as usize;
+    let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
     sp.write_slice(out_ptr, read);
     sp.write_u64(7, read.len() as u64);
@@ -221,7 +220,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     if !env.process.reached_wavmio {
         if debug {
             let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
-            println!("Created the machine in {}.", color::pink(time));
+            println!("Created the machine in {}.", time.pink());
         }
         env.process.timestamp = Instant::now();
         env.process.reached_wavmio = true;
@@ -247,6 +246,9 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         }
 
         address.pop(); // pop the newline
+        if address.is_empty() {
+            return Ok(());
+        }
         if debug {
             println!("Child will connect to {address}");
         }
@@ -287,6 +289,13 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         let position = socket::read_u64(stream)?;
         let message = socket::read_bytes(stream)?;
         env.delayed_messages.insert(position, message);
+    }
+
+    let preimage_count = socket::read_u64(stream)?;
+    for _ in 0..preimage_count {
+        let hash = socket::read_bytes32(stream)?;
+        let preimage = socket::read_bytes(stream)?;
+        env.preimages.insert(hash, preimage);
     }
 
     if socket::read_u8(stream)? != socket::READY {

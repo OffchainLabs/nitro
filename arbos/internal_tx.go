@@ -4,6 +4,7 @@
 package arbos
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 
@@ -42,33 +43,41 @@ func InternalTxStartBlock(
 	}
 }
 
-func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) {
-	switch *(*[4]byte)(tx.Data[:4]) {
+func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) error {
+	if len(tx.Data) < 4 {
+		return fmt.Errorf("internal tx data is too short (only %v bytes, at least 4 required)", len(tx.Data))
+	}
+	selector := *(*[4]byte)(tx.Data[:4])
+	switch selector {
 	case InternalTxStartBlockMethodID:
 		inputs, err := util.UnpackInternalTxDataStartBlock(tx.Data)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		l1BlockNumber := util.SafeMapGet[uint64](inputs, "l1BlockNumber")
 		timePassed := util.SafeMapGet[uint64](inputs, "timePassed")
-		if state.FormatVersion() < 3 {
+		if state.ArbOSVersion() < 3 {
 			// (incorrectly) use the L2 block number instead
 			timePassed = util.SafeMapGet[uint64](inputs, "l2BlockNumber")
 		}
+		if state.ArbOSVersion() < 8 {
+			// in old versions we incorrectly used an L1 block number one too high
+			l1BlockNumber++
+		}
 
-		nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
+		oldL1BlockNumber, err := state.Blockhashes().L1BlockNumber()
 		state.Restrict(err)
 
 		l2BaseFee, err := state.L2PricingState().BaseFeeWei()
 		state.Restrict(err)
 
-		if l1BlockNumber >= nextL1BlockNumber {
+		if l1BlockNumber > oldL1BlockNumber {
 			var prevHash common.Hash
 			if evm.Context.BlockNumber.Sign() > 0 {
 				prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
 			}
-			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash))
+			state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber-1, prevHash, state.ArbOSVersion()))
 		}
 
 		currentTime := evm.Context.Time.Uint64()
@@ -79,11 +88,11 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 		state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
 
-		state.UpgradeArbosVersionIfNecessary(currentTime)
+		return state.UpgradeArbosVersionIfNecessary(currentTime, evm.StateDB)
 	case InternalTxBatchPostingReportMethodID:
 		inputs, err := util.UnpackInternalTxDataBatchPostingReport(tx.Data)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		batchTimestamp := util.SafeMapGet[*big.Int](inputs, "batchTimestamp")
 		batchPosterAddress := util.SafeMapGet[common.Address](inputs, "batchPosterAddress")
@@ -100,7 +109,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		err = l1p.UpdateForBatchPosterSpending(
 			evm.StateDB,
 			evm,
-			state.FormatVersion(),
+			state.ArbOSVersion(),
 			batchTimestamp.Uint64(),
 			evm.Context.Time.Uint64(),
 			batchPosterAddress,
@@ -111,5 +120,8 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		if err != nil {
 			log.Warn("L1Pricing UpdateForSequencerSpending failed", "err", err)
 		}
+		return nil
+	default:
+		return fmt.Errorf("unknown internal tx method selector: %v", hex.EncodeToString(tx.Data[:4]))
 	}
 }

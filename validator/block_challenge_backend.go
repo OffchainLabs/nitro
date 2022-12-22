@@ -6,6 +6,7 @@ package validator
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -16,8 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
-
-	"github.com/pkg/errors"
 )
 
 type GoGlobalState struct {
@@ -84,7 +83,7 @@ func NewBlockChallengeBackend(
 	if startGs.BlockHash != (common.Hash{}) {
 		startBlock := bc.GetBlockByHash(startGs.BlockHash)
 		if startBlock == nil {
-			return nil, errors.New("failed to find start block")
+			return nil, fmt.Errorf("failed to find start block %v", startGs.BlockHash)
 		}
 		startBlockNum = int64(startBlock.NumberU64())
 	}
@@ -94,7 +93,7 @@ func NewBlockChallengeBackend(
 		var err error
 		startMsgCount, err = inboxTracker.GetBatchMessageCount(startGs.Batch - 1)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
+			return nil, fmt.Errorf("failed to get challenge start batch metadata: %w", err)
 		}
 	}
 	startMsgCount += arbutil.MessageIndex(startGs.PosInBatch)
@@ -109,7 +108,7 @@ func NewBlockChallengeBackend(
 		var err error
 		endMsgCount, err = inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to get challenge end batch metadata")
+			return nil, fmt.Errorf("failed to get challenge end batch metadata: %w", err)
 		}
 	}
 	endMsgCount += arbutil.MessageIndex(endGs.PosInBatch)
@@ -127,31 +126,29 @@ func NewBlockChallengeBackend(
 	}, nil
 }
 
-func (b *BlockChallengeBackend) findBatchFromMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
+func (b *BlockChallengeBackend) findBatchFromMessageIndex(msgCount arbutil.MessageIndex) (uint64, error) {
 	if msgCount == 0 {
 		return 0, nil
 	}
 	low := b.startGs.Batch
 	high := b.endGs.Batch
-	if b.endGs.PosInBatch == 0 {
-		if high == 0 {
-			return 0, errors.New("end global state at inbox position (0, 0)")
-		}
-		high--
-	}
 	for {
 		// Binary search invariants:
 		//   - messageCount(high) >= msgCount
 		//   - messageCount(low-1) < msgCount
+		//   - high >= low
+		if high < low {
+			return 0, fmt.Errorf("when attempting to find batch for message count %v high %v < low %v", msgCount, high, low)
+		}
 		mid := (low + high) / 2
 		batchMsgCount, err := b.inboxTracker.GetBatchMessageCount(mid)
 		if err != nil {
-			return 0, errors.Wrap(err, "failed to get batch metadata while binary searching")
+			return 0, fmt.Errorf("failed to get batch metadata while binary searching: %w", err)
 		}
 		if batchMsgCount < msgCount {
 			low = mid + 1
 		} else if batchMsgCount == msgCount {
-			return mid, nil
+			return mid + 1, nil
 		} else if mid == low { // batchMsgCount > msgCount
 			return mid, nil
 		} else { // batchMsgCount > msgCount
@@ -165,7 +162,7 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) 
 		return GoGlobalState{}, nil
 	}
 	msgCount := arbutil.BlockNumberToMessageCount(header.Number.Uint64(), b.genesisBlockNumber)
-	batch, err := b.findBatchFromMessageCount(msgCount)
+	batch, err := b.findBatchFromMessageIndex(msgCount)
 	if err != nil {
 		return GoGlobalState{}, err
 	}
@@ -223,6 +220,9 @@ func (b *BlockChallengeBackend) SetRange(_ context.Context, start uint64, end ui
 	newEndGs, endStatus, err := b.GetInfoAtStep(end)
 	if err != nil {
 		return err
+	}
+	if b.startPosition == start && b.startGs != newStartGs {
+		return fmt.Errorf("challenge start position remains at %v but global state changed from %v to %v", start, b.startGs, newStartGs)
 	}
 	b.startGs = newStartGs
 	if endStatus == StatusFinished {

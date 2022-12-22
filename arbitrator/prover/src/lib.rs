@@ -108,7 +108,7 @@ unsafe fn cstr_to_string(c_str: *const c_char) -> String {
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_free_machine(mach: *mut Machine) {
-    Box::from_raw(mach);
+    drop(Box::from_raw(mach));
 }
 
 #[no_mangle]

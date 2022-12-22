@@ -25,8 +25,9 @@ import (
 type ClientConnection struct {
 	stopwaiter.StopWaiter
 
-	ioMutex sync.Mutex
-	conn    net.Conn
+	ioMutex  sync.Mutex
+	conn     net.Conn
+	creation time.Time
 
 	desc            *netpoll.Desc
 	Name            string
@@ -37,11 +38,18 @@ type ClientConnection struct {
 	out           chan []byte
 }
 
-func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *ClientManager, requestedSeqNum arbutil.MessageIndex) *ClientConnection {
+func NewClientConnection(
+	conn net.Conn,
+	desc *netpoll.Desc,
+	clientManager *ClientManager,
+	requestedSeqNum arbutil.MessageIndex,
+	connectingIP string,
+) *ClientConnection {
 	return &ClientConnection{
 		conn:            conn,
 		desc:            desc,
-		Name:            conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
+		creation:        time.Now(),
+		Name:            connectingIP + "@" + conn.RemoteAddr().String() + strconv.Itoa(rand.Intn(10)),
 		clientManager:   clientManager,
 		requestedSeqNum: requestedSeqNum,
 		lastHeardUnix:   time.Now().Unix(),
@@ -49,10 +57,13 @@ func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *Clien
 	}
 }
 
+func (cc *ClientConnection) Age() time.Duration {
+	return time.Since(cc.creation)
+}
+
 func (cc *ClientConnection) Start(parentCtx context.Context) {
-	cc.StopWaiter.Start(parentCtx)
+	cc.StopWaiter.Start(parentCtx, cc)
 	cc.LaunchThread(func(ctx context.Context) {
-		defer close(cc.out)
 		for {
 			select {
 			case <-ctx.Done():
@@ -62,26 +73,19 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 				if err != nil {
 					logWarn(err, "error writing data to client")
 					cc.clientManager.Remove(cc)
-					for {
-						// Consume and ignore channel data until client properly stopped to prevent deadlock
-						select {
-						case <-ctx.Done():
-							return
-						case <-cc.out:
-						}
-					}
+					return
 				}
 			}
 		}
 	})
 }
 
-func (cc *ClientConnection) StopAndWait() {
-	if !cc.Started() {
-		// If client connection never started, need to close channel
-		close(cc.out)
+func (cc *ClientConnection) StopOnly() {
+	// Ignore errors from conn.Close since we are just shutting down
+	_ = cc.conn.Close()
+	if cc.Started() {
+		cc.StopWaiter.StopOnly()
 	}
-	cc.StopWaiter.StopAndWait()
 }
 
 func (cc *ClientConnection) RequestedSeqNum() arbutil.MessageIndex {

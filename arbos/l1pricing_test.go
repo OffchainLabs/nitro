@@ -170,15 +170,17 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 
 	// create some fake collection
 	balanceAdded := big.NewInt(int64(testParams.fundsCollectedPerSecond * 3))
-	unitsAdded := uint64(testParams.unitsPerSecond * 3)
+	unitsAdded := testParams.unitsPerSecond * 3
 	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, balanceAdded)
+	err = l1p.SetL1FeesAvailable(balanceAdded)
+	Require(t, err)
 	err = l1p.SetUnitsSinceUpdate(unitsAdded)
 	Require(t, err)
 
 	// submit a fake spending update, then check that balances are correct
 	err = l1p.SetAmortizedCostCapBips(testParams.amortizationCapBips)
 	Require(t, err)
-	version := arbosSt.FormatVersion()
+	version := arbosSt.ArbOSVersion()
 	scenario := util.TracingDuringEVM
 	err = l1p.UpdateForBatchPosterSpending(
 		evm.StateDB, evm, version, 1, 3, firstPoster, arbmath.UintToBig(testParams.fundsSpent), arbmath.UintToBig(testParams.l1BasefeeGwei*params.GWei), scenario,
@@ -200,6 +202,11 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	fundsStillHeld := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
 	if !arbmath.BigEquals(fundsStillHeld, expectedResults.fundsStillHeld) {
 		Fail(t, fundsStillHeld, expectedResults.fundsStillHeld)
+	}
+	fundsAvail, err := l1p.L1FeesAvailable()
+	Require(t, err)
+	if fundsStillHeld.Cmp(fundsAvail) != 0 {
+		Fail(t, fundsStillHeld, fundsAvail)
 	}
 }
 

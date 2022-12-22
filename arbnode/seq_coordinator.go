@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,54 +18,63 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/util/simple_hmac"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
-const CHOSENSEQ_KEY string = "coordinator.chosen"              // Never overwritten. Expires or released only
-const MSG_COUNT_KEY string = "coordinator.msgCount"            // Only written by sequencer holding CHOSEN key
-const PRIORITIES_KEY string = "coordinator.priorities"         // Read only
-const LIVELINESS_KEY_PREFIX string = "coordinator.liveliness." // Per server. Only written by self
-const MESSAGE_KEY_PREFIX string = "coordinator.msg."           // Per Message. Only written by sequencer holding CHOSEN
-const LIVELINESS_VAL string = "OK"
-const INVALID_VAL string = "INVALID"
-const INVALID_URL string = "<?INVALID-URL?>"
+var (
+	isActiveSequencer = metrics.NewRegisteredGauge("arb/sequencer/active", nil)
+)
 
 type SeqCoordinator struct {
 	stopwaiter.StopWaiter
 
-	sync      *SyncMonitor
-	streamer  *TransactionStreamer
-	sequencer *Sequencer
-	client    redis.UniversalClient
-	signer    *simple_hmac.SimpleHmac
-	config    SeqCoordinatorConfig
+	redisutil.RedisCoordinator
+
+	sync             *SyncMonitor
+	streamer         *TransactionStreamer
+	sequencer        *Sequencer
+	delayedSequencer *DelayedSequencer
+	signer           *signature.SignVerify
+	config           SeqCoordinatorConfig
 
 	prevChosenSequencer string
 	reportedAlive       bool
 
 	lockoutUntil int64 // atomic
 
-	chosenUpdateMutex sync.Mutex // mannages access to chosenOneUpdate
-	redisErrors       int        // error counter, from wrokthread
+	chosenUpdateMutex sync.Mutex // manages access to chosenOneUpdate
+	redisErrors       int        // error counter, from workthread
 }
 
 type SeqCoordinatorConfig struct {
-	Enable                bool                         `koanf:"enable"`
-	ChosenHealthcheckAddr string                       `koanf:"chosen-healthcheck-addr"`
-	RedisUrl              string                       `koanf:"redis-url"`
-	LockoutDuration       time.Duration                `koanf:"lockout-duration"`
-	LockoutSpare          time.Duration                `koanf:"lockout-spare"`
-	SeqNumDuration        time.Duration                `koanf:"seq-num-duration"`
-	UpdateInterval        time.Duration                `koanf:"update-interval"`
-	RetryInterval         time.Duration                `koanf:"retry-interval"`
-	MaxMsgPerPoll         arbutil.MessageIndex         `koanf:"msg-per-poll"`
-	MyUrl                 string                       `koanf:"my-url"`
-	Signing               simple_hmac.SimpleHmacConfig `koanf:"signer"`
+	Enable                bool                       `koanf:"enable"`
+	ChosenHealthcheckAddr string                     `koanf:"chosen-healthcheck-addr"`
+	RedisUrl              string                     `koanf:"redis-url"`
+	LockoutDuration       time.Duration              `koanf:"lockout-duration"`
+	LockoutSpare          time.Duration              `koanf:"lockout-spare"`
+	SeqNumDuration        time.Duration              `koanf:"seq-num-duration"`
+	UpdateInterval        time.Duration              `koanf:"update-interval"`
+	RetryInterval         time.Duration              `koanf:"retry-interval"`
+	SafeShutdownDelay     time.Duration              `koanf:"safe-shutdown-delay"`
+	MaxMsgPerPoll         arbutil.MessageIndex       `koanf:"msg-per-poll"`
+	MyUrlImpl             string                     `koanf:"my-url"`
+	Signing               signature.SignVerifyConfig `koanf:"signer"`
+}
+
+func (c *SeqCoordinatorConfig) MyUrl() string {
+	if c.MyUrlImpl == "" {
+		return redisutil.INVALID_URL
+	}
+
+	return c.MyUrlImpl
 }
 
 func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -78,9 +86,10 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
 	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "")
 	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
-	f.Uint16(prefix+".msg-per-poll", uint16(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
-	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrl, "url for this sequencer if it is the chosen")
-	simple_hmac.SimpleHmacConfigAddOptions(prefix+".signer", f)
+	f.Duration(prefix+".safe-shutdown-delay", DefaultSeqCoordinatorConfig.SafeShutdownDelay, "if non-zero will add delay after transferring control")
+	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MaxMsgPerPoll), "will only be marked live if not too far behind")
+	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrlImpl, "url for this sequencer if it is the chosen")
+	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -91,88 +100,82 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	LockoutSpare:          time.Duration(30) * time.Second,
 	SeqNumDuration:        time.Duration(24) * time.Hour,
 	UpdateInterval:        time.Duration(5) * time.Second,
+	SafeShutdownDelay:     time.Duration(10) * time.Second,
 	RetryInterval:         time.Second,
 	MaxMsgPerPoll:         2000,
-	MyUrl:                 INVALID_URL,
+	MyUrlImpl:             redisutil.INVALID_URL,
+	Signing:               signature.DefaultSignVerifyConfig,
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
-	Enable:          false,
-	RedisUrl:        redisutil.DefaultTestRedisURL,
-	LockoutDuration: time.Second * 2,
-	LockoutSpare:    time.Millisecond * 10,
-	SeqNumDuration:  time.Minute * 10,
-	UpdateInterval:  time.Millisecond * 10,
-	RetryInterval:   time.Millisecond * 3,
-	MaxMsgPerPoll:   20,
-	MyUrl:           INVALID_URL,
-	Signing:         simple_hmac.TestSimpleHmacConfig,
+	Enable:            false,
+	RedisUrl:          redisutil.DefaultTestRedisURL,
+	LockoutDuration:   time.Second * 2,
+	LockoutSpare:      time.Millisecond * 10,
+	SeqNumDuration:    time.Minute * 10,
+	UpdateInterval:    time.Millisecond * 10,
+	SafeShutdownDelay: time.Duration(0),
+	RetryInterval:     time.Millisecond * 3,
+	MaxMsgPerPoll:     20,
+	MyUrlImpl:         redisutil.INVALID_URL,
+	Signing:           signature.DefaultSignVerifyConfig,
 }
 
-func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
-	redisClient, err := redisutil.RedisClientFromURL(config.RedisUrl)
+func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.BatchPosterVerifier, streamer *TransactionStreamer, sequencer *Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
 		return nil, err
 	}
-	signer, err := simple_hmac.NewSimpleHmac(&config.Signing)
+	signer, err := signature.NewSignVerify(&config.Signing, dataSigner, bpvalidator)
 	if err != nil {
 		return nil, err
-	}
-	if config.MyUrl == "" {
-		config.MyUrl = INVALID_URL
 	}
 	coordinator := &SeqCoordinator{
-		sync:      sync,
-		streamer:  streamer,
-		sequencer: sequencer,
-		client:    redisClient,
-		config:    config,
-		signer:    signer,
+		RedisCoordinator: *redisCoordinator,
+		sync:             sync,
+		streamer:         streamer,
+		sequencer:        sequencer,
+		config:           config,
+		signer:           signer,
+	}
+	if sequencer != nil {
+		sequencer.Pause()
 	}
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
 }
 
+func (c *SeqCoordinator) SetDelayedSequencer(delayedSequencer *DelayedSequencer) {
+	if c.Started() {
+		panic("trying to set delayed sequencer after start")
+	}
+	if c.delayedSequencer != nil {
+		panic("trying to set delayed sequencer when already set")
+	}
+	c.delayedSequencer = delayedSequencer
+}
+
 func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient redis.UniversalClient, keyConfig string, msgIndex arbutil.MessageIndex) error {
-	signerConfig := simple_hmac.DefaultSimpleHmacConfig
+	signerConfig := signature.EmptySimpleHmacConfig
 	if keyConfig == "" {
 		signerConfig.Dangerous.DisableSignatureVerification = true
 	} else {
 		signerConfig.SigningKey = keyConfig
 	}
-	signer, err := simple_hmac.NewSimpleHmac(&signerConfig)
+	signer, err := signature.NewSimpleHmac(&signerConfig)
 	if err != nil {
 		return err
 	}
 	var msgIndexBytes [8]byte
 	binary.BigEndian.PutUint64(msgIndexBytes[:], uint64(msgIndex))
-	msg := []byte(INVALID_VAL)
-	signed := signer.SignMessage(msgIndexBytes[:], msg)
-	redisClient.Set(ctx, messageKeyFor(msgIndex), signed, DefaultSeqCoordinatorConfig.SeqNumDuration)
-	return nil
-}
-
-func (c *SeqCoordinator) recommendLiveSequencer(ctx context.Context) (string, error) {
-	prioritiesString, err := c.client.Get(ctx, PRIORITIES_KEY).Result()
+	msg := []byte(redisutil.INVALID_VAL)
+	sig, err := signer.SignMessage(msgIndexBytes[:], msg)
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			err = errors.New("sequencer priorities unset")
-		}
-		return "", err
+		return err
 	}
-	priorities := strings.Split(prioritiesString, ",")
-	for _, url := range priorities {
-		err := c.client.Get(ctx, livelinessKeyFor(url)).Err()
-		if errors.Is(err, redis.Nil) { // liveliness not set
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		return url, nil
-	}
-	log.Info("no sequencer appears live on redis", "priorities", prioritiesString, "self", c.config.MyUrl)
-	return "", nil
+	redisClient.Set(ctx, redisutil.MessageKeyFor(msgIndex), msg, DefaultSeqCoordinatorConfig.SeqNumDuration)
+	redisClient.Set(ctx, redisutil.MessageSigKeyFor(msgIndex), sig, DefaultSeqCoordinatorConfig.SeqNumDuration)
+	return nil
 }
 
 func atomicTimeWrite(addr *int64, t time.Time) {
@@ -184,12 +187,6 @@ func atomicTimeWrite(addr *int64, t time.Time) {
 func atomicTimeRead(addr *int64) time.Time {
 	asint64 := atomic.LoadInt64(addr)
 	return time.UnixMilli(asint64)
-}
-
-func livelinessKeyFor(url string) string { return LIVELINESS_KEY_PREFIX + url }
-
-func messageKeyFor(pos arbutil.MessageIndex) string {
-	return fmt.Sprintf("%s%d", MESSAGE_KEY_PREFIX, pos)
 }
 
 func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
@@ -205,23 +202,61 @@ func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 	return nil
 }
 
+func (c *SeqCoordinator) msgCountToSignedBytes(msgCount arbutil.MessageIndex) ([]byte, error) {
+	var msgCountBytes [8]byte
+	binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCount))
+	sig, err := c.signer.SignMessage(msgCountBytes[:])
+	if err != nil {
+		return nil, err
+	}
+	return append(sig, msgCountBytes[:]...), nil
+}
+
+func (c *SeqCoordinator) signedBytesToMsgCount(ctx context.Context, data []byte) (arbutil.MessageIndex, error) {
+	datalen := len(data)
+	if datalen < 8 {
+		return 0, errors.New("msgcount value too short")
+	}
+	msgCountBytes := data[datalen-8:]
+	sig := data[:datalen-8]
+	err := c.signer.VerifySignature(ctx, sig, msgCountBytes)
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.MessageIndex(binary.BigEndian.Uint64(msgCountBytes)), nil
+}
+
 func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
 	var messageData *string
+	var messageSigData *string
 	if lastmsg != nil {
 		msgBytes, err := json.Marshal(lastmsg)
 		if err != nil {
 			return err
 		}
-
-		msgBytes = c.signer.SignMessage(arbmath.UintToBytes(uint64(msgCountToWrite-1)), msgBytes)
-		messageString := string(msgBytes)
-		messageData = &messageString
+		msgSig, err := c.signer.SignMessage(arbmath.UintToBytes(uint64(msgCountToWrite-1)), msgBytes)
+		if err != nil {
+			return err
+		}
+		if c.config.Signing.SymmetricSign {
+			messageString := string(append(msgSig, msgBytes...))
+			messageData = &messageString
+		} else {
+			messageString := string(msgBytes)
+			sigString := string(msgSig)
+			messageData = &messageString
+			messageSigData = &sigString
+		}
+	}
+	msgCountMsg, err := c.msgCountToSignedBytes(msgCountToWrite)
+	if err != nil {
+		return err
 	}
 	c.chosenUpdateMutex.Lock()
 	defer c.chosenUpdateMutex.Unlock()
 	lockoutUntil := time.Now().Add(c.config.LockoutDuration)
-	err := c.client.Watch(ctx, func(tx *redis.Tx) error {
-		current, err := tx.Get(ctx, CHOSENSEQ_KEY).Result()
+	err = c.Client.Watch(ctx, func(tx *redis.Tx) error {
+		current, err := tx.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
 		var wasEmpty bool
 		if errors.Is(err, redis.Nil) {
 			wasEmpty = true
@@ -230,7 +265,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		if err != nil {
 			return err
 		}
-		if !wasEmpty && (current != c.config.MyUrl) {
+		if !wasEmpty && (current != c.config.MyUrl()) {
 			return fmt.Errorf("%w: failed to catch lock. redis shows chosen: %s", ErrRetrySequencer, current)
 		}
 		remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, tx)
@@ -238,6 +273,11 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			return err
 		}
 		if remoteMsgCount > msgCountExpected {
+			if messageData == nil && c.CurrentlyChosen() {
+				// this was called from update(), while msgCount was changed by a call from SequencingMessage
+				// no need to do anything
+				return nil
+			}
 			log.Info("coordinator failed to become main", "expected", msgCountExpected, "found", remoteMsgCount, "message is nil?", messageData == nil)
 			return fmt.Errorf("%w: failed to catch lock. expected msg %d found %d", ErrRetrySequencer, msgCountExpected, remoteMsgCount)
 		}
@@ -247,17 +287,18 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			initialDuration = 2 * time.Second
 		}
 		if wasEmpty {
-			pipe.Set(ctx, CHOSENSEQ_KEY, c.config.MyUrl, initialDuration)
+			pipe.Set(ctx, redisutil.CHOSENSEQ_KEY, c.config.MyUrl(), initialDuration)
 		}
-		var msgCountBytes [8]byte
-		binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCountToWrite))
-		pipe.Set(ctx, MSG_COUNT_KEY, c.signer.SignMessage(nil, msgCountBytes[:]), c.config.SeqNumDuration)
-		myLivelinessKey := livelinessKeyFor(c.config.MyUrl)
-		pipe.Set(ctx, myLivelinessKey, LIVELINESS_VAL, initialDuration)
+		pipe.Set(ctx, redisutil.MSG_COUNT_KEY, msgCountMsg, c.config.SeqNumDuration)
+		myLivelinessKey := redisutil.LivelinessKeyFor(c.config.MyUrl())
+		pipe.Set(ctx, myLivelinessKey, redisutil.LIVELINESS_VAL, initialDuration)
 		if messageData != nil {
-			pipe.Set(ctx, messageKeyFor(msgCountToWrite-1), *messageData, c.config.SeqNumDuration)
+			pipe.Set(ctx, redisutil.MessageKeyFor(msgCountToWrite-1), *messageData, c.config.SeqNumDuration)
+			if messageSigData != nil {
+				pipe.Set(ctx, redisutil.MessageSigKeyFor(msgCountToWrite-1), *messageSigData, c.config.SeqNumDuration)
+			}
 		}
-		pipe.PExpireAt(ctx, CHOSENSEQ_KEY, lockoutUntil)
+		pipe.PExpireAt(ctx, redisutil.CHOSENSEQ_KEY, lockoutUntil)
 		pipe.PExpireAt(ctx, myLivelinessKey, lockoutUntil)
 		err = execTestPipe(pipe, ctx)
 		if errors.Is(err, redis.TxFailedErr) {
@@ -267,47 +308,40 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			return fmt.Errorf("chosen sequencer failed to update redis: %w", err)
 		}
 		return nil
-	}, CHOSENSEQ_KEY, MSG_COUNT_KEY)
+	}, redisutil.CHOSENSEQ_KEY, redisutil.MSG_COUNT_KEY)
 
 	if err != nil {
 		return err
 	}
+	isActiveSequencer.Update(1)
 	atomicTimeWrite(&c.lockoutUntil, lockoutUntil.Add(-c.config.LockoutSpare))
 	return nil
 }
 
 func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmdable) (arbutil.MessageIndex, error) {
-	resStr, err := r.Get(ctx, MSG_COUNT_KEY).Result()
+	resStr, err := r.Get(ctx, redisutil.MSG_COUNT_KEY).Result()
 	if errors.Is(err, redis.Nil) {
 		return 0, nil
 	}
 	if err != nil {
 		return 0, err
 	}
-	resBytes := []byte(resStr)
-	resBytes, err = c.signer.VerifyMessageSignature(nil, []byte(resBytes))
-	if err != nil {
-		return 0, err
-	}
-	if len(resBytes) != 8 {
-		return 0, fmt.Errorf("unexpected msg count value length %v", len(resBytes))
-	}
-	return arbutil.MessageIndex(binary.BigEndian.Uint64(resBytes)), nil
+	return c.signedBytesToMsgCount(ctx, []byte(resStr))
 }
 
 func (c *SeqCoordinator) GetRemoteMsgCount() (arbutil.MessageIndex, error) {
-	return c.getRemoteMsgCountImpl(c.GetContext(), c.client)
+	return c.getRemoteMsgCountImpl(c.GetContext(), c.Client)
 }
 
 func (c *SeqCoordinator) livelinessUpdate(ctx context.Context) error {
-	myLivelinessKey := livelinessKeyFor(c.config.MyUrl)
+	myLivelinessKey := redisutil.LivelinessKeyFor(c.config.MyUrl())
 	aliveUntil := time.Now().Add(c.config.LockoutDuration)
-	pipe := c.client.TxPipeline()
+	pipe := c.Client.TxPipeline()
 	initialDuration := c.config.LockoutDuration
 	if initialDuration < 2*time.Second {
 		initialDuration = 2 * time.Second
 	}
-	pipe.Set(ctx, myLivelinessKey, LIVELINESS_VAL, initialDuration)
+	pipe.Set(ctx, myLivelinessKey, redisutil.LIVELINESS_VAL, initialDuration)
 	pipe.PExpireAt(ctx, myLivelinessKey, aliveUntil)
 	err := execTestPipe(pipe, ctx)
 	if err != nil {
@@ -317,47 +351,49 @@ func (c *SeqCoordinator) livelinessUpdate(ctx context.Context) error {
 }
 
 func (c *SeqCoordinator) chosenOneRelease(ctx context.Context) error {
-	releaseErr := c.client.Watch(ctx, func(tx *redis.Tx) error {
-		current, err := tx.Get(ctx, CHOSENSEQ_KEY).Result()
+	atomicTimeWrite(&c.lockoutUntil, time.Time{})
+	isActiveSequencer.Update(0)
+	releaseErr := c.Client.Watch(ctx, func(tx *redis.Tx) error {
+		current, err := tx.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
 		if errors.Is(err, redis.Nil) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		if current != c.config.MyUrl {
+		if current != c.config.MyUrl() {
 			return nil
 		}
 		pipe := tx.TxPipeline()
-		pipe.Del(ctx, CHOSENSEQ_KEY)
+		pipe.Del(ctx, redisutil.CHOSENSEQ_KEY)
 		err = execTestPipe(pipe, ctx)
 		if err != nil {
 			return fmt.Errorf("chosen sequencer failed to update redis: %w", err)
 		}
 		return nil
-	}, CHOSENSEQ_KEY)
+	}, redisutil.CHOSENSEQ_KEY)
 	if releaseErr == nil {
 		return nil
 	}
 	// got error - was it still released?
-	current, readErr := c.client.Get(ctx, CHOSENSEQ_KEY).Result()
+	current, readErr := c.Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
 	if errors.Is(readErr, redis.Nil) {
 		return nil
 	}
-	if current != c.config.MyUrl {
+	if current != c.config.MyUrl() {
 		return nil
 	}
 	return releaseErr
 }
 
 func (c *SeqCoordinator) livelinessRelease(ctx context.Context) error {
-	myLivelinessKey := livelinessKeyFor(c.config.MyUrl)
-	releaseErr := c.client.Del(ctx, myLivelinessKey).Err()
+	myLivelinessKey := redisutil.LivelinessKeyFor(c.config.MyUrl())
+	releaseErr := c.Client.Del(ctx, myLivelinessKey).Err()
 	if releaseErr == nil {
 		return nil
 	}
 	// got error - was it still deleted?
-	readErr := c.client.Get(ctx, myLivelinessKey).Err()
+	readErr := c.Client.Get(ctx, myLivelinessKey).Err()
 	if errors.Is(readErr, redis.Nil) {
 		return nil
 	}
@@ -380,9 +416,8 @@ func (c *SeqCoordinator) noRedisError() time.Duration {
 
 // update for the prev known-chosen sequencer (no need to load new messages)
 func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen string) time.Duration {
-	if nextChosen != c.config.MyUrl {
+	if nextChosen != c.config.MyUrl() {
 		// was the active sequencer, but no longer
-		atomicTimeWrite(&c.lockoutUntil, time.Time{})
 		setPrevChosenTo := nextChosen
 		if c.sequencer != nil {
 			err := c.sequencer.ForwardTo(nextChosen)
@@ -420,15 +455,15 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 }
 
 func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
-	chosenSeq, err := c.recommendLiveSequencer(ctx)
+	chosenSeq, err := c.RecommendLiveSequencer(ctx)
 	if err != nil {
 		log.Warn("coordinator failed finding live sequencer", "err", err)
 		return c.retryAfterRedisError()
 	}
-	if c.prevChosenSequencer == c.config.MyUrl {
+	if c.prevChosenSequencer == c.config.MyUrl() {
 		return c.updatePrevKnownChosen(ctx, chosenSeq)
 	}
-	if chosenSeq != c.config.MyUrl && chosenSeq != c.prevChosenSequencer {
+	if chosenSeq != c.config.MyUrl() && chosenSeq != c.prevChosenSequencer {
 		var err error
 		if c.sequencer != nil {
 			err = c.sequencer.ForwardTo(chosenSeq)
@@ -463,15 +498,35 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	var msgReadErr error
 	for msgToRead < readUntil {
 		var resString string
-		resString, msgReadErr = c.client.Get(ctx, messageKeyFor(msgToRead)).Result()
+		resString, msgReadErr = c.Client.Get(ctx, redisutil.MessageKeyFor(msgToRead)).Result()
 		if msgReadErr != nil {
 			log.Warn("coordinator failed reading message", "pos", msgToRead, "err", msgReadErr)
 			break
 		}
 		rsBytes := []byte(resString)
-		rsBytes, msgReadErr = c.signer.VerifyMessageSignature(arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
+		var sigString string
+		var sigBytes []byte
+		sigSeparateKey := true
+		sigString, msgReadErr = c.Client.Get(ctx, redisutil.MessageSigKeyFor(msgToRead)).Result()
+		if errors.Is(msgReadErr, redis.Nil) {
+			// no separate signature. Try reading old-style sig
+			if len(rsBytes) < 32 {
+				log.Warn("signature not found for msg", "pos", msgToRead)
+				msgReadErr = errors.New("signature not found")
+				break
+			}
+			sigBytes = rsBytes[:32]
+			rsBytes = rsBytes[32:]
+			sigSeparateKey = false
+		} else if msgReadErr != nil {
+			log.Warn("coordinator failed reading sig", "pos", msgToRead, "err", msgReadErr)
+			break
+		} else {
+			sigBytes = []byte(sigString)
+		}
+		msgReadErr = c.signer.VerifySignature(ctx, sigBytes, arbmath.UintToBytes(uint64(msgToRead)), rsBytes)
 		if msgReadErr != nil {
-			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr)
+			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr, "separate-key", sigSeparateKey)
 			break
 		}
 		var message arbstate.MessageWithMetadata
@@ -480,7 +535,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Warn("coordinator failed to parse message from redis", "pos", msgToRead, "err", err)
 			msgReadErr = fmt.Errorf("failed to parse message: %w", err)
 			// redis messages spelled "INVALID" will be parsed as invalid L1 message, but only one at a time
-			if len(messages) > 0 || string(rsBytes) != INVALID_VAL {
+			if len(messages) > 0 || string(rsBytes) != redisutil.INVALID_VAL {
 				break
 			}
 			lastDelayedMsg := uint64(0)
@@ -508,16 +563,19 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		}
 	}
 
-	if c.config.MyUrl == INVALID_URL {
+	if c.config.MyUrl() == redisutil.INVALID_URL {
 		return c.noRedisError()
 	}
 
 	// can take over as main sequencer?
-	if localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl {
+	if localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl() {
 		if c.sequencer == nil {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
 		}
+		// we're here because we don't currently hold the lock
+		// sequencer is already either paused or forwarding
+		c.sequencer.Pause()
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
@@ -526,11 +584,18 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			if err := c.livelinessUpdate(ctx); err != nil {
 				log.Warn("failed to update liveliness", "err", err)
 			}
+			c.prevChosenSequencer = ""
 			return c.retryAfterRedisError()
 		}
 		log.Info("caught chosen-coordinator lock")
-		c.sequencer.DontForward()
-		c.prevChosenSequencer = c.config.MyUrl
+		if c.delayedSequencer != nil {
+			err = c.delayedSequencer.ForceSequenceDelayed(ctx)
+			if err != nil {
+				log.Warn("failed sequencing delayed messages after catching lock", "err", err)
+			}
+		}
+		c.sequencer.Activate()
+		c.prevChosenSequencer = c.config.MyUrl()
 		return c.noRedisError()
 	}
 
@@ -548,7 +613,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		}
 	}
 	if livelinessErr != nil {
-		log.Warn("coordinator failed to post liveness", "err", err)
+		log.Warn("coordinator failed to post liveness", "err", livelinessErr)
 	}
 
 	if (livelinessErr != nil) || (msgReadErr != nil) {
@@ -558,7 +623,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 }
 
 func (c *SeqCoordinator) DebugPrint() string {
-	return fmt.Sprint("Url:", c.config.MyUrl,
+	return fmt.Sprint("Url:", c.config.MyUrl(),
 		" prevChosenSequencer:", c.prevChosenSequencer,
 		" reportedAlive:", c.reportedAlive,
 		" lockoutUntil:", c.lockoutUntil,
@@ -569,7 +634,7 @@ type seqCoordinatorChosenHealthcheck struct {
 	c *SeqCoordinator
 }
 
-func (h seqCoordinatorChosenHealthcheck) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (h seqCoordinatorChosenHealthcheck) ServeHTTP(response http.ResponseWriter, _ *http.Request) {
 	if h.c.CurrentlyChosen() {
 		response.WriteHeader(http.StatusOK)
 	} else {
@@ -599,22 +664,65 @@ func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
 }
 
 func (c *SeqCoordinator) Start(ctxIn context.Context) {
-	c.StopWaiter.Start(ctxIn)
+	c.StopWaiter.Start(ctxIn, c)
 	c.CallIteratively(c.update)
 	if c.config.ChosenHealthcheckAddr != "" {
 		c.StopWaiter.LaunchThread(c.launchHealthcheckServer)
 	}
 }
 
+func (c *SeqCoordinator) waitForHandoff(ctx context.Context) string {
+	var nextChosen string
+	for {
+		var err error
+		nextChosen, err = c.CurrentChosenSequencer(ctx)
+		if err == nil && nextChosen != "" && nextChosen != c.config.MyUrl() {
+			return nextChosen
+		}
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-time.After(c.config.RetryInterval):
+		}
+	}
+}
+
 func (c *SeqCoordinator) StopAndWait() {
+	wasChosen := c.CurrentlyChosen()
+	c.StopWaiter.StopAndWait()
+	// normal context now closed, use parent context
+	ctx := c.StopWaiter.GetParentContext()
 	if c.CurrentlyChosen() {
-		_ = c.chosenOneRelease(c.GetContext())
+		wasChosen = true
 	}
 	if c.reportedAlive {
-		_ = c.livelinessRelease(c.GetContext())
+		err := c.livelinessRelease(ctx)
+		if err != nil {
+			log.Warn("lieveliness release failed", "err", err)
+		}
 	}
-	c.StopWaiter.StopAndWait()
-	c.client.Close()
+	if wasChosen {
+		err := c.chosenOneRelease(ctx)
+		if err != nil {
+			log.Warn("chosen release failed", "err", err)
+		}
+		if c.config.SafeShutdownDelay != time.Duration(0) {
+			handoffCtx, cancel := context.WithTimeout(ctx, c.config.SafeShutdownDelay)
+			defer cancel()
+			log.Info("Waiting for someone else to become main sequencer..")
+			newTarget := c.waitForHandoff(handoffCtx)
+			if newTarget != "" {
+				err := c.sequencer.ForwardTo(newTarget)
+				if err != nil {
+					log.Warn("setting forward address failed", "err", err)
+				} else {
+					log.Info("Waiting some more", "delay", c.config.SafeShutdownDelay, "nextChosen", newTarget)
+					<-time.After(c.config.SafeShutdownDelay)
+				}
+			}
+		}
+	}
+	_ = c.Client.Close()
 }
 
 func (c *SeqCoordinator) CurrentlyChosen() bool {

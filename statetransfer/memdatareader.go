@@ -48,11 +48,11 @@ func (r *MemoryRetryableDataReader) GetNext() (*InitializationDataForRetryable, 
 	return &r.m.d.RetryableData[r.count-1], nil
 }
 
-func (m *MemoryInitDataReader) GetRetryableDataReader() (RetryableDataReader, error) {
+func (r *MemoryInitDataReader) GetRetryableDataReader() (RetryableDataReader, error) {
 	return &MemoryRetryableDataReader{
 		FieldReader: FieldReader{
-			m:      m,
-			length: len(m.d.RetryableData),
+			m:      r,
+			length: len(r.d.RetryableData),
 		},
 	}, nil
 }
@@ -69,11 +69,11 @@ func (r *MemoryAddressReader) GetNext() (*common.Address, error) {
 	return &r.m.d.AddressTableContents[r.count-1], nil
 }
 
-func (m *MemoryInitDataReader) GetAddressTableReader() (AddressReader, error) {
+func (r *MemoryInitDataReader) GetAddressTableReader() (AddressReader, error) {
 	return &MemoryAddressReader{
 		FieldReader: FieldReader{
-			m:      m,
-			length: len(m.d.AddressTableContents),
+			m:      r,
+			length: len(r.d.AddressTableContents),
 		},
 	}, nil
 }
@@ -90,15 +90,15 @@ func (r *MemoryAccountDataReaderr) GetNext() (*AccountInitializationInfo, error)
 	return &r.m.d.Accounts[r.count-1], nil
 }
 
-func (m *MemoryInitDataReader) GetAccountDataReader() (AccountDataReader, error) {
+func (r *MemoryInitDataReader) GetAccountDataReader() (AccountDataReader, error) {
 	return &MemoryAccountDataReaderr{
 		FieldReader: FieldReader{
-			m:      m,
-			length: len(m.d.Accounts),
+			m:      r,
+			length: len(r.d.Accounts),
 		},
 	}, nil
 }
 
-func (m *MemoryInitDataReader) Close() error {
+func (r *MemoryInitDataReader) Close() error {
 	return nil
 }
