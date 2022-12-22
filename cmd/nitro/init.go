@@ -202,7 +202,8 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 	targetBlockNum := header.Number.Uint64()
 	for {
 		if header == nil || header.Root == (common.Hash{}) {
-			return fmt.Errorf("missing state of pruning target block %v", targetBlockNum)
+			log.Error("missing state of pruning target", "blockNum", targetBlockNum)
+			return nil
 		}
 		if r.bc.HasState(header.Root) {
 			break
