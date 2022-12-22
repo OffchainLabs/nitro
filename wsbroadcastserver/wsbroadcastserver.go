@@ -53,6 +53,13 @@ type BroadcasterConfig struct {
 	RequireCompression bool          `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
 }
 
+func (bc *BroadcasterConfig) Validate() error {
+	if !bc.EnableCompression && bc.RequireCompression {
+		return errors.New("require-compression cannot be true while enable-compression is false")
+	}
+	return nil
+}
+
 type BroadcasterConfigFetcher func() *BroadcasterConfig
 
 func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {

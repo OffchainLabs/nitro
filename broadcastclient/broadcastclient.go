@@ -43,6 +43,10 @@ type FeedConfig struct {
 	Input  Config                              `koanf:"input" reload:"hot"`
 }
 
+func (fc *FeedConfig) Validate() error {
+	return fc.Output.Validate()
+}
+
 func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	if feedInputEnable {
 		ConfigAddOptions(prefix+".input", f)
