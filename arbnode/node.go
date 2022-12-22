@@ -875,7 +875,7 @@ func createNodeImpl(
 		}
 
 		broadcastClients, err = broadcastclients.NewBroadcastClients(
-			config.Feed.Input,
+			func() *broadcastclient.Config { return &configFetcher.Get().Feed.Input },
 			l2ChainId,
 			currentMessageCount,
 			txStreamer,

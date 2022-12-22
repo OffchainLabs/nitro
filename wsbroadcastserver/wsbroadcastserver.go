@@ -49,8 +49,8 @@ type BroadcasterConfig struct {
 	MaxSendQueue       int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
 	RequireVersion     bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
 	DisableSigning     bool          `koanf:"disable-signing"`
-	EnableCompression  bool          `koanf:"enable-compression"`
-	RequireCompression bool          `koanf:"require-compression"`
+	EnableCompression  bool          `koanf:"enable-compression" reload:"hot"`  // if reloaded to false will cause disconnection of clients with enabled compression on next broadcast
+	RequireCompression bool          `koanf:"require-compression" reload:"hot"` // if reloaded to true will cause disconnection of clients with disabled compression on next broadcast
 }
 
 type BroadcasterConfigFetcher func() *BroadcasterConfig

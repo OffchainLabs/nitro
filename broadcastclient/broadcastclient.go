@@ -40,7 +40,7 @@ var (
 
 type FeedConfig struct {
 	Output wsbroadcastserver.BroadcasterConfig `koanf:"output" reload:"hot"`
-	Input  Config                              `koanf:"input"`
+	Input  Config                              `koanf:"input" reload:"hot"`
 }
 
 func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
@@ -58,19 +58,21 @@ var FeedConfigDefault = FeedConfig{
 }
 
 type Config struct {
-	ReconnectInitialBackoff time.Duration            `koanf:"reconnect-initial-backoff"`
-	ReconnectMaximumBackoff time.Duration            `koanf:"reconnect-maximum-backoff"`
-	RequireChainId          bool                     `koanf:"require-chain-id"`
-	RequireFeedVersion      bool                     `koanf:"require-feed-version"`
-	Timeout                 time.Duration            `koanf:"timeout"`
+	ReconnectInitialBackoff time.Duration            `koanf:"reconnect-initial-backoff" reload:"hot"`
+	ReconnectMaximumBackoff time.Duration            `koanf:"reconnect-maximum-backoff" reload:"hot"`
+	RequireChainId          bool                     `koanf:"require-chain-id" reload:"hot"`
+	RequireFeedVersion      bool                     `koanf:"require-feed-version" reload:"hot"`
+	Timeout                 time.Duration            `koanf:"timeout" reload:"hot"`
 	URLs                    []string                 `koanf:"url"`
 	Verifier                signature.VerifierConfig `koanf:"verify"`
-	EnableCompression       bool                     `koanf:"enable-compression"`
+	EnableCompression       bool                     `koanf:"enable-compression" reload:"hot"`
 }
 
 func (c *Config) Enable() bool {
 	return len(c.URLs) > 0 && c.URLs[0] != ""
 }
+
+type ConfigFetcher func() *Config
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".reconnect-initial-backoff", DefaultConfig.ReconnectInitialBackoff, "initial duration to wait before reconnect")
@@ -112,7 +114,7 @@ type TransactionStreamerInterface interface {
 type BroadcastClient struct {
 	stopwaiter.StopWaiter
 
-	config       Config
+	config       ConfigFetcher
 	websocketUrl string
 	nextSeqNum   arbutil.MessageIndex
 	sigVerifier  *signature.Verifier
@@ -142,7 +144,7 @@ var ErrMissingChainId = errors.New("missing chain id")
 var ErrMissingFeedServerVersion = errors.New("missing feed server version")
 
 func NewBroadcastClient(
-	config Config,
+	config ConfigFetcher,
 	websocketUrl string,
 	chainId uint64,
 	currentMessageCount arbutil.MessageIndex,
@@ -152,7 +154,7 @@ func NewBroadcastClient(
 	bpVerifier contracts.BatchPosterVerifierInterface,
 	adjustCount func(int32),
 ) (*BroadcastClient, error) {
-	sigVerifier, err := signature.NewVerifier(&config.Verifier, bpVerifier)
+	sigVerifier, err := signature.NewVerifier(&config().Verifier, bpVerifier)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +178,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 		return
 	}
 	bc.LaunchThread(func(ctx context.Context) {
-		backoffDuration := bc.config.ReconnectInitialBackoff
+		backoffDuration := bc.config().ReconnectInitialBackoff
 		for {
 			earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 			if errors.Is(err, ErrMissingChainId) ||
@@ -192,7 +194,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
 			timer := time.NewTimer(backoffDuration)
-			if backoffDuration < bc.config.ReconnectMaximumBackoff {
+			if backoffDuration < bc.config().ReconnectMaximumBackoff {
 				backoffDuration *= 2
 			}
 			select {
@@ -222,10 +224,9 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	var chainId uint64
 	var feedServerVersion uint64
 
-	// TODO
-	useCompression := true
+	config := bc.config()
 	extensions := []httphead.Option{}
-	if useCompression {
+	if config.EnableCompression {
 		extensions = append(extensions, wsflate.DefaultParameters.Option())
 	}
 	timeoutDialer := ws.Dialer{
@@ -286,14 +287,14 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	if err != nil {
 		return nil, errors.Wrap(err, "broadcast client unable to connect")
 	}
-	if bc.config.RequireChainId && !foundChainId {
+	if config.RequireChainId && !foundChainId {
 		err := conn.Close()
 		if err != nil {
 			return nil, errors.Wrap(err, "error closing connection when missing chain id")
 		}
 		return nil, ErrMissingChainId
 	}
-	if bc.config.RequireFeedVersion && !foundFeedServerVersion {
+	if config.RequireFeedVersion && !foundFeedServerVersion {
 		err := conn.Close()
 		if err != nil {
 			return nil, errors.Wrap(err, "error closing connection when missing feed server version")
@@ -332,7 +333,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
 		connected := false
 		sourcesDisconnectedGauge.Inc(1)
-		backoffDuration := bc.config.ReconnectInitialBackoff
+		backoffDuration := bc.config().ReconnectInitialBackoff
 		for {
 			select {
 			case <-ctx.Done():
@@ -343,7 +344,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			var msg []byte
 			var op ws.OpCode
 			var err error
-			msg, op, bc.flateReader, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.config.Timeout, ws.StateClientSide, bc.compression, bc.flateReader)
+			msg, op, bc.flateReader, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.config().Timeout, ws.StateClientSide, bc.compression, bc.flateReader)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return
@@ -363,7 +364,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				}
 				_ = bc.conn.Close()
 				timer := time.NewTimer(backoffDuration)
-				if backoffDuration < bc.config.ReconnectMaximumBackoff {
+				if backoffDuration < bc.config().ReconnectMaximumBackoff {
 					backoffDuration *= 2
 				}
 				select {
@@ -375,7 +376,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				earlyFrameData = bc.retryConnect(ctx)
 				continue
 			}
-			backoffDuration = bc.config.ReconnectInitialBackoff
+			backoffDuration = bc.config().ReconnectInitialBackoff
 
 			if msg != nil {
 				res := broadcaster.BroadcastMessage{}
@@ -485,7 +486,7 @@ func (bc *BroadcastClient) StopAndWait() {
 }
 
 func (bc *BroadcastClient) isValidSignature(ctx context.Context, message *broadcaster.BroadcastFeedMessage) error {
-	if bc.config.Verifier.Dangerous.AcceptMissing && bc.sigVerifier == nil {
+	if bc.config().Verifier.Dangerous.AcceptMissing && bc.sigVerifier == nil {
 		// Verifier disabled
 		return nil
 	}
