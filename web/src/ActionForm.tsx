@@ -10,13 +10,14 @@ export const ActionForm: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [event.target.name]: event.target.value });
+    setFormData({ ...formData, index: parseInt(event.target.value) });
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
     try {
+      console.log('sending', formData);
       const response = await fetch('/api/assertions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -38,7 +39,7 @@ export const ActionForm: React.FC = () => {
     <form onSubmit={handleSubmit}>
       <section className="p-4 flex flex-col max-w-md mx-auto">
           <div className="p-6 bg-sky-100 rounded-sm">
-              <div className="flex items-left font-black mt-2 mb-2">
+              <div className="flex items-left font-black mb-2">
                   <span className="tracking-wide text-lg text-gray-900">Validator actions</span>
               </div>
               {error && <div className="text-red-500">Error: {error}</div>}
@@ -48,7 +49,7 @@ export const ActionForm: React.FC = () => {
                   focus:outline-none
                   focus:border-sky-500
                   focus:ring-1
-                  focus:ring-sky-500" type="text" name="index" placeholder="0" value={formData.index} onChange={handleChange}/>
+                  focus:ring-sky-500" type="number" name="index" placeholder="0" value={formData.index} onChange={handleChange}/>
               <button disabled={submitting} className="bg-fuchsia-500 px-4 py-1.5 rounded-sm shadow-lg font-small text-white font-white block" type="submit">
                 Submit assertion
               </button>

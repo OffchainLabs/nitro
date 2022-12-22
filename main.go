@@ -62,7 +62,7 @@ type server struct {
 	cancelFn   context.CancelFunc
 	cfg        *config
 	port       uint
-	chain      protocol.OnChainProtocol
+	chain      *protocol.AssertionChain
 	manager    statemanager.Manager
 	validators []*validator.Validator
 	wsClients  map[*websocket.Conn]bool
@@ -79,6 +79,20 @@ func (s *server) updateConfig(c echo.Context) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
+	req := defaultConfig()
+	defer c.Request().Body.Close()
+	enc, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		log.Error(err)
+		// http.Error(w, "Could not read body", http.StatusBadRequest)
+		return nil
+	}
+	if err := json.Unmarshal(enc, req); err != nil {
+		log.Error(err)
+		// http.Error(w, "Could not decode", http.StatusBadRequest)
+		return nil
+	}
+
 	log.Info("Received update config request, restarting application...")
 	// Cancel the current runtime of the application, wait a bit for cleanup,
 	// then restart the application with the updated configuration.
@@ -89,6 +103,7 @@ func (s *server) updateConfig(c echo.Context) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancelFn = cancel
 	s.ctx = ctx
+	s.cfg = req
 	go s.startBackgroundRoutines(ctx, s.cfg)
 
 	log.Info("Successfully restarted background routines")
@@ -171,6 +186,7 @@ func (s *server) startBackgroundRoutines(ctx context.Context, cfg *config) {
 type event struct {
 	Typ      string `json:"typ"`
 	Contents string `json:"contents"`
+	Vis      string `json:"vis"`
 }
 
 func (s *server) sendChainEventsToClients(
@@ -182,10 +198,12 @@ func (s *server) sendChainEventsToClients(
 		select {
 		case ev := <-chalEvs:
 			log.Infof("Got challenge event: %+T, and %+v", ev, ev)
+			vis := s.chain.Visualize()
 			s.lock.RLock()
 			eventToSend := &event{
 				Typ:      fmt.Sprintf("%+T", ev),
 				Contents: fmt.Sprintf("%+v", ev),
+				Vis:      vis,
 			}
 			enc, err := json.Marshal(eventToSend)
 			if err != nil {
@@ -205,10 +223,12 @@ func (s *server) sendChainEventsToClients(
 			s.lock.RUnlock()
 		case ev := <-chainEvs:
 			log.Infof("Got chain event: %+T, and %+v", ev, ev)
+			vis := s.chain.Visualize()
 			s.lock.RLock()
 			eventToSend := &event{
 				Typ:      fmt.Sprintf("%+T", ev),
 				Contents: fmt.Sprintf("%+v", ev),
+				Vis:      vis,
 			}
 			enc, err := json.Marshal(eventToSend)
 			if err != nil {
