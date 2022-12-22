@@ -53,7 +53,7 @@ fn benchmark_wasmer() -> Result<()> {
     }
 
     fn polyglot() -> Result<Duration> {
-        let mut args = vec![1]; // 100 keccaks
+        let mut args = vec![100]; // 100 keccaks
         args.extend([0; 32]);
         
         let config = PolyglotConfig::default();

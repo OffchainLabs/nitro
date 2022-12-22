@@ -83,9 +83,19 @@ wasm32_unknown = target/wasm32-unknown-unknown/release
 
 polyglot_dir = arbitrator/polyglot
 polyglot_test_dir = arbitrator/polyglot/tests
-polyglot_test_keccak_wasm = $(polyglot_test_dir)/keccak/$(wasm32_unknown)/keccak.wasm
-polyglot_test_keccak_src = $(wildcard $(polyglot_test_dir)/keccak/*.toml $(polyglot_test_dir)/keccak/src/*.rs)
-polyglot_benchmarks = $(wildcard $(polyglot_dir)/*.toml $(polyglot_dir)/src/*.rs) $(polyglot_test_keccak_wasm)
+
+get_polyglot_test_wasm = $(polyglot_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
+get_polyglot_test_rust = $(wildcard $(polyglot_test_dir)/$(1)/*.toml $(polyglot_test_dir)/$(1)/src/*.rs)
+get_polyglot_test_c    = $(wildcard $(polyglot_test_dir)/$(1)/*.c $(polyglot_test_dir)/$(1)/*.h)
+polyglot_test_keccak_wasm     = $(call get_polyglot_test_wasm,keccak)
+polyglot_test_keccak_src      = $(call get_polyglot_test_rust,keccak)
+polyglot_test_keccak-100_wasm = $(call get_polyglot_test_wasm,keccak-100)
+polyglot_test_keccak-100_src  = $(call get_polyglot_test_rust,keccak-100)
+polyglot_test_siphash_wasm    = $(polyglot_test_dir)/siphash/siphash.wasm
+polyglot_test_siphash_src     = $(call get_polyglot_test_c,siphash)
+
+polyglot_test_wasms = $(polyglot_test_keccak_wasm) $(polyglot_test_keccak-100_wasm) $(polyglot_test_siphash_wasm)
+polyglot_benchmarks = $(wildcard $(polyglot_dir)/*.toml $(polyglot_dir)/src/*.rs) $(polyglot_test_wasms)
 
 # user targets
 
@@ -293,6 +303,13 @@ $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 $(polyglot_test_keccak_wasm): $(polyglot_test_keccak_src)
 	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
 	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(polyglot_test_keccak-100_wasm): $(polyglot_test_keccak-100_src)
+	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(polyglot_test_siphash_wasm): $(polyglot_test_siphash_src)
+	clang $^ -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
 
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(arbitrator_prover_bin) $(output_root)/machines/latest/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(output_root)/machines/latest/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
