@@ -1,8 +1,8 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use siphasher::sip::SipHasher24;
 use sha3::{Digest, Keccak256};
+use siphasher::sip::SipHasher24;
 use std::hash::Hasher;
 
 pub fn keccak(preimage: &[u8]) -> [u8; 32] {

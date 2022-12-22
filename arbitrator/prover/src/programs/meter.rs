@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use std::fmt::Debug;
 use wasmer::{
     wasmparser::{Operator, Type as WpType, TypeOrFuncType},
-    GlobalInit, Instance, Type, StoreMut,
+    GlobalInit, Instance, StoreMut, Type,
 };
 use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 

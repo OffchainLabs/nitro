@@ -84,10 +84,11 @@ pub struct SystemState {
 
 impl WasmEnv {
     pub fn new(config: PolyglotConfig, args: Vec<u8>) -> Self {
-        let mut env = Self::default();
-        env.config = config;
-        env.args = args;
-        env
+        Self {
+            config,
+            args,
+            ..Default::default()
+        }
     }
 
     pub fn memory(env: &mut WasmEnvMut<'_>) -> MemoryViewContainer {
@@ -121,6 +122,7 @@ impl SystemState {
         Ok(())
     }
 
+    #[allow(clippy::inconsistent_digit_grouping)]
     pub fn buy_evm_gas(&mut self, store: &mut StoreMut, evm: u64) -> MaybeEscape {
         let wasm_gas = evm.saturating_mul(self.wasm_gas_price) / 100_00;
         self.buy_gas(store, wasm_gas)

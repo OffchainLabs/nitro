@@ -307,7 +307,7 @@ impl<'a> ModuleMod for WasmBinary<'a> {
             bail!("multi-memory extension not supported");
         }
         if let Some(memory) = self.memories.first_mut() {
-            let bound = memory.maximum.unwrap_or(limit.0.into());
+            let bound = memory.maximum.unwrap_or_else(|| limit.0.into());
             let bound = bound.min(limit.0.into());
             memory.maximum = Some(bound);
 

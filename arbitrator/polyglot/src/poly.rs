@@ -28,7 +28,7 @@ pub fn instance(path: &str, env: WasmEnv) -> Result<(Instance, FunctionEnv<WasmE
     let gas_status = expect_global(POLYGLOT_GAS_STATUS);
 
     let env = func_env.as_mut(&mut store);
-    env.memory = Some(memory.clone());
+    env.memory = Some(memory);
     env.state = Some(SystemState {
         gas_left,
         gas_status,

@@ -193,7 +193,7 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
         };
 
         // add an extraneous return instruction to the end to match Arbitrator
-        let mut code = std::mem::replace(&mut self.code, vec![]);
+        let mut code = std::mem::take(&mut self.code);
         let last = code.pop().unwrap();
         code.push(Return);
         code.push(last);
