@@ -175,7 +175,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) ([]*ClientConnection, error
 	config := cm.config()
 	//                                        /-> wsutil.Writer -> not compressed msg buffer
 	// bm -> json.Encoder -> io.MultiWriter -|
-	// 										  \-> cm.flateWriter -> wsutil.Writer -> compressed msg buffer
+	//                                        \-> cm.flateWriter -> wsutil.Writer -> compressed msg buffer
 	writers := []io.Writer{}
 	var notCompressed bytes.Buffer
 	var notCompressedWriter *wsutil.Writer
