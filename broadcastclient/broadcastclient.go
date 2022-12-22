@@ -403,8 +403,6 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 				} else {
 					log.Debug("received broadcast with no messages populated", "length", len(msg))
 				}
-				log.Info("#####", "version", res.Version, "len(Messages)", len(res.Messages))
-
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
 						for _, message := range res.Messages {
@@ -426,9 +424,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}
-					log.Info("res", "ConfirmedSequenceNumberMessage", res.ConfirmedSequenceNumberMessage)
 					if res.ConfirmedSequenceNumberMessage != nil && bc.confirmedSequenceNumberListener != nil {
-						log.Info("<<<<<<")
 						bc.confirmedSequenceNumberListener <- res.ConfirmedSequenceNumberMessage.SequenceNumber
 					}
 				}
