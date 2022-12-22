@@ -258,6 +258,14 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	roots := importantRoots{
 		bc: bc,
 	}
+	genesisHeader := bc.GetHeaderByNumber(bc.Config().ArbitrumChainParams.GenesisBlockNum)
+	if genesisHeader == nil {
+		return nil, errors.New("missing L2 genesis block header")
+	}
+	err = roots.addHeader(genesisHeader, false)
+	if err != nil {
+		return nil, err
+	}
 	if initConfig.Prune == "validator" {
 		if l1Client == nil {
 			return nil, errors.New("an L1 connection is required for validator pruning")
