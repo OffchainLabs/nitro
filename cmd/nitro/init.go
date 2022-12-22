@@ -240,6 +240,16 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
+	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", true)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err := arbDb.Close()
+		if err != nil {
+			log.Warn("failed to close arbitrum database after finding pruning targets", "err", err)
+		}
+	}()
 	bc, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &nodeConfig.Node)
 	if err != nil {
 		return nil, err
@@ -276,16 +286,6 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 				return nil, err
 			}
 
-			arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", true)
-			if err != nil {
-				return nil, err
-			}
-			defer func() {
-				err := arbDb.Close()
-				if err != nil {
-					log.Warn("failed to close arbitrum database after finding pruning targets", "err", err)
-				}
-			}()
 			validatorDb := rawdb.NewTable(arbDb, arbnode.BlockValidatorPrefix)
 			lastValidated, err := validator.ReadLastValidatedFromDb(validatorDb)
 			if err != nil {
@@ -319,25 +319,57 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	} else {
 		return nil, fmt.Errorf("unknown pruning mode: \"%v\"", initConfig.Prune)
 	}
-	latestHeader := bc.CurrentBlock().Header()
-	chainHeight := latestHeader.Number.Uint64()
-	for {
-		if latestHeader == nil {
-			log.Warn("missing latest cached block")
-			break
+	if l1Client != nil {
+		// Find the latest finalized block and add it as a pruning target
+		l1Block, err := l1Client.BlockByNumber(ctx, big.NewInt(int64(rpc.FinalizedBlockNumber)))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get finalized block: %w", err)
 		}
-		meetsHeight := latestHeader.Number.Uint64()+nodeConfig.Node.Caching.BlockCount <= chainHeight
-		meetsAge := time.Since(time.Unix(int64(latestHeader.Time), 0)) >= nodeConfig.Node.Caching.BlockAge
-		if meetsHeight && meetsAge {
-			err = roots.addHeader(latestHeader, true)
+		l1BlockNum := l1Block.NumberU64()
+		txStreamer, err := arbnode.NewTransactionStreamer(arbDb, bc, nil, nil, func() *arbnode.TransactionStreamerConfig { return &nodeConfig.Node.TransactionStreamer })
+		if err != nil {
+			return nil, err
+		}
+		tracker, err := arbnode.NewInboxTracker(arbDb, txStreamer, nil)
+		if err != nil {
+			return nil, err
+		}
+		batch, err := tracker.GetBatchCount()
+		if err != nil {
+			return nil, err
+		}
+		for {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if batch == 0 {
+				// No batch has been finalized
+				break
+			}
+			batch -= 1
+			meta, err := tracker.GetBatchMetadata(batch)
 			if err != nil {
 				return nil, err
 			}
-			break
+			if meta.L1Block <= l1BlockNum {
+				blockNum, err := txStreamer.MessageCountToBlockNumber(meta.MessageCount)
+				if err != nil {
+					return nil, err
+				}
+				l2Header := bc.GetHeaderByNumber(uint64(blockNum))
+				if l2Header == nil {
+					log.Warn("latest finalized L2 block is unknown", "blockNum", blockNum)
+					break
+				}
+				err = roots.addHeader(l2Header, false)
+				if err != nil {
+					return nil, err
+				}
+				break
+			}
 		}
-		// An underflow is fine here because it'll just return nil due to not found
-		latestHeader = bc.GetHeader(latestHeader.ParentHash, latestHeader.Number.Uint64()-1)
 	}
+	roots.roots = append(roots.roots, common.Hash{}) // the latest snapshot
 	log.Info("found pruning target blocks", "heights", roots.heights, "roots", roots.roots)
 	return roots.roots, nil
 }
