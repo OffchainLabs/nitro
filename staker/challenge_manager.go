@@ -518,7 +518,7 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 	if err != nil {
 		return nil, err
 	}
-	stepCount, computedState, computedStatus, err := m.executionChallengeBackend.GetFialState(ctx)
+	stepCount, computedState, computedStatus, err := m.executionChallengeBackend.GetFinalState(ctx)
 	if err != nil {
 		return nil, err
 	}

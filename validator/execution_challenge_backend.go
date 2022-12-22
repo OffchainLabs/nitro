@@ -92,7 +92,7 @@ func (b *ExecutionChallengeBackend) GetProofAt(
 	return mach.ProveNextStep(), nil
 }
 
-func (b *ExecutionChallengeBackend) GetFialState(ctx context.Context) (uint64, GoGlobalState, uint8, error) {
+func (b *ExecutionChallengeBackend) GetFinalState(ctx context.Context) (uint64, GoGlobalState, uint8, error) {
 	// TODO: we might also use HostIoMachineTo Speed things up
 	initialRunMachine := b.initialMachine.CloneMachineInterface()
 	var stepCount uint64
