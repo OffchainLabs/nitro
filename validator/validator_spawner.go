@@ -16,13 +16,13 @@ import (
 )
 
 type ValidationSpawner interface {
-	Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRunInt
+	Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun
 	Stop()
 	Name() string
 	Room() int
 }
 
-type ValidationRunInt interface {
+type ValidationRun interface {
 	WasmModuleRoot() common.Hash
 	Done() bool
 	ChDone() chan struct{}
@@ -38,7 +38,7 @@ type ArbitratorSpawner struct {
 	machineLoader *ArbMachineLoader
 }
 
-type ValidationRun struct {
+type valRun struct {
 	err      error
 	root     common.Hash
 	chanDone chan struct{}
@@ -48,36 +48,36 @@ type ValidationRun struct {
 
 var ErrNotDone error = errors.New("not done")
 
-func (r *ValidationRun) Done() bool {
+func (r *valRun) Done() bool {
 	return atomic.LoadInt32(&r.boolDone) != 0
 }
 
-func (r *ValidationRun) ChDone() chan struct{} {
+func (r *valRun) ChDone() chan struct{} {
 	return r.chanDone
 }
 
-func (r *ValidationRun) Result() (GoGlobalState, error) {
+func (r *valRun) Result() (GoGlobalState, error) {
 	if !r.Done() {
 		return GoGlobalState{}, ErrNotDone
 	}
 	return r.result, r.err
 }
 
-func (r *ValidationRun) WasmModuleRoot() common.Hash {
+func (r *valRun) WasmModuleRoot() common.Hash {
 	return r.root
 }
 
-func (r *ValidationRun) Close() {}
+func (r *valRun) Close() {}
 
-func NewValidationRun(root common.Hash) *ValidationRun {
-	return &ValidationRun{
+func NewvalRun(root common.Hash) *valRun {
+	return &valRun{
 		root:     root,
 		boolDone: 0,
 		chanDone: make(chan struct{}),
 	}
 }
 
-func (r *ValidationRun) consumeResult(res GoGlobalState, err error) {
+func (r *valRun) consumeResult(res GoGlobalState, err error) {
 	r.result = res
 	r.err = err
 	atomic.StoreInt32(&r.boolDone, 1)
@@ -174,9 +174,9 @@ func (v *ArbitratorSpawner) execute(
 	return mach.GetGlobalState(), nil
 }
 
-func (v *ArbitratorSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRunInt {
+func (v *ArbitratorSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun {
 	atomic.AddInt32(&v.count, 1)
-	run := NewValidationRun(moduleRoot)
+	run := NewvalRun(moduleRoot)
 	go func() {
 		run.consumeResult(v.execute(v.ctx, entry, moduleRoot))
 		atomic.AddInt32(&v.count, -1)
@@ -365,9 +365,9 @@ func (s *JitSpawner) Name() string {
 	return "jit"
 }
 
-func (v *JitSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRunInt {
+func (v *JitSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun {
 	atomic.AddInt32(&v.count, 1)
-	run := NewValidationRun(moduleRoot)
+	run := NewvalRun(moduleRoot)
 	go func() {
 		run.consumeResult(v.execute(v.ctx, entry, moduleRoot))
 		atomic.AddInt32(&v.count, -1)

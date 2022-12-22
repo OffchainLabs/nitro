@@ -149,10 +149,10 @@ const (
 )
 
 type validationStatus struct {
-	Status uint32                       // atomic: value is one of validationStatus*
-	Cancel func()                       // non-atomic: only read/written to with reorg mutex
-	Entry  *validationEntry             // non-atomic: only read if Status >= validationStatusPrepared
-	Runs   []validator.ValidationRunInt // if status >= ValidationSent
+	Status uint32                    // atomic: value is one of validationStatus*
+	Cancel func()                    // non-atomic: only read/written to with reorg mutex
+	Entry  *validationEntry          // non-atomic: only read if Status >= validationStatusPrepared
+	Runs   []validator.ValidationRun // if status >= ValidationSent
 }
 
 func (s *validationStatus) setStatus(val valStatusField) {

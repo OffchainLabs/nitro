@@ -578,7 +578,7 @@ func (v *StatelessBlockValidator) ValidateBlock(
 	if len(spawners) == 0 {
 		return false, errors.New("no validation defined")
 	}
-	var runs []validator.ValidationRunInt
+	var runs []validator.ValidationRun
 	for _, spawner := range spawners {
 		run := spawner.Launch(input, moduleRoot)
 		runs = append(runs, run)
