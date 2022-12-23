@@ -316,6 +316,6 @@ fn test_c() -> Result<()> {
     assert_eq!(status, 0);
 
     let env = env.as_ref(&store);
-    assert!(env.outs.is_empty());
+    assert_eq!(hex::encode(&env.outs), hex::encode(&env.args));
     Ok(())
 }

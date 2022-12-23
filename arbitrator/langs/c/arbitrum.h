@@ -14,7 +14,7 @@ extern "C" {
 #define POLY_HOST import_module("poly_host")
 
 extern __attribute__((POLY_HOST, import_name("read_args"))) void read_args(const uint8_t * data);
-extern __attribute__((POLY_HOST, import_name("return_data"))) void return_data(size_t len, const uint8_t * data);
+extern __attribute__((POLY_HOST, import_name("return_data"))) void return_data(const uint8_t * data, size_t len);
 
 typedef enum ArbStatus {
     Success = 0,
@@ -33,7 +33,7 @@ typedef struct ArbResult {
         const uint8_t args[args_len];                             \
         read_args(args);                                          \
         const ArbResult result = user_main(args, args_len);       \
-        return_data(result.output_len, result.output);            \
+        return_data(result.output, result.output_len);             \
         return result.status;                                     \
     }
 

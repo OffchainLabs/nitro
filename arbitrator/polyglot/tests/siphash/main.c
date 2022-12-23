@@ -21,8 +21,8 @@ ArbResult user_main(const uint8_t * args, size_t args_len) {
 
     return (ArbResult) {
         .status = valid,
-        .output = NULL,
-        .output_len = 0,
+        .output = args,
+        .output_len = args_len,
     };
 }
 
