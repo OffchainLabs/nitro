@@ -112,7 +112,7 @@ func NewJitMachineLoader(config *JitMachineConfig, locator *MachineLocator, fata
 	}
 	createMachineThreadFunc := func(ctx context.Context, moduleRoot common.Hash, status *machineStatus[JitMachine]) {
 		binPath := filepath.Join(locator.getMachinePath(moduleRoot), config.ProverBinPath)
-		status.machine, status.err = createJitMachine(jitPath, binPath, config, moduleRoot, fatalErrChan)
+		status.machine, status.err = createJitMachine(jitPath, binPath, config.JitCranelift, moduleRoot, fatalErrChan)
 	}
 	return &JitMachineLoader{
 		machineLoader: *newMachineLoader[JitMachine](locator, createMachineThreadFunc),

@@ -64,9 +64,6 @@ type BlockValidatorConfig struct {
 	Enable                   bool                          `koanf:"enable"`
 	ArbitratorValidator      bool                          `koanf:"arbitrator-validator"`
 	JitValidator             bool                          `koanf:"jit-validator"`
-	JitValidatorCranelift    bool                          `koanf:"jit-validator-cranelift"`
-	OutputPath               string                        `koanf:"output-path" reload:"hot"`
-	Deprecated_Concurrent    int                           `koanf:"concurrent-runs-limit" reload:"hot"`
 	ValidationPoll           time.Duration                 `koanf:"check-validations-poll" reload:"hot"`
 	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
@@ -86,9 +83,6 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	f.Bool(prefix+".arbitrator-validator", DefaultBlockValidatorConfig.ArbitratorValidator, "enable the complete, arbitrator block validator")
 	f.Bool(prefix+".jit-validator", DefaultBlockValidatorConfig.JitValidator, "enable the faster, jit-accelerated block validator")
-	f.Bool(prefix+".jit-validator-cranelift", DefaultBlockValidatorConfig.JitValidatorCranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
-	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
-	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.Deprecated_Concurrent, "depracated")
 	f.Duration(prefix+".check-validations-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
@@ -106,8 +100,6 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	ArbitratorValidator:      false,
 	JitValidator:             true,
-	JitValidatorCranelift:    true,
-	OutputPath:               "./target/output",
 	ValidationPoll:           time.Second,
 	ForwardBlocks:            1024,
 	PrerecordedBlocks:        128,
@@ -121,8 +113,6 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	ArbitratorValidator:      false,
 	JitValidator:             false,
-	JitValidatorCranelift:    true,
-	OutputPath:               "./target/output",
 	ValidationPoll:           100 * time.Millisecond,
 	ForwardBlocks:            128,
 	PrerecordedBlocks:        64,
@@ -421,7 +411,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	if err != nil {
 		return err
 	}
-	return v.execSpawner.WriteToFile(v.config().OutputPath, input, expOut, moduleRoot)
+	return v.execSpawner.WriteToFile(input, expOut, moduleRoot)
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {

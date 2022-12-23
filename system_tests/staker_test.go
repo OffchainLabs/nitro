@@ -116,9 +116,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
-	valConfig := staker.L1ValidatorConfig{
-		TargetMachineCount: 4,
-	}
+	valConfig := staker.L1ValidatorConfig{}
 
 	valWalletA, err := staker.NewContractValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {})
 	Require(t, err)
@@ -129,7 +127,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 	locator, err := validator.NewMachineLocator("")
 	Require(t, err)
-	spawner, err := validator.NewArbitratorSpawner(locator)
+	spawner, err := validator.NewArbitratorSpawner(locator, validator.DefaultArbitratorSpawnerConfigFetcher)
 	Require(t, err)
 	statelessA, err := staker.NewStatelessBlockValidator(
 		spawner,

@@ -25,9 +25,9 @@ type JitMachine struct {
 	stdin   io.WriteCloser
 }
 
-func createJitMachine(jitBinary string, binaryPath string, config *JitMachineConfig, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
+func createJitMachine(jitBinary string, binaryPath string, cranelift bool, moduleRoot common.Hash, fatalErrChan chan error) (*JitMachine, error) {
 	invocation := []string{"--binary", binaryPath, "--forks"}
-	if config.JitCranelift {
+	if cranelift {
 		invocation = append(invocation, "--cranelift")
 	}
 	process := exec.Command(jitBinary, invocation...)

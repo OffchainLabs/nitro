@@ -403,7 +403,8 @@ type Config struct {
 	TxPreCheckerStrictness uint                        `koanf:"tx-pre-checker-strictness" reload:"hot"`
 	BlockValidator         staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                   broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
-	Validator              staker.L1ValidatorConfig    `koanf:"validator"`
+	Staker                 staker.L1ValidatorConfig    `koanf:"staker"`
+	Validation             validator.ValidationConfig  `koanf:"validation" reload:"hot"`
 	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability       das.DataAvailabilityConfig  `koanf:"data-availability"`
 	Wasm                   WasmConfig                  `koanf:"wasm"`
@@ -466,7 +467,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	f.Uint(prefix+".tx-pre-checker-strictness", ConfigDefault.TxPreCheckerStrictness, txPreCheckerDescription)
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
-	staker.L1ValidatorConfigAddOptions(prefix+".validator", f)
+	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
+	validator.ValidationConfigAddOptions(prefix+".validation", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
@@ -491,7 +493,8 @@ var ConfigDefault = Config{
 	TxPreCheckerStrictness: TxPreCheckerStrictnessNone,
 	BlockValidator:         staker.DefaultBlockValidatorConfig,
 	Feed:                   broadcastclient.FeedConfigDefault,
-	Validator:              staker.DefaultL1ValidatorConfig,
+	Staker:                 staker.DefaultL1ValidatorConfig,
+	Validation:             validator.DefaultValidationConfig,
 	SeqCoordinator:         DefaultSeqCoordinatorConfig,
 	DataAvailability:       das.DefaultDataAvailabilityConfig,
 	Wasm:                   DefaultWasmConfig,
@@ -927,7 +930,10 @@ func createNodeImpl(
 
 	locator, err := validator.NewMachineLocator(config.Wasm.RootPath)
 	if err == nil {
-		execSpawner, err := validator.NewArbitratorSpawner(locator)
+		arbConfigFetcher := func() *validator.ArbitratorSpawnerConfig {
+			return &configFetcher.Get().Validation.Arbitrator
+		}
+		execSpawner, err := validator.NewArbitratorSpawner(locator, arbConfigFetcher)
 		if err != nil {
 			return nil, err
 		}
@@ -936,7 +942,8 @@ func createNodeImpl(
 			valSpawners = append(valSpawners, execSpawner)
 		}
 		if config.BlockValidator.JitValidator {
-			jitSpawner, err := validator.NewJitSpawner(locator, fatalErrChan)
+			jitConfigFetcher := func() *validator.JitSpawnerConfig { return &configFetcher.Get().Validation.Jit }
+			jitSpawner, err := validator.NewJitSpawner(locator, jitConfigFetcher, fatalErrChan)
 			if err != nil {
 				return nil, err
 			}
@@ -958,7 +965,7 @@ func createNodeImpl(
 			return nil, err
 		}
 	} else {
-		if blockValidatorConf.Enable || config.Validator.Enable {
+		if blockValidatorConf.Enable || config.Staker.Enable {
 			return nil, fmt.Errorf("%w: failed to find machines", err)
 		}
 		log.Warn("Failed to find machines", "err", err)
@@ -979,16 +986,16 @@ func createNodeImpl(
 	}
 
 	var stakerObj *staker.Staker
-	if config.Validator.Enable {
+	if config.Staker.Enable {
 		var wallet staker.ValidatorWalletInterface
-		if config.Validator.UseSmartContractWallet || txOpts == nil {
+		if config.Staker.UseSmartContractWallet || txOpts == nil {
 			var existingWalletAddress *common.Address
-			if len(config.Validator.ContractWalletAddress) > 0 {
-				if !common.IsHexAddress(config.Validator.ContractWalletAddress) {
-					log.Error("invalid validator smart contract wallet", "addr", config.Validator.ContractWalletAddress)
+			if len(config.Staker.ContractWalletAddress) > 0 {
+				if !common.IsHexAddress(config.Staker.ContractWalletAddress) {
+					log.Error("invalid validator smart contract wallet", "addr", config.Staker.ContractWalletAddress)
 					return nil, errors.New("invalid validator smart contract wallet address")
 				}
-				tmpAddress := common.HexToAddress(config.Validator.ContractWalletAddress)
+				tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 				existingWalletAddress = &tmpAddress
 			}
 			wallet, err = staker.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
@@ -996,7 +1003,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		} else {
-			if len(config.Validator.ContractWalletAddress) > 0 {
+			if len(config.Staker.ContractWalletAddress) > 0 {
 				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 			}
 			wallet, err = staker.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOpts)
@@ -1004,7 +1011,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -1022,7 +1029,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "txSender", txSenderPtr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Validator.Strategy)
+		log.Info("running as validator", "txSender", txSenderPtr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster

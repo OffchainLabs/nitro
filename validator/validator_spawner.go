@@ -3,6 +3,7 @@ package validator
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,9 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/pkg/errors"
 )
 
 type ValidationSpawner interface {
@@ -30,12 +32,70 @@ type ValidationRun interface {
 	Close()
 }
 
+type ArbitratorSpawnerConfig struct {
+	ConcurrentRuns     int    `koanf:"concurrent-runs-limit" reload:"hot"`
+	OutputPath         string `koanf:"output-path" reload:"hot"`
+	TargetMachineCount int    `koanf:"target-machine-count"`
+}
+
+type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
+
+var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
+	ConcurrentRuns:     0,
+	OutputPath:         "./target/output",
+	TargetMachineCount: 4,
+}
+
+func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Int(prefix+".concurrent-runs-limit", DefaultArbitratorSpawnerConfig.ConcurrentRuns, "number of cuncurrent runs")
+	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
+	f.Int(prefix+".target-machine-count", DefaultArbitratorSpawnerConfig.TargetMachineCount, "target machine count")
+}
+
+func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
+	return &DefaultArbitratorSpawnerConfig
+}
+
+type JitSpawnerConfig struct {
+	ConcurrentRuns int  `koanf:"concurrent-runs-limit" reload:"hot"`
+	Cranelift      bool `koanf:"cranelift"`
+}
+
+type JitSpawnerConfigFecher func() *JitSpawnerConfig
+
+var DefaultJitSpawnerConfig = JitSpawnerConfig{
+	ConcurrentRuns: 0,
+	Cranelift:      true,
+}
+
+func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Int(prefix+".concurrent-runs-limit", DefaultJitSpawnerConfig.ConcurrentRuns, "number of cuncurrent runs")
+	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
+}
+
+// joint for comfort only - the two configs are entirely separate.
+type ValidationConfig struct {
+	Arbitrator ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
+	Jit        JitSpawnerConfig        `koanf:"jit" reload:"hot"`
+}
+
+var DefaultValidationConfig = ValidationConfig{
+	Jit:        DefaultJitSpawnerConfig,
+	Arbitrator: DefaultArbitratorSpawnerConfig,
+}
+
+func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
+	ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
+	JitSpawnerConfigAddOptions(prefix+".jit", f)
+}
+
 type ArbitratorSpawner struct {
 	count         int32
 	ctx           context.Context
 	cancel        func()
 	locator       *MachineLocator
 	machineLoader *ArbMachineLoader
+	config        ArbitratorSpawnerConfigFecher
 }
 
 type valRun struct {
@@ -84,7 +144,7 @@ func (r *valRun) consumeResult(res GoGlobalState, err error) {
 	close(r.chanDone)
 }
 
-func NewArbitratorSpawner(locator *MachineLocator) (*ArbitratorSpawner, error) {
+func NewArbitratorSpawner(locator *MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ArbitratorSpawner{
@@ -92,6 +152,7 @@ func NewArbitratorSpawner(locator *MachineLocator) (*ArbitratorSpawner, error) {
 		cancel:        cancel,
 		locator:       locator,
 		machineLoader: NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
+		config:        config,
 	}, nil
 }
 
@@ -185,14 +246,18 @@ func (v *ArbitratorSpawner) Launch(entry *ValidationInput, moduleRoot common.Has
 }
 
 func (v *ArbitratorSpawner) Room() int {
-	return runtime.NumCPU() - int(atomic.LoadInt32(&v.count))
+	avail := v.config().ConcurrentRuns
+	if avail == 0 {
+		avail = runtime.NumCPU()
+	}
+	return avail - int(atomic.LoadInt32(&v.count))
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
-func (v *ArbitratorSpawner) WriteToFile(outPath string, input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) error {
-	outDirPath := filepath.Join(v.locator.rootPath, outPath, launchTime, fmt.Sprintf("block_%d", input.Id))
+func (v *ArbitratorSpawner) WriteToFile(input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) error {
+	outDirPath := filepath.Join(v.locator.rootPath, v.config().OutputPath, launchTime, fmt.Sprintf("block_%d", input.Id))
 	err := os.MkdirAll(outDirPath, 0755)
 	if err != nil {
 		return err
@@ -293,7 +358,7 @@ func (v *ArbitratorSpawner) WriteToFile(outPath string, input *ValidationInput, 
 	return nil
 }
 
-func (v *ArbitratorSpawner) CreateExecutionBackend(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput, targetMachineNum int) (*ExecutionChallengeBackend, error) {
+func (v *ArbitratorSpawner) CreateExecutionBackend(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput) (*ExecutionChallengeBackend, error) {
 	initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
 	if err != nil {
 		return nil, err
@@ -304,7 +369,7 @@ func (v *ArbitratorSpawner) CreateExecutionBackend(ctx context.Context, wasmModu
 		return nil, err
 	}
 	machine.Freeze()
-	return NewExecutionChallengeBackend(machine, targetMachineNum, nil)
+	return NewExecutionChallengeBackend(machine, v.config().TargetMachineCount, nil)
 }
 
 func (v *ArbitratorSpawner) Stop() {
@@ -317,13 +382,14 @@ type JitSpawner struct {
 	count         int32
 	locator       *MachineLocator
 	machineLoader *JitMachineLoader
-	config        *JitMachineConfig
+	config        JitSpawnerConfigFecher
 }
 
-func NewJitSpawner(locator *MachineLocator, fatalErrChan chan error) (*JitSpawner, error) {
+func NewJitSpawner(locator *MachineLocator, config JitSpawnerConfigFecher, fatalErrChan chan error) (*JitSpawner, error) {
 	// TODO - preload machines
-	config := &DefaultJitMachineConfig
-	loader, err := NewJitMachineLoader(config, locator, fatalErrChan)
+	machineConfig := DefaultJitMachineConfig
+	machineConfig.JitCranelift = config().Cranelift
+	loader, err := NewJitMachineLoader(&machineConfig, locator, fatalErrChan)
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +425,7 @@ func (v *JitSpawner) execute(
 }
 
 func (s *JitSpawner) Name() string {
-	if s.config.JitCranelift {
+	if s.config().Cranelift {
 		return "jit-cranelift"
 	}
 	return "jit"
@@ -376,7 +442,11 @@ func (v *JitSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) Vali
 }
 
 func (v *JitSpawner) Room() int {
-	return runtime.NumCPU() - int(atomic.LoadInt32(&v.count))
+	avail := v.config().ConcurrentRuns
+	if avail == 0 {
+		avail = runtime.NumCPU()
+	}
+	return avail - int(atomic.LoadInt32(&v.count))
 }
 
 func (v *JitSpawner) Stop() {

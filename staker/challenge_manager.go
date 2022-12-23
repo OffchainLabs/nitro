@@ -66,9 +66,8 @@ type ChallengeManager struct {
 	blockChallengeBackend *BlockChallengeBackend
 
 	// fields below are only used to create execution challenge from block challenge
-	validator         *StatelessBlockValidator
-	targetNumMachines int
-	wasmModuleRoot    common.Hash
+	validator      *StatelessBlockValidator
+	wasmModuleRoot common.Hash
 
 	initialMachineBlockNr int64
 
@@ -89,7 +88,6 @@ func NewChallengeManager(
 	inboxTracker InboxTrackerInterface,
 	validator *StatelessBlockValidator,
 	startL1Block uint64,
-	targetNumMachines int,
 	confirmationBlocks int64,
 ) (*ChallengeManager, error) {
 	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
@@ -145,7 +143,6 @@ func NewChallengeManager(
 		},
 		blockChallengeBackend: backend,
 		validator:             validator,
-		targetNumMachines:     targetNumMachines,
 		wasmModuleRoot:        challengeInfo.WasmModuleRoot,
 	}, nil
 }
@@ -460,7 +457,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}
 	}
-	m.executionChallengeBackend, err = m.validator.execSpawner.CreateExecutionBackend(ctx, m.wasmModuleRoot, input, m.targetNumMachines)
+	m.executionChallengeBackend, err = m.validator.execSpawner.CreateExecutionBackend(ctx, m.wasmModuleRoot, input)
 	if err != nil {
 		return err
 	}
