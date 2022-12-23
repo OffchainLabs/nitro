@@ -8,12 +8,12 @@ use parking_lot::Mutex;
 use std::fmt::Debug;
 use wasmer::{
     wasmparser::{Operator, Type as WpType, TypeOrFuncType},
-    GlobalInit, Instance, Store, Type,
+    GlobalInit, Instance, StoreMut, Type,
 };
 use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 
-const POLYGLOT_GAS_LEFT: &str = "polyglot_gas_left";
-const POLYGLOT_GAS_STATUS: &str = "polyglot_gas_status";
+pub const POLYGLOT_GAS_LEFT: &str = "polyglot_gas_left";
+pub const POLYGLOT_GAS_STATUS: &str = "polyglot_gas_status";
 
 pub trait OpcodePricer: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 
@@ -198,12 +198,12 @@ impl Into<u64> for MachineMeter {
 }
 
 pub trait MeteredMachine {
-    fn gas_left(&self, store: &mut Store) -> MachineMeter;
-    fn set_gas(&mut self, store: &mut Store, gas: u64);
+    fn gas_left(&self, store: &mut StoreMut) -> MachineMeter;
+    fn set_gas(&mut self, store: &mut StoreMut, gas: u64);
 }
 
 impl MeteredMachine for Instance {
-    fn gas_left(&self, store: &mut Store) -> MachineMeter {
+    fn gas_left(&self, store: &mut StoreMut) -> MachineMeter {
         let gas = self.get_global(store, POLYGLOT_GAS_LEFT);
         let status = self.get_global(store, POLYGLOT_GAS_STATUS);
         match status {
@@ -212,7 +212,7 @@ impl MeteredMachine for Instance {
         }
     }
 
-    fn set_gas(&mut self, store: &mut Store, gas: u64) {
+    fn set_gas(&mut self, store: &mut StoreMut, gas: u64) {
         self.set_global(store, POLYGLOT_GAS_LEFT, gas);
         self.set_global(store, POLYGLOT_GAS_STATUS, 0);
     }

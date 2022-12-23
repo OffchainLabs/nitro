@@ -1,19 +1,14 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-#![no_main]
-
 use sha3::{Digest, Keccak256};
 
-arbitrum::arbitrum_main!(user_main);
-
-fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
-    let mut data = keccak(&input[1..]);
-    let rounds = input[0];
-    for _ in 1..rounds {
+fn main() {
+    let mut data = [0; 32];
+    for _ in 0..100 {
         data = keccak(&data);
     }
-    Ok(data.as_ref().into())
+    assert_ne!(data, [0; 32]);
 }
 
 fn keccak(preimage: &[u8]) -> [u8; 32] {
