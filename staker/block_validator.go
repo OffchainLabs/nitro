@@ -708,7 +708,7 @@ func (v *BlockValidator) progressValidated() {
 			return
 		}
 		for _, run := range validationStatus.Runs {
-			if !run.Done() {
+			if !run.Ready() {
 				return
 			}
 			runEnd, err := run.Result()

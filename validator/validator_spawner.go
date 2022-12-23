@@ -26,8 +26,8 @@ type ValidationSpawner interface {
 
 type ValidationRun interface {
 	WasmModuleRoot() common.Hash
-	Done() bool
-	ChDone() chan struct{}
+	Ready() bool
+	ReadyChan() chan struct{}
 	Result() (GoGlobalState, error)
 	Close()
 }
@@ -99,25 +99,25 @@ type ArbitratorSpawner struct {
 }
 
 type valRun struct {
-	err      error
-	root     common.Hash
-	chanDone chan struct{}
-	boolDone int32
-	result   GoGlobalState
+	err       error
+	root      common.Hash
+	chanReady chan struct{}
+	boolReady int32
+	result    GoGlobalState
 }
 
 var ErrNotDone error = errors.New("not done")
 
-func (r *valRun) Done() bool {
-	return atomic.LoadInt32(&r.boolDone) != 0
+func (r *valRun) Ready() bool {
+	return atomic.LoadInt32(&r.boolReady) != 0
 }
 
-func (r *valRun) ChDone() chan struct{} {
-	return r.chanDone
+func (r *valRun) ReadyChan() chan struct{} {
+	return r.chanReady
 }
 
 func (r *valRun) Result() (GoGlobalState, error) {
-	if !r.Done() {
+	if !r.Ready() {
 		return GoGlobalState{}, ErrNotDone
 	}
 	return r.result, r.err
@@ -131,17 +131,17 @@ func (r *valRun) Close() {}
 
 func NewvalRun(root common.Hash) *valRun {
 	return &valRun{
-		root:     root,
-		boolDone: 0,
-		chanDone: make(chan struct{}),
+		root:      root,
+		boolReady: 0,
+		chanReady: make(chan struct{}),
 	}
 }
 
 func (r *valRun) consumeResult(res GoGlobalState, err error) {
 	r.result = res
 	r.err = err
-	atomic.StoreInt32(&r.boolDone, 1)
-	close(r.chanDone)
+	atomic.StoreInt32(&r.boolReady, 1)
+	close(r.chanReady)
 }
 
 func NewArbitratorSpawner(locator *MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
