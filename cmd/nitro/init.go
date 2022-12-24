@@ -187,7 +187,7 @@ func validateBlockChain(blockChain *core.BlockChain, expectedChainId *big.Int) e
 }
 
 type importantRoots struct {
-	bc      *core.BlockChain
+	chainDb ethdb.Database
 	roots   []common.Hash
 	heights []uint64
 }
@@ -205,7 +205,11 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 			log.Error("missing state of pruning target", "blockNum", targetBlockNum)
 			return nil
 		}
-		if r.bc.HasState(header.Root) {
+		exists, err := r.chainDb.Has(header.Root.Bytes())
+		if err != nil {
+			return err
+		}
+		if exists {
 			break
 		}
 		num := header.Number.Uint64()
@@ -213,7 +217,7 @@ func (r *importantRoots) addHeader(header *types.Header, overwrite bool) error {
 			log.Info("looking for old block with state to keep", "current", num, "target", targetBlockNum)
 		}
 		// An underflow is fine here because it'll just return nil due to not found
-		header = r.bc.GetHeader(header.ParentHash, num-1)
+		header = rawdb.ReadHeader(r.chainDb, header.ParentHash, num-1)
 	}
 	height := header.Number.Uint64()
 	for len(r.heights) > 0 && r.heights[len(r.heights)-1] > height {
@@ -251,15 +255,12 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			log.Warn("failed to close arbitrum database after finding pruning targets", "err", err)
 		}
 	}()
-	bc, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &nodeConfig.Node)
-	if err != nil {
-		return nil, err
-	}
-	defer bc.Stop()
 	roots := importantRoots{
-		bc: bc,
+		chainDb: chainDb,
 	}
-	genesisHeader := bc.GetHeaderByNumber(bc.Config().ArbitrumChainParams.GenesisBlockNum)
+	genesisNum := chainConfig.ArbitrumChainParams.GenesisBlockNum
+	genesisHash := rawdb.ReadCanonicalHash(chainDb, genesisNum)
+	genesisHeader := rawdb.ReadHeader(chainDb, genesisHash, genesisNum)
 	if genesisHeader == nil {
 		return nil, errors.New("missing L2 genesis block header")
 	}
@@ -288,7 +289,11 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			return nil, err
 		}
 		confirmedHash := latestConfirmedNode.Assertion.AfterState.GlobalState.BlockHash
-		confirmedHeader := bc.GetHeaderByHash(confirmedHash)
+		confirmedNumber := rawdb.ReadHeaderNumber(chainDb, confirmedHash)
+		var confirmedHeader *types.Header
+		if confirmedNumber != nil {
+			confirmedHeader = rawdb.ReadHeader(chainDb, confirmedHash, *confirmedNumber)
+		}
 		if confirmedHeader != nil {
 			err = roots.addHeader(confirmedHeader, false)
 			if err != nil {
@@ -301,7 +306,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 				return nil, err
 			}
 			if lastValidated != nil {
-				lastValidatedHeader := bc.GetHeaderByHash(lastValidated.BlockHash)
+				lastValidatedHeader := rawdb.ReadHeader(chainDb, lastValidated.BlockHash, lastValidated.BlockNumber)
 				if lastValidatedHeader != nil {
 					err = roots.addHeader(lastValidatedHeader, false)
 					if err != nil {
@@ -335,11 +340,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 			return nil, fmt.Errorf("failed to get finalized block: %w", err)
 		}
 		l1BlockNum := l1Block.NumberU64()
-		txStreamer, err := arbnode.NewTransactionStreamer(arbDb, bc, nil, nil, func() *arbnode.TransactionStreamerConfig { return &nodeConfig.Node.TransactionStreamer })
-		if err != nil {
-			return nil, err
-		}
-		tracker, err := arbnode.NewInboxTracker(arbDb, txStreamer, nil)
+		tracker, err := arbnode.NewInboxTracker(arbDb, nil, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -361,13 +362,12 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 				return nil, err
 			}
 			if meta.L1Block <= l1BlockNum {
-				blockNum, err := txStreamer.MessageCountToBlockNumber(meta.MessageCount)
-				if err != nil {
-					return nil, err
-				}
-				l2Header := bc.GetHeaderByNumber(uint64(blockNum))
+				signedBlockNum := arbutil.MessageCountToBlockNumber(meta.MessageCount, genesisNum)
+				blockNum := uint64(signedBlockNum)
+				l2Hash := rawdb.ReadCanonicalHash(chainDb, blockNum)
+				l2Header := rawdb.ReadHeader(chainDb, l2Hash, blockNum)
 				if l2Header == nil {
-					log.Warn("latest finalized L2 block is unknown", "blockNum", blockNum)
+					log.Warn("latest finalized L2 block is unknown", "blockNum", signedBlockNum)
 					break
 				}
 				err = roots.addHeader(l2Header, false)
@@ -408,13 +408,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, nil, err
 				}
-				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
-				if err != nil {
-					return chainDb, nil, err
-				}
 				err = pruneChainDb(ctx, chainDb, stack, config, cacheConfig, l1Client, rollupAddrs)
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
+				}
+				l2BlockChain, err := arbnode.GetBlockChain(chainDb, cacheConfig, chainConfig, &config.Node)
+				if err != nil {
+					return chainDb, nil, err
 				}
 				err = validateBlockChain(l2BlockChain, chainConfig.ChainID)
 				if err != nil {
