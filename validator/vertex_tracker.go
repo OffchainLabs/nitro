@@ -195,3 +195,52 @@ func (v *vertexTracker) mergeToExistingVertex(ctx context.Context) (*protocol.Ch
 	}
 	return mergedTo, nil
 }
+
+func (v *vertexTracker) canConfirm() error {
+	// Can't confirm if the vertex is not in correct state.
+	// TODO: We should just exit vertex routine if the vertex doesn't begin with the correct state
+	if v.vertex.Status != protocol.PendingAssertionState {
+		return fmt.Errorf("vertex status is not pending assertion: %v", v.vertex.Status)
+	}
+	// Can't confirm if parent isn't confirmed, exit early.
+	if v.vertex.Prev.Unwrap().Status != protocol.ConfirmedAssertionState {
+		return nil
+	}
+
+	// Can confirm if vertex's parent has a sub-challenge, and the sub-challenge has reported vertex as its winner.
+	subChallenge := v.vertex.Prev.Unwrap().SubChallenge
+	if !subChallenge.IsNone() && subChallenge.Unwrap().Winner == v.vertex {
+		if err := v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+			return v.vertex.ConfirmForSubChallengeWin(tx)
+		}); err != nil {
+			return err
+		}
+	}
+
+	// Can't confirm if the vertex in a middle of sub challenge.
+	if !subChallenge.IsNone() {
+		return nil
+	}
+
+	// Can confirm if vertex's presumptive successor timer is greater than one challenge period.
+	var challengePeriodLength time.Duration
+	if err := v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		challengePeriodLength = p.ChallengePeriodLength(tx)
+		if v.vertex.PsTimer.Get() > challengePeriodLength {
+			return v.vertex.ConfirmForPsTimer(tx)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Can confirm if the challenge’s end time has been reached, and vertex is the presumptive successor of parent. .
+	return v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		timeRef := p.TimeReference()
+		creationTime := v.challenge.CreationTime(tx)
+		if timeRef.Get().After(creationTime.Add(2 * challengePeriodLength)) {
+			return v.vertex.ConfirmForChallengeDeadline(tx)
+		}
+		return nil
+	})
+}
