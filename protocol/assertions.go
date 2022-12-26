@@ -865,6 +865,9 @@ func (v *ChallengeVertex) ConfirmForPsTimer(tx *ActiveTx) error {
 	if v.status != PendingAssertionState {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
 	}
+	if !v.Prev.Unwrap().subChallenge.IsNone() {
+		return errors.Wrap(ErrInvalidOp, "predecessor contains sub-challenge")
+	}
 	if v.Prev.Unwrap().status != ConfirmedAssertionState {
 		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
 	}
@@ -886,6 +889,9 @@ func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 	tx.verifyReadWrite()
 	if v.status != PendingAssertionState {
 		return errors.Wrapf(ErrWrongState, fmt.Sprintf("Status: %d", v.status))
+	}
+	if !v.Prev.Unwrap().subChallenge.IsNone() {
+		return errors.Wrap(ErrInvalidOp, "predecessor contains sub-challenge")
 	}
 	if v.Prev.Unwrap().status != ConfirmedAssertionState {
 		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
