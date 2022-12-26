@@ -564,7 +564,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 			},
 		})
 		mergingTo := &ChallengeVertex{
-			challenge: util.Some(&Challenge{
+			Challenge: util.Some(&Challenge{
 				rootAssertion: rootAssertion,
 			}),
 			PresumptiveSuccessor: ps,
@@ -675,7 +675,7 @@ func TestAssertionChain_Merge(t *testing.T) {
 		}
 		mergingFrom := &ChallengeVertex{
 			PsTimer: counter,
-			challenge: util.Some[*Challenge](&Challenge{
+			Challenge: util.Some[*Challenge](&Challenge{
 				rootAssertion: util.Some[*Assertion](&Assertion{
 					chain: &AssertionChain{
 						challengesFeed: NewEventFeed[ChallengeEvent](ctx),
