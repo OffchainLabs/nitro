@@ -17,6 +17,11 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
+type ReadyMarker interface {
+	Ready() bool
+	ReadyChan() chan struct{}
+}
+
 type ValidationSpawner interface {
 	Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun
 	Stop()
@@ -25,9 +30,8 @@ type ValidationSpawner interface {
 }
 
 type ValidationRun interface {
+	ReadyMarker
 	WasmModuleRoot() common.Hash
-	Ready() bool
-	ReadyChan() chan struct{}
 	Result() (GoGlobalState, error)
 	Close()
 }
@@ -98,27 +102,43 @@ type ArbitratorSpawner struct {
 	config        ArbitratorSpawnerConfigFecher
 }
 
-type valRun struct {
-	err       error
-	root      common.Hash
+type readyMarker struct {
 	chanReady chan struct{}
 	boolReady int32
-	result    GoGlobalState
 }
 
-var ErrNotDone error = errors.New("not done")
-
-func (r *valRun) Ready() bool {
-	return atomic.LoadInt32(&r.boolReady) != 0
+type valRun struct {
+	readyMarker
+	err    error
+	root   common.Hash
+	result GoGlobalState
 }
 
-func (r *valRun) ReadyChan() chan struct{} {
-	return r.chanReady
+var ErrNotReady error = errors.New("not ready")
+
+func (d *readyMarker) Ready() bool {
+	return atomic.LoadInt32(&d.boolReady) != 0
+}
+
+func (d *readyMarker) ReadyChan() chan struct{} {
+	return d.chanReady
+}
+
+func (d *readyMarker) signalReady() {
+	atomic.StoreInt32(&d.boolReady, 1)
+	close(d.chanReady)
+}
+
+func newReadyMarker() readyMarker {
+	return readyMarker{
+		boolReady: 0,
+		chanReady: make(chan struct{}),
+	}
 }
 
 func (r *valRun) Result() (GoGlobalState, error) {
 	if !r.Ready() {
-		return GoGlobalState{}, ErrNotDone
+		return GoGlobalState{}, ErrNotReady
 	}
 	return r.result, r.err
 }
@@ -131,17 +151,15 @@ func (r *valRun) Close() {}
 
 func NewvalRun(root common.Hash) *valRun {
 	return &valRun{
-		root:      root,
-		boolReady: 0,
-		chanReady: make(chan struct{}),
+		readyMarker: newReadyMarker(),
+		root:        root,
 	}
 }
 
 func (r *valRun) consumeResult(res GoGlobalState, err error) {
 	r.result = res
 	r.err = err
-	atomic.StoreInt32(&r.boolReady, 1)
-	close(r.chanReady)
+	r.signalReady()
 }
 
 func NewArbitratorSpawner(locator *MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
