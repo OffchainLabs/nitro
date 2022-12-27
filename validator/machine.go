@@ -129,6 +129,11 @@ func (m *ArbitratorMachine) Status() uint8 {
 	return uint8(C.arbitrator_get_status(m.ptr))
 }
 
+func (m *ArbitratorMachine) Destroy() {
+	freeMachine(m)
+	runtime.SetFinalizer(m, nil)
+}
+
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
 	haveStep := m.GetStepCount()
 	if haveStep > requestedStep {
