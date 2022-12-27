@@ -29,12 +29,56 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-func TestReceiveMessages(t *testing.T) {
+func TestReceiveMessagesWithoutCompression(t *testing.T) {
 	t.Parallel()
+	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
+	testReceiveMessages(t, false, false, false)
+}
+
+func TestReceiveMessagesWithCompression(t *testing.T) {
+	t.Parallel()
+	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
+	testReceiveMessages(t, true, true, false)
+}
+
+func TestReceiveMessagesWithServerOptionalCompression(t *testing.T) {
+	t.Parallel()
+	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
+	testReceiveMessages(t, true, true, false)
+}
+
+func TestReceiveMessagesWithServerOnlyCompression(t *testing.T) {
+	t.Parallel()
+	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
+	testReceiveMessages(t, false, true, false)
+}
+
+func TestReceiveMessagesWithClientOnlyCompression(t *testing.T) {
+	t.Parallel()
+	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
+	testReceiveMessages(t, true, false, false)
+}
+
+func TestReceiveMessagesWithRequiredCompression(t *testing.T) {
+	t.Parallel()
+	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
+	testReceiveMessages(t, true, true, true)
+}
+
+func TestReceiveMessagesWithRequiredCompressionButClientDisabled(t *testing.T) {
+	t.Parallel()
+	//	_ = testhelpers.InitTestLog(t, log.LvlTrace)
+	testReceiveMessages(t, false, true, true)
+}
+
+func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression bool, serverRequire bool) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	brodcasterConfig := wsbroadcastserver.DefaultTestBroadcasterConfig
+	broadcasterConfig := wsbroadcastserver.DefaultTestBroadcasterConfig
+	broadcasterConfig.EnableCompression = serverCompression
+	broadcasterConfig.RequireCompression = serverRequire
 
 	messageCount := 1000
 	clientCount := 2
@@ -46,13 +90,14 @@ func TestReceiveMessages(t *testing.T) {
 	dataSigner := signature.DataSignerFromPrivateKey(privateKey)
 
 	feedErrChan := make(chan error, 10)
-	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &brodcasterConfig }, chainId, feedErrChan, dataSigner)
+	b := broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &broadcasterConfig }, chainId, feedErrChan, dataSigner)
 
 	Require(t, b.Initialize())
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
 	config := DefaultTestConfig
+	config.EnableCompression = clientCompression
 	var wg sync.WaitGroup
 	for i := 0; i < clientCount; i++ {
 		startMakeBroadcastClient(ctx, t, config, b.ListenerAddr(), i, messageCount, chainId, &wg, &sequencerAddr)
