@@ -230,8 +230,9 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 
 	config := bc.config()
 	extensions := []httphead.Option{}
+	deflateExt := wsflate.DefaultParameters.Option()
 	if config.EnableCompression {
-		extensions = append(extensions, wsflate.DefaultParameters.Option())
+		extensions = append(extensions, deflateExt)
 	}
 	timeoutDialer := ws.Dialer{
 		Header: header,
@@ -318,16 +319,17 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		earlyFrameData = io.LimitReader(br, int64(br.Buffered()))
 	}
 
-	bc.connMutex.Lock()
-	bc.conn = conn
-	bc.connMutex.Unlock()
-	deflateExt := wsflate.DefaultParameters.Option()
+	compression := false
 	for _, ext := range hs.Extensions {
 		if ext.Equal(deflateExt) {
-			bc.compression = true
+			compression = true
 			break
 		}
 	}
+	bc.connMutex.Lock()
+	bc.conn = conn
+	bc.compression = compression
+	bc.connMutex.Unlock()
 	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum, "compression", bc.compression)
 
 	return earlyFrameData, nil
