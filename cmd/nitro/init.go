@@ -384,15 +384,16 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 }
 
 func pruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, nodeConfig *NodeConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs arbnode.RollupAddresses) error {
+	trieCachePath := stack.ResolvePath(ethconfig.Defaults.TrieCleanCacheJournal)
 	config := &nodeConfig.Init
 	if config.Prune == "" {
-		return nil
+		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, trieCachePath)
 	}
 	root, err := findImportantRoots(ctx, chainDb, stack, nodeConfig, cacheConfig, l1Client, rollupAddrs)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
-	pruner, err := pruner.NewPruner(chainDb, stack.InstanceDir(), stack.ResolvePath(ethconfig.Defaults.TrieCleanCacheJournal), config.PruneBloomSize)
+	pruner, err := pruner.NewPruner(chainDb, stack.InstanceDir(), trieCachePath, config.PruneBloomSize)
 	if err != nil {
 		return err
 	}
