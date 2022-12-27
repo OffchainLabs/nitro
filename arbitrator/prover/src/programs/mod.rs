@@ -3,21 +3,28 @@
 
 use crate::{
     binary::{ExportKind, WasmBinary},
-    value::{self, FunctionType as ArbFunctionType, Value},
+    value::{FunctionType as ArbFunctionType, Value},
 };
 
 use arbutil::Color;
 use eyre::{bail, Report, Result};
 use fnv::FnvHashMap as HashMap;
-use std::{fmt::Debug, marker::PhantomData};
-use wasmer::{
-    wasmparser::{Operator, Type as WpType},
-    ExportIndex, FunctionMiddleware, GlobalInit, GlobalType, Instance, MiddlewareError,
-    ModuleMiddleware, Mutability, StoreMut, Value as WasmerValue,
-};
+use std::fmt::Debug;
 use wasmer_types::{
-    entity::EntityRef, FunctionIndex, GlobalIndex, LocalFunctionIndex, ModuleInfo, Pages,
+    entity::EntityRef, FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, Pages,
     SignatureIndex, Type,
+};
+use wasmparser::{Operator, Type as WpType};
+
+#[cfg(feature = "native")]
+use {
+    super::value,
+    std::marker::PhantomData,
+    wasmer::{
+        ExportIndex, FunctionMiddleware, GlobalType, Instance, MiddlewareError, ModuleMiddleware,
+        Mutability, StoreMut, Value as WasmerValue,
+    },
+    wasmer_types::ModuleInfo,
 };
 
 pub mod config;
@@ -77,12 +84,14 @@ impl<'a> FuncMiddleware<'a> for DefaultFuncMiddleware {
 /// This wrapper exists to impl wasmer's `ModuleMiddleware` generically.
 /// We can't use `T` directly since we don't define `ModuleMiddleware`,
 /// and we need `M` to be part of the type.
+#[cfg(feature = "native")]
 #[derive(Debug)]
 pub struct MiddlewareWrapper<T, M>(pub T, PhantomData<M>)
 where
     T: Middleware<M> + Debug + Send + Sync,
     M: ModuleMod;
 
+#[cfg(feature = "native")]
 impl<T, M> MiddlewareWrapper<T, M>
 where
     T: Middleware<M> + Debug + Send + Sync,
@@ -93,6 +102,7 @@ where
     }
 }
 
+#[cfg(feature = "native")]
 impl<T> ModuleMiddleware for MiddlewareWrapper<T, ModuleInfo>
 where
     T: Middleware<ModuleInfo> + Debug + Send + Sync + 'static,
@@ -114,11 +124,13 @@ where
 /// This wrapper exists to impl wasmer's `FunctionMiddleware` generically.
 /// The logic is analogous to that of `ModuleMiddleware`, except this time
 /// we need a phantom marker to parameterize by `T`'s reference's lifetime.
+#[cfg(feature = "native")]
 #[derive(Debug)]
 pub struct FuncMiddlewareWrapper<'a, T: 'a>(T, PhantomData<&'a T>)
 where
     T: FuncMiddleware<'a> + Debug;
 
+#[cfg(feature = "native")]
 impl<'a, T> FunctionMiddleware<'a> for FuncMiddlewareWrapper<'a, T>
 where
     T: FuncMiddleware<'a> + Debug,
@@ -138,6 +150,7 @@ where
     }
 }
 
+#[cfg(feature = "native")]
 impl ModuleMod for ModuleInfo {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex> {
         let global_type = GlobalType::new(ty, Mutability::Var);
@@ -321,6 +334,7 @@ impl<'a> ModuleMod for WasmBinary<'a> {
     }
 }
 
+#[cfg(feature = "native")]
 pub trait GlobalMod {
     fn get_global<T>(&self, store: &mut StoreMut, name: &str) -> T
     where
@@ -332,6 +346,7 @@ pub trait GlobalMod {
         T: Into<WasmerValue>;
 }
 
+#[cfg(feature = "native")]
 impl GlobalMod for Instance {
     fn get_global<T>(&self, store: &mut StoreMut, name: &str) -> T
     where

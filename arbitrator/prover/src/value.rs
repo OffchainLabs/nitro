@@ -3,7 +3,7 @@
 
 use crate::{binary::FloatType, utils::Bytes32};
 use arbutil::Color;
-use wasmer::wasmparser::{FuncType, Type};
+use wasmparser::{FuncType, Type};
 
 use digest::Digest;
 use eyre::{bail, Result};
@@ -55,6 +55,7 @@ impl TryFrom<Type> for ArbValueType {
     }
 }
 
+#[cfg(feature = "native")]
 pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::Type {
     match ty {
         wasmer::Type::I32 => wasmer::wasmparser::Type::I32,
@@ -67,6 +68,7 @@ pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::Type {
     }
 }
 
+#[cfg(feature = "native")]
 pub fn parser_func_type(ty: wasmer::FunctionType) -> FuncType {
     let convert = |t: &[wasmer::Type]| -> Vec<Type> { t.iter().map(parser_type).collect() };
     let params = convert(ty.params()).into_boxed_slice();

@@ -13,7 +13,7 @@ use nom::{
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, path::Path, str::FromStr};
-use wasmer::wasmparser::{
+use wasmparser::{
     Data, Element, Export, ExternalKind, Global, Import, ImportSectionEntryType, MemoryType, Name,
     NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeDef, Validator,
     WasmFeatures,

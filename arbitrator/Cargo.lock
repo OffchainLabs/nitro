@@ -1251,6 +1251,7 @@ dependencies = [
  "eyre",
  "fnv",
  "hex",
+ "lazy_static",
  "libc",
  "nom",
  "nom-leb128",
@@ -1268,6 +1269,7 @@ dependencies = [
  "wasmer",
  "wasmer-compiler-singlepass",
  "wasmer-types",
+ "wasmparser",
 ]
 
 [[package]]

@@ -10,7 +10,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
 };
-use wasmer::wasmparser::{TableType, Type};
+use wasmparser::{TableType, Type};
 
 /// cbindgen:field-names=[bytes]
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

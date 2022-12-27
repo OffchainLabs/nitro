@@ -1,16 +1,19 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{FuncMiddleware, GlobalMod, Middleware, ModuleMod};
+use super::{FuncMiddleware, Middleware, ModuleMod};
 
 use eyre::Result;
 use parking_lot::Mutex;
 use std::fmt::Debug;
-use wasmer::{
-    wasmparser::{Operator, Type as WpType, TypeOrFuncType},
-    GlobalInit, Instance, StoreMut, Type,
+use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
+use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
+
+#[cfg(feature = "native")]
+use {
+    super::GlobalMod,
+    wasmer::{Instance, StoreMut},
 };
-use wasmer_types::{GlobalIndex, LocalFunctionIndex};
 
 pub const POLYGLOT_GAS_LEFT: &str = "polyglot_gas_left";
 pub const POLYGLOT_GAS_STATUS: &str = "polyglot_gas_status";
@@ -197,11 +200,13 @@ impl Into<u64> for MachineMeter {
     }
 }
 
+#[cfg(feature = "native")]
 pub trait MeteredMachine {
     fn gas_left(&self, store: &mut StoreMut) -> MachineMeter;
     fn set_gas(&mut self, store: &mut StoreMut, gas: u64);
 }
 
+#[cfg(feature = "native")]
 impl MeteredMachine for Instance {
     fn gas_left(&self, store: &mut StoreMut) -> MachineMeter {
         let gas = self.get_global(store, POLYGLOT_GAS_LEFT);
