@@ -45,7 +45,7 @@ type ChallengeBackend interface {
 }
 
 // Assert that ExecutionChallengeBackend implements ChallengeBackend
-var _ ChallengeBackend = (*validator.ExecutionChallengeBackend)(nil)
+var _ ChallengeBackend = (*ExecutionChallengeBackend)(nil)
 
 type challengeCore struct {
 	con                  *challengegen.ChallengeManager
@@ -72,7 +72,7 @@ type ChallengeManager struct {
 	initialMachineBlockNr int64
 
 	// nil until working on execution challenge
-	executionChallengeBackend *validator.ExecutionChallengeBackend
+	executionChallengeBackend *ExecutionChallengeBackend
 }
 
 // NewChallengeManager constructs a new challenge manager.
@@ -147,39 +147,39 @@ func NewChallengeManager(
 	}, nil
 }
 
-// NewExecutionChallengeManager is for testing only - skips block challenges
-func NewExecutionChallengeManager(
-	l1client bind.ContractBackend,
-	auth *bind.TransactOpts,
-	challengeManagerAddr common.Address,
-	challengeIndex uint64,
-	initialMachine validator.MachineInterface,
-	startL1Block uint64,
-	targetNumMachines int,
-	confirmationBlocks int64,
-) (*ChallengeManager, error) {
-	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
-	if err != nil {
-		return nil, err
-	}
-	backend, err := validator.NewExecutionChallengeBackend(initialMachine, targetNumMachines, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &ChallengeManager{
-		challengeCore: &challengeCore{
-			con:                  con,
-			challengeManagerAddr: challengeManagerAddr,
-			challengeIndex:       challengeIndex,
-			client:               l1client,
-			auth:                 auth,
-			actingAs:             auth.From,
-			startL1Block:         new(big.Int).SetUint64(startL1Block),
-			confirmationBlocks:   confirmationBlocks,
-		},
-		executionChallengeBackend: backend,
-	}, nil
-}
+// // NewExecutionChallengeManager is for testing only - skips block challenges
+// func NewExecutionChallengeManager(
+// 	l1client bind.ContractBackend,
+// 	auth *bind.TransactOpts,
+// 	challengeManagerAddr common.Address,
+// 	challengeIndex uint64,
+// 	initialMachine validator.MachineInterface,
+// 	startL1Block uint64,
+// 	targetNumMachines int,
+// 	confirmationBlocks int64,
+// ) (*ChallengeManager, error) {
+// 	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	backend, err := validator.NewExecutionChallengeBackend(initialMachine, targetNumMachines, nil)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return &ChallengeManager{
+// 		challengeCore: &challengeCore{
+// 			con:                  con,
+// 			challengeManagerAddr: challengeManagerAddr,
+// 			challengeIndex:       challengeIndex,
+// 			client:               l1client,
+// 			auth:                 auth,
+// 			actingAs:             auth.From,
+// 			startL1Block:         new(big.Int).SetUint64(startL1Block),
+// 			confirmationBlocks:   confirmationBlocks,
+// 		},
+// 		executionChallengeBackend: backend,
+// 	}, nil
+// }
 
 type ChallengeSegment struct {
 	Hash     common.Hash
@@ -457,10 +457,15 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, blockNum 
 	if tooFar {
 		input.BatchInfo = []validator.BatchInfo{}
 	}
-	m.executionChallengeBackend, err = m.validator.execSpawner.CreateExecutionBackend(ctx, m.wasmModuleRoot, input)
+	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input)
 	if err != nil {
 		return err
 	}
+	backend, err := NewExecutionChallengeBackend(execRun)
+	if err != nil {
+		return err
+	}
+	m.executionChallengeBackend = backend
 	m.initialMachineBlockNr = int64(blockNum)
 	return nil
 }

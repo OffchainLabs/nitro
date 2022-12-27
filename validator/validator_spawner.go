@@ -39,23 +39,23 @@ type ValidationRun interface {
 }
 
 type ArbitratorSpawnerConfig struct {
-	ConcurrentRuns     int    `koanf:"concurrent-runs-limit" reload:"hot"`
-	OutputPath         string `koanf:"output-path" reload:"hot"`
-	TargetMachineCount int    `koanf:"target-machine-count"`
+	ConcurrentRuns int                `koanf:"concurrent-runs-limit" reload:"hot"`
+	OutputPath     string             `koanf:"output-path" reload:"hot"`
+	Execution      MachineCacheConfig `koanf: "execution" reload:"hot"` // hot reloading for new executions only
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
-	ConcurrentRuns:     0,
-	OutputPath:         "./target/output",
-	TargetMachineCount: 4,
+	ConcurrentRuns: 0,
+	OutputPath:     "./target/output",
+	Execution:      DefaultMachineCacheConfig,
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".concurrent-runs-limit", DefaultArbitratorSpawnerConfig.ConcurrentRuns, "number of cuncurrent runs")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
-	f.Int(prefix+".target-machine-count", DefaultArbitratorSpawnerConfig.TargetMachineCount, "target machine count")
+	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
 }
 
 func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
@@ -386,18 +386,22 @@ func (v *ArbitratorSpawner) WriteToFile(input *ValidationInput, expOut GoGlobalS
 	return nil
 }
 
-func (v *ArbitratorSpawner) CreateExecutionBackend(ctx context.Context, wasmModuleRoot common.Hash, input *ValidationInput) (*ExecutionChallengeBackend, error) {
-	initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
-	if err != nil {
-		return nil, err
+func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) (ExecutionRun, error) {
+	getMachine := func(ctx context.Context) (MachineInterface, error) {
+		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
+		if err != nil {
+			return nil, err
+		}
+		machine := initialFrozenMachine.Clone()
+		err = v.loadEntryToMachine(ctx, input, machine)
+		if err != nil {
+			machine.Destroy()
+			return nil, err
+		}
+		return machine, nil
 	}
-	machine := initialFrozenMachine.Clone()
-	err = v.loadEntryToMachine(ctx, input, machine)
-	if err != nil {
-		return nil, err
-	}
-	machine.Freeze()
-	return NewExecutionChallengeBackend(machine, v.config().TargetMachineCount, nil)
+	currentExecConfig := v.config().Execution
+	return NewExecutionRun(v.GetContext(), getMachine, &currentExecConfig)
 }
 
 func (v *ArbitratorSpawner) Stop() {

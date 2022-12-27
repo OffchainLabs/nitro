@@ -96,3 +96,11 @@ func (m *IncorrectMachine) Hash() common.Hash {
 func (m *IncorrectMachine) ProveNextStep() []byte {
 	return m.inner.ProveNextStep()
 }
+
+func (m *IncorrectMachine) Freeze() {
+	m.inner.Freeze()
+}
+
+func (m *IncorrectMachine) Destroy() {
+	m.inner.Destroy()
+}

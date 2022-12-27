@@ -32,6 +32,8 @@ type MachineInterface interface {
 	Hash() common.Hash
 	GetGlobalState() GoGlobalState
 	ProveNextStep() []byte
+	Freeze()
+	Destroy()
 }
 
 // ArbitratorMachine holds an arbitrator machine pointer, and manages its lifetime
