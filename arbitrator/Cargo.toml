@@ -5,6 +5,9 @@ members = [
         "polyglot",
         "jit",
 ]
+exclude = [
+        "polyglot/tests/"
+]
 
 [profile.release]
 debug = true

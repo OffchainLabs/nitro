@@ -547,6 +547,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic := insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 
+	ArbWasm := insert(MakePrecompile(templates.ArbWasmMetaData, &ArbWasm{Address: hex("71")}))
+	ArbWasm.arbosVersion = 11
+
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
