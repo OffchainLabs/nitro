@@ -446,36 +446,22 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 
 var ErrValidationCanceled = errors.New("validation of block cancelled")
 
-func (v *BlockValidator) spawnerRoom() int {
-	room := 100 // even if there is more room then that it's fine
-	for _, spawner := range v.validationSpawners {
-		here := spawner.Room()
-		if here <= 0 {
-			return 0
-		}
-		if here < room {
-			room = here
-		}
-	}
-	return room
-}
-
 func (v *BlockValidator) sendValidations(ctx context.Context) {
 	v.reorgMutex.Lock()
 	defer v.reorgMutex.Unlock()
 	var batchCount uint64
 	wasmRoots := v.GetModuleRootsToValidate()
-	room := v.spawnerRoom() / len(wasmRoots)
-	if room <= 0 {
-		return
+	room := 100 // even if there is more room then that it's fine
+	for _, spawner := range v.validationSpawners {
+		here := spawner.Room() / len(wasmRoots)
+		if here <= 0 {
+			return
+		}
+		if here < room {
+			room = here
+		}
 	}
 	for atomic.LoadInt32(&v.reorgsPending) == 0 {
-		if room <= 0 {
-			room := v.spawnerRoom() / len(wasmRoots)
-			if room <= 0 {
-				return
-			}
-		}
 		if batchCount <= v.globalPosNextSend.BatchNumber {
 			var err error
 			batchCount, err = v.inboxTracker.GetBatchCount()
