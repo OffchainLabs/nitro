@@ -387,7 +387,7 @@ func (sbu *StorageBackedUint32) Get() (uint32, error) {
 	raw, err := sbu.StorageSlot.Get()
 	big := raw.Big()
 	if !big.IsUint64() || big.Uint64() > math.MaxUint32 {
-		panic("expected uint64 compatible value in storage")
+		panic("expected uint32 compatible value in storage")
 	}
 	return uint32(big.Uint64()), err
 }

@@ -9,7 +9,7 @@ type Bips int64
 type UBips uint64
 
 const OneInBips Bips = 10000
-const OneInUBips Bips = 10000
+const OneInUBips UBips = 10000
 
 func NaturalToBips(natural int64) Bips {
 	return Bips(SaturatingMul(natural, int64(OneInBips)))
