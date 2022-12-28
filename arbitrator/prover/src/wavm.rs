@@ -353,7 +353,7 @@ impl Instruction {
         let dataless = self.proving_argument_data.is_none() && self.argument_data == 0;
         if dataless {
             if let Some(hash) = OP_HASHES.lock().get(&self.opcode) {
-                return hash.clone();
+                return *hash;
             }
         }
 
@@ -364,7 +364,7 @@ impl Instruction {
         let hash: Bytes32 = h.finalize().into();
 
         if dataless {
-            OP_HASHES.lock().insert(self.opcode, hash.clone());
+            OP_HASHES.lock().insert(self.opcode, hash);
         }
         hash
     }
