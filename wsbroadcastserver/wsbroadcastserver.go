@@ -39,13 +39,13 @@ const (
 type BroadcasterConfig struct {
 	Enable             bool          `koanf:"enable"`
 	Signed             bool          `koanf:"signed"`
-	Addr               string        `koanf:"addr"`                         // TODO(magic) needs tcp server restart on change
-	IOTimeout          time.Duration `koanf:"io-timeout" reload:"hot"`      // reloading will affect only new connections
-	Port               string        `koanf:"port"`                         // TODO(magic) needs tcp server restart on change
-	Ping               time.Duration `koanf:"ping" reload:"hot"`            // reloaded value will change future ping intervals
-	ClientTimeout      time.Duration `koanf:"client-timeout" reload:"hot"`  // reloaded value will affect all clients (next time the timeout is checked)
-	Queue              int           `koanf:"queue"`                        // TODO(magic) ClientManager.pool needs to be recreated on change
-	Workers            int           `koanf:"workers"`                      // TODO(magic) ClientManager.pool needs to be recreated on change
+	Addr               string        `koanf:"addr"`
+	IOTimeout          time.Duration `koanf:"io-timeout" reload:"hot"` // reloading will affect only new connections
+	Port               string        `koanf:"port"`
+	Ping               time.Duration `koanf:"ping" reload:"hot"`           // reloaded value will change future ping intervals
+	ClientTimeout      time.Duration `koanf:"client-timeout" reload:"hot"` // reloaded value will affect all clients (next time the timeout is checked)
+	Queue              int           `koanf:"queue"`
+	Workers            int           `koanf:"workers"`
 	MaxSendQueue       int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
 	RequireVersion     bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
 	DisableSigning     bool          `koanf:"disable-signing"`
