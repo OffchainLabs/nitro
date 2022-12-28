@@ -138,7 +138,9 @@ func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contrac
 		config:           config,
 		signer:           signer,
 	}
-	sequencer.Pause()
+	if sequencer != nil {
+		sequencer.Pause()
+	}
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
 }
