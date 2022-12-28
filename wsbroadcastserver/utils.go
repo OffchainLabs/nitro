@@ -73,7 +73,6 @@ func GetStaticCompressorDictionary() []byte {
 
 func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State, compression bool, flateReader *wsflate.Reader) ([]byte, ws.OpCode, *wsflate.Reader, error) {
 	if compression {
-		// TODO
 		state |= ws.StateExtended
 	}
 	controlHandler := wsutil.ControlFrameHandler(conn, state)
@@ -134,7 +133,7 @@ func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idle
 		var data []byte
 		if msg.IsCompressed() {
 			if !compression {
-				log.Warn("Received compressed frame even though compression wasn't negotiated, discarding the frame")
+				log.Warn("Received compressed frame even though compression is disabled, discarding the frame")
 				if err := reader.Discard(); err != nil {
 					return nil, 0, nil, err
 				}

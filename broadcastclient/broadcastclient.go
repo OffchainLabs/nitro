@@ -229,10 +229,10 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	var feedServerVersion uint64
 
 	config := bc.config()
-	extensions := []httphead.Option{}
+	var extensions []httphead.Option
 	deflateExt := wsflate.DefaultParameters.Option()
 	if config.EnableCompression {
-		extensions = append(extensions, deflateExt)
+		extensions = []httphead.Option{deflateExt}
 	}
 	timeoutDialer := ws.Dialer{
 		Header: header,
@@ -285,7 +285,7 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		return nil, nil
 	}
 
-	conn, br, hs, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
+	conn, br, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if errors.Is(err, ErrIncorrectFeedServerVersion) || errors.Is(err, ErrIncorrectChainId) {
 		return nil, err
 	}
@@ -319,16 +319,8 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		earlyFrameData = io.LimitReader(br, int64(br.Buffered()))
 	}
 
-	compression := false
-	for _, ext := range hs.Extensions {
-		if ext.Equal(deflateExt) {
-			compression = true
-			break
-		}
-	}
 	bc.connMutex.Lock()
 	bc.conn = conn
-	bc.compression = compression
 	bc.connMutex.Unlock()
 	log.Info("Feed connected", "feedServerVersion", feedServerVersion, "chainId", chainId, "requestedSeqNum", nextSeqNum, "compression", bc.compression)
 
@@ -350,7 +342,8 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 			var msg []byte
 			var op ws.OpCode
 			var err error
-			msg, op, bc.flateReader, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.config().Timeout, ws.StateClientSide, bc.compression, bc.flateReader)
+			config := bc.config()
+			msg, op, bc.flateReader, err = wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, config.Timeout, ws.StateClientSide, config.EnableCompression, bc.flateReader)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return
