@@ -1507,15 +1507,26 @@ func (n *Node) StopAndWait() {
 	if n.configFetcher != nil && n.configFetcher.Started() {
 		n.configFetcher.StopAndWait()
 	}
+	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
+		// Releases the chosen sequencer lockout,
+		// and stops the background thread but not the redis client.
+		n.SeqCoordinator.PrepareForShutdown()
+	}
 	n.Stack.StopRPC() // does nothing if not running
+	if n.TxPublisher.Started() {
+		n.TxPublisher.StopAndWait()
+	}
+	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
+		n.DelayedSequencer.StopAndWait()
+	}
+	if n.BatchPoster != nil && n.BatchPoster.Started() {
+		n.BatchPoster.StopAndWait()
+	}
 	if n.BroadcastServer != nil && n.BroadcastServer.Started() {
 		n.BroadcastServer.StopAndWait()
 	}
 	if n.BroadcastClients != nil {
 		n.BroadcastClients.StopAndWait()
-	}
-	if n.L1Reader != nil && n.L1Reader.Started() {
-		n.L1Reader.StopAndWait()
 	}
 	if n.BlockValidator != nil && n.BlockValidator.Started() {
 		n.BlockValidator.StopAndWait()
@@ -1523,23 +1534,18 @@ func (n *Node) StopAndWait() {
 	if n.StatelessBlockValidator != nil {
 		n.StatelessBlockValidator.Stop()
 	}
-	if n.BatchPoster != nil && n.BatchPoster.Started() {
-		n.BatchPoster.StopAndWait()
-	}
-	if n.DelayedSequencer != nil && n.DelayedSequencer.Started() {
-		n.DelayedSequencer.StopAndWait()
-	}
 	if n.InboxReader != nil && n.InboxReader.Started() {
 		n.InboxReader.StopAndWait()
 	}
-	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
-		n.SeqCoordinator.StopAndWait()
-	}
-	if n.TxPublisher.Started() {
-		n.TxPublisher.StopAndWait()
+	if n.L1Reader != nil && n.L1Reader.Started() {
+		n.L1Reader.StopAndWait()
 	}
 	if n.TxStreamer.Started() {
 		n.TxStreamer.StopAndWait()
+	}
+	if n.SeqCoordinator != nil && n.SeqCoordinator.Started() {
+		// Just stops the redis client (most other stuff was stopped earlier)
+		n.SeqCoordinator.StopAndWait()
 	}
 	n.ArbInterface.BlockChain().Stop() // does nothing if not running
 	if err := n.Backend.Stop(); err != nil {
