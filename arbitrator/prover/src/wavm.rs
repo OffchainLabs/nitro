@@ -350,7 +350,7 @@ impl Instruction {
     }
 
     pub fn hash(&self) -> Bytes32 {
-        if self.proving_argument_data.is_none() {
+        if self.proving_argument_data.is_none() && self.argument_data == 0 {
             if let Some(hash) = OP_HASHES.lock().get(&self.opcode) {
                 return hash.clone();
             }
@@ -362,7 +362,7 @@ impl Instruction {
         h.update(self.get_proving_argument_data());
         let hash: Bytes32 = h.finalize().into();
 
-        if self.proving_argument_data.is_none() {
+        if self.proving_argument_data.is_none() && self.argument_data == 0 {
             OP_HASHES.lock().insert(self.opcode, hash.clone());
         }
         hash
