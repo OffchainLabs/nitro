@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 mod env;
-pub mod poly;
+pub mod stylus;
 
 #[cfg(test)]
 mod test;

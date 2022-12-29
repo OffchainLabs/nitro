@@ -11,7 +11,7 @@ use {
     wasmer::{Instance, Store, TypedFunction},
 };
 
-const POLYGLOT_START: &str = "polyglot_start";
+const STYLUS_START: &str = "stylus_start";
 
 #[derive(Debug, Default)]
 pub struct StartMover {}
@@ -20,7 +20,7 @@ impl<M: ModuleMod> Middleware<M> for StartMover {
     type FM<'a> = DefaultFuncMiddleware;
 
     fn update_module(&self, module: &mut M) -> Result<()> {
-        module.move_start_function(POLYGLOT_START)
+        module.move_start_function(STYLUS_START)
     }
 
     fn instrument<'a>(&self, _: LocalFunctionIndex) -> Result<Self::FM<'a>> {
@@ -41,7 +41,7 @@ pub trait StartlessMachine {
 impl StartlessMachine for Instance {
     fn get_start(&self, store: &Store) -> Result<TypedFunction<(), ()>> {
         self.exports
-            .get_typed_function(store, POLYGLOT_START)
+            .get_typed_function(store, STYLUS_START)
             .map_err(ErrReport::new)
     }
 }

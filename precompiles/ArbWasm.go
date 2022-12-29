@@ -20,9 +20,9 @@ func (con ArbWasm) CallProgram(c ctx, evm mech, program addr, data []byte) (uint
 	return 0, nil, errors.New("unimplemented")
 }
 
-// Gets the latest polyglot version
-func (con ArbWasm) PolyglotVersion(c ctx, evm mech) (uint32, error) {
-	return c.State.Programs().PolyglotVersion()
+// Gets the latest stylus version
+func (con ArbWasm) StylusVersion(c ctx, evm mech) (uint32, error) {
+	return c.State.Programs().StylusVersion()
 }
 
 // Gets the price (in evm gas basis points) of wasm gas

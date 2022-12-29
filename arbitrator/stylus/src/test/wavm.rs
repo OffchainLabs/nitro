@@ -2,9 +2,9 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use eyre::Result;
-use prover::{programs::config::PolyglotConfig, Machine};
+use prover::{programs::config::StylusConfig, Machine};
 
-fn new_test_machine(path: &str, config: PolyglotConfig) -> Result<Machine> {
+fn new_test_machine(path: &str, config: StylusConfig) -> Result<Machine> {
     let wat = std::fs::read(path)?;
     let wasm = wasmer::wat2wasm(&wat)?;
     Machine::from_user_wasm(&wasm, &config)
@@ -13,7 +13,7 @@ fn new_test_machine(path: &str, config: PolyglotConfig) -> Result<Machine> {
 /// TODO: actually test for gas usage once metering is added in a future PR
 #[test]
 fn test_gas() -> Result<()> {
-    let mut config = PolyglotConfig::default();
+    let mut config = StylusConfig::default();
     config.costs = super::expensive_add;
 
     let mut machine = new_test_machine("tests/add.wat", config)?;

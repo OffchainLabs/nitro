@@ -8,7 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{config::PolyglotConfig, ModuleMod},
+    programs::{config::StylusConfig, ModuleMod},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -275,7 +275,7 @@ struct Module {
     start_function: Option<u32>,
     func_types: Arc<Vec<FunctionType>>,
     /// Old modules use this format.
-    /// TODO: remove this after the jump to polyglot.
+    /// TODO: remove this after the jump to stylus.
     #[serde(alias = "exports")]
     func_exports: Arc<HashMap<String, u32>>,
     #[serde(default)]
@@ -903,7 +903,7 @@ impl Machine {
 
     /// Produces a machine representing a user program from an untrusted wasm
     /// TODO: apply instrumentation
-    pub fn from_user_wasm(wasm: &[u8], _config: &PolyglotConfig) -> Result<Machine> {
+    pub fn from_user_wasm(wasm: &[u8], _config: &StylusConfig) -> Result<Machine> {
         let bin = parse(wasm, Path::new("user"))?;
         Self::from_binaries(
             &[],

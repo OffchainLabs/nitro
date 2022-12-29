@@ -466,7 +466,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> eyre::Result<WasmBinary<'a>
     }
 
     // reject the module if it imports or exports reserved symbols
-    let reserved = |x: &&str| x.starts_with("polyglot");
+    let reserved = |x: &&str| x.starts_with("stylus");
     if let Some(name) = exports.into_iter().find(reserved) {
         bail!("binary exports reserved symbol {}", name.red())
     }

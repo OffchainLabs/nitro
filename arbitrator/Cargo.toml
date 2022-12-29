@@ -2,11 +2,11 @@
 members = [
         "arbutil",
         "prover",
-        "polyglot",
+        "stylus",
         "jit",
 ]
 exclude = [
-        "polyglot/tests/"
+        "stylus/tests/"
 ]
 
 [profile.release]

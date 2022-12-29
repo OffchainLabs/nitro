@@ -4,7 +4,7 @@
 use eyre::ErrReport;
 use ouroboros::self_referencing;
 use prover::programs::{
-    config::PolyglotConfig,
+    config::StylusConfig,
     meter::{MachineMeter, MeteredMachine},
 };
 use std::ops::{Deref, DerefMut};
@@ -66,10 +66,10 @@ pub struct WasmEnv {
     pub outs: Vec<u8>,
     /// Mechanism for reading and writing the module's memory
     pub memory: Option<Memory>,
-    /// Mechanism for accessing polyglot-specific global state
+    /// Mechanism for accessing stylus-specific global state
     pub state: Option<SystemStateData>,
     /// The instance's config
-    pub config: PolyglotConfig,
+    pub config: StylusConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -80,12 +80,12 @@ pub struct SystemStateData {
     pub gas_status: Global,
     /// The price of wasm gas, measured in bips of an evm gas
     pub wasm_gas_price: u64,
-    /// The amount of wasm gas one pays to do a polyhost call
+    /// The amount of wasm gas one pays to do a user_host call
     pub hostio_cost: u64,
 }
 
 impl WasmEnv {
-    pub fn new(config: PolyglotConfig, args: Vec<u8>) -> Self {
+    pub fn new(config: StylusConfig, args: Vec<u8>) -> Self {
         Self {
             config,
             args,

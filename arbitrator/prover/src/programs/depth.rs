@@ -17,7 +17,7 @@ use wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType};
 #[cfg(feature = "native")]
 use super::native::{GlobalMod, NativeInstance};
 
-const POLYGLOT_STACK_LEFT: &str = "polyglot_stack_left";
+const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
 /// This middleware ensures stack overflows are deterministic across different compilers and targets.
 /// The internal notion of "stack space left" that makes this possible is strictly smaller than that of
@@ -53,7 +53,7 @@ impl<M: ModuleMod> Middleware<M> for DepthChecker {
 
     fn update_module(&self, module: &mut M) -> Result<()> {
         let limit = GlobalInit::I32Const(self.limit as i32);
-        let space = module.add_global(POLYGLOT_STACK_LEFT, Type::I32, limit)?;
+        let space = module.add_global(STYLUS_STACK_LEFT, Type::I32, limit)?;
         *self.global.lock() = Some(space);
         *self.funcs.lock() = Arc::new(module.all_functions()?);
         *self.sigs.lock() = Arc::new(module.all_signatures()?);
@@ -482,20 +482,20 @@ pub trait DepthCheckedMachine {
 #[cfg(feature = "native")]
 impl DepthCheckedMachine for NativeInstance {
     fn stack_left(&mut self) -> Result<u32> {
-        self.get_global(POLYGLOT_STACK_LEFT)
+        self.get_global(STYLUS_STACK_LEFT)
     }
 
     fn set_stack(&mut self, size: u32) -> Result<()> {
-        self.set_global(POLYGLOT_STACK_LEFT, size)
+        self.set_global(STYLUS_STACK_LEFT, size)
     }
 }
 
 impl DepthCheckedMachine for Machine {
     fn stack_left(&mut self) -> Result<u32> {
-        self.get_global(POLYGLOT_STACK_LEFT)?.try_into()
+        self.get_global(STYLUS_STACK_LEFT)?.try_into()
     }
 
     fn set_stack(&mut self, size: u32) -> Result<()> {
-        self.set_global(POLYGLOT_STACK_LEFT, size.into())
+        self.set_global(STYLUS_STACK_LEFT, size.into())
     }
 }

@@ -81,21 +81,24 @@ arbitrator_wasm_hostio_files = $(wildcard arbitrator/wasm-libraries/host-io/src/
 wasm32_wasi = target/wasm32-wasi/release
 wasm32_unknown = target/wasm32-unknown-unknown/release
 
-polyglot_dir = arbitrator/polyglot
-polyglot_test_dir = arbitrator/polyglot/tests
+stylus_dir = arbitrator/stylus
+stylus_test_dir = arbitrator/stylus/tests
 
-get_polyglot_test_wasm = $(polyglot_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
-get_polyglot_test_rust = $(wildcard $(polyglot_test_dir)/$(1)/*.toml $(polyglot_test_dir)/$(1)/src/*.rs)
-get_polyglot_test_c    = $(wildcard $(polyglot_test_dir)/$(1)/*.c $(polyglot_test_dir)/$(1)/*.h)
-polyglot_test_keccak_wasm     = $(call get_polyglot_test_wasm,keccak)
-polyglot_test_keccak_src      = $(call get_polyglot_test_rust,keccak)
-polyglot_test_keccak-100_wasm = $(call get_polyglot_test_wasm,keccak-100)
-polyglot_test_keccak-100_src  = $(call get_polyglot_test_rust,keccak-100)
-polyglot_test_siphash_wasm    = $(polyglot_test_dir)/siphash/siphash.wasm
-polyglot_test_siphash_src     = $(call get_polyglot_test_c,siphash)
+stylus_lang_rust = $(wildcard arbitrator/lang/rust/src/*.rs arbitrator/lang/rust/*.toml)
+stylus_lang_c    = $(wildcard arbitrator/lang/c/*.c arbitrator/lang/c/*.h)
 
-polyglot_test_wasms = $(polyglot_test_keccak_wasm) $(polyglot_test_keccak-100_wasm) $(polyglot_test_siphash_wasm)
-polyglot_benchmarks = $(wildcard $(polyglot_dir)/*.toml $(polyglot_dir)/src/*.rs) $(polyglot_test_wasms)
+get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
+get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_lang_rust)
+get_stylus_test_c    = $(wildcard $(stylus_test_dir)/$(1)/*.c $(stylus_test_dir)/$(1)/*.h) $(stylus_lang_c)
+stylus_test_keccak_wasm     = $(call get_stylus_test_wasm,keccak)
+stylus_test_keccak_src      = $(call get_stylus_test_rust,keccak)
+stylus_test_keccak-100_wasm = $(call get_stylus_test_wasm,keccak-100)
+stylus_test_keccak-100_src  = $(call get_stylus_test_rust,keccak-100)
+stylus_test_siphash_wasm    = $(stylus_test_dir)/siphash/siphash.wasm
+stylus_test_siphash_src     = $(call get_stylus_test_c,siphash)
+
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_siphash_wasm)
+stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 
 # user targets
 
@@ -140,7 +143,7 @@ format fmt: .make/fmt
 lint: .make/lint
 	@printf $(done)
 
-polyglot-benchmarks: $(polyglot_benchmarks)
+stylus-benchmarks: $(stylus_benchmarks)
 	cargo test --manifest-path $< --release --features benchmark benchmark_ -- --nocapture
 	@printf $(done)
 
@@ -160,7 +163,7 @@ test-gen-proofs: \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	contracts/test/prover/proofs/go.json
 
-wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(polyglot_test_wasms)
+wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms)
 	@printf $(done)
 
 clean:
@@ -300,15 +303,15 @@ $(output_root)/machines/latest/machine.wavm.br: $(DEP_PREDICATE) $(arbitrator_pr
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@
 
-$(polyglot_test_keccak_wasm): $(polyglot_test_keccak_src)
+$(stylus_test_keccak_wasm): $(stylus_test_keccak_src)
 	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
-$(polyglot_test_keccak-100_wasm): $(polyglot_test_keccak-100_src)
+$(stylus_test_keccak-100_wasm): $(stylus_test_keccak-100_src)
 	cargo build --manifest-path $< --release --target wasm32-unknown-unknown
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
-$(polyglot_test_siphash_wasm): $(polyglot_test_siphash_src)
+$(stylus_test_siphash_wasm): $(stylus_test_siphash_src)
 	clang $^ -o $@ --target=wasm32 --no-standard-libraries -Wl,--no-entry -Oz
 
 contracts/test/prover/proofs/float%.json: $(arbitrator_cases)/float%.wasm $(arbitrator_prover_bin) $(output_root)/machines/latest/soft-float.wasm
@@ -342,7 +345,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint run --disable-all -E gofmt --fix
-	cargo fmt -p arbutil -p prover -p jit -p polyglot --manifest-path arbitrator/Cargo.toml -- --check
+	cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 	cargo fmt --all --manifest-path arbitrator/wasm-testsuite/Cargo.toml -- --check
 	yarn --cwd contracts prettier:solidity
 	@touch $@
@@ -388,4 +391,4 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 
 always:              # use this to force other rules to always build
 .DELETE_ON_ERROR:    # causes a failure to delete its target
-.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint polyglot-benchmarks test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint stylus-benchmarks test-go test-gen-proofs push clean docker

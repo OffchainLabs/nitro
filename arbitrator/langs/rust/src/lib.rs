@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-#[link(wasm_import_module = "poly_host")]
+#[link(wasm_import_module = "user_host")]
 extern "C" {
     pub fn read_args(data: *mut u8);
     pub fn return_data(data: *const u8, len: usize);

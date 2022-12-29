@@ -19,7 +19,7 @@ pub type Pricing = fn(&Operator) -> u64;
 
 #[repr(C)]
 #[derive(Clone)]
-pub struct PolyglotConfig {
+pub struct StylusConfig {
     pub costs: Pricing,
     pub start_gas: u64,
     pub max_depth: u32,
@@ -29,7 +29,7 @@ pub struct PolyglotConfig {
     pub hostio_cost: u64,
 }
 
-impl Default for PolyglotConfig {
+impl Default for StylusConfig {
     fn default() -> Self {
         let costs = |_: &Operator| 0;
         Self {
@@ -43,7 +43,7 @@ impl Default for PolyglotConfig {
     }
 }
 
-impl PolyglotConfig {
+impl StylusConfig {
     pub fn new(
         costs: Pricing,
         start_gas: u64,
