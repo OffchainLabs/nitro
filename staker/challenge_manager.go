@@ -147,39 +147,38 @@ func NewChallengeManager(
 	}, nil
 }
 
-// // NewExecutionChallengeManager is for testing only - skips block challenges
-// func NewExecutionChallengeManager(
-// 	l1client bind.ContractBackend,
-// 	auth *bind.TransactOpts,
-// 	challengeManagerAddr common.Address,
-// 	challengeIndex uint64,
-// 	initialMachine validator.MachineInterface,
-// 	startL1Block uint64,
-// 	targetNumMachines int,
-// 	confirmationBlocks int64,
-// ) (*ChallengeManager, error) {
-// 	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	backend, err := validator.NewExecutionChallengeBackend(initialMachine, targetNumMachines, nil)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return &ChallengeManager{
-// 		challengeCore: &challengeCore{
-// 			con:                  con,
-// 			challengeManagerAddr: challengeManagerAddr,
-// 			challengeIndex:       challengeIndex,
-// 			client:               l1client,
-// 			auth:                 auth,
-// 			actingAs:             auth.From,
-// 			startL1Block:         new(big.Int).SetUint64(startL1Block),
-// 			confirmationBlocks:   confirmationBlocks,
-// 		},
-// 		executionChallengeBackend: backend,
-// 	}, nil
-// }
+// NewExecutionChallengeManager is for testing only - skips block challenges
+func NewExecutionChallengeManager(
+	l1client bind.ContractBackend,
+	auth *bind.TransactOpts,
+	challengeManagerAddr common.Address,
+	challengeIndex uint64,
+	exec validator.ExecutionRun,
+	startL1Block uint64,
+	confirmationBlocks int64,
+) (*ChallengeManager, error) {
+	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
+	if err != nil {
+		return nil, err
+	}
+	backend, err := NewExecutionChallengeBackend(exec)
+	if err != nil {
+		return nil, err
+	}
+	return &ChallengeManager{
+		challengeCore: &challengeCore{
+			con:                  con,
+			challengeManagerAddr: challengeManagerAddr,
+			challengeIndex:       challengeIndex,
+			client:               l1client,
+			auth:                 auth,
+			actingAs:             auth.From,
+			startL1Block:         new(big.Int).SetUint64(startL1Block),
+			confirmationBlocks:   confirmationBlocks,
+		},
+		executionChallengeBackend: backend,
+	}, nil
+}
 
 type ChallengeSegment struct {
 	Hash     common.Hash

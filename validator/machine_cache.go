@@ -14,7 +14,6 @@ import (
 // Aims to speed the retrieval of a machine at a given step count.
 type MachineCache struct {
 	readyMarker
-	err                 error
 	zeroStepMachine     MachineInterface
 	finalMachine        MachineInterface
 	machines            []MachineInterface
@@ -64,7 +63,7 @@ func NewMachineCache(ctx context.Context, initialMachineGetter func(context.Cont
 			cache.signalReady(err)
 			return
 		}
-		cache.finalMachine = cache.machines[len(cache.machines)]
+		cache.finalMachine = cache.machines[len(cache.machines)-1]
 		cache.finalMachine.Freeze()
 		cache.signalReady(nil)
 	}()
@@ -99,7 +98,11 @@ func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, e
 			return
 		}
 		if initialStep < start {
-			initial.Step(ctx, start-initialStep)
+			err := initial.Step(ctx, start-initialStep)
+			if err != nil {
+				newCache.signalReady(err)
+				return
+			}
 		}
 		newCache.machines = []MachineInterface{initial}
 		newCache.firstMachineStep = start

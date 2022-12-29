@@ -41,7 +41,7 @@ type ValidationRun interface {
 type ArbitratorSpawnerConfig struct {
 	ConcurrentRuns int                `koanf:"concurrent-runs-limit" reload:"hot"`
 	OutputPath     string             `koanf:"output-path" reload:"hot"`
-	Execution      MachineCacheConfig `koanf: "execution" reload:"hot"` // hot reloading for new executions only
+	Execution      MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig

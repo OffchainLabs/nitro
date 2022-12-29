@@ -157,26 +157,33 @@ func runChallengeTest(
 
 	backend.Commit()
 
+	asserterRun, err := validator.NewExecutionRun(ctx,
+		func(context.Context) (validator.MachineInterface, error) { return asserterMachine, nil },
+		&validator.DefaultMachineCacheConfig)
+	Require(t, err)
+
 	asserterManager, err := NewExecutionChallengeManager(
 		backend,
 		asserter,
 		challengeManager,
 		1,
-		asserterMachine,
+		asserterRun,
 		0,
-		4,
 		12,
 	)
 	Require(t, err)
 
+	challengerRun, err := validator.NewExecutionRun(ctx,
+		func(context.Context) (validator.MachineInterface, error) { return challengerMachine, nil },
+		&validator.DefaultMachineCacheConfig)
+	Require(t, err)
 	challengerManager, err := NewExecutionChallengeManager(
 		backend,
 		challenger,
 		challengeManager,
 		1,
-		challengerMachine,
+		challengerRun,
 		0,
-		4,
 		12,
 	)
 	Require(t, err)
