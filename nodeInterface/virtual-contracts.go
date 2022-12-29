@@ -64,6 +64,7 @@ func init() {
 
 			switch *to {
 			case types.NodeInterfaceAddress:
+				address = types.NodeInterfaceAddress
 				duplicate := *nodeInterfaceImpl
 				duplicate.backend = backend
 				duplicate.context = ctx
@@ -71,9 +72,9 @@ func init() {
 				duplicate.sourceMessage = msg
 				duplicate.returnMessage.message = returnMessage
 				duplicate.returnMessage.changed = &swapMessages
-				precompile = nodeInterface.SwapImpl(&duplicate)
-				address = types.NodeInterfaceAddress
+				precompile = nodeInterface.CloneWithImpl(&duplicate)
 			case types.NodeInterfaceDebugAddress:
+				address = types.NodeInterfaceDebugAddress
 				duplicate := *nodeInterfaceDebugImpl
 				duplicate.backend = backend
 				duplicate.context = ctx
@@ -81,8 +82,7 @@ func init() {
 				duplicate.sourceMessage = msg
 				duplicate.returnMessage.message = returnMessage
 				duplicate.returnMessage.changed = &swapMessages
-				precompile = nodeInterfaceDebug.SwapImpl(&duplicate)
-				address = types.NodeInterfaceDebugAddress
+				precompile = nodeInterfaceDebug.CloneWithImpl(&duplicate)
 			default:
 				return msg, nil, nil
 			}
