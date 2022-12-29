@@ -197,42 +197,49 @@ impl Into<u64> for MachineMeter {
     }
 }
 
+/// Note: implementers may panic if uninstrumented
 pub trait MeteredMachine {
-    fn gas_left(&mut self) -> Result<MachineMeter>;
-    fn set_gas(&mut self, gas: u64) -> Result<()>;
+    fn gas_left(&mut self) -> MachineMeter;
+    fn set_gas(&mut self, gas: u64);
 }
 
 #[cfg(feature = "native")]
 impl MeteredMachine for NativeInstance {
-    fn gas_left(&mut self) -> Result<MachineMeter> {
-        let status = self.get_global(POLYGLOT_GAS_STATUS)?;
-        let mut gas = || self.get_global(POLYGLOT_GAS_LEFT);
+    fn gas_left(&mut self) -> MachineMeter {
+        let status = self.get_global(POLYGLOT_GAS_STATUS).unwrap();
+        let mut gas = || self.get_global(POLYGLOT_GAS_LEFT).unwrap();
 
-        Ok(match status {
-            0 => MachineMeter::Ready(gas()?),
+        match status {
+            0 => MachineMeter::Ready(gas()),
             _ => MachineMeter::Exhausted,
-        })
+        }
     }
 
-    fn set_gas(&mut self, gas: u64) -> Result<()> {
-        self.set_global(POLYGLOT_GAS_LEFT, gas)?;
-        self.set_global(POLYGLOT_GAS_STATUS, 0)
+    fn set_gas(&mut self, gas: u64) {
+        self.set_global(POLYGLOT_GAS_LEFT, gas).unwrap();
+        self.set_global(POLYGLOT_GAS_STATUS, 0).unwrap();
     }
 }
 
 impl MeteredMachine for Machine {
-    fn gas_left(&mut self) -> Result<MachineMeter> {
-        let gas = || self.get_global(POLYGLOT_GAS_LEFT);
-        let status: u32 = self.get_global(POLYGLOT_GAS_STATUS)?.try_into()?;
+    fn gas_left(&mut self) -> MachineMeter {
+        macro_rules! convert {
+            ($global:expr) => {{
+                $global.unwrap().try_into().expect("type mismatch")
+            }};
+        }
 
-        Ok(match status {
-            0 => MachineMeter::Ready(gas()?.try_into()?),
+        let gas = || convert!(self.get_global(POLYGLOT_GAS_LEFT));
+        let status: u32 = convert!(self.get_global(POLYGLOT_GAS_STATUS));
+
+        match status {
+            0 => MachineMeter::Ready(gas()),
             _ => MachineMeter::Exhausted,
-        })
+        }
     }
 
-    fn set_gas(&mut self, gas: u64) -> Result<()> {
-        self.set_global(POLYGLOT_GAS_LEFT, gas.into())?;
-        self.set_global(POLYGLOT_GAS_STATUS, 0_u32.into())
+    fn set_gas(&mut self, gas: u64) {
+        self.set_global(POLYGLOT_GAS_LEFT, gas.into()).unwrap();
+        self.set_global(POLYGLOT_GAS_STATUS, 0_u32.into()).unwrap();
     }
 }

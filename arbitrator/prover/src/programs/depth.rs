@@ -474,28 +474,30 @@ impl<'a> FuncDepthChecker<'a> {
     }
 }
 
+/// Note: implementers may panic if uninstrumented
 pub trait DepthCheckedMachine {
-    fn stack_left(&mut self) -> Result<u32>;
-    fn set_stack(&mut self, size: u32) -> Result<()>;
+    fn stack_left(&mut self) -> u32;
+    fn set_stack(&mut self, size: u32);
 }
 
 #[cfg(feature = "native")]
 impl DepthCheckedMachine for NativeInstance {
-    fn stack_left(&mut self) -> Result<u32> {
-        self.get_global(POLYGLOT_STACK_LEFT)
+    fn stack_left(&mut self) -> u32 {
+        self.get_global(POLYGLOT_STACK_LEFT).unwrap()
     }
 
-    fn set_stack(&mut self, size: u32) -> Result<()> {
-        self.set_global(POLYGLOT_STACK_LEFT, size)
+    fn set_stack(&mut self, size: u32) {
+        self.set_global(POLYGLOT_STACK_LEFT, size).unwrap()
     }
 }
 
 impl DepthCheckedMachine for Machine {
-    fn stack_left(&mut self) -> Result<u32> {
-        self.get_global(POLYGLOT_STACK_LEFT)?.try_into()
+    fn stack_left(&mut self) -> u32 {
+        let global = self.get_global(POLYGLOT_STACK_LEFT).unwrap();
+        global.try_into().expect("instrumentation type mismatch")
     }
 
-    fn set_stack(&mut self, size: u32) -> Result<()> {
-        self.set_global(POLYGLOT_STACK_LEFT, size.into())
+    fn set_stack(&mut self, size: u32) {
+        self.set_global(POLYGLOT_STACK_LEFT, size.into()).unwrap();
     }
 }
