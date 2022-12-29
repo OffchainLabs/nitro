@@ -209,8 +209,7 @@ fn main() -> eyre::Result<()> {
     }
 
     fn to_values(text: Vec<TextValue>) -> eyre::Result<Vec<Value>> {
-        let values = text.into_iter().map(TryInto::try_into).collect();
-        values
+        text.into_iter().map(TryInto::try_into).collect()
     }
 
     let mut wasmfile = String::new();
@@ -284,8 +283,9 @@ fn main() -> eyre::Result<()> {
 
         macro_rules! test_success {
             ($func:expr, $args:expr, $expected:expr) => {
-                let Ok(args) = to_values($args) else {
-                    continue;
+                let args = match to_values($args) {
+                    Ok(args) => args,
+                    Err(_) => continue, // TODO: can't use let-else due to rust fmt bug
                 };
                 if skip {
                     if !has_skipped {

@@ -22,7 +22,7 @@ impl NativeInstance {
     }
 }
 
-impl<'a> Deref for NativeInstance {
+impl Deref for NativeInstance {
     type Target = Instance;
 
     fn deref(&self) -> &Self::Target {
@@ -30,7 +30,7 @@ impl<'a> Deref for NativeInstance {
     }
 }
 
-impl<'a> DerefMut for NativeInstance {
+impl DerefMut for NativeInstance {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.instance
     }

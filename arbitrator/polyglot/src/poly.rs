@@ -12,7 +12,7 @@ use wasmer::{imports, Function, FunctionEnv, Global, Instance, Module};
 pub fn instance(path: &str, env: WasmEnv) -> Result<(NativeInstance, FunctionEnv<WasmEnv>)> {
     let mut store = env.config.store();
     let wat_or_wasm = std::fs::read(path)?;
-    let module = Module::new(&store, &wat_or_wasm)?;
+    let module = Module::new(&store, wat_or_wasm)?;
 
     let func_env = FunctionEnv::new(&mut store, env);
     let imports = imports! {

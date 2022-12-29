@@ -408,7 +408,7 @@ impl Module {
             };
             if !matches!(
                 offset.checked_add(data.data.len()),
-                Some(x) if (x as u64) <= memory.size() as u64,
+                Some(x) if (x as u64) <= memory.size(),
             ) {
                 bail!(
                     "Out-of-bounds data memory init with offset {} and size {}",
@@ -513,7 +513,7 @@ impl Module {
         })
     }
 
-    fn name<'a>(&'a self) -> &'a str {
+    fn name(&self) -> &str {
         &self.names.module
     }
 
@@ -904,7 +904,7 @@ impl Machine {
     /// Produces a machine representing a user program from an untrusted wasm
     /// TODO: apply instrumentation
     pub fn from_user_wasm(wasm: &[u8], _config: &PolyglotConfig) -> Result<Machine> {
-        let bin = parse(wasm, &Path::new("user"))?;
+        let bin = parse(wasm, Path::new("user"))?;
         Self::from_binaries(
             &[],
             bin,
@@ -1368,7 +1368,7 @@ impl Machine {
         let offset = self.find_module(module)?;
         let module = &self.modules[offset as usize];
         let func = module
-            .find_func(&func)
+            .find_func(func)
             .or_else(|_| module.find_func(&qualified))?;
         Ok((offset, func))
     }
@@ -1572,7 +1572,7 @@ impl Machine {
                 Opcode::CrossModuleCall => {
                     flush_module!();
                     self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(Value::I32(self.pc.module as u32));
+                    self.value_stack.push(Value::I32(self.pc.module));
                     self.value_stack.push(Value::I32(module.internals_offset));
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
@@ -1583,7 +1583,7 @@ impl Machine {
                 }
                 Opcode::CallerModuleInternalCall => {
                     self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(Value::I32(self.pc.module as u32));
+                    self.value_stack.push(Value::I32(self.pc.module));
                     self.value_stack.push(Value::I32(module.internals_offset));
 
                     let current_frame = self.frame_stack.last().unwrap();
@@ -1752,7 +1752,7 @@ impl Machine {
                     }
                 }
                 Opcode::MemorySize => {
-                    let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE as u64)
+                    let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE)
                         .expect("Memory pages grew past a u32");
                     self.value_stack.push(pages.into());
                 }
@@ -1848,7 +1848,7 @@ impl Machine {
                     let x = self.value_stack.pop().unwrap().assume_u32();
                     let x64 = match signed {
                         true => x as i32 as i64 as u64,
-                        false => x as u32 as u64,
+                        false => x as u64,
                     };
                     self.value_stack.push(x64.into());
                 }
@@ -2175,9 +2175,9 @@ impl Machine {
 
         data.extend(self.global_state.hash());
 
-        data.extend((self.pc.module as u32).to_be_bytes());
-        data.extend((self.pc.func as u32).to_be_bytes());
-        data.extend((self.pc.inst as u32).to_be_bytes());
+        data.extend((self.pc.module).to_be_bytes());
+        data.extend((self.pc.func).to_be_bytes());
+        data.extend((self.pc.inst).to_be_bytes());
         let mod_merkle = self.get_modules_merkle();
         data.extend(mod_merkle.root());
 
@@ -2430,7 +2430,7 @@ impl Machine {
             let names = &self.modules[pc.module()].names;
             let func = names
                 .functions
-                .get(&(pc.func as u32))
+                .get(&pc.func)
                 .cloned()
                 .unwrap_or_else(|| pc.func.to_string());
             let func = rustc_demangle::demangle(&func);

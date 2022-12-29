@@ -121,9 +121,9 @@ compile_error!("Architectures with less than a 32 bit pointer width are not supp
 impl ProgramCounter {
     pub fn serialize(self) -> Bytes32 {
         let mut b = [0u8; 32];
-        b[28..].copy_from_slice(&(self.inst as u32).to_be_bytes());
-        b[24..28].copy_from_slice(&(self.func as u32).to_be_bytes());
-        b[20..24].copy_from_slice(&(self.module as u32).to_be_bytes());
+        b[28..].copy_from_slice(&(self.inst).to_be_bytes());
+        b[24..28].copy_from_slice(&(self.func).to_be_bytes());
+        b[20..24].copy_from_slice(&(self.module).to_be_bytes());
         Bytes32(b)
     }
 
@@ -303,13 +303,13 @@ impl PartialEq for Value {
 
 impl From<u32> for Value {
     fn from(value: u32) -> Self {
-        Value::I32(value as u32)
+        Value::I32(value)
     }
 }
 
 impl From<u64> for Value {
     fn from(value: u64) -> Self {
-        Value::I64(value as u64)
+        Value::I64(value)
     }
 }
 
@@ -330,7 +330,7 @@ impl TryInto<u32> for Value {
 
     fn try_into(self) -> Result<u32, Self::Error> {
         match self {
-            Value::I32(value) => Ok(value as u32),
+            Value::I32(value) => Ok(value),
             _ => bail!("value not a u32"),
         }
     }
@@ -341,7 +341,7 @@ impl TryInto<u64> for Value {
 
     fn try_into(self) -> Result<u64> {
         match self {
-            Value::I64(value) => Ok(value as u64),
+            Value::I64(value) => Ok(value),
             _ => bail!("value not a u64"),
         }
     }
