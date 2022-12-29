@@ -465,8 +465,7 @@ impl<'a> FuncDepthChecker<'a> {
         }
 
         if self.locals.is_none() {
-            //bail!("missing locals info for func {}", self.func.as_u32().red())
-            println!("missing locals info for {}", self.func.as_u32().red());
+            bail!("missing locals info for func {}", self.func.as_u32().red())
         };
 
         let locals = self.locals.unwrap_or_default();
@@ -474,28 +473,30 @@ impl<'a> FuncDepthChecker<'a> {
     }
 }
 
+/// Note: implementers may panic if uninstrumented
 pub trait DepthCheckedMachine {
-    fn stack_left(&mut self) -> Result<u32>;
-    fn set_stack(&mut self, size: u32) -> Result<()>;
+    fn stack_left(&mut self) -> u32;
+    fn set_stack(&mut self, size: u32);
 }
 
 #[cfg(feature = "native")]
 impl DepthCheckedMachine for NativeInstance {
-    fn stack_left(&mut self) -> Result<u32> {
-        self.get_global(STYLUS_STACK_LEFT)
+    fn stack_left(&mut self) -> u32 {
+        self.get_global(STYLUS_STACK_LEFT).unwrap()
     }
 
-    fn set_stack(&mut self, size: u32) -> Result<()> {
-        self.set_global(STYLUS_STACK_LEFT, size)
+    fn set_stack(&mut self, size: u32) {
+        self.set_global(STYLUS_STACK_LEFT, size).unwrap()
     }
 }
 
 impl DepthCheckedMachine for Machine {
-    fn stack_left(&mut self) -> Result<u32> {
-        self.get_global(STYLUS_STACK_LEFT)?.try_into()
+    fn stack_left(&mut self) -> u32 {
+        let global = self.get_global(STYLUS_STACK_LEFT).unwrap();
+        global.try_into().expect("instrumentation type mismatch")
     }
 
-    fn set_stack(&mut self, size: u32) -> Result<()> {
-        self.set_global(STYLUS_STACK_LEFT, size.into())
+    fn set_stack(&mut self, size: u32) {
+        self.set_global(STYLUS_STACK_LEFT, size.into()).unwrap();
     }
 }

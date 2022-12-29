@@ -136,13 +136,13 @@ impl<'a> SystemState<'a> {
     }
 
     pub fn buy_gas(&mut self, gas: u64) -> MaybeEscape {
-        let MachineMeter::Ready(gas_left) = self.gas_left()? else {
+        let MachineMeter::Ready(gas_left) = self.gas_left() else {
             return Escape::out_of_gas();
         };
         if gas_left < gas {
             return Escape::out_of_gas();
         }
-        self.set_gas(gas_left - gas)?;
+        self.set_gas(gas_left - gas);
         Ok(())
     }
 
@@ -154,27 +154,26 @@ impl<'a> SystemState<'a> {
 }
 
 impl<'a> MeteredMachine for SystemState<'a> {
-    fn gas_left(&mut self) -> eyre::Result<MachineMeter> {
+    fn gas_left(&mut self) -> MachineMeter {
         let store = &mut self.store;
         let state = &self.state;
 
         let status = state.gas_status.get(store);
-        let status = status.try_into().map_err(ErrReport::msg)?;
+        let status = status.try_into().expect("type mismatch");
         let gas = state.gas_left.get(store);
-        let gas = gas.try_into().map_err(ErrReport::msg)?;
+        let gas = gas.try_into().expect("type mismatch");
 
-        Ok(match status {
+        match status {
             0_u32 => MachineMeter::Ready(gas),
             _ => MachineMeter::Exhausted,
-        })
+        }
     }
 
-    fn set_gas(&mut self, gas: u64) -> eyre::Result<()> {
+    fn set_gas(&mut self, gas: u64) {
         let store = &mut self.store;
         let state = &self.state;
-        state.gas_left.set(store, gas.into())?;
-        state.gas_status.set(store, 0.into())?;
-        Ok(())
+        state.gas_left.set(store, gas.into()).unwrap();
+        state.gas_status.set(store, 0.into()).unwrap();
     }
 }
 

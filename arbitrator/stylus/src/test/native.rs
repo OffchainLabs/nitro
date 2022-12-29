@@ -56,14 +56,14 @@ fn test_gas() -> Result<()> {
     let exports = &instance.exports;
     let add_one = exports.get_typed_function::<i32, i32>(&instance.store, "add_one")?;
 
-    assert_eq!(instance.gas_left()?, MachineMeter::Ready(0));
+    assert_eq!(instance.gas_left(), MachineMeter::Ready(0));
 
     macro_rules! exhaust {
         ($gas:expr) => {
-            instance.set_gas($gas)?;
-            assert_eq!(instance.gas_left()?, MachineMeter::Ready($gas));
+            instance.set_gas($gas);
+            assert_eq!(instance.gas_left(), MachineMeter::Ready($gas));
             assert!(add_one.call(&mut instance.store, 32).is_err());
-            assert_eq!(instance.gas_left()?, MachineMeter::Exhausted);
+            assert_eq!(instance.gas_left(), MachineMeter::Exhausted);
         };
     }
 
@@ -72,14 +72,14 @@ fn test_gas() -> Result<()> {
     exhaust!(99);
 
     let mut gas_left = 500;
-    instance.set_gas(gas_left)?;
+    instance.set_gas(gas_left);
     while gas_left > 0 {
-        assert_eq!(instance.gas_left()?, MachineMeter::Ready(gas_left));
+        assert_eq!(instance.gas_left(), MachineMeter::Ready(gas_left));
         assert_eq!(add_one.call(&mut instance.store, 64)?, 65);
         gas_left -= 100;
     }
     assert!(add_one.call(&mut instance.store, 32).is_err());
-    assert_eq!(instance.gas_left()?, MachineMeter::Exhausted);
+    assert_eq!(instance.gas_left(), MachineMeter::Exhausted);
     Ok(())
 }
 
@@ -100,15 +100,15 @@ fn test_depth() -> Result<()> {
 
     let program_depth: u32 = instance.get_global("depth")?;
     assert_eq!(program_depth, 0);
-    assert_eq!(instance.stack_left()?, 64);
+    assert_eq!(instance.stack_left(), 64);
 
     let mut check = |space: u32, expected: u32| -> Result<()> {
         instance.set_global("depth", 0)?;
-        instance.set_stack(space)?;
-        assert_eq!(instance.stack_left()?, space);
+        instance.set_stack(space);
+        assert_eq!(instance.stack_left(), space);
 
         assert!(recurse.call(&mut instance.store, 0).is_err());
-        assert_eq!(instance.stack_left()?, 0);
+        assert_eq!(instance.stack_left(), 0);
 
         let program_depth: u32 = instance.get_global("depth")?;
         assert_eq!(program_depth, expected);
