@@ -15,10 +15,7 @@ use wasmer_types::{
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType};
 
 #[cfg(feature = "native")]
-use {
-    super::GlobalMod,
-    wasmer::{Instance, StoreMut},
-};
+use super::native::{GlobalMod, NativeInstance};
 
 const POLYGLOT_STACK_LEFT: &str = "polyglot_stack_left";
 
@@ -479,17 +476,17 @@ impl<'a> FuncDepthChecker<'a> {
 
 #[cfg(feature = "native")]
 pub trait DepthCheckedMachine {
-    fn stack_left(&self, store: &mut StoreMut) -> u32;
-    fn set_stack(&mut self, store: &mut StoreMut, size: u32);
+    fn stack_left(&mut self) -> Result<u32>;
+    fn set_stack(&mut self, size: u32) -> Result<()>;
 }
 
 #[cfg(feature = "native")]
-impl DepthCheckedMachine for Instance {
-    fn stack_left(&self, store: &mut StoreMut) -> u32 {
-        self.get_global(store, POLYGLOT_STACK_LEFT)
+impl DepthCheckedMachine for NativeInstance {
+    fn stack_left(&mut self) -> Result<u32> {
+        self.get_global(POLYGLOT_STACK_LEFT)
     }
 
-    fn set_stack(&mut self, store: &mut StoreMut, size: u32) {
-        self.set_global(store, POLYGLOT_STACK_LEFT, size);
+    fn set_stack(&mut self, size: u32) -> Result<()> {
+        self.set_global(POLYGLOT_STACK_LEFT, size)
     }
 }

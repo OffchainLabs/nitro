@@ -21,8 +21,7 @@ use {
     super::value,
     std::marker::PhantomData,
     wasmer::{
-        ExportIndex, FunctionMiddleware, GlobalType, Instance, MiddlewareError, ModuleMiddleware,
-        Mutability, StoreMut, Value as WasmerValue,
+        ExportIndex, FunctionMiddleware, GlobalType, MiddlewareError, ModuleMiddleware, Mutability,
     },
     wasmer_types::ModuleInfo,
 };
@@ -32,6 +31,9 @@ pub mod depth;
 pub mod heap;
 pub mod meter;
 pub mod start;
+
+#[cfg(feature = "native")]
+pub mod native;
 
 pub trait ModuleMod {
     fn add_global(&mut self, name: &str, ty: Type, init: GlobalInit) -> Result<GlobalIndex>;
@@ -331,41 +333,5 @@ impl<'a> ModuleMod for WasmBinary<'a> {
             }
         }
         Ok(())
-    }
-}
-
-#[cfg(feature = "native")]
-pub trait GlobalMod {
-    fn get_global<T>(&self, store: &mut StoreMut, name: &str) -> T
-    where
-        T: TryFrom<WasmerValue>,
-        T::Error: Debug;
-
-    fn set_global<T>(&mut self, store: &mut StoreMut, name: &str, value: T)
-    where
-        T: Into<WasmerValue>;
-}
-
-#[cfg(feature = "native")]
-impl GlobalMod for Instance {
-    fn get_global<T>(&self, store: &mut StoreMut, name: &str) -> T
-    where
-        T: TryFrom<WasmerValue>,
-        T::Error: Debug,
-    {
-        let error = format!("global {} does not exist", name.red());
-        let global = self.exports.get_global(name).expect(&error);
-        let ty = global.get(store);
-        let error = format!("wrong type: {:?}", ty);
-        ty.try_into().expect(&error)
-    }
-
-    fn set_global<T>(&mut self, store: &mut StoreMut, name: &str, value: T)
-    where
-        T: Into<WasmerValue>,
-    {
-        let error = format!("global {} does not exist", name.red());
-        let global = self.exports.get_global(name).expect(&error);
-        global.set(store, value.into()).unwrap();
     }
 }

@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
-
+use crate::Machine;
 use eyre::Result;
 use parking_lot::Mutex;
 use std::fmt::Debug;
@@ -10,10 +10,7 @@ use wasmer_types::{GlobalIndex, GlobalInit, LocalFunctionIndex, Type};
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 
 #[cfg(feature = "native")]
-use {
-    super::GlobalMod,
-    wasmer::{Instance, StoreMut},
-};
+use super::native::{GlobalMod, NativeInstance};
 
 pub const POLYGLOT_GAS_LEFT: &str = "polyglot_gas_left";
 pub const POLYGLOT_GAS_STATUS: &str = "polyglot_gas_status";
@@ -200,25 +197,42 @@ impl Into<u64> for MachineMeter {
     }
 }
 
-#[cfg(feature = "native")]
 pub trait MeteredMachine {
-    fn gas_left(&self, store: &mut StoreMut) -> MachineMeter;
-    fn set_gas(&mut self, store: &mut StoreMut, gas: u64);
+    fn gas_left(&mut self) -> Result<MachineMeter>;
+    fn set_gas(&mut self, gas: u64) -> Result<()>;
 }
 
 #[cfg(feature = "native")]
-impl MeteredMachine for Instance {
-    fn gas_left(&self, store: &mut StoreMut) -> MachineMeter {
-        let gas = self.get_global(store, POLYGLOT_GAS_LEFT);
-        let status = self.get_global(store, POLYGLOT_GAS_STATUS);
-        match status {
-            0 => MachineMeter::Ready(gas),
+impl MeteredMachine for NativeInstance {
+    fn gas_left(&mut self) -> Result<MachineMeter> {
+        let status = self.get_global(POLYGLOT_GAS_STATUS)?;
+        let mut gas = || self.get_global(POLYGLOT_GAS_LEFT);
+
+        Ok(match status {
+            0 => MachineMeter::Ready(gas()?),
             _ => MachineMeter::Exhausted,
-        }
+        })
     }
 
-    fn set_gas(&mut self, store: &mut StoreMut, gas: u64) {
-        self.set_global(store, POLYGLOT_GAS_LEFT, gas);
-        self.set_global(store, POLYGLOT_GAS_STATUS, 0);
+    fn set_gas(&mut self, gas: u64) -> Result<()> {
+        self.set_global(POLYGLOT_GAS_LEFT, gas)?;
+        self.set_global(POLYGLOT_GAS_STATUS, 0)
+    }
+}
+
+impl MeteredMachine for Machine {
+    fn gas_left(&mut self) -> Result<MachineMeter> {
+        let gas = || self.get_global(POLYGLOT_GAS_LEFT);
+        let status: u32 = self.get_global(POLYGLOT_GAS_STATUS)?.try_into()?;
+
+        Ok(match status {
+            0 => MachineMeter::Ready(gas()?.try_into()?),
+            _ => MachineMeter::Exhausted,
+        })
+    }
+
+    fn set_gas(&mut self, gas: u64) -> Result<()> {
+        self.set_global(POLYGLOT_GAS_STATUS, 0_u32.into())?;
+        self.set_global(POLYGLOT_GAS_LEFT, gas.into())
     }
 }

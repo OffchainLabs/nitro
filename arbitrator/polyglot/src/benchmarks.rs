@@ -60,12 +60,12 @@ fn benchmark_wasmer() -> Result<()> {
         let env = WasmEnv::new(config, args);
 
         let file = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
-        let (instance, _, mut store) = poly::instance(file, env)?;
-        let exports = instance.exports;
-        let main = exports.get_typed_function::<i32, i32>(&store, "arbitrum_main")?;
+        let (mut instance, _) = poly::instance(file, env)?;
+        let exports = &instance.exports;
+        let main = exports.get_typed_function::<i32, i32>(&instance.store, "arbitrum_main")?;
 
         let time = Instant::now();
-        main.call(&mut store, 1)?;
+        main.call(&mut instance.store, 1)?;
         Ok(time.elapsed())
     }
 

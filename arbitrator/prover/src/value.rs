@@ -6,7 +6,7 @@ use arbutil::Color;
 use wasmparser::{FuncType, Type};
 
 use digest::Digest;
-use eyre::{bail, Result};
+use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, TryFromInto};
 use sha3::Keccak256;
@@ -326,23 +326,23 @@ impl From<f64> for Value {
 }
 
 impl TryInto<u32> for Value {
-    type Error = ();
+    type Error = ErrReport;
 
     fn try_into(self) -> Result<u32, Self::Error> {
         match self {
             Value::I32(value) => Ok(value as u32),
-            _ => Err(()),
+            _ => bail!("value not a u32"),
         }
     }
 }
 
 impl TryInto<u64> for Value {
-    type Error = ();
+    type Error = ErrReport;
 
-    fn try_into(self) -> Result<u64, Self::Error> {
+    fn try_into(self) -> Result<u64> {
         match self {
             Value::I64(value) => Ok(value as u64),
-            _ => Err(()),
+            _ => bail!("value not a u64"),
         }
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::ModuleMod,
+    programs::{config::PolyglotConfig, ModuleMod},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -315,13 +315,19 @@ impl Module {
                     Instruction::simple(Opcode::Return),
                 ];
                 Function::new_from_wavm(wavm, import.ty.clone(), vec![])
-            } else {
+            } else if let Ok(hostio) = host::get_host_impl(import.module, import_name) {
                 ensure!(
                     allow_hostapi,
                     "Calling hostapi directly is not allowed. Func {}",
                     import_name.red()
                 );
-                host::get_host_impl(import.module, import_name)?
+                hostio
+            } else {
+                bail!(
+                    "No such import {} in {}",
+                    import.module.red(),
+                    import_name.red()
+                )
             };
             ensure!(
                 &func.ty == have_ty,
@@ -505,6 +511,17 @@ impl Module {
             func_exports: Arc::new(func_exports),
             all_exports: Arc::new(bin.exports.clone()),
         })
+    }
+
+    fn name<'a>(&'a self) -> &'a str {
+        &self.names.module
+    }
+
+    fn find_func(&self, name: &str) -> Result<u32> {
+        let Some(func) = self.func_exports.iter().find(|x| x.0 == name) else {
+            bail!("func {} not found in {}", name.red(), self.name().red())
+        };
+        Ok(*func.1)
     }
 
     fn hash(&self) -> Bytes32 {
@@ -881,6 +898,22 @@ impl Machine {
             global_state,
             inbox_contents,
             preimage_resolver,
+        )
+    }
+
+    /// Produces a machine representing a user program from an untrusted wasm
+    /// TODO: apply instrumentation
+    pub fn from_user_wasm(wasm: &[u8], _config: &PolyglotConfig) -> Result<Machine> {
+        let bin = parse(wasm, &Path::new("user"))?;
+        Self::from_binaries(
+            &[],
+            bin,
+            false,
+            false,
+            false,
+            GlobalState::default(),
+            HashMap::default(),
+            Arc::new(|_, _| panic!("user program read preimage")),
         )
     }
 
@@ -1317,23 +1350,40 @@ impl Machine {
         }
     }
 
-    pub fn jump_into_function(&mut self, func: &str, mut args: Vec<Value>) {
+    pub fn main_module_name(&self) -> String {
+        self.modules.last().expect("no module").name().to_owned()
+    }
+
+    fn find_module(&self, name: &str) -> Result<u32> {
+        let Some(module) = self.modules.iter().position(|m| m.name() == name) else {
+            let names: Vec<_> = self.modules.iter().map(|m| m.name()).collect();
+            let names = names.join(", ");
+            bail!("module {} not found among: {}", name.red(), names)
+        };
+        Ok(module as u32)
+    }
+
+    pub fn find_module_func(&self, module: &str, func: &str) -> Result<(u32, u32)> {
+        let qualified = format!("{module}__{func}");
+        let offset = self.find_module(module)?;
+        let module = &self.modules[offset as usize];
+        let func = module
+            .find_func(&func)
+            .or_else(|_| module.find_func(&qualified))?;
+        Ok((offset, func))
+    }
+
+    pub fn jump_into_func(&mut self, module: u32, func: u32, mut args: Vec<Value>) {
         let frame_args = [Value::RefNull, Value::I32(0), Value::I32(0)];
         args.extend(frame_args);
         self.value_stack = args;
-
-        let module = self.modules.last().expect("no module");
-        let export = module.func_exports.iter().find(|x| x.0 == func);
-        let export = export
-            .unwrap_or_else(|| panic!("func {} not found", func))
-            .1;
 
         self.frame_stack.clear();
         self.internal_stack.clear();
 
         self.pc = ProgramCounter {
-            module: (self.modules.len() - 1).try_into().unwrap(),
-            func: *export,
+            module,
+            func,
             inst: 0,
         };
         self.status = MachineStatus::Running;
@@ -1343,11 +1393,46 @@ impl Machine {
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
         if !self.frame_stack.is_empty() {
             bail!(
-                "machine has not successfully computed a final result {:?}",
-                self.status
+                "machine has not successfully computed a final result {}",
+                self.status.red()
             )
         }
         Ok(self.value_stack.clone())
+    }
+
+    pub fn call_function(
+        &mut self,
+        module: &str,
+        func: &str,
+        args: Vec<Value>,
+    ) -> Result<Vec<Value>> {
+        let (module, func) = self.find_module_func(module, func)?;
+        self.jump_into_func(module, func, args);
+        self.step_n(Machine::MAX_STEPS)?;
+        self.get_final_result()
+    }
+
+    /// Gets the *last* global with the given name, if one exists
+    /// Note: two globals may have the same name, so use carefully!
+    pub fn get_global(&self, name: &str) -> Result<Value> {
+        for module in self.modules.iter().rev() {
+            if let Some((global, ExportKind::Global)) = module.all_exports.get(name) {
+                return Ok(module.globals[*global as usize]);
+            }
+        }
+        bail!("global {} not found", name.red())
+    }
+
+    /// Sets the *last* global with the given name, if one exists
+    /// Note: two globals may have the same name, so use carefully!
+    pub fn set_global(&mut self, name: &str, value: Value) -> Result<()> {
+        for module in self.modules.iter_mut().rev() {
+            if let Some((global, ExportKind::Global)) = module.all_exports.get(name) {
+                module.globals[*global as usize] = value;
+                return Ok(());
+            }
+        }
+        bail!("global {} not found", name.red())
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
