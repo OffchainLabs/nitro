@@ -10,6 +10,7 @@ fn new_test_machine(path: &str, config: PolyglotConfig) -> Result<Machine> {
     Machine::from_user_wasm(&wasm, &config)
 }
 
+/// TODO: actually test for gas usage once metering is added in a future PR
 #[test]
 fn test_gas() -> Result<()> {
     let mut config = PolyglotConfig::default();
