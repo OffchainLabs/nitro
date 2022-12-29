@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
-use crate::value::FunctionType;
+use crate::{value::FunctionType, Machine};
 
 use arbutil::Color;
 use eyre::{bail, Result};
@@ -474,7 +474,6 @@ impl<'a> FuncDepthChecker<'a> {
     }
 }
 
-#[cfg(feature = "native")]
 pub trait DepthCheckedMachine {
     fn stack_left(&mut self) -> Result<u32>;
     fn set_stack(&mut self, size: u32) -> Result<()>;
@@ -488,5 +487,15 @@ impl DepthCheckedMachine for NativeInstance {
 
     fn set_stack(&mut self, size: u32) -> Result<()> {
         self.set_global(POLYGLOT_STACK_LEFT, size)
+    }
+}
+
+impl DepthCheckedMachine for Machine {
+    fn stack_left(&mut self) -> Result<u32> {
+        self.get_global(POLYGLOT_STACK_LEFT)?.try_into()
+    }
+
+    fn set_stack(&mut self, size: u32) -> Result<()> {
+        self.set_global(POLYGLOT_STACK_LEFT, size.into())
     }
 }

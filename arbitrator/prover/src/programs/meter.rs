@@ -232,7 +232,7 @@ impl MeteredMachine for Machine {
     }
 
     fn set_gas(&mut self, gas: u64) -> Result<()> {
-        self.set_global(POLYGLOT_GAS_STATUS, 0_u32.into())?;
-        self.set_global(POLYGLOT_GAS_LEFT, gas.into())
+        self.set_global(POLYGLOT_GAS_LEFT, gas.into())?;
+        self.set_global(POLYGLOT_GAS_STATUS, 0_u32.into())
     }
 }
