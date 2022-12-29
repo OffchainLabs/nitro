@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -20,6 +21,7 @@ import (
 type ReadyMarker interface {
 	Ready() bool
 	ReadyChan() chan struct{}
+	WaitReady(ctx context.Context) error
 }
 
 type ValidationSpawner interface {
@@ -94,9 +96,8 @@ func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type ArbitratorSpawner struct {
+	stopwaiter.StopWaiter
 	count         int32
-	ctx           context.Context
-	cancel        func()
 	locator       *MachineLocator
 	machineLoader *ArbMachineLoader
 	config        ArbitratorSpawnerConfigFecher
@@ -105,11 +106,11 @@ type ArbitratorSpawner struct {
 type readyMarker struct {
 	chanReady chan struct{}
 	boolReady int32
+	err       error
 }
 
 type valRun struct {
 	readyMarker
-	err    error
 	root   common.Hash
 	result GoGlobalState
 }
@@ -124,7 +125,17 @@ func (d *readyMarker) ReadyChan() chan struct{} {
 	return d.chanReady
 }
 
-func (d *readyMarker) signalReady() {
+func (d *readyMarker) WaitReady(ctx context.Context) error {
+	select {
+	case <-d.chanReady:
+		return d.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (d *readyMarker) signalReady(err error) {
+	d.err = err
 	atomic.StoreInt32(&d.boolReady, 1)
 	close(d.chanReady)
 }
@@ -158,20 +169,18 @@ func NewvalRun(root common.Hash) *valRun {
 
 func (r *valRun) consumeResult(res GoGlobalState, err error) {
 	r.result = res
-	r.err = err
-	r.signalReady()
+	r.signalReady(err)
 }
 
 func NewArbitratorSpawner(locator *MachineLocator, config ArbitratorSpawnerConfigFecher) (*ArbitratorSpawner, error) {
 	// TODO: preload machines
-	ctx, cancel := context.WithCancel(context.Background())
-	return &ArbitratorSpawner{
-		ctx:           ctx,
-		cancel:        cancel,
+	spawner := &ArbitratorSpawner{
 		locator:       locator,
 		machineLoader: NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
 		config:        config,
-	}, nil
+	}
+	spawner.Start(context.Background(), spawner)
+	return spawner, nil
 }
 
 func (s *ArbitratorSpawner) LatestWasmModuleRoot() (common.Hash, error) {
@@ -257,10 +266,10 @@ func (v *ArbitratorSpawner) execute(
 func (v *ArbitratorSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun {
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
-	go func() {
-		run.consumeResult(v.execute(v.ctx, entry, moduleRoot))
+	v.LaunchUntrackedThread(func() {
+		run.consumeResult(v.execute(v.GetContext(), entry, moduleRoot))
 		atomic.AddInt32(&v.count, -1)
-	}()
+	})
 	return run
 }
 
@@ -392,12 +401,11 @@ func (v *ArbitratorSpawner) CreateExecutionBackend(ctx context.Context, wasmModu
 }
 
 func (v *ArbitratorSpawner) Stop() {
-	v.cancel()
+	v.StopOnly()
 }
 
 type JitSpawner struct {
-	ctx           context.Context
-	cancel        func()
+	stopwaiter.StopWaiter
 	count         int32
 	locator       *MachineLocator
 	machineLoader *JitMachineLoader
@@ -412,14 +420,13 @@ func NewJitSpawner(locator *MachineLocator, config JitSpawnerConfigFecher, fatal
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	return &JitSpawner{
-		ctx:           ctx,
-		cancel:        cancel,
+	spawner := &JitSpawner{
 		locator:       locator,
 		machineLoader: loader,
 		config:        config,
-	}, nil
+	}
+	spawner.Start(context.Background(), spawner)
+	return spawner, nil
 }
 
 func (v *JitSpawner) execute(
@@ -454,7 +461,7 @@ func (v *JitSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) Vali
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
 	go func() {
-		run.consumeResult(v.execute(v.ctx, entry, moduleRoot))
+		run.consumeResult(v.execute(v.GetContext(), entry, moduleRoot))
 		atomic.AddInt32(&v.count, -1)
 	}()
 	return run
@@ -469,6 +476,6 @@ func (v *JitSpawner) Room() int {
 }
 
 func (v *JitSpawner) Stop() {
-	v.cancel()
+	v.StopOnly()
 	v.machineLoader.Stop()
 }
