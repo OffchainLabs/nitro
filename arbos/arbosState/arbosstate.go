@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -44,6 +45,7 @@ type ArbosState struct {
 	addressTable      *addressTable.AddressTable
 	chainOwners       *addressSet.AddressSet
 	sendMerkle        *merkleAccumulator.MerkleAccumulator
+	programs          *programs.Programs
 	blockhashes       *blockhash.Blockhashes
 	chainId           storage.StorageBackedBigInt
 	genesisBlockNum   storage.StorageBackedUint64
@@ -75,6 +77,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
+		programs.Open(backingStorage.OpenSubStorage(programsSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
@@ -147,6 +150,7 @@ var (
 	chainOwnerSubspace   SubspaceID = []byte{4}
 	sendMerkleSubspace   SubspaceID = []byte{5}
 	blockhashesSubspace  SubspaceID = []byte{6}
+	programsSubspace     SubspaceID = []byte{7}
 )
 
 // Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
@@ -169,10 +173,6 @@ func getArbitrumOnlyPrecompiles(chainConfig *params.ChainConfig) []common.Addres
 	}
 	return arbOnlyPrecompiles
 }
-
-// During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
-// start running long-lived chains, every change to the storage format will require defining a new version and
-// providing upgrade code.
 
 func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
@@ -281,6 +281,9 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, s
 			// no state changes needed
 		case 9:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)))
+		case 10:
+			// TODO: move to the first version that introduces polyglot
+			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
 		default:
 			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)
 		}
@@ -361,6 +364,10 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 		state.sendMerkle = merkleAccumulator.OpenMerkleAccumulator(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
 	}
 	return state.sendMerkle
+}
+
+func (state *ArbosState) Programs() *programs.Programs {
+	return state.programs
 }
 
 func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {

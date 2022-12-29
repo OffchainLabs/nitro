@@ -1,0 +1,42 @@
+// Copyright 2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+// SPDX-License-Identifier: BUSL-1.1
+
+pragma solidity >=0.4.21 <0.9.0;
+
+/**
+ * @title Methods for managing user programs
+ * @notice Precompiled contract that exists in every Arbitrum chain at 0x0000000000000000000000000000000000000071.
+ */
+interface ArbWasm {
+    // @notice compile a wasm program
+    // @param program the program to compile
+    // @return version the polyglot version the program was compiled against
+    function compileProgram(address program) external returns (uint32 version);
+
+    // @notice call a wasm program
+    // @param id the program to call
+    // @param data the calldata to pass to the wasm program
+    // @return status whether the call succeeded (0 means success, nonzero failure)
+    // @return result the output of the wasm program
+    function callProgram(address program, bytes calldata data)
+        external
+        view
+        returns (uint32 status, bytes memory result);
+
+    // @notice gets the latest polyglot version
+    // @return version the polyglot version
+    function polyglotVersion() external view returns (uint32 version);
+
+    // @notice gets the conversion rate between evm and wasm gas
+    // @return price the price (in evm gas basis points) of wasm gas
+    function wasmGasPrice() external view returns (uint64 price);
+
+    // @notice gets the wasm stack size limit
+    // @return depth the maximum depth (in wasm words) a wasm stack may grow
+    function wasmMaxDepth() external view returns (uint32 depth);
+
+    // @notice gets the wasm memory limit
+    // @return bound the maximum size (in bytes) a wasm memory may be
+    function wasmHeapBound() external view returns (uint32 bound);
+}

@@ -5,6 +5,7 @@ package storage
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -145,6 +146,10 @@ func (store *Storage) Set(key common.Hash, value common.Hash) error {
 	}
 	store.db.SetState(store.account, mapAddress(store.storageKey, key), value)
 	return nil
+}
+
+func (store *Storage) SetUint64(key common.Hash, value uint64) error {
+	return store.Set(key, util.UintToHash(value))
 }
 
 func (store *Storage) SetByUint64(key uint64, value common.Hash) error {
@@ -350,6 +355,46 @@ func (sbu *StorageBackedBips) Get() (arbmath.Bips, error) {
 
 func (sbu *StorageBackedBips) Set(bips arbmath.Bips) error {
 	return sbu.backing.Set(int64(bips))
+}
+
+// StorageBackedUBips represents an unsigned number of basis points
+type StorageBackedUBips struct {
+	backing StorageBackedUint64
+}
+
+func (store *Storage) OpenStorageBackedUBips(offset uint64) StorageBackedUBips {
+	return StorageBackedUBips{StorageBackedUint64{store.NewSlot(offset)}}
+}
+
+func (sbu *StorageBackedUBips) Get() (arbmath.UBips, error) {
+	value, err := sbu.backing.Get()
+	return arbmath.UBips(value), err
+}
+
+func (sbu *StorageBackedUBips) Set(bips arbmath.UBips) error {
+	return sbu.backing.Set(bips.Uint64())
+}
+
+type StorageBackedUint32 struct {
+	StorageSlot
+}
+
+func (store *Storage) OpenStorageBackedUint32(offset uint64) StorageBackedUint32 {
+	return StorageBackedUint32{store.NewSlot(offset)}
+}
+
+func (sbu *StorageBackedUint32) Get() (uint32, error) {
+	raw, err := sbu.StorageSlot.Get()
+	big := raw.Big()
+	if !big.IsUint64() || big.Uint64() > math.MaxUint32 {
+		panic("expected uint32 compatible value in storage")
+	}
+	return uint32(big.Uint64()), err
+}
+
+func (sbu *StorageBackedUint32) Set(value uint32) error {
+	bigValue := new(big.Int).SetUint64(uint64(value))
+	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
 }
 
 type StorageBackedUint64 struct {
