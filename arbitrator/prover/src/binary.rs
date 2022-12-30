@@ -1,9 +1,15 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::value::{ArbValueType, FunctionType, IntegerValType, Value};
+use crate::{
+    programs::{
+        config::StylusConfig, depth::DepthChecker, heap::HeapBound, meter::Meter,
+        start::StartMover, FuncMiddleware, Middleware,
+    },
+    value::{ArbValueType, FunctionType, IntegerValType, Value},
+};
 use arbutil::Color;
-use eyre::{bail, ensure, Result};
+use eyre::{bail, ensure, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
@@ -12,10 +18,11 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::TryInto, fmt::Debug, hash::Hash, path::Path, str::FromStr};
+use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
+use wasmer_types::LocalFunctionIndex;
 use wasmparser::{
     Data, Element, Export, ExternalKind, Global, Import, ImportSectionEntryType, MemoryType, Name,
-    NameSectionReader, Naming, Operator, Parser, Payload, TableType, TypeDef, Validator,
+    NameSectionReader, Naming, Operator, Parser, Payload, TableType, Type, TypeDef, Validator,
     WasmFeatures,
 };
 
@@ -500,5 +507,51 @@ impl<'a> Debug for WasmBinary<'a> {
             .field("datas", &self.datas)
             .field("names", &self.names)
             .finish()
+    }
+}
+
+impl<'a> WasmBinary<'a> {
+    pub fn instrument(&mut self, config: &StylusConfig) -> Result<()> {
+        let meter = Meter::new(config.costs, config.start_gas);
+        let depth = DepthChecker::new(config.max_depth);
+        let bound = HeapBound::new(config.heap_bound)?;
+        let start = StartMover::default();
+
+        meter.update_module(self)?;
+        depth.update_module(self)?;
+        bound.update_module(self)?;
+        start.update_module(self)?;
+
+        for (index, code) in self.codes.iter_mut().enumerate() {
+            let index = LocalFunctionIndex::from_u32(index as u32);
+            let locals: Vec<Type> = code.locals.iter().map(|x| x.value.into()).collect();
+
+            let mut build = mem::take(&mut code.expr);
+            let mut input = Vec::with_capacity(build.len());
+
+            /// this macro exists since middlewares aren't sized (can't use a vec without boxes)
+            macro_rules! apply {
+                ($middleware:expr) => {
+                    let mut mid = Middleware::<WasmBinary>::instrument(&$middleware, index)?;
+                    mid.locals_info(&locals);
+
+                    mem::swap(&mut build, &mut input);
+
+                    for op in input.drain(..) {
+                        mid.feed(op, &mut build)
+                            .wrap_err_with(|| format!("{} failure", mid.name()))?
+                    }
+                };
+            }
+
+            // add the instrumentation in the order of application
+            // note: this must be consistent with native execution
+            apply!(meter);
+            apply!(depth);
+            apply!(bound);
+            apply!(start);
+            code.expr = build;
+        }
+        Ok(())
     }
 }

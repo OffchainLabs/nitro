@@ -55,6 +55,20 @@ impl TryFrom<Type> for ArbValueType {
     }
 }
 
+impl From<ArbValueType> for Type {
+    fn from(ty: ArbValueType) -> Self {
+        use ArbValueType::*;
+        match ty {
+            I32 => Self::I32,
+            I64 => Self::I64,
+            F32 => Self::F32,
+            F64 => Self::F64,
+            // InternalRef's aren't analogous, but they can be viewed as function pointers from wavm's perspective
+            RefNull | FuncRef | InternalRef => Self::FuncRef,
+        }
+    }
+}
+
 #[cfg(feature = "native")]
 pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::Type {
     match ty {

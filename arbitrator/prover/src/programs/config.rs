@@ -75,6 +75,7 @@ impl StylusConfig {
         let start = MiddlewareWrapper::new(StartMover::default());
 
         // add the instrumentation in the order of application
+        // note: this must be consistent with the prover
         compiler.push_middleware(Arc::new(meter));
         compiler.push_middleware(Arc::new(depth));
         compiler.push_middleware(Arc::new(bound));
