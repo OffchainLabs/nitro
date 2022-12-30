@@ -48,14 +48,13 @@ func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
 		return
 	}
 	machineStep := machine.GetStepCount()
-	if s.position == ^uint64(0) {
-		s.position = machineStep
-	} else if s.position != machine.GetStepCount() {
+	if s.position != machine.GetStepCount() {
 		machineRunning := machine.IsRunning()
 		if (machineRunning && s.position != machineStep) || machineStep > s.position {
 			s.signalReady(fmt.Errorf("machine is in wrong position want:%d, got: %d", s.position, machine.GetStepCount()))
 			return
 		}
+		s.position = machineStep
 	}
 	s.status = MachineStatus(machine.Status())
 	s.state = machine.GetGlobalState()
