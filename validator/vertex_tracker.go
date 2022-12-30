@@ -15,7 +15,7 @@ var (
 	ErrConfirmed          = errors.New("Vertex has been confirmed")
 	ErrSiblingConfirmed   = errors.New("Vertex sibling has been confirmed")
 	ErrPrevNone           = errors.New("Vertex parent is none")
-	ErrChallengeCompleted = errors.New("Challnege has been completed")
+	ErrChallengeCompleted = errors.New("Challenge has been completed")
 )
 
 type vertexTracker struct {
@@ -94,8 +94,10 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 	if v.vertex.Status == protocol.ConfirmedAssertionState {
 		return ErrConfirmed
 	}
+	var challengeCompleted bool
 	var siblingConfirmed bool
 	if err = v.validator.chain.Call(func(tx *protocol.ActiveTx, p protocol.OnChainProtocol) error {
+		challengeCompleted = v.challenge.Completed(tx)
 		siblingConfirmed, err = v.challenge.HasConfirmedAboveSeqNumber(tx, v.vertex.SequenceNum)
 		if err != nil {
 			return err
@@ -103,6 +105,9 @@ func (v *vertexTracker) actOnBlockChallenge(ctx context.Context) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	if challengeCompleted {
+		return ErrChallengeCompleted
 	}
 	if siblingConfirmed {
 		return ErrSiblingConfirmed
