@@ -145,8 +145,7 @@ impl<'a, F: OpcodePricer> FuncMiddleware<'a> for FuncMeter<'a, F> {
             header[9] = I64Const { value: cost as i64 };
 
             out.extend(header);
-            out.extend(self.block.clone());
-            self.block.clear();
+            out.extend(self.block.drain(..));
             self.block_cost = 0;
         }
         Ok(())
