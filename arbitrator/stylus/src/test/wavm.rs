@@ -137,6 +137,5 @@ fn test_start() -> Result<()> {
 
     call(machine, "move_me")?;
     call(machine, "stylus_start")?;
-    check(&mut machine, 12)?;
-    Ok(())
+    check(&mut machine, 12)
 }
