@@ -606,6 +606,13 @@ func (v *StatelessBlockValidator) RecordDBReferenceCount() int64 {
 	return v.recordingDatabase.ReferenceCount()
 }
 
+func (v *StatelessBlockValidator) Start(ctx_in context.Context) {
+	v.execSpawner.Start(ctx_in)
+	for _, spawner := range v.validationSpawners {
+		spawner.Start(ctx_in)
+	}
+}
+
 func (v *StatelessBlockValidator) Stop() {
 	v.execSpawner.Stop()
 	for _, spawner := range v.validationSpawners {

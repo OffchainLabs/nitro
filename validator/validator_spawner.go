@@ -26,6 +26,7 @@ type ReadyMarker interface {
 
 type ValidationSpawner interface {
 	Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun
+	Start(context.Context)
 	Stop()
 	Name() string
 	Room() int
@@ -179,8 +180,14 @@ func NewArbitratorSpawner(locator *MachineLocator, config ArbitratorSpawnerConfi
 		machineLoader: NewArbMachineLoader(&DefaultArbitratorMachineConfig, locator),
 		config:        config,
 	}
-	spawner.Start(context.Background(), spawner)
 	return spawner, nil
+}
+
+func (s *ArbitratorSpawner) Start(ctx_in context.Context) {
+	// could be used as both exec and validation spawner
+	if !s.Started() {
+		s.StopWaiter.Start(ctx_in, s)
+	}
 }
 
 func (s *ArbitratorSpawner) LatestWasmModuleRoot() (common.Hash, error) {
@@ -266,8 +273,8 @@ func (v *ArbitratorSpawner) execute(
 func (v *ArbitratorSpawner) Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun {
 	atomic.AddInt32(&v.count, 1)
 	run := NewvalRun(moduleRoot)
-	v.LaunchUntrackedThread(func() {
-		run.consumeResult(v.execute(v.GetContext(), entry, moduleRoot))
+	v.LaunchThread(func(ctx context.Context) {
+		run.consumeResult(v.execute(ctx, entry, moduleRoot))
 		atomic.AddInt32(&v.count, -1)
 	})
 	return run
@@ -425,8 +432,11 @@ func NewJitSpawner(locator *MachineLocator, config JitSpawnerConfigFecher, fatal
 		machineLoader: loader,
 		config:        config,
 	}
-	spawner.Start(context.Background(), spawner)
 	return spawner, nil
+}
+
+func (v *JitSpawner) Start(ctx_in context.Context) {
+	v.StopWaiter.Start(ctx_in, v)
 }
 
 func (v *JitSpawner) execute(
