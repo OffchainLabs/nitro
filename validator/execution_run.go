@@ -5,10 +5,10 @@ package validator
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-	"github.com/pkg/errors"
 )
 
 type ExecutionRun interface {
@@ -47,10 +47,15 @@ func (s *machineStep) consumeMachine(machine MachineInterface, err error) {
 		s.signalReady(err)
 		return
 	}
+	machineStep := machine.GetStepCount()
 	if s.position == ^uint64(0) {
-		s.position = machine.GetStepCount()
+		s.position = machineStep
 	} else if s.position != machine.GetStepCount() {
-		s.signalReady(errors.New("machine is in wrong position"))
+		machineRunning := machine.IsRunning()
+		if (machineRunning && s.position != machineStep) || machineStep > s.position {
+			s.signalReady(fmt.Errorf("machine is in wrong position want:%d, got: %d", s.position, machine.GetStepCount()))
+			return
+		}
 	}
 	s.status = MachineStatus(machine.Status())
 	s.state = machine.GetGlobalState()

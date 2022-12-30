@@ -5,6 +5,7 @@ package validator
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -86,6 +87,7 @@ func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, e
 			return
 		}
 		newCache.zeroStepMachine = c.zeroStepMachine
+		newCache.finalMachine = c.finalMachine
 		closest, err := c.getClosestMachine(start)
 		if err != nil {
 			newCache.signalReady(err)
@@ -94,7 +96,7 @@ func (c *MachineCache) SpawnCacheWithLimits(ctx context.Context, start uint64, e
 		initial := closest.CloneMachineInterface()
 		initialStep := initial.GetStepCount()
 		if initialStep > start {
-			newCache.signalReady(errors.New("initial machine step too large"))
+			newCache.signalReady(fmt.Errorf("initial machine step too large %d > %d", initialStep, start))
 			return
 		}
 		if initialStep < start {
@@ -132,6 +134,7 @@ func (c *MachineCache) populateInitialCache(ctx context.Context, target_step uin
 				}
 			}
 			c.machines = pruned
+			c.firstMachineStep += c.machineStepInterval
 			c.machineStepInterval *= 2
 		}
 		err := nextMachine.Step(ctx, c.machineStepInterval)
