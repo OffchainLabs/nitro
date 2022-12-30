@@ -283,8 +283,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigA.DataAvailability = das.DataAvailabilityConfig{
 		Enable: true,
 
-		LocalCacheConfig: das.TestBigCacheConfig,
-
 		// AggregatorConfig set up below
 		RequestTimeout: 5 * time.Second,
 	}
@@ -318,8 +316,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	l1NodeConfigB.DataAvailability = das.DataAvailabilityConfig{
 		Enable: true,
-
-		LocalCacheConfig: das.TestBigCacheConfig,
 
 		// AggregatorConfig set up below
 

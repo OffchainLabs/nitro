@@ -939,7 +939,7 @@ func createNodeImpl(
 				return nil, err
 			}
 		} else {
-			daReader, dasLifecycleManager, err = SetUpDataAvailability(ctx, &config.DataAvailability, l1Reader, deployInfo)
+			daReader, dasLifecycleManager, err = CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, deployInfo)
 			if err != nil {
 				return nil, err
 			}
@@ -1323,6 +1323,109 @@ func SetUpDataAvailability(
 	}
 
 	if topLevelDas != nil && seqInbox != nil {
+		topLevelDas, err = das.NewChainFetchDASWithSeqInbox(topLevelDas, seqInbox)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	if topLevelDas == nil {
+		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
+	}
+
+	return topLevelDas, dasLifecycleManager, nil
+}
+
+func CreateDAReaderForNode(
+	ctx context.Context,
+	config *das.DataAvailabilityConfig,
+	l1Reader *headerreader.HeaderReader,
+	deployInfo *RollupAddresses,
+) (das.DataAvailabilityServiceReader, *das.LifecycleManager, error) {
+	if !config.Enable {
+		return nil, nil, nil
+	}
+
+	var seqInbox *bridgegen.SequencerInbox
+	var err error
+
+	if l1Reader != nil && deployInfo != nil {
+		seqInbox, err = bridgegen.NewSequencerInbox(deployInfo.SequencerInbox, l1Reader.Client())
+		if err != nil {
+			return nil, nil, err
+		}
+	} else if l1Reader != nil && len(config.SequencerInboxAddress) > 0 {
+		seqInboxAddress, err := das.OptionalAddressFromString(config.SequencerInboxAddress)
+		if err != nil {
+			return nil, nil, err
+		}
+		if seqInboxAddress == nil {
+			return nil, nil, errors.New("must provide data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
+		}
+		seqInbox, err = bridgegen.NewSequencerInbox(*seqInboxAddress, l1Reader.Client())
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		return nil, nil, errors.New("data-availabilty.l1-node-url and sequencer-inbox-address must be set to a valid L1 URL and contract address")
+	}
+
+	topLevelStorageService, dasLifecycleManager, err := das.CreatePersistentStorageService(ctx, config, nil, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	hasPersistentStorage := topLevelStorageService != nil
+
+	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
+	// the REST aggregator is used as the fallback to them.
+	if config.RestfulClientAggregatorConfig.Enable {
+		restAgg, err := das.NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
+		if err != nil {
+			return nil, nil, err
+		}
+		restAgg.Start(ctx)
+		dasLifecycleManager.Register(restAgg)
+
+		// Wrap the primary storage service with the fallback to the restful aggregator
+		if hasPersistentStorage {
+			syncConf := &config.RestfulClientAggregatorConfig.SyncToStorageConfig
+			var retentionPeriodSeconds uint64
+			if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
+				retentionPeriodSeconds = math.MaxUint64
+			} else {
+				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
+			}
+			if syncConf.Eager {
+				return nil, nil, errors.New("sync-to-storage.eager can't be used with a Nitro node")
+			} else {
+				topLevelStorageService = das.NewFallbackStorageService(topLevelStorageService, restAgg,
+					retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
+			}
+		} else {
+			topLevelStorageService = das.NewReadLimitedStorageService(restAgg)
+		}
+		dasLifecycleManager.Register(topLevelStorageService)
+	}
+
+	var topLevelDas das.DataAvailabilityService
+	if config.AggregatorConfig.Enable {
+		return nil, nil, errors.New("node.data-availability.rpc-aggregator is only for Batch Poster mode")
+	}
+	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
+		return nil, nil, errors.New("node.data-availability.key options are only for daserver committee members")
+	} else {
+		topLevelDas = das.NewReadLimitedDataAvailabilityService(topLevelStorageService)
+	}
+
+	if config.RedisCacheConfig.Enable || config.LocalCacheConfig.Enable {
+		return nil, nil, errors.New("node.data-availbility.*-cache options are only for daserver")
+	}
+
+	if config.RegularSyncStorageConfig.Enable {
+		return nil, nil, errors.New("node.data-availability.regular-sync-store options are only for daserver")
+	}
+
+	if seqInbox != nil {
 		topLevelDas, err = das.NewChainFetchDASWithSeqInbox(topLevelDas, seqInbox)
 		if err != nil {
 			return nil, nil, err
