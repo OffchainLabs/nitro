@@ -1429,6 +1429,9 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing staker: %w", err)
 		}
 	}
+	if n.StatelessBlockValidator != nil {
+		n.StatelessBlockValidator.Start(ctx)
+	}
 	if n.BlockValidator != nil {
 		err = n.BlockValidator.Initialize()
 		if err != nil {
