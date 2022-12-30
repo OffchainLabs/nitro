@@ -1378,8 +1378,9 @@ func CreateDAReaderForNode(
 
 	// Create the REST aggregator if one was requested. If other storage types were enabled above, then
 	// the REST aggregator is used as the fallback to them.
+	var restAgg *das.SimpleDASReaderAggregator
 	if config.RestfulClientAggregatorConfig.Enable {
-		restAgg, err := das.NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
+		restAgg, err = das.NewRestfulClientAggregator(ctx, &config.RestfulClientAggregatorConfig)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1398,23 +1399,22 @@ func CreateDAReaderForNode(
 			if syncConf.Eager {
 				return nil, nil, errors.New("sync-to-storage.eager can't be used with a Nitro node")
 			} else {
+				// TODO fallback doesn't make sense for nodes
 				topLevelStorageService = das.NewFallbackStorageService(topLevelStorageService, restAgg,
 					retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
 			}
-		} else {
-			topLevelStorageService = das.NewReadLimitedStorageService(restAgg)
 		}
-		dasLifecycleManager.Register(topLevelStorageService)
+		// TODO cleanup
+		if topLevelStorageService != nil {
+			dasLifecycleManager.Register(topLevelStorageService)
+		}
 	}
 
-	var topLevelDas das.DataAvailabilityService
 	if config.AggregatorConfig.Enable {
 		return nil, nil, errors.New("node.data-availability.rpc-aggregator is only for Batch Poster mode")
 	}
 	if config.KeyConfig.KeyDir != "" || config.KeyConfig.PrivKey != "" {
 		return nil, nil, errors.New("node.data-availability.key options are only for daserver committee members")
-	} else {
-		topLevelDas = das.NewReadLimitedDataAvailabilityService(topLevelStorageService)
 	}
 
 	if config.RedisCacheConfig.Enable || config.LocalCacheConfig.Enable {
@@ -1425,18 +1425,27 @@ func CreateDAReaderForNode(
 		return nil, nil, errors.New("node.data-availability.regular-sync-store options are only for daserver")
 	}
 
+	if topLevelStorageService == nil && restAgg == nil {
+		return nil, nil, fmt.Errorf("data-availability.enable was specified but no Data Availability server types were enabled, %+v", config)
+	}
+
+	var daReader das.DataAvailabilityServiceReader = restAgg
+	if topLevelStorageService != nil {
+		// TODO only doing this because of fallback being a storage iface
+		daReader = topLevelStorageService
+	}
 	if seqInbox != nil {
-		topLevelDas, err = das.NewChainFetchDASWithSeqInbox(topLevelDas, seqInbox)
+		daReader, err = das.NewChainFetchReaderWithSeqInbox(daReader, seqInbox)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 
-	if topLevelDas == nil {
-		return nil, nil, errors.New("data-availability.enable was specified but no Data Availability server types were enabled")
+	if dasLifecycleManager == nil {
+		return nil, nil, errors.New("missing dasLifecycleManager")
 	}
 
-	return topLevelDas, dasLifecycleManager, nil
+	return daReader, dasLifecycleManager, nil
 }
 
 func CreateNode(
