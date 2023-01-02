@@ -36,7 +36,7 @@ var (
 
 // CatchupBuffer is a Protocol-specific client catch-up logic can be injected using this interface
 type CatchupBuffer interface {
-	OnRegisterClient(*ClientConnection) error
+	OnRegisterClient(*ClientConnection) (error, int, time.Duration)
 	OnDoBroadcast(interface{}) error
 	GetMessageCount() int
 }
@@ -82,9 +82,13 @@ func (cm *ClientManager) registerClient(ctx context.Context, clientConnection *C
 
 	clientsConnectedGauge.Inc(1)
 	atomic.AddInt32(&cm.clientCount, 1)
-	if err := cm.catchupBuffer.OnRegisterClient(clientConnection); err != nil {
+	err, sent, elapsed := cm.catchupBuffer.OnRegisterClient(clientConnection)
+	if err != nil {
 		clientsTotalFailedRegisterCounter.Inc(1)
 		return err
+	}
+	if cm.config().LogConnect {
+		log.Info("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", sent, "elapsed", elapsed)
 	}
 
 	clientConnection.Start(ctx)
@@ -132,7 +136,9 @@ func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
 		log.Warn("Failed to close client connection", "err", err)
 	}
 
-	log.Debug("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
+	if cm.config().LogDisconnect {
+		log.Info("client removed", "client", clientConnection.Name, "age", clientConnection.Age())
+	}
 	clientsDurationHistogram.Update(clientConnection.Age().Nanoseconds())
 	clientsConnectedGauge.Dec(1)
 	atomic.AddInt32(&cm.clientCount, -1)

@@ -47,6 +47,8 @@ type BroadcasterConfig struct {
 	MaxSendQueue   int           `koanf:"max-send-queue" reload:"hot"`  // reloaded value will affect only new connections
 	RequireVersion bool          `koanf:"require-version" reload:"hot"` // reloaded value will affect only future upgrades to websocket
 	DisableSigning bool          `koanf:"disable-signing"`
+	LogConnect     bool          `koanf:"log-connect"`
+	LogDisconnect  bool          `koanf:"log-disconnect"`
 }
 
 type BroadcasterConfigFetcher func() *BroadcasterConfig
@@ -64,6 +66,8 @@ func BroadcasterConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-send-queue", DefaultBroadcasterConfig.MaxSendQueue, "maximum number of messages allowed to accumulate before client is disconnected")
 	f.Bool(prefix+".require-version", DefaultBroadcasterConfig.RequireVersion, "don't connect if client version not present")
 	f.Bool(prefix+".disable-signing", DefaultBroadcasterConfig.DisableSigning, "don't sign feed messages")
+	f.Bool(prefix+".log-connect", DefaultBroadcasterConfig.LogConnect, "log every client connect")
+	f.Bool(prefix+".log-disconnect", DefaultBroadcasterConfig.LogDisconnect, "log every client disconnect")
 }
 
 var DefaultBroadcasterConfig = BroadcasterConfig{
@@ -79,6 +83,8 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	MaxSendQueue:   4096,
 	RequireVersion: false,
 	DisableSigning: true,
+	LogConnect:     false,
+	LogDisconnect:  false,
 }
 
 var DefaultTestBroadcasterConfig = BroadcasterConfig{
@@ -94,6 +100,8 @@ var DefaultTestBroadcasterConfig = BroadcasterConfig{
 	MaxSendQueue:   4096,
 	RequireVersion: false,
 	DisableSigning: false,
+	LogConnect:     false,
+	LogDisconnect:  false,
 }
 
 type WSBroadcastServer struct {
