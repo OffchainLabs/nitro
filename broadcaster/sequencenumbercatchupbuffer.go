@@ -4,7 +4,6 @@
 package broadcaster
 
 import (
-	"context"
 	"errors"
 	"sync/atomic"
 	"time"
@@ -23,6 +22,7 @@ const (
 
 var (
 	confirmedSequenceNumberGauge = metrics.NewRegisteredGauge("arb/sequencenumber/confirmed", nil)
+	cachedMessagesSentHistogram  = metrics.NewRegisteredHistogram("arb/feed/clients/cache/sent", nil, metrics.NewBoundedHistogramSample())
 )
 
 type SequenceNumberCatchupBuffer struct {
@@ -42,7 +42,7 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	// Ignore messages older than requested sequence number
 	firstCachedSeqNum := b.messages[0].SequenceNumber
 	if firstCachedSeqNum < requestedSeqNum {
-		lastCachedSeqNum := firstCachedSeqNum + arbutil.MessageIndex(len(b.messages))
+		lastCachedSeqNum := firstCachedSeqNum + arbutil.MessageIndex(len(b.messages)-1)
 		if lastCachedSeqNum < requestedSeqNum {
 			// Past end, nothing to return
 			return nil
@@ -74,7 +74,7 @@ func (b *SequenceNumberCatchupBuffer) getCacheMessages(requestedSeqNum arbutil.M
 	return nil
 }
 
-func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) error {
+func (b *SequenceNumberCatchupBuffer) OnRegisterClient(clientConnection *wsbroadcastserver.ClientConnection) error {
 	start := time.Now()
 	bm := b.getCacheMessages(clientConnection.RequestedSeqNum())
 	var bmCount int
@@ -90,7 +90,8 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 		}
 	}
 
-	log.Info("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", bmCount, "elapsed", time.Since(start))
+	cachedMessagesSentHistogram.Update(int64(bmCount))
+	log.Debug("client registered", "client", clientConnection.Name, "requestedSeqNum", clientConnection.RequestedSeqNum(), "sentCount", bmCount, "elapsed", time.Since(start))
 
 	return nil
 }

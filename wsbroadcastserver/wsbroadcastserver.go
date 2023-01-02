@@ -235,7 +235,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 		if err != nil {
 			if err.Error() != "" {
 				// Only log if liveness probe was not called
-				log.Warn("websocket upgrade error", "connectingIP", connectingIP, "err", err)
+				log.Debug("websocket upgrade error", "connectingIP", connectingIP, "err", err)
 				clientsTotalFailedUpgradeCounter.Inc(1)
 			}
 			_ = safeConn.Close()
@@ -258,13 +258,13 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			if ev&(netpoll.EventReadHup|netpoll.EventHup) != 0 {
 				// ReadHup or Hup received, means the client has close the connection
 				// remove it from the clientManager registry.
-				log.Info("Hup received", "age", client.Age(), "client", client.Name)
+				log.Debug("Hup received", "age", client.Age(), "client", client.Name)
 				s.clientManager.Remove(client)
 				return
 			}
 
 			if ev > 1 {
-				log.Info("event greater than 1 received", "client", client.Name, "event", int(ev))
+				log.Debug("event greater than 1 received", "client", client.Name, "event", int(ev))
 			}
 
 			// receive client messages, close on error
