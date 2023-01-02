@@ -339,7 +339,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 			} else {
 				var netError net.Error
 				isNetError := errors.As(err, &netError)
-				if !isNetError || !netError.Timeout() {
+				if (!isNetError || !netError.Timeout()) && !strings.Contains(err.Error(), "timed out") {
 					log.Error("broadcast poller error", "err", err)
 				}
 			}
