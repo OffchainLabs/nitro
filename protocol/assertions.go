@@ -896,6 +896,9 @@ func (v *ChallengeVertex) ConfirmForChallengeDeadline(tx *ActiveTx) error {
 	if v.Prev.Unwrap().status != ConfirmedAssertionState {
 		return errors.Wrapf(ErrWrongPredecessorState, fmt.Sprintf("State: %d", v.Prev.Unwrap().status))
 	}
+	if v != v.Prev.Unwrap().PresumptiveSuccessor.Unwrap() {
+		return errors.Wrap(ErrInvalidOp, "Vertex is not the presumptive successor")
+	}
 	chain := v.challenge.Unwrap().rootAssertion.Unwrap().chain
 	chalPeriod := chain.challengePeriod
 	if !chain.timeReference.Get().After(v.challenge.Unwrap().creationTime.Add(2 * chalPeriod)) {
