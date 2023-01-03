@@ -133,7 +133,7 @@ library Instructions {
     uint16 internal constant MOVE_FROM_INTERNAL_TO_STACK = 0x8006;
     uint16 internal constant DUP = 0x8008;
     uint16 internal constant CROSS_MODULE_CALL = 0x8009;
-    uint16 internal constant CALLER_MODULE_FORWARD = 0x800B;
+    uint16 internal constant CROSS_MODULE_FORWARD = 0x800B;
     uint16 internal constant CALLER_MODULE_INTERNAL_CALL = 0x800A;
 
     uint16 internal constant GET_GLOBAL_STATE_BYTES32 = 0x8010;
