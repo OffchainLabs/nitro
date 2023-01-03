@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -398,27 +399,27 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 }
 
 type Config struct {
-	RPC                    arbitrum.Config                `koanf:"rpc"`
-	Sequencer              SequencerConfig                `koanf:"sequencer" reload:"hot"`
-	L1Reader               headerreader.Config            `koanf:"l1-reader" reload:"hot"`
-	InboxReader            InboxReaderConfig              `koanf:"inbox-reader" reload:"hot"`
-	DelayedSequencer       DelayedSequencerConfig         `koanf:"delayed-sequencer" reload:"hot"`
-	BatchPoster            BatchPosterConfig              `koanf:"batch-poster" reload:"hot"`
-	ForwardingTargetImpl   string                         `koanf:"forwarding-target"`
-	Forwarder              ForwarderConfig                `koanf:"forwarder"`
-	TxPreCheckerStrictness uint                           `koanf:"tx-pre-checker-strictness" reload:"hot"`
-	BlockValidator         validator.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
-	Feed                   broadcastclient.FeedConfig     `koanf:"feed" reload:"hot"`
-	Validator              validator.L1ValidatorConfig    `koanf:"validator"`
-	SeqCoordinator         SeqCoordinatorConfig           `koanf:"seq-coordinator"`
-	DataAvailability       das.DataAvailabilityConfig     `koanf:"data-availability"`
-	Wasm                   WasmConfig                     `koanf:"wasm"`
-	SyncMonitor            SyncMonitorConfig              `koanf:"sync-monitor"`
-	Dangerous              DangerousConfig                `koanf:"dangerous"`
-	Caching                CachingConfig                  `koanf:"caching"`
-	Archive                bool                           `koanf:"archive"`
-	TxLookupLimit          uint64                         `koanf:"tx-lookup-limit"`
-	TransactionStreamer    TransactionStreamerConfig      `koanf:"transaction-streamer" reload:"hot"`
+	RPC                    arbitrum.Config             `koanf:"rpc"`
+	Sequencer              SequencerConfig             `koanf:"sequencer" reload:"hot"`
+	L1Reader               headerreader.Config         `koanf:"l1-reader" reload:"hot"`
+	InboxReader            InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
+	DelayedSequencer       DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
+	BatchPoster            BatchPosterConfig           `koanf:"batch-poster" reload:"hot"`
+	ForwardingTargetImpl   string                      `koanf:"forwarding-target"`
+	Forwarder              ForwarderConfig             `koanf:"forwarder"`
+	TxPreCheckerStrictness uint                        `koanf:"tx-pre-checker-strictness" reload:"hot"`
+	BlockValidator         staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
+	Feed                   broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
+	Validator              staker.L1ValidatorConfig    `koanf:"validator"`
+	SeqCoordinator         SeqCoordinatorConfig        `koanf:"seq-coordinator"`
+	DataAvailability       das.DataAvailabilityConfig  `koanf:"data-availability"`
+	Wasm                   WasmConfig                  `koanf:"wasm"`
+	SyncMonitor            SyncMonitorConfig           `koanf:"sync-monitor"`
+	Dangerous              DangerousConfig             `koanf:"dangerous"`
+	Caching                CachingConfig               `koanf:"caching"`
+	Archive                bool                        `koanf:"archive"`
+	TxLookupLimit          uint64                      `koanf:"tx-lookup-limit"`
+	TransactionStreamer    TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -470,9 +471,9 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 		"10 = should never reject anything that'd succeed, 20 = likely won't reject anything that'd succeed, " +
 		"30 = full validation which may reject txs that would succeed"
 	f.Uint(prefix+".tx-pre-checker-strictness", ConfigDefault.TxPreCheckerStrictness, txPreCheckerDescription)
-	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
+	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
-	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
+	staker.L1ValidatorConfigAddOptions(prefix+".validator", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
@@ -495,9 +496,9 @@ var ConfigDefault = Config{
 	BatchPoster:            DefaultBatchPosterConfig,
 	ForwardingTargetImpl:   "",
 	TxPreCheckerStrictness: TxPreCheckerStrictnessNone,
-	BlockValidator:         validator.DefaultBlockValidatorConfig,
+	BlockValidator:         staker.DefaultBlockValidatorConfig,
 	Feed:                   broadcastclient.FeedConfigDefault,
-	Validator:              validator.DefaultL1ValidatorConfig,
+	Validator:              staker.DefaultL1ValidatorConfig,
 	SeqCoordinator:         DefaultSeqCoordinatorConfig,
 	DataAvailability:       das.DefaultDataAvailabilityConfig,
 	Wasm:                   DefaultWasmConfig,
@@ -528,7 +529,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
-	config.BlockValidator = validator.TestBlockValidatorConfig
+	config.BlockValidator = staker.TestBlockValidatorConfig
 
 	return &config
 }
@@ -670,9 +671,9 @@ type Node struct {
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
 	BatchPoster             *BatchPoster
-	BlockValidator          *validator.BlockValidator
-	StatelessBlockValidator *validator.StatelessBlockValidator
-	Staker                  *validator.Staker
+	BlockValidator          *staker.BlockValidator
+	StatelessBlockValidator *staker.StatelessBlockValidator
+	Staker                  *staker.Staker
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -977,14 +978,17 @@ func createNodeImpl(
 	machinesPath, foundMachines := config.Wasm.FindMachineDir()
 	nitroMachineConfig.RootPath = machinesPath
 	nitroMachineConfig.JitCranelift = blockValidatorConf.JitValidatorCranelift
-	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig, fatalErrChan)
 
-	var blockValidator *validator.BlockValidator
-	var statelessBlockValidator *validator.StatelessBlockValidator
+	var blockValidator *staker.BlockValidator
+	var statelessBlockValidator *staker.StatelessBlockValidator
 
 	if foundMachines {
-		statelessBlockValidator, err = validator.NewStatelessBlockValidator(
-			nitroMachineLoader,
+		spawner, err := validator.NewValidationSpawner(nitroMachineConfig, fatalErrChan)
+		if err != nil {
+			return nil, err
+		}
+		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
+			spawner,
 			inboxReader,
 			inboxTracker,
 			txStreamer,
@@ -1005,13 +1009,12 @@ func createNodeImpl(
 	}
 
 	if blockValidatorConf.Enable {
-		blockValidator, err = validator.NewBlockValidator(
+		blockValidator, err = staker.NewBlockValidator(
 			statelessBlockValidator,
 			inboxTracker,
 			txStreamer,
-			nitroMachineLoader,
 			reorgingToBlock,
-			func() *validator.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
+			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
 		)
 		if err != nil {
@@ -1019,9 +1022,9 @@ func createNodeImpl(
 		}
 	}
 
-	var staker *validator.Staker
+	var stakerObj *staker.Staker
 	if config.Validator.Enable {
-		var wallet validator.ValidatorWalletInterface
+		var wallet staker.ValidatorWalletInterface
 		if config.Validator.UseSmartContractWallet || txOpts == nil {
 			var existingWalletAddress *common.Address
 			if len(config.Validator.ContractWalletAddress) > 0 {
@@ -1032,7 +1035,7 @@ func createNodeImpl(
 				tmpAddress := common.HexToAddress(config.Validator.ContractWalletAddress)
 				existingWalletAddress = &tmpAddress
 			}
-			wallet, err = validator.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+			wallet, err = staker.NewContractValidatorWallet(existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
 			if err != nil {
 				return nil, err
 			}
@@ -1040,16 +1043,16 @@ func createNodeImpl(
 			if len(config.Validator.ContractWalletAddress) > 0 {
 				return nil, errors.New("validator contract wallet specified but flag to use a smart contract wallet was not specified")
 			}
-			wallet, err = validator.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOpts)
+			wallet, err = staker.NewEoaValidatorWallet(deployInfo.Rollup, l1client, txOpts)
 			if err != nil {
 				return nil, err
 			}
 		}
-		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, blockValidator, statelessBlockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
-		if staker.Strategy() != validator.WatchtowerStrategy {
+		if stakerObj.Strategy() != staker.WatchtowerStrategy {
 			err := wallet.Initialize(ctx)
 			if err != nil {
 				return nil, err
@@ -1059,7 +1062,7 @@ func createNodeImpl(
 		if txOpts != nil {
 			txSenderPtr = &txOpts.From
 		}
-		whitelisted, err := staker.IsWhitelisted(ctx)
+		whitelisted, err := stakerObj.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1100,7 +1103,7 @@ func createNodeImpl(
 		batchPoster,
 		blockValidator,
 		statelessBlockValidator,
-		staker,
+		stakerObj,
 		broadcastServer,
 		broadcastClients,
 		coordinator,
