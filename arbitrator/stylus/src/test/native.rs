@@ -49,6 +49,15 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
     Ok(NativeInstance::new(instance, store))
 }
 
+fn uniform_cost_config() -> StylusConfig {
+    let mut config = StylusConfig::default();
+    config.start_gas = 1_000_000;
+    config.pricing.wasm_gas_price = 100_00;
+    config.pricing.hostio_cost = 100;
+    config.costs = |_| 1;
+    config
+}
+
 #[test]
 fn test_gas() -> Result<()> {
     let mut config = StylusConfig::default();
@@ -261,6 +270,7 @@ fn test_rust() -> Result<()> {
     //     the input is the # of hashings followed by a preimage
     //     the output is the iterated hash of the preimage
 
+    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
     let preimage = "°º¤ø,¸,ø¤°º¤ø,¸,ø¤°º¤ø,¸ nyan nyan ~=[,,_,,]:3 nyan nyan";
     let preimage = preimage.as_bytes().to_vec();
     let hash = hex::encode(crypto::keccak(&preimage));
@@ -269,14 +279,8 @@ fn test_rust() -> Result<()> {
     args.extend(preimage);
     let args_len = args.len() as u32;
 
-    let mut config = StylusConfig::default();
-    config.start_gas = 1_000_000;
-    config.pricing.wasm_gas_price = 10000;
-    config.pricing.hostio_cost = 100;
-    config.costs = |_| 1;
-
+    let config = uniform_cost_config();
     let env = WasmEnv::new(config.clone(), args.clone());
-    let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
     let (mut native, env) = stylus::instance(filename, env)?;
     let exports = &native.instance.exports;
     let store = &mut native.store;
@@ -293,10 +297,10 @@ fn test_rust() -> Result<()> {
         UserOutcome::Success(output) => hex::encode(output),
         err => bail!("user program failure: {}", err.red()),
     };
-    assert_eq!(output, hash);
 
-    assert_eq!(native.stack_left(), machine.stack_left());
+    assert_eq!(output, hash);
     assert_eq!(native.gas_left(), machine.gas_left());
+    assert_eq!(native.stack_left(), machine.stack_left());
     Ok(())
 }
 
@@ -305,6 +309,8 @@ fn test_c() -> Result<()> {
     // in siphash.c
     //     the inputs are a hash, key, and plaintext
     //     the output is whether the hash was valid
+
+    let filename = "tests/siphash/siphash.wasm";
 
     let text: Vec<u8> = (0..63).collect();
     let key: Vec<u8> = (0..16).collect();
@@ -316,10 +322,10 @@ fn test_c() -> Result<()> {
     args.extend(text);
     let args_len = args.len() as i32;
 
-    let config = StylusConfig::default();
-    let env = WasmEnv::new(config, args);
-    let (mut native, env) = stylus::instance("tests/siphash/siphash.wasm", env)?;
-    let exports = native.instance.exports;
+    let config = uniform_cost_config();
+    let env = WasmEnv::new(config.clone(), args.clone());
+    let (mut native, env) = stylus::instance(filename, env)?;
+    let exports = &native.instance.exports;
     let store = &mut native.store;
 
     let main = exports.get_typed_function::<i32, i32>(store, "arbitrum_main")?;
@@ -328,5 +334,15 @@ fn test_c() -> Result<()> {
 
     let env = env.as_ref(&store);
     assert_eq!(hex::encode(&env.outs), hex::encode(&env.args));
+
+    let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
+    let output = match machine.run_main(args, &config)? {
+        UserOutcome::Success(output) => hex::encode(output),
+        err => bail!("user program failure: {}", err.red()),
+    };
+
+    assert_eq!(output, hex::encode(&env.outs));
+    assert_eq!(native.gas_left(), machine.gas_left());
+    assert_eq!(native.stack_left(), machine.stack_left());
     Ok(())
 }

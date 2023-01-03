@@ -3,6 +3,7 @@
 
 use crate::{
     machine::{Function, InboxIdentifier},
+    programs::StylusGlobals,
     value::{ArbValueType, FunctionType},
     wavm::{Instruction, Opcode},
 };
@@ -15,6 +16,9 @@ enum InternalFunc {
     WavmCallerLoad32,
     WavmCallerStore8,
     WavmCallerStore32,
+    UserGasLeft,
+    UserGasStatus,
+    UserGasSet,
 }
 
 impl InternalFunc {
@@ -110,6 +114,20 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             ty = FunctionType::default();
             opcode!(HaltAndSetFinished);
         }
+        ("hostio", "user_gas_left") => {
+            ty = FunctionType::new(vec![], vec![I64]);
+            opcode!(CallerModuleInternalCall, UserGasLeft);
+        }
+        ("hostio", "user_gas_status") => {
+            ty = FunctionType::new(vec![], vec![I32]);
+            opcode!(CallerModuleInternalCall, UserGasStatus);
+        }
+        ("hostio", "user_set_gas") => {
+            ty = FunctionType::new(vec![I64, I32], vec![]);
+            opcode!(LocalGet, 0);
+            opcode!(LocalGet, 1);
+            opcode!(CallerModuleInternalCall, UserGasSet);
+        }
         _ => eyre::bail!("no such hostio {} in {}", name.red(), module.red()),
     }
 
@@ -123,7 +141,11 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
 
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
-pub fn add_internal_funcs(funcs: &mut Vec<Function>, func_types: &mut Vec<FunctionType>) {
+pub fn add_internal_funcs(
+    funcs: &mut Vec<Function>,
+    func_types: &mut Vec<FunctionType>,
+    globals: Option<StylusGlobals>,
+) {
     use ArbValueType::*;
     use InternalFunc::*;
     use Opcode::*;
@@ -170,4 +192,23 @@ pub fn add_internal_funcs(funcs: &mut Vec<Function>, func_types: &mut Vec<Functi
         MemoryStore { ty: I32, bytes: 4 },
         host(WavmCallerStore32),
     ));
+
+    if let Some(globals) = globals {
+        let (gas, status) = globals.offsets();
+        funcs.push(code_func(
+            vec![Instruction::with_data(GlobalGet, gas)],
+            host(UserGasLeft),
+        ));
+        funcs.push(code_func(
+            vec![Instruction::with_data(GlobalGet, status)],
+            host(UserGasStatus),
+        ));
+        funcs.push(code_func(
+            vec![
+                Instruction::with_data(GlobalSet, status),
+                Instruction::with_data(GlobalSet, gas),
+            ],
+            host(UserGasSet),
+        ));
+    }
 }

@@ -8,7 +8,7 @@ use crate::{
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::{config::StylusConfig, ModuleMod},
+    programs::{config::StylusConfig, ModuleMod, StylusGlobals},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -288,6 +288,7 @@ impl Module {
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
+        stylus_data: Option<StylusGlobals>,
     ) -> Result<Module> {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
@@ -488,7 +489,7 @@ impl Module {
         ensure!(!code.is_empty(), "Module has no code");
 
         let internals_offset = code.len() as u32;
-        host::add_internal_funcs(&mut code, &mut func_types);
+        host::add_internal_funcs(&mut code, &mut func_types, stylus_data);
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
         let func_exports = bin
@@ -905,13 +906,14 @@ impl Machine {
             global_state,
             inbox_contents,
             preimage_resolver,
+            None,
         )
     }
 
     pub fn from_user_path(path: &Path, config: &StylusConfig) -> Result<Self> {
         let wasm = std::fs::read(path)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
-        bin.instrument(config)?;
+        let stylus_data = bin.instrument(config)?;
 
         let forward = std::fs::read("../../target/machines/latest/forward.wasm")?;
         let forward = parse(&forward, Path::new("forward"))?;
@@ -927,6 +929,7 @@ impl Machine {
             GlobalState::default(),
             HashMap::default(),
             Arc::new(|_, _| panic!("tried to read preimage")),
+            Some(stylus_data),
         )
     }
 
@@ -939,6 +942,7 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
+        stylus_data: Option<StylusGlobals>,
     ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
@@ -977,7 +981,8 @@ impl Machine {
         }
 
         for lib in libraries {
-            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
+            let module =
+                Module::from_binary(lib, &available_imports, &floating_point_impls, true, None)?;
             for (name, &func) in &*module.func_exports {
                 let ty = module.func_types[func as usize].clone();
                 if let Ok(op) = name.parse::<FloatInstruction>() {
@@ -1010,6 +1015,7 @@ impl Machine {
             &available_imports,
             &floating_point_impls,
             allow_hostapi_from_main,
+            stylus_data,
         )?);
 
         // Build the entrypoint module

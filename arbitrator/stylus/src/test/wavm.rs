@@ -1,7 +1,6 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use arbutil::crypto;
 use eyre::Result;
 use prover::{
     machine::GlobalState,
@@ -18,7 +17,7 @@ pub fn new_test_machine(path: &str, config: StylusConfig) -> Result<Machine> {
     let wat = std::fs::read(path)?;
     let wasm = wasmer::wat2wasm(&wat)?;
     let mut bin = prover::binary::parse(&wasm, Path::new("user"))?;
-    bin.instrument(&config)?;
+    let stylus_data = bin.instrument(&config)?;
 
     let wat = std::fs::read("tests/test.wat")?;
     let wasm = wasmer::wat2wasm(&wat)?;
@@ -33,6 +32,7 @@ pub fn new_test_machine(path: &str, config: StylusConfig) -> Result<Machine> {
         GlobalState::default(),
         HashMap::default(),
         Arc::new(|_, _| panic!("tried to read preimage")),
+        Some(stylus_data),
     )
 }
 

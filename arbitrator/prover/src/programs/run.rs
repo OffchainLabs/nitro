@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use eyre::{bail, Result, ensure};
+use eyre::{ensure, Result};
 use std::fmt::Display;
 
 use crate::Machine;
@@ -78,7 +78,7 @@ impl RunProgram for Machine {
 
         let num_progs: u32 = call!("user_host", "pop_program", vec![]);
         ensure!(num_progs == 0, "dirty user_host");
-        
+
         Ok(match status {
             0 => UserOutcome::Success(outs),
             _ => UserOutcome::Revert(outs),

@@ -4,7 +4,7 @@
 use crate::{
     programs::{
         config::StylusConfig, depth::DepthChecker, heap::HeapBound, meter::Meter,
-        start::StartMover, FuncMiddleware, Middleware,
+        start::StartMover, FuncMiddleware, Middleware, StylusGlobals,
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
@@ -511,7 +511,7 @@ impl<'a> Debug for WasmBinary<'a> {
 }
 
 impl<'a> WasmBinary<'a> {
-    pub fn instrument(&mut self, config: &StylusConfig) -> Result<()> {
+    pub fn instrument(&mut self, config: &StylusConfig) -> Result<StylusGlobals> {
         let meter = Meter::new(config.costs, config.start_gas);
         let depth = DepthChecker::new(config.max_depth);
         let bound = HeapBound::new(config.heap_bound)?;
@@ -552,6 +552,11 @@ impl<'a> WasmBinary<'a> {
             apply!(start);
             code.expr = build;
         }
-        Ok(())
+
+        let (gas_left, gas_status) = meter.globals();
+        Ok(StylusGlobals {
+            gas_left,
+            gas_status,
+        })
     }
 }
