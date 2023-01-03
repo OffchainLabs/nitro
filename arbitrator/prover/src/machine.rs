@@ -22,7 +22,6 @@ use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
@@ -37,8 +36,11 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmer::wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
 use wasmer_types::FunctionIndex;
+use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
+
+#[cfg(feature = "native")]
+use rayon::prelude::*;
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -126,15 +128,17 @@ impl Function {
             u32::try_from(code.len()).is_ok(),
             "Function instruction count doesn't fit in a u32",
         );
-        let code_merkle = Merkle::new(
-            MerkleType::Instruction,
-            code.par_iter().map(|i| i.hash()).collect(),
-        );
+
+        #[cfg(feature = "native")]
+        let code_hashes = code.par_iter().map(|i| i.hash()).collect();
+
+        #[cfg(not(feature = "native"))]
+        let code_hashes = code.iter().map(|i| i.hash()).collect();
 
         Function {
             code,
             ty,
-            code_merkle,
+            code_merkle: Merkle::new(MerkleType::Instruction, code_hashes),
             local_types,
         }
     }
@@ -1170,6 +1174,7 @@ impl Machine {
         Ok(mach)
     }
 
+    #[cfg(feature = "native")]
     pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let f = BufReader::new(File::open(wavm_binary)?);
         let decompressor = brotli2::read::BrotliDecoder::new(f);
@@ -1187,10 +1192,13 @@ impl Machine {
             let funcs =
                 Arc::get_mut(&mut module.funcs).expect("Multiple copies of module functions");
             for func in funcs.iter_mut() {
-                func.code_merkle = Merkle::new(
-                    MerkleType::Instruction,
-                    func.code.par_iter().map(|i| i.hash()).collect(),
-                );
+                #[cfg(feature = "native")]
+                let code_hashes = func.code.par_iter().map(|i| i.hash()).collect();
+
+                #[cfg(not(feature = "native"))]
+                let code_hashes = func.code.iter().map(|i| i.hash()).collect();
+
+                func.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
             }
             module.funcs_merkle = Arc::new(Merkle::new(
                 MerkleType::Function,
@@ -1218,6 +1226,7 @@ impl Machine {
         Ok(mach)
     }
 
+    #[cfg(feature = "native")]
     pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         ensure!(
             self.hash() == self.initial_hash,

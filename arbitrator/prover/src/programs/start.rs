@@ -2,8 +2,14 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{DefaultFuncMiddleware, Middleware, ModuleMod};
-use eyre::{ErrReport, Result};
-use wasmer::{Instance, LocalFunctionIndex, Store, TypedFunction};
+use eyre::Result;
+use wasmer_types::LocalFunctionIndex;
+
+#[cfg(feature = "native")]
+use {
+    eyre::ErrReport,
+    wasmer::{Instance, Store, TypedFunction},
+};
 
 const POLYGLOT_START: &str = "polyglot_start";
 
@@ -26,10 +32,12 @@ impl<M: ModuleMod> Middleware<M> for StartMover {
     }
 }
 
+#[cfg(feature = "native")]
 pub trait StartlessMachine {
     fn get_start(&self, store: &Store) -> Result<TypedFunction<(), ()>>;
 }
 
+#[cfg(feature = "native")]
 impl StartlessMachine for Instance {
     fn get_start(&self, store: &Store) -> Result<TypedFunction<(), ()>> {
         self.exports

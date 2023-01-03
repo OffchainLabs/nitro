@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use super::{FuncMiddleware, GlobalMod, Middleware, ModuleMod};
+use super::{FuncMiddleware, Middleware, ModuleMod};
 use crate::value::FunctionType;
 
 use arbutil::Color;
@@ -9,12 +9,15 @@ use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use wasmer::{
-    wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType},
-    Instance, StoreMut,
-};
 use wasmer_types::{
     FunctionIndex, GlobalIndex, GlobalInit, LocalFunctionIndex, SignatureIndex, Type,
+};
+use wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType};
+
+#[cfg(feature = "native")]
+use {
+    super::GlobalMod,
+    wasmer::{Instance, StoreMut},
 };
 
 const POLYGLOT_STACK_LEFT: &str = "polyglot_stack_left";
@@ -122,9 +125,9 @@ impl<'a> FuncMiddleware<'a> for FuncDepthChecker<'a> {
         self.locals = Some(locals.len());
     }
 
-    fn feed<O>(&mut self, op: wasmer::wasmparser::Operator<'a>, out: &mut O) -> Result<()>
+    fn feed<O>(&mut self, op: Operator<'a>, out: &mut O) -> Result<()>
     where
-        O: Extend<wasmer::wasmparser::Operator<'a>>,
+        O: Extend<Operator<'a>>,
     {
         use Operator::*;
 
@@ -474,11 +477,13 @@ impl<'a> FuncDepthChecker<'a> {
     }
 }
 
+#[cfg(feature = "native")]
 pub trait DepthCheckedMachine {
     fn stack_left(&self, store: &mut StoreMut) -> u32;
     fn set_stack(&mut self, store: &mut StoreMut, size: u32);
 }
 
+#[cfg(feature = "native")]
 impl DepthCheckedMachine for Instance {
     fn stack_left(&self, store: &mut StoreMut) -> u32 {
         self.get_global(store, POLYGLOT_STACK_LEFT)

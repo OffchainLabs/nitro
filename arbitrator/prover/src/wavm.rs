@@ -9,10 +9,12 @@ use crate::{
 use digest::Digest;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
+use lazy_static::lazy_static;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
-use wasmer::wasmparser::{Operator, Type, TypeOrFuncType as BlockType};
+use wasmparser::{Operator, Type, TypeOrFuncType as BlockType};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IRelOpType {
@@ -307,6 +309,10 @@ pub fn unpack_cross_module_call(data: u64) -> (u32, u32) {
     ((data >> 32) as u32, data as u32)
 }
 
+lazy_static! {
+    static ref OP_HASHES: Mutex<HashMap<Opcode, Bytes32>> = Mutex::new(HashMap::default());
+}
+
 impl Instruction {
     #[must_use]
     pub fn simple(opcode: Opcode) -> Instruction {
@@ -343,12 +349,24 @@ impl Instruction {
         ret
     }
 
-    pub fn hash(self) -> Bytes32 {
+    pub fn hash(&self) -> Bytes32 {
+        let dataless = self.proving_argument_data.is_none() && self.argument_data == 0;
+        if dataless {
+            if let Some(hash) = OP_HASHES.lock().get(&self.opcode) {
+                return *hash;
+            }
+        }
+
         let mut h = Keccak256::new();
         h.update(b"Instruction:");
         h.update(self.opcode.repr().to_be_bytes());
         h.update(self.get_proving_argument_data());
-        h.finalize().into()
+        let hash: Bytes32 = h.finalize().into();
+
+        if dataless {
+            OP_HASHES.lock().insert(self.opcode, hash);
+        }
+        hash
     }
 }
 

@@ -6,7 +6,6 @@ publish = false
 
 [dependencies]
 bincode = "1.3.3"
-brotli2 = "0.3.2"
 digest = "0.9.0"
 eyre = "0.6.5"
 fnv = "1.0.7"
@@ -15,7 +14,6 @@ libc = "0.2.108"
 nom = "7.0.0"
 nom-leb128 = "0.2.0"
 num = "0.4"
-rayon = "1.5.1"
 rustc-demangle = "0.1.21"
 serde = { version = "1.0.130", features = ["derive", "rc"] }
 serde_json = "1.0.67"
@@ -24,11 +22,15 @@ static_assertions = "1.1.0"
 structopt = "0.3.23"
 serde_with = "1.12.1"
 parking_lot = "0.12.1"
+lazy_static = "1.4.0"
 smallvec = { version = "1.10.0", features = ["serde"] }
+brotli2 = { version = "0.3.2", optional = true }
+rayon = { version = "1.5.1", optional = true }
 arbutil = { path = "../arbutil/" }
 wasmer = { path = "../wasm-upstream/wasmer/lib/api/", optional = true }
 wasmer-types = { path = "../wasm-upstream/wasmer/lib/types" }
-wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass" }
+wasmer-compiler-singlepass = { path = "../wasm-upstream/wasmer/lib/compiler-singlepass", optional = true }
+wasmparser = "0.83"
 
 [lib]
 name = "prover"
@@ -36,4 +38,4 @@ crate-type = ["staticlib", "lib"]
 
 [features]
 default = ["native"]
-native = ["dep:wasmer"]
+native = ["dep:wasmer", "dep:rayon", "dep:wasmer-compiler-singlepass", "dep:brotli2"]

@@ -7,10 +7,12 @@ use crate::{
     value::{ArbValueType, Value},
 };
 use digest::Digest;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{borrow::Cow, convert::TryFrom};
+
+#[cfg(feature = "native")]
+use rayon::prelude::*;
 
 #[derive(PartialEq, Eq, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Memory {
@@ -72,9 +74,14 @@ impl Memory {
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
-        let mut leaf_hashes: Vec<Bytes32> = self
-            .buffer
-            .par_chunks(Self::LEAF_SIZE)
+
+        #[cfg(feature = "native")]
+        let leaf_hashes = self.buffer.par_chunks(Self::LEAF_SIZE);
+
+        #[cfg(not(feature = "native"))]
+        let leaf_hashes = self.buffer.chunks(Self::LEAF_SIZE);
+
+        let mut leaf_hashes: Vec<Bytes32> = leaf_hashes
             .map(|leaf| {
                 let mut full_leaf = [0u8; 32];
                 full_leaf[..leaf.len()].copy_from_slice(leaf);
