@@ -3,7 +3,7 @@
 
 #[link(wasm_import_module = "forward")]
 extern "C" {
-    pub fn read_args(data: *mut u8);
+    pub fn read_args(dest: *mut u8);
     pub fn return_data(data: *const u8, len: usize);
 }
 
@@ -18,10 +18,7 @@ pub fn args(len: usize) -> Vec<u8> {
 
 pub fn output(data: Vec<u8>) {
     unsafe {
-        let len = data.len();
-        let out = data.as_ptr();
-        std::mem::forget(data); // leak the data
-        return_data(out, len);
+        return_data(data.as_ptr(), data.len());
     }
 }
 

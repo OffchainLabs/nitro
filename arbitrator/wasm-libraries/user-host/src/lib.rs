@@ -40,8 +40,9 @@ pub unsafe extern "C" fn user_host__push_program(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__pop_program() {
+pub unsafe extern "C" fn user_host__pop_program() -> u32 {
     PROGRAMS.pop();
+    PROGRAMS.len() as u32
 }
 
 #[no_mangle]

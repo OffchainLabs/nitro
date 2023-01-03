@@ -8,11 +8,11 @@ use arbutil::wavm;
 pub unsafe extern "C" fn user_host__read_args(ptr: usize) {
     let program = PROGRAMS.last().expect("no program");
     program.pricing.begin();
-    wavm::write_slice_usize(&program.args, ptr)
+    wavm::write_slice_usize(&program.args, ptr);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__return_data(len: usize, ptr: usize) {
+pub unsafe extern "C" fn user_host__return_data(ptr: usize, len: usize) {
     let program = PROGRAMS.last_mut().expect("no program");
     program.pricing.begin();
 

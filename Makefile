@@ -83,8 +83,8 @@ wasm32_unknown = target/wasm32-unknown-unknown/release
 stylus_dir = arbitrator/stylus
 stylus_test_dir = arbitrator/stylus/tests
 
-stylus_lang_rust = $(wildcard arbitrator/lang/rust/src/*.rs arbitrator/lang/rust/*.toml)
-stylus_lang_c    = $(wildcard arbitrator/lang/c/*.c arbitrator/lang/c/*.h)
+stylus_lang_rust = $(wildcard arbitrator/langs/rust/src/*.rs arbitrator/langs/rust/*.toml)
+stylus_lang_c    = $(wildcard arbitrator/langs/c/*.c arbitrator/langs/c/*.h)
 
 get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_lang_rust)

@@ -278,7 +278,7 @@ fn test_rust() -> Result<()> {
     let env = WasmEnv::new(config.clone(), args.clone());
     let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
     let (mut native, env) = stylus::instance(filename, env)?;
-    let exports = native.instance.exports;
+    let exports = &native.instance.exports;
     let store = &mut native.store;
 
     let main = exports.get_typed_function::<u32, i32>(store, "arbitrum_main")?;
@@ -294,6 +294,9 @@ fn test_rust() -> Result<()> {
         err => bail!("user program failure: {}", err.red()),
     };
     assert_eq!(output, hash);
+
+    assert_eq!(native.stack_left(), machine.stack_left());
+    assert_eq!(native.gas_left(), machine.gas_left());
     Ok(())
 }
 

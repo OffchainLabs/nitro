@@ -310,7 +310,7 @@ impl Module {
 
             let func = if let Some(import) = available_imports.get(&qualified_name) {
                 let call = match forward {
-                    true => Opcode::CrossModuleCall,
+                    true => Opcode::CrossModuleForward,
                     false => Opcode::CrossModuleCall,
                 };
                 let wavm = vec![
@@ -1621,6 +1621,19 @@ impl Machine {
                     self.value_stack.push(Value::InternalRef(self.pc));
                     self.value_stack.push(Value::I32(self.pc.module));
                     self.value_stack.push(Value::I32(module.internals_offset));
+                    let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
+                    self.pc.module = call_module;
+                    self.pc.func = call_func;
+                    self.pc.inst = 0;
+                    module = &mut self.modules[self.pc.module()];
+                    func = &module.funcs[self.pc.func()];
+                }
+                Opcode::CrossModuleForward => {
+                    flush_module!();
+                    let frame = self.frame_stack.last().unwrap();
+                    self.value_stack.push(Value::InternalRef(self.pc));
+                    self.value_stack.push(frame.caller_module.into());
+                    self.value_stack.push(frame.caller_module_internals.into());
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
                     self.pc.func = call_func;
