@@ -161,6 +161,12 @@ func (cm *ClientManager) ClientCount() int32 {
 
 // Broadcast sends batch item to all clients.
 func (cm *ClientManager) Broadcast(bm interface{}) {
+	if cm.Stopped() {
+		// This should only occur if a reorg occurs after the broadcast server is stopped,
+		// with the sequencer enabled but not the sequencer coordinator.
+		// In this case we should proceed without broadcasting the message.
+		return
+	}
 	cm.broadcastChan <- bm
 }
 

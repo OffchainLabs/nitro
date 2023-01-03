@@ -398,7 +398,8 @@ func ProduceBlockAdvanced(
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
-	header.Root = statedb.IntermediateRoot(true)
+
+	FinalizeBlock(header, complete, statedb, chainConfig)
 
 	// Touch up the block hashes in receipts
 	tmpBlock := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
@@ -410,9 +411,6 @@ func ProduceBlockAdvanced(
 			txLog.BlockHash = blockHash
 		}
 	}
-
-	FinalizeBlock(header, complete, statedb, chainConfig)
-	header.Root = statedb.IntermediateRoot(true)
 
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
@@ -434,6 +432,7 @@ func ProduceBlockAdvanced(
 	return block, receipts, nil
 }
 
+// Also sets header.Root
 func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB, chainConfig *params.ChainConfig) {
 	if header != nil {
 		if header.Number.Uint64() < chainConfig.ArbitrumChainParams.GenesisBlockNum {
@@ -467,5 +466,6 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 			ArbOSFormatVersion: arbosVersion,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
+		header.Root = statedb.IntermediateRoot(true)
 	}
 }
