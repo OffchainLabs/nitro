@@ -1,6 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use arbutil::wavm;
 use go_abi::*;
 
 extern "C" {
@@ -35,7 +36,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalState
     let our_ptr = our_buf.0.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     wavm_get_globalstate_bytes32(idx, our_ptr);
-    write_slice(&our_buf.0[..(out_len as usize)], out_ptr);
+    wavm::write_slice(&our_buf.0[..(out_len as usize)], out_ptr);
 }
 
 #[no_mangle]
@@ -53,7 +54,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalState
         return;
     }
     let mut our_buf = MemoryLeaf([0u8; 32]);
-    our_buf.0.copy_from_slice(&read_slice(src_ptr, src_len));
+    let value = wavm::read_slice(src_ptr, src_len);
+    our_buf.0.copy_from_slice(&value);
     let our_ptr = our_buf.0.as_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     wavm_set_globalstate_bytes32(idx, our_ptr);
@@ -90,7 +92,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readInboxMessa
     assert_eq!(our_ptr as usize % 32, 0);
     let read = wavm_read_inbox_message(msg_num, our_ptr, offset as usize);
     assert!(read <= 32);
-    write_slice(&our_buf.0[..read], out_ptr);
+    wavm::write_slice(&our_buf.0[..read], out_ptr);
     sp.write_u64(5, read as u64);
 }
 
@@ -115,7 +117,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readDelayedInb
     assert_eq!(our_ptr as usize % 32, 0);
     let read = wavm_read_delayed_inbox_message(seq_num, our_ptr, offset as usize);
     assert!(read <= 32);
-    write_slice(&our_buf.0[..read], out_ptr);
+    wavm::write_slice(&our_buf.0[..read], out_ptr);
     sp.write_u64(5, read as u64);
 }
 
@@ -135,11 +137,12 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolvePreImag
         return;
     }
     let mut our_buf = MemoryLeaf([0u8; 32]);
-    our_buf.0.copy_from_slice(&read_slice(hash_ptr, hash_len));
+    let hash = wavm::read_slice(hash_ptr, hash_len);
+    our_buf.0.copy_from_slice(&hash);
     let our_ptr = our_buf.0.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     let read = wavm_read_pre_image(our_ptr, offset as usize);
     assert!(read <= 32);
-    write_slice(&our_buf.0[..read], out_ptr);
+    wavm::write_slice(&our_buf.0[..read], out_ptr);
     sp.write_u64(7, read as u64);
 }

@@ -7,6 +7,7 @@ use crate::{
     value::{ArbValueType, Value},
 };
 use digest::Digest;
+use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{borrow::Cow, convert::TryFrom};
@@ -265,12 +266,13 @@ impl Memory {
         Some(&self.buffer[offset..end])
     }
 
-    pub fn set_range(&mut self, offset: usize, data: &[u8]) {
+    pub fn set_range(&mut self, offset: usize, data: &[u8]) -> Result<()> {
         self.merkle = None;
-        let end = offset
-            .checked_add(data.len())
-            .expect("Overflow in offset+data.len() in Memory::set_range");
+        let Some(end) = offset.checked_add(data.len()) else {
+            bail!("Overflow in offset+data.len() in Memory::set_range")
+        };
         self.buffer[offset..end].copy_from_slice(data);
+        Ok(())
     }
 
     pub fn cache_merkle_tree(&mut self) {

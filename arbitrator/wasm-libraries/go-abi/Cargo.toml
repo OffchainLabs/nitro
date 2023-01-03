@@ -5,3 +5,4 @@ edition = "2018"
 publish = false
 
 [dependencies]
+arbutil = { path = "../../arbutil/", features = ["wavm"] }

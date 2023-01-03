@@ -11,9 +11,11 @@ use prover::{
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
         native::{GlobalMod, NativeInstance},
+        run::{RunProgram, UserOutcome},
         start::StartlessMachine,
         ModuleMod,
     },
+    Machine,
 };
 use std::path::Path;
 use wasmer::{
@@ -265,21 +267,33 @@ fn test_rust() -> Result<()> {
 
     let mut args = vec![0x01];
     args.extend(preimage);
-    let args_len = args.len() as i32;
+    let args_len = args.len() as u32;
 
-    let config = StylusConfig::default();
-    let env = WasmEnv::new(config, args);
+    let mut config = StylusConfig::default();
+    config.start_gas = 1_000_000;
+    config.pricing.wasm_gas_price = 10000;
+    config.pricing.hostio_cost = 100;
+    config.costs = |_| 1;
+
+    let env = WasmEnv::new(config.clone(), args.clone());
     let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
     let (mut native, env) = stylus::instance(filename, env)?;
     let exports = native.instance.exports;
     let store = &mut native.store;
 
-    let main = exports.get_typed_function::<i32, i32>(store, "arbitrum_main")?;
+    let main = exports.get_typed_function::<u32, i32>(store, "arbitrum_main")?;
     let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
     let env = env.as_ref(&store);
     assert_eq!(hex::encode(&env.outs), hash);
+
+    let mut machine = Machine::from_user_path(Path::new(filename), &config)?;
+    let output = match machine.run_main(args, &config)? {
+        UserOutcome::Success(output) => hex::encode(output),
+        err => bail!("user program failure: {}", err.red()),
+    };
+    assert_eq!(output, hash);
     Ok(())
 }
 

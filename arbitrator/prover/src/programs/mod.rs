@@ -30,6 +30,7 @@ pub mod config;
 pub mod depth;
 pub mod heap;
 pub mod meter;
+pub mod run;
 pub mod start;
 
 #[cfg(feature = "native")]

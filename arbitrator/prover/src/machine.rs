@@ -3,12 +3,12 @@
 
 use crate::{
     binary::{
-        parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
+        self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    programs::ModuleMod,
+    programs::{config::StylusConfig, ModuleMod},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
@@ -19,7 +19,7 @@ use crate::{
 };
 use arbutil::Color;
 use digest::Digest;
-use eyre::{bail, ensure, eyre, Result, WrapErr};
+use eyre::{bail, ensure, eyre, ErrReport, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use serde::{Deserialize, Serialize};
@@ -300,12 +300,19 @@ impl Module {
             let Some(import_name) = import.name else {
                 bail!("Missing name for import in {}", module.red());
             };
+            let (forward, import_name) = match import_name.strip_prefix("arbitrator_forward__") {
+                Some(name) => (true, name),
+                None => (false, import_name),
+            };
 
             let mut qualified_name = format!("{module}__{import_name}");
             qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
 
             let func = if let Some(import) = available_imports.get(&qualified_name) {
-                let call = Opcode::CrossModuleCall;
+                let call = match forward {
+                    true => Opcode::CrossModuleCall,
+                    false => Opcode::CrossModuleCall,
+                };
                 let wavm = vec![
                     Instruction::simple(Opcode::InitFrame),
                     Instruction::with_data(
@@ -416,7 +423,7 @@ impl Module {
                     data.data.len(),
                 );
             }
-            memory.set_range(offset, data.data);
+            memory.set_range(offset, data.data)?;
         }
 
         for table in &bin.tables {
@@ -901,6 +908,28 @@ impl Machine {
         )
     }
 
+    pub fn from_user_path(path: &Path, config: &StylusConfig) -> Result<Self> {
+        let wasm = std::fs::read(path)?;
+        let mut bin = binary::parse(&wasm, Path::new("user"))?;
+        bin.instrument(config)?;
+
+        let forward = std::fs::read("../../target/machines/latest/forward.wasm")?;
+        let forward = parse(&forward, Path::new("forward"))?;
+        let user_host = std::fs::read("../../target/machines/latest/user_host.wasm")?;
+        let user_host = parse(&user_host, Path::new("user_host"))?;
+
+        Self::from_binaries(
+            &[forward, user_host],
+            bin,
+            false,
+            false,
+            false,
+            GlobalState::default(),
+            HashMap::default(),
+            Arc::new(|_, _| panic!("tried to read preimage")),
+        )
+    }
+
     pub fn from_binaries(
         libraries: &[WasmBinary<'_>],
         bin: WasmBinary<'_>,
@@ -1334,7 +1363,8 @@ impl Machine {
         &self.modules.last().expect("no module").memory
     }
 
-    fn find_module(&self, name: &str) -> Result<u32> {
+    /// finds the first module with the given name
+    pub fn find_module(&self, name: &str) -> Result<u32> {
         let Some(module) = self.modules.iter().position(|m| m.name() == name) else {
             let names: Vec<_> = self.modules.iter().map(|m| m.name()).collect();
             let names = names.join(", ");
@@ -1353,7 +1383,20 @@ impl Machine {
         Ok((offset, func))
     }
 
-    pub fn jump_into_func(&mut self, module: u32, func: u32, mut args: Vec<Value>) {
+    pub fn jump_into_func(&mut self, module: u32, func: u32, mut args: Vec<Value>) -> Result<()> {
+        let source_module = &self.modules[module as usize];
+        let source_func = &source_module.funcs[func as usize];
+        let ty = &source_func.ty;
+        if ty.inputs.len() != args.len() {
+            let name = source_module.names.functions.get(&func).unwrap();
+            bail!(
+                "func {} has type {} but received args {:?}",
+                name.red(),
+                ty.red(),
+                args
+            )
+        }
+
         let frame_args = [Value::RefNull, Value::I32(0), Value::I32(0)];
         args.extend(frame_args);
         self.value_stack = args;
@@ -1368,6 +1411,7 @@ impl Machine {
         };
         self.status = MachineStatus::Running;
         self.steps = 0;
+        Ok(())
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
@@ -1387,7 +1431,7 @@ impl Machine {
         args: Vec<Value>,
     ) -> Result<Vec<Value>> {
         let (module, func) = self.find_module_func(module, func)?;
-        self.jump_into_func(module, func, args);
+        self.jump_into_func(module, func, args)?;
         self.step_n(Machine::MAX_STEPS)?;
         self.get_final_result()
     }
@@ -1413,6 +1457,28 @@ impl Machine {
             }
         }
         bail!("global {} not found", name.red())
+    }
+
+    pub fn read_memory(&mut self, module: u32, len: u32, ptr: u32) -> Result<&[u8]> {
+        let module = &mut self.modules[module as usize];
+        let memory = module.memory.get_range(ptr as usize, len as usize);
+        let error = || format!("failed memory read of {} bytes @ {}", len.red(), ptr.red());
+        memory.ok_or_else(|| ErrReport::msg(error()))
+    }
+
+    pub fn write_memory(&mut self, module: u32, ptr: u32, data: &[u8]) -> Result<()> {
+        let module = &mut self.modules[module as usize];
+        if let Err(err) = module.memory.set_range(ptr as usize, data) {
+            let msg = || {
+                format!(
+                    "failed to write {} bytes to memory @ {}",
+                    data.len().red(),
+                    ptr.red()
+                )
+            };
+            bail!(err.wrap_err(msg()));
+        }
+        Ok(())
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
@@ -1462,6 +1528,7 @@ impl Machine {
         }
         macro_rules! error {
             () => {{
+                println!("error on line {}", line!());
                 self.status = MachineStatus::Errored;
                 break;
             }};

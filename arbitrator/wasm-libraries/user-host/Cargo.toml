@@ -1,12 +1,12 @@
 [package]
-name = "host-io"
+name = "user-host"
 version = "0.1.0"
-edition = "2018"
-publish = false
+edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
 arbutil = { path = "../../arbutil/", features = ["wavm"] }
-go-abi = { path = "../go-abi" }
+hashbrown = "0.12.3"
+hex = "0.4.3"
