@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use super::{FuncMiddleware, Middleware, ModuleMod};
-use crate::value::FunctionType;
+use crate::{value::FunctionType, Machine};
 
 use arbutil::Color;
 use eyre::{bail, Result};
@@ -15,10 +15,7 @@ use wasmer_types::{
 use wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType};
 
 #[cfg(feature = "native")]
-use {
-    super::GlobalMod,
-    wasmer::{Instance, StoreMut},
-};
+use super::native::{GlobalMod, NativeInstance};
 
 const POLYGLOT_STACK_LEFT: &str = "polyglot_stack_left";
 
@@ -477,19 +474,30 @@ impl<'a> FuncDepthChecker<'a> {
     }
 }
 
-#[cfg(feature = "native")]
+/// Note: implementers may panic if uninstrumented
 pub trait DepthCheckedMachine {
-    fn stack_left(&self, store: &mut StoreMut) -> u32;
-    fn set_stack(&mut self, store: &mut StoreMut, size: u32);
+    fn stack_left(&mut self) -> u32;
+    fn set_stack(&mut self, size: u32);
 }
 
 #[cfg(feature = "native")]
-impl DepthCheckedMachine for Instance {
-    fn stack_left(&self, store: &mut StoreMut) -> u32 {
-        self.get_global(store, POLYGLOT_STACK_LEFT)
+impl DepthCheckedMachine for NativeInstance {
+    fn stack_left(&mut self) -> u32 {
+        self.get_global(POLYGLOT_STACK_LEFT).unwrap()
     }
 
-    fn set_stack(&mut self, store: &mut StoreMut, size: u32) {
-        self.set_global(store, POLYGLOT_STACK_LEFT, size);
+    fn set_stack(&mut self, size: u32) {
+        self.set_global(POLYGLOT_STACK_LEFT, size).unwrap()
+    }
+}
+
+impl DepthCheckedMachine for Machine {
+    fn stack_left(&mut self) -> u32 {
+        let global = self.get_global(POLYGLOT_STACK_LEFT).unwrap();
+        global.try_into().expect("instrumentation type mismatch")
+    }
+
+    fn set_stack(&mut self, size: u32) {
+        self.set_global(POLYGLOT_STACK_LEFT, size.into()).unwrap();
     }
 }

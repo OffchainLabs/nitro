@@ -6,6 +6,7 @@ use crate::{
     value::{ArbValueType, FunctionType},
     wavm::{Instruction, Opcode},
 };
+use arbutil::Color;
 
 /// Represents the internal hostio functions a module may have.
 #[repr(u64)]
@@ -109,7 +110,7 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
             ty = FunctionType::default();
             opcode!(HaltAndSetFinished);
         }
-        _ => eyre::bail!("Unsupported import of {:?} {:?}", module, name),
+        _ => eyre::bail!("no such hostio {} in {}", name.red(), module.red()),
     }
 
     let append = |code: &mut Vec<Instruction>| {

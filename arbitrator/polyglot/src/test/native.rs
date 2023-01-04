@@ -10,25 +10,19 @@ use prover::{
         config::PolyglotConfig,
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
+        native::{GlobalMod, NativeInstance},
         start::StartlessMachine,
-        GlobalMod, ModuleMod,
+        ModuleMod,
     },
 };
 use std::path::Path;
 use wasmer::{
-    imports, wasmparser::Operator, AsStoreMut, CompilerConfig, ExportIndex, Function, Imports,
-    Instance, MemoryType, Module, Pages, Store,
+    imports, CompilerConfig, ExportIndex, Function, Imports, Instance, MemoryType, Module, Pages,
+    Store,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
-fn expensive_add(op: &Operator) -> u64 {
-    match op {
-        Operator::I32Add => 100,
-        _ => 0,
-    }
-}
-
-fn new_test_instance(path: &str, config: PolyglotConfig) -> Result<(Instance, Store)> {
+fn new_test_instance(path: &str, config: PolyglotConfig) -> Result<NativeInstance> {
     let mut store = config.store();
     let wat = std::fs::read(path)?;
     let module = Module::new(&store, &wat)?;
@@ -36,16 +30,12 @@ fn new_test_instance(path: &str, config: PolyglotConfig) -> Result<(Instance, St
         "test" => {
             "noop" => Function::new_typed(&mut store, || {}),
         },
-        "poly_host" => {
-            "read_args" => Function::new_typed(&mut store, || {}),
-            "return_data" => Function::new_typed(&mut store, || {}),
-        },
     };
     let instance = Instance::new(&mut store, &module, &imports)?;
-    Ok((instance, store))
+    Ok(NativeInstance::new(instance, store))
 }
 
-fn new_vanilla_instance(path: &str) -> Result<(Instance, Store)> {
+fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
     let mut compiler = Singlepass::new();
     compiler.canonicalize_nans(true);
     compiler.enable_verifier();
@@ -54,27 +44,26 @@ fn new_vanilla_instance(path: &str) -> Result<(Instance, Store)> {
     let wat = std::fs::read(path)?;
     let module = Module::new(&mut store, &wat)?;
     let instance = Instance::new(&mut store, &module, &Imports::new())?;
-    Ok((instance, store))
+    Ok(NativeInstance::new(instance, store))
 }
 
 #[test]
 fn test_gas() -> Result<()> {
     let mut config = PolyglotConfig::default();
-    config.costs = expensive_add;
+    config.costs = super::expensive_add;
 
-    let (mut instance, mut store) = new_test_instance("tests/add.wat", config)?;
+    let mut instance = new_test_instance("tests/add.wat", config)?;
     let exports = &instance.exports;
-    let add_one = exports.get_typed_function::<i32, i32>(&store, "add_one")?;
-    let store = &mut store.as_store_mut();
+    let add_one = exports.get_typed_function::<i32, i32>(&instance.store, "add_one")?;
 
-    assert_eq!(instance.gas_left(store), MachineMeter::Ready(0));
+    assert_eq!(instance.gas_left(), MachineMeter::Ready(0));
 
     macro_rules! exhaust {
         ($gas:expr) => {
-            instance.set_gas(store, $gas);
-            assert_eq!(instance.gas_left(store), MachineMeter::Ready($gas));
-            assert!(add_one.call(store, 32).is_err());
-            assert_eq!(instance.gas_left(store), MachineMeter::Exhausted);
+            instance.set_gas($gas);
+            assert_eq!(instance.gas_left(), MachineMeter::Ready($gas));
+            assert!(add_one.call(&mut instance.store, 32).is_err());
+            assert_eq!(instance.gas_left(), MachineMeter::Exhausted);
         };
     }
 
@@ -83,14 +72,14 @@ fn test_gas() -> Result<()> {
     exhaust!(99);
 
     let mut gas_left = 500;
-    instance.set_gas(store, gas_left);
+    instance.set_gas(gas_left);
     while gas_left > 0 {
-        assert_eq!(instance.gas_left(store), MachineMeter::Ready(gas_left));
-        assert_eq!(add_one.call(store, 64)?, 65);
+        assert_eq!(instance.gas_left(), MachineMeter::Ready(gas_left));
+        assert_eq!(add_one.call(&mut instance.store, 64)?, 65);
         gas_left -= 100;
     }
-    assert!(add_one.call(store, 32).is_err());
-    assert_eq!(instance.gas_left(store), MachineMeter::Exhausted);
+    assert!(add_one.call(&mut instance.store, 32).is_err());
+    assert_eq!(instance.gas_left(), MachineMeter::Exhausted);
     Ok(())
 }
 
@@ -105,25 +94,25 @@ fn test_depth() -> Result<()> {
     let mut config = PolyglotConfig::default();
     config.max_depth = 64;
 
-    let (mut instance, mut store) = new_test_instance("tests/depth.wat", config)?;
+    let mut instance = new_test_instance("tests/depth.wat", config)?;
     let exports = &instance.exports;
-    let recurse = exports.get_typed_function::<i64, ()>(&store, "recurse")?;
-    let store = &mut store.as_store_mut();
+    let recurse = exports.get_typed_function::<i64, ()>(&instance.store, "recurse")?;
 
-    let program_depth: u32 = instance.get_global(store, "depth");
+    let program_depth: u32 = instance.get_global("depth")?;
     assert_eq!(program_depth, 0);
-    assert_eq!(instance.stack_left(store), 64);
+    assert_eq!(instance.stack_left(), 64);
 
-    let mut check = |space: u32, expected: u32| {
-        instance.set_global(store, "depth", 0);
-        instance.set_stack(store, space);
-        assert_eq!(instance.stack_left(store), space);
+    let mut check = |space: u32, expected: u32| -> Result<()> {
+        instance.set_global("depth", 0)?;
+        instance.set_stack(space);
+        assert_eq!(instance.stack_left(), space);
 
-        assert!(recurse.call(store, 0).is_err());
-        assert_eq!(instance.stack_left(store), 0);
+        assert!(recurse.call(&mut instance.store, 0).is_err());
+        assert_eq!(instance.stack_left(), 0);
 
-        let program_depth: u32 = instance.get_global(store, "depth");
+        let program_depth: u32 = instance.get_global("depth")?;
         assert_eq!(program_depth, expected);
+        Ok(())
     };
 
     let locals = 2;
@@ -132,13 +121,12 @@ fn test_depth() -> Result<()> {
 
     let frame_size = locals + depth + fixed;
 
-    check(frame_size, 0); // should immediately exhaust (space left <= frame)
-    check(frame_size + 1, 1);
-    check(2 * frame_size, 1);
-    check(2 * frame_size + 1, 2);
-    check(4 * frame_size, 3);
-    check(4 * frame_size + frame_size / 2, 4);
-    Ok(())
+    check(frame_size, 0)?; // should immediately exhaust (space left <= frame)
+    check(frame_size + 1, 1)?;
+    check(2 * frame_size, 1)?;
+    check(2 * frame_size + 1, 2)?;
+    check(4 * frame_size, 3)?;
+    check(4 * frame_size + frame_size / 2, 4)
 }
 
 #[test]
@@ -148,26 +136,26 @@ fn test_start() -> Result<()> {
     //     the `start` function increments `status`
     //     by the spec, `start` must run at initialization
 
-    fn check(store: &mut Store, instance: &Instance, value: i32) {
-        let store = &mut store.as_store_mut();
-        let status: i32 = instance.get_global(store, "status");
+    fn check(instance: &mut NativeInstance, value: i32) -> Result<()> {
+        let status: i32 = instance.get_global("status")?;
         assert_eq!(status, value);
+        Ok(())
     }
 
-    let (instance, mut store) = new_vanilla_instance("tests/start.wat")?;
-    check(&mut store, &instance, 11);
+    let mut instance = new_vanilla_instance("tests/start.wat")?;
+    check(&mut instance, 11)?;
 
     let config = PolyglotConfig::default();
-    let (instance, mut store) = new_test_instance("tests/start.wat", config)?;
-    check(&mut store, &instance, 10);
+    let mut instance = new_test_instance("tests/start.wat", config)?;
+    check(&mut instance, 10)?;
 
     let exports = &instance.exports;
-    let move_me = exports.get_typed_function::<(), ()>(&store, "move_me")?;
-    let starter = instance.get_start(&store)?;
+    let move_me = exports.get_typed_function::<(), ()>(&instance.store, "move_me")?;
+    let starter = instance.get_start(&instance.store)?;
 
-    move_me.call(&mut store)?;
-    starter.call(&mut store)?;
-    check(&mut store, &instance, 12);
+    move_me.call(&mut instance.store)?;
+    starter.call(&mut instance.store)?;
+    check(&mut instance, 12)?;
     Ok(())
 }
 
@@ -209,7 +197,7 @@ fn test_module_mod() -> Result<()> {
     let binary = binary::parse(&wasm, &Path::new(file))?;
 
     let config = PolyglotConfig::default();
-    let (instance, _) = new_test_instance(file, config)?;
+    let instance = new_test_instance(file, config)?;
     let module = instance.module().info();
 
     assert_eq!(module.all_functions()?, binary.all_functions()?);
@@ -245,11 +233,11 @@ fn test_heap() -> Result<()> {
         let mut config = PolyglotConfig::default();
         config.heap_bound = Pages(bound).into();
 
-        let (instance, store) = new_test_instance(file, config.clone())?;
+        let instance = new_test_instance(file, config.clone())?;
 
         let ty = MemoryType::new(start, Some(expected), false);
         let memory = instance.exports.get_memory("mem")?;
-        assert_eq!(ty, memory.ty(&store));
+        assert_eq!(ty, memory.ty(&instance.store));
         Ok(())
     };
 
@@ -278,11 +266,12 @@ fn test_rust() -> Result<()> {
     let config = PolyglotConfig::default();
     let env = WasmEnv::new(config, args);
     let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
-    let (instance, env, mut store) = poly::instance(filename, env)?;
-    let exports = instance.exports;
+    let (mut native, env) = poly::instance(filename, env)?;
+    let exports = native.instance.exports;
+    let store = &mut native.store;
 
-    let main = exports.get_typed_function::<i32, i32>(&mut store, "arbitrum_main")?;
-    let status = main.call(&mut store, args_len)?;
+    let main = exports.get_typed_function::<i32, i32>(store, "arbitrum_main")?;
+    let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
     let env = env.as_ref(&store);
@@ -308,11 +297,12 @@ fn test_c() -> Result<()> {
 
     let config = PolyglotConfig::default();
     let env = WasmEnv::new(config, args);
-    let (instance, env, mut store) = poly::instance("tests/siphash/siphash.wasm", env)?;
-    let exports = instance.exports;
+    let (mut native, env) = poly::instance("tests/siphash/siphash.wasm", env)?;
+    let exports = native.instance.exports;
+    let store = &mut native.store;
 
-    let main = exports.get_typed_function::<i32, i32>(&mut store, "arbitrum_main")?;
-    let status = main.call(&mut store, args_len)?;
+    let main = exports.get_typed_function::<i32, i32>(store, "arbitrum_main")?;
+    let status = main.call(store, args_len)?;
     assert_eq!(status, 0);
 
     let env = env.as_ref(&store);

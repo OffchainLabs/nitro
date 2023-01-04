@@ -19,9 +19,12 @@ pub mod wavm;
 #[cfg(test)]
 mod test;
 
-use crate::machine::{argument_data_to_inbox, Machine};
 use eyre::Result;
-use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
+pub use machine::Machine;
+use machine::{
+    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
+    PreimageResolver,
+};
 use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
