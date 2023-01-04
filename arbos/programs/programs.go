@@ -45,7 +45,7 @@ func Open(sto *storage.Storage) *Programs {
 	}
 }
 
-func (p Programs) PolyglotVersion() (uint32, error) {
+func (p Programs) StylusVersion() (uint32, error) {
 	return p.version.Get()
 }
 

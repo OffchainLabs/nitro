@@ -17,7 +17,7 @@ use wasmparser::{Operator, Type as WpType, TypeOrFuncType as BlockType};
 #[cfg(feature = "native")]
 use super::native::{GlobalMod, NativeInstance};
 
-const POLYGLOT_STACK_LEFT: &str = "polyglot_stack_left";
+const STYLUS_STACK_LEFT: &str = "stylus_stack_left";
 
 /// This middleware ensures stack overflows are deterministic across different compilers and targets.
 /// The internal notion of "stack space left" that makes this possible is strictly smaller than that of
@@ -53,7 +53,7 @@ impl<M: ModuleMod> Middleware<M> for DepthChecker {
 
     fn update_module(&self, module: &mut M) -> Result<()> {
         let limit = GlobalInit::I32Const(self.limit as i32);
-        let space = module.add_global(POLYGLOT_STACK_LEFT, Type::I32, limit)?;
+        let space = module.add_global(STYLUS_STACK_LEFT, Type::I32, limit)?;
         *self.global.lock() = Some(space);
         *self.funcs.lock() = Arc::new(module.all_functions()?);
         *self.sigs.lock() = Arc::new(module.all_signatures()?);
@@ -465,8 +465,7 @@ impl<'a> FuncDepthChecker<'a> {
         }
 
         if self.locals.is_none() {
-            //bail!("missing locals info for func {}", self.func.as_u32().red())
-            println!("missing locals info for {}", self.func.as_u32().red());
+            bail!("missing locals info for func {}", self.func.as_u32().red())
         };
 
         let locals = self.locals.unwrap_or_default();
@@ -483,21 +482,21 @@ pub trait DepthCheckedMachine {
 #[cfg(feature = "native")]
 impl DepthCheckedMachine for NativeInstance {
     fn stack_left(&mut self) -> u32 {
-        self.get_global(POLYGLOT_STACK_LEFT).unwrap()
+        self.get_global(STYLUS_STACK_LEFT).unwrap()
     }
 
     fn set_stack(&mut self, size: u32) {
-        self.set_global(POLYGLOT_STACK_LEFT, size).unwrap()
+        self.set_global(STYLUS_STACK_LEFT, size).unwrap()
     }
 }
 
 impl DepthCheckedMachine for Machine {
     fn stack_left(&mut self) -> u32 {
-        let global = self.get_global(POLYGLOT_STACK_LEFT).unwrap();
+        let global = self.get_global(STYLUS_STACK_LEFT).unwrap();
         global.try_into().expect("instrumentation type mismatch")
     }
 
     fn set_stack(&mut self, size: u32) {
-        self.set_global(POLYGLOT_STACK_LEFT, size.into()).unwrap();
+        self.set_global(STYLUS_STACK_LEFT, size.into()).unwrap();
     }
 }

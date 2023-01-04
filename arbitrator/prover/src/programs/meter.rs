@@ -12,8 +12,8 @@ use wasmparser::{Operator, Type as WpType, TypeOrFuncType};
 #[cfg(feature = "native")]
 use super::native::{GlobalMod, NativeInstance};
 
-pub const POLYGLOT_GAS_LEFT: &str = "polyglot_gas_left";
-pub const POLYGLOT_GAS_STATUS: &str = "polyglot_gas_status";
+pub const STYLUS_GAS_LEFT: &str = "stylus_gas_left";
+pub const STYLUS_GAS_STATUS: &str = "stylus_gas_status";
 
 pub trait OpcodePricer: Fn(&Operator) -> u64 + Send + Sync + Clone {}
 
@@ -47,8 +47,8 @@ where
     fn update_module(&self, module: &mut M) -> Result<()> {
         let start_gas = GlobalInit::I64Const(self.start_gas as i64);
         let start_status = GlobalInit::I32Const(0);
-        let gas = module.add_global(POLYGLOT_GAS_LEFT, Type::I64, start_gas)?;
-        let status = module.add_global(POLYGLOT_GAS_STATUS, Type::I32, start_status)?;
+        let gas = module.add_global(STYLUS_GAS_LEFT, Type::I64, start_gas)?;
+        let status = module.add_global(STYLUS_GAS_STATUS, Type::I32, start_status)?;
         *self.gas_global.lock() = Some(gas);
         *self.status_global.lock() = Some(status);
         Ok(())
@@ -206,8 +206,8 @@ pub trait MeteredMachine {
 #[cfg(feature = "native")]
 impl MeteredMachine for NativeInstance {
     fn gas_left(&mut self) -> MachineMeter {
-        let status = self.get_global(POLYGLOT_GAS_STATUS).unwrap();
-        let mut gas = || self.get_global(POLYGLOT_GAS_LEFT).unwrap();
+        let status = self.get_global(STYLUS_GAS_STATUS).unwrap();
+        let mut gas = || self.get_global(STYLUS_GAS_LEFT).unwrap();
 
         match status {
             0 => MachineMeter::Ready(gas()),
@@ -216,8 +216,8 @@ impl MeteredMachine for NativeInstance {
     }
 
     fn set_gas(&mut self, gas: u64) {
-        self.set_global(POLYGLOT_GAS_LEFT, gas).unwrap();
-        self.set_global(POLYGLOT_GAS_STATUS, 0).unwrap();
+        self.set_global(STYLUS_GAS_LEFT, gas).unwrap();
+        self.set_global(STYLUS_GAS_STATUS, 0).unwrap();
     }
 }
 
@@ -229,8 +229,8 @@ impl MeteredMachine for Machine {
             }};
         }
 
-        let gas = || convert!(self.get_global(POLYGLOT_GAS_LEFT));
-        let status: u32 = convert!(self.get_global(POLYGLOT_GAS_STATUS));
+        let gas = || convert!(self.get_global(STYLUS_GAS_LEFT));
+        let status: u32 = convert!(self.get_global(STYLUS_GAS_STATUS));
 
         match status {
             0 => MachineMeter::Ready(gas()),
@@ -239,7 +239,7 @@ impl MeteredMachine for Machine {
     }
 
     fn set_gas(&mut self, gas: u64) {
-        self.set_global(POLYGLOT_GAS_LEFT, gas.into()).unwrap();
-        self.set_global(POLYGLOT_GAS_STATUS, 0_u32.into()).unwrap();
+        self.set_global(STYLUS_GAS_LEFT, gas.into()).unwrap();
+        self.set_global(STYLUS_GAS_STATUS, 0_u32.into()).unwrap();
     }
 }

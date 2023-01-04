@@ -282,7 +282,7 @@ func (state *ArbosState) UpgradeArbosVersion(upgradeTo uint64, firstTime bool, s
 		case 9:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)))
 		case 10:
-			// TODO: move to the first version that introduces polyglot
+			// TODO: move to the first version that introduces stylus
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
 		default:
 			return fmt.Errorf("unrecognized ArbOS version %v, %w", state.arbosVersion, ErrFatalNodeOutOfDate)

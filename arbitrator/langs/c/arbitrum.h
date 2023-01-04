@@ -11,10 +11,10 @@
 extern "C" {
 #endif
 
-#define POLY_HOST import_module("poly_host")
+#define USER_HOST import_module("user_host")
 
-extern __attribute__((POLY_HOST, import_name("read_args"))) void read_args(const uint8_t * data);
-extern __attribute__((POLY_HOST, import_name("return_data"))) void return_data(const uint8_t * data, size_t len);
+extern __attribute__((USER_HOST, import_name("read_args"))) void read_args(const uint8_t * data);
+extern __attribute__((USER_HOST, import_name("return_data"))) void return_data(const uint8_t * data, size_t len);
 
 typedef enum ArbStatus {
     Success = 0,

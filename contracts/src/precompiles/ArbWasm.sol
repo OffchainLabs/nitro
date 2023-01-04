@@ -11,7 +11,7 @@ pragma solidity >=0.4.21 <0.9.0;
 interface ArbWasm {
     // @notice compile a wasm program
     // @param program the program to compile
-    // @return version the polyglot version the program was compiled against
+    // @return version the stylus version the program was compiled against
     function compileProgram(address program) external returns (uint32 version);
 
     // @notice call a wasm program
@@ -24,9 +24,9 @@ interface ArbWasm {
         view
         returns (uint32 status, bytes memory result);
 
-    // @notice gets the latest polyglot version
-    // @return version the polyglot version
-    function polyglotVersion() external view returns (uint32 version);
+    // @notice gets the latest stylus version
+    // @return version the stylus version
+    function stylusVersion() external view returns (uint32 version);
 
     // @notice gets the conversion rate between evm and wasm gas
     // @return price the price (in evm gas basis points) of wasm gas

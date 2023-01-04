@@ -2,4 +2,4 @@
 ;; For license information, see https://github.com/nitro/blob/master/LICENSE
 
 (module
-    (import "env" "polyglot_global_with_random_name" (func)))
+    (global $status (export "stylus_gas_left") (mut i64) (i64.const -1)))

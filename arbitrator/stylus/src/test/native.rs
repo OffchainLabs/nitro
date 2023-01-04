@@ -1,13 +1,13 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{env::WasmEnv, poly};
+use crate::{env::WasmEnv, stylus};
 use arbutil::{crypto, Color};
 use eyre::{bail, Result};
 use prover::{
     binary,
     programs::{
-        config::PolyglotConfig,
+        config::StylusConfig,
         depth::DepthCheckedMachine,
         meter::{MachineMeter, MeteredMachine},
         native::{GlobalMod, NativeInstance},
@@ -22,7 +22,7 @@ use wasmer::{
 };
 use wasmer_compiler_singlepass::Singlepass;
 
-fn new_test_instance(path: &str, config: PolyglotConfig) -> Result<NativeInstance> {
+fn new_test_instance(path: &str, config: StylusConfig) -> Result<NativeInstance> {
     let mut store = config.store();
     let wat = std::fs::read(path)?;
     let module = Module::new(&store, &wat)?;
@@ -49,7 +49,7 @@ fn new_vanilla_instance(path: &str) -> Result<NativeInstance> {
 
 #[test]
 fn test_gas() -> Result<()> {
-    let mut config = PolyglotConfig::default();
+    let mut config = StylusConfig::default();
     config.costs = super::expensive_add;
 
     let mut instance = new_test_instance("tests/add.wat", config)?;
@@ -91,7 +91,7 @@ fn test_depth() -> Result<()> {
     //    the `recurse` function has 1 parameter and 2 locals
     //    comments show that the max depth is 3 words
 
-    let mut config = PolyglotConfig::default();
+    let mut config = StylusConfig::default();
     config.max_depth = 64;
 
     let mut instance = new_test_instance("tests/depth.wat", config)?;
@@ -145,7 +145,7 @@ fn test_start() -> Result<()> {
     let mut instance = new_vanilla_instance("tests/start.wat")?;
     check(&mut instance, 11)?;
 
-    let config = PolyglotConfig::default();
+    let config = StylusConfig::default();
     let mut instance = new_test_instance("tests/start.wat", config)?;
     check(&mut instance, 10)?;
 
@@ -162,13 +162,13 @@ fn test_start() -> Result<()> {
 #[test]
 fn test_import_export_safety() -> Result<()> {
     // test wasms
-    //     bad-export.wat   there's a global named `polyglot_gas_left`
-    //     bad-export2.wat  there's a func named `polyglot_global_with_random_name`
-    //     bad-import.wat   there's an import named `polyglot_global_with_random_name`
+    //     bad-export.wat   there's a global named `stylus_gas_left`
+    //     bad-export2.wat  there's a func named `stylus_global_with_random_name`
+    //     bad-import.wat   there's an import named `stylus_global_with_random_name`
 
     fn check(path: &str, both: bool) -> Result<()> {
         if both {
-            let config = PolyglotConfig::default();
+            let config = StylusConfig::default();
             assert!(new_test_instance(path, config).is_err());
         }
         let path = &Path::new(path);
@@ -196,7 +196,7 @@ fn test_module_mod() -> Result<()> {
     let wasm = wasmer::wat2wasm(&wat)?;
     let binary = binary::parse(&wasm, &Path::new(file))?;
 
-    let config = PolyglotConfig::default();
+    let config = StylusConfig::default();
     let instance = new_test_instance(file, config)?;
     let module = instance.module().info();
 
@@ -224,13 +224,13 @@ fn test_heap() -> Result<()> {
     //     memory.wat   there's a 2-page memory with an upper limit of 4
     //     memory2.wat  there's a 2-page memory with no upper limit
 
-    let mut config = PolyglotConfig::default();
+    let mut config = StylusConfig::default();
     config.heap_bound = Pages(1).into();
     assert!(new_test_instance("tests/memory.wat", config.clone()).is_err());
     assert!(new_test_instance("tests/memory2.wat", config.clone()).is_err());
 
     let check = |start: u32, bound: u32, expected: u32, file: &str| -> Result<()> {
-        let mut config = PolyglotConfig::default();
+        let mut config = StylusConfig::default();
         config.heap_bound = Pages(bound).into();
 
         let instance = new_test_instance(file, config.clone())?;
@@ -263,10 +263,10 @@ fn test_rust() -> Result<()> {
     args.extend(preimage);
     let args_len = args.len() as i32;
 
-    let config = PolyglotConfig::default();
+    let config = StylusConfig::default();
     let env = WasmEnv::new(config, args);
     let filename = "tests/keccak/target/wasm32-unknown-unknown/release/keccak.wasm";
-    let (mut native, env) = poly::instance(filename, env)?;
+    let (mut native, env) = stylus::instance(filename, env)?;
     let exports = native.instance.exports;
     let store = &mut native.store;
 
@@ -295,9 +295,9 @@ fn test_c() -> Result<()> {
     args.extend(text);
     let args_len = args.len() as i32;
 
-    let config = PolyglotConfig::default();
+    let config = StylusConfig::default();
     let env = WasmEnv::new(config, args);
-    let (mut native, env) = poly::instance("tests/siphash/siphash.wasm", env)?;
+    let (mut native, env) = stylus::instance("tests/siphash/siphash.wasm", env)?;
     let exports = native.instance.exports;
     let store = &mut native.store;
 

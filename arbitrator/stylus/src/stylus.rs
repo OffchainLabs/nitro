@@ -4,7 +4,7 @@
 use crate::env::{MaybeEscape, SystemStateData, WasmEnv, WasmEnvMut};
 use eyre::Result;
 use prover::programs::{
-    meter::{POLYGLOT_GAS_LEFT, POLYGLOT_GAS_STATUS},
+    meter::{STYLUS_GAS_LEFT, STYLUS_GAS_STATUS},
     native::NativeInstance,
 };
 use wasmer::{imports, Function, FunctionEnv, Global, Instance, Module};
@@ -16,7 +16,7 @@ pub fn instance(path: &str, env: WasmEnv) -> Result<(NativeInstance, FunctionEnv
 
     let func_env = FunctionEnv::new(&mut store, env);
     let imports = imports! {
-        "poly_host" => {
+        "user_host" => {
             "read_args" => Function::new_typed_with_env(&mut store, &func_env, read_args),
             "return_data" => Function::new_typed_with_env(&mut store, &func_env, return_data),
         },
@@ -27,8 +27,8 @@ pub fn instance(path: &str, env: WasmEnv) -> Result<(NativeInstance, FunctionEnv
     let expect_global = |name| -> Global { instance.exports.get_global(name).unwrap().clone() };
 
     let memory = exports.get_memory("memory")?.clone();
-    let gas_left = expect_global(POLYGLOT_GAS_LEFT);
-    let gas_status = expect_global(POLYGLOT_GAS_STATUS);
+    let gas_left = expect_global(STYLUS_GAS_LEFT);
+    let gas_status = expect_global(STYLUS_GAS_STATUS);
 
     let env = func_env.as_mut(&mut store);
     env.memory = Some(memory);
