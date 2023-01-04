@@ -709,7 +709,6 @@ func (c *Challenge) AddLeaf(tx *ActiveTx, assertion *Assertion, history util.His
 
 // Completed returns true if the challenge is completed.
 func (c *Challenge) Completed(tx *ActiveTx) bool {
-	tx.verifyRead()
 	return !c.winnerAssertion.IsNone()
 }
 
