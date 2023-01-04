@@ -10,7 +10,6 @@ import (
 
 	"github.com/OffchainLabs/new-rollup-exploration/protocol"
 	statemanager "github.com/OffchainLabs/new-rollup-exploration/state-manager"
-	"github.com/OffchainLabs/new-rollup-exploration/testing/mocks"
 	"github.com/OffchainLabs/new-rollup-exploration/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/sirupsen/logrus/hooks/test"
@@ -463,12 +462,12 @@ func runBlockChallengeTest(t testing.TB, hook *test.Hook, cfg *blockChallengeTes
 
 func TestValidator_verifyAddLeafConditions(t *testing.T) {
 	badAssertion := &protocol.Assertion{}
-	v := &Validator{chain: &mocks.MockProtocol{}}
+	ctx := context.Background()
+	timeRef := util.NewArtificialTimeReference()
+	v := &Validator{chain: protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)}
 	// Can not add leaf on root assertion
 	require.ErrorIs(t, v.verifyAddLeafConditions(badAssertion, &protocol.Challenge{}), protocol.ErrInvalidOp)
 
-	ctx := context.Background()
-	timeRef := util.NewArtificialTimeReference()
 	chain := protocol.NewAssertionChain(ctx, timeRef, 100*time.Second)
 	var chal *protocol.Challenge
 	var rootAssertion *protocol.Assertion
