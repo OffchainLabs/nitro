@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y curl build-essential=12.9
 
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
-RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
+RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5 wabt
     # pinned rust 1.65.0
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.65.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
