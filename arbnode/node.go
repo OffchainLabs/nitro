@@ -636,10 +636,11 @@ func (w *WasmConfig) FindMachineDir() (string, bool) {
 }
 
 type CachingConfig struct {
-	Archive       bool          `koanf:"archive"`
-	BlockCount    uint64        `koanf:"block-count"`
-	BlockAge      time.Duration `koanf:"block-age"`
-	TrieTimeLimit time.Duration `koanf:"trie-time-limit"`
+	Archive        bool          `koanf:"archive"`
+	BlockCount     uint64        `koanf:"block-count"`
+	BlockAge       time.Duration `koanf:"block-age"`
+	TrieTimeLimit  time.Duration `koanf:"trie-time-limit"`
+	TrieDirtyCache int           `koanf:"trie-dirty-cache"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -647,13 +648,15 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".block-count", DefaultCachingConfig.BlockCount, "minimum number of recent blocks to keep in memory")
 	f.Duration(prefix+".block-age", DefaultCachingConfig.BlockAge, "minimum age a block must be to be pruned")
 	f.Duration(prefix+".trie-time-limit", DefaultCachingConfig.TrieTimeLimit, "maximum block processing time before trie is written to hard-disk")
+	f.Int(prefix+".trie-dirty-cache", DefaultCachingConfig.TrieDirtyCache, "amount of memory in megabytes to cache state diffs against disk with (larger cache lowers database growth)")
 }
 
 var DefaultCachingConfig = CachingConfig{
-	Archive:       false,
-	BlockCount:    128,
-	BlockAge:      30 * time.Minute,
-	TrieTimeLimit: time.Hour,
+	Archive:        false,
+	BlockCount:     128,
+	BlockAge:       30 * time.Minute,
+	TrieTimeLimit:  time.Hour,
+	TrieDirtyCache: 1024,
 }
 
 type Node struct {
@@ -1592,7 +1595,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		TrieCleanJournal:    stack.ResolvePath(baseConf.TrieCleanCacheJournal),
 		TrieCleanRejournal:  baseConf.TrieCleanCacheRejournal,
 		TrieCleanNoPrefetch: baseConf.NoPrefetch,
-		TrieDirtyLimit:      baseConf.TrieDirtyCache,
+		TrieDirtyLimit:      cachingConfig.TrieDirtyCache,
 		TrieDirtyDisabled:   cachingConfig.Archive,
 		TrieTimeLimit:       cachingConfig.TrieTimeLimit,
 		TriesInMemory:       cachingConfig.BlockCount,
